@@ -28,6 +28,10 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Approvals Screen**: Consolidated view for user-specific pending approvals.
 -   **Teams Chat Groups**: MS Teams-styled channel-based group chat for departments and projects.
 -   **PM On-The-Go Mode**: Mobile-first interface for site managers, enforcing daily updates and supporting PO requests/invoice linking.
+-   **PO Generator**: Dialog-based Purchase Order generator accessible from project detail page. Creates PDFs matching Emergent Energy template (PO{seq}-{PROJECT}-{DATE}-{Supplier} naming). Supports line items, supplier details, delivery instructions, and status tracking (draft/sent/approved/cancelled). PDF download on generation.
+-   **Quality Dashboard**: Overhauled with KPI strip (Total Projects, Items Passed, Active Warnings, Avg QM Score), Projects/Items view toggle, sortable items table, and collapsible warnings by severity.
+-   **Quality Tab**: Phase-tabbed navigation with progress indicators, group accordions, inline status buttons (Pass/Fail/Review/N/A), evidence upload, approval workflows, and bulk actions.
+-   **MS SSO Unavailable Banner**: Outlook email and Teams chat pages show blue info banner when Microsoft 365 SSO is not configured for the user, replacing destructive toast with persistent informative UI.
 -   **Knowledge Base**: Wiki-style system with SOP-enriched nodes.
 -   **Navigation**: Redesigned sidebar with color-coded section indicators, tooltip support for collapsed state, and promoted "Users & Roles" admin shortcut in the user profile area. Sections flow: My Work → EXCO → Collaboration → Project Management → Finance → Project Development → Engineering → Governance → Information → Admin. Admin section now has Users & Roles as a top-level item (not nested under Settings). Collapsed sidebar width reduced to 68px with icon-only tooltips.
 
@@ -57,6 +61,7 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Baseline Tracking**: `work_items` table has `baseline_start`, `baseline_end`, `baseline_duration`, `task_mode` columns. PATCH endpoint handles all baseline and duration fields with auto-calc end date from duration.
 -   **MS Object Sync**: Periodically syncs calendar, email, and Teams data from Microsoft Graph API. All syncs are user-scoped — each user's SSO token is used to fetch their own data. Token refresh via MSAL `acquireTokenSilent` with persisted token cache in `ms_accounts.refresh_token_encrypted`. Fallback to shared Replit Connector is blocked for user-specific endpoints (`/me/*`). All Outlook/SharePoint API routes require a valid user SSO token — if no token exists, routes return empty arrays or 401 instead of using the shared connector. The `resolveUserToken` function in `outlook.ts` enforces this at the Graph API level, and route-level guards in `routes.ts` provide early rejection.
 -   **Email/Message to Task**: Enables creating project-linked tasks from Outlook emails or Teams messages.
+-   **PO Generator Backend**: `server/po-routes.ts` with `purchase_orders` table and `po_number_seq` sequence. Routes: `GET /api/po/:projectName` (list), `POST /api/po/generate` (create + PDF), `GET /api/po/:projectName/:poId/pdf` (download), `PATCH /api/po/:poId/status`, `DELETE /api/po/:poId`. Uses parameterized SQL queries via Drizzle `sql` template tag. PDF generated with `pdfkit`.
 -   **COS Realised Logic**: Font color takes precedence over `invoiceDateConfirmed` boolean. Red font = NOT confirmed regardless of boolean. Manual date overrides do NOT auto-set `invoiceDateConfirmed=true`; only explicit font color toggle (black) confirms a date.
 
 ### Database Architecture
@@ -80,6 +85,7 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 ### File Processing
 -   **exceljs**
 -   **multer**
+-   **pdfkit**
 
 ### Frontend Libraries
 -   **@tanstack/react-query**

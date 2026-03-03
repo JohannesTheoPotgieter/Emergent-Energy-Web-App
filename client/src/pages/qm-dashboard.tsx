@@ -36,6 +36,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   Shield,
   ShieldCheck,
   AlertTriangle,
@@ -44,7 +49,6 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardCheck,
-  BarChart3,
   CheckCircle2,
   Eye,
   Plus,
@@ -55,9 +59,13 @@ import {
   LayoutGrid,
   Table2,
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   FileText,
   User,
   Calendar,
+  TrendingUp,
+  XCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ActionBar } from "@/components/guidance/ActionBar";
@@ -123,17 +131,19 @@ interface QualityItem {
 
 type ProjectSortKey = "name" | "completion" | "warnings" | "updated";
 type ProjectSortDir = "asc" | "desc";
+type ItemSortKey = "itemName" | "projectName" | "phaseName" | "groupName" | "qmStatus" | "assigneeName" | "endDate" | "evidenceCount";
 
 function CircularProgress({ value, size = 48, strokeWidth = 4, className = "" }: { value: number; size?: number; strokeWidth?: number; className?: string }) {
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
   const offset = circumference - (value / 100) * circumference;
+  const color = value >= 80 ? "text-emerald-500" : value >= 50 ? "text-amber-500" : "text-red-400";
   return (
     <svg width={size} height={size} className={className}>
       <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={strokeWidth} className="text-muted/20" />
       <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={strokeWidth}
         strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round"
-        className="text-emerald-500 transition-all duration-700" transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+        className={`${color} transition-all duration-700`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
       <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" className="fill-current text-foreground font-bold" fontSize={size * 0.24}>
         {value}%
       </text>
@@ -142,15 +152,41 @@ function CircularProgress({ value, size = 48, strokeWidth = 4, className = "" }:
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { bg: string; text: string; label: string }> = {
-    pass: { bg: "bg-emerald-500/15", text: "text-emerald-600 dark:text-emerald-400", label: "Pass" },
-    fail: { bg: "bg-red-500/15", text: "text-red-600 dark:text-red-400", label: "Fail" },
-    review: { bg: "bg-amber-500/15", text: "text-amber-600 dark:text-amber-400", label: "Review" },
-    na: { bg: "bg-gray-500/15", text: "text-gray-500", label: "N/A" },
-    pending: { bg: "bg-blue-500/15", text: "text-blue-600 dark:text-blue-400", label: "Pending" },
+  const config: Record<string, { bg: string; text: string; label: string; dot: string }> = {
+    pass: { bg: "bg-emerald-500/15", text: "text-emerald-600 dark:text-emerald-400", label: "Pass", dot: "bg-emerald-500" },
+    fail: { bg: "bg-red-500/15", text: "text-red-600 dark:text-red-400", label: "Fail", dot: "bg-red-500" },
+    review: { bg: "bg-amber-500/15", text: "text-amber-600 dark:text-amber-400", label: "Review", dot: "bg-amber-500" },
+    na: { bg: "bg-gray-500/15", text: "text-gray-500", label: "N/A", dot: "bg-gray-400" },
+    pending: { bg: "bg-blue-500/15", text: "text-blue-600 dark:text-blue-400", label: "Pending", dot: "bg-blue-500" },
   };
   const c = config[status] || config.pending;
-  return <Badge variant="outline" className={`${c.bg} ${c.text} border-0 text-xs`}>{c.label}</Badge>;
+  return (
+    <Badge variant="outline" className={`${c.bg} ${c.text} border-0 text-xs gap-1.5`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />
+      {c.label}
+    </Badge>
+  );
+}
+
+function SortHeader({ label, sortKey, currentSort, currentDir, onSort, className = "" }: {
+  label: string; sortKey: string; currentSort: string; currentDir: ProjectSortDir;
+  onSort: (key: string) => void; className?: string;
+}) {
+  const active = currentSort === sortKey;
+  return (
+    <button
+      className={`flex items-center gap-1 hover:text-foreground transition-colors ${active ? "text-foreground font-semibold" : "text-muted-foreground font-medium"} ${className}`}
+      onClick={() => onSort(sortKey)}
+      data-testid={`sort-col-${sortKey}`}
+    >
+      {label}
+      {active ? (
+        currentDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+      ) : (
+        <ArrowUpDown className="h-3 w-3 opacity-40" />
+      )}
+    </button>
+  );
 }
 
 export default function QmDashboardPage() {
@@ -175,6 +211,8 @@ export default function QmDashboardPage() {
   const [itemsProjectFilter, setItemsProjectFilter] = useState<string>("all");
   const [itemsPhaseFilter, setItemsPhaseFilter] = useState<string>("all");
   const [itemsSearch, setItemsSearch] = useState("");
+  const [itemSort, setItemSort] = useState<ItemSortKey>("itemName");
+  const [itemSortDir, setItemSortDir] = useState<ProjectSortDir>("asc");
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -287,6 +325,12 @@ export default function QmDashboardPage() {
       return sum + c.phases.reduce((t, p) => t + p.completed, 0);
     }, 0);
   }, [checklists]);
+  const totalItemsAll = useMemo(() => {
+    return checklists.reduce((sum, c) => {
+      if (!c.phases) return sum;
+      return sum + c.phases.reduce((t, p) => t + p.total, 0);
+    }, 0);
+  }, [checklists]);
   const activeWarnings = warnings.length;
   const avgQmScore = checklists.length > 0
     ? Math.round(
@@ -341,14 +385,30 @@ export default function QmDashboardPage() {
     if (itemsStatusFilter !== "all") list = list.filter(i => i.qmStatus === itemsStatusFilter);
     if (itemsProjectFilter !== "all") list = list.filter(i => i.projectName === itemsProjectFilter);
     if (itemsPhaseFilter !== "all") list = list.filter(i => i.phaseName === itemsPhaseFilter);
+
+    list.sort((a, b) => {
+      let cmp = 0;
+      switch (itemSort) {
+        case "itemName": cmp = (a.itemName || "").localeCompare(b.itemName || ""); break;
+        case "projectName": cmp = (a.projectName || "").localeCompare(b.projectName || ""); break;
+        case "phaseName": cmp = (a.phaseName || "").localeCompare(b.phaseName || ""); break;
+        case "groupName": cmp = (a.groupName || "").localeCompare(b.groupName || ""); break;
+        case "qmStatus": cmp = (a.qmStatus || "").localeCompare(b.qmStatus || ""); break;
+        case "assigneeName": cmp = (a.assigneeName || "").localeCompare(b.assigneeName || ""); break;
+        case "endDate": cmp = (a.endDate || "").localeCompare(b.endDate || ""); break;
+        case "evidenceCount": cmp = a.evidenceCount - b.evidenceCount; break;
+      }
+      return itemSortDir === "desc" ? -cmp : cmp;
+    });
     return list;
-  }, [allItems, itemsSearch, itemsStatusFilter, itemsProjectFilter, itemsPhaseFilter]);
+  }, [allItems, itemsSearch, itemsStatusFilter, itemsProjectFilter, itemsPhaseFilter, itemSort, itemSortDir]);
 
   const itemProjects = useMemo(() => Array.from(new Set(allItems.map(i => i.projectName))).sort(), [allItems]);
   const itemPhases = useMemo(() => Array.from(new Set(allItems.map(i => i.phaseName))).sort(), [allItems]);
 
   const highSeverityWarnings = useMemo(() => warnings.filter(w => w.severity === "High"), [warnings]);
-  const otherWarnings = useMemo(() => warnings.filter(w => w.severity !== "High"), [warnings]);
+  const mediumWarnings = useMemo(() => warnings.filter(w => w.severity === "Medium"), [warnings]);
+  const lowWarnings = useMemo(() => warnings.filter(w => w.severity !== "High" && w.severity !== "Medium"), [warnings]);
 
   const toggleSort = (key: ProjectSortKey) => {
     if (projectSort === key) {
@@ -356,6 +416,15 @@ export default function QmDashboardPage() {
     } else {
       setProjectSort(key);
       setProjectSortDir("asc");
+    }
+  };
+
+  const toggleItemSort = (key: string) => {
+    if (itemSort === key) {
+      setItemSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setItemSort(key as ItemSortKey);
+      setItemSortDir("asc");
     }
   };
 
@@ -378,111 +447,179 @@ export default function QmDashboardPage() {
     { title: "Warnings", description: "Active warnings are shown below. Override or resolve them with a reason." },
   ], []);
 
+  const activeFiltersCount = [
+    searchTerm ? 1 : 0,
+    statusFilter !== "all" ? 1 : 0,
+    warningFilter ? 1 : 0,
+  ].reduce((a, b) => a + b, 0);
+
+  const activeItemFiltersCount = [
+    itemsSearch ? 1 : 0,
+    itemsStatusFilter !== "all" ? 1 : 0,
+    itemsProjectFilter !== "all" ? 1 : 0,
+    itemsPhaseFilter !== "all" ? 1 : 0,
+  ].reduce((a, b) => a + b, 0);
+
   return (
-    <div className="space-y-6" data-testid="qm-dashboard-page">
-      <div className="flex items-center gap-3 flex-wrap">
-        <ShieldCheck className="h-8 w-8 text-emerald-500" />
-        <div className="flex-1 min-w-0">
-          <h2 className="text-lg sm:text-xl md:text-2xl font-heading font-bold" data-testid="text-qm-title">Quality Management</h2>
-          <p className="text-sm text-muted-foreground">Overview of all project quality checklists</p>
+    <div className="space-y-6 pb-8" data-testid="qm-dashboard-page">
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="p-2.5 rounded-xl bg-emerald-500/10">
+          <ShieldCheck className="h-7 w-7 text-emerald-500" />
         </div>
-        <ReplayWalkthrough screenId="qm-dashboard" />
-        <Button
-          onClick={() => setStartQmOpen(true)}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white"
-          data-testid="btn-start-quality-process"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Start Quality Process
-        </Button>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-lg sm:text-xl md:text-2xl font-heading font-bold tracking-tight" data-testid="text-qm-title">Quality Management</h2>
+          <p className="text-sm text-muted-foreground">Monitor quality checklists, track items, and manage warnings across all projects</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <ReplayWalkthrough screenId="qm-dashboard" />
+          <Button
+            onClick={() => setStartQmOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+            data-testid="btn-start-quality-process"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Start Quality Process
+          </Button>
+        </div>
       </div>
 
       <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} />
       <ActionBar nextAction={qmNextAction} blockers={qmBlockers} />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card className="bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/40 dark:to-blue-900/20 border-blue-200/50 dark:border-blue-800/50">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
-              <ClipboardCheck className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold" data-testid="stat-total-projects">{totalProjects}</p>
-              <p className="text-xs text-muted-foreground">Projects with Checklists</p>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="relative overflow-hidden border-blue-200/50 dark:border-blue-800/40" data-testid="kpi-total-projects">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-blue-100/30 dark:from-blue-950/30 dark:to-blue-900/10" />
+          <CardContent className="relative p-4 sm:p-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Projects</p>
+                <p className="text-3xl font-bold tabular-nums" data-testid="stat-total-projects">{totalProjects}</p>
+                <p className="text-xs text-muted-foreground mt-1">With quality checklists</p>
+              </div>
+              <div className="p-2 rounded-lg bg-blue-500/10">
+                <ClipboardCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/40 dark:to-emerald-900/20 border-emerald-200/50 dark:border-emerald-800/50">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-              <CheckCircle2 className="h-5 w-5" />
+        <Card className="relative overflow-hidden border-emerald-200/50 dark:border-emerald-800/40" data-testid="kpi-items-passed">
+          <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 to-emerald-100/30 dark:from-emerald-950/30 dark:to-emerald-900/10" />
+          <CardContent className="relative p-4 sm:p-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Items Passed</p>
+                <p className="text-3xl font-bold tabular-nums" data-testid="stat-items-passed">{totalItemsPassed}</p>
+                <p className="text-xs text-muted-foreground mt-1">of {totalItemsAll} total items</p>
+              </div>
+              <div className="p-2 rounded-lg bg-emerald-500/10">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              </div>
             </div>
-            <div>
-              <p className="text-2xl font-bold" data-testid="stat-items-passed">{totalItemsPassed}</p>
-              <p className="text-xs text-muted-foreground">Items Passed</p>
-            </div>
+            {totalItemsAll > 0 && (
+              <Progress value={(totalItemsPassed / totalItemsAll) * 100} className="h-1 mt-3" />
+            )}
           </CardContent>
         </Card>
 
         <Card
-          className="bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-950/40 dark:to-amber-900/20 border-amber-200/50 dark:border-amber-800/50 cursor-pointer"
+          className="relative overflow-hidden border-amber-200/50 dark:border-amber-800/40 cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => setWarningFilter(!warningFilter)}
           data-testid="kpi-active-warnings"
         >
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-              <AlertTriangle className="h-5 w-5" />
+          <div className="absolute inset-0 bg-gradient-to-br from-amber-50 to-amber-100/30 dark:from-amber-950/30 dark:to-amber-900/10" />
+          <CardContent className="relative p-4 sm:p-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Warnings</p>
+                <p className="text-3xl font-bold tabular-nums" data-testid="stat-warnings">{activeWarnings}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {activeWarnings === 0 ? "All clear" : `${highSeverityWarnings.length} high severity`}
+                </p>
+              </div>
+              <div className="p-2 rounded-lg bg-amber-500/10">
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              </div>
             </div>
-            <div>
-              <p className="text-2xl font-bold" data-testid="stat-warnings">{activeWarnings}</p>
-              <p className="text-xs text-muted-foreground">Active Warnings</p>
-            </div>
-            {warningFilter && <Badge variant="outline" className="ml-auto text-[10px] bg-amber-500/10 border-amber-500/30 text-amber-600">Filtering</Badge>}
+            {warningFilter && (
+              <Badge variant="outline" className="absolute top-2 right-2 text-[10px] bg-amber-500/10 border-amber-500/30 text-amber-600">
+                Filtering
+              </Badge>
+            )}
           </CardContent>
         </Card>
 
-        <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100/50 dark:from-indigo-950/40 dark:to-indigo-900/20 border-indigo-200/50 dark:border-indigo-800/50">
-          <CardContent className="p-4 flex items-center gap-3">
-            <CircularProgress value={avgQmScore} size={52} strokeWidth={5} />
-            <div>
-              <p className="text-sm font-semibold" data-testid="stat-avg-completion">Avg QM Score</p>
-              <p className="text-xs text-muted-foreground">Across all projects</p>
+        <Card className="relative overflow-hidden border-indigo-200/50 dark:border-indigo-800/40" data-testid="kpi-avg-score">
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-50 to-indigo-100/30 dark:from-indigo-950/30 dark:to-indigo-900/10" />
+          <CardContent className="relative p-4 sm:p-5">
+            <div className="flex items-center gap-4">
+              <CircularProgress value={avgQmScore} size={56} strokeWidth={5} />
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Avg QM Score</p>
+                <p className="text-sm font-semibold" data-testid="stat-avg-completion">
+                  {avgQmScore >= 80 ? "On Track" : avgQmScore >= 50 ? "Needs Attention" : avgQmScore > 0 ? "At Risk" : "No Data"}
+                </p>
+                <p className="text-xs text-muted-foreground">Across all projects</p>
+              </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
       <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "projects" | "items")}>
-        <div className="flex items-center gap-3 flex-wrap">
-          <TabsList data-testid="view-mode-toggle">
-            <TabsTrigger value="projects" data-testid="tab-projects-view" className="gap-1.5">
-              <LayoutGrid className="h-3.5 w-3.5" /> Projects
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <TabsList className="h-10" data-testid="view-mode-toggle">
+            <TabsTrigger value="projects" data-testid="tab-projects-view" className="gap-1.5 px-4">
+              <LayoutGrid className="h-4 w-4" /> Projects
             </TabsTrigger>
-            <TabsTrigger value="items" data-testid="tab-items-view" className="gap-1.5">
-              <Table2 className="h-3.5 w-3.5" /> Items
+            <TabsTrigger value="items" data-testid="tab-items-view" className="gap-1.5 px-4">
+              <Table2 className="h-4 w-4" /> Items
             </TabsTrigger>
           </TabsList>
+          {viewMode === "projects" && activeFiltersCount > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground"
+              onClick={() => { setSearchTerm(""); setStatusFilter("all"); setWarningFilter(false); }}
+              data-testid="btn-clear-all-filters"
+            >
+              <XCircle className="h-3.5 w-3.5 mr-1" />
+              Clear {activeFiltersCount} filter{activeFiltersCount > 1 ? "s" : ""}
+            </Button>
+          )}
+          {viewMode === "items" && activeItemFiltersCount > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground"
+              onClick={() => { setItemsSearch(""); setItemsStatusFilter("all"); setItemsProjectFilter("all"); setItemsPhaseFilter("all"); }}
+              data-testid="btn-clear-all-item-filters"
+            >
+              <XCircle className="h-3.5 w-3.5 mr-1" />
+              Clear {activeItemFiltersCount} filter{activeItemFiltersCount > 1 ? "s" : ""}
+            </Button>
+          )}
         </div>
 
-        <TabsContent value="projects">
+        <TabsContent value="projects" className="mt-4">
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
-                <CardTitle className="text-lg">Project Checklists</CardTitle>
+                <CardTitle className="text-base font-semibold">Project Checklists</CardTitle>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <div className="relative w-full max-w-xs">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                     <Input
                       placeholder="Search projects..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10 h-9"
+                      className="pl-9 h-9 w-[200px] sm:w-[240px]"
                       data-testid="input-qm-search"
                     />
                   </div>
                   <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
-                    <SelectTrigger className="w-[130px] h-9" data-testid="select-status-filter">
+                    <SelectTrigger className="w-[120px] h-9" data-testid="select-status-filter">
                       <SelectValue placeholder="Status" />
                     </SelectTrigger>
                     <SelectContent>
@@ -491,19 +628,19 @@ export default function QmDashboardPage() {
                       <SelectItem value="completed">Completed</SelectItem>
                     </SelectContent>
                   </Select>
-                  <div className="flex items-center border rounded-md">
+                  <div className="flex items-center border rounded-md bg-muted/30">
                     {(["name", "completion", "warnings", "updated"] as ProjectSortKey[]).map(key => (
                       <Button
                         key={key}
                         variant="ghost"
                         size="sm"
-                        className={`h-9 px-2.5 text-xs rounded-none first:rounded-l-md last:rounded-r-md ${projectSort === key ? "bg-muted" : ""}`}
+                        className={`h-9 px-2.5 text-xs rounded-none first:rounded-l-md last:rounded-r-md ${projectSort === key ? "bg-background shadow-sm" : ""}`}
                         onClick={() => toggleSort(key)}
                         data-testid={`sort-${key}`}
                       >
                         {key === "name" ? "Name" : key === "completion" ? "%" : key === "warnings" ? "⚠" : "Date"}
                         {projectSort === key && (
-                          <ArrowUpDown className="h-3 w-3 ml-1" />
+                          projectSortDir === "asc" ? <ArrowUp className="h-3 w-3 ml-1" /> : <ArrowDown className="h-3 w-3 ml-1" />
                         )}
                       </Button>
                     ))}
@@ -513,120 +650,135 @@ export default function QmDashboardPage() {
             </CardHeader>
             <CardContent>
               {checklistsLoading ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Loader2 className="h-6 w-6 mx-auto mb-2 animate-spin" />
-                  Loading checklists...
+                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                  <Loader2 className="h-8 w-8 mb-3 animate-spin text-emerald-500" />
+                  <p className="text-sm">Loading checklists...</p>
                 </div>
               ) : filteredProjects.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Shield className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                  <p>No checklists found</p>
-                  {(searchTerm || statusFilter !== "all" || warningFilter) && (
+                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                  <Shield className="h-16 w-16 mb-4 opacity-20" />
+                  <p className="font-medium">No checklists found</p>
+                  <p className="text-xs mt-1">
+                    {activeFiltersCount > 0 ? "Try adjusting your filters" : "Start a quality process for a project"}
+                  </p>
+                  {activeFiltersCount > 0 && (
                     <Button variant="link" size="sm" className="mt-2" onClick={() => { setSearchTerm(""); setStatusFilter("all"); setWarningFilter(false); }} data-testid="btn-clear-filters">
                       Clear filters
                     </Button>
                   )}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {filteredProjects.map((checklist) => {
-                    const completion = getProjectCompletion(checklist);
-                    const warnCount = getProjectWarnings(checklist);
-                    return (
-                      <Card
-                        key={checklist.id}
-                        data-testid={`qm-project-card-${checklist.id}`}
-                        className="cursor-pointer hover:border-emerald-400/50 transition-all group"
-                        onClick={() => setLocation(`/project/${encodeURIComponent(checklist.projectName)}?tab=quality`)}
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between gap-2 mb-3">
-                            <div className="min-w-0 flex-1">
-                              <h3 className="font-semibold text-sm truncate group-hover:text-emerald-600 transition-colors" data-testid={`text-project-name-${checklist.id}`}>
-                                {checklist.projectName}
-                              </h3>
-                              <Badge
-                                variant="outline"
-                                className={`mt-1 text-[10px] ${
-                                  checklist.status === "completed"
-                                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                                    : checklist.status === "active"
-                                    ? "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30"
-                                    : ""
-                                }`}
-                              >
-                                {checklist.status}
-                              </Badge>
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {filteredProjects.map((checklist) => {
+                      const completion = getProjectCompletion(checklist);
+                      const warnCount = getProjectWarnings(checklist);
+                      const totalItems = checklist.phases?.reduce((t, p) => t + p.total, 0) ?? 0;
+                      const passedItems = checklist.phases?.reduce((t, p) => t + p.completed, 0) ?? 0;
+                      return (
+                        <Card
+                          key={checklist.id}
+                          data-testid={`qm-project-card-${checklist.id}`}
+                          className="cursor-pointer hover:shadow-md hover:border-emerald-400/50 transition-all group"
+                          onClick={() => setLocation(`/project/${encodeURIComponent(checklist.projectName)}?tab=quality`)}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between gap-3 mb-3">
+                              <div className="min-w-0 flex-1">
+                                <h3 className="font-semibold text-sm truncate group-hover:text-emerald-600 transition-colors" data-testid={`text-project-name-${checklist.id}`}>
+                                  {checklist.projectName}
+                                </h3>
+                                <div className="flex items-center gap-2 mt-1.5">
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-[10px] ${
+                                      checklist.status === "completed"
+                                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
+                                        : "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30"
+                                    }`}
+                                  >
+                                    {checklist.status}
+                                  </Badge>
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {passedItems}/{totalItems} items
+                                  </span>
+                                </div>
+                              </div>
+                              <CircularProgress value={completion} size={48} strokeWidth={4} />
                             </div>
-                            <CircularProgress value={completion} size={44} strokeWidth={4} />
-                          </div>
 
-                          {checklist.phases && checklist.phases.length > 0 && (
-                            <div className="mb-3 space-y-1.5">
-                              {checklist.phases.map((phase) => {
-                                const pct = phase.total > 0 ? Math.round((phase.completed / phase.total) * 100) : 0;
-                                return (
-                                  <div key={phase.phaseId} className="flex items-center gap-2" title={`${phase.phaseName}: ${phase.completed}/${phase.total}`}>
-                                    <span className="text-[10px] text-muted-foreground w-16 truncate">{phase.phaseName}</span>
-                                    <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                      <div
-                                        className={`h-full rounded-full transition-all ${(phase.failed ?? 0) > 0 ? "bg-amber-500" : "bg-emerald-500"}`}
-                                        style={{ width: `${pct}%` }}
-                                      />
+                            {checklist.phases && checklist.phases.length > 0 && (
+                              <div className="mb-3 space-y-1.5">
+                                {checklist.phases.map((phase) => {
+                                  const pct = phase.total > 0 ? Math.round((phase.completed / phase.total) * 100) : 0;
+                                  const hasFailed = (phase.failed ?? 0) > 0;
+                                  const hasReview = (phase.inReview ?? 0) > 0;
+                                  return (
+                                    <div key={phase.phaseId} className="flex items-center gap-2" title={`${phase.phaseName}: ${phase.completed}/${phase.total}${hasFailed ? ` (${phase.failed} failed)` : ""}${hasReview ? ` (${phase.inReview} in review)` : ""}`}>
+                                      <span className="text-[10px] text-muted-foreground w-16 truncate">{phase.phaseName}</span>
+                                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                        <div
+                                          className={`h-full rounded-full transition-all ${hasFailed ? "bg-red-400" : hasReview ? "bg-amber-500" : "bg-emerald-500"}`}
+                                          style={{ width: `${pct}%` }}
+                                        />
+                                      </div>
+                                      <span className="text-[10px] text-muted-foreground w-8 text-right tabular-nums">{pct}%</span>
                                     </div>
-                                    <span className="text-[10px] text-muted-foreground w-8 text-right">{pct}%</span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
+                                  );
+                                })}
+                              </div>
+                            )}
 
-                          <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
-                            <div className="flex items-center gap-1">
-                              {warnCount > 0 ? (
-                                <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[10px]">
-                                  <AlertTriangle className="h-3 w-3 mr-0.5" />
-                                  {warnCount} warning{warnCount !== 1 ? "s" : ""}
-                                </Badge>
-                              ) : (
-                                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/30 text-[10px]">
-                                  <ShieldCheck className="h-3 w-3 mr-0.5" />
-                                  Clear
-                                </Badge>
-                              )}
+                            <div className="flex items-center justify-between text-xs text-muted-foreground pt-2.5 border-t">
+                              <div className="flex items-center gap-1.5">
+                                {warnCount > 0 ? (
+                                  <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[10px] gap-1">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    {warnCount} warning{warnCount !== 1 ? "s" : ""}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] gap-1">
+                                    <ShieldCheck className="h-3 w-3" />
+                                    Clear
+                                  </Badge>
+                                )}
+                              </div>
+                              <span className="tabular-nums">
+                                {checklist.updatedAt
+                                  ? new Date(checklist.updatedAt).toLocaleDateString()
+                                  : checklist.createdAt
+                                  ? new Date(checklist.createdAt).toLocaleDateString()
+                                  : "—"}
+                              </span>
+                              <ChevronRight className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
                             </div>
-                            <span>
-                              {checklist.updatedAt
-                                ? new Date(checklist.updatedAt).toLocaleDateString()
-                                : checklist.createdAt
-                                ? new Date(checklist.createdAt).toLocaleDateString()
-                                : "—"}
-                            </span>
-                            <ChevronRight className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground text-right mt-3">
+                    Showing {filteredProjects.length} of {checklists.length} projects
+                  </p>
+                </>
               )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="items">
+        <TabsContent value="items" className="mt-4">
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
-                <CardTitle className="text-lg">All Quality Items</CardTitle>
+                <CardTitle className="text-base font-semibold">All Quality Items</CardTitle>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <div className="relative w-full max-w-xs">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                     <Input
                       placeholder="Search items..."
                       value={itemsSearch}
                       onChange={(e) => setItemsSearch(e.target.value)}
-                      className="pl-10 h-9"
+                      className="pl-9 h-9 w-[200px] sm:w-[240px]"
                       data-testid="input-items-search"
                     />
                   </div>
@@ -670,33 +822,49 @@ export default function QmDashboardPage() {
             </CardHeader>
             <CardContent>
               {itemsLoading ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <Loader2 className="h-6 w-6 mx-auto mb-2 animate-spin" />
-                  Loading items...
+                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                  <Loader2 className="h-8 w-8 mb-3 animate-spin text-emerald-500" />
+                  <p className="text-sm">Loading items...</p>
                 </div>
               ) : filteredItems.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground">
-                  <ListFilter className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                  <p>No quality items found</p>
-                  {(itemsSearch || itemsStatusFilter !== "all" || itemsProjectFilter !== "all" || itemsPhaseFilter !== "all") && (
+                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                  <ListFilter className="h-16 w-16 mb-4 opacity-20" />
+                  <p className="font-medium">No quality items found</p>
+                  <p className="text-xs mt-1">
+                    {activeItemFiltersCount > 0 ? "Try adjusting your filters" : "Quality items will appear when checklists are created"}
+                  </p>
+                  {activeItemFiltersCount > 0 && (
                     <Button variant="link" size="sm" className="mt-2" onClick={() => { setItemsSearch(""); setItemsStatusFilter("all"); setItemsProjectFilter("all"); setItemsPhaseFilter("all"); }} data-testid="btn-clear-items-filters">
                       Clear filters
                     </Button>
                   )}
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
+                <div className="overflow-x-auto -mx-6">
+                  <table className="w-full min-w-[800px]">
                     <thead>
-                      <tr className="border-b text-sm text-muted-foreground">
-                        <th className="text-left py-2 px-3 font-medium">Item Name</th>
-                        <th className="text-left py-2 px-3 font-medium hidden md:table-cell">Project</th>
-                        <th className="text-left py-2 px-3 font-medium hidden lg:table-cell">Phase</th>
-                        <th className="text-left py-2 px-3 font-medium hidden lg:table-cell">Group</th>
-                        <th className="text-center py-2 px-3 font-medium">Status</th>
-                        <th className="text-left py-2 px-3 font-medium hidden md:table-cell">Assignee</th>
-                        <th className="text-left py-2 px-3 font-medium hidden sm:table-cell">Due Date</th>
-                        <th className="text-center py-2 px-3 font-medium hidden sm:table-cell">Evidence</th>
+                      <tr className="border-b bg-muted/30">
+                        <th className="text-left py-2.5 px-4">
+                          <SortHeader label="Item Name" sortKey="itemName" currentSort={itemSort} currentDir={itemSortDir} onSort={toggleItemSort} className="text-xs" />
+                        </th>
+                        <th className="text-left py-2.5 px-4 hidden md:table-cell">
+                          <SortHeader label="Project" sortKey="projectName" currentSort={itemSort} currentDir={itemSortDir} onSort={toggleItemSort} className="text-xs" />
+                        </th>
+                        <th className="text-left py-2.5 px-4 hidden lg:table-cell">
+                          <SortHeader label="Phase" sortKey="phaseName" currentSort={itemSort} currentDir={itemSortDir} onSort={toggleItemSort} className="text-xs" />
+                        </th>
+                        <th className="text-left py-2.5 px-4 hidden lg:table-cell">
+                          <SortHeader label="Group" sortKey="groupName" currentSort={itemSort} currentDir={itemSortDir} onSort={toggleItemSort} className="text-xs" />
+                        </th>
+                        <th className="text-center py-2.5 px-4">
+                          <SortHeader label="Status" sortKey="qmStatus" currentSort={itemSort} currentDir={itemSortDir} onSort={toggleItemSort} className="text-xs justify-center" />
+                        </th>
+                        <th className="text-left py-2.5 px-4 hidden md:table-cell">
+                          <SortHeader label="Assignee" sortKey="assigneeName" currentSort={itemSort} currentDir={itemSortDir} onSort={toggleItemSort} className="text-xs" />
+                        </th>
+                        <th className="text-center py-2.5 px-4 hidden sm:table-cell">
+                          <SortHeader label="Evidence" sortKey="evidenceCount" currentSort={itemSort} currentDir={itemSortDir} onSort={toggleItemSort} className="text-xs justify-center" />
+                        </th>
                         <th className="w-8"></th>
                       </tr>
                     </thead>
@@ -705,59 +873,53 @@ export default function QmDashboardPage() {
                         <tr
                           key={item.id}
                           data-testid={`item-row-${item.id}`}
-                          className="border-b border-border/50 hover:bg-muted/30 cursor-pointer transition-colors"
+                          className="border-b border-border/40 hover:bg-muted/30 cursor-pointer transition-colors group"
                           onClick={() => setLocation(`/project/${encodeURIComponent(item.projectName)}?tab=quality`)}
                         >
-                          <td className="py-2.5 px-3">
-                            <div className="font-medium text-sm truncate max-w-[200px]">{item.itemName}</div>
-                            <div className="text-[10px] text-muted-foreground truncate max-w-[200px] md:hidden">
+                          <td className="py-3 px-4">
+                            <div className="font-medium text-sm truncate max-w-[220px]">{item.itemName}</div>
+                            <div className="text-[10px] text-muted-foreground truncate max-w-[220px] md:hidden mt-0.5">
                               {item.projectName}
                             </div>
                           </td>
-                          <td className="py-2.5 px-3 text-sm hidden md:table-cell">
+                          <td className="py-3 px-4 text-sm hidden md:table-cell">
                             <span className="truncate max-w-[150px] inline-block">{item.projectName}</span>
                           </td>
-                          <td className="py-2.5 px-3 text-xs text-muted-foreground hidden lg:table-cell">{item.phaseName}</td>
-                          <td className="py-2.5 px-3 text-xs text-muted-foreground hidden lg:table-cell">{item.groupName}</td>
-                          <td className="py-2.5 px-3 text-center">
+                          <td className="py-3 px-4 text-xs text-muted-foreground hidden lg:table-cell">{item.phaseName}</td>
+                          <td className="py-3 px-4 text-xs text-muted-foreground hidden lg:table-cell">{item.groupName}</td>
+                          <td className="py-3 px-4 text-center">
                             <StatusBadge status={item.qmStatus || "pending"} />
                           </td>
-                          <td className="py-2.5 px-3 text-sm hidden md:table-cell">
+                          <td className="py-3 px-4 text-sm hidden md:table-cell">
                             {item.assigneeName ? (
                               <div className="flex items-center gap-1.5">
-                                <User className="h-3.5 w-3.5 text-muted-foreground" />
-                                <span className="truncate max-w-[100px]">{item.assigneeName}</span>
+                                <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center">
+                                  <User className="h-3 w-3 text-muted-foreground" />
+                                </div>
+                                <span className="truncate max-w-[100px] text-xs">{item.assigneeName}</span>
                               </div>
                             ) : (
                               <span className="text-muted-foreground text-xs">—</span>
                             )}
                           </td>
-                          <td className="py-2.5 px-3 text-xs text-muted-foreground hidden sm:table-cell">
-                            {item.endDate ? (
-                              <div className="flex items-center gap-1">
-                                <Calendar className="h-3 w-3" />
-                                {new Date(item.endDate).toLocaleDateString()}
-                              </div>
-                            ) : "—"}
-                          </td>
-                          <td className="py-2.5 px-3 text-center hidden sm:table-cell">
+                          <td className="py-3 px-4 text-center hidden sm:table-cell">
                             {item.evidenceCount > 0 ? (
-                              <Badge variant="outline" className="text-[10px]">
-                                <FileText className="h-3 w-3 mr-0.5" />
+                              <Badge variant="outline" className="text-[10px] gap-1">
+                                <FileText className="h-3 w-3" />
                                 {item.evidenceCount}
                               </Badge>
                             ) : (
                               <span className="text-muted-foreground text-xs">—</span>
                             )}
                           </td>
-                          <td className="py-2.5 px-3">
-                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          <td className="py-3 px-4">
+                            <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                  <div className="text-xs text-muted-foreground text-right pt-2">
+                  <div className="text-xs text-muted-foreground text-right pt-3 px-4">
                     Showing {filteredItems.length} of {allItems.length} items
                   </div>
                 </div>
@@ -768,116 +930,83 @@ export default function QmDashboardPage() {
       </Tabs>
 
       {!warningsLoading && warnings.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3 cursor-pointer" onClick={() => setWarningsExpanded(!warningsExpanded)} data-testid="warnings-section-header">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-500" />
-                Active Warnings ({warnings.length})
-              </CardTitle>
-              {warningsExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-            </div>
-          </CardHeader>
-          {warningsExpanded && (
-            <CardContent>
-              {highSeverityWarnings.length > 0 && (
-                <div className="mb-4">
-                  <p className="text-xs font-semibold text-red-500 uppercase tracking-wider mb-2">High Severity</p>
-                  <div className="space-y-2">
-                    {highSeverityWarnings.map((warning) => (
-                      <div
-                        key={warning.id}
-                        className="flex items-start gap-3 p-3 rounded-lg border border-red-200/50 dark:border-red-800/50 bg-red-50/50 dark:bg-red-950/20 hover:bg-red-50 dark:hover:bg-red-950/30 cursor-pointer transition-colors"
-                        onClick={() => setSelectedWarning(warning)}
-                        data-testid={`warning-row-${warning.id}`}
-                      >
-                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-red-500" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm">{warning.title}</span>
-                            <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/30 text-[10px]">High</Badge>
-                            <Badge variant="outline" className="text-[10px]">{warning.warningType}</Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">{warning.projectName}</p>
-                          {warning.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{warning.description}</p>}
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs"
-                            onClick={(e) => { e.stopPropagation(); setSelectedWarning(warning); setActionType("override"); }}
-                            data-testid={`btn-override-${warning.id}`}
-                          >
-                            Override
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs text-emerald-600"
-                            onClick={(e) => { e.stopPropagation(); setSelectedWarning(warning); setActionType("resolve"); }}
-                            data-testid={`btn-resolve-${warning.id}`}
-                          >
-                            Resolve
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+        <Collapsible open={warningsExpanded} onOpenChange={setWarningsExpanded}>
+          <Card className="border-amber-200/50 dark:border-amber-800/40">
+            <CollapsibleTrigger asChild>
+              <CardHeader className="pb-3 cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg" data-testid="warnings-section-header">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-amber-500/10">
+                      <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    </div>
+                    Active Warnings
+                    <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 ml-1">
+                      {warnings.length}
+                    </Badge>
+                  </CardTitle>
+                  {warningsExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                 </div>
-              )}
+              </CardHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="pt-0">
+                {highSeverityWarnings.length > 0 && (
+                  <div className="mb-5">
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <span className="h-2 w-2 rounded-full bg-red-500" />
+                      <p className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider">High Severity ({highSeverityWarnings.length})</p>
+                    </div>
+                    <div className="space-y-2">
+                      {highSeverityWarnings.map((warning) => (
+                        <WarningRow key={warning.id} warning={warning} severity="high"
+                          onView={() => setSelectedWarning(warning)}
+                          onOverride={() => { setSelectedWarning(warning); setActionType("override"); }}
+                          onResolve={() => { setSelectedWarning(warning); setActionType("resolve"); }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-              {otherWarnings.length > 0 && (
-                <div>
-                  {highSeverityWarnings.length > 0 && (
-                    <p className="text-xs font-semibold text-amber-500 uppercase tracking-wider mb-2">Other Warnings</p>
-                  )}
-                  <div className="space-y-2">
-                    {otherWarnings.map((warning) => (
-                      <div
-                        key={warning.id}
-                        className="flex items-start gap-3 p-3 rounded-lg border border-border/50 hover:bg-muted/30 cursor-pointer transition-colors"
-                        onClick={() => setSelectedWarning(warning)}
-                        data-testid={`warning-row-${warning.id}`}
-                      >
-                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-500" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm">{warning.title}</span>
-                            <Badge variant="outline" className="bg-amber-500/10 text-amber-500 border-amber-500/30 text-[10px]">{warning.severity}</Badge>
-                            <Badge variant="outline" className="text-[10px]">{warning.warningType}</Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">{warning.projectName}</p>
-                          {warning.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{warning.description}</p>}
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs"
-                            onClick={(e) => { e.stopPropagation(); setSelectedWarning(warning); setActionType("override"); }}
-                            data-testid={`btn-override-${warning.id}`}
-                          >
-                            Override
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs text-emerald-600"
-                            onClick={(e) => { e.stopPropagation(); setSelectedWarning(warning); setActionType("resolve"); }}
-                            data-testid={`btn-resolve-${warning.id}`}
-                          >
-                            Resolve
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                {mediumWarnings.length > 0 && (
+                  <div className="mb-5">
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <span className="h-2 w-2 rounded-full bg-amber-500" />
+                      <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Medium Severity ({mediumWarnings.length})</p>
+                    </div>
+                    <div className="space-y-2">
+                      {mediumWarnings.map((warning) => (
+                        <WarningRow key={warning.id} warning={warning} severity="medium"
+                          onView={() => setSelectedWarning(warning)}
+                          onOverride={() => { setSelectedWarning(warning); setActionType("override"); }}
+                          onResolve={() => { setSelectedWarning(warning); setActionType("resolve"); }}
+                        />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-            </CardContent>
-          )}
-        </Card>
+                )}
+
+                {lowWarnings.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2.5">
+                      <span className="h-2 w-2 rounded-full bg-blue-400" />
+                      <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Low / Other ({lowWarnings.length})</p>
+                    </div>
+                    <div className="space-y-2">
+                      {lowWarnings.map((warning) => (
+                        <WarningRow key={warning.id} warning={warning} severity="low"
+                          onView={() => setSelectedWarning(warning)}
+                          onOverride={() => { setSelectedWarning(warning); setActionType("override"); }}
+                          onResolve={() => { setSelectedWarning(warning); setActionType("resolve"); }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
       )}
 
       <Dialog open={!!selectedWarning && !actionType} onOpenChange={(open) => { if (!open) closeDialog(); }}>
@@ -892,7 +1021,7 @@ export default function QmDashboardPage() {
             <div className="space-y-4">
               <div>
                 <p className="font-semibold text-sm">{selectedWarning.title}</p>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1.5">
                   <Badge variant="outline" className={
                     selectedWarning.severity === "High"
                       ? "bg-red-500/10 text-red-500 border-red-500/30 text-xs"
@@ -906,24 +1035,24 @@ export default function QmDashboardPage() {
                 </div>
               </div>
 
-              <div className="space-y-2 text-sm">
-                <div>
-                  <span className="text-muted-foreground">Project:</span>{" "}
+              <div className="space-y-2.5 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground text-xs w-16">Project</span>
                   <span className="font-medium">{selectedWarning.projectName}</span>
                 </div>
                 {selectedWarning.description && (
                   <div>
-                    <span className="text-muted-foreground">Description:</span>
-                    <p className="mt-1 text-sm bg-muted/50 p-2 rounded">{selectedWarning.description}</p>
+                    <span className="text-muted-foreground text-xs">Description</span>
+                    <p className="mt-1 text-sm bg-muted/50 p-2.5 rounded-lg">{selectedWarning.description}</p>
                   </div>
                 )}
-                <div>
-                  <span className="text-muted-foreground">Created:</span>{" "}
-                  <span>{new Date(selectedWarning.createdAt).toLocaleDateString()}</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground text-xs w-16">Created</span>
+                  <span className="tabular-nums">{new Date(selectedWarning.createdAt).toLocaleDateString()}</span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 pt-2 border-t">
+              <div className="flex items-center gap-2 pt-3 border-t">
                 <Button
                   variant="outline"
                   size="sm"
@@ -940,7 +1069,7 @@ export default function QmDashboardPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50"
+                  className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/30"
                   onClick={() => setActionType("override")}
                   data-testid="btn-override-warning"
                 >
@@ -954,7 +1083,7 @@ export default function QmDashboardPage() {
                   data-testid="btn-resolve-warning"
                 >
                   <CheckCircle2 className="h-4 w-4 mr-1" />
-                  Close / Resolve
+                  Resolve
                 </Button>
               </div>
             </div>
@@ -988,12 +1117,12 @@ export default function QmDashboardPage() {
               <div>
                 <label className="text-sm font-medium block mb-1.5">
                   {actionType === "override" ? "Override reason" : "Resolution notes"}
-                  {actionType === "resolve" && <span className="text-muted-foreground font-normal"> (optional)</span>}
+                  {actionType === "override" && <span className="text-red-500 ml-0.5">*</span>}
                 </label>
                 <Textarea
                   placeholder={actionType === "override"
-                    ? "Explain why this warning is being overridden..."
-                    : "Describe how this issue was resolved..."
+                    ? "Provide justification for overriding this warning..."
+                    : "Describe how this warning was resolved (optional)..."
                   }
                   value={reasonText}
                   onChange={(e) => setReasonText(e.target.value)}
@@ -1104,6 +1233,67 @@ export default function QmDashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function WarningRow({ warning, severity, onView, onOverride, onResolve }: {
+  warning: Warning;
+  severity: "high" | "medium" | "low";
+  onView: () => void;
+  onOverride: () => void;
+  onResolve: () => void;
+}) {
+  const borderClass = severity === "high"
+    ? "border-red-200/50 dark:border-red-800/40 bg-red-50/30 dark:bg-red-950/10 hover:bg-red-50/60 dark:hover:bg-red-950/20"
+    : severity === "medium"
+    ? "border-amber-200/50 dark:border-amber-800/40 bg-amber-50/30 dark:bg-amber-950/10 hover:bg-amber-50/60 dark:hover:bg-amber-950/20"
+    : "border-border/50 hover:bg-muted/30";
+
+  const iconClass = severity === "high" ? "text-red-500" : severity === "medium" ? "text-amber-500" : "text-blue-400";
+
+  const badgeClass = severity === "high"
+    ? "bg-red-500/10 text-red-500 border-red-500/30"
+    : severity === "medium"
+    ? "bg-amber-500/10 text-amber-500 border-amber-500/30"
+    : "bg-blue-500/10 text-blue-500 border-blue-500/30";
+
+  return (
+    <div
+      className={`flex items-start gap-3 p-3 rounded-lg border ${borderClass} cursor-pointer transition-colors`}
+      onClick={onView}
+      data-testid={`warning-row-${warning.id}`}
+    >
+      <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${iconClass}`} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium text-sm">{warning.title}</span>
+          <Badge variant="outline" className={`${badgeClass} text-[10px]`}>{warning.severity}</Badge>
+          <Badge variant="outline" className="text-[10px]">{warning.warningType}</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">{warning.projectName}</p>
+        {warning.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{warning.description}</p>}
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs hover:bg-amber-500/10"
+          onClick={(e) => { e.stopPropagation(); onOverride(); }}
+          data-testid={`btn-override-${warning.id}`}
+        >
+          Override
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs text-emerald-600 hover:bg-emerald-500/10"
+          onClick={(e) => { e.stopPropagation(); onResolve(); }}
+          data-testid={`btn-resolve-${warning.id}`}
+        >
+          Resolve
+        </Button>
+      </div>
     </div>
   );
 }
