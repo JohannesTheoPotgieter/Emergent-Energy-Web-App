@@ -333,14 +333,18 @@ export function registerMsSyncRoutes(app: Express) {
       const username = currentUser?.username || "";
       const userMap = await buildUserMap();
 
+      const userEmail = currentUser?.email || currentUser?.username || "";
+
       const [personalTasks, opTasks, trRegisterItems, approvalData, deliverableItems, planTasks, engTasks, qualityTasks] = await Promise.all([
         db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)).orderBy(desc(mytoolTasks.createdAt)),
 
         db.select().from(operationalTasks).where(
-          sql`(${operationalTasks.ownerUserId} = ${userId} OR ${userName} = ANY(${operationalTasks.assignees}))`
+          sql`(${operationalTasks.ownerUserId} = ${userId} OR ${userName} = ANY(${operationalTasks.assignees}) OR ${operationalTasks.createdBy} = ${userId})`
         ).orderBy(asc(operationalTasks.sortOrder)),
 
-        db.select().from(trItems).where(sql`${userName} = ANY(${trItems.owners})`).orderBy(desc(trItems.createdAt)),
+        db.select().from(trItems).where(
+          sql`(${userName} = ANY(${trItems.owners}) OR ${trItems.createdBy} = ${userEmail} OR ${trItems.createdBy} = ${userName})`
+        ).orderBy(desc(trItems.createdAt)),
 
         (async () => {
           const engApprovals = await db.select({
@@ -462,16 +466,28 @@ export function registerMsSyncRoutes(app: Express) {
           ...t,
           resolvedOwner: resolveUserId(t.ownerUserId),
         })),
-        operational: opTasks.map(t => ({
-          ...t,
-          subtaskCount: subtaskCounts[t.id] || 0,
-          resolvedAssignees: resolveUserIds(t.assigneeUserIds),
-          resolvedOwner: resolveUserId(t.ownerUserId),
-        })),
-        trRegister: trRegisterItems.map(t => ({
-          ...t,
-          resolvedOwners: resolveUserIds(t.ownerUserIds),
-        })),
+        operational: opTasks.map(t => {
+          const isOwnerOrAssignee = t.ownerUserId === userId || (t.assignees || []).includes(userName);
+          const isCreator = t.createdBy === userId;
+          const trackingRole = isOwnerOrAssignee && isCreator ? "both" : isOwnerOrAssignee ? "assignee" : "creator";
+          return {
+            ...t,
+            subtaskCount: subtaskCounts[t.id] || 0,
+            resolvedAssignees: resolveUserIds(t.assigneeUserIds),
+            resolvedOwner: resolveUserId(t.ownerUserId),
+            trackingRole,
+          };
+        }),
+        trRegister: trRegisterItems.map(t => {
+          const isOwner = (t.owners || []).includes(userName);
+          const isCreatorByEmail = t.createdBy === userEmail || t.createdBy === userName || t.createdBy === username;
+          const trackingRole = isOwner && isCreatorByEmail ? "both" : isOwner ? "assignee" : "creator";
+          return {
+            ...t,
+            resolvedOwners: resolveUserIds(t.ownerUserIds),
+            trackingRole,
+          };
+        }),
         approvals: {
           engineering: approvalData.engApprovals.map(a => ({
             id: a.id,
