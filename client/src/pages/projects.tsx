@@ -826,7 +826,6 @@ const COLUMN_WIDTHS: Record<string, string> = {
   epc_contract_signed: "62px",
   financial_close: "52px",
   phase: "90px",
-  task_counts: "60px",
   escalation_level: "58px",
   pd_handover_date: "68px",
   construction_start_date: "64px",
@@ -845,7 +844,7 @@ const COLUMN_WIDTHS: Record<string, string> = {
 const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; stickyFirst?: boolean }[] = [
   { label: "Project Info", keys: ["project_name", "size_kwp", "pd", "pm"], color: "bg-slate-50 text-slate-600", stickyFirst: true },
   { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
-  { label: "Phase & Schedule", keys: ["phase", "task_counts", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
+  { label: "Phase & Schedule", keys: ["phase", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
   { label: "Financials", keys: ["actual_revenue", "actual_expenses", "gp_percent", "revenue_outstanding", "expenses_due"], color: "bg-green-50 text-green-700" },
   { label: "Updates", keys: ["latest_update"], color: "bg-amber-50 text-amber-700" },
@@ -1594,25 +1593,6 @@ export default function ProjectsSummary() {
             <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
             {getPhaseLabel(p.phase)}
           </span>
-        );
-      },
-    },
-    {
-      key: "task_counts",
-      header: "Tasks",
-      render: (p) => {
-        const counts = p.task_status_counts || {};
-        const total = Object.values(counts).reduce((s, c) => s + c, 0);
-        const done = (counts["DONE"] || 0) + (counts["COMPLETE"] || 0);
-        const inProgress = counts["IN PROGRESS"] || 0;
-        if (total === 0) return <span className="text-slate-400 text-[10px]">—</span>;
-        return (
-          <div className="flex items-center gap-1" title={Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(", ")}>
-            <span className="text-[10px] font-mono text-slate-600">{done}/{total}</span>
-            {inProgress > 0 && (
-              <span className="text-[10px] px-1 py-0 rounded bg-blue-50 text-blue-600 border border-blue-200">{inProgress} WIP</span>
-            )}
-          </div>
         );
       },
     },
