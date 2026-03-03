@@ -24,7 +24,7 @@ import { buildOverrideMap, applyOverridesToCashflowLines, applyOverridesToCOSLin
 import { recordOverride, recordManualEdit } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
-import { createNameResolver, fetchAllNormalized, mergeExpensesOnly, mergeInflowsOnly, mergePlansOnly } from "./lib/data-merge";
+import { createNameResolver, fetchAllNormalized, mergeExpensesOnly, mergeInflowsOnly, mergePlansOnly, mapCostToExpenseInput } from "./lib/data-merge";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
 import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getWorkItemsAsOperationalTasks, getWorkItemsAsMytoolTasks } from "./work-items-adapter";
@@ -1114,7 +1114,7 @@ export async function registerRoutes(
       for (const cost of allNormCostsOv) {
         if (oldExpenseProjects.has(resolveOvName(cost.projectName))) continue;
         if (cost.amountExVat) {
-          const state = classifyExpenseState(cost as any);
+          const state = classifyExpenseState(mapCostToExpenseInput(cost));
           if (state === 'Paid') {
             actualSpendPaid += parseFloat(cost.amountExVat) || 0;
           }
@@ -2229,7 +2229,7 @@ export async function registerRoutes(
             if (cost.amountExVat) {
               const amt = parseFloat(cost.amountExVat) || 0;
               totalExpenses += amt;
-              const state = classifyExpenseState(cost as any);
+              const state = classifyExpenseState(mapCostToExpenseInput(cost));
               if (state === 'Paid') {
                 actualExpenses += amt;
               }
@@ -2476,7 +2476,8 @@ export async function registerRoutes(
 
         const hasInvoice = !!(rev.invoiceNumber && String(rev.invoiceNumber).trim());
         const hasPaidDate = isValidDate(rev.paidDate);
-        const paidDateBlack = hasPaidDate && (rev.paidDateConfirmed === true || rev.paidDateFontColor === 'black');
+        const hasPaymentColorInfo = rev.paidDateConfirmed != null || (rev.paidDateFontColor != null && rev.paidDateFontColor !== '');
+        const paidDateBlack = hasPaidDate && (rev.paidDateConfirmed === true || rev.paidDateFontColor === 'black' || !hasPaymentColorInfo);
         const isInBank = hasInvoice && paidDateBlack;
 
         if (isInBank) {
@@ -2489,18 +2490,6 @@ export async function registerRoutes(
           }
         }
       }
-
-      const mapCostToExpenseInput = (cost: any) => ({
-        expensePaymentDate: cost.paidDate,
-        expenseInvoiceNumber: cost.invoiceNumber,
-        expenseInvoicedDate: cost.invoiceDate,
-        expensePoNumber: cost.poNumber,
-        invoiceDateFontColor: cost.invoiceDateFontColor,
-        paymentDateFontColor: cost.paidDateFontColor,
-        invoiceDateConfirmed: cost.invoiceDateConfirmed,
-        paymentDateConfirmed: cost.paidDateConfirmed,
-        expenseActualTotal: cost.amountExVat,
-      });
 
       for (const cost of allNormCosts) {
         if (!activeNames.has(cost.projectName.toLowerCase().trim())) continue;
