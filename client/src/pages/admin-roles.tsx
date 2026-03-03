@@ -66,7 +66,7 @@ import {
 } from "@shared/schema";
 
 const ALL_SECTIONS = [
-  "MY_WORK", "COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "INFORMATION", "SETTINGS",
+  "MY_WORK", "COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "PROJECT_DETAIL", "INFORMATION", "SETTINGS",
 ] as const;
 
 const SECTION_META: Record<string, { label: string; icon: any; color: string }> = {
@@ -77,6 +77,7 @@ const SECTION_META: Record<string, { label: string; icon: any; color: string }> 
   MONEY: { label: "Project Finance", icon: DollarSign, color: "bg-emerald-50 border-emerald-200 text-emerald-700" },
   DELIVERY: { label: "Engineering", icon: Wrench, color: "bg-orange-50 border-orange-200 text-orange-700" },
   GOVERNANCE: { label: "Governance", icon: ShieldCheck, color: "bg-purple-50 border-purple-200 text-purple-700" },
+  PROJECT_DETAIL: { label: "Project Detail Tabs", icon: FileText, color: "bg-cyan-50 border-cyan-200 text-cyan-700" },
   INFORMATION: { label: "Information", icon: BookOpen, color: "bg-cyan-50 border-cyan-200 text-cyan-700" },
   PROJECT_DEVELOPMENT: { label: "Project Development", icon: FileEdit, color: "bg-teal-50 border-teal-200 text-teal-700" },
   SETTINGS: { label: "Settings", icon: Settings, color: "bg-slate-50 border-slate-200 text-slate-700" },
@@ -146,6 +147,7 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "pm_on_the_go" as PermissionEntity, label: "On-The-Go", actions: ["view", "edit"] },
       { entity: "tr_register" as PermissionEntity, label: "TR Register", actions: ["view", "edit", "delete"] },
       { entity: "smart_import" as PermissionEntity, label: "Smart Import", actions: ["view", "edit"] },
+      { entity: "excel_updates" as PermissionEntity, label: "Excel Updates", actions: ["view", "approve"] },
       { entity: "portfolios" as PermissionEntity, label: "Portfolios", actions: ["view", "edit", "delete"] },
       { entity: "portfolio_detail" as PermissionEntity, label: "Portfolio Detail", actions: ["view", "edit", "delete"] },
       { entity: "weekly_review_wizard" as PermissionEntity, label: "Weekly Reviews", actions: ["view", "edit"] },
@@ -179,7 +181,7 @@ const PERM_CATEGORIES: PermCat[] = [
     key: "project_dev",
     label: "Project Development",
     icon: FileEdit,
-    color: "bg-violet-500",
+    color: "bg-teal-500",
     items: [
       { entity: "pd_dashboard" as PermissionEntity, label: "PD Dashboard", actions: ["view"] },
       { entity: "pd_tickets" as PermissionEntity, label: "PD Tickets", actions: ["view", "edit", "delete"] },
@@ -259,6 +261,7 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "admin_roles" as PermissionEntity, label: "Roles & Permissions", actions: ["view", "edit"] },
       { entity: "activity_log" as PermissionEntity, label: "Change Audit", actions: ["view"] },
       { entity: "ms_integration" as PermissionEntity, label: "Microsoft 365", actions: ["view", "edit"] },
+      { entity: "database_migration" as PermissionEntity, label: "Database Migration", actions: ["view", "edit"] },
       { entity: "admin" as PermissionEntity, label: "Admin Settings", actions: ["view", "edit"] },
       { entity: "data_import" as PermissionEntity, label: "Data Import", actions: ["view", "edit"] },
       { entity: "data_export" as PermissionEntity, label: "Data Export & Reports", actions: ["view"] },
