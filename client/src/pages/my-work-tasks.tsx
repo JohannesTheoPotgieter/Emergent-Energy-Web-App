@@ -23,6 +23,7 @@ import {
   Inbox, Filter, Eye, Calendar, Building2, FolderOpen, AlertTriangle, ListTodo,
   ClipboardList, ShieldCheck, FileCheck, BookOpen, CheckCircle2, Circle, Clock,
   AlertCircle, Wrench, Users, User, LayoutList, Columns3, Link2, GripVertical,
+  Save, RotateCw,
 } from "lucide-react";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 
@@ -130,18 +131,50 @@ function getAuthHeaders(): Record<string, string> {
 
 const DEPARTMENTS = ["Engineering", "Operations", "Finance", "Commercial", "Quality", "HSE", "Legal", "Project Development", "Construction", "Procurement"];
 
+interface MyWorkDefaultView {
+  viewMode: ViewMode;
+  sortField: SortField;
+  sortDirection: SortDirection;
+  sourceFilter: SourceFilter;
+}
+
+function getMwViewKey(userId?: number): string {
+  return `my_work_default_view_${userId || "default"}`;
+}
+
+function getSavedMyWorkDefault(userId?: number): MyWorkDefaultView | null {
+  try {
+    const raw = localStorage.getItem(getMwViewKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    const validViews: ViewMode[] = ["list", "board"];
+    if (!validViews.includes(parsed.viewMode)) parsed.viewMode = "list";
+    return parsed;
+  } catch { return null; }
+}
+
+function saveMyWorkDefault(view: MyWorkDefaultView, userId?: number) {
+  localStorage.setItem(getMwViewKey(userId), JSON.stringify(view));
+}
+
+function clearMyWorkDefault(userId?: number) {
+  localStorage.removeItem(getMwViewKey(userId));
+}
+
 export default function MyWorkTasksPage() {
   const { toast } = useToast();
   const { user } = useAuth();
 
+  const mwDefaults = useMemo(() => getSavedMyWorkDefault(user?.id), [user?.id]);
   const [searchText, setSearchText] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<TaskStatus[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority[]>([]);
   const [projectFilter, setProjectFilter] = useState("");
-  const [sortField, setSortField] = useState<SortField>("priority");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [sortField, setSortField] = useState<SortField>(mwDefaults?.sortField || "priority");
+  const [sortDirection, setSortDirection] = useState<SortDirection>(mwDefaults?.sortDirection || "asc");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(mwDefaults?.sourceFilter || "all");
   const [showFilters, setShowFilters] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [groomMode, setGroomMode] = useState(false);
@@ -153,7 +186,8 @@ export default function MyWorkTasksPage() {
   const [subtaskDialog, setSubtaskDialog] = useState<{ parentId: number; projectName: string } | null>(null);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [newSubtaskPriority, setNewSubtaskPriority] = useState("Med");
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [viewMode, setViewMode] = useState<ViewMode>(mwDefaults?.viewMode || "list");
+  const [hasCustomDefault, setHasCustomDefault] = useState(!!mwDefaults);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [draggedTask, setDraggedTask] = useState<UnifiedTask | null>(null);
   const [dropTargetCol, setDropTargetCol] = useState<TaskStatus | null>(null);
@@ -524,6 +558,22 @@ export default function MyWorkTasksPage() {
     return counts;
   }, [unifiedTasks]);
 
+  const handleSaveDefaultView = useCallback(() => {
+    saveMyWorkDefault({ viewMode, sortField, sortDirection, sourceFilter }, user?.id);
+    setHasCustomDefault(true);
+    toast({ title: "Default view saved", description: "This page will open with your current view settings next time." });
+  }, [viewMode, sortField, sortDirection, sourceFilter, toast, user?.id]);
+
+  const handleResetDefaultView = useCallback(() => {
+    clearMyWorkDefault(user?.id);
+    setHasCustomDefault(false);
+    setViewMode("list");
+    setSortField("priority");
+    setSortDirection("asc");
+    setSourceFilter("all");
+    toast({ title: "Default view reset", description: "This page will open with the standard list view." });
+  }, [toast, user?.id]);
+
   const kpiStats = useMemo(() => {
     const active = unifiedTasks.filter(t => t.status !== "done" && t.status !== "cancelled");
     const overdue = active.filter(t => isTaskOverdue(t));
@@ -578,6 +628,16 @@ export default function MyWorkTasksPage() {
           <div className="flex items-center border rounded-lg overflow-hidden shadow-sm">
             <button onClick={() => setViewMode("list")} className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-list" title="List view"><LayoutList className="h-4 w-4" /></button>
             <button onClick={() => setViewMode("board")} className={`p-1.5 transition-colors ${viewMode === "board" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-board" title="Board view"><Columns3 className="h-4 w-4" /></button>
+          </div>
+          <div className="flex items-center border rounded-md">
+            <Button variant="ghost" size="sm" className="h-8 px-2 text-xs gap-1" onClick={handleSaveDefaultView} data-testid="btn-save-default-view" title="Save current view as your default">
+              <Save className="h-3.5 w-3.5" /><span className="hidden sm:inline">Save Default</span>
+            </Button>
+            {hasCustomDefault && (
+              <Button variant="ghost" size="sm" className="h-8 px-2 text-xs gap-1 text-muted-foreground" onClick={handleResetDefaultView} data-testid="btn-reset-default-view" title="Reset to standard view">
+                <RotateCw className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
           <Button variant={groomMode ? "default" : "outline"} size="sm" className={`h-8 text-xs ${groomMode ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}`} onClick={() => setGroomMode(!groomMode)} data-testid="button-groom-mode"><Eye className="h-3 w-3 mr-1" /> Groom</Button>
           <Button variant={showFilters ? "default" : "outline"} size="sm" className="h-8 text-xs" onClick={() => setShowFilters(!showFilters)} data-testid="button-toggle-filters">
