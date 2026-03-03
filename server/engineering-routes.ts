@@ -1305,16 +1305,23 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/excel-updates", requireAuth, async (req, res) => {
     try {
-      const userId = getUser(req).id;
+      const user = getUser(req);
+      const userId = user.id;
+      const userRole = user.role;
       const { status, search, limit: rawLimit, offset: rawOffset } = req.query;
       const pageLimit = Math.min(parseInt(rawLimit as string) || 50, 200);
       const pageOffset = parseInt(rawOffset as string) || 0;
 
       const excelEventTypes = ["excel_sync_confirmation", "plan.change_confirmation"];
+      const adminRoles = ["COO_ADMIN", "CEO_ADMIN"];
+      const isAdmin = adminRoles.includes(userRole);
+
       const conditions: any[] = [
-        eq(notifications.recipientUserId, userId),
         inArray(notifications.eventType, excelEventTypes),
       ];
+      if (!isAdmin) {
+        conditions.push(eq(notifications.recipientUserId, userId));
+      }
 
       if (status === "pending") conditions.push(isNull(notifications.confirmedAt));
       if (status === "confirmed") conditions.push(sql`${notifications.confirmedAt} IS NOT NULL`);
@@ -1324,6 +1331,13 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       const whereClause = and(...conditions);
+
+      const baseConditions: any[] = [
+        inArray(notifications.eventType, excelEventTypes),
+      ];
+      if (!isAdmin) {
+        baseConditions.push(eq(notifications.recipientUserId, userId));
+      }
 
       const [items, [countResult], [pendingCountResult], [confirmedCountResult], projectsResult] = await Promise.all([
         db.select().from(notifications)
@@ -1336,23 +1350,18 @@ export function registerEngineeringRoutes(app: Express) {
         db.select({ count: sql<number>`count(*)::int` })
           .from(notifications)
           .where(and(
-            eq(notifications.recipientUserId, userId),
-            inArray(notifications.eventType, excelEventTypes),
+            ...baseConditions,
             isNull(notifications.confirmedAt)
           )),
         db.select({ count: sql<number>`count(*)::int` })
           .from(notifications)
           .where(and(
-            eq(notifications.recipientUserId, userId),
-            inArray(notifications.eventType, excelEventTypes),
+            ...baseConditions,
             sql`${notifications.confirmedAt} IS NOT NULL`
           )),
         db.selectDistinct({ projectName: notifications.projectName })
           .from(notifications)
-          .where(and(
-            eq(notifications.recipientUserId, userId),
-            inArray(notifications.eventType, excelEventTypes),
-          ))
+          .where(and(...baseConditions))
           .orderBy(notifications.projectName),
       ]);
 
