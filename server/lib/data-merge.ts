@@ -3,6 +3,20 @@ import { normalizedCostLines, normalizedRevenueLines, workItems, projectInfo, ty
 import type { NormalizedCostLine, NormalizedRevenueLine, NormalizedPlanTask } from "@shared/schema";
 import { isNull, eq } from "drizzle-orm";
 
+export function mapCostToExpenseInput(cost: NormalizedCostLine) {
+  return {
+    expensePaymentDate: cost.paidDate,
+    expenseInvoiceNumber: cost.invoiceNumber,
+    expenseInvoicedDate: cost.invoiceDate,
+    expensePoNumber: cost.poNumber,
+    invoiceDateFontColor: cost.invoiceDateFontColor,
+    paymentDateFontColor: cost.paidDateFontColor,
+    invoiceDateConfirmed: cost.invoiceDateConfirmed,
+    paymentDateConfirmed: cost.paidDateConfirmed,
+    expenseActualTotal: cost.amountExVat,
+  };
+}
+
 export function createNameResolver(projectInfoNames: string[]) {
   const piNames = new Set(projectInfoNames);
   const normMap = new Map<string, string>();
@@ -83,13 +97,17 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
   const hasPO = !!(cost.poNumber);
   const hasPaidDate = !!(cost.paidDate);
 
+  const hasInvoiceColorInfo = invoiceDateConfirmed !== null || invoiceDateFontColor !== null;
   const invoiceDateActual = hasInvoiceDate && (
     invoiceDateConfirmed === true ||
-    invoiceDateFontColor === 'black'
+    invoiceDateFontColor === 'black' ||
+    !hasInvoiceColorInfo
   );
+  const hasPaymentColorInfo = paidDateConfirmed !== null || paymentDateFontColor !== null;
   const paidDateActual = hasPaidDate && (
     paidDateConfirmed === true ||
-    paymentDateFontColor === 'black'
+    paymentDateFontColor === 'black' ||
+    !hasPaymentColorInfo
   );
 
   let computedState = "Planned";
