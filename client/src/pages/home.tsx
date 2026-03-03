@@ -987,14 +987,16 @@ function QuickActionsWidget({ role }: { role: string }) {
 const EXCLUDED_PHASES = ["Compliance Handover", "Commercial Close Out", "Closed"];
 
 function PortfolioHealthWidget({ projects }: { projects: ProjectSummary[] }) {
+  const [, navigate] = useLocation();
+  const [expandedStat, setExpandedStat] = useState<"all" | "ontrack" | "behind" | "avg" | null>(null);
+
   const activeProjects = projects.filter(p => p.is_active !== false && !EXCLUDED_PHASES.includes(p.phase || ""));
   const totalProjects = activeProjects.length;
-  const onTrack = activeProjects.filter(p => {
+  const onTrackProjects = activeProjects.filter(p => {
     const delta = (p.delta_vs_expected ?? 0);
     return delta > -0.05;
-  }).length;
-  const behind = activeProjects.filter(p => (p.delta_vs_expected ?? 0) <= -0.05).length;
-  const completed = activeProjects.filter(p => (p.project_pct_complete ?? 0) >= 0.99).length;
+  });
+  const behindProjects = activeProjects.filter(p => (p.delta_vs_expected ?? 0) <= -0.05);
   const avgCompletion = totalProjects > 0
     ? activeProjects.reduce((s, p) => s + (p.project_pct_complete ?? 0), 0) / totalProjects
     : 0;
@@ -1006,6 +1008,25 @@ function PortfolioHealthWidget({ projects }: { projects: ProjectSummary[] }) {
   }
   const topPhases = Object.entries(phases).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
+  const toggleStat = (stat: "all" | "ontrack" | "behind" | "avg") => {
+    setExpandedStat(prev => prev === stat ? null : stat);
+  };
+
+  const detailProjects = useMemo(() => {
+    if (!expandedStat) return [];
+    let list: ProjectSummary[];
+    switch (expandedStat) {
+      case "all": list = activeProjects; break;
+      case "ontrack": list = onTrackProjects; break;
+      case "behind": list = behindProjects; break;
+      case "avg": list = [...activeProjects].sort((a, b) => (b.project_pct_complete ?? 0) - (a.project_pct_complete ?? 0)); break;
+      default: list = [];
+    }
+    return list.slice(0, 15);
+  }, [expandedStat, activeProjects, onTrackProjects, behindProjects]);
+
+  const detailTitle = expandedStat === "all" ? "Active Projects" : expandedStat === "ontrack" ? "On Track Projects" : expandedStat === "behind" ? "Projects Behind Plan" : expandedStat === "avg" ? "Projects by Completion" : "";
+
   return (
     <Card className="shadow-sm" data-testid="portfolio-health">
       <CardHeader className="pb-2">
@@ -1016,23 +1037,93 @@ function PortfolioHealthWidget({ projects }: { projects: ProjectSummary[] }) {
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-          <div className="text-center p-2 rounded-lg bg-blue-50 dark:bg-blue-950/30">
+          <button
+            className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-blue-300 ${expandedStat === "all" ? "ring-2 ring-blue-400 bg-blue-100 dark:bg-blue-900/50" : "bg-blue-50 dark:bg-blue-950/30"}`}
+            onClick={() => toggleStat("all")}
+            data-testid="portfolio-total-btn"
+          >
             <div className="text-xl font-bold text-blue-700 dark:text-blue-400" data-testid="portfolio-total">{totalProjects}</div>
             <div className="text-[10px] text-muted-foreground uppercase">Active Projects</div>
-          </div>
-          <div className="text-center p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30">
-            <div className="text-xl font-bold text-emerald-700 dark:text-emerald-400" data-testid="portfolio-on-track">{onTrack}</div>
+          </button>
+          <button
+            className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-emerald-300 ${expandedStat === "ontrack" ? "ring-2 ring-emerald-400 bg-emerald-100 dark:bg-emerald-900/50" : "bg-emerald-50 dark:bg-emerald-950/30"}`}
+            onClick={() => toggleStat("ontrack")}
+            data-testid="portfolio-on-track-btn"
+          >
+            <div className="text-xl font-bold text-emerald-700 dark:text-emerald-400" data-testid="portfolio-on-track">{onTrackProjects.length}</div>
             <div className="text-[10px] text-muted-foreground uppercase">On Track</div>
-          </div>
-          <div className="text-center p-2 rounded-lg bg-red-50 dark:bg-red-950/30">
-            <div className="text-xl font-bold text-red-700 dark:text-red-400" data-testid="portfolio-behind">{behind}</div>
+          </button>
+          <button
+            className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-red-300 ${expandedStat === "behind" ? "ring-2 ring-red-400 bg-red-100 dark:bg-red-900/50" : "bg-red-50 dark:bg-red-950/30"}`}
+            onClick={() => toggleStat("behind")}
+            data-testid="portfolio-behind-btn"
+          >
+            <div className="text-xl font-bold text-red-700 dark:text-red-400" data-testid="portfolio-behind">{behindProjects.length}</div>
             <div className="text-[10px] text-muted-foreground uppercase">Behind Plan</div>
-          </div>
-          <div className="text-center p-2 rounded-lg bg-purple-50 dark:bg-purple-950/30">
+          </button>
+          <button
+            className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-purple-300 ${expandedStat === "avg" ? "ring-2 ring-purple-400 bg-purple-100 dark:bg-purple-900/50" : "bg-purple-50 dark:bg-purple-950/30"}`}
+            onClick={() => toggleStat("avg")}
+            data-testid="portfolio-avg-btn"
+          >
             <div className="text-xl font-bold text-purple-700 dark:text-purple-400" data-testid="portfolio-avg">{Math.round(avgCompletion * 100)}%</div>
             <div className="text-[10px] text-muted-foreground uppercase">Avg Completion</div>
-          </div>
+          </button>
         </div>
+
+        {expandedStat && detailProjects.length > 0 && (
+          <div className="mb-4 border rounded-lg overflow-hidden animate-in slide-in-from-top-2 duration-200" data-testid="portfolio-detail-panel">
+            <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
+              <span className="text-xs font-semibold text-muted-foreground">{detailTitle}</span>
+              <button onClick={() => setExpandedStat(null)} className="text-muted-foreground hover:text-foreground" data-testid="btn-close-portfolio-detail">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="divide-y max-h-[280px] overflow-y-auto">
+              {detailProjects.map(p => {
+                const pct = Math.round((p.project_pct_complete ?? 0) * 100);
+                const delta = Math.round((p.delta_vs_expected ?? 0) * 100);
+                if (!p.project_name) return null;
+                return (
+                  <div
+                    key={p.project_name}
+                    className="flex items-center gap-3 px-3 py-2 hover:bg-muted/30 cursor-pointer transition-colors"
+                    onClick={() => navigate(`/project/${encodeURIComponent(p.project_name)}`)}
+                    data-testid={`portfolio-detail-${p.project_name}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{cleanProjectName(p.project_name)}</p>
+                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                        {p.phase && <span>{p.phase}</span>}
+                        {p.pm && <span>PM: {p.pm}</span>}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${pct >= 90 ? "bg-emerald-500" : pct >= 50 ? "bg-blue-500" : "bg-amber-500"}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-xs font-bold tabular-nums w-8 text-right">{pct}%</span>
+                      {delta !== 0 && (
+                        <Badge className={`text-[9px] px-1 py-0 ${delta >= 0 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+                          {delta > 0 ? "+" : ""}{delta}%
+                        </Badge>
+                      )}
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  </div>
+                );
+              })}
+            </div>
+            {(expandedStat === "all" ? activeProjects : expandedStat === "ontrack" ? onTrackProjects : expandedStat === "behind" ? behindProjects : activeProjects).length > 15 && (
+              <div className="px-3 py-2 bg-muted/30 border-t text-center">
+                <span className="text-[10px] text-muted-foreground">
+                  Showing 15 of {(expandedStat === "all" ? activeProjects : expandedStat === "ontrack" ? onTrackProjects : expandedStat === "behind" ? behindProjects : activeProjects).length}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-1.5">
           {topPhases.map(([phase, count]) => (
             <Badge key={phase} variant="outline" className="text-[10px] gap-1">
@@ -1045,7 +1136,9 @@ function PortfolioHealthWidget({ projects }: { projects: ProjectSummary[] }) {
   );
 }
 
-function FinancialHeadlineWidget({ projects: _projects }: { projects: ProjectSummary[] }) {
+function FinancialHeadlineWidget({ projects }: { projects: ProjectSummary[] }) {
+  const [, navigate] = useLocation();
+  const [expandedStat, setExpandedStat] = useState<"revenue" | "expenses" | "gp" | "gpmargin" | "outstanding" | "due" | null>(null);
   const { data: fyData, isLoading } = useQuery<{
     fyLabel: string;
     totalRevenue: number;
@@ -1072,6 +1165,46 @@ function FinancialHeadlineWidget({ projects: _projects }: { projects: ProjectSum
   const expensesDue = fyData?.expensesDue ?? 0;
   const fyLabel = fyData?.fyLabel ?? "FY";
 
+  const activeProjects = useMemo(() => projects.filter(p => p.is_active !== false), [projects]);
+
+  const toggleStat = (stat: typeof expandedStat) => {
+    setExpandedStat(prev => prev === stat ? null : stat);
+  };
+
+  const detailProjects = useMemo(() => {
+    if (!expandedStat) return [];
+    let list: ProjectSummary[];
+    switch (expandedStat) {
+      case "revenue":
+        list = [...activeProjects].filter(p => (p.actual_revenue ?? 0) > 0).sort((a, b) => (b.actual_revenue ?? 0) - (a.actual_revenue ?? 0));
+        break;
+      case "expenses":
+        list = [...activeProjects].filter(p => (p.actual_expenses ?? 0) > 0).sort((a, b) => (b.actual_expenses ?? 0) - (a.actual_expenses ?? 0));
+        break;
+      case "gp":
+      case "gpmargin":
+        list = [...activeProjects].filter(p => p.gp_percent !== null && p.gp_percent !== undefined).sort((a, b) => (a.gp_percent ?? 0) - (b.gp_percent ?? 0));
+        break;
+      case "outstanding":
+        list = [...activeProjects].filter(p => (p.revenue_outstanding ?? 0) > 0).sort((a, b) => (b.revenue_outstanding ?? 0) - (a.revenue_outstanding ?? 0));
+        break;
+      case "due":
+        list = [...activeProjects].filter(p => (p.expenses_due ?? 0) > 0).sort((a, b) => (b.expenses_due ?? 0) - (a.expenses_due ?? 0));
+        break;
+      default: list = [];
+    }
+    return list.slice(0, 15);
+  }, [expandedStat, activeProjects]);
+
+  const detailConfig = {
+    revenue: { title: "Projects with Revenue", valueKey: "actual_revenue" as const, label: "Revenue" },
+    expenses: { title: "Projects with Expenses", valueKey: "actual_expenses" as const, label: "Expenses" },
+    gp: { title: "Projects by Gross Profit", valueKey: "gp_percent" as const, label: "GP%" },
+    gpmargin: { title: "Projects by GP Margin", valueKey: "gp_percent" as const, label: "GP%" },
+    outstanding: { title: "Revenue Outstanding", valueKey: "revenue_outstanding" as const, label: "Outstanding" },
+    due: { title: "Expenses Due", valueKey: "expenses_due" as const, label: "Due" },
+  };
+
   return (
     <Card className="shadow-sm" data-testid="financial-headline">
       <CardHeader className="pb-2">
@@ -1088,29 +1221,94 @@ function FinancialHeadlineWidget({ projects: _projects }: { projects: ProjectSum
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <div className="text-center p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30">
+            <button
+              className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-emerald-300 ${expandedStat === "revenue" ? "ring-2 ring-emerald-400 bg-emerald-100 dark:bg-emerald-900/50" : "bg-emerald-50 dark:bg-emerald-950/30"}`}
+              onClick={() => toggleStat("revenue")}
+              data-testid="fin-revenue-btn"
+            >
               <div className="text-lg font-bold text-emerald-700 dark:text-emerald-400" data-testid="fin-revenue">{fmt(totalRevenue)}</div>
               <div className="text-[10px] text-muted-foreground uppercase">Total Revenue</div>
-            </div>
-            <div className="text-center p-2 rounded-lg bg-blue-50 dark:bg-blue-950/30">
+            </button>
+            <button
+              className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-blue-300 ${expandedStat === "expenses" ? "ring-2 ring-blue-400 bg-blue-100 dark:bg-blue-900/50" : "bg-blue-50 dark:bg-blue-950/30"}`}
+              onClick={() => toggleStat("expenses")}
+              data-testid="fin-expenses-btn"
+            >
               <div className="text-lg font-bold text-blue-700 dark:text-blue-400" data-testid="fin-expenses">{fmt(totalExpenses)}</div>
               <div className="text-[10px] text-muted-foreground uppercase">Total Expenses</div>
-            </div>
-            <div className="text-center p-2 rounded-lg bg-purple-50 dark:bg-purple-950/30">
+            </button>
+            <button
+              className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-purple-300 ${expandedStat === "gp" ? "ring-2 ring-purple-400 bg-purple-100 dark:bg-purple-900/50" : "bg-purple-50 dark:bg-purple-950/30"}`}
+              onClick={() => toggleStat("gp")}
+              data-testid="fin-gp-btn"
+            >
               <div className={`text-lg font-bold ${grossProfit >= 0 ? "text-purple-700 dark:text-purple-400" : "text-red-600"}`} data-testid="fin-gp">{fmt(grossProfit)}</div>
               <div className="text-[10px] text-muted-foreground uppercase">Gross Profit</div>
-            </div>
-            <div className="text-center p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30">
+            </button>
+            <button
+              className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-amber-300 ${expandedStat === "gpmargin" ? "ring-2 ring-amber-400 bg-amber-100 dark:bg-amber-900/50" : "bg-amber-50 dark:bg-amber-950/30"}`}
+              onClick={() => toggleStat("gpmargin")}
+              data-testid="fin-gp-pct-btn"
+            >
               <div className={`text-lg font-bold ${gpPercent >= 15 ? "text-amber-700 dark:text-amber-400" : "text-red-600"}`} data-testid="fin-gp-pct">{gpPercent.toFixed(1)}%</div>
               <div className="text-[10px] text-muted-foreground uppercase">GP Margin</div>
-            </div>
-            <div className="text-center p-2 rounded-lg bg-orange-50 dark:bg-orange-950/30">
+            </button>
+            <button
+              className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-orange-300 ${expandedStat === "outstanding" ? "ring-2 ring-orange-400 bg-orange-100 dark:bg-orange-900/50" : "bg-orange-50 dark:bg-orange-950/30"}`}
+              onClick={() => toggleStat("outstanding")}
+              data-testid="fin-outstanding-btn"
+            >
               <div className="text-lg font-bold text-orange-700 dark:text-orange-400" data-testid="fin-outstanding">{fmt(revenueOutstanding)}</div>
               <div className="text-[10px] text-muted-foreground uppercase">Rev Outstanding</div>
-            </div>
-            <div className="text-center p-2 rounded-lg bg-red-50 dark:bg-red-950/30">
+            </button>
+            <button
+              className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-red-300 ${expandedStat === "due" ? "ring-2 ring-red-400 bg-red-100 dark:bg-red-900/50" : "bg-red-50 dark:bg-red-950/30"}`}
+              onClick={() => toggleStat("due")}
+              data-testid="fin-due-btn"
+            >
               <div className="text-lg font-bold text-red-700 dark:text-red-400" data-testid="fin-due">{fmt(expensesDue)}</div>
               <div className="text-[10px] text-muted-foreground uppercase">Expenses Due</div>
+            </button>
+          </div>
+        )}
+
+        {expandedStat && detailProjects.length > 0 && (
+          <div className="mt-4 border rounded-lg overflow-hidden animate-in slide-in-from-top-2 duration-200" data-testid="financial-detail-panel">
+            <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
+              <span className="text-xs font-semibold text-muted-foreground">{detailConfig[expandedStat].title}</span>
+              <button onClick={() => setExpandedStat(null)} className="text-muted-foreground hover:text-foreground" data-testid="btn-close-financial-detail">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="divide-y max-h-[280px] overflow-y-auto">
+              {detailProjects.map(p => {
+                const valueKey = detailConfig[expandedStat].valueKey;
+                const value = (p as any)[valueKey] ?? 0;
+                const isPercent = valueKey === "gp_percent";
+                if (!p.project_name) return null;
+                return (
+                  <div
+                    key={p.project_name}
+                    className="flex items-center gap-3 px-3 py-2 hover:bg-muted/30 cursor-pointer transition-colors"
+                    onClick={() => navigate(`/project/${encodeURIComponent(p.project_name)}`)}
+                    data-testid={`fin-detail-${p.project_name}`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{cleanProjectName(p.project_name)}</p>
+                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                        {p.phase && <span>{p.phase}</span>}
+                        {p.pm && <span>PM: {p.pm}</span>}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <span className={`text-sm font-bold tabular-nums ${isPercent ? (value >= 15 ? "text-emerald-600" : value >= 0 ? "text-amber-600" : "text-red-600") : "text-foreground"}`}>
+                        {isPercent ? `${value.toFixed(1)}%` : fmt(value)}
+                      </span>
+                    </div>
+                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
