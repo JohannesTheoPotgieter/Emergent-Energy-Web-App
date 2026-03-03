@@ -2635,7 +2635,8 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'dashboard_widgets' | 'pm_on_the_go' | 'weekly_review_wizard' | 'project_creation' | 'financial_linking'
   | 'collaboration_hub' | 'sharepoint_files' | 'project_chat' | 'deliverables' | 'excel_sync_ack'
   | 'data_import' | 'data_export' | 'audit_trail'
-  | 'ms_integration';
+  | 'ms_integration'
+  | 'my_work' | 'ms_sync' | 'project_tagging' | 'excel_updates' | 'database_migration';
 export type PermissionAction = 'view' | 'edit' | 'approve' | 'override' | 'delete';
 
 export interface EntityPermissionRule {
