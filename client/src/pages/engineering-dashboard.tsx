@@ -617,13 +617,14 @@ function StandupTaskDrawer({
             <div>
               <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Assignee</label>
               <Select
-                value={task.assignees?.[0] || ""}
-                onValueChange={(val) => handleFieldUpdate({ assignees: [val] })}
+                value={task.assignees?.[0] || "__unassigned"}
+                onValueChange={(val) => handleFieldUpdate({ assignees: val === "__unassigned" ? [] : [val] })}
               >
                 <SelectTrigger className="h-8 text-xs mt-1" data-testid="drawer-assignee-select">
                   <SelectValue placeholder="Unassigned" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="__unassigned" className="text-xs">Unassigned</SelectItem>
                   {teamMembers.map((m: any) => (
                     <SelectItem key={m.id || m.name} value={m.name} className="text-xs">{m.name}</SelectItem>
                   ))}
