@@ -2639,7 +2639,8 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'collaboration_hub' | 'sharepoint_files' | 'project_chat' | 'deliverables' | 'excel_sync_ack'
   | 'data_import' | 'data_export' | 'audit_trail'
   | 'ms_integration'
-  | 'my_work' | 'ms_sync' | 'project_tagging' | 'excel_updates' | 'database_migration';
+  | 'my_work' | 'ms_sync' | 'project_tagging' | 'excel_updates' | 'database_migration'
+  | 'emergent_gpt';
 export type PermissionAction = 'view' | 'edit' | 'approve' | 'override' | 'delete';
 
 export interface EntityPermissionRule {
@@ -3366,6 +3367,14 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'ms_integration',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'emergent_gpt',
     view_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
