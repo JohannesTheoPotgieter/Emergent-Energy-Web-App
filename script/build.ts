@@ -43,13 +43,12 @@ async function buildAll() {
   let versionData = { major: 0, minor: 0, patch: 1, lastUpdated: buildTime };
   try {
     versionData = JSON.parse(await readFile("version.json", "utf-8"));
-    versionData.patch += 1;
     versionData.lastUpdated = buildTime;
   } catch {}
 
   const now = new Date();
   const buildNumber = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}.${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
-  const versionString = `${versionData.major}.${versionData.minor}.${String(versionData.patch).padStart(3, "0")}`;
+  const versionString = `${versionData.major}.${versionData.minor}.${versionData.patch}`;
 
   console.log(`Build ID: ${buildId}`);
   console.log(`Version: ${versionString}`);
@@ -59,35 +58,45 @@ async function buildAll() {
 
   let releaseNotes: { title: string; description: string }[] = [];
   try {
-    let lastTag = "";
+    const existingRn = JSON.parse(await readFile("release-notes.json", "utf-8"));
+    if (existingRn.notes && existingRn.notes.length > 0 && existingRn.notes[0].description) {
+      releaseNotes = existingRn.notes;
+      console.log(`Release notes: ${releaseNotes.length} items loaded from release-notes.json`);
+    } else {
+      throw new Error("No custom release notes");
+    }
+  } catch {
     try {
-      lastTag = execSync("git describe --tags --abbrev=0 HEAD^ 2>/dev/null", { encoding: "utf-8" }).trim();
-    } catch {}
+      let lastTag = "";
+      try {
+        lastTag = execSync("git describe --tags --abbrev=0 HEAD^ 2>/dev/null", { encoding: "utf-8" }).trim();
+      } catch {}
 
-    const range = lastTag ? `${lastTag}..HEAD` : "HEAD~30..HEAD";
-    const log = execSync(`git log ${range} --pretty=format:"%s" --no-merges 2>/dev/null`, { encoding: "utf-8" }).trim();
+      const range = lastTag ? `${lastTag}..HEAD` : "HEAD~30..HEAD";
+      const log = execSync(`git log ${range} --pretty=format:"%s" --no-merges 2>/dev/null`, { encoding: "utf-8" }).trim();
 
-    if (log) {
-      const commits = log.split("\n").filter(Boolean);
-      const seen = new Set<string>();
-      for (const msg of commits) {
-        const cleaned = msg.replace(/^["']|["']$/g, "").trim();
-        if (!cleaned || seen.has(cleaned.toLowerCase())) continue;
-        if (/^(merge|wip|fix typo|lint|format|chore)/i.test(cleaned)) continue;
-        seen.add(cleaned.toLowerCase());
-        const title = cleaned.length > 80 ? cleaned.slice(0, 77) + "..." : cleaned;
-        releaseNotes.push({ title, description: "" });
+      if (log) {
+        const commits = log.split("\n").filter(Boolean);
+        const seen = new Set<string>();
+        for (const msg of commits) {
+          const cleaned = msg.replace(/^["']|["']$/g, "").trim();
+          if (!cleaned || seen.has(cleaned.toLowerCase())) continue;
+          if (/^(merge|wip|fix typo|lint|format|chore)/i.test(cleaned)) continue;
+          seen.add(cleaned.toLowerCase());
+          const title = cleaned.length > 80 ? cleaned.slice(0, 77) + "..." : cleaned;
+          releaseNotes.push({ title, description: "" });
+        }
       }
-    }
 
-    if (releaseNotes.length === 0) {
-      releaseNotes.push({ title: "Bug fixes and performance improvements", description: "" });
-    }
+      if (releaseNotes.length === 0) {
+        releaseNotes.push({ title: "Bug fixes and performance improvements", description: "" });
+      }
 
-    console.log(`Release notes: ${releaseNotes.length} items generated from git log`);
-  } catch (err) {
-    console.log("Could not generate release notes from git, using default");
-    releaseNotes = [{ title: "Bug fixes and performance improvements", description: "" }];
+      console.log(`Release notes: ${releaseNotes.length} items generated from git log`);
+    } catch (err) {
+      console.log("Could not generate release notes from git, using default");
+      releaseNotes = [{ title: "Bug fixes and performance improvements", description: "" }];
+    }
   }
 
   const releaseData = {
