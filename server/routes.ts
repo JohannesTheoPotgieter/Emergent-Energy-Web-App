@@ -10852,6 +10852,17 @@ export async function registerRoutes(
       const planTaskResult = await safeLegacyQuery(() => db.select().from(projectPlan).where(eq(projectPlan.id, actualTaskId)), []);
       const isProjectPlanTask = planTaskResult.length > 0;
 
+      const workItemResult = !isProjectPlanTask
+        ? await db.select().from(workItems).where(
+            and(
+              eq(workItems.legacyTable, "normalized_plan_tasks"),
+              eq(workItems.legacyId, actualTaskId),
+              isNull(workItems.deletedAt)
+            )
+          ).limit(1)
+        : [];
+      const isWorkItemTask = workItemResult.length > 0;
+
       if (isProjectPlanTask) {
         const scenario = await storage.getOrCreateActiveScenario(projectName);
         const existingOverrides = await storage.getTaskOverridesByScenario(scenario.id);
@@ -10977,6 +10988,103 @@ export async function registerRoutes(
         });
 
         res.json({ success: true, taskId });
+      } else if (isWorkItemTask) {
+        const wi = workItemResult[0];
+        const taskName = updates.title || wi.title || "Unknown task";
+        const wiUpdateFields: any = {};
+        const notifFields: { field: string; old: string | null; new_: string | null }[] = [];
+
+        if (updates.title != null) {
+          wiUpdateFields.title = updates.title;
+          notifFields.push({ field: "title", old: wi.title || null, new_: updates.title });
+        }
+        if (updates.startDate != null) {
+          wiUpdateFields.startDate = updates.startDate;
+          notifFields.push({ field: "startDate", old: wi.startDate || null, new_: updates.startDate });
+        }
+        if (updates.dueDate != null || updates.endDate != null) {
+          const endVal = updates.dueDate || updates.endDate;
+          wiUpdateFields.endDate = endVal;
+          notifFields.push({ field: "endDate", old: wi.endDate || null, new_: endVal });
+        }
+        if (updates.status != null) {
+          wiUpdateFields.status = updates.status;
+          notifFields.push({ field: "status", old: wi.status || null, new_: updates.status });
+        }
+        if (updates.percentComplete != null) {
+          wiUpdateFields.percentComplete = updates.percentComplete / 100;
+          notifFields.push({
+            field: "percentComplete",
+            old: wi.percentComplete != null ? String(Math.round(Number(wi.percentComplete) * 100)) : null,
+            new_: String(updates.percentComplete),
+          });
+        }
+        if (updates.comment != null || updates.description != null) {
+          wiUpdateFields.description = updates.comment || updates.description;
+        }
+        if (updates.priority != null) {
+          wiUpdateFields.priority = updates.priority;
+        }
+
+        if (updates.status === "Done" && updates.percentComplete == null) {
+          wiUpdateFields.percentComplete = 1.0;
+        }
+
+        if (Object.keys(wiUpdateFields).length > 0) {
+          await db.update(workItems).set(wiUpdateFields).where(eq(workItems.id, wi.id));
+        }
+
+        try {
+          await safeLegacyWrite(() =>
+            db.update(normalizedPlanTasks).set({
+              ...(updates.title != null ? { highLevelProgramme: updates.title } : {}),
+              ...(updates.startDate != null ? { actualStart: updates.startDate } : {}),
+              ...(updates.dueDate != null || updates.endDate != null ? { actualEnd: updates.dueDate || updates.endDate } : {}),
+              ...(updates.percentComplete != null ? { actualPctComplete: updates.percentComplete / 100 } : {}),
+              ...(updates.status === "Done" && updates.percentComplete == null ? { actualPctComplete: 1.0 } : {}),
+            }).where(eq(normalizedPlanTasks.id, actualTaskId))
+          );
+        } catch (e) {
+          console.warn(`[planning-tasks] Failed to sync to normalized_plan_tasks for task ${actualTaskId}:`, e);
+        }
+
+        const isAdminRole = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
+        if (!isAdminRole && notifFields.length > 0) {
+          const projectInfoRow = await storage.getProjectInfo(projectName);
+          for (const nf of notifFields) {
+            await db.insert(planEditNotifications).values({
+              projectName,
+              projectId: projectInfoRow?.id || null,
+              taskId: actualTaskId,
+              taskName,
+              editType: "task_update",
+              fieldName: nf.field,
+              oldValue: nf.old,
+              newValue: nf.new_,
+              editedByUserId: user.id,
+              editedByName: user.name || user.username,
+              status: "pending",
+            });
+          }
+        }
+
+        sendExcelSyncNotification({
+          projectName,
+          changedByUserId: user.id || 0,
+          changeType: "plan_task_updated",
+          changeDescription: `Plan task "${taskName}" updated.`,
+          details: { taskId: actualTaskId, ...updates },
+        }).catch(() => {});
+
+        logAuditFromReq(req, {
+          entityType: "plan_task",
+          action: "update",
+          entityId: String(wi.id),
+          projectName,
+          changesJson: { taskName, ...updates },
+        });
+
+        res.json({ success: true, taskId, workItemId: wi.id });
       } else {
         const updateFields: any = {};
         if (updates.title != null) updateFields.title = updates.title;
@@ -10989,7 +11097,7 @@ export async function registerRoutes(
         if (updates.assignees != null) updateFields.assignees = updates.assignees;
 
         if (Object.keys(updateFields).length > 0) {
-          await db.update(operationalTasks).set(updateFields).where(eq(operationalTasks.id, taskId));
+          await db.update(operationalTasks).set(updateFields).where(eq(operationalTasks.id, actualTaskId));
         }
         res.json({ success: true, taskId });
       }
