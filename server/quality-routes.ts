@@ -13,6 +13,7 @@ import {
   qcPostmortem, qcPostmortemMetricValue, qcPostmortemSummary,
   qcAccessChallenge, calendarHoliday,
   notifications, notificationThrottle,
+  users,
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
@@ -989,6 +990,102 @@ export function registerQualityRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Quality] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ========== ALL ITEMS (flat list for bottom-up view) ==========
+
+  app.get("/api/quality/all-items", requireAuth, async (req, res) => {
+    try {
+      const projectFilter = req.query.project as string | undefined;
+      const phaseFilter = req.query.phase as string | undefined;
+      const statusFilter = req.query.status as string | undefined;
+
+      const allInstances = await db.select().from(qcItemInstance);
+      const allChecklists = await db.select().from(qcChecklist);
+
+      const checklistMap = new Map(allChecklists.map(cl => [cl.id, cl]));
+
+      let filtered = allInstances;
+      if (projectFilter) {
+        const matchingChecklistIds = allChecklists
+          .filter(cl => cl.projectName === projectFilter)
+          .map(cl => cl.id);
+        filtered = filtered.filter(i => matchingChecklistIds.includes(i.checklistId));
+      }
+      if (statusFilter) {
+        filtered = filtered.filter(i => i.qmStatus === statusFilter);
+      }
+
+      if (filtered.length === 0) {
+        return res.json([]);
+      }
+
+      const templateItemIds = [...new Set(filtered.map(i => i.templateItemId))];
+      const templateItems = templateItemIds.length
+        ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
+        : [];
+      const templateItemMap = new Map(templateItems.map(ti => [ti.id, ti]));
+
+      const groupIds = [...new Set(templateItems.map(ti => ti.templateGroupId))];
+      const groups = groupIds.length
+        ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.id, groupIds))
+        : [];
+      const groupMap = new Map(groups.map(g => [g.id, g]));
+
+      const phaseIds = [...new Set(groups.map(g => g.templatePhaseId))];
+      const phases = phaseIds.length
+        ? await db.select().from(qcTemplatePhase).where(inArray(qcTemplatePhase.id, phaseIds))
+        : [];
+      const phaseMap = new Map(phases.map(p => [p.id, p]));
+
+      const itemInstanceIds = filtered.map(i => i.id);
+      const allEvidence = itemInstanceIds.length
+        ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemInstanceIds))
+        : [];
+      const evidenceCountMap = new Map<number, number>();
+      for (const ev of allEvidence) {
+        evidenceCountMap.set(ev.itemInstanceId, (evidenceCountMap.get(ev.itemInstanceId) || 0) + 1);
+      }
+
+      const assigneeUserIds = [...new Set(filtered.map(i => i.assigneeUserId).filter((id): id is number => id !== null))];
+      let userMap = new Map<number, string>();
+      if (assigneeUserIds.length) {
+        const assignees = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, assigneeUserIds));
+        userMap = new Map(assignees.map(u => [u.id, u.name]));
+      }
+
+      let items = filtered.map(inst => {
+        const checklist = checklistMap.get(inst.checklistId);
+        const templateItem = templateItemMap.get(inst.templateItemId);
+        const group = templateItem ? groupMap.get(templateItem.templateGroupId) : undefined;
+        const phase = group ? phaseMap.get(group.templatePhaseId) : undefined;
+
+        return {
+          id: inst.id,
+          itemName: templateItem?.itemName || "Unknown",
+          description: templateItem?.defaultSeverity || null,
+          projectName: checklist?.projectName || "Unknown",
+          phaseName: phase?.phaseName || "Unknown",
+          groupName: group?.groupName || "Unknown",
+          qmStatus: inst.qmStatus,
+          assigneeName: inst.assigneeUserId ? (userMap.get(inst.assigneeUserId) || null) : null,
+          startDate: inst.startDate,
+          endDate: inst.endDate,
+          evidenceCount: evidenceCountMap.get(inst.id) || 0,
+          approved: inst.approved,
+          approvedAt: inst.approvedAt,
+        };
+      });
+
+      if (phaseFilter) {
+        items = items.filter(i => i.phaseName === phaseFilter);
+      }
+
+      res.json(items);
+    } catch (err: any) {
+      console.error("[Quality] all-items error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });

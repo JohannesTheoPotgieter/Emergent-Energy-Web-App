@@ -72,6 +72,57 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
+  app.patch("/api/pd/clients/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const role = user?.companyRole || user?.role || "";
+      if (!isPdRole(role)) {
+        return res.status(403).json({ error: "Only authorized roles can edit clients" });
+      }
+
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid client ID" });
+
+      const { name } = req.body;
+      if (!name?.trim()) {
+        return res.status(400).json({ error: "Client name is required" });
+      }
+
+      const [existing] = await db.select().from(clients).where(eq(clients.id, id));
+      if (!existing) return res.status(404).json({ error: "Client not found" });
+
+      const duplicate = await db.select().from(clients).where(and(ilike(clients.name, name.trim()), sql`${clients.id} != ${id}`)).limit(1);
+      if (duplicate.length > 0) {
+        return res.status(409).json({ error: "Another client with this name already exists" });
+      }
+
+      const [updated] = await db.update(clients).set({
+        name: name.trim(),
+        updatedBy: user?.id || null,
+        updatedAt: new Date(),
+      }).where(eq(clients.id, id)).returning();
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/pd/clients/project-counts", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const rows = await db.select({
+        clientId: projectInfo.clientId,
+        count: sql<number>`count(*)::int`,
+      })
+        .from(projectInfo)
+        .where(sql`${projectInfo.clientId} IS NOT NULL`)
+        .groupBy(projectInfo.clientId);
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/pd/tickets", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = req.user as any;

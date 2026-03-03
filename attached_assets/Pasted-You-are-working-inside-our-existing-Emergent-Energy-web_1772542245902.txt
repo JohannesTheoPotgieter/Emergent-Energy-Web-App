@@ -1,0 +1,108 @@
+You are working inside our existing Emergent Energy web application. DO NOT break or remove any existing functionality, routes, components, tables, or APIs. Only extend.
+
+Goal:
+Upgrade Emergent Energy Info → Operating System → Overview Map into an interactive “Company Lifecycle Map” that a normal user can follow.
+It must have:
+1) Story Mode (guided, step-based) as default
+2) Explore Mode (existing Network view) unchanged
+3) A toggle: “👶 explain like i’m new” that simplifies the UI for onboarding/training
+
+Non-negotiables:
+- Keep existing Network view and any current data structures working.
+- Do not remove existing tabs, buttons, or routes.
+- COO-only edit permissions; other roles view-only.
+- Must support drill-down with animation: Lifecycle → Stage → Process → Step → Detail.
+- Must support Next/Back navigation using explicit “next” links.
+
+UI Requirements:
+A) Add segmented control at top of Overview Map:
+- Story Mode (default)
+- Explore Mode (existing Network)
+
+B) In Story Mode add a top-right toggle:
+- “👶 explain like i’m new” (default ON for non-admin users; OFF for COO by default)
+
+C) Story Mode layout:
+Left Panel:
+- Lifecycle stages P0–P7 list with status badges (Ready/Blocked) and progress indicator.
+- Selecting a stage loads that stage into the center panel.
+Center Panel (Step Player):
+- Title
+- Purpose (1–2 lines)
+- Inputs (bullets)
+- Outputs (bullets)
+- Definition of Done
+- Owner (R) + Approver (A)
+- Buttons: Back / Next / Jump to Gate / Open Required Template(s) / Open SharePoint Folder (if link exists)
+Right Rail:
+- Tools & Docs links
+- Related nodes
+- “Open in Explore Mode” deep link
+
+D) Empty state (when nothing selected):
+Show three large buttons:
+- Start Lifecycle Tour
+- Choose a Stage
+- Try Demo Project Walkthrough
+
+Explain-like-I’m-new mode behavior:
+When the toggle is ON:
+1) Collapse Purpose/Inputs/Outputs/DoD/RACI sections by default
+2) Show one prominent card at top:
+   - “Do this now:” {primary_instruction}
+3) Show only 3 chips beneath it:
+   - Owner (R)
+   - Key Output
+   - Gate/DoD status
+4) Keep only 3 main actions visible:
+   - Next
+   - Open Required Template(s)
+   - Open Required Doc Folder
+5) Hide/secondary the rest behind “Show details” accordion.
+
+Explore Mode:
+- Must remain visually and functionally unchanged.
+
+Example mode (guided walkthrough):
+- Add toggle/button: “Follow an example project”
+- Start with seeded DEMO data (do not depend on real project data yet).
+- The demo walkthrough should demonstrate the lifecycle end-to-end with 10–20 steps.
+- Each step should display (in addition to normal fields):
+  - example_artifacts (links)
+  - example_notes (short narrative)
+  - common_pitfalls
+
+Data model changes (minimal and safe):
+Use existing nodes/edges data where possible.
+If fields do not exist, add them with backward-compatible migrations:
+- primary_instruction (text)  // required for newbie mode
+- node_type (lifecycle_stage | process | step | content | tool | template | department)
+- parent_node_id (nullable)
+- next_node_id (nullable)  // drives Next navigation
+- stage_code (P0..P7) (nullable)
+- definition_of_done (text)
+- owner_role_id (nullable)
+- approver_role_id (nullable)
+- required_links (json array of {label, url, type})
+- example_artifacts (json array)
+- example_notes (text)
+- common_pitfalls (json array of strings)
+Do not change existing IDs. Do not break existing queries.
+
+Implementation steps:
+1) Add Story Mode components without touching Explore Mode internals.
+2) Add navigation logic using next_node_id and parent_node_id.
+3) Add Framer Motion (or equivalent) animations for drill-down transitions.
+4) Add COO-only edit controls (reuse existing permission framework).
+5) Seed demo lifecycle + demo walkthrough data automatically on migration/seed step (no manual clicking).
+6) Add basic interaction tests:
+   - Next/Back navigation works
+   - Toggle “explain like i’m new” changes UI state
+   - Non-COO cannot edit
+7) Confirm all existing pages still render and function.
+
+Deliverable:
+- Story Mode works end-to-end with demo walkthrough.
+- Explore Mode unchanged.
+- Newbie toggle works and meaningfully simplifies the experience.
+- Clean code and no regressions.
