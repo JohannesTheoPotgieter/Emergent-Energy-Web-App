@@ -314,14 +314,14 @@ router.get("/api/overview", async (req, res) => {
     let totalProgramBudget = 0;
     for (const info of allProjectInfo) {
       if (info.contractValue) {
-        totalProgramBudget += parseFloat(info.contractValue);
+        totalProgramBudget += parseFloat(info.contractValue) || 0;
       }
     }
     
     if (totalProgramBudget === 0) {
       for (const inflow of allInflows) {
         if (inflow.milestoneAmount) {
-          totalProgramBudget += parseFloat(inflow.milestoneAmount);
+          totalProgramBudget += parseFloat(inflow.milestoneAmount) || 0;
         }
       }
     }
@@ -330,7 +330,7 @@ router.get("/api/overview", async (req, res) => {
     for (const expense of allExpenses) {
       const paymentDate = expense.expensePaymentDate;
       if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && expense.expenseActualTotal) {
-        actualSpendPaid += parseFloat(expense.expenseActualTotal);
+        actualSpendPaid += parseFloat(expense.expenseActualTotal) || 0;
       }
     }
 
@@ -338,7 +338,7 @@ router.get("/api/overview", async (req, res) => {
     for (const inflow of allInflows) {
       const paymentDate = inflow.effectiveDate;
       if (paymentDate && /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) && paymentDate <= today && inflow.milestoneAmount) {
-        revenueRealised += parseFloat(inflow.milestoneAmount);
+        revenueRealised += parseFloat(inflow.milestoneAmount) || 0;
       }
     }
 
@@ -832,7 +832,7 @@ router.get("/api/projects-summary", async (req, res) => {
       let actualRevenue = 0;
       for (const inflow of projectInflows) {
         if (inflow.milestoneAmount) {
-          const amt = parseFloat(inflow.milestoneAmount);
+          const amt = parseFloat(inflow.milestoneAmount) || 0;
           totalContractRevenue += amt;
           const manualInBank = inflow.inBank === 1 || inflow.inBank === '1' || inflow.inBank === true;
           const hasInvoice = !!(inflow.milestoneInvoiceNumber && String(inflow.milestoneInvoiceNumber).trim());
@@ -848,7 +848,7 @@ router.get("/api/projects-summary", async (req, res) => {
       let actualExpenses = 0;
       for (const expense of projectExpenses) {
         if (expense.expenseActualTotal) {
-          const amt = parseFloat(expense.expenseActualTotal);
+          const amt = parseFloat(expense.expenseActualTotal) || 0;
           totalExpenses += amt;
           const state = (expense as any).computedState || classifyExpenseState(expense as any);
           if (state === 'Paid') {
@@ -958,7 +958,7 @@ router.get("/api/projects-summary", async (req, res) => {
           const hasPayment = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate) && inflow.paymentReceivedDate <= today;
           const noInvoice = !inflow.milestoneInvoiceNumber || inflow.milestoneInvoiceNumber.trim() === '';
           if (hasPayment && noInvoice) {
-            revenueOutstanding += parseFloat(inflow.milestoneAmount);
+            revenueOutstanding += parseFloat(inflow.milestoneAmount) || 0;
           }
         }
       }
@@ -969,7 +969,7 @@ router.get("/api/projects-summary", async (req, res) => {
           const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
           const noInvoice = !expense.expenseInvoiceNumber || expense.expenseInvoiceNumber.trim() === '';
           if (hasPastPaymentDate && noInvoice) {
-            expensesDue += parseFloat(expense.expenseActualTotal);
+            expensesDue += parseFloat(expense.expenseActualTotal) || 0;
           }
         }
       }
@@ -1314,7 +1314,7 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
       let projRevOutstanding = 0;
       for (const inflow of projectInflows) {
         if (inflow.milestoneAmount) {
-          const amt = parseFloat(inflow.milestoneAmount);
+          const amt = parseFloat(inflow.milestoneAmount) || 0;
           const hasInvoiceNum = inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim() !== '';
           const paymentNotReceived = !inflow.paymentReceivedDate || inflow.paymentReceivedDate.trim() === '';
           const dateToCheck = inflow.effectiveDate || inflow.invoiceRaisedDate;
@@ -1325,7 +1325,7 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
           }
         }
         if (isThisWeek(inflow.effectiveDate) && inflow.milestoneAmount) {
-          inflowsThisWeek += parseFloat(inflow.milestoneAmount);
+          inflowsThisWeek += parseFloat(inflow.milestoneAmount) || 0;
         }
       }
       if (projRevOutstanding > 0) {
@@ -1336,7 +1336,7 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
       let projOutflowsWeek = 0;
       for (const inflow of projectInflows) {
         if (isThisWeek(inflow.effectiveDate) && inflow.milestoneAmount) {
-          projInflowsWeek += parseFloat(inflow.milestoneAmount);
+          projInflowsWeek += parseFloat(inflow.milestoneAmount) || 0;
         }
       }
       if (projInflowsWeek > 0) {
@@ -1347,7 +1347,7 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
       let projHasInvoice = false;
       for (const expense of projectExpenses) {
         if (expense.expenseActualTotal) {
-          const amt = parseFloat(expense.expenseActualTotal);
+          const amt = parseFloat(expense.expenseActualTotal) || 0;
           const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}$/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
           const state = expense.computedState || '';
           const isOverdueState = state === 'Invoiced' || state === 'Committed';
@@ -1360,7 +1360,7 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
           }
         }
         if (isThisWeek(expense.expensePaymentDate) && expense.expenseActualTotal) {
-          projOutflowsWeek += parseFloat(expense.expenseActualTotal);
+          projOutflowsWeek += parseFloat(expense.expenseActualTotal) || 0;
         }
       }
       if (projExpOverdue > 0) {
@@ -1578,7 +1578,7 @@ router.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
 
     for (const expense of allExpenses) {
       if (expense.expenseActualTotal && expense.expensePaymentDate) {
-        const amt = parseFloat(expense.expenseActualTotal);
+        const amt = parseFloat(expense.expenseActualTotal) || 0;
         const state = expense.computedState || '';
         if (amt > 0 && expense.expensePaymentDate < today && (state === 'Invoiced' || state === 'Committed')) {
           overdueExpenses.push({
@@ -1609,7 +1609,7 @@ router.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
 
     for (const inflow of allInflows) {
       if (inflow.milestoneAmount) {
-        const amt = parseFloat(inflow.milestoneAmount);
+        const amt = parseFloat(inflow.milestoneAmount) || 0;
         const hasInvoiceNum = inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim() !== '';
         const paymentNotReceived = !inflow.paymentReceivedDate || inflow.paymentReceivedDate.trim() === '';
         const dateToCheck = inflow.effectiveDate || inflow.invoiceRaisedDate;

@@ -550,7 +550,7 @@ router.get("/api/cashflow-2026", requireAuth, async (req, res) => {
         const d = inflow.effectiveDate;
         if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
         if (d >= weekStart && d < weekEnd && inflow.milestoneAmount) {
-          projectInflowsSum += parseFloat(inflow.milestoneAmount);
+          projectInflowsSum += parseFloat(inflow.milestoneAmount) || 0;
         }
       }
 
@@ -560,7 +560,7 @@ router.get("/api/cashflow-2026", requireAuth, async (req, res) => {
         const d = expense.expensePaymentDate;
         if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
         if (d >= weekStart && d < weekEnd && expense.expenseActualTotal) {
-          projectOutflowsSum += parseFloat(expense.expenseActualTotal);
+          projectOutflowsSum += parseFloat(expense.expenseActualTotal) || 0;
         }
       }
 
@@ -884,7 +884,7 @@ router.get("/api/rev-tracker", requireAuth, requireAdmin, async (req, res) => {
         const d = inflow.invoiceRaisedDate;
         if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
         if (d >= monthStart && d < monthEnd && inflow.milestoneAmount) {
-          planned += parseFloat(inflow.milestoneAmount);
+          planned += parseFloat(inflow.milestoneAmount) || 0;
         }
       }
 

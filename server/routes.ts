@@ -1063,7 +1063,7 @@ export async function registerRoutes(
       let totalProgramBudget = 0;
       for (const info of allProjectInfo) {
         if (info.contractValue) {
-          totalProgramBudget += parseFloat(info.contractValue);
+          totalProgramBudget += parseFloat(info.contractValue) || 0;
         }
       }
       
@@ -1071,7 +1071,7 @@ export async function registerRoutes(
       if (totalProgramBudget === 0) {
         for (const inflow of allInflows) {
           if (inflow.milestoneAmount) {
-            totalProgramBudget += parseFloat(inflow.milestoneAmount);
+            totalProgramBudget += parseFloat(inflow.milestoneAmount) || 0;
           }
         }
         if (totalProgramBudget === 0) {
@@ -2243,7 +2243,7 @@ export async function registerRoutes(
               const hasPayment = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate) && inflow.paymentReceivedDate <= today;
               const noInvoice = !inflow.milestoneInvoiceNumber || inflow.milestoneInvoiceNumber.trim() === '';
               if (hasPayment && noInvoice) {
-                revenueOutstanding += parseFloat(inflow.milestoneAmount);
+                revenueOutstanding += parseFloat(inflow.milestoneAmount) || 0;
               }
             }
           }
@@ -2253,7 +2253,7 @@ export async function registerRoutes(
               const hasPayment = rev.paidDate && /^\d{4}-\d{2}-\d{2}/.test(rev.paidDate) && rev.paidDate <= today;
               const noInvoice = !rev.invoiceNumber || rev.invoiceNumber.trim() === '';
               if (hasPayment && noInvoice) {
-                revenueOutstanding += parseFloat(rev.amountExVat);
+                revenueOutstanding += parseFloat(rev.amountExVat) || 0;
               }
             }
           }
@@ -2267,7 +2267,7 @@ export async function registerRoutes(
               const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
               const noInvoice = !expense.expenseInvoiceNumber || expense.expenseInvoiceNumber.trim() === '';
               if (hasPastPaymentDate && noInvoice) {
-                expensesDue += parseFloat(expense.expenseActualTotal);
+                expensesDue += parseFloat(expense.expenseActualTotal) || 0;
               }
             }
           }
@@ -2277,7 +2277,7 @@ export async function registerRoutes(
               const hasPastPaymentDate = cost.paidDate && /^\d{4}-\d{2}-\d{2}/.test(cost.paidDate) && cost.paidDate < today;
               const noInvoice = !cost.invoiceNumber || cost.invoiceNumber.trim() === '';
               if (hasPastPaymentDate && noInvoice) {
-                expensesDue += parseFloat(cost.amountExVat);
+                expensesDue += parseFloat(cost.amountExVat) || 0;
               }
             }
           }
@@ -2696,7 +2696,7 @@ export async function registerRoutes(
           const d = inflow.effectiveDate;
           if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
           if (d >= weekStart && d < weekEnd && inflow.milestoneAmount) {
-            projectInflowsSum += parseFloat(inflow.milestoneAmount);
+            projectInflowsSum += parseFloat(inflow.milestoneAmount) || 0;
           }
         }
 
@@ -2706,7 +2706,7 @@ export async function registerRoutes(
           const d = expense.expensePaymentDate;
           if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
           if (d >= weekStart && d < weekEnd && expense.expenseActualTotal) {
-            projectOutflowsSum += parseFloat(expense.expenseActualTotal);
+            projectOutflowsSum += parseFloat(expense.expenseActualTotal) || 0;
           }
         }
 
@@ -3122,7 +3122,7 @@ export async function registerRoutes(
           const d = inflow.invoiceRaisedDate;
           if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
           if (d >= monthStart && d < monthEnd && inflow.milestoneAmount) {
-            planned += parseFloat(inflow.milestoneAmount);
+            planned += parseFloat(inflow.milestoneAmount) || 0;
           }
         }
 
@@ -3703,7 +3703,7 @@ export async function registerRoutes(
         let projRevOutstanding = 0;
         for (const inflow of projectInflows) {
           if (inflow.milestoneAmount) {
-            const amt = parseFloat(inflow.milestoneAmount);
+            const amt = parseFloat(inflow.milestoneAmount) || 0;
             const hasInvoiceNum = inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim() !== '';
             const rcvDate = inflow.paymentReceivedDate && inflow.paymentReceivedDate.trim() !== '' ? inflow.paymentReceivedDate.trim() : null;
             const paymentNotReceived = !rcvDate || !/^\d{4}-\d{2}-\d{2}/.test(rcvDate) || rcvDate > today;
@@ -3715,7 +3715,7 @@ export async function registerRoutes(
             }
           }
           if (isThisWeek(inflow.effectiveDate) && inflow.milestoneAmount) {
-            inflowsThisWeek += parseFloat(inflow.milestoneAmount);
+            inflowsThisWeek += parseFloat(inflow.milestoneAmount) || 0;
           }
         }
         if (projRevOutstanding > 0) {
@@ -3726,7 +3726,7 @@ export async function registerRoutes(
         let projOutflowsWeek = 0;
         for (const inflow of projectInflows) {
           if (isThisWeek(inflow.effectiveDate) && inflow.milestoneAmount) {
-            projInflowsWeek += parseFloat(inflow.milestoneAmount);
+            projInflowsWeek += parseFloat(inflow.milestoneAmount) || 0;
           }
         }
         if (projInflowsWeek > 0) {
@@ -3737,7 +3737,7 @@ export async function registerRoutes(
         let projHasInvoice = false;
         for (const expense of projectExpenses) {
           if (expense.expenseActualTotal) {
-            const amt = parseFloat(expense.expenseActualTotal);
+            const amt = parseFloat(expense.expenseActualTotal) || 0;
             const hasPastPaymentDate = expense.expensePaymentDate && /^\d{4}-\d{2}-\d{2}$/.test(expense.expensePaymentDate) && expense.expensePaymentDate < today;
             const state = expense.computedState || '';
             const isOverdueState = state === 'Invoiced' || state === 'Committed';
@@ -3750,7 +3750,7 @@ export async function registerRoutes(
             }
           }
           if (isThisWeek(expense.expensePaymentDate) && expense.expenseActualTotal) {
-            projOutflowsWeek += parseFloat(expense.expenseActualTotal);
+            projOutflowsWeek += parseFloat(expense.expenseActualTotal) || 0;
           }
         }
         if (projExpOverdue > 0) {
@@ -4011,7 +4011,7 @@ export async function registerRoutes(
 
       for (const expense of allExpenses) {
         if (expense.expenseActualTotal && expense.expensePaymentDate) {
-          const amt = parseFloat(expense.expenseActualTotal);
+          const amt = parseFloat(expense.expenseActualTotal) || 0;
           const state = expense.computedState || '';
           if (amt > 0 && expense.expensePaymentDate < today && (state === 'Invoiced' || state === 'Committed')) {
             if (isMegaParkOutsideFY(expense.projectName, expense.expensePaymentDate)) continue;
@@ -4043,7 +4043,7 @@ export async function registerRoutes(
 
       for (const inflow of allInflows) {
         if (inflow.milestoneAmount) {
-          const amt = parseFloat(inflow.milestoneAmount);
+          const amt = parseFloat(inflow.milestoneAmount) || 0;
           const hasInvoiceNum = inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim() !== '';
           const paymentNotReceived = !inflow.paymentReceivedDate || inflow.paymentReceivedDate.trim() === '';
           const rawInBank = (inflow as any).inBank === 1 || (inflow as any).inBank === '1' || (inflow as any).inBank === true;
