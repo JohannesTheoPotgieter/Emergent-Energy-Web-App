@@ -1165,6 +1165,8 @@ function FinancialHeadlineWidget({ projects }: { projects: ProjectSummary[] }) {
     gpMargin: number;
     revenueOutstanding: number;
     expensesDue: number;
+    revenueOverdue: number;
+    expensesOverdue: number;
   }>({
     queryKey: ["/api/financial-headline"],
   });
@@ -1181,6 +1183,8 @@ function FinancialHeadlineWidget({ projects }: { projects: ProjectSummary[] }) {
   const gpPercent = fyData?.gpMargin ?? 0;
   const revenueOutstanding = fyData?.revenueOutstanding ?? 0;
   const expensesDue = fyData?.expensesDue ?? 0;
+  const revenueOverdue = fyData?.revenueOverdue ?? 0;
+  const expensesOverdue = fyData?.expensesOverdue ?? 0;
   const fyLabel = fyData?.fyLabel ?? "FY";
 
   const activeProjects = useMemo(() => projects.filter(p => p.is_active !== false), [projects]);
@@ -1288,6 +1292,9 @@ function FinancialHeadlineWidget({ projects }: { projects: ProjectSummary[] }) {
             >
               <div className="text-lg font-bold text-orange-700 dark:text-orange-400" data-testid="fin-outstanding">{fmt(revenueOutstanding)}</div>
               <div className="text-[10px] text-muted-foreground uppercase">Rev Outstanding</div>
+              {revenueOverdue > 0 && (
+                <div className="text-[9px] font-semibold text-red-600 mt-0.5" data-testid="fin-rev-overdue">{fmt(revenueOverdue)} overdue</div>
+              )}
             </button>
             <button
               className={`text-center p-3 min-h-[44px] rounded-lg transition-all duration-200 ease-out cursor-pointer hover:ring-2 hover:ring-red-300 focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:outline-none ${expandedStat === "due" ? "ring-2 ring-red-400 bg-red-100 dark:bg-red-900/50" : "bg-red-50 dark:bg-red-950/30"}`}
@@ -1298,6 +1305,9 @@ function FinancialHeadlineWidget({ projects }: { projects: ProjectSummary[] }) {
             >
               <div className="text-lg font-bold text-red-700 dark:text-red-400" data-testid="fin-due">{fmt(expensesDue)}</div>
               <div className="text-[10px] text-muted-foreground uppercase">Expenses Due</div>
+              {expensesOverdue > 0 && (
+                <div className="text-[9px] font-semibold text-red-600 mt-0.5" data-testid="fin-exp-overdue">{fmt(expensesOverdue)} overdue</div>
+              )}
             </button>
           </div>
         )}
