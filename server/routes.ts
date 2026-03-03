@@ -6319,20 +6319,9 @@ export async function registerRoutes(
         }
 
         for (const [expenseId, fields] of rowGroups.entries()) {
-          await storage.updateProgramExpenseFields(expenseId, fields);
-        }
-
-        const { classifyExpenseState } = await import("./lib/calculations/stateClassifier");
-        const { forecastExpensePaymentDate } = await import("./lib/calculations/forecaster");
-        const updatedExpenses = await storage.getProgramExpensesByProject(pn as string);
-        for (const exp of updatedExpenses) {
-          if (!rowGroups.has(exp.id)) continue;
-          const newState = classifyExpenseState(exp as any);
-          const newForecast = forecastExpensePaymentDate(exp as any);
-          await storage.updateProgramExpenseFields(exp.id, {
-            computedState: newState,
-            computedForecastPaymentDate: newForecast ?? null,
-          });
+          if (Object.keys(fields).length > 0) {
+            await storage.updateProgramExpenseFields(expenseId, fields);
+          }
         }
       }
 

@@ -830,9 +830,15 @@ export class DatabaseStorage implements IStorage {
       paymentDateConfirmed: 'paidDateConfirmed',
       paymentDateFontColor: 'paidDateFontColor',
     };
+    const validDbColumns = new Set(Object.values(fieldMap));
     for (const [key, value] of Object.entries(fields)) {
       const mapped = fieldMap[key] || key;
-      mappedFields[mapped] = value;
+      if (validDbColumns.has(mapped) || Object.keys(normalizedCostLines).includes(mapped)) {
+        mappedFields[mapped] = value;
+      }
+    }
+    if (Object.keys(mappedFields).length === 0) {
+      return undefined;
     }
     const canonicalId = id >= 900000 ? id - 900000 : id;
     const result = await this.dbInstance
