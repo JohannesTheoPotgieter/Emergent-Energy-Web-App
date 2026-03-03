@@ -29,24 +29,26 @@ import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
 import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getWorkItemsAsOperationalTasks, getWorkItemsAsMytoolTasks } from "./work-items-adapter";
 
+function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
+  if (fontColor === 'red') return false;
+  if (fontColor === 'black') return true;
+  if (confirmed === true) return true;
+  return false;
+}
+
 function isCosRealisedCheck(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
   const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
   const hasPO = !!(exp.expensePoNumber && String(exp.expensePoNumber).trim());
   if (!hasInvoice || !hasInvDate || !hasPO) return false;
-  const dateConfirmed =
-    exp.invoiceDateConfirmed === true ||
-    exp.invoiceDateFontColor === 'black';
-  return dateConfirmed;
+  return isDateConfirmedCheck(exp.invoiceDateConfirmed, exp.invoiceDateFontColor);
 }
 
 function isCashflowConfirmedCheck(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
   const hasPayDate = !!(exp.expensePaymentDate && String(exp.expensePaymentDate).trim());
   if (!hasInvoice || !hasPayDate) return false;
-  const payDateConfirmed =
-    exp.paymentDateConfirmed === true ||
-    exp.paymentDateFontColor === 'black';
+  const payDateConfirmed = isDateConfirmedCheck(exp.paymentDateConfirmed, exp.paymentDateFontColor);
   return payDateConfirmed;
 }
 
@@ -3475,9 +3477,9 @@ export async function registerRoutes(
           invoiceNumber: exp.expenseInvoiceNumber || null,
           poNumber: exp.expensePoNumber || null,
           invoiceDate: invDate,
-          invoiceDateConfirmed: exp.invoiceDateConfirmed === true || exp.invoiceDateFontColor === 'black',
+          invoiceDateConfirmed: isDateConfirmedCheck(exp.invoiceDateConfirmed, exp.invoiceDateFontColor),
           paymentDate: payDate,
-          paymentDateConfirmed: exp.paymentDateConfirmed === true,
+          paymentDateConfirmed: isDateConfirmedCheck(exp.paymentDateConfirmed, exp.paymentDateFontColor),
           supplier: exp.supplierName || null,
           isRealised,
           realisedMonth,
@@ -6759,9 +6761,7 @@ export async function registerRoutes(
 
         const hasInvoice = !!(exp.expenseInvoiceNumber && exp.expenseInvoiceNumber.trim());
         const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
-        const invoiceDateBlack = hasInvDate && (
-          exp.invoiceDateConfirmed === true || exp.invoiceDateFontColor === 'black'
-        );
+        const invoiceDateBlack = hasInvDate && isDateConfirmedCheck(exp.invoiceDateConfirmed, exp.invoiceDateFontColor);
 
         let cosStatus: string;
         if (hasInvoice && invoiceDateBlack) {
@@ -6775,9 +6775,7 @@ export async function registerRoutes(
         }
 
         const hasPayDate = !!(exp.expensePaymentDate && String(exp.expensePaymentDate).trim());
-        const paymentDateBlack = hasPayDate && (
-          exp.paymentDateConfirmed === true || exp.paymentDateFontColor === 'black'
-        );
+        const paymentDateBlack = hasPayDate && isDateConfirmedCheck(exp.paymentDateConfirmed, exp.paymentDateFontColor);
 
         let paymentStatus: string;
         if (paymentDateBlack && hasInvoice) {

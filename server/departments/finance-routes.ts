@@ -67,25 +67,26 @@ async function createPendingEditRequest(
 
 const router = Router();
 
+function isDateConfirmed(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
+  if (fontColor === 'red') return false;
+  if (fontColor === 'black') return true;
+  if (confirmed === true) return true;
+  return false;
+}
+
 function isCosRealised(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
   const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
   const hasPO = !!(exp.expensePoNumber && String(exp.expensePoNumber).trim());
   if (!hasPO || !hasInvoice || !hasInvDate) return false;
-  const dateConfirmed =
-    exp.invoiceDateConfirmed === true ||
-    exp.invoiceDateFontColor === 'black';
-  return dateConfirmed;
+  return isDateConfirmed(exp.invoiceDateConfirmed, exp.invoiceDateFontColor);
 }
 
 function isCashflowConfirmed(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
   const hasPayDate = !!(exp.expensePaymentDate && String(exp.expensePaymentDate).trim());
   if (!hasInvoice || !hasPayDate) return false;
-  const payDateConfirmed =
-    exp.paymentDateConfirmed === true ||
-    exp.paymentDateFontColor === 'black';
-  return payDateConfirmed;
+  return isDateConfirmed(exp.paymentDateConfirmed, exp.paymentDateFontColor);
 }
 
 function getWeekStartDate(dateStr: string): string {
@@ -2508,9 +2509,7 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
       const hasPO = !!(exp.expensePoNumber && exp.expensePoNumber.trim());
       const hasInvoice = !!(exp.expenseInvoiceNumber && exp.expenseInvoiceNumber.trim());
       const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
-      const invoiceDateBlack = hasInvDate && (
-        exp.invoiceDateConfirmed === true || exp.invoiceDateFontColor === 'black'
-      );
+      const invoiceDateBlack = hasInvDate && isDateConfirmed(exp.invoiceDateConfirmed, exp.invoiceDateFontColor);
 
       let cosStatus: string;
       if (hasPO && hasInvoice && invoiceDateBlack) {
@@ -2524,9 +2523,7 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
       }
 
       const hasPayDate = !!(exp.expensePaymentDate && String(exp.expensePaymentDate).trim());
-      const paymentDateBlack = hasPayDate && (
-        exp.paymentDateConfirmed === true || exp.paymentDateFontColor === 'black'
-      );
+      const paymentDateBlack = hasPayDate && isDateConfirmed(exp.paymentDateConfirmed, exp.paymentDateFontColor);
 
       let paymentStatus: string;
       if (paymentDateBlack && hasInvoice) {
