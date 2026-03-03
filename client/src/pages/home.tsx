@@ -1038,32 +1038,40 @@ function PortfolioHealthWidget({ projects }: { projects: ProjectSummary[] }) {
       <CardContent>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           <button
-            className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-blue-300 ${expandedStat === "all" ? "ring-2 ring-blue-400 bg-blue-100 dark:bg-blue-900/50" : "bg-blue-50 dark:bg-blue-950/30"}`}
+            className={`text-center p-3 min-h-[44px] rounded-lg transition-all duration-200 ease-out cursor-pointer hover:ring-2 hover:ring-blue-300 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${expandedStat === "all" ? "ring-2 ring-blue-400 bg-blue-100 dark:bg-blue-900/50" : "bg-blue-50 dark:bg-blue-950/30"}`}
             onClick={() => toggleStat("all")}
+            aria-label={`View ${totalProjects} active projects`}
+            aria-expanded={expandedStat === "all"}
             data-testid="portfolio-total-btn"
           >
             <div className="text-xl font-bold text-blue-700 dark:text-blue-400" data-testid="portfolio-total">{totalProjects}</div>
             <div className="text-[10px] text-muted-foreground uppercase">Active Projects</div>
           </button>
           <button
-            className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-emerald-300 ${expandedStat === "ontrack" ? "ring-2 ring-emerald-400 bg-emerald-100 dark:bg-emerald-900/50" : "bg-emerald-50 dark:bg-emerald-950/30"}`}
+            className={`text-center p-3 min-h-[44px] rounded-lg transition-all duration-200 ease-out cursor-pointer hover:ring-2 hover:ring-emerald-300 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none ${expandedStat === "ontrack" ? "ring-2 ring-emerald-400 bg-emerald-100 dark:bg-emerald-900/50" : "bg-emerald-50 dark:bg-emerald-950/30"}`}
             onClick={() => toggleStat("ontrack")}
+            aria-label={`View ${onTrackProjects.length} on-track projects`}
+            aria-expanded={expandedStat === "ontrack"}
             data-testid="portfolio-on-track-btn"
           >
             <div className="text-xl font-bold text-emerald-700 dark:text-emerald-400" data-testid="portfolio-on-track">{onTrackProjects.length}</div>
             <div className="text-[10px] text-muted-foreground uppercase">On Track</div>
           </button>
           <button
-            className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-red-300 ${expandedStat === "behind" ? "ring-2 ring-red-400 bg-red-100 dark:bg-red-900/50" : "bg-red-50 dark:bg-red-950/30"}`}
+            className={`text-center p-3 min-h-[44px] rounded-lg transition-all duration-200 ease-out cursor-pointer hover:ring-2 hover:ring-red-300 focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:outline-none ${expandedStat === "behind" ? "ring-2 ring-red-400 bg-red-100 dark:bg-red-900/50" : "bg-red-50 dark:bg-red-950/30"}`}
             onClick={() => toggleStat("behind")}
+            aria-label={`View ${behindProjects.length} projects behind plan`}
+            aria-expanded={expandedStat === "behind"}
             data-testid="portfolio-behind-btn"
           >
             <div className="text-xl font-bold text-red-700 dark:text-red-400" data-testid="portfolio-behind">{behindProjects.length}</div>
             <div className="text-[10px] text-muted-foreground uppercase">Behind Plan</div>
           </button>
           <button
-            className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-purple-300 ${expandedStat === "avg" ? "ring-2 ring-purple-400 bg-purple-100 dark:bg-purple-900/50" : "bg-purple-50 dark:bg-purple-950/30"}`}
+            className={`text-center p-3 min-h-[44px] rounded-lg transition-all duration-200 ease-out cursor-pointer hover:ring-2 hover:ring-purple-300 focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:outline-none ${expandedStat === "avg" ? "ring-2 ring-purple-400 bg-purple-100 dark:bg-purple-900/50" : "bg-purple-50 dark:bg-purple-950/30"}`}
             onClick={() => toggleStat("avg")}
+            aria-label={`View projects by completion, average ${Math.round(avgCompletion * 100)}%`}
+            aria-expanded={expandedStat === "avg"}
             data-testid="portfolio-avg-btn"
           >
             <div className="text-xl font-bold text-purple-700 dark:text-purple-400" data-testid="portfolio-avg">{Math.round(avgCompletion * 100)}%</div>
@@ -1075,11 +1083,16 @@ function PortfolioHealthWidget({ projects }: { projects: ProjectSummary[] }) {
           <div className="mb-4 border rounded-lg overflow-hidden animate-in slide-in-from-top-2 duration-200" data-testid="portfolio-detail-panel">
             <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
               <span className="text-xs font-semibold text-muted-foreground">{detailTitle}</span>
-              <button onClick={() => setExpandedStat(null)} className="text-muted-foreground hover:text-foreground" data-testid="btn-close-portfolio-detail">
+              <button
+                onClick={() => setExpandedStat(null)}
+                className="text-muted-foreground hover:text-foreground p-1.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none transition-colors duration-200"
+                aria-label="Close detail panel"
+                data-testid="btn-close-portfolio-detail"
+              >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <div className="divide-y max-h-[280px] overflow-y-auto">
+            <div className="divide-y max-h-[280px] overflow-y-auto" aria-label={detailTitle}>
               {detailProjects.map(p => {
                 const pct = Math.round((p.project_pct_complete ?? 0) * 100);
                 const delta = Math.round((p.delta_vs_expected ?? 0) * 100);
@@ -1087,8 +1100,12 @@ function PortfolioHealthWidget({ projects }: { projects: ProjectSummary[] }) {
                 return (
                   <div
                     key={p.project_name}
-                    className="flex items-center gap-3 px-3 py-2 hover:bg-muted/30 cursor-pointer transition-colors"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${cleanProjectName(p.project_name)}, ${pct}% complete. Click to view project.`}
+                    className="flex items-center gap-3 px-3 py-2.5 min-h-[44px] hover:bg-muted/30 cursor-pointer transition-colors duration-200 ease-out focus-visible:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
                     onClick={() => navigate(`/project/${encodeURIComponent(p.project_name)}`)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(`/project/${encodeURIComponent(p.project_name)}`); } }}
                     data-testid={`portfolio-detail-${p.project_name}`}
                   >
                     <div className="flex-1 min-w-0">
@@ -1222,48 +1239,60 @@ function FinancialHeadlineWidget({ projects }: { projects: ProjectSummary[] }) {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <button
-              className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-emerald-300 ${expandedStat === "revenue" ? "ring-2 ring-emerald-400 bg-emerald-100 dark:bg-emerald-900/50" : "bg-emerald-50 dark:bg-emerald-950/30"}`}
+              className={`text-center p-3 min-h-[44px] rounded-lg transition-all duration-200 ease-out cursor-pointer hover:ring-2 hover:ring-emerald-300 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none ${expandedStat === "revenue" ? "ring-2 ring-emerald-400 bg-emerald-100 dark:bg-emerald-900/50" : "bg-emerald-50 dark:bg-emerald-950/30"}`}
               onClick={() => toggleStat("revenue")}
+              aria-label={`View total revenue ${fmt(totalRevenue)}`}
+              aria-expanded={expandedStat === "revenue"}
               data-testid="fin-revenue-btn"
             >
               <div className="text-lg font-bold text-emerald-700 dark:text-emerald-400" data-testid="fin-revenue">{fmt(totalRevenue)}</div>
               <div className="text-[10px] text-muted-foreground uppercase">Total Revenue</div>
             </button>
             <button
-              className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-blue-300 ${expandedStat === "expenses" ? "ring-2 ring-blue-400 bg-blue-100 dark:bg-blue-900/50" : "bg-blue-50 dark:bg-blue-950/30"}`}
+              className={`text-center p-3 min-h-[44px] rounded-lg transition-all duration-200 ease-out cursor-pointer hover:ring-2 hover:ring-blue-300 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none ${expandedStat === "expenses" ? "ring-2 ring-blue-400 bg-blue-100 dark:bg-blue-900/50" : "bg-blue-50 dark:bg-blue-950/30"}`}
               onClick={() => toggleStat("expenses")}
+              aria-label={`View total expenses ${fmt(totalExpenses)}`}
+              aria-expanded={expandedStat === "expenses"}
               data-testid="fin-expenses-btn"
             >
               <div className="text-lg font-bold text-blue-700 dark:text-blue-400" data-testid="fin-expenses">{fmt(totalExpenses)}</div>
               <div className="text-[10px] text-muted-foreground uppercase">Total Expenses</div>
             </button>
             <button
-              className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-purple-300 ${expandedStat === "gp" ? "ring-2 ring-purple-400 bg-purple-100 dark:bg-purple-900/50" : "bg-purple-50 dark:bg-purple-950/30"}`}
+              className={`text-center p-3 min-h-[44px] rounded-lg transition-all duration-200 ease-out cursor-pointer hover:ring-2 hover:ring-purple-300 focus-visible:ring-2 focus-visible:ring-purple-500 focus-visible:outline-none ${expandedStat === "gp" ? "ring-2 ring-purple-400 bg-purple-100 dark:bg-purple-900/50" : "bg-purple-50 dark:bg-purple-950/30"}`}
               onClick={() => toggleStat("gp")}
+              aria-label={`View gross profit ${fmt(grossProfit)}`}
+              aria-expanded={expandedStat === "gp"}
               data-testid="fin-gp-btn"
             >
               <div className={`text-lg font-bold ${grossProfit >= 0 ? "text-purple-700 dark:text-purple-400" : "text-red-600"}`} data-testid="fin-gp">{fmt(grossProfit)}</div>
               <div className="text-[10px] text-muted-foreground uppercase">Gross Profit</div>
             </button>
             <button
-              className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-amber-300 ${expandedStat === "gpmargin" ? "ring-2 ring-amber-400 bg-amber-100 dark:bg-amber-900/50" : "bg-amber-50 dark:bg-amber-950/30"}`}
+              className={`text-center p-3 min-h-[44px] rounded-lg transition-all duration-200 ease-out cursor-pointer hover:ring-2 hover:ring-amber-300 focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:outline-none ${expandedStat === "gpmargin" ? "ring-2 ring-amber-400 bg-amber-100 dark:bg-amber-900/50" : "bg-amber-50 dark:bg-amber-950/30"}`}
               onClick={() => toggleStat("gpmargin")}
+              aria-label={`View GP margin ${gpPercent.toFixed(1)}%`}
+              aria-expanded={expandedStat === "gpmargin"}
               data-testid="fin-gp-pct-btn"
             >
               <div className={`text-lg font-bold ${gpPercent >= 15 ? "text-amber-700 dark:text-amber-400" : "text-red-600"}`} data-testid="fin-gp-pct">{gpPercent.toFixed(1)}%</div>
               <div className="text-[10px] text-muted-foreground uppercase">GP Margin</div>
             </button>
             <button
-              className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-orange-300 ${expandedStat === "outstanding" ? "ring-2 ring-orange-400 bg-orange-100 dark:bg-orange-900/50" : "bg-orange-50 dark:bg-orange-950/30"}`}
+              className={`text-center p-3 min-h-[44px] rounded-lg transition-all duration-200 ease-out cursor-pointer hover:ring-2 hover:ring-orange-300 focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:outline-none ${expandedStat === "outstanding" ? "ring-2 ring-orange-400 bg-orange-100 dark:bg-orange-900/50" : "bg-orange-50 dark:bg-orange-950/30"}`}
               onClick={() => toggleStat("outstanding")}
+              aria-label={`View revenue outstanding ${fmt(revenueOutstanding)}`}
+              aria-expanded={expandedStat === "outstanding"}
               data-testid="fin-outstanding-btn"
             >
               <div className="text-lg font-bold text-orange-700 dark:text-orange-400" data-testid="fin-outstanding">{fmt(revenueOutstanding)}</div>
               <div className="text-[10px] text-muted-foreground uppercase">Rev Outstanding</div>
             </button>
             <button
-              className={`text-center p-2 rounded-lg transition-all cursor-pointer hover:ring-2 hover:ring-red-300 ${expandedStat === "due" ? "ring-2 ring-red-400 bg-red-100 dark:bg-red-900/50" : "bg-red-50 dark:bg-red-950/30"}`}
+              className={`text-center p-3 min-h-[44px] rounded-lg transition-all duration-200 ease-out cursor-pointer hover:ring-2 hover:ring-red-300 focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:outline-none ${expandedStat === "due" ? "ring-2 ring-red-400 bg-red-100 dark:bg-red-900/50" : "bg-red-50 dark:bg-red-950/30"}`}
               onClick={() => toggleStat("due")}
+              aria-label={`View expenses due ${fmt(expensesDue)}`}
+              aria-expanded={expandedStat === "due"}
               data-testid="fin-due-btn"
             >
               <div className="text-lg font-bold text-red-700 dark:text-red-400" data-testid="fin-due">{fmt(expensesDue)}</div>
@@ -1276,11 +1305,16 @@ function FinancialHeadlineWidget({ projects }: { projects: ProjectSummary[] }) {
           <div className="mt-4 border rounded-lg overflow-hidden animate-in slide-in-from-top-2 duration-200" data-testid="financial-detail-panel">
             <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b">
               <span className="text-xs font-semibold text-muted-foreground">{detailConfig[expandedStat].title}</span>
-              <button onClick={() => setExpandedStat(null)} className="text-muted-foreground hover:text-foreground" data-testid="btn-close-financial-detail">
+              <button
+                onClick={() => setExpandedStat(null)}
+                className="text-muted-foreground hover:text-foreground p-1.5 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none transition-colors duration-200"
+                aria-label="Close financial detail panel"
+                data-testid="btn-close-financial-detail"
+              >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <div className="divide-y max-h-[280px] overflow-y-auto">
+            <div className="divide-y max-h-[280px] overflow-y-auto" aria-label={detailConfig[expandedStat].title}>
               {detailProjects.map(p => {
                 const valueKey = detailConfig[expandedStat].valueKey;
                 const value = (p as any)[valueKey] ?? 0;
@@ -1289,8 +1323,12 @@ function FinancialHeadlineWidget({ projects }: { projects: ProjectSummary[] }) {
                 return (
                   <div
                     key={p.project_name}
-                    className="flex items-center gap-3 px-3 py-2 hover:bg-muted/30 cursor-pointer transition-colors"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${cleanProjectName(p.project_name)}, ${isPercent ? value.toFixed(1) + "%" : fmt(value)}. Click to view project.`}
+                    className="flex items-center gap-3 px-3 py-2.5 min-h-[44px] hover:bg-muted/30 cursor-pointer transition-colors duration-200 ease-out focus-visible:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
                     onClick={() => navigate(`/project/${encodeURIComponent(p.project_name)}`)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(`/project/${encodeURIComponent(p.project_name)}`); } }}
                     data-testid={`fin-detail-${p.project_name}`}
                   >
                     <div className="flex-1 min-w-0">
@@ -1446,12 +1484,16 @@ function AlertsWidget({ projects }: { projects: ProjectSummary[] }) {
             return (
               <div
                 key={alert.id}
-                className={`flex items-center gap-2.5 p-2 rounded-lg border text-sm cursor-pointer transition-colors hover:shadow-sm ${
+                role="button"
+                tabIndex={0}
+                className={`flex items-center gap-2.5 p-3 min-h-[44px] rounded-lg border text-sm cursor-pointer transition-colors duration-200 ease-out hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                   alert.severity === "red"
                     ? "border-red-200 bg-red-50/30 dark:border-red-900/30 dark:bg-red-950/10 hover:bg-red-50 dark:hover:bg-red-950/20"
                     : "border-amber-200 bg-amber-50/30 dark:border-amber-900/30 dark:bg-amber-950/10 hover:bg-amber-50 dark:hover:bg-amber-950/20"
                 }`}
                 onClick={() => navigate(`/project/${encodeURIComponent(alert.projectName)}`)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(`/project/${encodeURIComponent(alert.projectName)}`); } }}
+                aria-label={`${alert.title}: ${alert.detail}. Click to view project.`}
                 data-testid={`alert-${alert.id}`}
               >
                 <Icon className={`h-4 w-4 shrink-0 ${alert.severity === "red" ? "text-red-500" : "text-amber-500"}`} />
