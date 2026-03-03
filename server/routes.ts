@@ -8013,7 +8013,7 @@ export async function registerRoutes(
   app.patch("/api/working-plan/tasks/:taskId", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { taskId } = req.params;
-      const { projectName, startDate, endDate, name, taskNo, comment } = req.body;
+      const { projectName, startDate, endDate, name, taskNo, comment, percentComplete } = req.body;
 
       if (!projectName) {
         return res.status(400).json({ error: "validation_error", message: "projectName is required" });
@@ -8022,7 +8022,6 @@ export async function registerRoutes(
       const scenario = await storage.getOrCreateActiveScenario(projectName);
       const id = parseInt(taskId);
 
-      // Check if override already exists for this task
       const existingOverrides = await storage.getTaskOverridesByScenario(scenario.id);
       const existing = existingOverrides.find(o => o.importedTaskId === id);
 
@@ -8047,6 +8046,22 @@ export async function registerRoutes(
           deletedFlag: 0,
           isNewTask: 0,
         });
+      }
+
+      if (percentComplete !== undefined && percentComplete !== null) {
+        const parsed = parseInt(String(percentComplete));
+        if (isNaN(parsed) || parsed < 0 || parsed > 100) {
+          return res.status(400).json({ error: "BAD_REQUEST", message: "percentComplete must be between 0 and 100" });
+        }
+        const pctVal = parsed / 100;
+        await safeLegacyWrite(() => db.update(projectPlan).set({ actualPctComplete: pctVal }).where(eq(projectPlan.id, id)));
+        try {
+          await db.update(workItems).set({ percentComplete: pctVal }).where(
+            and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, id))
+          );
+        } catch (e) {
+          console.warn(`[working-plan] Failed to sync percentComplete to work_items for task ${id}:`, e);
+        }
       }
       sendExcelSyncNotification({
         projectName,
