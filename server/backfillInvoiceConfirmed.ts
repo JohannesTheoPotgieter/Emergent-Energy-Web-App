@@ -174,8 +174,13 @@ export async function backfillInvoiceDateConfirmed(): Promise<{ updated: number;
         }
 
         if (updates.length > 0) {
+          const nclUpdates = updates
+            .map(u => u.replace('invoice_date_confirmed', 'invoice_date_confirmed')
+                       .replace('invoice_date_font_color', 'invoice_date_font_color')
+                       .replace('payment_date_confirmed', 'paid_date_confirmed')
+                       .replace('payment_date_font_color', 'paid_date_font_color'));
           await pool.query(
-            `UPDATE program_expense SET ${updates.join(", ")} WHERE project_name = $1 AND row_number = $2`,
+            `UPDATE normalized_cost_lines SET ${nclUpdates.join(", ")} WHERE project_name = $1 AND source_row = $2`,
             params
           );
           totalUpdated++;
