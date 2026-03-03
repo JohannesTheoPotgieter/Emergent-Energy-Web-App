@@ -1795,7 +1795,7 @@ function NotificationsTab() {
   );
 }
 
-function TeamsChatTab() {
+function TeamsChatSection() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
 
@@ -1843,7 +1843,7 @@ function TeamsChatTab() {
   const hasContent = myGroups.length > 0 || (msTeams && msTeams.length > 0) || (msChats && msChats.length > 0);
 
   return (
-    <div className="space-y-4" data-testid="teams-chat-tab">
+    <div className="space-y-3" data-testid="teams-chat-section">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">Your MS Teams channels and dashboard chats</p>
         <Button variant="outline" size="sm" onClick={() => navigate("/teams/chats")} data-testid="teams-open-full">
@@ -1852,12 +1852,12 @@ function TeamsChatTab() {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       ) : !hasContent ? (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <MessageSquare className="h-10 w-10 text-muted-foreground mb-3" />
+        <div className="flex flex-col items-center justify-center py-8 text-center">
+          <MessageSquare className="h-8 w-8 text-muted-foreground mb-2" />
           <p className="text-muted-foreground text-sm">No chat channels found</p>
           <p className="text-xs text-muted-foreground mt-1">Teams permissions may need to be granted in Azure</p>
           <Button variant="outline" size="sm" className="mt-3" onClick={() => navigate("/teams/chats")} data-testid="teams-go-create">
@@ -1972,6 +1972,47 @@ function TeamsChatTab() {
   );
 }
 
+function CombinedTeamsTab() {
+  const [activeSection, setActiveSection] = useState<"activity" | "chat">("activity");
+
+  return (
+    <div className="space-y-4" data-testid="combined-teams-tab">
+      <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1" data-testid="teams-section-toggle">
+        <button
+          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+            activeSection === "activity"
+              ? "bg-white text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => setActiveSection("activity")}
+          data-testid="teams-section-activity"
+        >
+          <Zap className="h-4 w-4" />
+          Activity
+        </button>
+        <button
+          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+            activeSection === "chat"
+              ? "bg-white text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => setActiveSection("chat")}
+          data-testid="teams-section-chat"
+        >
+          <MessageSquare className="h-4 w-4" />
+          Chat
+        </button>
+      </div>
+
+      {activeSection === "activity" ? (
+        <SyncedTeamsTab />
+      ) : (
+        <TeamsChatSection />
+      )}
+    </div>
+  );
+}
+
 export default function CollaborationPage() {
   const { user } = useAuth();
   const { allowed, loading: permLoading } = usePermission("pd_collaboration", "view");
@@ -2058,7 +2099,7 @@ export default function CollaborationPage() {
               <SyncedEmailTab />
             </TabsContent>
             <TabsContent value="teams">
-              <SyncedTeamsTab />
+              <CombinedTeamsTab />
             </TabsContent>
             <TabsContent value="sharepoint">
               <SyncedSharePointTab />
@@ -2119,7 +2160,7 @@ export default function CollaborationPage() {
             <EmailTab />
           </TabsContent>
           <TabsContent value="teams">
-            <TeamsChatTab />
+            <CombinedTeamsTab />
           </TabsContent>
           <TabsContent value="sharepoint">
             <SharePointTab />
