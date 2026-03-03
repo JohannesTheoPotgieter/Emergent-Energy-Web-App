@@ -10862,6 +10862,57 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/planning-tasks/:projectName/summary-rollup", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectName = decodeURIComponent(req.params.projectName);
+      const allTasks = await db.select().from(workItems).where(
+        and(eq(workItems.workstream, "PM"), eq(workItems.projectName, projectName), isNull(workItems.deletedAt))
+      );
+
+      const childrenByParent = new Map<number, typeof allTasks>();
+      for (const t of allTasks) {
+        if (t.parentId) {
+          if (!childrenByParent.has(t.parentId)) childrenByParent.set(t.parentId, []);
+          childrenByParent.get(t.parentId)!.push(t);
+        }
+      }
+
+      const rollup: Record<number, { percentComplete: number; startDate: string | null; endDate: string | null; duration: number | null }> = {};
+
+      for (const [parentId, children] of childrenByParent) {
+        let minStart: string | null = null;
+        let maxEnd: string | null = null;
+        let totalDuration = 0;
+        let weightedPct = 0;
+        let totalWeight = 0;
+
+        for (const c of children) {
+          const s = c.startDate;
+          const e = c.endDate;
+          if (s && (!minStart || s < minStart)) minStart = s;
+          if (e && (!maxEnd || e > maxEnd)) maxEnd = e;
+          const dur = c.duration || 1;
+          totalDuration += dur;
+          const pct = c.percentComplete != null ? Number(c.percentComplete) : 0;
+          weightedPct += pct * dur;
+          totalWeight += dur;
+        }
+
+        rollup[parentId] = {
+          percentComplete: totalWeight > 0 ? Math.round((weightedPct / totalWeight) * 100) / 100 : 0,
+          startDate: minStart,
+          endDate: maxEnd,
+          duration: totalDuration || null,
+        };
+      }
+
+      res.json(rollup);
+    } catch (err: any) {
+      console.error("Summary rollup error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ==================== PLAN TASK EDITING (with COO notifications) ====================
 
   const canEditProjectTasks = async (req: Request, projectName: string): Promise<boolean> => {
@@ -11067,6 +11118,31 @@ export async function registerRoutes(
         if (updates.priority != null) {
           wiUpdateFields.priority = updates.priority;
         }
+        if (updates.duration != null) {
+          wiUpdateFields.duration = updates.duration;
+          notifFields.push({ field: "duration", old: wi.duration != null ? String(wi.duration) : null, new_: String(updates.duration) });
+          if (updates.startDate || wi.startDate) {
+            const start = new Date(updates.startDate || wi.startDate!);
+            start.setDate(start.getDate() + updates.duration);
+            wiUpdateFields.endDate = start.toISOString().split("T")[0];
+          }
+        }
+        if (updates.assigneeUserId != null) {
+          wiUpdateFields.ownerUserId = updates.assigneeUserId || null;
+          notifFields.push({ field: "assignee", old: wi.ownerUserId ? String(wi.ownerUserId) : null, new_: String(updates.assigneeUserId) });
+        }
+        if (updates.wbsCode != null) {
+          wiUpdateFields.wbsCode = updates.wbsCode;
+        }
+        if (updates.baselineStart != null) {
+          wiUpdateFields.baselineStart = updates.baselineStart;
+        }
+        if (updates.baselineEnd != null) {
+          wiUpdateFields.baselineEnd = updates.baselineEnd;
+        }
+        if (updates.baselineDuration != null) {
+          wiUpdateFields.baselineDuration = updates.baselineDuration;
+        }
 
         if (updates.status === "Done" && updates.percentComplete == null) {
           wiUpdateFields.percentComplete = 1.0;
@@ -11210,6 +11286,126 @@ export async function registerRoutes(
       res.json(task);
     } catch (err: any) {
       console.error("Plan task create error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/planning-tasks/bulk", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const { projectName, operation, taskIds } = req.body;
+      if (!projectName || !operation || !Array.isArray(taskIds) || taskIds.length === 0) {
+        return res.status(400).json({ error: "projectName, operation, and taskIds[] required" });
+      }
+
+      const canEdit = await canEditProjectTasks(req, projectName);
+      if (!canEdit) return res.status(403).json({ error: "No permission" });
+
+      const results: Array<{ id: number; success: boolean; error?: string }> = [];
+
+      if (operation === "delete") {
+        for (const id of taskIds) {
+          try {
+            await db.update(workItems).set({ deletedAt: new Date() }).where(eq(workItems.id, id));
+            results.push({ id, success: true });
+          } catch (e: any) {
+            results.push({ id, success: false, error: e.message });
+          }
+        }
+      } else if (operation === "indent") {
+        for (const id of taskIds) {
+          try {
+            const [task] = await db.select().from(workItems).where(eq(workItems.id, id));
+            if (task) {
+              const siblings = await db.select().from(workItems).where(
+                and(eq(workItems.projectName, projectName), eq(workItems.workstream, "PM"), isNull(workItems.deletedAt), eq(workItems.parentId, task.parentId || 0))
+              );
+              const sorted = siblings.sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+              const idx = sorted.findIndex((s: any) => s.id === id);
+              if (idx > 0) {
+                await db.update(workItems).set({ parentId: sorted[idx - 1].id, indentLevel: (task.indentLevel || 0) + 1 }).where(eq(workItems.id, id));
+                results.push({ id, success: true });
+              } else {
+                results.push({ id, success: false, error: "No task above to indent under" });
+              }
+            }
+          } catch (e: any) {
+            results.push({ id, success: false, error: e.message });
+          }
+        }
+      } else if (operation === "outdent") {
+        for (const id of taskIds) {
+          try {
+            const [task] = await db.select().from(workItems).where(eq(workItems.id, id));
+            if (task && task.parentId) {
+              const [parent] = await db.select().from(workItems).where(eq(workItems.id, task.parentId));
+              await db.update(workItems).set({
+                parentId: parent?.parentId || null,
+                indentLevel: Math.max(0, (task.indentLevel || 1) - 1),
+              }).where(eq(workItems.id, id));
+              results.push({ id, success: true });
+            } else {
+              results.push({ id, success: false, error: "Already at top level" });
+            }
+          } catch (e: any) {
+            results.push({ id, success: false, error: e.message });
+          }
+        }
+      } else if (operation === "moveUp" || operation === "moveDown") {
+        for (const id of taskIds) {
+          try {
+            const [task] = await db.select().from(workItems).where(eq(workItems.id, id));
+            if (task) {
+              const siblings = await db.select().from(workItems).where(
+                and(
+                  eq(workItems.projectName, projectName),
+                  eq(workItems.workstream, "PM"),
+                  isNull(workItems.deletedAt),
+                  task.parentId ? eq(workItems.parentId, task.parentId) : isNull(workItems.parentId)
+                )
+              );
+              const sorted = siblings.sort((a: any, b: any) => (a.sortOrder ?? a.id) - (b.sortOrder ?? b.id));
+              const idx = sorted.findIndex((s: any) => s.id === id);
+              const swapIdx = operation === "moveUp" ? idx - 1 : idx + 1;
+              if (swapIdx >= 0 && swapIdx < sorted.length) {
+                const curOrder = sorted[idx].sortOrder ?? idx * 10;
+                const swapOrder = sorted[swapIdx].sortOrder ?? swapIdx * 10;
+                await db.update(workItems).set({ sortOrder: swapOrder }).where(eq(workItems.id, sorted[idx].id));
+                await db.update(workItems).set({ sortOrder: curOrder }).where(eq(workItems.id, sorted[swapIdx].id));
+                results.push({ id, success: true });
+              } else {
+                results.push({ id, success: false, error: `Cannot move ${operation === "moveUp" ? "up" : "down"}` });
+              }
+            }
+          } catch (e: any) {
+            results.push({ id, success: false, error: e.message });
+          }
+        }
+      } else {
+        return res.status(400).json({ error: `Unknown operation: ${operation}` });
+      }
+
+      const succeeded = results.filter(r => r.success).length;
+
+      sendExcelSyncNotification({
+        projectName,
+        changedByUserId: user.id || 0,
+        changeType: `plan_bulk_${operation}`,
+        changeDescription: `Bulk ${operation}: ${succeeded}/${taskIds.length} tasks.`,
+        details: { operation, taskIds, results },
+      }).catch(() => {});
+
+      logAuditFromReq(req, {
+        entityType: "plan_task",
+        action: `bulk_${operation}`,
+        entityId: taskIds.join(","),
+        projectName,
+        changesJson: { operation, taskIds, succeeded },
+      });
+
+      res.json({ success: true, results });
+    } catch (err: any) {
+      console.error("Bulk plan task error:", err);
       res.status(500).json({ error: err.message });
     }
   });

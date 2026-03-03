@@ -13,7 +13,9 @@ import { getErrorMessage } from "@/lib/errors";
 import {
   Save, RotateCcw, Loader2, ChevronDown, ChevronRight, Filter,
   Columns, ChevronsUpDown, ChevronsDownUp, Plus, Link, Unlink,
-  X, Search, ListPlus, ClipboardList, CalendarIcon, Palette
+  X, Search, ListPlus, ClipboardList, CalendarIcon, Palette,
+  TrendingUp, TrendingDown, DollarSign, BarChart3, Percent,
+  CircleDot, Wallet, CheckCircle2
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -39,6 +41,14 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format, parse, isValid } from "date-fns";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface EnrichedExpense {
   id: number;
@@ -74,6 +84,14 @@ interface EnrichedExpense {
   cosOverride: { reason: string; overriddenBy: string | null; originalStatus: string; overrideStatus: string } | null;
 }
 
+interface ExpenditureOverride {
+  id: number;
+  projectName: string;
+  rowNumber: number;
+  fieldName: string;
+  overrideValue: string;
+}
+
 interface CategoryGroup {
   category: string;
   items: EnrichedExpense[];
@@ -91,7 +109,7 @@ interface ExpenditureEditableTabProps {
 type ColumnKey =
   | "description" | "actualTotal" | "poNumber" | "invoiceNo"
   | "invoiceDate" | "paymentDate" | "linkedTask" | "cosStatus"
-  | "paymentStatus" | "plannedMonth" | "budgetTotal" | "variance" | "revenueAmount";
+  | "paymentStatus" | "plannedMonth" | "budgetTotal" | "variance" | "revenueAmount" | "supplier";
 
 interface ColumnDef {
   key: ColumnKey;
@@ -103,6 +121,7 @@ interface ColumnDef {
 
 const COLUMNS: ColumnDef[] = [
   { key: "description", label: "Description", defaultVisible: true, align: "left", minWidth: "200px" },
+  { key: "budgetTotal", label: "Costed Total", defaultVisible: true, align: "right", minWidth: "120px" },
   { key: "actualTotal", label: "Actual Total", defaultVisible: true, align: "right", minWidth: "120px" },
   { key: "poNumber", label: "PO Number", defaultVisible: true, align: "left", minWidth: "110px" },
   { key: "invoiceNo", label: "Invoice No", defaultVisible: true, align: "left", minWidth: "110px" },
@@ -112,7 +131,7 @@ const COLUMNS: ColumnDef[] = [
   { key: "cosStatus", label: "COS Status", defaultVisible: true, align: "center", minWidth: "110px" },
   { key: "paymentStatus", label: "Payment Status", defaultVisible: true, align: "center", minWidth: "110px" },
   { key: "plannedMonth", label: "Planned Month", defaultVisible: true, align: "center", minWidth: "100px" },
-  { key: "budgetTotal", label: "Costed Total", defaultVisible: false, align: "right", minWidth: "120px" },
+  { key: "supplier", label: "Supplier", defaultVisible: false, align: "left", minWidth: "130px" },
   { key: "revenueAmount", label: "Rev Recognition", defaultVisible: false, align: "right", minWidth: "130px" },
   { key: "variance", label: "Variance", defaultVisible: false, align: "right", minWidth: "110px" },
 ];
@@ -144,6 +163,19 @@ const formatMonth = (value: string | null): string => {
   }
 };
 
+const getRowStatusBadge = (exp: EnrichedExpense) => {
+  if (exp.paymentStatus === "Out of Bank") {
+    return <Badge data-testid={`badge-status-${exp.id}`} className="text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap bg-emerald-50 text-emerald-700 border-emerald-300" variant="outline">Paid</Badge>;
+  }
+  if (exp.cosStatus === "COS Realised" || (exp.expenseInvoiceNumber && exp.expenseInvoicedDate)) {
+    return <Badge data-testid={`badge-status-${exp.id}`} className="text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap bg-amber-50 text-amber-700 border-amber-300" variant="outline">Invoiced</Badge>;
+  }
+  if (exp.expensePoNumber && exp.expensePoNumber.trim()) {
+    return <Badge data-testid={`badge-status-${exp.id}`} className="text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap bg-blue-50 text-blue-600 border-blue-200" variant="outline">Committed</Badge>;
+  }
+  return <Badge data-testid={`badge-status-${exp.id}`} className="text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap bg-slate-100 text-slate-600 border-slate-200" variant="outline">Planned</Badge>;
+};
+
 const getCosStatusBadge = (status: string) => {
   const colors: Record<string, string> = {
     "COS Realised": "bg-emerald-50 text-emerald-700 border-emerald-300",
@@ -170,6 +202,21 @@ const getPaymentStatusBadge = (status: string) => {
     </Badge>
   );
 };
+
+const OverrideDot = ({ originalValue }: { originalValue: string }) => (
+  <TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex items-center ml-1 shrink-0 cursor-help">
+          <CircleDot className="h-3 w-3 text-blue-500" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-xs bg-blue-50 border-blue-200 text-blue-800">
+        <span>Manual override: {originalValue || "(empty)"}</span>
+      </TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+);
 
 export function ExpenditureEditableTab({ projectName, highlightId }: ExpenditureEditableTabProps) {
   const { isAdmin } = useAuth();
@@ -199,6 +246,9 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   const [cosOverrideTarget, setCosOverrideTarget] = useState<EnrichedExpense | null>(null);
   const [cosOverrideStatus, setCosOverrideStatus] = useState("COS Realised");
   const [cosOverrideReason, setCosOverrideReason] = useState("");
+  const [supplierSearchTerm, setSupplierSearchTerm] = useState("");
+  const [overrideCategory, setOverrideCategory] = useState("DATA_CORRECTION");
+  const [overrideComment, setOverrideComment] = useState("");
 
   const breakdownKey = ["expenditure-breakdown", projectName];
 
@@ -223,6 +273,32 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     },
     enabled: !!projectName,
   });
+
+  const { data: overridesData = [] } = useQuery<ExpenditureOverride[]>({
+    queryKey: ["expenditure-overrides", projectName],
+    queryFn: async () => {
+      const res = await authFetch(`/api/expenditure/overrides?projectName=${encodeURIComponent(projectName)}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectName,
+  });
+
+  const overrideMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const o of overridesData) {
+      map.set(`${o.rowNumber}::${o.fieldName}`, o.overrideValue);
+    }
+    return map;
+  }, [overridesData]);
+
+  const hasOverride = useCallback((rowNumber: number, fieldName: string): boolean => {
+    return overrideMap.has(`${rowNumber}::${fieldName}`);
+  }, [overrideMap]);
+
+  const getOriginalValue = useCallback((rowNumber: number, fieldName: string): string | undefined => {
+    return overrideMap.get(`${rowNumber}::${fieldName}`);
+  }, [overrideMap]);
 
   const { data: projectTasks = [] } = useQuery<any[]>({
     queryKey: ["all-tasks-for-linking", projectName],
@@ -259,11 +335,11 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (overrides: { projectName: string; rowNumber: number; fieldName: string; overrideValue: string }[]) => {
+    mutationFn: async (payload: { overrides: { projectName: string; rowNumber: number; fieldName: string; overrideValue: string }[]; category: string; comment: string }) => {
       const response = await authFetch("/api/expenditure/overrides", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ overrides, overrideCategory: "DATA_CORRECTION", overrideComment: "Inline edit from Expenditure tab" }),
+        body: JSON.stringify({ overrides: payload.overrides, overrideCategory: payload.category, overrideComment: payload.comment }),
       });
       if (!response.ok) throw new Error("Failed to save overrides");
       return response.json();
@@ -277,6 +353,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         return;
       }
       queryClient.invalidateQueries({ queryKey: breakdownKey });
+      queryClient.invalidateQueries({ queryKey: ["expenditure-overrides", projectName] });
       queryClient.invalidateQueries({ predicate: (query) => {
         const key = query.queryKey[0];
         if (typeof key === 'string') {
@@ -296,6 +373,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["cashflow"] });
       setEdits(new Map());
+      setOverrideCategory("DATA_CORRECTION");
+      setOverrideComment("");
       toast({ title: "Changes Saved", description: "Expenditure edits saved and applied to all calculations." });
     },
     onError: (error) => {
@@ -426,12 +505,23 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   const items = breakdownData?.items || [];
   const categories = breakdownData?.categories || [];
 
+  const supplierNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const item of items) {
+      const inv = item.expenseInvoiceNumber || "";
+      if (inv.includes(":")) names.add(inv.split(":")[0].trim());
+      else if (inv.includes("-")) names.add(inv.split("-")[0].trim());
+    }
+    return Array.from(names).filter(n => n.length > 1).sort();
+  }, [items]);
+
   const kpis = useMemo(() => {
     const totalBudget = items.reduce((sum, e) => sum + (parseFloat(e.budgetTotal || "0")), 0);
     const totalActual = items.reduce((sum, e) => sum + (parseFloat(e.expenseActualTotal || "0")), 0);
     const cosRealised = items.filter(e => e.cosStatus === "COS Realised").reduce((s, e) => s + (parseFloat(e.expenseActualTotal || "0")), 0);
     const totalOutOfBank = items.filter(e => e.paymentStatus === "Out of Bank").reduce((s, e) => s + (parseFloat(e.expenseActualTotal || "0")), 0);
     const variance = totalBudget - totalActual;
+    const gpPercent = totalBudget > 0 ? ((variance / totalBudget) * 100) : 0;
     const countByCos = {
       "COS Realised": items.filter(e => e.cosStatus === "COS Realised").length,
       "Deferred": items.filter(e => e.cosStatus === "Deferred").length,
@@ -443,7 +533,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       "Payment Planned": items.filter(e => e.paymentStatus === "Payment Planned").length,
       "Planned": items.filter(e => e.paymentStatus === "Planned").length,
     };
-    return { totalBudget, totalActual, cosRealised, totalOutOfBank, variance, countByCos, countByPayment, totalItems: items.length };
+    return { totalBudget, totalActual, cosRealised, totalOutOfBank, variance, gpPercent, countByCos, countByPayment, totalItems: items.length };
   }, [items]);
 
   const filteredItems = useMemo(() => {
@@ -563,8 +653,14 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         overrideValue: String(value),
       }));
     });
-    await saveMutation.mutateAsync(overrides);
+    await saveMutation.mutateAsync({ overrides, category: overrideCategory, comment: overrideComment || "Inline edit from Expenditure tab" });
   };
+
+  const handleDiscard = useCallback(() => {
+    setEdits(new Map());
+    setEditingCell(null);
+    toast({ title: "Changes Discarded", description: "All pending edits have been discarded." });
+  }, [toast]);
 
   const toggleCategory = useCallback((category: string) => {
     setCollapsedCategories(prev => {
@@ -612,10 +708,13 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     );
   }
 
-  const EditableCell = ({ rowId, field, value, type = "text", colorClass = "" }: { rowId: number; field: string; value: string | null; type?: string; colorClass?: string }) => {
+  const EditableCell = ({ rowId, field, value, type = "text", colorClass = "", rowNumber }: {
+    rowId: number; field: string; value: string | null; type?: string; colorClass?: string; rowNumber?: number;
+  }) => {
     const cellKey = `${rowId}-${field}`;
     const isEditing = isAdmin && editingCell === cellKey;
     const displayValue = type === "currency" ? formatCurrency(value) : (type === "date" ? formatDate(value) : (value || "-"));
+    const showOverride = rowNumber !== undefined && hasOverride(rowNumber, field);
     return isEditing ? (
       <Input
         type={type === "currency" ? "number" : "text"}
@@ -625,23 +724,79 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setEditingCell(null); }}
         autoFocus
         className="h-6 text-xs w-full"
+        data-testid={`input-edit-${rowId}-${field}`}
       />
     ) : (
       <span
         onClick={() => { if (isAdmin) setEditingCell(cellKey); }}
-        className={`${isAdmin ? "cursor-pointer hover:bg-blue-50" : ""} px-1 py-0.5 rounded block text-xs truncate ${colorClass}`}
+        className={`${isAdmin ? "cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950" : ""} px-1 py-0.5 rounded inline-flex items-center text-xs truncate ${colorClass}`}
+        data-testid={`cell-${rowId}-${field}`}
       >
         {displayValue}
+        {showOverride && <OverrideDot originalValue={getOriginalValue(rowNumber, field) || ""} />}
       </span>
     );
   };
 
-  const DatePickerCell = ({ rowId, field, value, fontColor, fontColorField }: {
-    rowId: number; field: string; value: string | null; fontColor: string | null; fontColorField: string;
+  const SupplierCell = ({ rowId, value, rowNumber }: { rowId: number; value: string | null; rowNumber: number }) => {
+    const cellKey = `${rowId}-supplier`;
+    const isEditing = isAdmin && editingCell === cellKey;
+    const showOverride = hasOverride(rowNumber, "supplierName");
+
+    if (isEditing) {
+      const filtered = supplierSearchTerm
+        ? supplierNames.filter(s => s.toLowerCase().includes(supplierSearchTerm.toLowerCase()))
+        : supplierNames;
+      return (
+        <div className="relative">
+          <Input
+            defaultValue={value || ""}
+            onChange={(e) => {
+              setSupplierSearchTerm(e.target.value);
+              handleCellEdit(rowId, "supplierName", e.target.value);
+            }}
+            onBlur={() => setTimeout(() => setEditingCell(null), 200)}
+            onKeyDown={(e) => { if (e.key === "Escape") setEditingCell(null); }}
+            autoFocus
+            className="h-6 text-xs w-full"
+            data-testid={`input-supplier-${rowId}`}
+          />
+          {filtered.length > 0 && (
+            <div className="absolute top-full left-0 z-50 w-full max-h-32 overflow-auto bg-white dark:bg-gray-900 border rounded-md shadow-lg mt-0.5">
+              {filtered.slice(0, 8).map(s => (
+                <button key={s} className="w-full text-left px-2 py-1 text-xs hover:bg-blue-50 dark:hover:bg-blue-950"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleCellEdit(rowId, "supplierName", s);
+                    setEditingCell(null);
+                  }}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <span
+        onClick={() => { if (isAdmin) { setEditingCell(cellKey); setSupplierSearchTerm(""); } }}
+        className={`${isAdmin ? "cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950" : ""} px-1 py-0.5 rounded inline-flex items-center text-xs truncate`}
+      >
+        {value || "-"}
+        {showOverride && <OverrideDot originalValue={getOriginalValue(rowNumber, "supplierName") || ""} />}
+      </span>
+    );
+  };
+
+  const DatePickerCell = ({ rowId, field, value, fontColor, fontColorField, rowNumber }: {
+    rowId: number; field: string; value: string | null; fontColor: string | null; fontColorField: string; rowNumber: number;
   }) => {
     const editedColor = edits.get(rowId)?.[fontColorField];
     const currentColor = editedColor !== undefined ? editedColor : (fontColor || "black");
     const isRed = currentColor === "red";
+    const showOverride = hasOverride(rowNumber, field);
 
     const parseDate = (val: string | null): Date | undefined => {
       if (!val) return undefined;
@@ -696,8 +851,9 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
 
     if (!isAdmin) {
       return (
-        <span className={`text-xs px-1 py-0.5 block truncate ${isRed ? "text-red-500" : ""}`}>
+        <span className={`text-xs px-1 py-0.5 inline-flex items-center truncate ${isRed ? "text-red-500 italic" : ""}`}>
           {formatDate(value)}
+          {showOverride && <OverrideDot originalValue={getOriginalValue(rowNumber, field) || ""} />}
         </span>
       );
     }
@@ -707,11 +863,12 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         <Popover>
           <PopoverTrigger asChild>
             <button
-              className={`flex items-center gap-1 px-1 py-0.5 rounded text-xs hover:bg-blue-50 cursor-pointer truncate ${isRed ? "text-red-500 font-medium" : ""}`}
+              className={`flex items-center gap-1 px-1 py-0.5 rounded text-xs hover:bg-blue-50 dark:hover:bg-blue-950 cursor-pointer truncate ${isRed ? "text-red-500 italic font-medium" : ""}`}
               data-testid={`button-datepicker-${rowId}-${field}`}
             >
               <CalendarIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
               <span>{selectedDate ? formatDate(format(selectedDate, "yyyy-MM-dd")) : "-"}</span>
+              {showOverride && <OverrideDot originalValue={getOriginalValue(rowNumber, field) || ""} />}
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start" side="bottom">
@@ -732,7 +889,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         <button
           onClick={toggleColor}
           className={`shrink-0 w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${isRed ? "bg-red-500 border-red-600" : "bg-gray-800 border-gray-900"}`}
-          title={isRed ? "Switch to black" : "Switch to red"}
+          title={isRed ? "Forecast (click to confirm)" : "Confirmed (click to mark forecast)"}
           data-testid={`button-color-toggle-${rowId}-${field}`}
         >
           <span className="sr-only">{isRed ? "Red" : "Black"}</span>
@@ -805,6 +962,13 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     );
   };
 
+  const extractSupplier = (invoiceNum: string | null): string => {
+    if (!invoiceNum) return "-";
+    if (invoiceNum.includes(":")) return invoiceNum.split(":")[0].trim();
+    if (invoiceNum.includes("-")) return invoiceNum.split("-")[0].trim();
+    return invoiceNum.substring(0, Math.min(20, invoiceNum.length));
+  };
+
   const renderCellValue = (exp: EnrichedExpense, col: ColumnDef) => {
     const variance = parseFloat(exp.budgetTotal || "0") - parseFloat(exp.expenseActualTotal || "0");
     switch (col.key) {
@@ -814,7 +978,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="max-w-[200px]">
-                  <EditableCell rowId={exp.id} field="expenseLineItem" value={exp.expenseLineItem} />
+                  <EditableCell rowId={exp.id} field="expenseLineItem" value={exp.expenseLineItem} rowNumber={exp.rowNumber} />
                 </div>
               </TooltipTrigger>
               {exp.expenseLineItem && exp.expenseLineItem.length > 30 && (
@@ -824,23 +988,30 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
           </TooltipProvider>
         );
       case "budgetTotal":
-        return <span className="text-xs font-mono">{formatCurrency(exp.budgetTotal)}</span>;
+        return (
+          <span className="text-xs font-mono inline-flex items-center">
+            {formatCurrency(exp.budgetTotal)}
+            {hasOverride(exp.rowNumber, "budgetTotal") && <OverrideDot originalValue={getOriginalValue(exp.rowNumber, "budgetTotal") || ""} />}
+          </span>
+        );
       case "revenueAmount":
         return <span className="text-xs font-mono">{formatCurrency(exp.revenueAmount)}</span>;
       case "actualTotal":
-        return <span className="text-xs font-mono">{formatCurrency(exp.expenseActualTotal)}</span>;
+        return (
+          <EditableCell rowId={exp.id} field="expenseActualTotal" value={exp.expenseActualTotal} type="currency" rowNumber={exp.rowNumber} />
+        );
       case "poNumber":
-        return <EditableCell rowId={exp.id} field="expensePoNumber" value={exp.expensePoNumber} />;
+        return <EditableCell rowId={exp.id} field="expensePoNumber" value={exp.expensePoNumber} rowNumber={exp.rowNumber} />;
       case "invoiceNo":
-        return <EditableCell rowId={exp.id} field="expenseInvoiceNumber" value={exp.expenseInvoiceNumber} />;
+        return <EditableCell rowId={exp.id} field="expenseInvoiceNumber" value={exp.expenseInvoiceNumber} rowNumber={exp.rowNumber} />;
       case "invoiceDate":
         return <DatePickerCell rowId={exp.id} field="expenseInvoicedDate" value={exp.expenseInvoicedDate}
-          fontColor={exp.invoiceDateFontColor} fontColorField="invoiceDateFontColor" />;
+          fontColor={exp.invoiceDateFontColor} fontColorField="invoiceDateFontColor" rowNumber={exp.rowNumber} />;
       case "paymentDate":
         return (
           <div className="flex items-center gap-0.5">
             <DatePickerCell rowId={exp.id} field="expensePaymentDate" value={exp.expensePaymentDate || exp.effectivePaymentDate}
-              fontColor={exp.paymentDateFontColor} fontColorField="paymentDateFontColor" />
+              fontColor={exp.paymentDateFontColor} fontColorField="paymentDateFontColor" rowNumber={exp.rowNumber} />
             {exp.hasDateOverride && <span className="text-amber-500 text-[10px]" title={exp.dateOverrideReason || "Override"}>*</span>}
           </div>
         );
@@ -889,6 +1060,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         return getPaymentStatusBadge(exp.paymentStatus);
       case "plannedMonth":
         return <span className="text-xs">{formatMonth(exp.plannedMonth)}</span>;
+      case "supplier":
+        return <SupplierCell rowId={exp.id} value={extractSupplier(exp.expenseInvoiceNumber)} rowNumber={exp.rowNumber} />;
       case "variance":
         return (
           <span className={`text-xs font-mono ${variance >= 0 ? "text-emerald-600" : "text-red-600"}`}>
@@ -900,51 +1073,75 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     }
   };
 
-  const allMonths = [...new Set(items.map(i => i.plannedMonth).filter(Boolean))].sort() as string[];
-
-  const pctUsed = kpis.totalBudget > 0 ? Math.round((kpis.totalActual / kpis.totalBudget) * 100) : 0;
+  const allMonths = Array.from(new Set(items.map(i => i.plannedMonth).filter(Boolean))).sort() as string[];
 
   return (
     <div className="space-y-3">
-      {/* KPI Summary Strip */}
-      <div className="rounded-lg border bg-white dark:bg-gray-950 shadow-sm overflow-hidden">
-        <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-gray-100 dark:divide-gray-800">
-          <div className="p-3 sm:p-4">
-            <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">Actual</div>
-            <div className="text-base sm:text-lg font-bold font-mono" data-testid="text-kpi-actual">{formatCurrency(kpis.totalActual)}</div>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3" data-testid="kpi-summary-strip">
+        <div className="bg-white dark:bg-gray-950 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 border-l-4 border-l-slate-400 p-3 sm:p-4">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <DollarSign className="h-4 w-4 text-slate-400" />
+            <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">Total Budget</span>
           </div>
-          <div className="p-3 sm:p-4">
-            <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">COS Realised</div>
-            <div className="text-base sm:text-lg font-bold text-emerald-600 font-mono" data-testid="text-kpi-cos">{formatCurrency(kpis.cosRealised)}</div>
-            <div className="text-[10px] text-gray-400 mt-0.5">{kpis.countByCos["COS Realised"]} lines</div>
+          <div className="text-base sm:text-lg font-bold font-mono text-slate-800 dark:text-slate-100" data-testid="text-kpi-budget">{formatCurrency(kpis.totalBudget)}</div>
+        </div>
+        <div className="bg-white dark:bg-gray-950 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 border-l-4 border-l-blue-500 p-3 sm:p-4">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <BarChart3 className="h-4 w-4 text-blue-500" />
+            <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">Total Actual</span>
           </div>
-          <div className="p-3 sm:p-4">
-            <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">Out of Bank</div>
-            <div className="text-base sm:text-lg font-bold text-emerald-600 font-mono" data-testid="text-kpi-paid">{formatCurrency(kpis.totalOutOfBank)}</div>
-            <div className="text-[10px] text-gray-400 mt-0.5">{kpis.countByPayment["Out of Bank"]} lines</div>
+          <div className={`text-base sm:text-lg font-bold font-mono ${kpis.totalActual > kpis.totalBudget ? "text-red-600" : "text-blue-700 dark:text-blue-400"}`} data-testid="text-kpi-actual">
+            {formatCurrency(kpis.totalActual)}
           </div>
-          <div className="p-3 sm:p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors" onClick={() => setDrawerOpen(true)}>
-            <div className="text-[10px] uppercase tracking-wider font-medium text-gray-400">Lines</div>
-            <div className="text-base sm:text-lg font-bold" data-testid="text-kpi-items">{kpis.totalItems}</div>
-            <div className="text-[10px] text-blue-600 mt-0.5">Drilldown</div>
+          <div className="text-[10px] text-slate-400 mt-0.5">{kpis.totalItems} lines</div>
+        </div>
+        <div className="bg-white dark:bg-gray-950 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 border-l-4 border-l-emerald-500 p-3 sm:p-4">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+            <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">COS Realised</span>
+          </div>
+          <div className="text-base sm:text-lg font-bold text-emerald-600 font-mono" data-testid="text-kpi-cos">{formatCurrency(kpis.cosRealised)}</div>
+          <div className="text-[10px] text-slate-400 mt-0.5">{kpis.countByCos["COS Realised"]} lines</div>
+        </div>
+        <div className={`bg-white dark:bg-gray-950 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 border-l-4 ${kpis.variance >= 0 ? "border-l-emerald-500" : "border-l-red-500"} p-3 sm:p-4`}>
+          <div className="flex items-center gap-1.5 mb-1.5">
+            {kpis.variance >= 0 ? <TrendingUp className="h-4 w-4 text-emerald-500" /> : <TrendingDown className="h-4 w-4 text-red-500" />}
+            <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">Variance</span>
+          </div>
+          <div className={`text-base sm:text-lg font-bold font-mono ${kpis.variance >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="text-kpi-variance">
+            {formatCurrency(kpis.variance)}
+          </div>
+          <div className={`text-[10px] mt-0.5 font-medium ${kpis.variance >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+            {kpis.variance >= 0 ? "Under budget" : "Over budget"}
+          </div>
+        </div>
+        <div className={`bg-white dark:bg-gray-950 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 border-l-4 ${kpis.gpPercent >= 20 ? "border-l-emerald-500" : kpis.gpPercent >= 10 ? "border-l-amber-500" : "border-l-red-500"} p-3 sm:p-4`}>
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Percent className="h-4 w-4 text-slate-400" />
+            <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">GP%</span>
+          </div>
+          <div className={`text-base sm:text-lg font-bold font-mono ${kpis.gpPercent >= 20 ? "text-emerald-600" : kpis.gpPercent >= 10 ? "text-amber-600" : "text-red-600"}`} data-testid="text-kpi-gp">
+            {kpis.gpPercent.toFixed(1)}%
+          </div>
+          <div className="text-[10px] text-slate-400 mt-0.5 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => setDrawerOpen(true)}>
+            Drilldown →
           </div>
         </div>
       </div>
 
-      {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 px-1">
         <div className="flex items-center gap-1 border rounded-md p-0.5 bg-white dark:bg-gray-950">
-          <Button variant="ghost" size="sm" onClick={expandAll} className="h-7 px-1.5" title="Expand All">
+          <Button variant="ghost" size="sm" onClick={expandAll} className="h-7 px-1.5" title="Expand All" data-testid="button-expand-all">
             <ChevronsDownUp className="h-3.5 w-3.5" />
           </Button>
-          <Button variant="ghost" size="sm" onClick={collapseAll} className="h-7 px-1.5" title="Collapse All">
+          <Button variant="ghost" size="sm" onClick={collapseAll} className="h-7 px-1.5" title="Collapse All" data-testid="button-collapse-all">
             <ChevronsUpDown className="h-3.5 w-3.5" />
           </Button>
         </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 text-xs">
+            <Button variant="outline" size="sm" className="h-7 text-xs" data-testid="button-columns-menu">
               <Columns className="h-3.5 w-3.5 mr-1" /> Columns
             </Button>
           </DropdownMenuTrigger>
@@ -958,7 +1155,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         </DropdownMenu>
 
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[160px] h-7 text-xs"><SelectValue placeholder="Filter by status" /></SelectTrigger>
+          <SelectTrigger className="w-[160px] h-7 text-xs" data-testid="select-status-filter"><SelectValue placeholder="Filter by status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All ({kpis.totalItems})</SelectItem>
             <SelectItem value="COS Realised">COS Realised ({kpis.countByCos["COS Realised"]})</SelectItem>
@@ -992,57 +1189,56 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             </DropdownMenu>
           )}
 
-          <PermissionGate entity="financials" action="edit">
-            <Button onClick={handleSave} disabled={!hasEdits || saveMutation.isPending} size="sm"
-              className={`h-7 text-xs ${hasEdits ? "bg-blue-600 hover:bg-blue-700 text-white shadow-sm" : ""}`}
-              variant={hasEdits ? "default" : "outline"}
-              data-testid="button-save-edits">
-              <Save className="h-3.5 w-3.5 mr-1" /> {saveMutation.isPending ? "Saving..." : hasEdits ? `Save (${edits.size})` : "Save"}
-            </Button>
-          </PermissionGate>
-
           <Button onClick={() => setDrawerOpen(true)} variant="outline" size="sm" className="h-7 text-xs" data-testid="button-drilldown">
             <Search className="h-3.5 w-3.5 mr-1" /> Drilldown
           </Button>
         </div>
       </div>
 
-      {/* Main Table */}
       <div className="rounded-lg border bg-white dark:bg-gray-950 shadow-sm overflow-hidden">
         {categoryGroups.length === 0 ? (
-          <p className="text-center text-muted-foreground py-12">No expenditure data available for this project</p>
+          <p className="text-center text-muted-foreground py-12" data-testid="text-empty-state">No expenditure data available for this project</p>
         ) : (
-          <div ref={tableContainerRef} className="relative overflow-auto" style={{ maxHeight: "calc(100vh - 340px)", minHeight: "400px" }}>
-            <table className="w-full border-collapse text-sm">
-              <thead className="sticky top-0 z-20">
-                <tr className="bg-gray-50 dark:bg-gray-900 border-b-2 border-gray-200 dark:border-gray-700">
-                  {activeColumns.map((col, idx) => (
-                    <th key={col.key}
-                      className={`px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 whitespace-nowrap
-                        ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}
-                        ${idx === 0 ? "sticky left-0 z-30 bg-gray-50 dark:bg-gray-900" : ""}`}
+          <div ref={tableContainerRef} className="relative overflow-auto" style={{ maxHeight: "calc(100vh - 380px)", minHeight: "400px" }}>
+            <Table>
+              <TableHeader className="sticky top-0 z-20">
+                <TableRow className="bg-slate-100 dark:bg-gray-900 border-b-2 border-slate-200 dark:border-gray-700 hover:bg-slate-100 dark:hover:bg-gray-900">
+                  <TableHead className="px-2 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-gray-400 whitespace-nowrap w-[40px] text-center sticky left-0 z-30 bg-slate-100 dark:bg-gray-900">
+                    #
+                  </TableHead>
+                  {activeColumns.map((col) => (
+                    <TableHead key={col.key}
+                      className={`px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-gray-400 whitespace-nowrap
+                        ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}`}
                       style={{ minWidth: col.minWidth }}>
                       {col.label}
-                    </th>
+                    </TableHead>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
+                  <TableHead className="px-2 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-gray-400 whitespace-nowrap w-[80px] text-center">
+                    Status
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {categoryGroups.map((group) => {
                   const isCollapsed = collapsedCategories.has(group.category);
                   return (
                     <React.Fragment key={group.category}>
-                      <tr className="bg-slate-100/80 dark:bg-slate-800/50 hover:bg-slate-200/60 dark:hover:bg-slate-700/50 cursor-pointer border-b border-slate-200 dark:border-slate-700"
-                        onClick={() => toggleCategory(group.category)}>
-                        <td className="sticky left-0 z-10 bg-slate-100/80 dark:bg-slate-800/50 px-3 py-2.5" colSpan={1}>
-                          <div className="flex items-center gap-2">
+                      <TableRow className="bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-700/50 cursor-pointer border-b border-slate-200 dark:border-slate-700"
+                        onClick={() => toggleCategory(group.category)} data-testid={`row-category-${group.category}`}>
+                        <TableCell className="sticky left-0 z-10 bg-slate-50 dark:bg-slate-800/50 px-2 py-2.5" colSpan={1}>
+                          <div className="flex items-center gap-1">
                             {isCollapsed ? <ChevronRight className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
-                            <span className="font-semibold text-slate-700 dark:text-slate-200 text-sm">{group.category}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell colSpan={1} className="px-3 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-700 dark:text-slate-200 text-sm">{group.category}</span>
                             <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal">{group.items.length}</Badge>
                           </div>
-                        </td>
+                        </TableCell>
                         {activeColumns.slice(1).map((col) => (
-                          <td key={col.key} className={`px-3 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300
+                          <TableCell key={col.key} className={`px-3 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300
                             ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : ""}`}>
                             {col.key === "budgetTotal" && <span className="font-mono">{formatCurrency(group.budgetTotal)}</span>}
                             {col.key === "revenueAmount" && <span className="font-mono">{formatCurrency(group.revenueTotal)}</span>}
@@ -1050,41 +1246,83 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                             {col.key === "variance" && (
                               <span className={`font-mono ${group.variance >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(group.variance)}</span>
                             )}
-                          </td>
+                          </TableCell>
                         ))}
-                      </tr>
+                        <TableCell />
+                      </TableRow>
                       {!isCollapsed && group.items.map((exp, rowIdx) => (
-                        <tr key={exp.id}
+                        <TableRow key={exp.id}
                           data-row-id={exp.id}
-                          className={`border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50/40 dark:hover:bg-blue-950/20 transition-colors
-                            ${highlightedRowId === exp.id ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : rowIdx % 2 === 0 ? "bg-white dark:bg-gray-950" : "bg-gray-50/50 dark:bg-gray-900/30"}`}>
-                          {activeColumns.map((col, colIdx) => (
-                            <td key={col.key}
+                          data-testid={`row-expense-${exp.id}`}
+                          className={`border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50/30 dark:hover:bg-blue-950/20 transition-colors
+                            ${highlightedRowId === exp.id ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : rowIdx % 2 === 0 ? "bg-white dark:bg-gray-950" : "bg-muted/20 dark:bg-gray-900/30"}`}>
+                          <TableCell className="px-2 py-1.5 text-center text-[10px] text-muted-foreground font-mono sticky left-0 z-10 bg-inherit">
+                            {exp.rowNumber}
+                          </TableCell>
+                          {activeColumns.map((col) => (
+                            <TableCell key={col.key}
                               className={`px-3 py-1.5
-                                ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}
-                                ${colIdx === 0 ? "sticky left-0 z-10 bg-inherit" : ""}`}
+                                ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}`}
                               style={{ minWidth: col.minWidth }}>
                               {renderCellValue(exp, col)}
-                            </td>
+                            </TableCell>
                           ))}
-                        </tr>
+                          <TableCell className="px-2 py-1.5 text-center">
+                            {getRowStatusBadge(exp)}
+                          </TableCell>
+                        </TableRow>
                       ))}
                     </React.Fragment>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {hasEdits && (
-          <div className="px-4 py-2 text-xs text-amber-700 border-t bg-amber-50 dark:bg-amber-950/30 dark:text-amber-300 flex items-center gap-2">
-            <Save className="h-3.5 w-3.5" />
-            {edits.size} {edits.size === 1 ? "row" : "rows"} modified — click Save to persist changes
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>
 
-      {/* Drilldown Drawer */}
+      {hasEdits && (
+        <div className="sticky bottom-0 z-30 mx-0 px-4 py-3 bg-white dark:bg-gray-950 border-t-2 border-blue-200 dark:border-blue-800 shadow-[0_-4px_12px_rgba(0,0,0,0.1)] rounded-b-lg" data-testid="save-cancel-bar">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300 shrink-0">
+              <Save className="h-4 w-4" />
+              <span className="font-medium">{edits.size} {edits.size === 1 ? "row" : "rows"} modified</span>
+            </div>
+            <div className="flex flex-1 flex-wrap items-center gap-2">
+              <Select value={overrideCategory} onValueChange={setOverrideCategory}>
+                <SelectTrigger className="w-[180px] h-8 text-xs" data-testid="select-override-category">
+                  <SelectValue placeholder="Override category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="DATA_CORRECTION">Data Correction</SelectItem>
+                  <SelectItem value="BUSINESS_DECISION">Business Decision</SelectItem>
+                  <SelectItem value="TIMING_ADJUSTMENT">Timing Adjustment</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                placeholder="Comment (min 3 chars)..."
+                value={overrideComment}
+                onChange={(e) => setOverrideComment(e.target.value)}
+                className="h-8 text-xs flex-1 min-w-[150px] max-w-[300px]"
+                data-testid="input-override-comment"
+              />
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button variant="outline" size="sm" onClick={handleDiscard} className="h-8 text-xs" data-testid="button-discard-edits">
+                <RotateCcw className="h-3.5 w-3.5 mr-1" /> Discard
+              </Button>
+              <PermissionGate entity="financials" action="edit">
+                <Button onClick={handleSave} disabled={saveMutation.isPending || overrideComment.length < 3} size="sm"
+                  className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                  data-testid="button-save-edits">
+                  <Save className="h-3.5 w-3.5 mr-1" /> {saveMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </PermissionGate>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
         <SheetContent side="right" className="w-[500px] sm:w-[600px] overflow-auto">
           <SheetHeader>
@@ -1196,6 +1434,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                         )}
                       </span>
                       {getPaymentStatusBadge(item.paymentStatus)}
+                      {getRowStatusBadge(item)}
                       {item.plannedMonth && <Badge variant="outline" className="text-[8px]">{formatMonth(item.plannedMonth)}</Badge>}
                     </div>
                     <div className="grid grid-cols-2 gap-1 text-[10px] text-muted-foreground">
@@ -1203,6 +1442,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                       <span>Invoice: {item.expenseInvoiceNumber || "-"}</span>
                       <span>Inv Date: {formatDate(item.expenseInvoicedDate)}</span>
                       <span>Pay Date: {formatDate(item.effectivePaymentDate)}</span>
+                      <span>Budget: {formatCurrency(item.budgetTotal)}</span>
+                      <span>Variance: {formatCurrency(parseFloat(item.budgetTotal || "0") - parseFloat(item.expenseActualTotal || "0"))}</span>
                       {item.linkedTask && <span className="col-span-2">Task: {item.linkedTask.title} ({item.linkedTask.status})</span>}
                     </div>
                   </CardContent>
@@ -1213,7 +1454,6 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         </SheetContent>
       </Sheet>
 
-      {/* Add Line Item Dialog */}
       <Dialog open={addLineOpen} onOpenChange={setAddLineOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Add Line Item</DialogTitle></DialogHeader>
@@ -1271,7 +1511,6 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         </DialogContent>
       </Dialog>
 
-      {/* Add Category Dialog */}
       <Dialog open={addCategoryOpen} onOpenChange={setAddCategoryOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Add Category</DialogTitle></DialogHeader>
@@ -1290,7 +1529,6 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         </DialogContent>
       </Dialog>
 
-      {/* Insert Task as Line Item Dialog */}
       <Dialog open={insertTaskOpen} onOpenChange={setInsertTaskOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Insert Task as Line Item</DialogTitle></DialogHeader>

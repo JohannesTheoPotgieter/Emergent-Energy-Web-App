@@ -26,6 +26,7 @@ import {
   Milestone, FolderPlus, Hash, RefreshCw, Target,
   Calendar, AlertCircle, ChevronLeft, ZoomIn, ArrowRight,
   GripVertical, MoreHorizontal, ArrowDownToLine, Unlink,
+  ArrowUp, ArrowDown, Diamond, FolderOpen,
 } from "lucide-react";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import {
@@ -321,6 +322,47 @@ function InlineDateEditor({ value, onCommit }: { value: string | null; onCommit:
   );
 }
 
+function InlineDurationEditor({ value, onCommit }: { value: number | string; onCommit: (v: number) => void }) {
+  const numVal = typeof value === 'number' ? value : parseInt(String(value)) || 0;
+  const [editing, setEditing] = useState(false);
+  const [localVal, setLocalVal] = useState(String(numVal));
+
+  useEffect(() => { setLocalVal(String(numVal)); }, [numVal]);
+
+  const commit = () => {
+    const parsed = Math.max(0, parseInt(localVal) || 0);
+    setEditing(false);
+    onCommit(parsed);
+  };
+
+  if (editing) {
+    return (
+      <input
+        data-testid="inline-duration-input"
+        className="w-12 h-5 text-[10px] tabular-nums text-center border border-primary/40 rounded bg-background outline-none focus:ring-1 focus:ring-primary/30"
+        type="number"
+        min={0}
+        value={localVal}
+        onChange={(e) => setLocalVal(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setLocalVal(String(numVal)); setEditing(false); } }}
+        onClick={(e) => e.stopPropagation()}
+        autoFocus
+      />
+    );
+  }
+
+  return (
+    <span
+      className="cursor-pointer hover:text-primary hover:underline"
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      title="Click to edit duration (working days)"
+    >
+      {numVal > 0 ? `${numVal}d` : "—"}
+    </span>
+  );
+}
+
 type ZoomLevel = "week" | "month";
 
 export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlanTabProps) {
@@ -435,7 +477,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             if (!byPlanProject.has(pName)) byPlanProject.set(pName, []);
             byPlanProject.get(pName)!.push(t.rowNumber);
           }
-          for (const [pName, rowNumbers] of byPlanProject) {
+          for (const [pName, rowNumbers] of Array.from(byPlanProject.entries())) {
             await apiRequest("POST", "/api/project-plan/delete-tasks", { projectName: pName, rowNumbers });
           }
         }
@@ -556,6 +598,56 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       colorMap.set(id, MILESTONE_GROUP_COLORS[idx % MILESTONE_GROUP_COLORS.length]);
     });
     return colorMap;
+  }, [tasks]);
+
+  const summaryRollup = useMemo(() => {
+    const rollup = new Map<number, { pct: number; start: string | null; finish: string | null; duration: number }>();
+    const childrenOf = new Map<number, any[]>();
+    for (const t of tasks) {
+      if (t.parentTaskId) {
+        if (!childrenOf.has(t.parentTaskId)) childrenOf.set(t.parentTaskId, []);
+        childrenOf.get(t.parentTaskId)!.push(t);
+      }
+    }
+    for (const t of tasks) {
+      const hasChildren = t.isParent || t.childCount > 0;
+      if (!hasChildren) continue;
+      const children = childrenOf.get(t.id) || [];
+      if (children.length === 0) continue;
+
+      let minStart: string | null = null;
+      let maxFinish: string | null = null;
+      let totalWeightedPct = 0;
+      let totalWeight = 0;
+      let totalDuration = 0;
+
+      for (const c of children) {
+        const cs = c.startDate || c.actualStartDate;
+        const ce = c.dueDate || c.actualEndDate;
+        if (cs && (!minStart || cs < minStart)) minStart = cs;
+        if (ce && (!maxFinish || ce > maxFinish)) maxFinish = ce;
+        const cDur = (() => {
+          if (cs && ce) {
+            const sd = new Date(cs);
+            const ed = new Date(ce);
+            if (!isNaN(sd.getTime()) && !isNaN(ed.getTime())) return countWorkingDays(sd, ed);
+          }
+          return c.plannedDurationDays || c.durationDays || 1;
+        })();
+        totalDuration += cDur;
+        const weight = cDur || 1;
+        totalWeightedPct += (c.percentComplete || 0) * weight;
+        totalWeight += weight;
+      }
+
+      rollup.set(t.id, {
+        pct: totalWeight > 0 ? Math.round(totalWeightedPct / totalWeight) : 0,
+        start: minStart,
+        finish: maxFinish,
+        duration: totalDuration,
+      });
+    }
+    return rollup;
   }, [tasks]);
 
   const getGroupColor = useCallback((task: any): typeof MILESTONE_GROUP_COLORS[0] | null => {
@@ -905,16 +997,152 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             {STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
           </SelectContent>
         </Select>
-        {isAdmin && (
-          <>
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setMilestoneDialogOpen(true)} data-testid="button-create-milestone">
-              <Milestone className="h-3 w-3 mr-1" /> Create Milestone
-            </Button>
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => renumberMutation.mutate()} disabled={renumberMutation.isPending} data-testid="button-renumber">
-              <Hash className="h-3 w-3 mr-1" /> Refresh Numbering
-            </Button>
-          </>
-        )}
+
+        <div className="flex items-center border rounded-md overflow-hidden bg-white shadow-sm" data-testid="toolbar-actions">
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="h-7 px-2 text-xs border-r hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  disabled={!isAdmin}
+                  onClick={() => { if (newTaskTitle.trim()) createMutation.mutate(newTaskTitle.trim()); else { setNewTaskTitle("New Task"); createMutation.mutate("New Task"); } }}
+                  data-testid="toolbar-add-task"
+                >
+                  <Plus className="h-3.5 w-3.5 text-emerald-600" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom"><p className="text-xs">Add Task</p></TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="h-7 px-2 text-xs border-r hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  disabled={!isAdmin}
+                  onClick={() => setMilestoneDialogOpen(true)}
+                  data-testid="button-create-milestone"
+                >
+                  <Diamond className="h-3.5 w-3.5 text-amber-600" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom"><p className="text-xs">Add Milestone</p></TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="h-7 px-2 text-xs border-r hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  disabled={!isAdmin || selectedIds.size === 0}
+                  onClick={() => {
+                    const selArr = Array.from(selectedIds);
+                    const selTasks = selArr.map(id => taskMap.get(id)).filter(Boolean);
+                    if (selTasks.length === 0) return;
+                    const firstSel = selTasks[0];
+                    const idx = visibleTasks.findIndex(t => t.id === firstSel.id);
+                    if (idx <= 0) return;
+                    const above = visibleTasks[idx - 1];
+                    if (!above?.rowNumber) return;
+                    const rowNums = selTasks.map((t: any) => t.rowNumber).filter(Boolean);
+                    if (rowNums.length > 0) setParentMutation.mutate({ taskRowNumbers: rowNums, parentRowNumber: above.rowNumber });
+                  }}
+                  data-testid="toolbar-indent"
+                >
+                  <ArrowRight className="h-3.5 w-3.5 text-blue-600" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom"><p className="text-xs">Indent</p></TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="h-7 px-2 text-xs border-r hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  disabled={!isAdmin || selectedIds.size === 0}
+                  onClick={() => {
+                    const selArr = Array.from(selectedIds);
+                    const selTasks = selArr.map(id => taskMap.get(id)).filter(Boolean);
+                    const rowNums = selTasks.filter((t: any) => t.parentTaskId && t.rowNumber).map((t: any) => t.rowNumber);
+                    if (rowNums.length > 0) removeMilestoneMutation.mutate(rowNums);
+                  }}
+                  data-testid="toolbar-outdent"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5 text-blue-600" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom"><p className="text-xs">Outdent</p></TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="h-7 px-2 text-xs border-r hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  disabled={!isAdmin || selectedIds.size !== 1}
+                  onClick={() => {
+                    const selId = Array.from(selectedIds)[0];
+                    const idx = visibleTasks.findIndex(t => t.id === selId);
+                    if (idx <= 0) return;
+                    const task = visibleTasks[idx];
+                    const above = visibleTasks[idx - 1];
+                    if (!task?.rowNumber || !above?.rowNumber) return;
+                    bulkReorderMutation.mutate([
+                      { rowNumber: task.rowNumber, sortOrder: (above.sortOrder ?? above.rowNumber ?? 0) - 1 },
+                    ]);
+                  }}
+                  data-testid="toolbar-move-up"
+                >
+                  <ArrowUp className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom"><p className="text-xs">Move Up</p></TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="h-7 px-2 text-xs border-r hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  disabled={!isAdmin || selectedIds.size !== 1}
+                  onClick={() => {
+                    const selId = Array.from(selectedIds)[0];
+                    const idx = visibleTasks.findIndex(t => t.id === selId);
+                    if (idx < 0 || idx >= visibleTasks.length - 1) return;
+                    const task = visibleTasks[idx];
+                    const below = visibleTasks[idx + 1];
+                    if (!task?.rowNumber || !below?.rowNumber) return;
+                    bulkReorderMutation.mutate([
+                      { rowNumber: task.rowNumber, sortOrder: (below.sortOrder ?? below.rowNumber ?? 0) + 1 },
+                    ]);
+                  }}
+                  data-testid="toolbar-move-down"
+                >
+                  <ArrowDown className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom"><p className="text-xs">Move Down</p></TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="h-7 px-2 text-xs border-r hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 text-red-600"
+                  disabled={!isAdmin || selectedIds.size === 0}
+                  onClick={() => deleteMutation.mutate(Array.from(selectedIds))}
+                  data-testid="toolbar-delete"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom"><p className="text-xs">Delete</p></TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="h-7 px-2 text-xs hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  disabled={!isAdmin || renumberMutation.isPending}
+                  onClick={() => renumberMutation.mutate()}
+                  data-testid="button-renumber"
+                >
+                  <Hash className="h-3.5 w-3.5 text-violet-600" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom"><p className="text-xs">Renumber WBS</p></TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+
         <div className="ml-auto flex items-center gap-1.5">
           <Select value={zoomLevel} onValueChange={(v) => setZoomLevel(v as ZoomLevel)}>
             <SelectTrigger className="w-[90px] h-7 text-xs" data-testid="select-zoom">
@@ -972,7 +1200,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
         <div
           ref={bodyScrollRef}
           className="flex-shrink-0 overflow-y-auto overflow-x-auto border-r"
-          style={{ width: "clamp(500px, 55%, 700px)" }}
+          style={{ width: "clamp(600px, 60%, 850px)" }}
           onScroll={handleBodyScroll}
           data-testid="plan-grid-left"
         >
@@ -991,21 +1219,24 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                     data-testid="checkbox-select-all"
                   />
                 </th>
+                <th className="w-8 px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-row-num">#</th>
+                <th className="w-6 px-0 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-indicator"></th>
                 <th className="w-12 px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-wbs">WBS</th>
-                <th className="min-w-[140px] px-2 py-1.5 text-left border-b border-r font-semibold text-slate-600" data-testid="header-task">TASK</th>
-                <th className="w-[70px] px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-lead">LEAD</th>
-                <th className="w-[68px] px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-start">START</th>
-                <th className="w-[68px] px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-end">END</th>
-                <th className="w-10 px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-days">DAYS</th>
-                <th className="w-[90px] px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-pct-done">% DONE</th>
-                <th className="w-14 px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-pct-forecast">% FORE</th>
+                <th className="min-w-[140px] px-2 py-1.5 text-left border-b border-r font-semibold text-slate-600" data-testid="header-task">Task Name</th>
+                <th className="w-14 px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-duration">Duration</th>
+                <th className="w-[68px] px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-start">Start</th>
+                <th className="w-[68px] px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-end">Finish</th>
+                <th className="w-[60px] px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-predecessors">Pred.</th>
+                <th className="w-[70px] px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-lead">Resource</th>
+                <th className="w-[90px] px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-pct-done">% Complete</th>
+                <th className="w-10 px-1 py-1.5 text-center border-b border-r font-semibold text-slate-600" data-testid="header-status">Status</th>
                 {isAdmin && <th className="w-7 px-0 py-1.5 border-b font-semibold text-slate-600" />}
               </tr>
             </thead>
             <tbody>
               {visibleTasks.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 11 : 9} className="text-center text-muted-foreground py-12">
+                  <td colSpan={isAdmin ? 14 : 12} className="text-center text-muted-foreground py-12">
                     <div className="flex flex-col items-center gap-2">
                       <Circle className="h-8 w-8 text-slate-300" />
                       <span className="text-emerald-600 font-medium">No tasks found</span>
@@ -1014,25 +1245,63 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                   </td>
                 </tr>
               ) : (
-                visibleTasks.map((task) => {
+                visibleTasks.map((task, rowIndex) => {
                   const depth = getTaskDepth(task, taskMap);
                   const isMilestone = task.isVirtualMilestone || task.isMilestone;
                   const hasChildren = task.isParent || task.childCount > 0;
                   const isCollapsed = collapsedParents.has(task.id);
-                  const pct = task.percentComplete || 0;
+                  const rollup = hasChildren ? summaryRollup.get(task.id) : null;
+                  const pct = rollup ? rollup.pct : (task.percentComplete || 0);
                   const expPct = task.computedExpectedPct ?? task.expectedPercentComplete ?? null;
                   const isLate = expPct !== null && pct < expPct && pct < 100;
                   const isDragging = dragTaskId === task.id;
                   const dropClass = getDropIndicatorClass(task.id);
+
+                  const taskStart = rollup?.start || task.startDate || task.actualStartDate || null;
+                  const taskFinish = rollup?.finish || task.dueDate || task.actualEndDate || null;
+                  const taskDuration = (() => {
+                    if (rollup) return rollup.duration;
+                    const s = task.startDate || task.actualStartDate;
+                    const e = task.dueDate || task.actualEndDate;
+                    if (s && e) {
+                      const sd = new Date(s);
+                      const ed = new Date(e);
+                      if (!isNaN(sd.getTime()) && !isNaN(ed.getTime())) return countWorkingDays(sd, ed);
+                    }
+                    return task.plannedDurationDays || task.durationDays || 0;
+                  })();
+
+                  const ragStatus = (() => {
+                    if (task.status === "Done" || pct >= 100) return "green";
+                    if (expPct === null) return pct > 0 ? "green" : "neutral";
+                    const delta = expPct - pct;
+                    if (delta <= 5) return "green";
+                    if (delta <= 20) return "amber";
+                    return "red";
+                  })();
+
+                  const ragDot = ragStatus === "green"
+                    ? "bg-emerald-500"
+                    : ragStatus === "amber"
+                      ? "bg-amber-500"
+                      : ragStatus === "red"
+                        ? "bg-red-500"
+                        : "bg-slate-300";
+
+                  const ragTooltip = expPct !== null
+                    ? `Expected: ${expPct}% | Actual: ${pct}%${isLate ? ' (Behind schedule)' : ''}`
+                    : `${pct}% complete`;
 
                   return (
                     <tr
                       key={task.id}
                       className={`
                         border-b transition-colors cursor-pointer
-                        ${isMilestone ? "bg-amber-50/80 font-semibold" : "hover:bg-slate-50"}
-                        ${isLate && !isMilestone ? "bg-red-50/30" : ""}
-                        ${selectedIds.has(task.id) ? "bg-blue-50" : ""}
+                        ${hasChildren && !isMilestone ? "bg-slate-100 font-semibold" : ""}
+                        ${isMilestone ? "bg-amber-50/60 font-semibold" : ""}
+                        ${!hasChildren && !isMilestone ? "hover:bg-blue-50/30" : ""}
+                        ${selectedIds.has(task.id) ? "!bg-blue-100/50" : ""}
+                        ${isLate && !isMilestone && !hasChildren ? "border-l-2 border-l-red-400" : ""}
                         ${isDragging ? "opacity-40" : ""}
                         ${dropClass}
                       `}
@@ -1066,6 +1335,18 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           data-testid={`checkbox-task-${task.id}`}
                         />
                       </td>
+                      <td className="px-1 text-center border-r text-[10px] tabular-nums text-slate-400" data-testid={`row-num-${task.id}`}>
+                        {rowIndex + 1}
+                      </td>
+                      <td className="px-0 text-center border-r" data-testid={`indicator-${task.id}`}>
+                        {isMilestone ? (
+                          <span className="text-amber-600 text-[11px]" title="Milestone">◆</span>
+                        ) : hasChildren ? (
+                          <FolderOpen className="h-3 w-3 text-blue-500 mx-auto" />
+                        ) : (
+                          <span className="text-slate-400 text-[10px]" title="Task">▬</span>
+                        )}
+                      </td>
                       <td className="px-1 text-center border-r text-[10px] tabular-nums text-slate-500" data-testid={`wbs-${task.id}`}>
                         {isAdmin && task.rowNumber ? (
                           <InlineWbsEditor
@@ -1087,51 +1368,73 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                               {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                             </button>
                           )}
-                          {isMilestone && <Milestone className="h-3 w-3 text-amber-600 flex-shrink-0" />}
-                          <span className={`truncate ${isMilestone ? "text-amber-800" : ""}`} title={task.title}>
+                          <span className={`truncate ${isMilestone ? "text-amber-800" : hasChildren ? "text-slate-800" : ""}`} title={task.title}>
                             {task.title}
                           </span>
                         </div>
+                      </td>
+                      <td className="px-1 text-center border-r text-[10px] tabular-nums" onClick={(e) => e.stopPropagation()} data-testid={`duration-${task.id}`}>
+                        {hasChildren ? (
+                          <span className="text-slate-400">{taskDuration > 0 ? `${taskDuration}d` : "—"}</span>
+                        ) : (
+                          <InlineDurationEditor
+                            value={taskDuration}
+                            onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { duration: v } })}
+                          />
+                        )}
+                      </td>
+                      <td className={`px-1 text-center border-r text-[10px] tabular-nums ${hasChildren ? "text-slate-400" : ""}`} onClick={(e) => e.stopPropagation()} data-testid={`start-${task.id}`}>
+                        {hasChildren ? (
+                          <span>{formatDateCompact(taskStart)}</span>
+                        ) : (
+                          <InlineDateEditor
+                            value={taskStart}
+                            onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { startDate: v } })}
+                          />
+                        )}
+                      </td>
+                      <td className={`px-1 text-center border-r text-[10px] tabular-nums ${hasChildren ? "text-slate-400" : ""}`} onClick={(e) => e.stopPropagation()} data-testid={`end-${task.id}`}>
+                        {hasChildren ? (
+                          <span>{formatDateCompact(taskFinish)}</span>
+                        ) : (
+                          <InlineDateEditor
+                            value={taskFinish}
+                            onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { dueDate: v } })}
+                          />
+                        )}
+                      </td>
+                      <td className="px-1 text-center border-r text-[10px] text-slate-400 truncate" data-testid={`predecessors-${task.id}`}>
+                        {task.dependencies && typeof task.dependencies === 'string' ? task.dependencies : task.predecessorTaskId ? `${task.predecessorTaskId} FS` : "—"}
                       </td>
                       <td className="px-1 text-center border-r text-[10px] text-slate-500 truncate" data-testid={`lead-${task.id}`}>
                         {task.assignees ? (
                           <span className="truncate">{typeof task.assignees === 'string' ? task.assignees.split(',')[0] : '—'}</span>
                         ) : "—"}
                       </td>
-                      <td className="px-1 text-center border-r text-[10px] tabular-nums" onClick={(e) => e.stopPropagation()} data-testid={`start-${task.id}`}>
-                        <InlineDateEditor
-                          value={task.startDate || task.actualStartDate || null}
-                          onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { startDate: v } })}
-                        />
-                      </td>
-                      <td className="px-1 text-center border-r text-[10px] tabular-nums" onClick={(e) => e.stopPropagation()} data-testid={`end-${task.id}`}>
-                        <InlineDateEditor
-                          value={task.dueDate || task.actualEndDate || null}
-                          onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { dueDate: v } })}
-                        />
-                      </td>
-                      <td className="px-1 text-center border-r text-[10px] tabular-nums" data-testid={`days-${task.id}`}>
-                        {(() => {
-                          const s = task.startDate || task.actualStartDate;
-                          const e = task.dueDate || task.actualEndDate;
-                          if (s && e) {
-                            const sd = new Date(s);
-                            const ed = new Date(e);
-                            if (!isNaN(sd.getTime()) && !isNaN(ed.getTime())) {
-                              return countWorkingDays(sd, ed);
-                            }
-                          }
-                          return task.plannedDurationDays || task.durationDays || "—";
-                        })()}
-                      </td>
                       <td className="px-1 border-r" onClick={(e) => e.stopPropagation()} data-testid={`pct-done-${task.id}`}>
-                        <InlinePctEditor
-                          pct={pct}
-                          onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { percentComplete: v } })}
-                        />
+                        {hasChildren ? (
+                          <div className="flex items-center gap-1.5">
+                            <div className="flex-1 h-[5px] rounded-full bg-slate-200 overflow-hidden min-w-[30px]">
+                              <div className={`h-full rounded-full transition-all ${pctColor(pct)}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                            </div>
+                            <span className="text-[10px] tabular-nums text-slate-400 min-w-[24px] text-right">{pct}%</span>
+                          </div>
+                        ) : (
+                          <InlinePctEditor
+                            pct={pct}
+                            onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { percentComplete: v } })}
+                          />
+                        )}
                       </td>
-                      <td className={`px-1 text-center border-r text-[10px] tabular-nums font-medium ${isLate ? "text-amber-600" : "text-slate-500"}`} data-testid={`pct-forecast-${task.id}`}>
-                        {expPct !== null ? `${expPct}%` : "—"}
+                      <td className="px-1 text-center border-r" data-testid={`status-${task.id}`}>
+                        <TooltipProvider delayDuration={200}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className={`w-3 h-3 rounded-full mx-auto ${ragDot}`} />
+                            </TooltipTrigger>
+                            <TooltipContent side="left"><p className="text-xs">{ragTooltip}</p></TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       </td>
                       {isAdmin && (
                         <td className="px-0 text-center" onClick={(e) => e.stopPropagation()}>
