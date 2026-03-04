@@ -8363,7 +8363,7 @@ export async function registerRoutes(
   app.delete("/api/working-plan/tasks/:taskId", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { taskId } = req.params;
-      const { projectName, isNewTask } = req.body;
+      const { projectName, isBaseline, isNewTask } = req.body;
 
       if (!projectName) {
         return res.status(400).json({ error: "validation_error", message: "projectName is required" });
@@ -8371,21 +8371,19 @@ export async function registerRoutes(
 
       const scenario = await storage.getOrCreateActiveScenario(projectName);
       const id = parseInt(taskId);
+      const absId = Math.abs(id);
+      const isImported = isBaseline === true || id < 0;
 
-      if (isNewTask) {
-        // For new tasks, we can hard delete the override
-        await storage.softDeleteTaskOverride(Math.abs(id));
-      } else {
-        // For imported tasks, create soft-delete override
+      if (isImported) {
         const existingOverrides = await storage.getTaskOverridesByScenario(scenario.id);
-        const existing = existingOverrides.find(o => o.importedTaskId === id);
+        const existing = existingOverrides.find(o => o.importedTaskId === absId);
 
         if (existing) {
           await storage.softDeleteTaskOverride(existing.id);
         } else {
           await storage.createTaskOverride({
             scenarioId: scenario.id,
-            importedTaskId: id,
+            importedTaskId: absId,
             overrideStartDate: null,
             overrideEndDate: null,
             overrideName: null,
@@ -8395,6 +8393,14 @@ export async function registerRoutes(
             isNewTask: 0,
           });
         }
+      } else {
+        const existingOverrides = await storage.getTaskOverridesByScenario(scenario.id);
+        const existingOverride = existingOverrides.find(o => o.id === absId && o.isNewTask === 1);
+        if (existingOverride) {
+          await storage.softDeleteTaskOverride(existingOverride.id);
+        } else {
+          await db.delete(operationalTasks).where(eq(operationalTasks.id, absId));
+        }
       }
 
       sendExcelSyncNotification({
@@ -8402,10 +8408,10 @@ export async function registerRoutes(
         changedByUserId: req.user?.id || 0,
         changeType: "working_plan_task_deleted",
         changeDescription: `Working plan task #${taskId} deleted.`,
-        details: { taskId, isNewTask },
+        details: { taskId, isImported },
       }).catch(() => {});
 
-      logAuditFromReq(req, { entityType: "working_plan_task", action: "delete", entityId: taskId, projectName, changesJson: { description: "Working plan task deleted", isNewTask } });
+      logAuditFromReq(req, { entityType: "working_plan_task", action: "delete", entityId: taskId, projectName, changesJson: { description: "Working plan task deleted", isImported } });
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error deleting task:", error);

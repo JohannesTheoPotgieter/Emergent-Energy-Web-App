@@ -1374,33 +1374,36 @@ export default function ProjectDetailPage() {
                   <div className="space-y-1.5 border-t pt-2">
                     <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Top Categories</p>
                     {(() => {
-                      const categories = (expenseData as any[]).reduce((acc: Record<string, { actual: number; budget: number }>, e: any) => {
+                      const categories = (expenseData as any[]).reduce((acc: Record<string, { actual: number; paid: number; count: number }>, e: any) => {
                         const cat = e.expenseCategory || "Uncategorised";
-                        if (!acc[cat]) acc[cat] = { actual: 0, budget: 0 };
-                        acc[cat].actual += Number(e.expenseActualTotal) || 0;
-                        acc[cat].budget += Number(e.budgetTotal) || 0;
+                        if (!acc[cat]) acc[cat] = { actual: 0, paid: 0, count: 0 };
+                        const amt = Number(e.expenseActualTotal) || 0;
+                        acc[cat].actual += amt;
+                        acc[cat].count += 1;
+                        const isPaid = e.computedState === "Paid" || (e.expensePaymentDate && String(e.expensePaymentDate).trim());
+                        if (isPaid) acc[cat].paid += amt;
                         return acc;
                       }, {});
                       const sorted = Object.entries(categories).sort((a, b) => b[1].actual - a[1].actual);
-                      const maxVal = Math.max(...sorted.map(([, v]) => Math.max(v.actual, v.budget)), 1);
+                      const totalActual = sorted.reduce((sum, [, v]) => sum + v.actual, 0);
+                      const maxVal = Math.max(...sorted.map(([, v]) => v.actual), 1);
                       if (sorted.length === 0) return <p className="text-xs text-muted-foreground text-center py-1">No expenditure data</p>;
                       return sorted.slice(0, 5).map(([cat, vals]) => {
-                        const overBudget = vals.actual > vals.budget && vals.budget > 0;
+                        const pct = totalActual > 0 ? ((vals.actual / totalActual) * 100).toFixed(0) : "0";
+                        const paidPct = vals.actual > 0 ? ((vals.paid / vals.actual) * 100).toFixed(0) : "0";
+                        const fmtAmt = vals.actual >= 1000000 ? `R${(vals.actual / 1000000).toFixed(1)}M` : `R${(vals.actual / 1000).toFixed(0)}k`;
+                        const fmtPaid = vals.paid >= 1000000 ? `R${(vals.paid / 1000000).toFixed(1)}M` : `R${(vals.paid / 1000).toFixed(0)}k`;
                         return (
                           <div key={cat} className="space-y-0.5" data-testid={`exp-cat-${cat.replace(/\s+/g, "-").toLowerCase()}`}>
                             <div className="flex items-center justify-between text-[11px]">
                               <span className="truncate max-w-[200px] text-muted-foreground">{cat}</span>
-                              <span className={`font-medium ${overBudget ? "text-red-600" : ""}`}>
-                                R{(vals.actual / 1000).toFixed(0)}k / R{(vals.budget / 1000).toFixed(0)}k
+                              <span className="font-medium">
+                                {fmtAmt} <span className="text-muted-foreground font-normal">({pct}%)</span>
+                                {Number(paidPct) > 0 && <span className="text-emerald-600 ml-1">{fmtPaid} paid</span>}
                               </span>
                             </div>
-                            <div className="flex gap-0.5 h-1.5">
-                              <div className="h-full bg-violet-200 rounded-full overflow-hidden flex-1">
-                                <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${Math.min((vals.budget / maxVal) * 100, 100)}%` }} />
-                              </div>
-                              <div className="h-full bg-muted rounded-full overflow-hidden flex-1">
-                                <div className={`h-full rounded-full transition-all ${overBudget ? "bg-red-500" : "bg-emerald-500"}`} style={{ width: `${Math.min((vals.actual / maxVal) * 100, 100)}%` }} />
-                              </div>
+                            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                              <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.min((vals.actual / maxVal) * 100, 100)}%` }} />
                             </div>
                           </div>
                         );
