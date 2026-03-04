@@ -334,14 +334,8 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   });
 
   const deleteTaskMutation = useMutation({
-    mutationFn: async ({ taskId, isNewTask }: { taskId: number; isNewTask: boolean }) => {
-      const res = await fetch(`/api/working-plan/tasks/${taskId}`, {
-        credentials: "include",
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectName, isNewTask }),
-      });
-      if (!res.ok) throw new Error("Failed to delete task");
+    mutationFn: async ({ taskId, isBaseline }: { taskId: number; isBaseline: boolean }) => {
+      const res = await apiRequest("DELETE", `/api/working-plan/tasks/${taskId}`, { projectName, isBaseline });
       return res.json();
     },
     onSuccess: () => {
@@ -1490,7 +1484,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
               variant="destructive"
               onClick={() => {
                 if (taskToDelete) {
-                  deleteTaskMutation.mutate({ taskId: taskToDelete.id, isNewTask: taskToDelete.id < 0 });
+                  deleteTaskMutation.mutate({ taskId: taskToDelete.id, isBaseline: taskToDelete.isBaseline === true });
                 }
               }}
               disabled={deleteTaskMutation.isPending}
