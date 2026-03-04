@@ -229,6 +229,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "PD Dashboard", icon: FileEdit, path: "/pd" },
         { label: "PD Tickets", icon: ClipboardList, path: "/pd/tickets" },
+        { label: "Clients", icon: Users, path: "/clients" },
       ],
     },
     {
