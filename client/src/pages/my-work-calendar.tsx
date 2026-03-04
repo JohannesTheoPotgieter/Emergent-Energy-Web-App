@@ -27,6 +27,7 @@ import {
   GripVertical,
   ListTodo,
   X,
+  RefreshCw,
 } from "lucide-react";
 
 function authHeaders() {
@@ -502,6 +503,43 @@ export default function MyWorkCalendarPage() {
     });
   }, [scheduleMutation]);
 
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/ms-sync/trigger", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ type: "calendar" }),
+      });
+      if (!res.ok) throw new Error("Sync failed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["outlook-events-calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["outlook-status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
+      if (data?.success === false && data?.error === "ms_sso_required") {
+        toast({
+          title: "Microsoft Sign-In Required",
+          description: "Please sign in with Microsoft 365 SSO to sync your calendar events.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Calendar Synced",
+          description: "Your Outlook calendar events have been refreshed.",
+        });
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Sync Failed",
+        description: "Could not refresh calendar data. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const isLoading = outlookLoading || tasksLoading;
 
   return (
@@ -515,6 +553,17 @@ export default function MyWorkCalendarPage() {
             Outlook events and tasks combined
           </p>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => syncMutation.mutate()}
+          disabled={syncMutation.isPending}
+          data-testid="button-refresh-connection"
+          className="gap-1.5"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+          {syncMutation.isPending ? "Syncing..." : "Refresh Connection"}
+        </Button>
       </div>
 
       <Card className="flex-1 flex flex-col min-h-0">

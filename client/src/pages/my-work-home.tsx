@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link } from "wouter";
+import { useToast } from "@/hooks/use-toast";
 import { format, parseISO, isToday } from "date-fns";
 import {
   CheckCircle2,
@@ -23,6 +24,7 @@ import {
   FolderOpen,
   Flag,
   ArrowRight,
+  RefreshCw,
 } from "lucide-react";
 
 interface TaskItem {
@@ -97,6 +99,45 @@ function StatusIcon({ status }: { status: string }) {
 
 export default function MyWorkHomePage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/ms-sync/trigger", {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error("Sync failed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["outlook-events-mywork"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ms-objects/mine"] });
+      if (data?.success === false && data?.error === "ms_sso_required") {
+        toast({
+          title: "Microsoft Sign-In Required",
+          description: "Please sign in with Microsoft 365 SSO to sync your data.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Data Synced",
+          description: "Your tasks, calendar, and email data have been refreshed.",
+        });
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Sync Failed",
+        description: "Could not refresh data. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
 
   const { data: calendarEvents = [], isLoading: calLoading } = useQuery<CalendarEvent[]>({
     queryKey: ["outlook-events-mywork", today],
@@ -417,9 +458,24 @@ export default function MyWorkHomePage() {
                   <Target className="h-4 w-4 text-emerald-600" />
                   Open Tasks
                 </CardTitle>
-                <Badge variant="secondary" className="text-xs" data-testid="badge-open-tasks-count">
-                  {openTasks.length}
-                </Badge>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => {
+                      queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
+                      toast({ title: "Refreshing tasks...", description: "Fetching latest task data." });
+                    }}
+                    data-testid="button-refresh-tasks"
+                    title="Refresh tasks"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                  </Button>
+                  <Badge variant="secondary" className="text-xs" data-testid="badge-open-tasks-count">
+                    {openTasks.length}
+                  </Badge>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="pt-0">
@@ -488,11 +544,24 @@ export default function MyWorkHomePage() {
                   <Calendar className="h-4 w-4 text-blue-600" />
                   Today's Timeline
                 </CardTitle>
-                <Link href="/my-work/calendar">
-                  <Button variant="ghost" size="sm" className="h-6 text-xs" data-testid="link-full-calendar">
-                    Full Calendar <ChevronRight className="h-3 w-3 ml-0.5" />
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => syncMutation.mutate()}
+                    disabled={syncMutation.isPending}
+                    data-testid="button-refresh-timeline"
+                    title="Refresh connection"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${syncMutation.isPending ? "animate-spin" : ""}`} />
                   </Button>
-                </Link>
+                  <Link href="/my-work/calendar">
+                    <Button variant="ghost" size="sm" className="h-6 text-xs" data-testid="link-full-calendar">
+                      Full Calendar <ChevronRight className="h-3 w-3 ml-0.5" />
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="pt-0">
