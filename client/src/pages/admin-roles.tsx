@@ -147,6 +147,7 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "cos" as PermissionEntity, label: "COS Tracker", actions: ["view", "edit"] },
       { entity: "subcontractors" as PermissionEntity, label: "Procurement", actions: ["view", "edit", "delete"] },
       { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Patterns", actions: ["view", "edit"] },
+      { entity: "revenue_tracker" as PermissionEntity, label: "Revenue Tracker", actions: ["view", "edit"] },
     ],
   },
   {

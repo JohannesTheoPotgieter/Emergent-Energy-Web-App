@@ -66,7 +66,7 @@ import {
   Leaf,
   CircuitBoard,
 } from "lucide-react";
-import { UX_REDESIGN_ENABLED } from "@shared/schema";
+import { UX_REDESIGN_ENABLED, checkPermission, ENTITY_PERMISSION_DEFAULTS, type PermissionEntity } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import { authApi } from "@/lib/api";
@@ -128,6 +128,60 @@ const SECTION_COLORS: Record<string, string> = {
   PROJECT_DELIVERY: "text-orange-600",
   OPERATIONS: "text-amber-600",
 };
+
+const PATH_TO_ENTITY: Record<string, PermissionEntity> = {
+  "/cashflow": "cashflow",
+  "/cos": "cos",
+  "/revenue-tracker": "revenue_tracker",
+  "/subcontractor-dashboard": "subcontractors",
+  "/engineering": "engineering",
+  "/engineering/tasks": "eng_tasks",
+  "/quality": "quality",
+  "/pd": "pd_dashboard",
+  "/pd/tickets": "pd_tickets",
+  "/pd/clients": "pd_clients",
+  "/lifecycle-board": "lifecycle",
+  "/projects": "projects",
+  "/portfolios": "portfolios",
+  "/dashboard": "execution_board",
+  "/pm-dashboard": "pm_dashboard",
+  "/pm/on-the-go": "pm_on_the_go",
+  "/weekly-reviews": "weekly_review_wizard",
+  "/admin/roles": "admin_roles",
+  "/admin/settings": "admin",
+  "/admin/activity-log": "activity_log",
+  "/smart-import": "smart_import",
+  "/excel-updates": "excel_updates",
+  "/ee-info": "ee_info",
+  "/feedback": "feedback",
+  "/leaderboard": "leaderboard",
+  "/invoice-patterns": "invoice_patterns",
+  "/company-priorities": "company_priorities",
+  "/my-work": "home",
+  "/my-work/tasks": "my_tool",
+  "/my-work/approvals": "my_work",
+  "/my-work/calendar": "my_work",
+  "/my-work/meetings": "meetings",
+  "/my-work/email": "collaboration_hub",
+  "/my-work/teams": "teams_chat",
+};
+
+function hasEntityViewPermission(
+  path: string,
+  role: string | null,
+  entityPermissions: Record<string, Record<string, boolean>> | null | undefined,
+): boolean {
+  const entity = PATH_TO_ENTITY[path];
+  if (!entity) return true;
+
+  if (entityPermissions && entityPermissions[entity]) {
+    if (entityPermissions[entity].view === true) return true;
+    if (entityPermissions[entity].view === false) return false;
+  }
+
+  if (!role) return true;
+  return checkPermission(role, entity, "view");
+}
 
 function getLegacyNavGroups(): NavGroup[] {
   return [
@@ -211,6 +265,8 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "PD Dashboard", icon: Sun, path: "/pd" },
         { label: "PD Tickets", icon: ClipboardList, path: "/pd/tickets" },
+        { label: "Clients", icon: Users, path: "/pd/clients" },
+        { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
         { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
       ],
     },
@@ -522,6 +578,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               }
               return true;
             });
+
+            const entityPerms = permissions?.entityPermissions as Record<string, Record<string, boolean>> | null | undefined;
+            visibleItems = visibleItems.filter(item =>
+              hasEntityViewPermission(item.path, activeRole, entityPerms)
+            );
             if (visibleItems.length === 0) return null;
 
             const currentSearchStr = typeof window !== "undefined" ? window.location.search : "";

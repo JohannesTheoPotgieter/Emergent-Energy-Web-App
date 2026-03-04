@@ -795,7 +795,22 @@ export default function ProjectDetailPage() {
     engineering: canViewPerm("pd_engineering") && canViewEngineering,
     quality: canViewPerm("pd_quality") && canViewQuality,
     history: canViewPerm("pd_history"),
+    expenditure: canViewPerm("pd_expenditure"),
   };
+
+  useEffect(() => {
+    if (overviewTab) return;
+    const tabs = [
+      { key: "plan", visible: canViewTab.overview },
+      { key: "engineering", visible: canViewTab.engineering },
+      { key: "quality", visible: canViewTab.quality },
+      { key: "finance", visible: canViewTab.expenditure },
+      { key: "collaboration", visible: true },
+      { key: "pd", visible: true },
+    ];
+    const first = tabs.find(t => t.visible);
+    if (first) setOverviewTab(first.key);
+  }, [canViewTab.overview, canViewTab.engineering, canViewTab.quality, canViewTab.expenditure, overviewTab]);
 
   const canViewSubTab = {
     revenue: canViewPerm("pd_revenue"),
@@ -827,6 +842,7 @@ export default function ProjectDetailPage() {
 
   const [activeSection, setActiveSection] = useState<string>(resolvedFromUrl?.section || "overview");
   const [activeSubTab, setActiveSubTab] = useState<string>(resolvedFromUrl?.subTab || "");
+  const [overviewTab, setOverviewTab] = useState<string>("");
 
   useEffect(() => {
     if (urlTab) {
@@ -1132,430 +1148,434 @@ export default function ProjectDetailPage() {
 
 
       {activeSection === "overview" && (
-        <div className="space-y-4" data-testid="overview-section">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="space-y-3" data-testid="overview-section">
+          <div className="flex items-center gap-1 bg-white border rounded-lg p-1 overflow-x-auto" data-testid="overview-tabs">
+            {[
+              { key: "plan", label: "Plan", icon: CalendarDays, activeClass: "bg-sky-50 text-sky-700 shadow-sm", visible: canViewTab.overview },
+              { key: "engineering", label: "Engineering", icon: Wrench, activeClass: "bg-orange-50 text-orange-700 shadow-sm", visible: canViewTab.engineering },
+              { key: "quality", label: "Quality", icon: ShieldCheck, activeClass: "bg-emerald-50 text-emerald-700 shadow-sm", visible: canViewTab.quality },
+              { key: "finance", label: "Finance", icon: DollarSign, activeClass: "bg-violet-50 text-violet-700 shadow-sm", visible: canViewTab.expenditure },
+              { key: "collaboration", label: "Collaboration", icon: Users, activeClass: "bg-teal-50 text-teal-700 shadow-sm", visible: true },
+              { key: "pd", label: "PD", icon: FileText, activeClass: "bg-indigo-50 text-indigo-700 shadow-sm", visible: true },
+            ].filter(t => t.visible).map(tab => {
+              const Icon = tab.icon;
+              const isActive = overviewTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setOverviewTab(tab.key)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all ${isActive ? tab.activeClass : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
+                  data-testid={`overview-tab-${tab.key}`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
 
-            {canViewTab.overview && (
-            <Card className="relative overflow-hidden border-l-[3px] border-l-sky-500 shadow-sm hover:shadow-md transition-shadow" data-testid="overview-plan-summary">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-sky-50 flex items-center justify-center">
-                      <CalendarDays className="h-3.5 w-3.5 text-sky-600" />
+          <Card className="shadow-sm" data-testid="overview-panel">
+            <CardContent className="p-4">
+              {overviewTab === "plan" && canViewTab.overview && (
+                <div className="space-y-3" data-testid="overview-plan-panel">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CalendarDays className="h-4 w-4 text-sky-600" />
+                      <h3 className="font-semibold text-sm">Project Plan</h3>
+                      <RagDot color={scheduleRag} />
                     </div>
-                    <h3 className="font-semibold text-sm">Project Plan</h3>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-sky-600" onClick={() => navigateToSection("project-management", "plan")} data-testid="button-goto-plan">
+                      Open Plan <ArrowRight className="h-3 w-3" />
+                    </Button>
                   </div>
-                  <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-sky-600 px-2" onClick={() => navigateToSection("project-management", "plan")} data-testid="button-goto-plan">
-                    View <ArrowRight className="h-3 w-3" />
-                  </Button>
-                </div>
 
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">Progress</span>
-                    <span className="font-semibold">{planCompletionPct.toFixed(0)}%</span>
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-muted-foreground">Progress</span>
+                        <span className="font-semibold">{planCompletionPct.toFixed(0)}%</span>
+                      </div>
+                      <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-sky-500 rounded-full transition-all" style={{ width: `${planCompletionPct}%` }} />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 text-center shrink-0">
+                      <div>
+                        <p className="text-lg font-bold">{planTasks.length}</p>
+                        <p className="text-[9px] text-muted-foreground">Total</p>
+                      </div>
+                      <div>
+                        <p className="text-lg font-bold text-emerald-600">{completedPlanTasks.length}</p>
+                        <p className="text-[9px] text-muted-foreground">Done</p>
+                      </div>
+                      <div>
+                        <p className={`text-lg font-bold ${overduePlanTasks.length > 0 ? "text-red-600" : ""}`}>{overduePlanTasks.length}</p>
+                        <p className="text-[9px] text-muted-foreground">Overdue</p>
+                      </div>
+                      <div>
+                        <p className="text-lg font-bold text-sky-600">{Math.max(0, planTasks.length - completedPlanTasks.length - overduePlanTasks.length)}</p>
+                        <p className="text-[9px] text-muted-foreground">On Track</p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-sky-500 rounded-full transition-all" style={{ width: `${planCompletionPct}%` }} />
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-4 gap-1 text-center">
-                  <div className="rounded-lg bg-muted/50 py-1.5">
-                    <p className="text-base font-bold">{planTasks.length}</p>
-                    <p className="text-[9px] text-muted-foreground">Total</p>
-                  </div>
-                  <div className="rounded-lg bg-emerald-50 py-1.5">
-                    <p className="text-base font-bold text-emerald-600">{completedPlanTasks.length}</p>
-                    <p className="text-[9px] text-muted-foreground">Done</p>
-                  </div>
-                  <div className={`rounded-lg py-1.5 ${overduePlanTasks.length > 0 ? "bg-red-50" : "bg-muted/50"}`}>
-                    <p className={`text-base font-bold ${overduePlanTasks.length > 0 ? "text-red-600" : ""}`}>{overduePlanTasks.length}</p>
-                    <p className="text-[9px] text-muted-foreground">Overdue</p>
-                  </div>
-                  <div className="rounded-lg bg-sky-50 py-1.5">
-                    <p className="text-base font-bold text-sky-600">{Math.max(0, planTasks.length - completedPlanTasks.length - overduePlanTasks.length)}</p>
-                    <p className="text-[9px] text-muted-foreground">On Track</p>
-                  </div>
-                </div>
-
-                <div className="space-y-1 max-h-[100px] overflow-y-auto pr-1">
-                  {(() => {
-                    if (planTasks.length === 0) return <p className="text-xs text-muted-foreground text-center py-2">No plan data uploaded yet</p>;
-                    const urgent = [...overduePlanTasks]
-                      .sort((a: any, b: any) => (a.actualEnd || a.endDate || "").localeCompare(b.actualEnd || b.endDate || ""))
-                      .slice(0, 3);
-                    if (urgent.length === 0) {
-                      const upcoming = planTasks
-                        .filter((t: any) => {
-                          const endDate = t.actualEnd || t.endDate;
-                          const pct = Number(t.actualPctComplete) || 0;
-                          return endDate && endDate >= today && pct < 1;
-                        })
+                  <div className="space-y-1 border-t pt-2">
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                      {overduePlanTasks.length > 0 ? "Urgent Tasks" : "Upcoming"}
+                    </p>
+                    {(() => {
+                      if (planTasks.length === 0) return <p className="text-xs text-muted-foreground text-center py-1">No plan data uploaded yet</p>;
+                      const urgent = [...overduePlanTasks]
                         .sort((a: any, b: any) => (a.actualEnd || a.endDate || "").localeCompare(b.actualEnd || b.endDate || ""))
                         .slice(0, 3);
-                      if (upcoming.length === 0) return <p className="text-xs text-emerald-600 text-center py-2">All tasks on track</p>;
-                      return upcoming.map((t: any, i: number) => (
-                        <div key={i} className="flex items-center gap-2 text-[11px] py-1 px-2 rounded bg-muted/50 hover:bg-muted cursor-pointer" onClick={() => navigateToSection("project-management", "plan")} data-testid={`row-plan-upcoming-${t.id || i}`}>
-                          <Circle className="h-2 w-2 text-sky-400 shrink-0" />
-                          <span className="truncate flex-1">{t.highLevelProgramme || t.taskName || t.task_name || "Unnamed"}</span>
-                          <span className="text-sky-600 font-medium shrink-0 text-[10px]">{((Number(t.actualPctComplete) || 0) * 100).toFixed(0)}%</span>
-                        </div>
-                      ));
-                    }
-                    return urgent.map((t: any, i: number) => {
-                      const endDate = t.actualEnd || t.endDate || "";
-                      const daysLate = endDate ? Math.floor((new Date().getTime() - new Date(endDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
-                      return (
-                        <div key={i} className="flex items-center gap-2 text-[11px] py-1 px-2 rounded bg-red-50 border border-red-100 cursor-pointer" onClick={() => navigateToSection("project-management", "plan")} data-testid={`row-plan-overdue-${t.id || i}`}>
-                          <AlertCircle className="h-3 w-3 text-red-500 shrink-0" />
-                          <span className="truncate flex-1">{t.highLevelProgramme || t.taskName || t.task_name || "Unnamed"}</span>
-                          <Badge variant="destructive" className="text-[9px] px-1 py-0 shrink-0">{daysLate}d</Badge>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-
-                <div className="flex items-center gap-2 pt-1.5 border-t">
-                  <RagDot color={scheduleRag} />
-                  <span className={`text-[11px] font-medium ${ragColor(scheduleRag)}`}>
-                    {scheduleRag === "green" ? "On schedule" : scheduleRag === "amber" ? `${overduePlanTasks.length} overdue` : `${overduePlanTasks.length} behind`}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-            )}
-
-            {canViewTab.engineering && (
-            <Card className="relative overflow-hidden border-l-[3px] border-l-orange-500 shadow-sm hover:shadow-md transition-shadow" data-testid="overview-engineering-summary">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-orange-50 flex items-center justify-center">
-                      <Wrench className="h-3.5 w-3.5 text-orange-600" />
-                    </div>
-                    <h3 className="font-semibold text-sm">Engineering</h3>
-                  </div>
-                  <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-orange-600 px-2" onClick={() => navigateToSection("engineering")} data-testid="button-goto-engineering">
-                    View <ArrowRight className="h-3 w-3" />
-                  </Button>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">Stage Progress</span>
-                    <span className="font-semibold">{engStagePct.toFixed(0)}%</span>
-                  </div>
-                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-orange-500 rounded-full transition-all" style={{ width: `${engStagePct}%` }} />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-1 text-center">
-                  <div className="rounded-lg bg-muted/50 py-1.5">
-                    <p className="text-base font-bold">{engStages.length}</p>
-                    <p className="text-[9px] text-muted-foreground">Stages</p>
-                  </div>
-                  <div className="rounded-lg bg-emerald-50 py-1.5">
-                    <p className="text-base font-bold text-emerald-600">{engCompletedStages}</p>
-                    <p className="text-[9px] text-muted-foreground">Complete</p>
-                  </div>
-                  <div className="rounded-lg bg-orange-50 py-1.5">
-                    <p className="text-base font-bold">{engCompletedTasks}/{engTotalTasks}</p>
-                    <p className="text-[9px] text-muted-foreground">Tasks</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 pt-1.5 border-t">
-                  <Target className="h-3.5 w-3.5 text-orange-500" />
-                  <span className="text-[11px] font-medium text-muted-foreground truncate">
-                    {engActiveStage ? `Active: ${engActiveStage.stageName || engActiveStage.templateName || "Stage"}` : engStages.length === 0 && engBoardTotal > 0 ? `${engBoardTotal} board task${engBoardTotal !== 1 ? "s" : ""}` : engStages.length === 0 ? "No stages yet" : "All complete"}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-            )}
-
-            {canViewTab.quality && (
-            <Card className="relative overflow-hidden border-l-[3px] border-l-emerald-500 shadow-sm hover:shadow-md transition-shadow" data-testid="overview-quality-summary">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center">
-                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                    </div>
-                    <h3 className="font-semibold text-sm">Quality</h3>
-                  </div>
-                  <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-emerald-600 px-2" onClick={() => navigateToSection("quality")} data-testid="button-goto-quality">
-                    View <ArrowRight className="h-3 w-3" />
-                  </Button>
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">Gate Progress</span>
-                    <span className="font-semibold">{qualityGatesTotal > 0 ? `${qualityGatesPassed}/${qualityGatesTotal}` : "No gates"}</span>
-                  </div>
-                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${qualityGatesTotal > 0 ? (qualityGatesPassed / qualityGatesTotal) * 100 : 0}%` }} />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-1 text-center">
-                  <div className="rounded-lg bg-muted/50 py-1.5">
-                    <p className="text-base font-bold">{qualityGatesTotal}</p>
-                    <p className="text-[9px] text-muted-foreground">Gates</p>
-                  </div>
-                  <div className="rounded-lg bg-emerald-50 py-1.5">
-                    <p className="text-base font-bold text-emerald-600">{qualityGatesPassed}</p>
-                    <p className="text-[9px] text-muted-foreground">Passed</p>
-                  </div>
-                  <div className={`rounded-lg py-1.5 ${qualityGatesTotal - qualityGatesPassed > 0 ? "bg-amber-50" : "bg-muted/50"}`}>
-                    <p className={`text-base font-bold ${qualityGatesTotal - qualityGatesPassed > 0 ? "text-amber-600" : ""}`}>
-                      {qualityGatesTotal - qualityGatesPassed}
-                    </p>
-                    <p className="text-[9px] text-muted-foreground">Pending</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 pt-1.5 border-t">
-                  <RagDot color={qualityRag} />
-                  <span className={`text-[11px] font-medium ${ragColor(qualityRag)}`}>
-                    {qualityRag === "green" ? "On Track" : qualityRag === "amber" ? "Needs Review" : "Action Required"}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {canViewTab.expenditure && (
-            <Card className="relative overflow-hidden border-l-[3px] border-l-violet-500 shadow-sm hover:shadow-md transition-shadow lg:col-span-2" data-testid="overview-expenditure">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center">
-                      <DollarSign className="h-3.5 w-3.5 text-violet-600" />
-                    </div>
-                    <h3 className="font-semibold text-sm">Expenditure</h3>
-                  </div>
-                  <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-violet-600 px-2" onClick={() => navigateToSection("project-management", "expenditure")} data-testid="button-goto-expenditure">
-                    View <ArrowRight className="h-3 w-3" />
-                  </Button>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-lg bg-violet-50 py-2">
-                    <p className="text-[10px] text-muted-foreground mb-0.5">Costed</p>
-                    <p className="text-sm font-bold">R{(budgetTotal / 1000).toFixed(0)}k</p>
-                  </div>
-                  <div className={`rounded-lg py-2 ${costRag === "red" ? "bg-red-50" : costRag === "amber" ? "bg-amber-50" : "bg-muted/50"}`}>
-                    <p className="text-[10px] text-muted-foreground mb-0.5">Actual</p>
-                    <p className={`text-sm font-bold ${costRag === "red" ? "text-red-600" : costRag === "amber" ? "text-amber-600" : ""}`}>R{(totalExpenses / 1000).toFixed(0)}k</p>
-                  </div>
-                  <div className={`rounded-lg py-2 ${(budgetTotal - totalExpenses) < 0 ? "bg-red-50" : "bg-emerald-50"}`}>
-                    <p className="text-[10px] text-muted-foreground mb-0.5">Variance</p>
-                    <p className={`text-sm font-bold ${(budgetTotal - totalExpenses) < 0 ? "text-red-600" : "text-emerald-600"}`}>
-                      {(budgetTotal - totalExpenses) >= 0 ? "" : "-"}R{(Math.abs(budgetTotal - totalExpenses) / 1000).toFixed(0)}k
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
-                  {(() => {
-                    const categories = (expenseData as any[]).reduce((acc: Record<string, { actual: number; budget: number }>, e: any) => {
-                      const cat = e.expenseCategory || "Uncategorised";
-                      if (!acc[cat]) acc[cat] = { actual: 0, budget: 0 };
-                      acc[cat].actual += Number(e.expenseActualTotal) || 0;
-                      acc[cat].budget += Number(e.budgetTotal) || 0;
-                      return acc;
-                    }, {});
-                    const sorted = Object.entries(categories).sort((a, b) => b[1].actual - a[1].actual);
-                    const maxVal = Math.max(...sorted.map(([, v]) => Math.max(v.actual, v.budget)), 1);
-                    if (sorted.length === 0) return <p className="text-xs text-muted-foreground text-center py-3">No expenditure data</p>;
-                    return sorted.slice(0, 5).map(([cat, vals]) => {
-                      const overBudget = vals.actual > vals.budget && vals.budget > 0;
-                      return (
-                        <div key={cat} className="space-y-0.5" data-testid={`exp-cat-${cat.replace(/\s+/g, "-").toLowerCase()}`}>
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="truncate max-w-[160px] text-muted-foreground">{cat}</span>
-                            <span className={`font-medium ${overBudget ? "text-red-600" : ""}`}>
-                              R{(vals.actual / 1000).toFixed(0)}k / R{(vals.budget / 1000).toFixed(0)}k
-                            </span>
-                          </div>
-                          <div className="flex gap-0.5 h-1.5">
-                            <div className="h-full bg-violet-200 rounded-full overflow-hidden flex-1">
-                              <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${Math.min((vals.budget / maxVal) * 100, 100)}%` }} />
-                            </div>
-                            <div className="h-full bg-muted rounded-full overflow-hidden flex-1">
-                              <div className={`h-full rounded-full transition-all ${overBudget ? "bg-red-500" : "bg-emerald-500"}`} style={{ width: `${Math.min((vals.actual / maxVal) * 100, 100)}%` }} />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-                <div className="flex items-center gap-4 text-[10px] text-muted-foreground pt-1.5 border-t">
-                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-violet-500" /> Costed</div>
-                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500" /> Actual</div>
-                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500" /> Over Budget</div>
-                </div>
-              </CardContent>
-            </Card>
-            )}
-
-            <Card className="relative overflow-hidden border-l-[3px] border-l-teal-500 shadow-sm hover:shadow-md transition-shadow" data-testid="overview-collaboration">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-teal-50 flex items-center justify-center">
-                      <Users className="h-3.5 w-3.5 text-teal-600" />
-                    </div>
-                    <h3 className="font-semibold text-sm">Collaboration</h3>
-                  </div>
-                  <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-teal-600 px-2" onClick={() => navigateToSection("collaboration", "chat")} data-testid="button-goto-collaboration">
-                    Open <ArrowRight className="h-3 w-3" />
-                  </Button>
-                </div>
-
-                <div className="space-y-2">
-                  <div
-                    className="flex items-center gap-3 p-3 rounded-lg bg-gradient-to-r from-teal-50 to-emerald-50/50 border border-teal-100 cursor-pointer hover:shadow-sm transition-all"
-                    onClick={() => navigateToSection("collaboration", "chat")}
-                    data-testid="collab-chat-link"
-                  >
-                    <div className="w-9 h-9 rounded-lg bg-teal-100 flex items-center justify-center shrink-0">
-                      <MessageSquare className="h-4 w-4 text-teal-700" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">Project Chat</p>
-                      <p className="text-[11px] text-muted-foreground">Team discussion & updates</p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-teal-400 shrink-0" />
-                  </div>
-
-                  <div
-                    className="flex items-center gap-3 p-3 rounded-lg bg-gradient-to-r from-blue-50 to-sky-50/50 border border-blue-100 cursor-pointer hover:shadow-sm transition-all"
-                    onClick={() => navigateToSection("collaboration", "local-files")}
-                    data-testid="collab-folder-link"
-                  >
-                    <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
-                      <FolderOpen className="h-4 w-4 text-blue-700" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">Project Folder</p>
-                      <p className="text-[11px] text-muted-foreground">Local SharePoint sync folder</p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-blue-400 shrink-0" />
-                  </div>
-
-                  <div
-                    className="flex items-center gap-3 p-3 rounded-lg bg-gradient-to-r from-violet-50 to-purple-50/50 border border-violet-100 cursor-pointer hover:shadow-sm transition-all"
-                    onClick={() => navigateToSection("collaboration", "approvals")}
-                    data-testid="collab-approvals-link"
-                  >
-                    <div className="w-9 h-9 rounded-lg bg-violet-100 flex items-center justify-center shrink-0">
-                      <FileCheck className="h-4 w-4 text-violet-700" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">Approvals</p>
-                      <p className="text-[11px] text-muted-foreground">Deliverables & sign-offs</p>
-                    </div>
-                    <ArrowRight className="h-4 w-4 text-violet-400 shrink-0" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Card className="relative overflow-hidden border-l-[3px] border-l-indigo-500 shadow-sm hover:shadow-md transition-shadow" data-testid="overview-pd-summary">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center">
-                      <FileText className="h-3.5 w-3.5 text-indigo-600" />
-                    </div>
-                    <h3 className="font-semibold text-sm">Project Development</h3>
-                  </div>
-                  <Button variant="ghost" size="sm" className="h-6 text-[11px] gap-1 text-indigo-600 px-2" onClick={() => setLocation("/pd-tickets")} data-testid="button-goto-pd">
-                    View All <ArrowRight className="h-3 w-3" />
-                  </Button>
-                </div>
-
-                {(() => {
-                  const tickets = pdTicketsData || [];
-                  const active = tickets.filter((t: any) => t.status === "In Progress" || t.status === "Draft");
-                  const completed = tickets.filter((t: any) => t.status === "Completed");
-                  const overdue = tickets.filter((t: any) => {
-                    if (!t.dueDate || t.status === "Completed" || t.status === "Cancelled") return false;
-                    return t.dueDate < new Date().toISOString().split("T")[0];
-                  });
-                  const totalTasks = tickets.reduce((sum: number, t: any) => sum + (t.taskCount?.total || 0), 0);
-                  const completedTasks = tickets.reduce((sum: number, t: any) => sum + (t.taskCount?.completed || 0), 0);
-                  const progressPct = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
-
-                  return (
-                    <>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Task Progress</span>
-                          <span className="font-semibold">{totalTasks > 0 ? `${completedTasks}/${totalTasks}` : "No tasks"}</span>
-                        </div>
-                        <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                          <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${progressPct}%` }} />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-1 text-center">
-                        <div className="rounded-lg bg-muted/50 py-1.5">
-                          <p className="text-base font-bold">{tickets.length}</p>
-                          <p className="text-[9px] text-muted-foreground">Tickets</p>
-                        </div>
-                        <div className="rounded-lg bg-emerald-50 py-1.5">
-                          <p className="text-base font-bold text-emerald-600">{completed.length}</p>
-                          <p className="text-[9px] text-muted-foreground">Done</p>
-                        </div>
-                        <div className={`rounded-lg py-1.5 ${active.length > 0 ? "bg-indigo-50" : "bg-muted/50"}`}>
-                          <p className={`text-base font-bold ${active.length > 0 ? "text-indigo-600" : ""}`}>{active.length}</p>
-                          <p className="text-[9px] text-muted-foreground">Active</p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1 max-h-[80px] overflow-y-auto pr-1">
-                        {tickets.length === 0 ? (
-                          <p className="text-xs text-muted-foreground text-center py-2">No PD tickets for this project</p>
-                        ) : (
-                          tickets.slice(0, 3).map((t: any) => {
-                            const isOverdue = t.dueDate && t.status !== "Completed" && t.status !== "Cancelled" && t.dueDate < new Date().toISOString().split("T")[0];
-                            return (
-                              <div key={t.id} className={`flex items-center gap-2 text-[11px] py-1 px-2 rounded ${isOverdue ? "bg-red-50 border border-red-100" : "bg-muted/50"} hover:bg-muted cursor-pointer`} onClick={() => setLocation(`/pd-tickets/${t.id}`)} data-testid={`row-pd-ticket-${t.id}`}>
-                                {isOverdue ? <AlertCircle className="h-3 w-3 text-red-500 shrink-0" /> : <Circle className="h-2 w-2 text-indigo-400 shrink-0" />}
-                                <span className="truncate flex-1">{t.requestType || t.projectSiteName}</span>
-                                <Badge variant={t.status === "Completed" ? "default" : t.status === "In Progress" ? "secondary" : "outline"} className="text-[9px] px-1.5 py-0 shrink-0">{t.status}</Badge>
-                              </div>
-                            );
+                      if (urgent.length === 0) {
+                        const upcoming = planTasks
+                          .filter((t: any) => {
+                            const endDate = t.actualEnd || t.endDate;
+                            const pct = Number(t.actualPctComplete) || 0;
+                            return endDate && endDate >= today && pct < 1;
                           })
-                        )}
-                      </div>
+                          .sort((a: any, b: any) => (a.actualEnd || a.endDate || "").localeCompare(b.actualEnd || b.endDate || ""))
+                          .slice(0, 3);
+                        if (upcoming.length === 0) return <p className="text-xs text-emerald-600 text-center py-1">All tasks on track</p>;
+                        return upcoming.map((t: any, i: number) => (
+                          <div key={i} className="flex items-center gap-2 text-[11px] py-1 px-2 rounded bg-muted/50 hover:bg-muted cursor-pointer" onClick={() => navigateToSection("project-management", "plan")} data-testid={`row-plan-upcoming-${t.id || i}`}>
+                            <Circle className="h-2 w-2 text-sky-400 shrink-0" />
+                            <span className="truncate flex-1">{t.highLevelProgramme || t.taskName || t.task_name || "Unnamed"}</span>
+                            <span className="text-sky-600 font-medium shrink-0 text-[10px]">{((Number(t.actualPctComplete) || 0) * 100).toFixed(0)}%</span>
+                          </div>
+                        ));
+                      }
+                      return urgent.map((t: any, i: number) => {
+                        const endDate = t.actualEnd || t.endDate || "";
+                        const daysLate = endDate ? Math.floor((new Date().getTime() - new Date(endDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+                        return (
+                          <div key={i} className="flex items-center gap-2 text-[11px] py-1 px-2 rounded bg-red-50 border border-red-100 cursor-pointer" onClick={() => navigateToSection("project-management", "plan")} data-testid={`row-plan-overdue-${t.id || i}`}>
+                            <AlertCircle className="h-3 w-3 text-red-500 shrink-0" />
+                            <span className="truncate flex-1">{t.highLevelProgramme || t.taskName || t.task_name || "Unnamed"}</span>
+                            <Badge variant="destructive" className="text-[9px] px-1 py-0 shrink-0">{daysLate}d</Badge>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
 
-                      <div className="flex items-center gap-2 pt-1.5 border-t">
-                        <RagDot color={overdue.length > 0 ? "red" : active.length > 0 ? "amber" : "green"} />
-                        <span className={`text-[11px] font-medium ${overdue.length > 0 ? "text-red-600" : active.length > 0 ? "text-amber-600" : "text-emerald-600"}`}>
-                          {overdue.length > 0 ? `${overdue.length} overdue` : active.length > 0 ? `${active.length} active` : tickets.length === 0 ? "No tickets" : "All complete"}
-                        </span>
-                      </div>
-                    </>
-                  );
-                })()}
-              </CardContent>
-            </Card>
+              {overviewTab === "engineering" && canViewTab.engineering && (
+                <div className="space-y-3" data-testid="overview-engineering-panel">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Wrench className="h-4 w-4 text-orange-600" />
+                      <h3 className="font-semibold text-sm">Engineering</h3>
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-orange-600" onClick={() => navigateToSection("engineering")} data-testid="button-goto-engineering">
+                      Open Engineering <ArrowRight className="h-3 w-3" />
+                    </Button>
+                  </div>
 
-            <FinancialIntegrationPanel projectName={projectName} />
-          </div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-muted-foreground">Stage Progress</span>
+                        <span className="font-semibold">{engStagePct.toFixed(0)}%</span>
+                      </div>
+                      <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-orange-500 rounded-full transition-all" style={{ width: `${engStagePct}%` }} />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 text-center shrink-0">
+                      <div>
+                        <p className="text-lg font-bold">{engStages.length}</p>
+                        <p className="text-[9px] text-muted-foreground">Stages</p>
+                      </div>
+                      <div>
+                        <p className="text-lg font-bold text-emerald-600">{engCompletedStages}</p>
+                        <p className="text-[9px] text-muted-foreground">Complete</p>
+                      </div>
+                      <div>
+                        <p className="text-lg font-bold">{engCompletedTasks}/{engTotalTasks}</p>
+                        <p className="text-[9px] text-muted-foreground">Tasks</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 border-t pt-2">
+                    <Target className="h-3.5 w-3.5 text-orange-500" />
+                    <span className="text-[11px] font-medium text-muted-foreground truncate">
+                      {engActiveStage ? `Active: ${engActiveStage.stageName || engActiveStage.templateName || "Stage"}` : engStages.length === 0 && engBoardTotal > 0 ? `${engBoardTotal} board task${engBoardTotal !== 1 ? "s" : ""}` : engStages.length === 0 ? "No stages yet" : "All complete"}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {overviewTab === "quality" && canViewTab.quality && (
+                <div className="space-y-3" data-testid="overview-quality-panel">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                      <h3 className="font-semibold text-sm">Quality</h3>
+                      <RagDot color={qualityRag} />
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-emerald-600" onClick={() => navigateToSection("quality")} data-testid="button-goto-quality">
+                      Open Quality <ArrowRight className="h-3 w-3" />
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-muted-foreground">Gate Progress</span>
+                        <span className="font-semibold">{qualityGatesTotal > 0 ? `${qualityGatesPassed}/${qualityGatesTotal}` : "No gates"}</span>
+                      </div>
+                      <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${qualityGatesTotal > 0 ? (qualityGatesPassed / qualityGatesTotal) * 100 : 0}%` }} />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 text-center shrink-0">
+                      <div>
+                        <p className="text-lg font-bold">{qualityGatesTotal}</p>
+                        <p className="text-[9px] text-muted-foreground">Gates</p>
+                      </div>
+                      <div>
+                        <p className="text-lg font-bold text-emerald-600">{qualityGatesPassed}</p>
+                        <p className="text-[9px] text-muted-foreground">Passed</p>
+                      </div>
+                      <div>
+                        <p className={`text-lg font-bold ${qualityGatesTotal - qualityGatesPassed > 0 ? "text-amber-600" : ""}`}>
+                          {qualityGatesTotal - qualityGatesPassed}
+                        </p>
+                        <p className="text-[9px] text-muted-foreground">Pending</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 border-t pt-2">
+                    <span className={`text-[11px] font-medium ${ragColor(qualityRag)}`}>
+                      {qualityRag === "green" ? "On Track" : qualityRag === "amber" ? "Needs Review" : "Action Required"}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {overviewTab === "finance" && canViewTab.expenditure && (
+                <div className="space-y-3" data-testid="overview-finance-panel">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <DollarSign className="h-4 w-4 text-violet-600" />
+                      <h3 className="font-semibold text-sm">Finance</h3>
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-violet-600" onClick={() => navigateToSection("project-management", "expenditure")} data-testid="button-goto-expenditure">
+                      Open Expenditure <ArrowRight className="h-3 w-3" />
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="rounded-lg bg-violet-50 py-2 px-3">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Costed</p>
+                      <p className="text-sm font-bold">R{(budgetTotal / 1000).toFixed(0)}k</p>
+                    </div>
+                    <div className={`rounded-lg py-2 px-3 ${costRag === "red" ? "bg-red-50" : costRag === "amber" ? "bg-amber-50" : "bg-muted/50"}`}>
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Actual</p>
+                      <p className={`text-sm font-bold ${costRag === "red" ? "text-red-600" : costRag === "amber" ? "text-amber-600" : ""}`}>R{(totalExpenses / 1000).toFixed(0)}k</p>
+                    </div>
+                    <div className={`rounded-lg py-2 px-3 ${(budgetTotal - totalExpenses) < 0 ? "bg-red-50" : "bg-emerald-50"}`}>
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Variance</p>
+                      <p className={`text-sm font-bold ${(budgetTotal - totalExpenses) < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                        {(budgetTotal - totalExpenses) >= 0 ? "" : "-"}R{(Math.abs(budgetTotal - totalExpenses) / 1000).toFixed(0)}k
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 border-t pt-2">
+                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Top Categories</p>
+                    {(() => {
+                      const categories = (expenseData as any[]).reduce((acc: Record<string, { actual: number; budget: number }>, e: any) => {
+                        const cat = e.expenseCategory || "Uncategorised";
+                        if (!acc[cat]) acc[cat] = { actual: 0, budget: 0 };
+                        acc[cat].actual += Number(e.expenseActualTotal) || 0;
+                        acc[cat].budget += Number(e.budgetTotal) || 0;
+                        return acc;
+                      }, {});
+                      const sorted = Object.entries(categories).sort((a, b) => b[1].actual - a[1].actual);
+                      const maxVal = Math.max(...sorted.map(([, v]) => Math.max(v.actual, v.budget)), 1);
+                      if (sorted.length === 0) return <p className="text-xs text-muted-foreground text-center py-1">No expenditure data</p>;
+                      return sorted.slice(0, 5).map(([cat, vals]) => {
+                        const overBudget = vals.actual > vals.budget && vals.budget > 0;
+                        return (
+                          <div key={cat} className="space-y-0.5" data-testid={`exp-cat-${cat.replace(/\s+/g, "-").toLowerCase()}`}>
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="truncate max-w-[200px] text-muted-foreground">{cat}</span>
+                              <span className={`font-medium ${overBudget ? "text-red-600" : ""}`}>
+                                R{(vals.actual / 1000).toFixed(0)}k / R{(vals.budget / 1000).toFixed(0)}k
+                              </span>
+                            </div>
+                            <div className="flex gap-0.5 h-1.5">
+                              <div className="h-full bg-violet-200 rounded-full overflow-hidden flex-1">
+                                <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${Math.min((vals.budget / maxVal) * 100, 100)}%` }} />
+                              </div>
+                              <div className="h-full bg-muted rounded-full overflow-hidden flex-1">
+                                <div className={`h-full rounded-full transition-all ${overBudget ? "bg-red-500" : "bg-emerald-500"}`} style={{ width: `${Math.min((vals.actual / maxVal) * 100, 100)}%` }} />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {overviewTab === "collaboration" && (
+                <div className="space-y-3" data-testid="overview-collaboration-panel">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-teal-600" />
+                      <h3 className="font-semibold text-sm">Collaboration</h3>
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-teal-600" onClick={() => navigateToSection("collaboration", "chat")} data-testid="button-goto-collaboration">
+                      Open <ArrowRight className="h-3 w-3" />
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                    <div
+                      className="flex flex-col items-center gap-2 p-3 rounded-lg bg-teal-50 border border-teal-100 cursor-pointer hover:shadow-sm transition-all"
+                      onClick={() => navigateToSection("collaboration", "chat")}
+                      data-testid="collab-chat-link"
+                    >
+                      <div className="w-9 h-9 rounded-lg bg-teal-100 flex items-center justify-center">
+                        <MessageSquare className="h-4 w-4 text-teal-700" />
+                      </div>
+                      <p className="text-xs font-medium">Project Chat</p>
+                    </div>
+
+                    <div
+                      className="flex flex-col items-center gap-2 p-3 rounded-lg bg-blue-50 border border-blue-100 cursor-pointer hover:shadow-sm transition-all"
+                      onClick={() => navigateToSection("collaboration", "local-files")}
+                      data-testid="collab-folder-link"
+                    >
+                      <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center">
+                        <FolderOpen className="h-4 w-4 text-blue-700" />
+                      </div>
+                      <p className="text-xs font-medium">Project Folder</p>
+                    </div>
+
+                    <div
+                      className="flex flex-col items-center gap-2 p-3 rounded-lg bg-violet-50 border border-violet-100 cursor-pointer hover:shadow-sm transition-all"
+                      onClick={() => navigateToSection("collaboration", "approvals")}
+                      data-testid="collab-approvals-link"
+                    >
+                      <div className="w-9 h-9 rounded-lg bg-violet-100 flex items-center justify-center">
+                        <FileCheck className="h-4 w-4 text-violet-700" />
+                      </div>
+                      <p className="text-xs font-medium">Approvals</p>
+                    </div>
+
+                    <CaptureDeliverable
+                      projectId={projectInfoId ?? undefined}
+                      projectName={projectName}
+                      trigger={
+                        <div
+                          className="flex flex-col items-center gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-100 cursor-pointer hover:shadow-sm transition-all"
+                          data-testid="collab-capture-deliverable"
+                        >
+                          <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center">
+                            <Inbox className="h-4 w-4 text-emerald-700" />
+                          </div>
+                          <p className="text-xs font-medium">Capture Deliverable</p>
+                        </div>
+                      }
+                    />
+                  </div>
+                </div>
+              )}
+
+              {overviewTab === "pd" && (
+                <div className="space-y-3" data-testid="overview-pd-panel">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-indigo-600" />
+                      <h3 className="font-semibold text-sm">Project Development</h3>
+                    </div>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-indigo-600" onClick={() => setLocation("/pd-tickets")} data-testid="button-goto-pd">
+                      View All <ArrowRight className="h-3 w-3" />
+                    </Button>
+                  </div>
+
+                  {(() => {
+                    const tickets = pdTicketsData || [];
+                    const active = tickets.filter((t: any) => t.status === "In Progress" || t.status === "Draft");
+                    const completed = tickets.filter((t: any) => t.status === "Completed");
+                    const overdue = tickets.filter((t: any) => {
+                      if (!t.dueDate || t.status === "Completed" || t.status === "Cancelled") return false;
+                      return t.dueDate < new Date().toISOString().split("T")[0];
+                    });
+                    const totalTasks = tickets.reduce((sum: number, t: any) => sum + (t.taskCount?.total || 0), 0);
+                    const completedTasks = tickets.reduce((sum: number, t: any) => sum + (t.taskCount?.completed || 0), 0);
+                    const progressPct = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+
+                    return (
+                      <>
+                        <div className="flex items-center gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between text-xs mb-1">
+                              <span className="text-muted-foreground">Task Progress</span>
+                              <span className="font-semibold">{totalTasks > 0 ? `${completedTasks}/${totalTasks}` : "No tasks"}</span>
+                            </div>
+                            <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                              <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${progressPct}%` }} />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 text-center shrink-0">
+                            <div>
+                              <p className="text-lg font-bold">{tickets.length}</p>
+                              <p className="text-[9px] text-muted-foreground">Tickets</p>
+                            </div>
+                            <div>
+                              <p className="text-lg font-bold text-emerald-600">{completed.length}</p>
+                              <p className="text-[9px] text-muted-foreground">Done</p>
+                            </div>
+                            <div>
+                              <p className={`text-lg font-bold ${active.length > 0 ? "text-indigo-600" : ""}`}>{active.length}</p>
+                              <p className="text-[9px] text-muted-foreground">Active</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1 border-t pt-2">
+                          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Recent Tickets</p>
+                          {tickets.length === 0 ? (
+                            <p className="text-xs text-muted-foreground text-center py-1">No PD tickets for this project</p>
+                          ) : (
+                            tickets.slice(0, 3).map((t: any) => {
+                              const isOverdue = t.dueDate && t.status !== "Completed" && t.status !== "Cancelled" && t.dueDate < new Date().toISOString().split("T")[0];
+                              return (
+                                <div key={t.id} className={`flex items-center gap-2 text-[11px] py-1 px-2 rounded ${isOverdue ? "bg-red-50 border border-red-100" : "bg-muted/50"} hover:bg-muted cursor-pointer`} onClick={() => setLocation(`/pd-tickets/${t.id}`)} data-testid={`row-pd-ticket-${t.id}`}>
+                                  {isOverdue ? <AlertCircle className="h-3 w-3 text-red-500 shrink-0" /> : <Circle className="h-2 w-2 text-indigo-400 shrink-0" />}
+                                  <span className="truncate flex-1">{t.requestType || t.projectSiteName}</span>
+                                  <Badge variant={t.status === "Completed" ? "default" : t.status === "In Progress" ? "secondary" : "outline"} className="text-[9px] px-1.5 py-0 shrink-0">{t.status}</Badge>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-1 border-t">
+                          <RagDot color={overdue.length > 0 ? "red" : active.length > 0 ? "amber" : "green"} />
+                          <span className={`text-[11px] font-medium ${overdue.length > 0 ? "text-red-600" : active.length > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                            {overdue.length > 0 ? `${overdue.length} overdue` : active.length > 0 ? `${active.length} active` : tickets.length === 0 ? "No tickets" : "All complete"}
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <FinancialIntegrationPanel projectName={projectName} />
 
           {projectInfoId && <PhaseHistoryTimeline projectId={projectInfoId} />}
         </div>
