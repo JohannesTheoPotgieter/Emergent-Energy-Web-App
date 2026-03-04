@@ -25,6 +25,7 @@ import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
 import { MonthlyRealisationTab } from "@/components/tabs/MonthlyRealisationTab";
 import { RevenueTrackerTab } from "@/components/tabs/RevenueTrackerTab";
+import { GpTrackerTab } from "@/components/tabs/GpTrackerTab";
 import { CashflowTab } from "@/components/tabs/CashflowTab";
 import { ProjectSubcontractorsTab } from "@/components/tabs/ProjectSubcontractorsTab";
 import TaskDetailDrawer from "@/components/TaskDetailDrawer";
@@ -713,6 +714,7 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "expenditure": { section: "project-management", subTab: "expenditure" },
   "monthly-realisation": { section: "project-management", subTab: "monthly-realisation" },
   "revenue-tracker": { section: "project-management", subTab: "revenue-tracker" },
+  "gp-tracker": { section: "project-management", subTab: "gp-tracker" },
   "cashflow": { section: "project-management", subTab: "cashflow" },
   "subcontractors": { section: "project-management", subTab: "subcontractors" },
   "quality": { section: "quality", subTab: "quality" },
@@ -1624,6 +1626,11 @@ export default function ProjectDetailPage() {
               <TrendingUp className="h-3 w-3 mr-1" /> Revenue
             </Button>
             )}
+            {canViewTab.finance && canViewSubTab.cosTracker && (
+            <Button size="sm" variant={activeSubTab === "gp-tracker" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("gp-tracker")} data-testid="subtab-gp-tracker">
+              <BarChart3 className="h-3 w-3 mr-1" /> GP
+            </Button>
+            )}
             {canViewTab.finance && canViewSubTab.cashflow && (
             <Button size="sm" variant={activeSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("cashflow")} data-testid="subtab-cashflow">
               <Activity className="h-3 w-3 mr-1" /> Cashflow
@@ -1649,6 +1656,7 @@ export default function ProjectDetailPage() {
           {activeSubTab === "expenditure" && canViewTab.finance && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
           {activeSubTab === "monthly-realisation" && canViewTab.finance && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
           {activeSubTab === "revenue-tracker" && canViewTab.finance && canViewSubTab.cosTracker && <RevenueTrackerTab projectName={projectName} />}
+          {activeSubTab === "gp-tracker" && canViewTab.finance && canViewSubTab.cosTracker && <GpTrackerTab projectName={projectName} />}
           {activeSubTab === "cashflow" && canViewTab.finance && canViewSubTab.cashflow && <CashflowTab projectName={projectName} />}
           {activeSubTab === "subcontractors" && canViewTab.finance && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
           {activeSubTab === "history" && canViewTab.history && (
