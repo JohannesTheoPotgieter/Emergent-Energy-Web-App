@@ -192,7 +192,8 @@ function daysFromNow(d: string | null) {
   return `${diff}d`;
 }
 
-function displayProject(name: string) {
+function displayProject(name: string | null | undefined) {
+  if (!name) return "Unassigned Project";
   return name.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
 }
 
