@@ -40,6 +40,7 @@ import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
 import { GuidancePrompt, getPhaseGuidance } from "@/components/MicroGuidance";
 import { ProjectChatTab } from "@/components/tabs/ProjectChatTab";
 import { SharePointFilesTab } from "@/components/tabs/SharePointFilesTab";
+import { LocalFolderTab } from "@/components/tabs/LocalFolderTab";
 import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
 import { ProjectNotificationsTab } from "@/components/tabs/ProjectNotificationsTab";
 import { POGenerator } from "@/components/POGenerator";
@@ -721,6 +722,7 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "plan": { section: "project-management", subTab: "plan" },
   "chat": { section: "collaboration", subTab: "chat" },
   "sharepoint": { section: "collaboration", subTab: "sharepoint" },
+  "local-files": { section: "collaboration", subTab: "local-files" },
   "approvals": { section: "collaboration", subTab: "approvals" },
   "notifications": { section: "collaboration", subTab: "notifications" },
   "collaboration": { section: "collaboration", subTab: "chat" },
@@ -1631,11 +1633,16 @@ export default function ProjectDetailPage() {
             <Button size="sm" variant={activeSubTab === "notifications" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("notifications")} data-testid="subtab-notifications">
               <Bell className="h-3 w-3 mr-1" /> Notifications
             </Button>
+            <div className="w-px h-5 bg-border self-center mx-1" />
+            <Button size="sm" variant={activeSubTab === "local-files" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("local-files")} data-testid="subtab-local-files">
+              <FolderOpen className="h-3 w-3 mr-1" /> Project Folder
+            </Button>
           </div>
 
           {activeSubTab === "chat" && <ProjectChatTab projectName={projectName} />}
           {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "notifications" && <ProjectNotificationsTab projectName={projectName} />}
+          {activeSubTab === "local-files" && <LocalFolderTab projectName={projectName} />}
         </div>
       )}
 

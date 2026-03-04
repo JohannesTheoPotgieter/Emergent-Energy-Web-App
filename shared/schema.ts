@@ -4931,3 +4931,13 @@ export const migrationCleanupLog = pgTable("migration_cleanup_log", {
   metadata: text("metadata"),
 })
 export type MigrationCleanupLog = typeof migrationCleanupLog.$inferSelect;
+
+export const userProjectFolders = pgTable("user_project_folders", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  projectName: text("project_name").notNull(),
+  folderName: text("folder_name").notNull(),
+  folderPath: text("folder_path"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type UserProjectFolder = typeof userProjectFolders.$inferSelect;
