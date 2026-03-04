@@ -1519,10 +1519,13 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, async (req,
 
 router.get("/api/gp-tracker", requireAuth, async (req, res) => {
   try {
-    const [allExpenses, allInflowsRaw] = await Promise.all([
+    const [allExpenses, allInflowsRaw, manualEntries] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
+      storage.getTrackerMonthlyManual('GP'),
     ]);
+
+    const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
 
     const revByProject = new Map<string, number>();
     for (const rev of allInflowsRaw) {
@@ -1587,7 +1590,7 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
 
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
-    let ytdCOS = 0, ytdRevenue = 0;
+    let ytdCOS = 0, ytdRevenue = 0, ytdBudget = 0;
 
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(startMonth);
@@ -1597,14 +1600,26 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
       const monthKey = `${yr}-${String(mo + 1).padStart(2, '0')}`;
 
       const totalCOS = cosByMonth.get(monthKey) ?? 0;
+      const realisedCOS = realisedCosByMonth.get(monthKey) ?? 0;
       const totalRevenue = revByMonth.get(monthKey) ?? 0;
+      const realisedRevenue = realisedRevByMonth.get(monthKey) ?? 0;
       const totalGP = totalRevenue - totalCOS;
+      const realisedGP = realisedRevenue - realisedCOS;
+      const unrealisedGP = totalGP - realisedGP;
       const gpPct = totalRevenue !== 0 ? (totalGP / totalRevenue) * 100 : 0;
+
+      const manual = manualMap.get(monthKey);
+      const budget = manual?.budget ? parseFloat(manual.budget) : 0;
+      const variance = totalGP - budget;
+      const variancePct = budget !== 0 ? (totalGP - budget) / budget * 100 : 0;
 
       ytdCOS += totalCOS;
       ytdRevenue += totalRevenue;
+      ytdBudget += budget;
       const ytdGP = ytdRevenue - ytdCOS;
       const ytdGpPct = ytdRevenue !== 0 ? (ytdGP / ytdRevenue) * 100 : 0;
+      const ytdVariance = ytdGP - ytdBudget;
+      const ytdVariancePct = ytdBudget !== 0 ? (ytdGP - ytdBudget) / ytdBudget * 100 : 0;
 
       months.push({
         monthKey,
@@ -1612,11 +1627,19 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
         totalRevenue,
         totalCOS,
         totalGP,
+        realisedGP,
+        unrealisedGP,
         gpPct,
+        budget,
+        variance,
+        variancePct,
         ytdRevenue,
         ytdCOS,
         ytdGP,
         ytdGpPct,
+        ytdBudget,
+        ytdVariance,
+        ytdVariancePct,
       });
     }
 

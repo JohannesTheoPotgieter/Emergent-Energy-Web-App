@@ -1,14 +1,18 @@
-import React, { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import {
   Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ComposedChart, Line,
 } from "recharts";
 import {
-  DollarSign, TrendingUp, Activity, Percent, Search, Loader2, ChevronDown, ChevronRight,
+  DollarSign, TrendingUp, Activity, Percent, Search, Loader2,
+  Target, ChevronDown, ChevronRight, Check, X,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -23,6 +27,11 @@ function formatRand(val: number | null | undefined): string {
   if (abs >= 1_000_000) return `R ${(val / 1_000_000).toFixed(2)}M`;
   if (abs >= 1_000) return `R ${(val / 1_000).toFixed(1)}K`;
   return `R ${val.toFixed(0)}`;
+}
+
+function formatPercent(val: number | null | undefined): string {
+  if (val == null) return "0%";
+  return `${val.toFixed(1)}%`;
 }
 
 function KpiCard({ icon: Icon, label, value, sub, color }: {
@@ -41,9 +50,43 @@ function KpiCard({ icon: Icon, label, value, sub, color }: {
   );
 }
 
+const ROW_DEFS: {
+  key: string; label: string; dataKey: string;
+  editable: boolean; colorClass: string; group: "monthly" | "ytd";
+  colorCoded?: boolean;
+}[] = [
+  { key: "totalGP", label: "GP (Actual)", dataKey: "totalGP", editable: false, colorClass: "text-foreground font-bold", group: "monthly" },
+  { key: "realisedGP", label: "Realised GP", dataKey: "realisedGP", editable: false, colorClass: "text-emerald-600 font-semibold", group: "monthly" },
+  { key: "unrealisedGP", label: "Unrealised GP", dataKey: "unrealisedGP", editable: false, colorClass: "text-red-600 font-semibold", group: "monthly" },
+  { key: "budget", label: "GP Budget", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
+  { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
+  { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
+  { key: "gpPct", label: "GP %", dataKey: "gpPct", editable: false, colorClass: "text-foreground font-semibold", group: "monthly" },
+  { key: "ytdGP", label: "YTD GP", dataKey: "ytdGP", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
+  { key: "ytdBudget", label: "YTD Budget", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
+  { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", editable: false, colorClass: "", group: "ytd", colorCoded: true },
+  { key: "ytdVariancePct", label: "YTD Var %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
+  { key: "ytdGpPct", label: "YTD GP %", dataKey: "ytdGpPct", editable: false, colorClass: "text-foreground font-semibold", group: "ytd" },
+];
+
+interface EditingCell {
+  field: string;
+  monthKey: string;
+  value: string;
+}
+
 export default function GpTrackerPage() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
+  const [showMonthly, setShowMonthly] = useState(true);
+  const [showYtd, setShowYtd] = useState(true);
+  const [showProjects, setShowProjects] = useState(true);
+  const [editing, setEditing] = useState<EditingCell | null>(null);
+  const editRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER"].includes(user?.role || "");
 
   const { data, isLoading } = useQuery<any>({
     queryKey: ["gp-tracker-portfolio"],
@@ -54,15 +97,31 @@ export default function GpTrackerPage() {
     },
   });
 
+  const saveBudgetMutation = useMutation({
+    mutationFn: async (body: { trackerType: string; monthKey: string; budget?: string }) => {
+      const res = await fetch("/api/tracker-monthly", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("Failed to save budget");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gp-tracker-portfolio"] });
+      toast({ title: "GP Budget saved" });
+    },
+  });
+
   const months = data?.months || [];
   const projects = data?.projects || [];
 
   const chartData = useMemo(() => {
     return months.map((m: any) => ({
       name: m.monthLabel || "",
-      Revenue: Math.round(m.totalRevenue || 0),
-      COS: Math.round(m.totalCOS || 0),
-      GP: Math.round(m.totalGP || 0),
+      "Actual GP": Math.round(m.totalGP || 0),
+      Budget: Math.round(m.budget || 0),
       "GP%": parseFloat((m.gpPct ?? 0).toFixed(1)),
     }));
   }, [months]);
@@ -72,6 +131,31 @@ export default function GpTrackerPage() {
     const q = search.toLowerCase();
     return projects.filter((p: any) => (p.projectName || "").toLowerCase().includes(q));
   }, [projects, search]);
+
+  const startEdit = useCallback((field: string, monthKey: string, currentValue: number) => {
+    if (!isAdmin) return;
+    setEditing({ field, monthKey, value: String(currentValue || "") });
+  }, [isAdmin]);
+
+  const saveEdit = useCallback(() => {
+    if (!editing) return;
+    const numVal = parseFloat(editing.value) || 0;
+    saveBudgetMutation.mutate({
+      trackerType: "GP",
+      monthKey: editing.monthKey,
+      budget: String(numVal),
+    });
+    setEditing(null);
+  }, [editing, saveBudgetMutation]);
+
+  const cancelEdit = useCallback(() => setEditing(null), []);
+
+  useEffect(() => {
+    if (editing && editRef.current) {
+      editRef.current.focus();
+      editRef.current.select();
+    }
+  }, [editing]);
 
   if (isLoading) {
     return (
@@ -86,51 +170,64 @@ export default function GpTrackerPage() {
   const totalGP = data?.totalGP || 0;
   const overallGpPct = data?.overallGpPct || 0;
 
-  const currentMonth = months.find((m: any) => {
-    const now = new Date();
-    const mk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    return m.monthKey === mk;
-  });
-  const ytdGP = currentMonth?.ytdGP || 0;
-  const ytdGpPct = currentMonth?.ytdGpPct || 0;
+  const lastMonth = months.length > 0 ? months[months.length - 1] : null;
+  const ytdGP = lastMonth?.ytdGP || 0;
+  const ytdBudget = lastMonth?.ytdBudget || 0;
+  const ytdVariance = lastMonth?.ytdVariance || 0;
+  const ytdGpPct = lastMonth?.ytdGpPct || 0;
+
+  const monthlyRows = ROW_DEFS.filter(r => r.group === "monthly");
+  const ytdRows = ROW_DEFS.filter(r => r.group === "ytd");
+
+  function getCellValue(m: any, dataKey: string): number {
+    return m[dataKey] ?? 0;
+  }
+
+  function formatCellValue(val: number, key: string): string {
+    if (key.includes("Pct") || key === "gpPct" || key === "ytdGpPct") return formatPercent(val);
+    return formatRand(val);
+  }
+
+  function getVarianceColor(val: number): string {
+    if (val > 0) return "text-emerald-600";
+    if (val < 0) return "text-red-600";
+    return "text-muted-foreground";
+  }
 
   return (
-    <div className="p-6 space-y-6 max-w-[1400px] mx-auto page-enter" data-testid="gp-tracker-page">
+    <div className="p-6 space-y-6 max-w-[1600px] mx-auto page-enter" data-testid="gp-tracker-page">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">GP Tracker</h1>
-          <p className="text-sm text-muted-foreground">Portfolio-level Gross Profit analysis across all projects</p>
+          <p className="text-sm text-muted-foreground">Portfolio-level Gross Profit — Budget vs Actual (Sep 2025 – Aug 2026)</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
         <KpiCard icon={DollarSign} label="Total Revenue" value={formatRand(totalRevenue)} color="text-blue-500" />
         <KpiCard icon={TrendingUp} label="Total COS" value={formatRand(totalCOS)} color="text-red-500" />
         <KpiCard icon={Activity} label="Total GP" value={formatRand(totalGP)} color={totalGP >= 0 ? "text-emerald-500" : "text-red-500"} />
-        <KpiCard icon={Percent} label="Overall GP%" value={`${overallGpPct.toFixed(1)}%`} color={overallGpPct >= 15 ? "text-emerald-500" : "text-red-500"} />
-        <KpiCard icon={Activity} label="YTD GP" value={formatRand(ytdGP)} sub="year to date" color={ytdGP >= 0 ? "text-emerald-500" : "text-red-500"} />
-        <KpiCard icon={Percent} label="YTD GP%" value={`${ytdGpPct.toFixed(1)}%`} sub="year to date" color={ytdGpPct >= 15 ? "text-emerald-500" : "text-red-500"} />
+        <KpiCard icon={Percent} label="GP%" value={formatPercent(overallGpPct)} color={overallGpPct >= 15 ? "text-emerald-500" : "text-red-500"} />
+        <KpiCard icon={Activity} label="YTD GP" value={formatRand(ytdGP)} color={ytdGP >= 0 ? "text-emerald-500" : "text-red-500"} />
+        <KpiCard icon={Target} label="YTD Budget" value={formatRand(ytdBudget)} color="text-purple-500" />
+        <KpiCard icon={Activity} label="YTD Variance" value={formatRand(ytdVariance)} color={ytdVariance >= 0 ? "text-emerald-500" : "text-red-500"} />
+        <KpiCard icon={Percent} label="YTD GP%" value={formatPercent(ytdGpPct)} color={ytdGpPct >= 15 ? "text-emerald-500" : "text-red-500"} />
       </div>
 
       <Card>
         <CardContent className="p-4">
-          <h3 className="text-sm font-semibold mb-3">Monthly GP Trend (Sep 2025 – Aug 2026)</h3>
-          <div className="h-[300px]">
+          <h3 className="text-sm font-semibold mb-3">Budget vs Actual GP</h3>
+          <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                 <YAxis yAxisId="left" tick={{ fontSize: 10 }} tickFormatter={(v: number) => formatRand(v)} />
                 <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} tickFormatter={(v: number) => `${v}%`} domain={[-50, 50]} />
-                <Tooltip
-                  formatter={(value: number, name: string) =>
-                    name === "GP%" ? `${value}%` : formatRand(value)
-                  }
-                />
+                <Tooltip formatter={(value: number, name: string) => name === "GP%" ? `${value}%` : formatRand(value)} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar yAxisId="left" dataKey="Revenue" fill="#3b82f6" radius={[3, 3, 0, 0]} barSize={20} />
-                <Bar yAxisId="left" dataKey="COS" fill="#ef4444" radius={[3, 3, 0, 0]} barSize={20} />
-                <Bar yAxisId="left" dataKey="GP" fill="#10b981" radius={[3, 3, 0, 0]} barSize={20} />
+                <Bar yAxisId="left" dataKey="Actual GP" fill="#10b981" radius={[3, 3, 0, 0]} barSize={24} />
+                <Bar yAxisId="left" dataKey="Budget" fill="#a855f7" radius={[3, 3, 0, 0]} barSize={24} opacity={0.7} />
                 <Line yAxisId="right" type="monotone" dataKey="GP%" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
               </ComposedChart>
             </ResponsiveContainer>
@@ -140,91 +237,183 @@ export default function GpTrackerPage() {
 
       <Card>
         <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold">Monthly Breakdown</h3>
+          <div
+            className="flex items-center gap-2 cursor-pointer select-none mb-2"
+            onClick={() => setShowMonthly(!showMonthly)}
+            data-testid="button-toggle-monthly"
+          >
+            {showMonthly ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            <h3 className="text-sm font-semibold">Monthly Tracking</h3>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th className="pb-2 font-medium">Month</th>
-                  <th className="pb-2 font-medium text-right">Revenue</th>
-                  <th className="pb-2 font-medium text-right">COS</th>
-                  <th className="pb-2 font-medium text-right">GP</th>
-                  <th className="pb-2 font-medium text-right">GP%</th>
-                  <th className="pb-2 font-medium text-right">YTD GP</th>
-                  <th className="pb-2 font-medium text-right">YTD GP%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {months.map((m: any) => (
-                  <tr key={m.monthKey} className="border-b border-border/50 hover:bg-muted/30" data-testid={`row-month-${m.monthKey}`}>
-                    <td className="py-2 font-medium">{m.monthLabel}</td>
-                    <td className="py-2 text-right text-blue-600">{formatRand(m.totalRevenue)}</td>
-                    <td className="py-2 text-right text-red-600">{formatRand(m.totalCOS)}</td>
-                    <td className={`py-2 text-right font-semibold ${m.totalGP >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatRand(m.totalGP)}</td>
-                    <td className={`py-2 text-right ${(m.gpPct ?? 0) >= 15 ? 'text-emerald-600' : 'text-red-600'}`}>{(m.gpPct ?? 0).toFixed(1)}%</td>
-                    <td className={`py-2 text-right font-semibold ${m.ytdGP >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatRand(m.ytdGP)}</td>
-                    <td className={`py-2 text-right ${(m.ytdGpPct ?? 0) >= 15 ? 'text-emerald-600' : 'text-red-600'}`}>{(m.ytdGpPct ?? 0).toFixed(1)}%</td>
+          {showMonthly && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="border-b-2 border-border">
+                    <th className="py-2 px-3 text-left font-semibold text-muted-foreground sticky left-0 bg-white z-10 min-w-[140px]">Metric</th>
+                    {months.map((m: any) => (
+                      <th key={m.monthKey} className="py-2 px-3 text-right font-semibold text-muted-foreground min-w-[100px]">{m.monthLabel}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {monthlyRows.map(row => (
+                    <tr key={row.key} className="border-b border-border/40 hover:bg-muted/20" data-testid={`row-${row.key}`}>
+                      <td className="py-2 px-3 font-medium text-muted-foreground sticky left-0 bg-white z-10 whitespace-nowrap">
+                        {row.label}
+                        {row.editable && isAdmin && <span className="ml-1 text-[9px] text-purple-400">(editable)</span>}
+                      </td>
+                      {months.map((m: any) => {
+                        const val = getCellValue(m, row.dataKey);
+                        const isEditing = editing && editing.field === row.key && editing.monthKey === m.monthKey;
+
+                        if (isEditing) {
+                          return (
+                            <td key={m.monthKey} className="py-1 px-1">
+                              <div className="flex items-center gap-0.5">
+                                <Input
+                                  ref={editRef}
+                                  value={editing!.value}
+                                  onChange={e => setEditing({ ...editing!, value: e.target.value })}
+                                  onKeyDown={e => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") cancelEdit(); }}
+                                  className="h-6 text-xs w-20 px-1"
+                                  data-testid={`input-budget-${m.monthKey}`}
+                                />
+                                <Button size="icon" variant="ghost" className="h-5 w-5" onClick={saveEdit} data-testid={`button-save-${m.monthKey}`}>
+                                  <Check className="h-3 w-3 text-emerald-600" />
+                                </Button>
+                                <Button size="icon" variant="ghost" className="h-5 w-5" onClick={cancelEdit}>
+                                  <X className="h-3 w-3 text-red-500" />
+                                </Button>
+                              </div>
+                            </td>
+                          );
+                        }
+
+                        const colorClass = row.colorCoded ? getVarianceColor(val) : row.colorClass;
+
+                        return (
+                          <td
+                            key={m.monthKey}
+                            className={`py-2 px-3 text-right ${colorClass} ${row.editable && isAdmin ? "cursor-pointer hover:bg-purple-50 rounded" : ""}`}
+                            onClick={row.editable ? () => startEdit(row.key, m.monthKey, val) : undefined}
+                          >
+                            {formatCellValue(val, row.dataKey)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
 
       <Card>
         <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold">Project GP Breakdown</h3>
-            <div className="relative w-60">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                placeholder="Search projects..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="h-8 pl-8 text-xs"
-                data-testid="input-search-projects"
-              />
-            </div>
+          <div
+            className="flex items-center gap-2 cursor-pointer select-none mb-2"
+            onClick={() => setShowYtd(!showYtd)}
+            data-testid="button-toggle-ytd"
+          >
+            {showYtd ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            <h3 className="text-sm font-semibold">Year-to-Date Tracking</h3>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th className="pb-2 font-medium">Project</th>
-                  <th className="pb-2 font-medium text-right">Revenue</th>
-                  <th className="pb-2 font-medium text-right">COS</th>
-                  <th className="pb-2 font-medium text-right">GP</th>
-                  <th className="pb-2 font-medium text-right">GP%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredProjects.map((p: any) => (
-                  <tr
-                    key={p.projectName}
-                    className="border-b border-border/50 hover:bg-muted/30 cursor-pointer"
-                    onClick={() => navigate(`/project/${encodeURIComponent(p.projectName)}?tab=gp-tracker`)}
-                    data-testid={`row-project-${p.projectName}`}
-                  >
-                    <td className="py-2 font-medium text-blue-600 hover:underline">{p.projectName}</td>
-                    <td className="py-2 text-right">{formatRand(p.revenue)}</td>
-                    <td className="py-2 text-right">{formatRand(p.cos)}</td>
-                    <td className={`py-2 text-right font-semibold ${p.gp >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatRand(p.gp)}</td>
-                    <td className="py-2 text-right">
-                      <Badge className={`text-[9px] ${(p.gpPct ?? 0) >= 15 ? 'bg-emerald-50 text-emerald-700' : (p.gpPct ?? 0) >= 0 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>
-                        {(p.gpPct ?? 0).toFixed(1)}%
-                      </Badge>
-                    </td>
+          {showYtd && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="border-b-2 border-border">
+                    <th className="py-2 px-3 text-left font-semibold text-muted-foreground sticky left-0 bg-white z-10 min-w-[140px]">Metric</th>
+                    {months.map((m: any) => (
+                      <th key={m.monthKey} className="py-2 px-3 text-right font-semibold text-muted-foreground min-w-[100px]">{m.monthLabel}</th>
+                    ))}
                   </tr>
-                ))}
-                {filteredProjects.length === 0 && (
-                  <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">No projects found</td></tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {ytdRows.map(row => (
+                    <tr key={row.key} className="border-b border-border/40 hover:bg-muted/20" data-testid={`row-${row.key}`}>
+                      <td className="py-2 px-3 font-medium text-muted-foreground sticky left-0 bg-white z-10 whitespace-nowrap">{row.label}</td>
+                      {months.map((m: any) => {
+                        const val = getCellValue(m, row.dataKey);
+                        const colorClass = row.colorCoded ? getVarianceColor(val) : row.colorClass;
+                        return (
+                          <td key={m.monthKey} className={`py-2 px-3 text-right ${colorClass}`}>
+                            {formatCellValue(val, row.dataKey)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-4">
+          <div
+            className="flex items-center gap-2 cursor-pointer select-none mb-2"
+            onClick={() => setShowProjects(!showProjects)}
+            data-testid="button-toggle-projects"
+          >
+            {showProjects ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            <h3 className="text-sm font-semibold">Project GP Breakdown</h3>
           </div>
+          {showProjects && (
+            <>
+              <div className="relative w-60 mb-3">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search projects..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="h-8 pl-8 text-xs"
+                  data-testid="input-search-projects"
+                />
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-2 font-medium">Project</th>
+                      <th className="pb-2 font-medium text-right">Revenue</th>
+                      <th className="pb-2 font-medium text-right">COS</th>
+                      <th className="pb-2 font-medium text-right">GP</th>
+                      <th className="pb-2 font-medium text-right">GP%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredProjects.map((p: any) => (
+                      <tr
+                        key={p.projectName}
+                        className="border-b border-border/50 hover:bg-muted/30 cursor-pointer"
+                        onClick={() => navigate(`/project/${encodeURIComponent(p.projectName)}?tab=gp-tracker`)}
+                        data-testid={`row-project-${p.projectName}`}
+                      >
+                        <td className="py-2 font-medium text-blue-600 hover:underline">{p.projectName}</td>
+                        <td className="py-2 text-right">{formatRand(p.revenue)}</td>
+                        <td className="py-2 text-right">{formatRand(p.cos)}</td>
+                        <td className={`py-2 text-right font-semibold ${(p.gp ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatRand(p.gp)}</td>
+                        <td className="py-2 text-right">
+                          <Badge className={`text-[9px] ${(p.gpPct ?? 0) >= 15 ? 'bg-emerald-50 text-emerald-700' : (p.gpPct ?? 0) >= 0 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>
+                            {(p.gpPct ?? 0).toFixed(1)}%
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredProjects.length === 0 && (
+                      <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">No projects found</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
