@@ -18,8 +18,6 @@ import CostTracker from "@/pages/cos";
 import NotFound from "@/pages/not-found";
 import ProjectDetailPage from "@/pages/project-detail";
 import AdminPage from "@/pages/admin";
-import CosControlPage from "@/pages/cos-control";
-import CashflowForecastPage from "@/pages/cashflow-forecast";
 import MyToolTodayPage from "@/pages/my-tool-today";
 import MyToolWeekPage from "@/pages/my-tool-week";
 import MyToolBacklogPage from "@/pages/my-tool-backlog";
@@ -133,8 +131,6 @@ function ProtectedPages() {
         <Route path="/cashflow" component={CashflowPage} />
         <Route path="/revenue" component={RevenueTracker} />
         <Route path="/cos" component={CostTracker} />
-        <Route path="/cos-control" component={CosControlPage} />
-        <Route path="/cashflow-forecast" component={CashflowForecastPage} />
         <Route path="/my-tool" component={MyToolTodayPage} />
         <Route path="/my-tool/week" component={MyToolWeekPage} />
         <Route path="/my-tool/backlog" component={MyToolBacklogPage} />
