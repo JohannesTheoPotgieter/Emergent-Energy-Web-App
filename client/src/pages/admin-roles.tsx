@@ -99,8 +99,6 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "my_tool" as PermissionEntity, label: "Tasks", actions: ["view", "edit"] },
       { entity: "my_work" as PermissionEntity, label: "Approvals / Calendar", actions: ["view", "edit"] },
       { entity: "meetings" as PermissionEntity, label: "Meetings", actions: ["view", "edit"] },
-      { entity: "collaboration_hub" as PermissionEntity, label: "Email", actions: ["view", "edit"] },
-      { entity: "teams_chat" as PermissionEntity, label: "Teams Chat", actions: ["view", "edit", "delete"] },
     ],
   },
   {
