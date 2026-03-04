@@ -24,7 +24,6 @@ import {
   X,
   Search,
   Loader2,
-  Landmark,
 } from "lucide-react";
 
 interface ProjectBreakdown {
@@ -91,19 +90,17 @@ const ROW_DEFS: {
   colorClass: string;
   group: "monthly" | "ytd";
   expandable?: boolean;
-  projectsKey?: "revProjects" | "realisedProjects" | "unrealisedProjects" | "budgetProjects";
+  projectsKey?: "revProjects" | "realisedProjects" | "unrealisedProjects";
   colorCoded?: boolean;
 }[] = [
   { key: "totalRevenue", label: "Revenue", dataKey: "totalRevenue", colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "revProjects" },
   { key: "realisedRevenue", label: "Realised Revenue", dataKey: "realisedRevenue", colorClass: "text-emerald-700 font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
   { key: "unrealisedRevenue", label: "Unrealised Revenue", dataKey: "unrealisedRevenue", colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
-  { key: "budget", label: "Milestone Inflows", dataKey: "budget", colorClass: "text-purple-600", group: "monthly", expandable: true, projectsKey: "budgetProjects" },
   { key: "variance", label: "Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdRevenue", label: "YTD Revenue", dataKey: "ytdRevenue", colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", colorClass: "text-emerald-700 font-bold", group: "ytd" },
   { key: "ytdUnrealised", label: "YTD Unrealised", dataKey: "ytdUnrealised", colorClass: "text-amber-600", group: "ytd" },
-  { key: "ytdBudget", label: "YTD Milestone Inflows", dataKey: "ytdBudget", colorClass: "text-purple-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", colorClass: "", group: "ytd", colorCoded: true },
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", colorClass: "", group: "ytd", colorCoded: true },
 ];
@@ -380,7 +377,7 @@ export default function RevenueTrackerPage() {
 
   const projectNamesByRow = useMemo(() => {
     const result: Record<string, string[]> = {};
-    for (const key of ["revProjects", "realisedProjects", "unrealisedProjects", "budgetProjects"] as const) {
+    for (const key of ["revProjects", "realisedProjects", "unrealisedProjects"] as const) {
       const names = new Set<string>();
       for (const m of months) {
         for (const p of (m as any)[key] || []) {
@@ -407,7 +404,6 @@ export default function RevenueTrackerPage() {
         month: m.monthLabel,
         "Realised": m.realisedRevenue,
         "Unrealised": m.unrealisedRevenue,
-        "Milestone Inflows": m.budget,
         "YTD Variance": m.ytdVariance,
       })),
     [months],
@@ -431,7 +427,6 @@ export default function RevenueTrackerPage() {
     { id: "ytd-revenue", label: "YTD Revenue", value: formatRand(lastMonth?.ytdRevenue ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground font-black", borderColor: "" },
     { id: "ytd-realised", label: "YTD Realised", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingUp, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border" },
     { id: "ytd-unrealised", label: "YTD Unrealised", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200" },
-    { id: "total-milestone", label: "Total Milestone Inflows", value: formatRand(data?.totalMilestoneRevenue ?? 0), icon: Landmark, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "" },
     {
       id: "ytd-variance", label: "YTD Variance", value: formatRand(ytdVar),
       icon: TrendingUp,
@@ -518,7 +513,6 @@ export default function RevenueTrackerPage() {
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
                   <Bar dataKey="Realised" stackId="rev" fill="#059669" radius={[0, 0, 0, 0]} />
                   <Bar dataKey="Unrealised" stackId="rev" fill="#d97706" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Milestone Inflows" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
                   <Line type="monotone" dataKey="YTD Variance" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
