@@ -8,6 +8,7 @@ import { MetricStrip } from "@/components/ui/metric-strip";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { ROLE_QUICK_ACTIONS } from "@shared/schema";
+import { EnergyLoader } from "@/components/ui/energy-loader";
 import {
   Flag,
   Loader2,
@@ -307,8 +308,8 @@ function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: b
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-6">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      <div className="flex items-center justify-center py-12">
+        <EnergyLoader size="md" label="Powering up dashboard..." />
       </div>
     );
   }

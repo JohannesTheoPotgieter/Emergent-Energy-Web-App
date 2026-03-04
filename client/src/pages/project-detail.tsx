@@ -19,6 +19,7 @@ import {
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
   MessageSquare, FolderOpen, Bell, Mail, ThumbsUp, ThumbsDown, FileCheck, Inbox,
 } from "lucide-react";
+import { EnergyLoader } from "@/components/ui/energy-loader";
 import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
@@ -368,7 +369,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
   }
 
   if (isLoading) {
-    return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+    return <div className="flex justify-center py-12"><EnergyLoader size="md" label="Loading project..." /></div>;
   }
 
   const tasks = engData?.tasks || [];
