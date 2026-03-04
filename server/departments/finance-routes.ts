@@ -1093,6 +1093,121 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
   }
 });
 
+router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res) => {
+  try {
+    const projectName = decodeURIComponent(req.params.projectName);
+    const projectExpenses = await storage.getProgramExpensesByProject(projectName);
+
+    const cosByMonth = new Map<string, number>();
+    const realisedByMonth = new Map<string, number>();
+    const itemsByMonth = new Map<string, any[]>();
+
+    const nowDate = new Date();
+    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+
+    for (const exp of projectExpenses) {
+      if (exp.rowType !== 'item') continue;
+      const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
+      if (isNaN(amount) || amount === 0) continue;
+
+      const invDate = exp.expenseInvoicedDate as string | null;
+      if (!invDate) continue;
+      const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+      if (!dateMatch) continue;
+      const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
+
+      cosByMonth.set(monthKey, (cosByMonth.get(monthKey) || 0) + amount);
+
+      const isRealised = isCosRealised(exp) && monthKey <= currentMonthKey;
+      if (isRealised) {
+        realisedByMonth.set(monthKey, (realisedByMonth.get(monthKey) || 0) + amount);
+      }
+
+      if (!itemsByMonth.has(monthKey)) itemsByMonth.set(monthKey, []);
+      itemsByMonth.get(monthKey)!.push({
+        id: exp.id,
+        category: exp.expenseCategory || null,
+        lineItem: exp.expenseLineItem || null,
+        amount,
+        invoiceNumber: exp.expenseInvoiceNumber || null,
+        poNumber: exp.expensePoNumber || null,
+        invoiceDate: exp.expenseInvoicedDate || null,
+        supplier: exp.supplierName || null,
+        isRealised,
+        cosStatus: isRealised ? 'Realised' : (exp.expenseInvoiceNumber ? 'Invoiced' : (exp.expensePoNumber ? 'Committed' : 'Planned')),
+        paymentDate: exp.expensePaymentDate || null,
+      });
+    }
+
+    const budgetByMonth = new Map<string, number>();
+    for (const exp of projectExpenses) {
+      if (exp.rowType !== 'item') continue;
+      const budgetAmt = exp.budgetTotal ? parseFloat(exp.budgetTotal as string) : 0;
+      if (isNaN(budgetAmt) || budgetAmt === 0) continue;
+      const invDate = exp.expenseInvoicedDate as string | null;
+      const startDate = invDate || (exp as any).startDate || null;
+      if (!startDate) continue;
+      const dateMatch = String(startDate).match(/^(\d{4})-(\d{2})/);
+      if (!dateMatch) continue;
+      const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
+      budgetByMonth.set(monthKey, (budgetByMonth.get(monthKey) || 0) + budgetAmt);
+    }
+
+    const months: any[] = [];
+    const startMonth = new Date(Date.UTC(2025, 8, 1));
+    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0;
+
+    for (let i = 0; i < 12; i++) {
+      const monthDate = new Date(startMonth);
+      monthDate.setUTCMonth(monthDate.getUTCMonth() + i);
+      const yr = monthDate.getUTCFullYear();
+      const mo = monthDate.getUTCMonth();
+      const monthKey = `${yr}-${String(mo + 1).padStart(2, '0')}`;
+
+      const totalCOS = cosByMonth.get(monthKey) ?? 0;
+      const realisedCOS = realisedByMonth.get(monthKey) ?? 0;
+      const unrealisedCOS = totalCOS - realisedCOS;
+      const budget = budgetByMonth.get(monthKey) ?? 0;
+      const variance = totalCOS - budget;
+      const variancePct = budget !== 0 ? variance / budget : 0;
+
+      ytdCOS += totalCOS;
+      ytdRealised += realisedCOS;
+      ytdBudget += budget;
+      const ytdUnrealised = ytdCOS - ytdRealised;
+      const ytdVariance = ytdCOS - ytdBudget;
+      const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+
+      const monthItems = itemsByMonth.get(monthKey) || [];
+
+      months.push({
+        monthKey,
+        monthLabel: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+        totalCOS,
+        realisedCOS,
+        unrealisedCOS,
+        budget,
+        variance,
+        variancePct,
+        ytdCOS,
+        ytdRealised,
+        ytdUnrealised,
+        ytdBudget,
+        ytdVariance,
+        ytdVariancePct,
+        itemCount: monthItems.length,
+        realisedCount: monthItems.filter((it: any) => it.isRealised).length,
+        items: monthItems,
+      });
+    }
+
+    res.json(months);
+  } catch (error) {
+    console.error("Project COS tracker error:", error);
+    res.status(500).json({ error: "Failed to fetch project COS tracker data" });
+  }
+});
+
 router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
   try {
     const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
