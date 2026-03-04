@@ -646,24 +646,25 @@ export async function registerRoutes(
           LIMIT ${lim}
         `),
         db.execute(sql`
-          SELECT id, title, status, project_name, task_type, assigned_to, percent_complete
-          FROM work_items
-          WHERE LOWER(title) LIKE ${containsPattern}
-             OR LOWER(project_name) LIKE ${containsPattern}
-          ORDER BY CASE WHEN LOWER(title) LIKE ${startsWithPattern} THEN 0 ELSE 1 END, title
+          SELECT w.id, w.title, w.status, p.project_name, w.type as task_type, w.owner_name as assigned_to, w.percent_complete
+          FROM work_items w
+          LEFT JOIN project_info p ON w.project_id = p.project_info_id
+          WHERE LOWER(w.title) LIKE ${containsPattern}
+             OR LOWER(p.project_name) LIKE ${containsPattern}
+          ORDER BY CASE WHEN LOWER(w.title) LIKE ${startsWithPattern} THEN 0 ELSE 1 END, w.title
           LIMIT ${lim}
         `),
         db.execute(sql`
-          SELECT id, description, project_name, category, supplier, total_cost, status
+          SELECT id, description, project_name, cost_category as category, counterparty_name as supplier, amount_ex_vat as total_cost, cost_line_status as status
           FROM normalized_cost_lines
           WHERE LOWER(description) LIKE ${containsPattern}
-             OR LOWER(supplier) LIKE ${containsPattern}
-             OR LOWER(category) LIKE ${containsPattern}
+             OR LOWER(counterparty_name) LIKE ${containsPattern}
+             OR LOWER(cost_category) LIKE ${containsPattern}
           ORDER BY description
           LIMIT ${lim}
         `),
         db.execute(sql`
-          SELECT id, description, project_name, milestone_name, amount, status
+          SELECT id, description, project_name, milestone_name, amount_ex_vat as amount, status
           FROM normalized_revenue_lines
           WHERE LOWER(description) LIKE ${containsPattern}
              OR LOWER(milestone_name) LIKE ${containsPattern}
