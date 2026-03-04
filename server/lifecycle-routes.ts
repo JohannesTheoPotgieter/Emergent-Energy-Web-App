@@ -1085,6 +1085,44 @@ export function registerLifecycleRoutes(app: Express) {
     }
   });
 
+  app.patch("/api/lifecycle-board/projects/:id/restore", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id as string, 10);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+
+      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      if (project.archivedStatus === "ACTIVE") {
+        return res.status(400).json({ error: "Project is already active" });
+      }
+
+      const user = (req as any).user as any;
+      const restoredBy = user?.email || user?.name || "unknown";
+
+      const [updated] = await db.update(projectInfo)
+        .set({ archivedStatus: "ACTIVE", updatedAt: new Date() })
+        .where(eq(projectInfo.id, projectId))
+        .returning();
+
+      logAuditFromReq(req, {
+        entityType: "lifecycle",
+        entityId: String(projectId),
+        action: "restore",
+        projectName: project.projectName,
+        changesJson: {
+          description: `Project restored from ${project.archivedStatus} by ${restoredBy}`,
+          previousStatus: project.archivedStatus,
+        },
+      });
+
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[lifecycle-board] PATCH restore error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.delete("/api/lifecycle-board/projects/:id", requireAuth, requireExecRole, async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id as string, 10);
