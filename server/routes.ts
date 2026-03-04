@@ -12964,7 +12964,11 @@ export async function registerRoutes(
       const userToken = await getUserSsoToken(req);
       let events: any[] = [];
       if (userToken) {
-        events = await outlook.getCalendarEvents(start as string, end as string, userToken);
+        try {
+          events = await outlook.getCalendarEvents(start as string, end as string, userToken);
+        } catch (graphErr: any) {
+          console.log("[Outlook] Graph API call failed with user token:", graphErr.message);
+        }
       } else {
         try {
           events = await outlook.getCalendarEvents(start as string, end as string);
