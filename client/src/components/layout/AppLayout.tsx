@@ -844,11 +844,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2 md:gap-3 shrink-0">
-            <div className="relative hidden lg:block w-56">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search projects..." className="pl-9 h-9 bg-card border-border focus-visible:ring-1 focus-visible:ring-primary" />
-            </div>
-            
             <PmModeToggle />
 
             <NotificationBell />

@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { MetricStrip } from "@/components/ui/metric-strip";
 import { useAuth } from "@/hooks/use-auth";
@@ -40,6 +41,10 @@ import {
   Zap,
   DollarSign,
   Clock,
+  Search,
+  FolderOpenDot,
+  Receipt,
+  Banknote,
 } from "lucide-react";
 
 const ROLE_COMPLIMENTS: Record<string, string[]> = {
@@ -403,6 +408,165 @@ function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: b
   );
 }
 
+const SEARCH_TYPE_CONFIG: Record<string, { icon: any; label: string; color: string }> = {
+  project: { icon: FolderOpenDot, label: "Project", color: "text-emerald-600 bg-emerald-50" },
+  task: { icon: ListTodo, label: "Task", color: "text-sky-600 bg-sky-50" },
+  cost: { icon: Receipt, label: "Cost", color: "text-amber-600 bg-amber-50" },
+  revenue: { icon: Banknote, label: "Revenue", color: "text-green-600 bg-green-50" },
+};
+
+function UniversalSearch() {
+  const [query, setQuery] = useState("");
+  const [focused, setFocused] = useState(false);
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [, navigate] = useLocation();
+
+  const debouncedQuery = useDebounce(query, 250);
+
+  const { data, isFetching } = useQuery<{ results: any[] }>({
+    queryKey: ["universal-search", debouncedQuery],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/search?q=${encodeURIComponent(debouncedQuery)}&limit=15`, {
+        headers,
+        credentials: "include",
+      });
+      if (!res.ok) return { results: [] };
+      return res.json();
+    },
+    enabled: debouncedQuery.length >= 2,
+    staleTime: 10_000,
+  });
+
+  const results = data?.results || [];
+  const showDropdown = focused && query.length >= 2;
+
+  useEffect(() => {
+    setSelectedIdx(0);
+  }, [results]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setFocused(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleSelect = useCallback((result: any) => {
+    if (result.url) {
+      navigate(result.url);
+      setQuery("");
+      setFocused(false);
+    }
+  }, [navigate]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!showDropdown || results.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedIdx(i => Math.min(i + 1, results.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedIdx(i => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (results[selectedIdx]) handleSelect(results[selectedIdx]);
+    } else if (e.key === "Escape") {
+      setFocused(false);
+      inputRef.current?.blur();
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative w-full" data-testid="universal-search">
+      <div className="relative">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground pointer-events-none" />
+        <Input
+          ref={inputRef}
+          type="text"
+          placeholder="Search projects, tasks, costs, revenue..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onKeyDown={handleKeyDown}
+          className="pl-12 pr-12 h-12 text-base bg-white border-2 border-emerald-200 rounded-xl shadow-sm focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:border-emerald-400 placeholder:text-muted-foreground/60"
+          data-testid="input-universal-search"
+        />
+        {isFetching && (
+          <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-emerald-500" />
+        )}
+        {!isFetching && query.length > 0 && (
+          <button
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            onClick={() => { setQuery(""); inputRef.current?.focus(); }}
+            data-testid="btn-clear-search"
+          >
+            <span className="text-sm font-medium">Clear</span>
+          </button>
+        )}
+      </div>
+
+      {showDropdown && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-border rounded-xl shadow-lg z-50 max-h-[400px] overflow-y-auto" data-testid="search-results-dropdown">
+          {results.length === 0 && !isFetching ? (
+            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+              <Search className="h-8 w-8 mb-2 opacity-30" />
+              <p className="text-sm font-medium">No results found</p>
+              <p className="text-xs mt-0.5">Try a different search term</p>
+            </div>
+          ) : (
+            <div className="py-1">
+              {results.map((result, idx) => {
+                const config = SEARCH_TYPE_CONFIG[result.type] || SEARCH_TYPE_CONFIG.task;
+                const Icon = config.icon;
+                const isSelected = idx === selectedIdx;
+                return (
+                  <button
+                    key={result.id}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${isSelected ? "bg-emerald-50" : "hover:bg-muted/50"}`}
+                    onClick={() => handleSelect(result)}
+                    onMouseEnter={() => setSelectedIdx(idx)}
+                    data-testid={`search-result-${result.id}`}
+                  >
+                    <div className={`p-1.5 rounded-lg shrink-0 ${config.color}`}>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{result.title}</p>
+                      {result.subtitle && (
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">{result.subtitle}</p>
+                      )}
+                    </div>
+                    <Badge variant="outline" className={`text-[10px] shrink-0 ${config.color} border-0`}>
+                      {config.label}
+                    </Badge>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function useDebounce(value: string, delay: number): string {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debouncedValue;
+}
+
 const ICON_MAP: Record<string, any> = {
   BarChart3, Wallet, ClipboardCheck, Layers, FileSpreadsheet, Settings: Settings2,
   Activity, TrendingUp, ClipboardList, FolderOpen, ShieldCheck, HardHat,
@@ -494,6 +658,8 @@ export default function Home() {
         title={`Welcome, ${firstName}`}
         subtitle={isFriday ? `\uD83D\uDE04 ${compliment}` : compliment}
       />
+
+      <UniversalSearch />
 
       <MetricStrip
         metrics={[

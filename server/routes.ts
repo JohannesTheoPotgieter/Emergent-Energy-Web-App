@@ -626,6 +626,98 @@ export async function registerRoutes(
     return info;
   }
 
+  // ==================== UNIVERSAL SEARCH ====================
+
+  app.get("/api/search", requireAuth, async (req, res) => {
+    try {
+      const q = (req.query.q as string || "").trim().toLowerCase();
+      if (!q || q.length < 2) return res.json({ results: [] });
+      const lim = Math.min(parseInt(req.query.limit as string) || 20, 50);
+      const startsWithPattern = `${q}%`;
+      const containsPattern = `%${q}%`;
+
+      const [projectRows, workItemRows, costRows, revenueRows] = await Promise.all([
+        db.execute(sql`
+          SELECT project_info_id as id, project_name, phase, pd, pm, size_kwp
+          FROM project_info
+          WHERE LOWER(project_name) LIKE ${startsWithPattern}
+             OR LOWER(project_name) LIKE ${containsPattern}
+          ORDER BY CASE WHEN LOWER(project_name) LIKE ${startsWithPattern} THEN 0 ELSE 1 END, project_name
+          LIMIT ${lim}
+        `),
+        db.execute(sql`
+          SELECT id, title, status, project_name, task_type, assigned_to, percent_complete
+          FROM work_items
+          WHERE LOWER(title) LIKE ${containsPattern}
+             OR LOWER(project_name) LIKE ${containsPattern}
+          ORDER BY CASE WHEN LOWER(title) LIKE ${startsWithPattern} THEN 0 ELSE 1 END, title
+          LIMIT ${lim}
+        `),
+        db.execute(sql`
+          SELECT id, description, project_name, category, supplier, total_cost, status
+          FROM normalized_cost_lines
+          WHERE LOWER(description) LIKE ${containsPattern}
+             OR LOWER(supplier) LIKE ${containsPattern}
+             OR LOWER(category) LIKE ${containsPattern}
+          ORDER BY description
+          LIMIT ${lim}
+        `),
+        db.execute(sql`
+          SELECT id, description, project_name, milestone_name, amount, status
+          FROM normalized_revenue_lines
+          WHERE LOWER(description) LIKE ${containsPattern}
+             OR LOWER(milestone_name) LIKE ${containsPattern}
+          ORDER BY description
+          LIMIT ${lim}
+        `),
+      ]);
+
+      const results: any[] = [];
+
+      for (const r of (projectRows as any).rows || []) {
+        results.push({
+          type: "project",
+          id: r.project_name,
+          title: r.project_name,
+          subtitle: [r.phase, r.pm ? `PM: ${r.pm}` : null, r.size_kwp ? `${r.size_kwp} kWp` : null].filter(Boolean).join(" · "),
+          url: `/project/${encodeURIComponent(r.project_name)}`,
+        });
+      }
+      for (const r of (workItemRows as any).rows || []) {
+        results.push({
+          type: "task",
+          id: `wi-${r.id}`,
+          title: r.title,
+          subtitle: [r.project_name, r.task_type, r.status, r.percent_complete != null ? `${Math.round(r.percent_complete * 100)}%` : null].filter(Boolean).join(" · "),
+          url: r.project_name ? `/project/${encodeURIComponent(r.project_name)}?tab=plan` : null,
+        });
+      }
+      for (const r of (costRows as any).rows || []) {
+        results.push({
+          type: "cost",
+          id: `cost-${r.id}`,
+          title: r.description || r.category || "Cost item",
+          subtitle: [r.project_name, r.supplier, r.category, r.total_cost ? `R${Number(r.total_cost).toLocaleString()}` : null].filter(Boolean).join(" · "),
+          url: r.project_name ? `/project/${encodeURIComponent(r.project_name)}?tab=expenditure` : null,
+        });
+      }
+      for (const r of (revenueRows as any).rows || []) {
+        results.push({
+          type: "revenue",
+          id: `rev-${r.id}`,
+          title: r.description || r.milestone_name || "Revenue item",
+          subtitle: [r.project_name, r.milestone_name, r.amount ? `R${Number(r.amount).toLocaleString()}` : null].filter(Boolean).join(" · "),
+          url: r.project_name ? `/project/${encodeURIComponent(r.project_name)}?tab=revenue` : null,
+        });
+      }
+
+      res.json({ results: results.slice(0, lim) });
+    } catch (err: any) {
+      console.error("Search error:", err);
+      res.status(500).json({ error: "Search failed" });
+    }
+  });
+
   // ==================== FEATURE FLAGS ====================
 
   app.get("/api/settings", requireAuth, async (req, res) => {
