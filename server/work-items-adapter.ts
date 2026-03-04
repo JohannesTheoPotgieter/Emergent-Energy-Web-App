@@ -183,35 +183,67 @@ export async function getWorkItemsAsEngineeringTasks(userId?: number): Promise<a
     conditions.push(eq(workItems.ownerUserId, userId));
   }
 
-  const items = await db
-    .select()
-    .from(workItems)
-    .where(and(...conditions))
-    .orderBy(desc(workItems.createdAt));
+  const [items, projectRows] = await Promise.all([
+    db.select().from(workItems).where(and(...conditions)).orderBy(desc(workItems.createdAt)),
+    db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
+  ]);
 
-  return items.map((wi: WorkItem) => ({
-    id: wi.legacyId ?? wi.id,
-    projectId: wi.projectId,
-    projectName: null,
-    title: wi.title,
-    description: wi.description,
-    lifecyclePhaseTag: "EXECUTION",
-    status: mapToEngStatus(wi.status),
-    requiresQcApproval: false,
-    requiresOpsApproval: false,
-    qcApprovedAt: null,
-    qcApprovedByRole: null,
-    opsApprovedAt: null,
-    opsApprovedByRole: null,
-    assigneeUserId: wi.ownerUserId,
-    assigneeName: null,
-    softDeletedAt: null,
-    createdAt: wi.createdAt,
-    updatedAt: wi.updatedAt,
-    scheduledDate: null,
-    scheduledStartTime: null,
-    scheduledEndTime: null,
-  }));
+  const projectMap = new Map<number, string>();
+  for (const p of projectRows) {
+    projectMap.set(p.id, p.projectName);
+  }
+
+  const allItemIds = items.map((i: WorkItem) => i.id);
+  const assignments = allItemIds.length > 0
+    ? await db.select().from(workItemAssignments).where(
+        sql`${workItemAssignments.workItemId} IN (${sql.join(allItemIds.map((id: number) => sql`${id}`), sql`, `)})`
+      )
+    : [];
+
+  const assignmentsByItem = new Map<number, string[]>();
+  const { buildUserMap } = await import("./user-resolver");
+  const userMap = await buildUserMap();
+  for (const a of assignments) {
+    if (!assignmentsByItem.has(a.workItemId)) assignmentsByItem.set(a.workItemId, []);
+    const resolved = userMap.get(a.userId);
+    if (resolved) assignmentsByItem.get(a.workItemId)!.push(resolved.name);
+  }
+
+  return items.map((wi: WorkItem) => {
+    const resolvedProject = wi.projectId ? projectMap.get(wi.projectId) || null : null;
+    const assigneeNames = assignmentsByItem.get(wi.id) || [];
+    const ownerName = wi.ownerUserId ? userMap.get(wi.ownerUserId)?.name || null : null;
+    if (ownerName && !assigneeNames.includes(ownerName)) assigneeNames.push(ownerName);
+
+    return {
+      id: wi.legacyId ?? wi.id,
+      projectId: wi.projectId,
+      projectName: resolvedProject,
+      title: wi.title,
+      description: wi.description,
+      status: mapToEngStatus(wi.status),
+      priority: wi.priority || "Medium",
+      dueDate: wi.endDate,
+      startDate: wi.startDate,
+      assignees: assigneeNames.length > 0 ? assigneeNames : null,
+      assigneeUserIds: assignments.filter(a => a.workItemId === wi.id).map(a => a.userId),
+      ownerUserId: wi.ownerUserId,
+      trackingRag: null,
+      holdReason: null,
+      blockerReason: null,
+      blockedType: null,
+      completedAt: wi.status === "COMPLETE" ? (wi.updatedAt || wi.createdAt) : null,
+      taskTypeTag: null,
+      primaryWorkstream: wi.workstream,
+      percentComplete: wi.percentComplete ?? 0,
+      summaryText: null,
+      externalSource: null,
+      externalTaskId: wi.externalRef,
+      sortOrder: 0,
+      createdAt: wi.createdAt,
+      updatedAt: wi.updatedAt,
+    };
+  });
 }
 
 export async function getWorkItemsAsMytoolTasks(userId: number): Promise<any[]> {
