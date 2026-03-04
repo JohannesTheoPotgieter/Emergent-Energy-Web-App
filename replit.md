@@ -1,4 +1,4 @@
-# Emergent Energy Dashboard
+# Emergent Energy Dashboard V1.0.0
 
 ## Overview
 The Emergent Energy Dashboard is a full-stack web application designed for comprehensive management of renewable energy projects. It offers end-to-end project lifecycle tracking, robust financial oversight (Cost of Sales, cashflow, revenue, expenditure), and streamlines engineering operations with a 5-stage checklist and task management. The platform integrates quality management, communication features, and Microsoft 365 services via Azure AD SSO. Its main goal is to boost efficiency, reduce operational costs, and enhance project delivery for renewable energy initiatives.
