@@ -2044,7 +2044,19 @@ function PreviewCommitStep({
   const [committed, setCommitted] = useState(false);
   const [commitResult, setCommitResult] = useState<any>(null);
   const [expandedTables, setExpandedTables] = useState<Record<string, boolean>>({});
-  const [manualEditsWarning, setManualEditsWarning] = useState<{ message: string; count: number } | null>(null);
+  const [manualEditsWarning, setManualEditsWarning] = useState<{
+    message: string;
+    count: number;
+    conflicts?: Array<{
+      sourceRow: number;
+      description: string;
+      costCategory: string;
+      field: string;
+      currentValue: string;
+      importValue: string;
+    }>;
+  } | null>(null);
+  const [conflictResolutions, setConflictResolutions] = useState<Record<string, "keep" | "import">>({});
   const [previouslyDeletedWarning, setPreviouslyDeletedWarning] = useState<{ message: string; deletedBy: string; deletedAt: string } | null>(null);
   const [recencyWarning, setRecencyWarning] = useState<{ message: string; error: string } | null>(null);
   const [, navigate] = useLocation();
@@ -2081,7 +2093,14 @@ function PreviewCommitStep({
       } else {
         const err = await res.json().catch(() => ({ error: "Commit failed" }));
         if (err.error === "manual_edits_warning") {
-          setManualEditsWarning({ message: err.message, count: err.manualEditCount });
+          setManualEditsWarning({ message: err.message, count: err.manualEditCount, conflicts: err.conflicts || [] });
+          if (err.conflicts) {
+            const defaults: Record<string, "keep" | "import"> = {};
+            for (const c of err.conflicts) {
+              defaults[`${c.sourceRow}::${c.field}`] = "keep";
+            }
+            setConflictResolutions(defaults);
+          }
         } else if (err.error === "previously_deleted") {
           setPreviouslyDeletedWarning({ message: err.message, deletedBy: err.deletedBy, deletedAt: err.deletedAt });
         } else if (err.error === "import_older_than_existing" || err.error === "import_equal_date") {
@@ -2099,6 +2118,8 @@ function PreviewCommitStep({
 
   const handleCommit = () => doCommit({});
   const handleCommitForce = () => doCommit({ acknowledgeManualEdits: true });
+  const handleCommitPreserve = () => doCommit({ preserveManualEdits: true });
+  const handleCommitWithResolutions = () => doCommit({ conflictResolutions });
   const handleCommitRecreate = () => doCommit({ forceRecreate: true });
 
   const toggleTable = (key: string) => {
@@ -2121,6 +2142,9 @@ function PreviewCommitStep({
               {commitResult.costLines != null && <p>{commitResult.costLines} cost lines imported</p>}
               {commitResult.executionPhases != null && <p>{commitResult.executionPhases} execution phases</p>}
               {commitResult.counterparties != null && <p>{commitResult.counterparties} new counterparties</p>}
+              {commitResult.preservedManualEdits != null && commitResult.preservedManualEdits > 0 && (
+                <p className="text-emerald-600 font-medium">{commitResult.preservedManualEdits} manual edit(s) preserved</p>
+              )}
             </div>
           )}
           {projectName && (
@@ -2362,28 +2386,140 @@ function PreviewCommitStep({
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
-              <div className="flex-1 space-y-2">
+              <div className="flex-1 space-y-3">
                 <p className="text-sm font-medium text-amber-800">{manualEditsWarning.message}</p>
-                <p className="text-xs text-amber-600">Proceeding will overwrite these manual changes. You can review them in the Change Audit first.</p>
+                <p className="text-xs text-amber-600">Choose how to handle your existing manual changes below.</p>
+
+                {manualEditsWarning.conflicts && manualEditsWarning.conflicts.length > 0 && (
+                  <div className="mt-2 border border-amber-200 rounded-lg overflow-hidden bg-white">
+                    <div className="px-3 py-2 bg-amber-100/50 border-b border-amber-200">
+                      <p className="text-xs font-semibold text-amber-800">Manual edits detected — choose which to keep</p>
+                    </div>
+                    <div className="max-h-[240px] overflow-y-auto">
+                      <table className="w-full text-xs" data-testid="table-conflicts">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200">
+                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Row</th>
+                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Item</th>
+                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Field</th>
+                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Current</th>
+                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Import</th>
+                            <th className="text-center px-3 py-1.5 font-medium text-slate-600">Keep?</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {manualEditsWarning.conflicts.map((c, i) => {
+                            const key = `${c.sourceRow}::${c.field}`;
+                            const isKeep = conflictResolutions[key] === "keep";
+                            return (
+                              <tr key={i} className={`border-b border-slate-100 ${isKeep ? "bg-emerald-50/30" : "bg-red-50/20"}`}>
+                                <td className="px-3 py-1.5 text-slate-500 font-mono">{c.sourceRow}</td>
+                                <td className="px-3 py-1.5 text-slate-700 max-w-[180px] truncate" title={`${c.costCategory}: ${c.description}`}>
+                                  {c.description || c.costCategory}
+                                </td>
+                                <td className="px-3 py-1.5 text-slate-600">{c.field}</td>
+                                <td className="px-3 py-1.5 text-emerald-700 font-medium">{c.currentValue}</td>
+                                <td className="px-3 py-1.5 text-slate-500">{c.importValue}</td>
+                                <td className="px-3 py-1.5 text-center">
+                                  <button
+                                    className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
+                                      isKeep
+                                        ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                                        : "bg-red-100 text-red-600 hover:bg-red-200"
+                                    }`}
+                                    onClick={() => {
+                                      setConflictResolutions(prev => ({
+                                        ...prev,
+                                        [key]: isKeep ? "import" : "keep",
+                                      }));
+                                    }}
+                                    data-testid={`btn-toggle-conflict-${i}`}
+                                  >
+                                    {isKeep ? "Keep Manual" : "Use Import"}
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 flex gap-2">
+                      <button
+                        className="text-[10px] font-medium text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
+                        onClick={() => {
+                          const all: Record<string, "keep" | "import"> = {};
+                          for (const c of manualEditsWarning.conflicts || []) {
+                            all[`${c.sourceRow}::${c.field}`] = "keep";
+                          }
+                          setConflictResolutions(all);
+                        }}
+                        data-testid="btn-keep-all"
+                      >
+                        Keep All Manual
+                      </button>
+                      <span className="text-slate-300">|</span>
+                      <button
+                        className="text-[10px] font-medium text-red-600 hover:text-red-700 underline underline-offset-2"
+                        onClick={() => {
+                          const all: Record<string, "keep" | "import"> = {};
+                          for (const c of manualEditsWarning.conflicts || []) {
+                            all[`${c.sourceRow}::${c.field}`] = "import";
+                          }
+                          setConflictResolutions(all);
+                        }}
+                        data-testid="btn-use-all-import"
+                      >
+                        Use All Import Values
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-2 mt-3">
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setManualEditsWarning(null)}
+                    onClick={() => { setManualEditsWarning(null); setConflictResolutions({}); }}
                     data-testid="btn-cancel-overwrite"
                   >
                     Cancel
                   </Button>
-                  <Button
-                    size="sm"
-                    className="bg-amber-600 hover:bg-amber-700"
-                    onClick={handleCommitForce}
-                    disabled={committing}
-                    data-testid="btn-confirm-overwrite"
-                  >
-                    {committing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
-                    Overwrite & Commit
-                  </Button>
+                  {manualEditsWarning.conflicts && manualEditsWarning.conflicts.length > 0 ? (
+                    <Button
+                      size="sm"
+                      className="bg-emerald-600 hover:bg-emerald-700"
+                      onClick={handleCommitWithResolutions}
+                      disabled={committing}
+                      data-testid="btn-commit-resolved"
+                    >
+                      {committing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                      Commit with Selections
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        className="bg-emerald-600 hover:bg-emerald-700"
+                        onClick={handleCommitPreserve}
+                        disabled={committing}
+                        data-testid="btn-preserve-manual"
+                      >
+                        {committing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                        Keep Manual Edits & Commit
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="bg-amber-600 hover:bg-amber-700"
+                        onClick={handleCommitForce}
+                        disabled={committing}
+                        data-testid="btn-confirm-overwrite"
+                      >
+                        {committing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                        Overwrite & Commit
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -2545,7 +2681,7 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
             const res = await fetch(`/api/smart-import/${run.id}/commit`, {
               method: "POST",
               headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-              body: JSON.stringify({ acknowledgeManualEdits: true, forceCommit: true, acknowledgeEqualDate: true, forceRecreate: true }),
+              body: JSON.stringify({ preserveManualEdits: true, forceCommit: true, acknowledgeEqualDate: true, forceRecreate: true }),
             });
             if (res.ok) {
               const data = await res.json();

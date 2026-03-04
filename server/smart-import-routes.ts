@@ -785,8 +785,22 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
     }
 
     const acknowledgeManualEdits = req.body?.acknowledgeManualEdits === true;
-    if (!acknowledgeManualEdits && run.projectId) {
-      const manualEditCount = await db
+    const preserveManualEdits = req.body?.preserveManualEdits === true;
+    const conflictResolutions = req.body?.conflictResolutions as Record<string, "keep" | "import"> | undefined;
+
+    if (!acknowledgeManualEdits && !preserveManualEdits && run.projectId) {
+      const existingCostLines = await db.select().from(normalizedCostLines)
+        .where(eq(normalizedCostLines.projectId, run.projectId));
+
+      const manuallyModifiedRows = existingCostLines.filter(row =>
+        row.cosRealised === true ||
+        row.invoiceDateConfirmed === true ||
+        row.paidDateConfirmed === true ||
+        row.noRevenueLinked === true ||
+        row.cashflowConfirmed === true
+      );
+
+      const manualEditChangeSets = await db
         .select({ count: sql<number>`count(*)` })
         .from(changeSets)
         .where(and(
@@ -794,13 +808,82 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
           eq(changeSets.entityType, "expense_line"),
           eq(changeSets.source, "MANUAL_EDIT")
         ));
-      const editCount = Number(manualEditCount[0]?.count || 0);
-      if (editCount > 0) {
+      const changeSetCount = Number(manualEditChangeSets[0]?.count || 0);
+
+      if (manuallyModifiedRows.length > 0) {
+        const norm = (run.summaryJson as any)?.normalization;
+        const importCostLines = norm?.costLines || [];
+
+        const conflicts: Array<{
+          sourceRow: number;
+          description: string;
+          costCategory: string;
+          field: string;
+          currentValue: string;
+          importValue: string;
+        }> = [];
+
+        for (const existing of manuallyModifiedRows) {
+          const matchingImport = importCostLines.find((imp: any) => imp.sourceRow === existing.sourceRow);
+          if (existing.cosRealised) {
+            conflicts.push({
+              sourceRow: existing.sourceRow || 0,
+              description: existing.description || "",
+              costCategory: existing.costCategory || "",
+              field: "COS Realised",
+              currentValue: "Yes (manually confirmed)",
+              importValue: matchingImport?.cosRealised ? "Yes" : "No",
+            });
+          }
+          if (existing.invoiceDateConfirmed) {
+            conflicts.push({
+              sourceRow: existing.sourceRow || 0,
+              description: existing.description || "",
+              costCategory: existing.costCategory || "",
+              field: "Invoice Date Confirmed",
+              currentValue: "Yes (manually confirmed)",
+              importValue: matchingImport?.invoiceDateConfirmed ? "Yes" : "No",
+            });
+          }
+          if (existing.paidDateConfirmed) {
+            conflicts.push({
+              sourceRow: existing.sourceRow || 0,
+              description: existing.description || "",
+              costCategory: existing.costCategory || "",
+              field: "Paid Date Confirmed",
+              currentValue: "Yes (manually confirmed)",
+              importValue: matchingImport?.paidDateConfirmed ? "Yes" : "No",
+            });
+          }
+          if (existing.noRevenueLinked) {
+            conflicts.push({
+              sourceRow: existing.sourceRow || 0,
+              description: existing.description || "",
+              costCategory: existing.costCategory || "",
+              field: "No Revenue Linked",
+              currentValue: "Yes (manually set)",
+              importValue: "No",
+            });
+          }
+          if (existing.cashflowConfirmed) {
+            conflicts.push({
+              sourceRow: existing.sourceRow || 0,
+              description: existing.description || "",
+              costCategory: existing.costCategory || "",
+              field: "Cashflow Confirmed",
+              currentValue: "Yes (manually confirmed)",
+              importValue: matchingImport?.cashflowConfirmed ? "Yes" : "No",
+            });
+          }
+        }
+
         return res.status(409).json({
           error: "manual_edits_warning",
-          message: `This project has ${editCount} manually edited expenditure record(s). Re-importing will overwrite these changes.`,
-          manualEditCount: editCount,
-          hint: "Set acknowledgeManualEdits=true to proceed, or review edits in the Change Audit first.",
+          message: `This project has ${manuallyModifiedRows.length} cost line(s) with manual edits that will be affected by this import.`,
+          manualEditCount: manuallyModifiedRows.length,
+          changeSetCount,
+          conflicts,
+          hint: "Choose 'preserveManualEdits' to keep your manual changes, or 'acknowledgeManualEdits' to overwrite them with the imported data.",
         });
       }
     }
@@ -891,6 +974,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
     const counts = { planTasks: 0, revenueLines: 0, costLines: 0, executionPhases: 0, counterparties: 0 };
     const skippedOverrideFields: Array<{ row: number; field: string; importValue: string; manualValue: string }> = [];
 
+    let preservedManualEditsCount = 0;
+
     await db.transaction(async (tx: any) => {
       const existingTaskOwners = new Map<string, string>();
       {
@@ -902,6 +987,55 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         for (const t of existingWiTasks) {
           if (t.ownerName && t.ownerName.trim()) {
             existingTaskOwners.set(t.title, t.ownerName);
+          }
+        }
+      }
+
+      const manualEditsToPreserve = new Map<number, {
+        cosRealised?: boolean;
+        invoiceDateConfirmed?: boolean;
+        paidDateConfirmed?: boolean;
+        noRevenueLinked?: boolean;
+        cashflowConfirmed?: boolean;
+      }>();
+
+      if (preserveManualEdits || conflictResolutions) {
+        const existingCostRows = projectId
+          ? await tx.select().from(normalizedCostLines).where(eq(normalizedCostLines.projectId, projectId))
+          : await tx.select().from(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
+
+        for (const row of existingCostRows) {
+          const hasManualEdits = row.cosRealised || row.invoiceDateConfirmed || row.paidDateConfirmed || row.noRevenueLinked || row.cashflowConfirmed;
+          if (!hasManualEdits || row.sourceRow == null) continue;
+
+          if (conflictResolutions) {
+            const edits: Record<string, boolean> = {};
+            const fields: Record<string, string> = {
+              cosRealised: "COS Realised",
+              invoiceDateConfirmed: "Invoice Date Confirmed",
+              paidDateConfirmed: "Paid Date Confirmed",
+              noRevenueLinked: "No Revenue Linked",
+              cashflowConfirmed: "Cashflow Confirmed",
+            };
+            for (const [dbField, label] of Object.entries(fields)) {
+              if ((row as any)[dbField]) {
+                const key = `${row.sourceRow}::${label}`;
+                if (conflictResolutions[key] === "keep") {
+                  (edits as any)[dbField] = true;
+                }
+              }
+            }
+            if (Object.keys(edits).length > 0) {
+              manualEditsToPreserve.set(row.sourceRow, edits as any);
+            }
+          } else {
+            manualEditsToPreserve.set(row.sourceRow, {
+              cosRealised: row.cosRealised || undefined,
+              invoiceDateConfirmed: row.invoiceDateConfirmed || undefined,
+              paidDateConfirmed: row.paidDateConfirmed || undefined,
+              noRevenueLinked: row.noRevenueLinked || undefined,
+              cashflowConfirmed: row.cashflowConfirmed || undefined,
+            });
           }
         }
       }
@@ -1242,6 +1376,30 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
             return normalized;
           });
           await tx.insert(normalizedCostLines).values(normalizedInserts);
+
+          if (manualEditsToPreserve.size > 0) {
+            const insertedRows = projectId
+              ? await tx.select({ id: normalizedCostLines.id, sourceRow: normalizedCostLines.sourceRow }).from(normalizedCostLines).where(eq(normalizedCostLines.projectId, projectId))
+              : await tx.select({ id: normalizedCostLines.id, sourceRow: normalizedCostLines.sourceRow }).from(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
+
+            for (const inserted of insertedRows) {
+              if (inserted.sourceRow == null) continue;
+              const preserved = manualEditsToPreserve.get(inserted.sourceRow);
+              if (!preserved) continue;
+
+              const updates: Record<string, boolean> = {};
+              if (preserved.cosRealised) updates.cosRealised = true;
+              if (preserved.invoiceDateConfirmed) updates.invoiceDateConfirmed = true;
+              if (preserved.paidDateConfirmed) updates.paidDateConfirmed = true;
+              if (preserved.noRevenueLinked) updates.noRevenueLinked = true;
+              if (preserved.cashflowConfirmed) updates.cashflowConfirmed = true;
+
+              if (Object.keys(updates).length > 0) {
+                await tx.update(normalizedCostLines).set(updates).where(eq(normalizedCostLines.id, inserted.id));
+                preservedManualEditsCount++;
+              }
+            }
+          }
         }
         counts.costLines = costValues.length;
 
@@ -1438,6 +1596,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
       runId,
       counts,
       preservedOverrides: skippedOverrideFields.length > 0 ? skippedOverrideFields : undefined,
+      preservedManualEdits: preservedManualEditsCount > 0 ? preservedManualEditsCount : undefined,
     });
   } catch (err: any) {
     console.error("[smart-import] POST commit error:", err);
