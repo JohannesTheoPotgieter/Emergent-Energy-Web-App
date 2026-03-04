@@ -204,7 +204,7 @@ function KpiCard({
   );
 }
 
-function DetailRow({ weekStart, project }: { weekStart: string; project: string }) {
+function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; project: string; colSpan?: number }) {
   const [detailSearch, setDetailSearch] = useState("");
   const params = new URLSearchParams({ week: weekStart });
   if (project !== "all") params.set("project", project);
@@ -223,7 +223,7 @@ function DetailRow({ weekStart, project }: { weekStart: string; project: string 
   if (isLoading) {
     return (
       <tr>
-        <td colSpan={9} className="p-0">
+        <td colSpan={colSpan} className="p-0">
           <div className="flex items-center justify-center gap-2 text-muted-foreground py-6 bg-gradient-to-b from-slate-50 to-white">
             <Loader2 className="h-4 w-4 animate-spin" data-testid="spinner-detail" />
             <span className="text-sm">Loading week detail...</span>
@@ -259,7 +259,7 @@ function DetailRow({ weekStart, project }: { weekStart: string; project: string 
 
   return (
     <tr>
-      <td colSpan={9} className="p-0">
+      <td colSpan={colSpan} className="p-0">
         <div className="bg-gradient-to-b from-slate-50/80 to-white border-y border-border/60 px-6 py-5">
           <div className="flex items-center gap-3 mb-4">
             <Input
@@ -785,7 +785,7 @@ export default function CashflowPage() {
                 {showDetail ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 {showDetail ? "Hide Detail" : "Show Detail"}
               </Button>
-              {isAdmin && (
+              {isAdmin && !isProjectFiltered && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -949,39 +949,41 @@ export default function CashflowPage() {
 
             <Card className="border border-border shadow-sm rounded-xl overflow-hidden" data-testid="card-weekly-grid">
               <CardContent className="p-0">
-                <div className="overflow-x-auto">
+                <div className="overflow-auto max-h-[70vh]">
                   <table className="w-full border-collapse text-sm" data-testid="table-cashflow">
-                    <thead>
+                    <thead className="sticky top-0 z-20">
                       <tr className="bg-muted/80 border-b-2 border-border">
-                        <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider sticky left-0 bg-muted/80 z-10 min-w-[100px]">
+                        <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider sticky left-0 bg-muted/80 z-30 min-w-[100px]">
                           Week
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px]">
+                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px] bg-muted/80">
                           Opening Bal
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px]">
+                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px] bg-muted/80">
                           Proj Inflows
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[120px]">
-                          OPEX
-                        </th>
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px]">
+                        {!isProjectFiltered && (
+                          <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[120px] bg-muted/80">
+                            OPEX
+                          </th>
+                        )}
+                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px] bg-muted/80">
                           Proj Outflows
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px]">
+                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px] bg-muted/80">
                           Total Out
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px]">
+                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px] bg-muted/80">
                           Closing Bal
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[150px]">
+                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[150px] bg-muted/80">
                           Avail Payment
                         </th>
                       </tr>
                     </thead>
                     <tbody>
                       {cashflowData.map((week, idx) => {
-                        const totalOutflows = (week.opexOutflows || 0) + (week.projectOutflows || 0);
+                        const totalOutflows = (isProjectFiltered ? 0 : (week.opexOutflows || 0)) + (week.projectOutflows || 0);
                         const current = isCurrentWeek(week.weekStart, week.weekEnd);
                         const isExpanded = expandedWeek === week.weekStart;
                         const isEven = idx % 2 === 0;
@@ -1094,6 +1096,7 @@ export default function CashflowPage() {
                               >
                                 {formatRand(week.projectInflows)}
                               </td>
+                              {!isProjectFiltered && (
                               <td
                                 className="px-4 py-3 text-right font-mono text-[13px] text-red-500"
                                 data-testid={`text-opex-${week.weekStart}`}
@@ -1155,6 +1158,7 @@ export default function CashflowPage() {
                                   )}
                                 </div>
                               </td>
+                              )}
                               <td
                                 className="px-4 py-3 text-right font-mono text-[13px] text-red-500"
                                 data-testid={`text-proj-outflows-${week.weekStart}`}
@@ -1230,6 +1234,7 @@ export default function CashflowPage() {
                               <DetailRow
                                 weekStart={week.weekStart}
                                 project={selectedProject}
+                                colSpan={isProjectFiltered ? 7 : 8}
                               />
                             )}
                           </Fragment>
