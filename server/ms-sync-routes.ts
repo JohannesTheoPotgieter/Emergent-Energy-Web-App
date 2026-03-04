@@ -476,6 +476,16 @@ export function registerMsSyncRoutes(app: Express) {
         return userMap.get(id) || null;
       };
 
+      const resolveTextNameToUser = (name: string | null | undefined): ResolvedUser | null => {
+        if (!name || !name.trim()) return null;
+        const n = name.trim().toLowerCase();
+        const allU = [...userMap.values()];
+        let found = allU.find(u => u.name.toLowerCase() === n || u.username.toLowerCase() === n);
+        if (!found) found = allU.find(u => u.name.split(" ")[0].toLowerCase() === n);
+        if (!found && n.length >= 4) found = allU.find(u => u.name.toLowerCase().startsWith(n) || n.startsWith(u.name.toLowerCase()));
+        return found || null;
+      };
+
       res.json({
         personal: personalTasks.map(t => ({
           ...t,
@@ -533,7 +543,7 @@ export function registerMsSyncRoutes(app: Express) {
           endDate: t.end_date,
           pctComplete: t.pct_complete,
           assigneeUserId: t.assignee_user_id,
-          resolvedAssignee: resolveUserId(t.assignee_user_id),
+          resolvedAssignee: resolveUserId(t.assignee_user_id) || resolveTextNameToUser(t.owner),
           scheduledDate: t.scheduled_date || null,
           scheduledStartTime: t.scheduled_start_time || null,
           scheduledEndTime: t.scheduled_end_time || null,
@@ -547,7 +557,7 @@ export function registerMsSyncRoutes(app: Express) {
           lifecyclePhase: t.lifecyclePhaseTag,
           assigneeUserId: t.assigneeUserId,
           assigneeName: t.assigneeName,
-          resolvedAssignee: resolveUserId(t.assigneeUserId),
+          resolvedAssignee: resolveUserId(t.assigneeUserId) || resolveTextNameToUser(t.assigneeName),
           scheduledDate: (t as any).scheduledDate || null,
           scheduledStartTime: (t as any).scheduledStartTime || null,
           scheduledEndTime: (t as any).scheduledEndTime || null,

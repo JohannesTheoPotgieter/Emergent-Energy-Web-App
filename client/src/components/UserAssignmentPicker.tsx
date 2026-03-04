@@ -118,15 +118,24 @@ export default function UserAssignmentPicker({
 
   const hasResolvedUsers = resolvedUsers && resolvedUsers.length > 0;
   const hasTextNames = textNames && textNames.filter(Boolean).length > 0;
-  const hasUnmatchedNames = hasTextNames && textNames.filter(n => {
-    if (!n) return false;
-    return !(resolvedUsers || []).some(u => u.name.toLowerCase() === n.toLowerCase());
-  }).length > 0;
 
-  const unmatchedNames = hasTextNames ? textNames.filter(n => {
-    if (!n) return false;
-    return !(resolvedUsers || []).some(u => u.name.toLowerCase() === n.toLowerCase());
-  }) : [];
+  const nameMatchesUser = (textName: string, user: ResolvedUser): boolean => {
+    const n = textName.trim().toLowerCase();
+    if (user.name.toLowerCase() === n) return true;
+    if (user.username.toLowerCase() === n) return true;
+    if (user.name.split(" ")[0].toLowerCase() === n) return true;
+    if (n.length >= 4 && (user.name.toLowerCase().startsWith(n) || n.startsWith(user.name.toLowerCase()))) return true;
+    return false;
+  };
+
+  const isTextNameResolved = (n: string): boolean => {
+    if (!n) return true;
+    return (resolvedUsers || []).some(u => nameMatchesUser(n, u));
+  };
+
+  const hasUnmatchedNames = hasTextNames && textNames.some(n => n && !isTextNameResolved(n));
+
+  const unmatchedNames = hasTextNames ? textNames.filter(n => n && !isTextNameResolved(n)) : [];
 
   const isUnassigned = !hasResolvedUsers && !hasTextNames;
 
@@ -252,9 +261,17 @@ export function UserAvatarGroup({
   const remaining = users.length - maxDisplay;
   const isXs = size === "xs";
 
+  const nameMatchesUser = (textName: string, user: ResolvedUser): boolean => {
+    const n = textName.trim().toLowerCase();
+    if (user.name.toLowerCase() === n) return true;
+    if (user.username.toLowerCase() === n) return true;
+    if (user.name.split(" ")[0].toLowerCase() === n) return true;
+    if (n.length >= 4 && (user.name.toLowerCase().startsWith(n) || n.startsWith(user.name.toLowerCase()))) return true;
+    return false;
+  };
   const unmatchedNames = (textNames || []).filter(n => {
     if (!n) return false;
-    return !users.some(u => u.name.toLowerCase() === n.toLowerCase());
+    return !users.some(u => nameMatchesUser(n, u));
   });
 
   if (users.length === 0 && unmatchedNames.length === 0) {
