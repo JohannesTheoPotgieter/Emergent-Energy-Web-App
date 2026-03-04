@@ -319,7 +319,7 @@ function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: b
     <div data-testid="company-priorities-section">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-          <Flag className="h-4 w-4 text-red-400" />
+          <Flag className="h-4 w-4 text-red-600" />
           Company Priorities
           <span className="text-xs font-normal normal-case tracking-normal text-muted-foreground/70">
             {activePriorities.length} active
@@ -350,7 +350,7 @@ function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: b
                   <h3 className="font-semibold text-sm leading-snug" data-testid={`text-priority-title-${p.id}`}>{p.title}</h3>
                   <div className="flex items-center gap-1 shrink-0">
                     {p.department && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-500/30 text-blue-400 bg-blue-500/10" data-testid={`badge-dept-${p.id}`}>
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-200 text-blue-600 bg-blue-50" data-testid={`badge-dept-${p.id}`}>
                         {p.department}
                       </Badge>
                     )}
@@ -374,7 +374,7 @@ function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: b
                 <div className="flex items-center justify-between pt-1 border-t border-border/50">
                   <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
                     {p.dueDate && (
-                      <span className={`flex items-center gap-1 ${overdue ? "text-red-400 font-medium" : ""}`}>
+                      <span className={`flex items-center gap-1 ${overdue ? "text-red-600 font-medium" : ""}`}>
                         <Calendar className="h-3 w-3" />
                         {p.dueDate}
                         {overdue && <AlertTriangle className="h-3 w-3" />}

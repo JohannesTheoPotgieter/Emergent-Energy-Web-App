@@ -103,7 +103,7 @@ function CommandStrip({ onTaskClick }: { onTaskClick?: (taskId: number) => void 
               <button
                 key={t.id}
                 onClick={() => onTaskClick?.(t.id)}
-                className="px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-950/20 border border-indigo-200/50 dark:border-indigo-800/30 text-[11px] text-indigo-700 dark:text-indigo-300 truncate max-w-[160px] hover:shadow-sm transition-all"
+                className="px-2 py-1 rounded-md bg-indigo-50 border border-indigo-200/50/30 text-[11px] text-indigo-700 truncate max-w-[160px] hover:shadow-sm transition-all"
                 data-testid={`strip-waiting-${t.id}`}
               >
                 {t.title}
@@ -125,7 +125,7 @@ function CommandStrip({ onTaskClick }: { onTaskClick?: (taskId: number) => void 
               <button
                 key={t.id}
                 onClick={() => onTaskClick?.(t.id)}
-                className="px-2 py-1 rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200/50 dark:border-red-800/30 text-[11px] text-red-700 dark:text-red-300 truncate max-w-[160px] hover:shadow-sm transition-all"
+                className="px-2 py-1 rounded-md bg-red-50 border border-red-200/50/30 text-[11px] text-red-700 truncate max-w-[160px] hover:shadow-sm transition-all"
                 data-testid={`strip-blocked-${t.id}`}
               >
                 {t.title}
@@ -147,7 +147,7 @@ function CommandStrip({ onTaskClick }: { onTaskClick?: (taskId: number) => void 
               <button
                 key={t.id}
                 onClick={() => onTaskClick?.(t.id)}
-                className="px-2 py-1 rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200/50 dark:border-red-800/30 text-[11px] text-red-700 dark:text-red-300 truncate max-w-[160px] hover:shadow-sm transition-all"
+                className="px-2 py-1 rounded-md bg-red-50 border border-red-200/50/30 text-[11px] text-red-700 truncate max-w-[160px] hover:shadow-sm transition-all"
                 data-testid={`strip-overdue-${t.id}`}
               >
                 {t.title}

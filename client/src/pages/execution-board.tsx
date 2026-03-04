@@ -79,7 +79,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 function ScheduleHealthBadge({ actual, expected }: { actual: number | null; expected: number | null }) {
-  if (actual === null) return <Badge variant="outline" className="text-[10px] text-slate-400 border-border">No plan</Badge>;
+  if (actual === null) return <Badge variant="outline" className="text-[10px] text-slate-500 border-border">No plan</Badge>;
   const diff = expected !== null ? Math.round((actual - expected) * 100) : null;
   if (diff === null) return <Badge variant="outline" className="text-[10px]">{Math.round(actual * 100)}%</Badge>;
   if (diff >= 0) {
@@ -372,7 +372,7 @@ export default function ExecutionBoard() {
         <Card className="shadow-sm" data-testid="empty-state">
           <CardContent className="flex flex-col items-center justify-center py-20 gap-4">
             <div className="rounded-full bg-muted p-5">
-              <Building2 className="w-10 h-10 text-slate-300" />
+              <Building2 className="w-10 h-10 text-slate-600" />
             </div>
             <div className="text-center max-w-md">
               <p className="text-sm font-medium text-muted-foreground mb-1">No projects in execution yet</p>
@@ -385,7 +385,7 @@ export default function ExecutionBoard() {
       ) : filtered.length === 0 ? (
         <Card className="shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-16 gap-3">
-            <Search className="w-8 h-8 text-slate-300" />
+            <Search className="w-8 h-8 text-slate-600" />
             <p className="text-sm text-muted-foreground">No projects match your filters</p>
           </CardContent>
         </Card>
@@ -520,7 +520,7 @@ export default function ExecutionBoard() {
                           </>
                         ) : (
                           <div className="py-3 text-center">
-                            <p className="text-xs text-slate-400 italic">No plan imported</p>
+                            <p className="text-xs text-slate-500 italic">No plan imported</p>
                           </div>
                         )}
                       </div>
@@ -555,7 +555,7 @@ export default function ExecutionBoard() {
                           </>
                         ) : (
                           <div className="py-3 text-center">
-                            <p className="text-xs text-slate-400 italic">No revenue data</p>
+                            <p className="text-xs text-slate-500 italic">No revenue data</p>
                           </div>
                         )}
                       </div>
@@ -590,7 +590,7 @@ export default function ExecutionBoard() {
                           </>
                         ) : (
                           <div className="py-3 text-center">
-                            <p className="text-xs text-slate-400 italic">No cost data</p>
+                            <p className="text-xs text-slate-500 italic">No cost data</p>
                           </div>
                         )}
                       </div>
@@ -619,7 +619,7 @@ export default function ExecutionBoard() {
                             {contractVal > 0 && <span className="text-[11px] text-muted-foreground">of {formatCurrencyFull(contractVal)}</span>}
                           </div>
                         ) : (
-                          <p className="text-xs text-slate-400 italic py-1">No financial data</p>
+                          <p className="text-xs text-slate-500 italic py-1">No financial data</p>
                         )}
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-2 text-[11px]">

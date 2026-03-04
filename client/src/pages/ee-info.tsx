@@ -1890,7 +1890,7 @@ function RoleBasedSimulation() {
                       onClick={() => navigate(db.path)}
                       data-testid={`dashboard-link-${i}`}
                     >
-                      <ExternalLink className="h-3.5 w-3.5 text-slate-400 group-hover:text-blue-600 shrink-0" />
+                      <ExternalLink className="h-3.5 w-3.5 text-slate-500 group-hover:text-blue-600 shrink-0" />
                       <span className="text-xs font-medium text-foreground group-hover:text-blue-600 truncate">{db.label}</span>
                     </button>
                   ))}
@@ -2023,7 +2023,7 @@ function WalkthroughTab() {
               </div>
               <div className="text-right shrink-0 ml-4">
                 <p className="text-2xl font-bold font-mono text-foreground">{pct}%</p>
-                <p className="text-xs text-slate-400">{stepsCompleted}/{totalSteps} steps</p>
+                <p className="text-xs text-slate-500">{stepsCompleted}/{totalSteps} steps</p>
               </div>
             </div>
             <div className="mt-3 h-2 bg-muted rounded-full overflow-hidden">
@@ -2040,7 +2040,7 @@ function WalkthroughTab() {
                   <div key={step.stepNumber} className={`px-6 py-4 transition-colors ${isCompleted ? "bg-green-50/30" : "bg-card"}`} data-testid={`walkthrough-step-${step.stepNumber}`}>
                     <div className="flex items-start gap-4">
                       <button type="button" className="mt-0.5 shrink-0" onClick={() => saveProgress(selected.id, step.stepNumber, !isCompleted)} data-testid={`walkthrough-check-${step.stepNumber}`}>
-                        {isCompleted ? <CheckCircle2 className="h-6 w-6 text-green-600" /> : <CircleDot className="h-6 w-6 text-slate-300 hover:text-slate-400 transition-colors" />}
+                        {isCompleted ? <CheckCircle2 className="h-6 w-6 text-green-600" /> : <CircleDot className="h-6 w-6 text-slate-600 hover:text-slate-500 transition-colors" />}
                       </button>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
@@ -2081,7 +2081,7 @@ function WalkthroughTab() {
     <div className="space-y-4" data-testid="walkthrough-tab">
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
           <Input placeholder="Search walkthroughs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-9 text-sm" data-testid="walkthrough-search" />
         </div>
         <div className="flex gap-1.5 flex-wrap">
@@ -2106,12 +2106,12 @@ function WalkthroughTab() {
               <CardContent className="pt-5 pb-4 px-5">
                 <div className="flex items-start justify-between mb-3">
                   <Badge variant="outline" className={`text-[10px] ${catConfig?.color || ""}`}>{catConfig?.label || w.category}</Badge>
-                  <span className="flex items-center gap-1 text-xs text-slate-400"><Clock className="h-3 w-3" /> {w.estimatedMinutes} min</span>
+                  <span className="flex items-center gap-1 text-xs text-slate-500"><Clock className="h-3 w-3" /> {w.estimatedMinutes} min</span>
                 </div>
                 <h3 className="font-semibold text-sm text-foreground group-hover:text-blue-600 transition-colors mb-1.5">{w.title}</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2 mb-3">{w.description}</p>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-400">{w.steps.length} steps</span>
+                  <span className="text-xs text-slate-500">{w.steps.length} steps</span>
                   {stepsCompleted > 0 && (
                     <div className="flex items-center gap-2">
                       <div className="h-1.5 w-16 bg-muted rounded-full overflow-hidden"><div className="h-full bg-green-500 rounded-full" style={{ width: `${pct}%` }} /></div>

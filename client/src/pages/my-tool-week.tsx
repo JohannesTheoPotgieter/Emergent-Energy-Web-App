@@ -341,12 +341,12 @@ export default function MyToolWeekPage() {
                   {dayEvents.map((evt) => (
                     <div
                       key={evt.id}
-                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-violet-50 dark:bg-violet-950/30 border border-violet-100/60 dark:border-violet-900/40"
+                      className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-violet-50 border border-violet-100/60/40"
                       data-testid={`calendar-event-${evt.id}`}
                     >
                       <Clock className="h-3 w-3 text-violet-500 shrink-0" />
                       <div className="min-w-0 flex-1">
-                        <span className="text-[10px] text-violet-600 dark:text-violet-400 font-medium block truncate">
+                        <span className="text-[10px] text-violet-600 font-medium block truncate">
                           {evt.subject}
                         </span>
                         {!evt.isAllDay && (

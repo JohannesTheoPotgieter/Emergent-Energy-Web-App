@@ -89,7 +89,7 @@ export default function KeyDatesPanel({ projectName }: KeyDatesPanelProps) {
                   {kd.mappingValid ? (
                     <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
                   ) : (
-                    <AlertCircle className="h-4 w-4 text-slate-400 shrink-0" />
+                    <AlertCircle className="h-4 w-4 text-slate-500 shrink-0" />
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -105,7 +105,7 @@ export default function KeyDatesPanel({ projectName }: KeyDatesPanelProps) {
                         <span className="truncate max-w-[180px]" title={kd.matchedTaskTitle || ""}>
                           {kd.matchedTaskTitle}
                         </span>
-                        <ArrowRight className="h-3 w-3 shrink-0 text-slate-400" />
+                        <ArrowRight className="h-3 w-3 shrink-0 text-slate-500" />
                         <span className="text-[10px]">
                           {kd.dateField === 'startDate' ? 'Start Date' : 'Due Date'}
                         </span>
@@ -124,7 +124,7 @@ export default function KeyDatesPanel({ projectName }: KeyDatesPanelProps) {
                       {formatDate(kd.effectiveDate)}
                     </span>
                   ) : (
-                    <span className="text-xs text-slate-400">—</span>
+                    <span className="text-xs text-slate-500">—</span>
                   )}
                 </div>
               </div>

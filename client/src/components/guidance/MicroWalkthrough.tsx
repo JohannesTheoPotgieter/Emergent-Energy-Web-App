@@ -31,14 +31,14 @@ export function MicroWalkthrough({ screenId, steps, className = "" }: MicroWalkt
   const isLast = currentStep === steps.length - 1;
 
   return (
-    <div className={`rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800 p-3 ${className}`} data-testid="walkthrough">
+    <div className={`rounded-lg border border-blue-200 bg-blue-50 p-3 ${className}`} data-testid="walkthrough">
       <div className="flex items-start gap-2">
         <div className="flex items-center justify-center w-5 h-5 rounded-full bg-blue-500 text-white text-[10px] font-bold shrink-0 mt-0.5">
           {currentStep + 1}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-blue-800 dark:text-blue-200" data-testid="walkthrough-title">{step.title}</p>
-          <p className="text-xs text-blue-600 dark:text-blue-300 mt-0.5" data-testid="walkthrough-desc">{step.description}</p>
+          <p className="text-sm font-medium text-blue-800" data-testid="walkthrough-title">{step.title}</p>
+          <p className="text-xs text-blue-600 mt-0.5" data-testid="walkthrough-desc">{step.description}</p>
           <div className="flex items-center gap-2 mt-2">
             {!isLast ? (
               <Button
@@ -61,10 +61,10 @@ export function MicroWalkthrough({ screenId, steps, className = "" }: MicroWalkt
                 Got it
               </Button>
             )}
-            <span className="text-[10px] text-blue-400">{currentStep + 1} of {steps.length}</span>
+            <span className="text-[10px] text-blue-600">{currentStep + 1} of {steps.length}</span>
             <button
               onClick={() => { markCompleted(); setVisible(false); }}
-              className="ml-auto text-blue-400 hover:text-blue-600"
+              className="ml-auto text-blue-600 hover:text-blue-600"
               data-testid="walkthrough-skip"
             >
               <X className="w-3.5 h-3.5" />

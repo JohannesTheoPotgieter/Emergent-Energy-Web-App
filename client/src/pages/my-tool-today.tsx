@@ -901,7 +901,7 @@ export default function MyToolTodayPage() {
                           <div className="px-1 pb-1 space-y-0.5">
                             {doneTasks.map(task => (
                               <div key={task.id} className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] text-muted-foreground" data-testid={`done-task-item-${task.id}`}>
-                                <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
+                                <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
                                 <span className="flex-1 truncate line-through cursor-pointer hover:text-foreground" onClick={() => { setDrawerTask(task); setDrawerOpen(true); setContextSelection({ type: "task", id: task.id }); }}>{task.title}</span>
                               </div>
                             ))}
@@ -942,9 +942,9 @@ export default function MyToolTodayPage() {
               {calendarEvents.filter(e => e.isAllDay).length > 0 && (
                 <div className="px-4 pb-2 space-y-1">
                   {calendarEvents.filter(e => e.isAllDay).map(evt => (
-                    <div key={evt.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded bg-blue-50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-800/30" data-testid={`allday-event-${evt.id}`}>
+                    <div key={evt.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded bg-blue-50 border border-blue-200/50/30" data-testid={`allday-event-${evt.id}`}>
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
-                      <span className="text-[11px] text-blue-700 dark:text-blue-300 truncate flex-1">{evt.subject}</span>
+                      <span className="text-[11px] text-blue-700 truncate flex-1">{evt.subject}</span>
                       <span className="text-[9px] text-blue-500 uppercase shrink-0">All day</span>
                     </div>
                   ))}
@@ -1119,16 +1119,16 @@ export default function MyToolTodayPage() {
                             return (
                               <div
                                 key={`evt-${evt.id}`}
-                                className="absolute z-10 rounded-md bg-blue-100/80 dark:bg-blue-900/30 border border-blue-300/60 dark:border-blue-700/40 px-2 py-1 overflow-hidden cursor-default"
+                                className="absolute z-10 rounded-md bg-blue-100/80 border border-blue-300/60/40 px-2 py-1 overflow-hidden cursor-default"
                                 style={{ top, height: Math.max(height, 20), left: colLeft, width: colWidth, right: isSingle ? "4px" : undefined }}
                                 title={`${evt.subject}\n${startFmt} – ${endFmt}${evt.location ? `\n${evt.location}` : ""}`}
                                 data-testid={`calendar-event-${evt.id}`}
                               >
                                 <div className="flex items-start gap-1">
-                                  <Mail className="h-3 w-3 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+                                  <Mail className="h-3 w-3 text-blue-600 mt-0.5 shrink-0" />
                                   <div className="min-w-0 flex-1">
-                                    <p className="text-[11px] font-medium text-blue-800 dark:text-blue-200 truncate leading-tight">{evt.subject}</p>
-                                    <p className="text-[9px] text-blue-600 dark:text-blue-400">{startFmt} – {endFmt}</p>
+                                    <p className="text-[11px] font-medium text-blue-800 truncate leading-tight">{evt.subject}</p>
+                                    <p className="text-[9px] text-blue-600">{startFmt} – {endFmt}</p>
                                     {evt.location && height > 40 && <p className="text-[9px] text-blue-500 truncate">{evt.location}</p>}
                                   </div>
                                 </div>
@@ -1146,7 +1146,7 @@ export default function MyToolTodayPage() {
                             return (
                               <div
                                 key={`blk-${block.id}`}
-                                className={`absolute z-20 rounded-md bg-violet-100/80 dark:bg-violet-900/30 border border-violet-300/60 dark:border-violet-700/40 px-2 py-1 overflow-hidden group/block ${isResizing ? "ring-2 ring-violet-400/60 shadow-lg" : ""}`}
+                                className={`absolute z-20 rounded-md bg-violet-100/80 border border-violet-300/60/40 px-2 py-1 overflow-hidden group/block ${isResizing ? "ring-2 ring-violet-400/60 shadow-lg" : ""}`}
                                 style={{ top: displayTop, height: Math.max(displayHeight, 20), left: colLeft, width: colWidth, right: isSingle ? "4px" : undefined, userSelect: isResizing ? "none" : undefined }}
                                 title={`${block.label}\n${displayStartFmt} – ${displayEndFmt}`}
                                 data-testid={`timeblock-${block.id}`}
@@ -1175,10 +1175,10 @@ export default function MyToolTodayPage() {
                                   </div>
                                 ) : (
                                   <div className="flex items-start gap-1">
-                                    <Clock className="h-3 w-3 text-violet-600 dark:text-violet-400 mt-0.5 shrink-0" />
+                                    <Clock className="h-3 w-3 text-violet-600 mt-0.5 shrink-0" />
                                     <div className="min-w-0 flex-1">
-                                      <p className="text-[11px] font-medium text-violet-800 dark:text-violet-200 truncate leading-tight">{block.label}</p>
-                                      <p className="text-[9px] text-violet-600 dark:text-violet-400">{displayStartFmt} – {displayEndFmt}</p>
+                                      <p className="text-[11px] font-medium text-violet-800 truncate leading-tight">{block.label}</p>
+                                      <p className="text-[9px] text-violet-600">{displayStartFmt} – {displayEndFmt}</p>
                                       {linkedTask && displayHeight > 35 && (
                                         <p className="text-[9px] text-violet-500 truncate mt-0.5">
                                           <span className={`inline-block w-1 h-1 rounded-full mr-0.5 ${linkedTask.status === "done" ? "bg-emerald-500" : linkedTask.status === "in_progress" ? "bg-amber-500" : "bg-blue-500"}`} />
@@ -1187,10 +1187,10 @@ export default function MyToolTodayPage() {
                                       )}
                                     </div>
                                     <div className="flex flex-col gap-0.5 opacity-0 group-hover/block:opacity-100 shrink-0">
-                                      <Button variant="ghost" size="sm" className="h-4 w-4 p-0 text-violet-400 hover:text-violet-600" onClick={(e) => { e.stopPropagation(); setEditingBlockId(block.id); setEditBlockStart(block.startTime); setEditBlockEnd(block.endTime); }} data-testid={`button-edit-block-${block.id}`}>
+                                      <Button variant="ghost" size="sm" className="h-4 w-4 p-0 text-violet-600 hover:text-violet-600" onClick={(e) => { e.stopPropagation(); setEditingBlockId(block.id); setEditBlockStart(block.startTime); setEditBlockEnd(block.endTime); }} data-testid={`button-edit-block-${block.id}`}>
                                         <Edit className="h-2.5 w-2.5" />
                                       </Button>
-                                      <Button variant="ghost" size="sm" className="h-4 w-4 p-0 text-violet-400 hover:text-destructive" onClick={(e) => { e.stopPropagation(); deleteBlockMutation.mutate(block.id); }} data-testid={`button-delete-block-${block.id}`}>
+                                      <Button variant="ghost" size="sm" className="h-4 w-4 p-0 text-violet-600 hover:text-destructive" onClick={(e) => { e.stopPropagation(); deleteBlockMutation.mutate(block.id); }} data-testid={`button-delete-block-${block.id}`}>
                                         <Trash2 className="h-2.5 w-2.5" />
                                       </Button>
                                     </div>
@@ -1220,11 +1220,11 @@ export default function MyToolTodayPage() {
               <div className="flex items-center justify-between px-4 pb-3 border-t border-border/30 pt-2">
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1">
-                    <span className="w-2.5 h-2.5 rounded bg-violet-200 dark:bg-violet-800 border border-violet-300" />
+                    <span className="w-2.5 h-2.5 rounded bg-violet-200 border border-violet-300" />
                     <span className="text-[10px] text-muted-foreground">Tasks</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <span className="w-2.5 h-2.5 rounded bg-blue-200 dark:bg-blue-800 border border-blue-300" />
+                    <span className="w-2.5 h-2.5 rounded bg-blue-200 border border-blue-300" />
                     <span className="text-[10px] text-muted-foreground">Meetings</span>
                   </div>
                   <div className="flex items-center gap-1">
@@ -1468,7 +1468,7 @@ export default function MyToolTodayPage() {
                               key={email.id}
                               draggable
                               onDragStart={(e) => { e.dataTransfer.setData("application/json", JSON.stringify(email)); e.dataTransfer.effectAllowed = "copy"; }}
-                              className={`px-2.5 py-2 rounded-md border border-border/50 hover:bg-muted/30 cursor-pointer transition-colors group/email ${!email.isRead ? "bg-blue-50/30 dark:bg-blue-950/10 border-blue-200/30" : ""}`}
+                              className={`px-2.5 py-2 rounded-md border border-border/50 hover:bg-muted/30 cursor-pointer transition-colors group/email ${!email.isRead ? "bg-blue-50/30 border-blue-200/30" : ""}`}
                               onClick={() => { setEmailDetailId(email.id); setReplyMode(null); setReplyText(""); setContextSelection({ type: "email", id: email.id }); }}
                               data-testid={`inbox-email-${email.id}`}
                             >

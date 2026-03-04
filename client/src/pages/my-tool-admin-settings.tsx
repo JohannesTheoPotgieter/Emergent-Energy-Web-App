@@ -250,10 +250,10 @@ export default function MyToolAdminSettingsPage() {
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto" data-testid="mytool-admin-settings-page">
       <header>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground dark:text-gray-50" data-testid="text-page-title">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground" data-testid="text-page-title">
           My Tool — Administration
         </h1>
-        <p className="text-sm text-muted-foreground dark:text-gray-400 mt-1">Manage global settings and company priorities</p>
+        <p className="text-sm text-muted-foreground mt-1">Manage global settings and company priorities</p>
       </header>
 
       <Card data-testid="card-feature-settings">
@@ -384,7 +384,7 @@ export default function MyToolAdminSettingsPage() {
                     >
                       <SeverityBadge severity={p.severity} />
                       <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium text-foreground dark:text-gray-200" data-testid={`text-priority-title-${p.id}`}>
+                        <span className="text-sm font-medium text-foreground" data-testid={`text-priority-title-${p.id}`}>
                           {p.title}
                         </span>
                         {p.description && (
@@ -464,7 +464,7 @@ function PriorityForm({
   testIdPrefix: string;
 }) {
   return (
-    <div className="p-4 rounded-lg border border-blue-200 bg-blue-50/30 dark:bg-blue-900/10 dark:border-blue-800 space-y-3" data-testid={`form-priority-${testIdPrefix}`}>
+    <div className="p-4 rounded-lg border border-blue-200 bg-blue-50/30 space-y-3" data-testid={`form-priority-${testIdPrefix}`}>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label data-testid={`label-${testIdPrefix}-title`}>Title</Label>

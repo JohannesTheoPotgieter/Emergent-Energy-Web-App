@@ -853,7 +853,7 @@ function UsersTab({ toast, shared }: { toast: any; shared: ReturnType<typeof use
                         <KeyRound className="h-3.5 w-3.5 text-blue-500" />
                       </Button>
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setConfirmDelete(user)} disabled={deletingId === user.id} title="Delete user" data-testid={`btn-delete-user-${user.id}`}>
-                        {deletingId === user.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 text-red-400" />}
+                        {deletingId === user.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 text-red-600" />}
                       </Button>
                       {changingId === user.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
                     </div>

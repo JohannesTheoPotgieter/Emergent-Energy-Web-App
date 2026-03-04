@@ -7,12 +7,12 @@ const statusChipVariants = cva(
   {
     variants: {
       status: {
-        success: "bg-green-500/15 text-green-400 border border-green-500/20",
-        warning: "bg-amber-500/15 text-amber-400 border border-amber-500/20",
-        error: "bg-red-500/15 text-red-400 border border-red-500/20",
-        info: "bg-blue-500/15 text-blue-400 border border-blue-500/20",
+        success: "bg-green-50 text-green-700 border border-green-200",
+        warning: "bg-amber-50 text-amber-700 border border-amber-200",
+        error: "bg-red-50 text-red-700 border border-red-200",
+        info: "bg-blue-50 text-blue-700 border border-blue-200",
         neutral: "bg-muted text-muted-foreground border border-border",
-        active: "bg-primary/15 text-primary border border-primary/20",
+        active: "bg-green-50 text-green-700 border border-green-200",
       },
       size: {
         sm: "text-[10px] px-2 py-px",
@@ -53,12 +53,12 @@ function StatusChip({
         <span
           className={cn(
             "h-1.5 w-1.5 rounded-full shrink-0",
-            status === "success" && "bg-green-400",
-            status === "warning" && "bg-amber-400",
-            status === "error" && "bg-red-400",
-            status === "info" && "bg-blue-400",
+            status === "success" && "bg-green-500",
+            status === "warning" && "bg-amber-500",
+            status === "error" && "bg-red-500",
+            status === "info" && "bg-blue-500",
             status === "neutral" && "bg-muted-foreground",
-            status === "active" && "bg-primary"
+            status === "active" && "bg-green-600"
           )}
         />
       )}

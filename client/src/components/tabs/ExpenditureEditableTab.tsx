@@ -729,7 +729,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     ) : (
       <span
         onClick={() => { if (isAdmin) setEditingCell(cellKey); }}
-        className={`${isAdmin ? "cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950" : ""} px-1 py-0.5 rounded inline-flex items-center text-xs truncate ${colorClass}`}
+        className={`${isAdmin ? "cursor-pointer hover:bg-blue-50" : ""} px-1 py-0.5 rounded inline-flex items-center text-xs truncate ${colorClass}`}
         data-testid={`cell-${rowId}-${field}`}
       >
         {displayValue}
@@ -764,7 +764,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
           {filtered.length > 0 && (
             <div className="absolute top-full left-0 z-50 w-full max-h-32 overflow-auto bg-card  border rounded-md shadow-lg mt-0.5">
               {filtered.slice(0, 8).map(s => (
-                <button key={s} className="w-full text-left px-2 py-1 text-xs hover:bg-blue-50 dark:hover:bg-blue-950"
+                <button key={s} className="w-full text-left px-2 py-1 text-xs hover:bg-blue-50"
                   onMouseDown={(e) => {
                     e.preventDefault();
                     handleCellEdit(rowId, "supplierName", s);
@@ -782,7 +782,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     return (
       <span
         onClick={() => { if (isAdmin) { setEditingCell(cellKey); setSupplierSearchTerm(""); } }}
-        className={`${isAdmin ? "cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950" : ""} px-1 py-0.5 rounded inline-flex items-center text-xs truncate`}
+        className={`${isAdmin ? "cursor-pointer hover:bg-blue-50" : ""} px-1 py-0.5 rounded inline-flex items-center text-xs truncate`}
       >
         {value || "-"}
         {showOverride && <OverrideDot originalValue={getOriginalValue(rowNumber, "supplierName") || ""} />}
@@ -863,7 +863,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         <Popover>
           <PopoverTrigger asChild>
             <button
-              className={`flex items-center gap-1 px-1 py-0.5 rounded text-xs hover:bg-blue-50 dark:hover:bg-blue-950 cursor-pointer truncate ${isRed ? "text-red-500 italic font-medium" : ""}`}
+              className={`flex items-center gap-1 px-1 py-0.5 rounded text-xs hover:bg-blue-50 cursor-pointer truncate ${isRed ? "text-red-500 italic font-medium" : ""}`}
               data-testid={`button-datepicker-${rowId}-${field}`}
             >
               <CalendarIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -1080,20 +1080,20 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3" data-testid="kpi-summary-strip">
         <div className="bg-card  rounded-xl shadow-sm border border-border border-l-4 border-l-slate-400 p-3 sm:p-4">
           <div className="flex items-center gap-1.5 mb-1.5">
-            <DollarSign className="h-4 w-4 text-slate-400" />
+            <DollarSign className="h-4 w-4 text-slate-500" />
             <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Total Budget</span>
           </div>
-          <div className="text-base sm:text-lg font-bold font-mono text-foreground dark:text-slate-100" data-testid="text-kpi-budget">{formatCurrency(kpis.totalBudget)}</div>
+          <div className="text-base sm:text-lg font-bold font-mono text-foreground" data-testid="text-kpi-budget">{formatCurrency(kpis.totalBudget)}</div>
         </div>
         <div className="bg-card  rounded-xl shadow-sm border border-border border-l-4 border-l-blue-500 p-3 sm:p-4">
           <div className="flex items-center gap-1.5 mb-1.5">
             <BarChart3 className="h-4 w-4 text-blue-500" />
             <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Total Actual</span>
           </div>
-          <div className={`text-base sm:text-lg font-bold font-mono ${kpis.totalActual > kpis.totalBudget ? "text-red-600" : "text-blue-700 dark:text-blue-400"}`} data-testid="text-kpi-actual">
+          <div className={`text-base sm:text-lg font-bold font-mono ${kpis.totalActual > kpis.totalBudget ? "text-red-600" : "text-blue-700"}`} data-testid="text-kpi-actual">
             {formatCurrency(kpis.totalActual)}
           </div>
-          <div className="text-[10px] text-slate-400 mt-0.5">{kpis.totalItems} lines</div>
+          <div className="text-[10px] text-slate-500 mt-0.5">{kpis.totalItems} lines</div>
         </div>
         <div className="bg-card  rounded-xl shadow-sm border border-border border-l-4 border-l-emerald-500 p-3 sm:p-4">
           <div className="flex items-center gap-1.5 mb-1.5">
@@ -1101,7 +1101,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">COS Realised</span>
           </div>
           <div className="text-base sm:text-lg font-bold text-emerald-600 font-mono" data-testid="text-kpi-cos">{formatCurrency(kpis.cosRealised)}</div>
-          <div className="text-[10px] text-slate-400 mt-0.5">{kpis.countByCos["COS Realised"]} lines</div>
+          <div className="text-[10px] text-slate-500 mt-0.5">{kpis.countByCos["COS Realised"]} lines</div>
         </div>
         <div className={`bg-card  rounded-xl shadow-sm border border-border border-l-4 ${kpis.variance >= 0 ? "border-l-emerald-500" : "border-l-red-500"} p-3 sm:p-4`}>
           <div className="flex items-center gap-1.5 mb-1.5">
@@ -1117,13 +1117,13 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         </div>
         <div className={`bg-card  rounded-xl shadow-sm border border-border border-l-4 ${kpis.gpPercent >= 20 ? "border-l-emerald-500" : kpis.gpPercent >= 10 ? "border-l-amber-500" : "border-l-red-500"} p-3 sm:p-4`}>
           <div className="flex items-center gap-1.5 mb-1.5">
-            <Percent className="h-4 w-4 text-slate-400" />
+            <Percent className="h-4 w-4 text-slate-500" />
             <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">GP%</span>
           </div>
           <div className={`text-base sm:text-lg font-bold font-mono ${kpis.gpPercent >= 20 ? "text-emerald-600" : kpis.gpPercent >= 10 ? "text-amber-600" : "text-red-600"}`} data-testid="text-kpi-gp">
             {kpis.gpPercent.toFixed(1)}%
           </div>
-          <div className="text-[10px] text-slate-400 mt-0.5 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => setDrawerOpen(true)}>
+          <div className="text-[10px] text-slate-500 mt-0.5 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => setDrawerOpen(true)}>
             Drilldown →
           </div>
         </div>
@@ -1202,19 +1202,19 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
           <div ref={tableContainerRef} className="relative overflow-auto" style={{ maxHeight: "calc(100vh - 380px)", minHeight: "400px" }}>
             <Table>
               <TableHeader className="sticky top-0 z-20">
-                <TableRow className="bg-muted  border-b-2 border-border dark:border-gray-700 hover:bg-muted dark:hover:bg-gray-900">
-                  <TableHead className="px-2 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground dark:text-gray-400 whitespace-nowrap w-[40px] text-center sticky left-0 z-30 bg-muted ">
+                <TableRow className="bg-muted  border-b-2 border-border hover:bg-muted">
+                  <TableHead className="px-2 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap w-[40px] text-center sticky left-0 z-30 bg-muted ">
                     #
                   </TableHead>
                   {activeColumns.map((col) => (
                     <TableHead key={col.key}
-                      className={`px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground dark:text-gray-400 whitespace-nowrap
+                      className={`px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap
                         ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}`}
                       style={{ minWidth: col.minWidth }}>
                       {col.label}
                     </TableHead>
                   ))}
-                  <TableHead className="px-2 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground dark:text-gray-400 whitespace-nowrap w-[80px] text-center">
+                  <TableHead className="px-2 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap w-[80px] text-center">
                     Status
                   </TableHead>
                 </TableRow>
@@ -1224,16 +1224,16 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                   const isCollapsed = collapsedCategories.has(group.category);
                   return (
                     <React.Fragment key={group.category}>
-                      <TableRow className="bg-muted dark:bg-slate-800/50 hover:bg-muted dark:hover:bg-slate-700/50 cursor-pointer border-b border-border dark:border-slate-700"
+                      <TableRow className="bg-muted hover:bg-muted cursor-pointer border-b border-border"
                         onClick={() => toggleCategory(group.category)} data-testid={`row-category-${group.category}`}>
-                        <TableCell className="sticky left-0 z-10 bg-muted dark:bg-slate-800/50 px-2 py-2.5" colSpan={1}>
+                        <TableCell className="sticky left-0 z-10 bg-muted px-2 py-2.5" colSpan={1}>
                           <div className="flex items-center gap-1">
                             {isCollapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                           </div>
                         </TableCell>
                         <TableCell colSpan={1} className="px-3 py-2.5">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-foreground dark:text-slate-200 text-sm">{group.category}</span>
+                            <span className="font-bold text-foreground text-sm">{group.category}</span>
                             <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal">{group.items.length}</Badge>
                           </div>
                         </TableCell>
@@ -1254,7 +1254,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                         <TableRow key={exp.id}
                           data-row-id={exp.id}
                           data-testid={`row-expense-${exp.id}`}
-                          className={`border-b border-border hover:bg-blue-50/30 dark:hover:bg-blue-950/20 transition-colors
+                          className={`border-b border-border hover:bg-blue-50/30 transition-colors
                             ${highlightedRowId === exp.id ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : rowIdx % 2 === 0 ? "bg-card " : "bg-muted/20 /30"}`}>
                           <TableCell className="px-2 py-1.5 text-center text-[10px] text-muted-foreground font-mono sticky left-0 z-10 bg-inherit">
                             {exp.rowNumber}
@@ -1282,9 +1282,9 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       </div>
 
       {hasEdits && (
-        <div className="sticky bottom-0 z-30 mx-0 px-4 py-3 bg-card  border-t-2 border-blue-200 dark:border-blue-800 shadow-[0_-4px_12px_rgba(0,0,0,0.1)] rounded-b-lg" data-testid="save-cancel-bar">
+        <div className="sticky bottom-0 z-30 mx-0 px-4 py-3 bg-card  border-t-2 border-blue-200 shadow-[0_-4px_12px_rgba(0,0,0,0.1)] rounded-b-lg" data-testid="save-cancel-bar">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-            <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300 shrink-0">
+            <div className="flex items-center gap-2 text-sm text-amber-700 shrink-0">
               <Save className="h-4 w-4" />
               <span className="font-medium">{edits.size} {edits.size === 1 ? "row" : "rows"} modified</span>
             </div>

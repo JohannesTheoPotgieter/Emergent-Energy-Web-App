@@ -128,7 +128,7 @@ const statusIcon = (s: string) => {
     case "Done": return <CheckCircle2 className="h-3 w-3 text-emerald-600" />;
     case "In Progress": return <Loader2 className="h-3 w-3 text-blue-600" />;
     case "Blocked": return <Ban className="h-3 w-3 text-red-500" />;
-    default: return <Circle className="h-3 w-3 text-slate-400" />;
+    default: return <Circle className="h-3 w-3 text-slate-500" />;
   }
 };
 
@@ -239,7 +239,7 @@ function InlinePctEditor({ pct, onCommit }: { pct: number; onCommit: (v: number)
       <div className="flex-1 h-[5px] rounded-full bg-muted overflow-hidden min-w-[30px]">
         <div className={`h-full rounded-full transition-all ${pctColor(pct)}`} style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
-      <span className={`text-[10px] tabular-nums font-semibold min-w-[24px] text-right group-hover:text-primary ${pct >= 100 ? "text-emerald-600" : pct > 0 ? "text-foreground" : "text-slate-400"}`}>
+      <span className={`text-[10px] tabular-nums font-semibold min-w-[24px] text-right group-hover:text-primary ${pct >= 100 ? "text-emerald-600" : pct > 0 ? "text-foreground" : "text-slate-500"}`}>
         {pct}%
       </span>
     </div>
@@ -1172,11 +1172,11 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
               {kd.mappingValid ? (
                 <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
               ) : (
-                <AlertCircle className="h-3 w-3 text-slate-400 shrink-0" />
+                <AlertCircle className="h-3 w-3 text-slate-500 shrink-0" />
               )}
               <span className="font-medium text-[11px]">{kd.keyDateName}</span>
               <ArrowRight className="h-2.5 w-2.5 text-muted-foreground" />
-              <span className={`text-[11px] tabular-nums ${kd.mappingValid ? "text-foreground" : "text-slate-400"}`}>
+              <span className={`text-[11px] tabular-nums ${kd.mappingValid ? "text-foreground" : "text-slate-500"}`}>
                 {formatKeyDate(kd.effectiveDate)}
               </span>
             </div>
@@ -1262,7 +1262,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                 <tr>
                   <td colSpan={isAdmin ? 15 : 13} className="text-center text-muted-foreground py-12">
                     <div className="flex flex-col items-center gap-2">
-                      <Circle className="h-8 w-8 text-slate-300" />
+                      <Circle className="h-8 w-8 text-slate-600" />
                       <span className="text-emerald-600 font-medium">No tasks found</span>
                       <span className="text-[10px]">Add a task below to get started</span>
                     </div>
@@ -1341,7 +1341,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                     >
                       {isAdmin && (
                         <td className="px-0 text-center border-r cursor-grab active:cursor-grabbing" onClick={(e) => e.stopPropagation()} data-testid={`drag-handle-${task.id}`}>
-                          <GripVertical className="h-3 w-3 text-slate-300 mx-auto" />
+                          <GripVertical className="h-3 w-3 text-slate-600 mx-auto" />
                         </td>
                       )}
                       <td className="px-1 text-center border-r" onClick={(e) => e.stopPropagation()}>
@@ -1359,7 +1359,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           data-testid={`checkbox-task-${task.id}`}
                         />
                       </td>
-                      <td className="px-1 text-center border-r text-[10px] tabular-nums text-slate-400" data-testid={`row-num-${task.id}`}>
+                      <td className="px-1 text-center border-r text-[10px] tabular-nums text-slate-500" data-testid={`row-num-${task.id}`}>
                         {rowIndex + 1}
                       </td>
                       <td className="px-0 text-center border-r" data-testid={`indicator-${task.id}`}>
@@ -1368,7 +1368,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                         ) : hasChildren ? (
                           <FolderOpen className="h-3 w-3 text-blue-500 mx-auto" />
                         ) : (
-                          <span className="text-slate-400 text-[10px]" title="Task">▬</span>
+                          <span className="text-slate-500 text-[10px]" title="Task">▬</span>
                         )}
                       </td>
                       <td className="px-1 text-center border-r text-[10px] tabular-nums text-muted-foreground" data-testid={`wbs-${task.id}`}>
@@ -1399,7 +1399,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                       </td>
                       <td className="px-1 text-center border-r text-[10px] tabular-nums" onClick={(e) => e.stopPropagation()} data-testid={`duration-${task.id}`}>
                         {hasChildren ? (
-                          <span className="text-slate-400">{taskDuration > 0 ? `${taskDuration}d` : "—"}</span>
+                          <span className="text-slate-500">{taskDuration > 0 ? `${taskDuration}d` : "—"}</span>
                         ) : (
                           <InlineDurationEditor
                             value={taskDuration}
@@ -1407,7 +1407,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           />
                         )}
                       </td>
-                      <td className={`px-1 text-center border-r text-[10px] tabular-nums ${hasChildren ? "text-slate-400" : ""}`} onClick={(e) => e.stopPropagation()} data-testid={`start-${task.id}`}>
+                      <td className={`px-1 text-center border-r text-[10px] tabular-nums ${hasChildren ? "text-slate-500" : ""}`} onClick={(e) => e.stopPropagation()} data-testid={`start-${task.id}`}>
                         {hasChildren ? (
                           <span>{formatDateCompact(taskStart)}</span>
                         ) : (
@@ -1417,7 +1417,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           />
                         )}
                       </td>
-                      <td className={`px-1 text-center border-r text-[10px] tabular-nums ${hasChildren ? "text-slate-400" : ""}`} onClick={(e) => e.stopPropagation()} data-testid={`end-${task.id}`}>
+                      <td className={`px-1 text-center border-r text-[10px] tabular-nums ${hasChildren ? "text-slate-500" : ""}`} onClick={(e) => e.stopPropagation()} data-testid={`end-${task.id}`}>
                         {hasChildren ? (
                           <span>{formatDateCompact(taskFinish)}</span>
                         ) : (
@@ -1427,7 +1427,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           />
                         )}
                       </td>
-                      <td className="px-1 text-center border-r text-[10px] text-slate-400 truncate" data-testid={`predecessors-${task.id}`}>
+                      <td className="px-1 text-center border-r text-[10px] text-slate-500 truncate" data-testid={`predecessors-${task.id}`}>
                         {task.dependencies && typeof task.dependencies === 'string' ? task.dependencies : task.predecessorTaskId ? `${task.predecessorTaskId} FS` : "—"}
                       </td>
                       <td className="px-1 text-center border-r text-[10px] text-muted-foreground truncate" data-testid={`lead-${task.id}`}>
@@ -1441,7 +1441,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                             <div className="flex-1 h-[5px] rounded-full bg-slate-200 overflow-hidden min-w-[30px]">
                               <div className={`h-full rounded-full transition-all ${pctColor(pct)}`} style={{ width: `${Math.min(pct, 100)}%` }} />
                             </div>
-                            <span className="text-[10px] tabular-nums text-slate-400 min-w-[24px] text-right">{pct}%</span>
+                            <span className="text-[10px] tabular-nums text-slate-500 min-w-[24px] text-right">{pct}%</span>
                           </div>
                         ) : (
                           <InlinePctEditor
@@ -1454,7 +1454,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                         {expPct !== null ? (
                           <span className={isLate ? "text-red-600 font-semibold" : "text-muted-foreground"}>{expPct}%</span>
                         ) : (
-                          <span className="text-slate-300">—</span>
+                          <span className="text-slate-600">—</span>
                         )}
                       </td>
                       <td className="px-1 text-center border-r" data-testid={`status-${task.id}`}>
@@ -1472,7 +1472,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button className="p-0.5 hover:bg-slate-200 rounded" data-testid={`actions-${task.id}`}>
-                                <MoreHorizontal className="h-3 w-3 text-slate-400" />
+                                <MoreHorizontal className="h-3 w-3 text-slate-500" />
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="text-xs min-w-[180px]">
@@ -1656,7 +1656,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
 
       {isAdmin && (
         <div className="flex items-center gap-2 px-2 py-1.5 border rounded-md bg-muted" data-testid="add-task-row">
-          <Plus className="h-3.5 w-3.5 text-slate-400" />
+          <Plus className="h-3.5 w-3.5 text-slate-500" />
           <Input
             placeholder="Add a new task..."
             value={newTaskTitle}
@@ -1795,7 +1795,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                       >
                         {isMil ? <Milestone className="h-3 w-3 text-amber-600 flex-shrink-0" /> :
                          hasCh ? <FolderPlus className="h-3 w-3 text-blue-500 flex-shrink-0" /> :
-                         <Circle className="h-2.5 w-2.5 text-slate-300 flex-shrink-0" />}
+                         <Circle className="h-2.5 w-2.5 text-slate-600 flex-shrink-0" />}
                         <span className="truncate">{t.taskNumber ? `${t.taskNumber} — ` : ""}{t.title}</span>
                       </button>
                     );

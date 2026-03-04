@@ -169,7 +169,7 @@ const PRIORITY_BADGE: Record<string, { label: string; class: string }> = {
   critical: { label: "P1", class: "bg-red-500 text-white" },
   high: { label: "P2", class: "bg-orange-100 text-orange-700 border border-orange-200" },
   normal: { label: "P3", class: "bg-muted text-muted-foreground border border-border" },
-  low: { label: "P4", class: "bg-muted text-slate-400 border border-border" },
+  low: { label: "P4", class: "bg-muted text-slate-500 border border-border" },
 };
 
 function smartDueLabel(dueAt: string | null): { label: string; urgency: "overdue" | "today" | "tomorrow" | "soon" | "future" | "none" } {
@@ -700,9 +700,9 @@ export default function MyWorkTasksPage() {
           <button onClick={() => setOverdueOnly(!overdueOnly)} className={`relative overflow-hidden rounded-xl border p-3 text-left shadow-sm transition-all ${kpiStats.overdue > 0 ? "bg-gradient-to-br from-red-500 to-red-600 text-white hover:shadow-md" : "bg-gradient-to-br from-slate-100 to-slate-50 text-muted-foreground border-border"} ${overdueOnly ? "ring-2 ring-red-300 ring-offset-1" : ""}`} data-testid="kpi-overdue">
             <div className="flex items-center justify-between">
               <div>
-                <p className={`text-[10px] font-medium uppercase tracking-wider ${kpiStats.overdue > 0 ? "text-red-100" : "text-slate-400"}`}>Overdue</p>
+                <p className={`text-[10px] font-medium uppercase tracking-wider ${kpiStats.overdue > 0 ? "text-red-100" : "text-slate-500"}`}>Overdue</p>
                 <p className="text-2xl font-bold mt-0.5">{kpiStats.overdue}</p>
-                <p className={`text-[10px] mt-0.5 ${kpiStats.overdue > 0 ? "text-red-200" : "text-slate-400"}`}>{kpiStats.blocked} blocked</p>
+                <p className={`text-[10px] mt-0.5 ${kpiStats.overdue > 0 ? "text-red-200" : "text-slate-500"}`}>{kpiStats.blocked} blocked</p>
               </div>
               <div className={`rounded-full p-2 ${kpiStats.overdue > 0 ? "bg-card/20" : "bg-slate-200"}`}><AlertCircle className="h-5 w-5" /></div>
             </div>
@@ -1140,7 +1140,7 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
 
   const statusLabel = task.status === "done" ? "Done" : task.status === "in_progress" ? "In Progress" : task.status === "blocked" ? "Blocked" : task.status === "waiting" ? "Waiting" : task.status === "cancelled" ? "Cancelled" : task.status === "inbox" ? "To Do" : task.status === "planned" ? "Planned" : task.status;
   const priorityLabel = task.priority === "critical" ? "P1 — Critical" : task.priority === "high" ? "P2 — High" : task.priority === "low" ? "P4 — Low" : "P3 — Normal";
-  const priorityColor = task.priority === "critical" ? "text-red-600" : task.priority === "high" ? "text-orange-600" : task.priority === "low" ? "text-slate-400" : "text-blue-600";
+  const priorityColor = task.priority === "critical" ? "text-red-600" : task.priority === "high" ? "text-orange-600" : task.priority === "low" ? "text-slate-500" : "text-blue-600";
   const statusColor = task.status === "done" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : task.status === "in_progress" ? "bg-blue-100 text-blue-700 border-blue-200" : task.status === "blocked" ? "bg-red-100 text-red-700 border-red-200" : task.status === "waiting" ? "bg-amber-100 text-amber-700 border-amber-200" : task.status === "cancelled" ? "bg-muted text-muted-foreground border-border" : "bg-muted text-muted-foreground border-border";
   const isOverdue = (() => { if (!task.dueAt || task.status === "done" || task.status === "cancelled") return false; try { return isPast(parseISO(task.dueAt)); } catch { return false; } })();
 

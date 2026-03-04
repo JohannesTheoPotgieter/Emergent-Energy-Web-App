@@ -166,7 +166,7 @@ function ProjectCard({ project, onClick }: { project: PmProject; onClick: () => 
           {project.voPending > 0 && (
             <Badge
               variant="secondary"
-              className="text-xs flex items-center gap-1 bg-amber-500/15 text-amber-600 border-amber-500/30"
+              className="text-xs flex items-center gap-1 bg-amber-50 text-amber-600 border-amber-200"
               data-testid={`badge-vo-${project.id}`}
             >
               <CircleDollarSign className="w-3 h-3" />

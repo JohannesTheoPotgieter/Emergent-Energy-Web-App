@@ -295,7 +295,7 @@ function UploadStep({
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3">
-              <Upload className="w-10 h-10 text-slate-400" />
+              <Upload className="w-10 h-10 text-slate-500" />
               <p className="text-sm text-muted-foreground">Drag & drop Excel trackers here</p>
               <div className="flex gap-2">
                 <Button
@@ -317,7 +317,7 @@ function UploadStep({
                   Browse Folder
                 </Button>
               </div>
-              <p className="text-xs text-slate-400">.xlsx and .xlsm files supported</p>
+              <p className="text-xs text-slate-500">.xlsx and .xlsm files supported</p>
             </div>
           )}
         </div>
@@ -331,10 +331,10 @@ function UploadStep({
                     entry.status === "success" ? "text-emerald-500" :
                     entry.status === "error" ? "text-red-500" :
                     entry.status === "uploading" ? "text-blue-500" :
-                    "text-slate-400"
+                    "text-slate-500"
                   }`} />
                   <span className="flex-1 truncate">{entry.file.name}</span>
-                  <span className="text-xs text-slate-400 flex-shrink-0">
+                  <span className="text-xs text-slate-500 flex-shrink-0">
                     {(entry.file.size / 1024).toFixed(0)} KB
                   </span>
                   {entry.status === "success" && (
@@ -559,7 +559,7 @@ function EditableField({
             <Check className="w-3.5 h-3.5 text-emerald-600" />
           </Button>
           <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setEditing(false)} data-testid={`btn-cancel-${testId}`}>
-            <X className="w-3.5 h-3.5 text-slate-400" />
+            <X className="w-3.5 h-3.5 text-slate-500" />
           </Button>
         </div>
       </div>
@@ -576,7 +576,7 @@ function EditableField({
           onClick={() => { setDraft(value || ""); setEditing(true); }}
           data-testid={`btn-edit-${testId}`}
         >
-          <Pencil className="w-3 h-3 text-slate-400 hover:text-blue-500" />
+          <Pencil className="w-3 h-3 text-slate-500 hover:text-blue-500" />
         </button>
       </div>
     </div>
@@ -648,7 +648,7 @@ function SectionDetectionStep({
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm">Project Info (from sheet header)</CardTitle>
-              <span className="text-[10px] text-slate-400">Hover to edit</span>
+              <span className="text-[10px] text-slate-500">Hover to edit</span>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -667,7 +667,7 @@ function SectionDetectionStep({
             </div>
 
             <div>
-              <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wide mb-1.5">Key Dates</p>
+              <p className="text-[11px] text-slate-500 font-medium uppercase tracking-wide mb-1.5">Key Dates</p>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                 {dateFields.map(d => (
                   <EditableField
@@ -728,9 +728,9 @@ function SectionDetectionStep({
             <ul className="space-y-1 text-xs text-muted-foreground">
               {unmatchedSheets.map((sheet: any, idx: number) => (
                 <li key={idx} className="flex items-center gap-2" data-testid={`unmatched-sheet-${idx}`}>
-                  <X className="w-3 h-3 text-slate-400" />
+                  <X className="w-3 h-3 text-slate-500" />
                   <span className="font-medium">{typeof sheet === "string" ? sheet : sheet.name || sheet.sheetName}</span>
-                  {sheet.reason && <span className="text-slate-400">— {sheet.reason}</span>}
+                  {sheet.reason && <span className="text-slate-500">— {sheet.reason}</span>}
                 </li>
               ))}
             </ul>
@@ -904,7 +904,7 @@ function ColumnMappingStep({
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-slate-400">Destination:</span>
+                        <span className="text-[10px] text-slate-500">Destination:</span>
                         <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] px-1.5 py-0 font-mono">
                           {dbTable}
                         </Badge>
@@ -1055,15 +1055,15 @@ function ColumnMappingStep({
                                 const indent = row.indentLevel || 0;
                                 return (
                                 <tr key={idx} className={`border-b border-border ${isMs ? "bg-amber-50/60 font-semibold" : "hover:bg-muted/50"}`}>
-                                  <td className="px-2 py-1 text-slate-400">{row.sourceRow || idx + 1}</td>
+                                  <td className="px-2 py-1 text-slate-500">{row.sourceRow || idx + 1}</td>
                                   {Object.entries(row).filter(([k]) => !["sourceSheet", "sourceRow", "isMilestone", "parentTaskNo", "indentLevel"].includes(k)).slice(0, 8).map(([key, val]) => (
                                     <td key={key} className="px-2 py-1 max-w-[120px] truncate" title={String(val ?? "")}>
                                       {key === "taskName" && indent > 0 ? (
-                                        <span style={{ paddingLeft: `${indent * 12}px` }}>{isMs ? "◆ " : ""}{val != null ? String(val) : <span className="text-slate-300">—</span>}</span>
+                                        <span style={{ paddingLeft: `${indent * 12}px` }}>{isMs ? "◆ " : ""}{val != null ? String(val) : <span className="text-slate-600">—</span>}</span>
                                       ) : key === "taskName" && isMs ? (
                                         <span className="text-amber-800">◆ {val != null ? String(val) : "—"}</span>
                                       ) : (
-                                        val != null ? String(val) : <span className="text-slate-300">—</span>
+                                        val != null ? String(val) : <span className="text-slate-600">—</span>
                                       )}
                                     </td>
                                   ))}
@@ -1073,7 +1073,7 @@ function ColumnMappingStep({
                             </tbody>
                           </table>
                           {previewData.length > 8 && (
-                            <div className="text-center py-1.5 text-[10px] text-slate-400 bg-muted">
+                            <div className="text-center py-1.5 text-[10px] text-slate-500 bg-muted">
                               ... and {previewData.length - 8} more rows
                             </div>
                           )}
@@ -1081,7 +1081,7 @@ function ColumnMappingStep({
                       )}
 
                       {showPreview[sectionName] && previewData.length === 0 && (
-                        <p className="mt-2 text-xs text-slate-400">No data rows extracted for this section.</p>
+                        <p className="mt-2 text-xs text-slate-500">No data rows extracted for this section.</p>
                       )}
                     </div>
                   </CardContent>
@@ -1093,7 +1093,7 @@ function ColumnMappingStep({
       ) : (
         <Card className="bg-card rounded-xl shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-12 gap-2">
-            <Info className="w-8 h-8 text-slate-400" />
+            <Info className="w-8 h-8 text-slate-500" />
             <p className="text-sm text-muted-foreground">No column mappings available.</p>
           </CardContent>
         </Card>
@@ -1226,7 +1226,7 @@ function IssueRowDetail({ issue, normalization }: { issue: any; normalization: a
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 bg-card rounded border border-border p-2">
           {fields.map(f => (
             <div key={f.key}>
-              <span className="text-[9px] text-slate-400 uppercase">{f.label}</span>
+              <span className="text-[9px] text-slate-500 uppercase">{f.label}</span>
               <p className={`text-[11px] ${(f as any).highlight ? "font-semibold text-red-600 bg-red-50 px-1 rounded" : "text-foreground"}`}>
                 {rowData[f.key] ?? "—"}
               </p>
@@ -1250,7 +1250,7 @@ function IssueRowDetail({ issue, normalization }: { issue: any; normalization: a
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 bg-card rounded border border-border p-2">
         {allFields.map(([key, val]) => (
           <div key={key}>
-            <span className="text-[9px] text-slate-400 uppercase">{key.replace(/([A-Z])/g, " $1").trim()}</span>
+            <span className="text-[9px] text-slate-500 uppercase">{key.replace(/([A-Z])/g, " $1").trim()}</span>
             <p className="text-[11px] text-foreground">{val != null ? String(val) : "—"}</p>
           </div>
         ))}
@@ -1451,7 +1451,7 @@ function IssuesStep({
                   data-testid={`issue-toggle-${issue.id}`}
                 >
                   <div className="flex items-start gap-2 flex-1">
-                    <ChevronDown className={`w-3.5 h-3.5 mt-0.5 text-slate-400 shrink-0 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
+                    <ChevronDown className={`w-3.5 h-3.5 mt-0.5 text-slate-500 shrink-0 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
                     <div className="flex-1">
                       <p className="text-xs font-medium" data-testid={`text-issue-msg-${issue.id}`}>
                         {issue.message}
@@ -1487,7 +1487,7 @@ function IssuesStep({
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-6 w-6 p-0 text-slate-400 hover:text-muted-foreground"
+                          className="h-6 w-6 p-0 text-slate-500 hover:text-muted-foreground"
                           disabled={resolving === issue.id}
                           onClick={() => handleResolve(issue.id, false)}
                           data-testid={`btn-reopen-${issue.id}`}
@@ -2237,7 +2237,7 @@ function PreviewCommitStep({
                   </tbody>
                 </table>
                 {planRows.length > 15 && (
-                  <div className="text-center py-1.5 text-[10px] text-slate-400 bg-muted">
+                  <div className="text-center py-1.5 text-[10px] text-slate-500 bg-muted">
                     ... and {planRows.length - 15} more tasks
                   </div>
                 )}
@@ -2674,7 +2674,7 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
     return (
       <Card className="bg-card rounded-xl shadow-sm" data-testid="no-pending-runs">
         <CardContent className="flex flex-col items-center justify-center py-12 gap-3">
-          <CheckCircle2 className="w-10 h-10 text-slate-300" />
+          <CheckCircle2 className="w-10 h-10 text-slate-600" />
           <p className="text-sm text-muted-foreground">No pending imports to commit</p>
           <Button variant="outline" onClick={onBack} data-testid="btn-back-to-upload">
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -2724,11 +2724,11 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
                   <p className="text-sm font-medium truncate" data-testid={`pending-name-${run.id}`}>
                     {run.projectName}
                   </p>
-                  <p className="text-[10px] text-slate-400 truncate">{run.sourceFileName}</p>
+                  <p className="text-[10px] text-slate-500 truncate">{run.sourceFileName}</p>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
                   {run.totalIssues > 0 && (
-                    <span className="text-[10px] text-slate-400">
+                    <span className="text-[10px] text-slate-500">
                       {run.resolvedIssues}/{run.totalIssues} resolved
                     </span>
                   )}

@@ -429,7 +429,7 @@ export default function MsIntegrationSettingsPage() {
         <Card>
           <CardContent className="py-4">
             <div className="flex items-start gap-2 text-xs text-muted-foreground">
-              <Shield className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+              <Shield className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
               <p>Integration settings are managed by administrators. Contact your COO or system admin if you need changes to these connections.</p>
             </div>
           </CardContent>

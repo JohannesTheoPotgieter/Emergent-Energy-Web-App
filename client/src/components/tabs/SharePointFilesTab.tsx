@@ -126,7 +126,7 @@ export function SharePointFilesTab({ projectName }: { projectName: string }) {
     <div className="border rounded-lg overflow-hidden bg-card" data-testid="sharepoint-files-tab">
       <div className="flex items-center justify-between px-4 py-2.5 bg-[#292929] text-white">
         <div className="flex items-center gap-2">
-          <HardDrive className="h-4 w-4 text-blue-400" />
+          <HardDrive className="h-4 w-4 text-blue-600" />
           <span className="font-medium text-sm">SharePoint Files</span>
         </div>
         <Button

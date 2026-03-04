@@ -22,9 +22,9 @@ export function ActionBar({ nextAction, blockers = [], owners = [], className = 
   };
 
   const severityBg = {
-    info: "bg-blue-50 border-blue-200 dark:bg-blue-950/30 dark:border-blue-800",
-    warning: "bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800",
-    urgent: "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800",
+    info: "bg-blue-50 border-blue-200",
+    warning: "bg-amber-50 border-amber-200",
+    urgent: "bg-red-50 border-red-200",
   };
 
   const severity = nextAction?.severity || "info";

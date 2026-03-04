@@ -96,15 +96,15 @@ const TASK_STATUSES = [
 const PRIORITIES = ["Critical", "Urgent", "High", "Medium", "Low"];
 
 const statusColors: Record<string, string> = {
-  "TO DO": "bg-muted text-foreground dark:bg-gray-800 dark:text-gray-300",
-  "IN PROGRESS": "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
-  "HOLD": "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
-  "NEEDS APPROVAL": "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
-  "QC APPROVED": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300",
-  "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300",
-  "OPERATIONAL APPROVAL": "bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300",
-  "PROJECTS ASSISTANCE": "bg-cyan-100 text-cyan-700 dark:bg-cyan-900 dark:text-cyan-300",
-  "COMPLETE": "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+  "TO DO": "bg-muted text-foreground",
+  "IN PROGRESS": "bg-blue-100 text-blue-700",
+  "HOLD": "bg-red-100 text-red-700",
+  "NEEDS APPROVAL": "bg-amber-100 text-amber-700",
+  "QC APPROVED": "bg-emerald-100 text-emerald-700",
+  "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700",
+  "OPERATIONAL APPROVAL": "bg-indigo-100 text-indigo-700",
+  "PROJECTS ASSISTANCE": "bg-cyan-100 text-cyan-700",
+  "COMPLETE": "bg-green-100 text-green-700",
 };
 
 const statusColumnColors: Record<string, string> = {
@@ -417,7 +417,7 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
         onClick={onClick}
         className={`bg-card border-l-[3px] border border-b-border border-r-border border-t-border rounded px-2 py-1.5 cursor-pointer hover:shadow-sm transition-all group relative
           ${priorityBorderColors[task.priority] || "border-l-gray-300"}
-          ${overdue ? "bg-red-50/60 dark:bg-red-950/20" : ""}
+          ${overdue ? "bg-red-50/60" : ""}
         `}
         data-testid={`kanban-card-${task.id}`}
       >
@@ -449,8 +449,8 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
       onClick={onClick}
       className={`bg-card border-l-[3px] border border-b-border border-r-border border-t-border rounded-md px-2.5 py-2 cursor-pointer hover:shadow-md hover:translate-y-[-1px] transition-all duration-150 group relative
         ${priorityBorderColors[task.priority] || "border-l-gray-300"}
-        ${overdue ? "bg-red-50/60 dark:bg-red-950/20 border-r-red-200 border-t-red-200 border-b-red-200 dark:border-r-red-900 dark:border-t-red-900 dark:border-b-red-900" : ""}
-        ${isCritical && !overdue ? "bg-orange-50/30 dark:bg-orange-950/10" : ""}
+        ${overdue ? "bg-red-50/60 border-r-red-200 border-t-red-200 border-b-red-200red-900red-900red-900" : ""}
+        ${isCritical && !overdue ? "bg-orange-50/30" : ""}
       `}
       data-testid={`kanban-card-${task.id}`}
     >
@@ -505,7 +505,7 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
         </div>
         {task.dueDate && (
           <span className={`text-[10px] flex items-center gap-0.5 font-medium px-1 py-0 rounded
-            ${overdue ? "text-red-700 bg-red-100 dark:bg-red-900/40 dark:text-red-300" : dueSoon ? "text-amber-700 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-300" : "text-muted-foreground"}`}
+            ${overdue ? "text-red-700 bg-red-100" : dueSoon ? "text-amber-700 bg-amber-50" : "text-muted-foreground"}`}
           >
             {overdue && <AlertTriangle className="h-3 w-3 shrink-0" />}
             {!overdue && dueSoon && <Clock className="h-3 w-3 shrink-0" />}
@@ -546,9 +546,9 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
       </div>
 
       {task.holdReason && (
-        <div className="mt-1.5 px-1.5 py-1 bg-red-50 dark:bg-red-950/30 rounded text-[10px] text-red-600 dark:text-red-400 flex items-center gap-1 border border-red-100 dark:border-red-900">
+        <div className="mt-1.5 px-1.5 py-1 bg-red-50 rounded text-[10px] text-red-600 flex items-center gap-1 border border-red-100">
           <PauseCircle className="h-3 w-3 shrink-0" />
-          {task.blockedType && <span className={`px-1 py-0 rounded text-[9px] font-bold ${task.blockedType === "External" ? "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300" : "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300"}`}>{task.blockedType}</span>}
+          {task.blockedType && <span className={`px-1 py-0 rounded text-[9px] font-bold ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"}`}>{task.blockedType}</span>}
           <span className="truncate">{task.holdReason}</span>
         </div>
       )}
@@ -620,13 +620,13 @@ function KanbanColumn({
           </div>
           <div className="flex items-center gap-1 shrink-0">
             {overdueCount > 0 && (
-              <span className="flex items-center gap-0.5 text-[9px] font-bold text-red-600 bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 rounded-full">
+              <span className="flex items-center gap-0.5 text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">
                 <AlertTriangle className="h-2.5 w-2.5" />
                 {overdueCount}
               </span>
             )}
             {criticalCount > 0 && overdueCount === 0 && (
-              <span className="flex items-center gap-0.5 text-[9px] font-bold text-orange-600 bg-orange-100 dark:bg-orange-900/40 px-1.5 py-0.5 rounded-full">
+              <span className="flex items-center gap-0.5 text-[9px] font-bold text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded-full">
                 {criticalCount}
               </span>
             )}
@@ -717,10 +717,10 @@ function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { taskId:
   };
 
   return (
-    <div className="p-3 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg space-y-2" data-testid="post-update-form">
+    <div className="p-3 bg-blue-50/50 border border-blue-200 rounded-lg space-y-2" data-testid="post-update-form">
       <div className="flex items-center gap-2">
         <ArrowRight className="h-3.5 w-3.5 text-blue-600" />
-        <span className="text-xs font-semibold text-blue-700 dark:text-blue-400">Post Update</span>
+        <span className="text-xs font-semibold text-blue-700">Post Update</span>
       </div>
       <Textarea
         value={updateText}
@@ -1088,7 +1088,7 @@ function TaskDetailDrawer({
 
               {(task.status === "NEEDS APPROVAL" || task.status === "OPERATIONAL APPROVAL") && (
                 <div className="space-y-2 pt-1">
-                  <div className="p-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
+                  <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 flex items-center gap-2">
                     <Clock className="h-3.5 w-3.5 shrink-0" />
                     Awaiting approval
                   </div>
@@ -1156,14 +1156,14 @@ function TaskDetailDrawer({
               )}
 
               {task.status === "PROVIDE FEEDBACK" && (
-                <div className="p-2 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800 rounded text-xs text-purple-700 dark:text-purple-300 flex items-center gap-2">
+                <div className="p-2 bg-purple-50 border border-purple-200 rounded text-xs text-purple-700 flex items-center gap-2">
                   <RotateCcw className="h-3.5 w-3.5 shrink-0" />
                   Changes requested — address feedback and resubmit for approval
                 </div>
               )}
 
               {task.status === "QC APPROVED" && (
-                <div className="p-2 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                <div className="p-2 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-700 flex items-center gap-2">
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                   QC Approved — ready for operational sign-off or completion
                 </div>
@@ -1194,7 +1194,7 @@ function TaskDetailDrawer({
                         <div className="space-y-1.5">
                           <Label className="text-xs font-medium">Attachment (optional)</Label>
                           <div
-                            className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-amber-400 hover:bg-amber-50/30 dark:hover:bg-amber-950/10 ${sendApprovalFile ? "border-amber-400 bg-amber-50/20" : "border-muted"}`}
+                            className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-amber-400 hover:bg-amber-50/30 ${sendApprovalFile ? "border-amber-400 bg-amber-50/20" : "border-muted"}`}
                             onClick={() => {
                               const input = document.createElement("input");
                               input.type = "file";
@@ -1280,7 +1280,7 @@ function TaskDetailDrawer({
               )}
             </div>
 
-            <div className="space-y-3 p-3 bg-blue-50/30 dark:bg-blue-950/10 rounded-lg border border-blue-200/50 dark:border-blue-800/30">
+            <div className="space-y-3 p-3 bg-blue-50/30 rounded-lg border border-blue-200/50/30">
               <div className="flex items-center justify-between">
                 <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                   <Paperclip className="h-3.5 w-3.5" /> Deliverables
@@ -1300,7 +1300,7 @@ function TaskDetailDrawer({
               {taskDeliverables.length > 0 && (
                 <div className="space-y-2 max-h-[200px] overflow-y-auto">
                   {taskDeliverables.map((del: any) => (
-                    <div key={del.id} className="p-2 bg-card dark:bg-gray-900 rounded border text-xs space-y-1" data-testid={`deliverable-item-${del.id}`}>
+                    <div key={del.id} className="p-2 bg-card rounded border text-xs space-y-1" data-testid={`deliverable-item-${del.id}`}>
                       <div className="flex items-center justify-between gap-2">
                         <a
                           href={`/api/eng/deliverables/${del.id}/download`}
@@ -1387,7 +1387,7 @@ function TaskDetailDrawer({
                     <div className="space-y-1.5">
                       <Label className="text-xs font-medium">File <span className="text-red-500">*</span></Label>
                       <div
-                        className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 dark:hover:bg-blue-950/10 ${deliverableFile ? "border-blue-400 bg-blue-50/20" : "border-muted"}`}
+                        className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 ${deliverableFile ? "border-blue-400 bg-blue-50/20" : "border-muted"}`}
                         onClick={() => {
                           const input = document.createElement("input");
                           input.type = "file";
@@ -1469,8 +1469,8 @@ function TaskDetailDrawer({
             </div>
 
             {task.holdReason && (
-              <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg">
-                <p className="text-xs font-semibold text-red-700 dark:text-red-400 flex items-center gap-1">
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-xs font-semibold text-red-700 flex items-center gap-1">
                   <AlertTriangle className="h-3.5 w-3.5" /> Hold Reason
                   {task.blockedType && <Badge variant="outline" className={`ml-1 text-[10px] ${task.blockedType === "External" ? "border-orange-400 text-orange-700" : "border-purple-400 text-purple-700"}`}>{task.blockedType}</Badge>}
                 </p>
@@ -1759,14 +1759,14 @@ function TaskDetailDrawer({
 }
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
-  P0_FIRST_ASSESSMENT: { bg: "bg-muted dark:bg-slate-900/30", text: "text-foreground dark:text-slate-300", accent: "bg-slate-500" },
-  P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-50 dark:bg-violet-900/30", text: "text-violet-700 dark:text-violet-300", accent: "bg-violet-500" },
-  P2_PD_PM_HANDOVER: { bg: "bg-indigo-50 dark:bg-indigo-900/30", text: "text-indigo-700 dark:text-indigo-300", accent: "bg-indigo-500" },
-  P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-50 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-300", accent: "bg-blue-500" },
-  P4_CONSTRUCTION_INSTALLATION: { bg: "bg-amber-50 dark:bg-amber-900/30", text: "text-amber-700 dark:text-amber-300", accent: "bg-amber-500" },
-  P5_COMMISSIONING_TESTING: { bg: "bg-orange-50 dark:bg-orange-900/30", text: "text-orange-700 dark:text-orange-300", accent: "bg-orange-500" },
-  P6_HANDOVER_CLIENT_MATRIARCH: { bg: "bg-teal-50 dark:bg-teal-900/30", text: "text-teal-700 dark:text-teal-300", accent: "bg-teal-500" },
-  P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-50 dark:bg-emerald-900/30", text: "text-emerald-700 dark:text-emerald-300", accent: "bg-emerald-500" },
+  P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", accent: "bg-slate-500" },
+  P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-50", text: "text-violet-700", accent: "bg-violet-500" },
+  P2_PD_PM_HANDOVER: { bg: "bg-indigo-50", text: "text-indigo-700", accent: "bg-indigo-500" },
+  P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-50", text: "text-blue-700", accent: "bg-blue-500" },
+  P4_CONSTRUCTION_INSTALLATION: { bg: "bg-amber-50", text: "text-amber-700", accent: "bg-amber-500" },
+  P5_COMMISSIONING_TESTING: { bg: "bg-orange-50", text: "text-orange-700", accent: "bg-orange-500" },
+  P6_HANDOVER_CLIENT_MATRIARCH: { bg: "bg-teal-50", text: "text-teal-700", accent: "bg-teal-500" },
+  P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-50", text: "text-emerald-700", accent: "bg-emerald-500" },
 };
 
 interface ProjectGroup {
@@ -2279,11 +2279,11 @@ function MyTasksView({
     rest.sort(sortByPriority);
 
     return [
-      { key: "overdue", label: "Overdue", icon: <AlertTriangle className="h-4 w-4 text-red-500" />, tasks: overdue, color: "border-l-red-500 bg-red-50/30 dark:bg-red-950/10" },
-      { key: "due-soon", label: "Due Today / Due Soon", icon: <Timer className="h-4 w-4 text-amber-500" />, tasks: dueSoon, color: "border-l-amber-500 bg-amber-50/30 dark:bg-amber-950/10" },
-      { key: "hold", label: "On Hold", icon: <PauseCircle className="h-4 w-4 text-red-400" />, tasks: hold, color: "border-l-red-400 bg-red-50/20 dark:bg-red-950/10" },
-      { key: "in-progress", label: "In Progress", icon: <ArrowRight className="h-4 w-4 text-blue-500" />, tasks: inProgress, color: "border-l-blue-500 bg-blue-50/30 dark:bg-blue-950/10" },
-      { key: "everything-else", label: "Everything Else", icon: <Circle className="h-4 w-4 text-gray-400" />, tasks: rest, color: "border-l-gray-400 bg-muted/30 dark:bg-gray-800/10" },
+      { key: "overdue", label: "Overdue", icon: <AlertTriangle className="h-4 w-4 text-red-500" />, tasks: overdue, color: "border-l-red-500 bg-red-50/30" },
+      { key: "due-soon", label: "Due Today / Due Soon", icon: <Timer className="h-4 w-4 text-amber-500" />, tasks: dueSoon, color: "border-l-amber-500 bg-amber-50/30" },
+      { key: "hold", label: "On Hold", icon: <PauseCircle className="h-4 w-4 text-red-600" />, tasks: hold, color: "border-l-red-400 bg-red-50/20" },
+      { key: "in-progress", label: "In Progress", icon: <ArrowRight className="h-4 w-4 text-blue-500" />, tasks: inProgress, color: "border-l-blue-500 bg-blue-50/30" },
+      { key: "everything-else", label: "Everything Else", icon: <Circle className="h-4 w-4 text-gray-400" />, tasks: rest, color: "border-l-gray-400 bg-muted/30" },
     ];
   }, [filteredMyTasks]);
 

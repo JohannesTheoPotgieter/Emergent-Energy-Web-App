@@ -295,12 +295,12 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
-              <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+              <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
               <span className="text-sm">Loading line items…</span>
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
-              <Search className="h-8 w-8 text-slate-300" />
+              <Search className="h-8 w-8 text-slate-600" />
               <span className="text-sm">No line items found</span>
             </div>
           ) : (
@@ -324,7 +324,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                       onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
                       data-testid={`row-detail-${i}`}
                     >
-                      <td className="px-3 py-2.5 text-slate-400 group-hover:text-muted-foreground transition-colors">
+                      <td className="px-3 py-2.5 text-slate-500 group-hover:text-muted-foreground transition-colors">
                         {expandedId === item.id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                       </td>
                       <td className="px-3 py-2.5 max-w-[150px] truncate font-medium text-foreground" title={item.projectName}>{item.projectName}</td>
@@ -359,15 +359,15 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                         <td colSpan={7} className="px-6 py-4">
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-xs">
                             <div>
-                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Invoice #</p>
+                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Invoice #</p>
                               <p className="font-medium text-foreground">{item.invoiceNumber || "—"}</p>
                             </div>
                             <div>
-                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">PO #</p>
+                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">PO #</p>
                               <p className="font-medium text-foreground">{item.poNumber || "—"}</p>
                             </div>
                             <div>
-                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Invoice Date</p>
+                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Invoice Date</p>
                               <p className="font-medium text-red-600 flex items-center gap-1.5">
                                 {item.invoiceDate || "—"}
                                 {item.invoiceDate && (
@@ -377,7 +377,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                               </p>
                             </div>
                             <div>
-                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Payment Date</p>
+                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Payment Date</p>
                               <p className="font-medium text-foreground flex items-center gap-1.5">
                                 {item.paymentDate || "—"}
                                 {item.paymentDate && (
@@ -387,21 +387,21 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                               </p>
                             </div>
                             <div>
-                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Supplier</p>
+                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Supplier</p>
                               <p className="font-medium text-foreground">{item.supplier || "—"}</p>
                             </div>
                             <div>
-                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Realised Month</p>
+                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Realised Month</p>
                               <p className="font-medium text-foreground">{item.realisedMonth || "Not realised"}</p>
                             </div>
                             <div>
-                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">COS State</p>
+                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">COS State</p>
                               <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${stateBadgeColor(item.cosState)}`}>
                                 {item.cosState}
                               </span>
                             </div>
                             <div>
-                              <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Amount</p>
+                              <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-0.5">Amount</p>
                               <p className="font-mono font-bold text-foreground">{formatRand(item.amount)}</p>
                             </div>
                           </div>
@@ -535,7 +535,7 @@ export default function CosTracker() {
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3" data-testid="loading-indicator">
-        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
         <span className="text-sm font-medium">Loading COS data…</span>
       </div>
     );
@@ -718,7 +718,7 @@ export default function CosTracker() {
                                 onClick={() => toggleRow(row.key)}
                                 data-testid={`toggle-${row.key}`}
                               >
-                                <span className="text-slate-400 group-hover:text-blue-500 transition-colors">
+                                <span className="text-slate-500 group-hover:text-blue-500 transition-colors">
                                   {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                                 </span>
                                 <span>{row.label}</span>

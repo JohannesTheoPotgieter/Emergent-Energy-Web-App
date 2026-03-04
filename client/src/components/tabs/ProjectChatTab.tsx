@@ -201,7 +201,7 @@ export function ProjectChatTab({ projectName }: { projectName: string }) {
     <div className="flex flex-col h-[500px] border rounded-lg overflow-hidden bg-card" data-testid="project-chat-tab">
       <div className="flex items-center justify-between px-4 py-2.5 bg-[#292929] text-white">
         <div className="flex items-center gap-2">
-          <MessageSquare className="h-4 w-4 text-blue-400" />
+          <MessageSquare className="h-4 w-4 text-blue-600" />
           <span className="font-medium text-sm">{group?.name || "Project Chat"}</span>
           <Badge variant="outline" className="text-[10px] border-gray-500 text-gray-300">
             {group?.memberCount || 0} members

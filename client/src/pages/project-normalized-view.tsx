@@ -68,7 +68,7 @@ function SortableHeader({ label, active, dir, onClick, testId }: {
     >
       <span className="inline-flex items-center gap-0.5">
         {label}
-        <ArrowUpDown className={`w-3 h-3 ${active ? "text-blue-500" : "text-slate-300"}`} />
+        <ArrowUpDown className={`w-3 h-3 ${active ? "text-blue-500" : "text-slate-600"}`} />
       </span>
     </th>
   );
@@ -106,7 +106,7 @@ function costStatusBadge(status: string | null | undefined) {
 }
 
 function planStatusBadge(status: string | null | undefined) {
-  if (!status) return <span className="text-[10px] text-slate-400">—</span>;
+  if (!status) return <span className="text-[10px] text-slate-500">—</span>;
   const s = status.toLowerCase();
   let cls = "bg-muted text-muted-foreground border-border";
   if (s.includes("complete") || s.includes("done")) cls = "bg-emerald-50 text-emerald-700 border-emerald-200";
@@ -295,7 +295,7 @@ export default function ProjectNormalizedView() {
         </div>
         <Card className="bg-card rounded-xl shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
-            <FileSpreadsheet className="w-12 h-12 text-slate-300" />
+            <FileSpreadsheet className="w-12 h-12 text-slate-600" />
             <p className="text-sm text-muted-foreground text-center max-w-md" data-testid="text-empty-message">
               No normalized data available yet. Import an Excel tracker to see unified project views.
             </p>
@@ -435,7 +435,7 @@ export default function ProjectNormalizedView() {
                                 <span className="text-[10px] text-muted-foreground w-[28px] text-right">{Math.round(t.pctComplete)}%</span>
                               </div>
                             ) : (
-                              <span className="text-[10px] text-slate-400">—</span>
+                              <span className="text-[10px] text-slate-500">—</span>
                             )}
                           </td>
                         </tr>

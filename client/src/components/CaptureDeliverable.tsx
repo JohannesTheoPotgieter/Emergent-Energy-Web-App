@@ -458,16 +458,16 @@ export default function CaptureDeliverable({
             )}
 
             {(linkType === "cost_line" || linkType === "revenue_line") && (
-              <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="flex items-start gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
                 <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
-                <p className="text-xs text-blue-700 dark:text-blue-300">
+                <p className="text-xs text-blue-700">
                   The file name (without extension) will be saved as the invoice number on this financial line item.
                 </p>
               </div>
             )}
 
             <div
-              className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${file ? "border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/20" : "border-muted-foreground/25 hover:border-muted-foreground/50"}`}
+              className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${file ? "border-emerald-300 bg-emerald-50/50" : "border-muted-foreground/25 hover:border-muted-foreground/50"}`}
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleDrop}
               data-testid="dropzone"

@@ -555,28 +555,28 @@ export default function SubcontractorDashboardPage() {
             <CardContent className="pt-3 pb-2 px-3">
               <div className="text-[10px] text-muted-foreground mb-0.5">Eligible Lines</div>
               <div className="text-lg font-bold" data-testid="stat-eligible">{patternStats.eligibleLines.toLocaleString()}</div>
-              <div className="text-[9px] text-slate-400">with invoice & amount</div>
+              <div className="text-[9px] text-slate-500">with invoice & amount</div>
             </CardContent>
           </Card>
           <Card className="bg-card">
             <CardContent className="pt-3 pb-2 px-3">
               <div className="text-[10px] text-muted-foreground mb-0.5">Tagged</div>
               <div className="text-lg font-bold text-green-700" data-testid="stat-tagged">{patternStats.taggedLines.toLocaleString()}</div>
-              <div className="text-[9px] text-slate-400">pattern-matched</div>
+              <div className="text-[9px] text-slate-500">pattern-matched</div>
             </CardContent>
           </Card>
           <Card className="bg-card">
             <CardContent className="pt-3 pb-2 px-3">
               <div className="text-[10px] text-muted-foreground mb-0.5">Untagged</div>
               <div className="text-lg font-bold text-amber-600" data-testid="stat-untagged">{patternStats.untaggedLines.toLocaleString()}</div>
-              <div className="text-[9px] text-slate-400">awaiting classification</div>
+              <div className="text-[9px] text-slate-500">awaiting classification</div>
             </CardContent>
           </Card>
           <Card className="bg-card">
             <CardContent className="pt-3 pb-2 px-3">
               <div className="text-[10px] text-muted-foreground mb-0.5">Classification Rate</div>
               <div className="text-lg font-bold" data-testid="stat-rate">{patternStats.classificationRate}%</div>
-              <div className="text-[9px] text-slate-400">tagged / eligible</div>
+              <div className="text-[9px] text-slate-500">tagged / eligible</div>
             </CardContent>
           </Card>
           <Card className="bg-card">
@@ -590,7 +590,7 @@ export default function SubcontractorDashboardPage() {
                   </Badge>
                 ))}
                 {Object.keys(patternStats.typeCounts || {}).length === 0 && (
-                  <span className="text-[9px] text-slate-400">No classified lines yet</span>
+                  <span className="text-[9px] text-slate-500">No classified lines yet</span>
                 )}
               </div>
             </CardContent>
@@ -606,7 +606,7 @@ export default function SubcontractorDashboardPage() {
               <p className="text-xs text-muted-foreground">Biggest Account</p>
             </div>
             <p className="text-lg font-bold truncate">{kpis.biggestAccount || "—"}</p>
-            <p className="text-xs text-slate-400">{formatCurrency(kpis.biggestAccountSpend)}</p>
+            <p className="text-xs text-slate-500">{formatCurrency(kpis.biggestAccountSpend)}</p>
           </CardContent>
         </Card>
         <Card data-testid="kpi-total">
@@ -635,7 +635,7 @@ export default function SubcontractorDashboardPage() {
               <p className="text-xs text-muted-foreground">Overdue</p>
             </div>
             <p className="text-lg font-bold text-red-600">{formatCurrency(kpis.totalOverdueAmount)}</p>
-            <p className="text-xs text-slate-400">{kpis.totalOverdueCount || 0} items — click to view</p>
+            <p className="text-xs text-slate-500">{kpis.totalOverdueCount || 0} items — click to view</p>
           </CardContent>
         </Card>
         <Card data-testid="kpi-upcoming">
@@ -765,7 +765,7 @@ export default function SubcontractorDashboardPage() {
           </CardHeader>
           <CardContent>
             {overdueLoading ? (
-              <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-red-400" /></div>
+              <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-red-600" /></div>
             ) : overdueData?.items?.length > 0 ? (
               <div className="border border-red-200 rounded-lg overflow-hidden max-h-[400px] overflow-y-auto">
                 <table className="w-full text-[11px]" data-testid="overdue-table">
@@ -821,7 +821,7 @@ export default function SubcontractorDashboardPage() {
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <Input placeholder="Search counterparties..." value={search} onChange={e => setSearch(e.target.value)}
             className="pl-9" data-testid="input-search" />
         </div>
@@ -940,11 +940,11 @@ export default function SubcontractorDashboardPage() {
       )}
 
       {isLoading ? (
-        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
+        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-slate-500" /></div>
       ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            <AlertCircle className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+            <AlertCircle className="w-8 h-8 mx-auto mb-2 text-slate-600" />
             No counterparty data available. Import expenditure data via Smart Import first.
           </CardContent>
         </Card>
@@ -1012,7 +1012,7 @@ export default function SubcontractorDashboardPage() {
                   <td className="px-3 py-2 text-xs" title={cp.projectNames?.join(", ") || ""}>
                     <span className="font-medium">{cp.projectCount}</span>
                     {cp.projectNames?.length > 0 && cp.projectNames.length <= 3 && (
-                      <span className="text-[10px] text-slate-400 ml-1 block truncate max-w-[120px]">{cp.projectNames.join(", ")}</span>
+                      <span className="text-[10px] text-slate-500 ml-1 block truncate max-w-[120px]">{cp.projectNames.join(", ")}</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{formatDate(cp.lastInvoiceDate)}</td>
@@ -1021,7 +1021,7 @@ export default function SubcontractorDashboardPage() {
                   <td className="px-3 py-2 text-xs font-mono text-amber-600">{cp.openAmount > 0 ? formatCurrency(cp.openAmount) : "\u2014"}</td>
                   <td className="px-3 py-2 text-xs font-mono text-red-600">{cp.overdueAmount > 0 ? formatCurrency(cp.overdueAmount) : "\u2014"}</td>
                   <td className="px-3 py-2 text-xs font-mono text-purple-600">{cp.upcomingAmount30d > 0 ? formatCurrency(cp.upcomingAmount30d) : "\u2014"}</td>
-                  <td className="px-3 py-2"><ChevronRight className="w-4 h-4 text-slate-300" /></td>
+                  <td className="px-3 py-2"><ChevronRight className="w-4 h-4 text-slate-600" /></td>
                 </tr>
               ))}
             </tbody>
@@ -1053,7 +1053,7 @@ export default function SubcontractorDashboardPage() {
                       onClick={handleConfirmRename} disabled={renameLoading} data-testid="btn-confirm-rename">
                       {renameLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                     </Button>
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-muted-foreground"
+                    <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-500 hover:text-muted-foreground"
                       onClick={handleCancelRename} data-testid="btn-cancel-rename">
                       <X className="w-4 h-4" />
                     </Button>
@@ -1064,17 +1064,17 @@ export default function SubcontractorDashboardPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <DialogTitle className="text-xl font-bold">{selectedCp}</DialogTitle>
                       <PermissionGate entity="procurement" action="edit">
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-blue-600"
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-500 hover:text-blue-600"
                           onClick={handleStartRename} title="Rename" data-testid="btn-rename-counterparty">
                           <Pencil className="w-3.5 h-3.5" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400 hover:text-red-600"
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-500 hover:text-red-600"
                           onClick={() => setDeleteConfirm(true)} title="Delete" data-testid="btn-delete-counterparty">
                           <Trash2 className="w-3.5 h-3.5" />
                         </Button>
                       </PermissionGate>
                       <div className="flex items-center gap-1.5 ml-2">
-                        <Tag className="w-3 h-3 text-slate-400" />
+                        <Tag className="w-3 h-3 text-slate-500" />
                         <Select
                           value={(() => {
                             const cpData = (data?.counterparties || []).find((c: any) => c.counterpartyName === selectedCp);
@@ -1092,7 +1092,7 @@ export default function SubcontractorDashboardPage() {
                             <SelectItem value="OTHER">Other</SelectItem>
                           </SelectContent>
                         </Select>
-                        {typeChangeLoading && <Loader2 className="w-3 h-3 animate-spin text-slate-400" />}
+                        {typeChangeLoading && <Loader2 className="w-3 h-3 animate-spin text-slate-500" />}
                       </div>
                     </div>
                   </div>
@@ -1121,7 +1121,7 @@ export default function SubcontractorDashboardPage() {
 
           <div className="px-6 py-4">
           {detailLoading ? (
-            <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
+            <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-slate-500" /></div>
           ) : detailData ? (
             <div className="space-y-6">
               {selectedCp?.toLowerCase() === "unknown" && (
@@ -1160,7 +1160,7 @@ export default function SubcontractorDashboardPage() {
                       <CardContent className="p-3">
                         <p className="text-[10px] text-muted-foreground uppercase">Total Invoices</p>
                         <p className="text-2xl font-bold">{detailData.invoiceSummary.totalInvoices}</p>
-                        <p className="text-xs text-slate-400 font-mono">{formatCurrency(detailData.invoiceSummary.totalAmount)}</p>
+                        <p className="text-xs text-slate-500 font-mono">{formatCurrency(detailData.invoiceSummary.totalAmount)}</p>
                       </CardContent>
                     </Card>
                     <Card className="border-green-200 bg-green-50/30">
@@ -1264,7 +1264,7 @@ export default function SubcontractorDashboardPage() {
                           </button>
                           <div className="text-right text-[11px]">
                             <span className="font-mono">{formatCurrency(p.totalSpend)}</span>
-                            <span className="text-slate-400 ml-1.5">({p.lineCount} lines)</span>
+                            <span className="text-slate-500 ml-1.5">({p.lineCount} lines)</span>
                             {p.openCount > 0 && (
                               <span className="ml-2 text-amber-600">{p.openCount} open</span>
                             )}
@@ -1295,7 +1295,7 @@ export default function SubcontractorDashboardPage() {
                         </div>
                         <div className="text-right">
                           <span className="text-xs font-mono">{formatCurrency(parseFloat(u.amountExVat || "0"))}</span>
-                          <span className="text-[10px] text-slate-400 ml-2">{formatDate(u.invoiceDate)}</span>
+                          <span className="text-[10px] text-slate-500 ml-2">{formatDate(u.invoiceDate)}</span>
                         </div>
                       </div>
                     ))}

@@ -320,7 +320,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
             )}
           </div>
           <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
             <input
               type="text"
               placeholder="Search tasks..."
@@ -333,7 +333,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
         </div>
         <div className="overflow-y-auto max-h-[400px]">
           {isLoading ? (
-            <div className="p-6 text-center"><Loader2 className="h-4 w-4 animate-spin mx-auto text-slate-400" /></div>
+            <div className="p-6 text-center"><Loader2 className="h-4 w-4 animate-spin mx-auto text-slate-500" /></div>
           ) : filtered.length > 0 ? (
             <table className="w-full text-[11px]">
               <thead className="sticky top-0 bg-muted z-10">
@@ -357,7 +357,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
                       className={`border-b border-slate-50 hover:bg-blue-50/30 transition-colors ${isEditing ? 'bg-blue-50/50' : ''}`}
                       data-testid={`task-row-${task.rowNumber}`}
                     >
-                      <td className="px-2 py-1.5 text-slate-400 font-mono">{task.taskNo || "-"}</td>
+                      <td className="px-2 py-1.5 text-slate-500 font-mono">{task.taskNo || "-"}</td>
                       <td className="px-2 py-1.5">
                         {isEditing ? (
                           <input
@@ -436,7 +436,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
                       <td className="px-1 py-1.5">
                         <button
                           onClick={() => setEditingRow(isEditing ? null : task.rowNumber)}
-                          className={`p-0.5 rounded transition-colors ${isEditing ? 'text-blue-600 bg-blue-100' : 'text-slate-400 hover:text-muted-foreground hover:bg-muted'}`}
+                          className={`p-0.5 rounded transition-colors ${isEditing ? 'text-blue-600 bg-blue-100' : 'text-slate-500 hover:text-muted-foreground hover:bg-muted'}`}
                           title={isEditing ? "Done editing" : "Edit task"}
                           data-testid={`btn-edit-task-${task.rowNumber}`}
                         >
@@ -449,7 +449,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
               </tbody>
             </table>
           ) : (
-            <div className="p-6 text-center text-sm text-slate-400">No tasks found</div>
+            <div className="p-6 text-center text-sm text-slate-500">No tasks found</div>
           )}
         </div>
         {hasEdits && (
@@ -594,7 +594,7 @@ function FinancialCloseCell({
         </a>
         {isAdmin && (
           <button onClick={openDialog} className="p-0.5 hover:bg-muted rounded transition-colors" title="Replace or edit document" data-testid={`btn-edit-${fieldPrefix}-${projectName}`}>
-            <Pencil className="w-3 h-3 text-slate-400" />
+            <Pencil className="w-3 h-3 text-slate-500" />
           </button>
         )}
         {saved && <Check className="w-3 h-3 text-green-500" />}
@@ -612,7 +612,7 @@ function FinancialCloseCell({
         </span>
         {isAdmin && (
           <button onClick={openDialog} className="p-0.5 hover:bg-muted rounded transition-colors" title="Change document status" data-testid={`btn-edit-${fieldPrefix}-${projectName}`}>
-            <Pencil className="w-3 h-3 text-slate-400" />
+            <Pencil className="w-3 h-3 text-slate-500" />
           </button>
         )}
         {saved && <Check className="w-3 h-3 text-green-500" />}
@@ -678,9 +678,9 @@ function FinancialCloseCell({
                   }`}
                   data-testid="btn-mode-link"
                 >
-                  <Upload className={`w-6 h-6 ${mode === "link" ? "text-emerald-600" : "text-slate-400"}`} />
+                  <Upload className={`w-6 h-6 ${mode === "link" ? "text-emerald-600" : "text-slate-500"}`} />
                   <span className={`text-sm font-semibold ${mode === "link" ? "text-emerald-700" : "text-muted-foreground"}`}>{type === "link" ? "Replace File" : "Attach File"}</span>
-                  <span className="text-[10px] text-slate-400">Upload or link</span>
+                  <span className="text-[10px] text-slate-500">Upload or link</span>
                 </button>
                 <button
                   onClick={() => setMode("na")}
@@ -689,9 +689,9 @@ function FinancialCloseCell({
                   }`}
                   data-testid="btn-mode-na"
                 >
-                  <Ban className={`w-6 h-6 ${mode === "na" ? "text-muted-foreground" : "text-slate-400"}`} />
+                  <Ban className={`w-6 h-6 ${mode === "na" ? "text-muted-foreground" : "text-slate-500"}`} />
                   <span className={`text-sm font-semibold ${mode === "na" ? "text-foreground" : "text-muted-foreground"}`}>Not Applicable</span>
-                  <span className="text-[10px] text-slate-400">With reason</span>
+                  <span className="text-[10px] text-slate-500">With reason</span>
                 </button>
               </div>
 
@@ -733,7 +733,7 @@ function FinancialCloseCell({
                     </div>
                   )}
 
-                  <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500">
                     <div className="flex-1 h-px bg-slate-200" />
                     <span>OR paste a URL</span>
                     <div className="flex-1 h-px bg-slate-200" />
@@ -933,10 +933,10 @@ function LatestUpdateCell({ project }: { project: ProjectSummary }) {
       {project.latest_update ? (
         <div className="text-[10px] leading-tight">
           <span className="text-foreground line-clamp-2">{project.latest_update}</span>
-          {timeAgo && <span className="text-[9px] text-slate-400 block">{project.latest_update_by?.split(" ")[0]} · {timeAgo}</span>}
+          {timeAgo && <span className="text-[9px] text-slate-500 block">{project.latest_update_by?.split(" ")[0]} · {timeAgo}</span>}
         </div>
       ) : (
-        <span className="text-[10px] text-slate-300 group-hover:text-slate-400 italic">+ Add update</span>
+        <span className="text-[10px] text-slate-600 group-hover:text-slate-500 italic">+ Add update</span>
       )}
     </div>
   );
@@ -1437,7 +1437,7 @@ export default function ProjectsSummary() {
         <Card className="border-2 border-dashed border-border">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-              <AlertCircle className="w-8 h-8 text-slate-400" />
+              <AlertCircle className="w-8 h-8 text-slate-500" />
             </div>
             <h3 className="text-lg font-semibold text-foreground mb-2">No Projects Available</h3>
             <p className="text-sm text-muted-foreground max-w-md">
@@ -1602,7 +1602,7 @@ export default function ProjectsSummary() {
       render: (p) => {
         const level = p.escalation_level || "None";
         const cfg: Record<string, { bg: string; text: string; border: string; dot: string }> = {
-          None: { bg: "bg-muted", text: "text-slate-400", border: "border-border", dot: "bg-slate-300" },
+          None: { bg: "bg-muted", text: "text-slate-500", border: "border-border", dot: "bg-slate-300" },
           Low: { bg: "bg-blue-50", text: "text-blue-600", border: "border-blue-200", dot: "bg-blue-400" },
           Medium: { bg: "bg-amber-50", text: "text-amber-600", border: "border-amber-200", dot: "bg-amber-400" },
           High: { bg: "bg-orange-50", text: "text-orange-600", border: "border-orange-200", dot: "bg-orange-500" },
@@ -1701,7 +1701,7 @@ export default function ProjectsSummary() {
       header: "Delta",
       align: "right",
       render: (p) => {
-        if (p.delta_vs_expected == null) return <span className="text-slate-400">—</span>;
+        if (p.delta_vs_expected == null) return <span className="text-slate-500">—</span>;
         const val = p.delta_vs_expected * 100;
         const { text, bg } = deltaColor(val);
         const sign = val >= 0 ? "+" : "";
@@ -1721,10 +1721,10 @@ export default function ProjectsSummary() {
       render: (p) => {
         const received = p.actual_revenue;
         const total = p.total_contract_revenue;
-        if ((received == null || received === 0) && (total == null || total === 0)) return <span className="text-slate-400 text-[10px]">—</span>;
+        if ((received == null || received === 0) && (total == null || total === 0)) return <span className="text-slate-500 text-[10px]">—</span>;
         const fmt = (v: number) => "R" + v.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-        if (received == null || received === 0) return <span className="font-mono text-[10px]"><span className="text-slate-400">R0</span><span className="text-slate-300"> / {fmt(total || 0)}</span></span>;
-        return <span className="font-mono text-emerald-600 text-[10px]" data-testid="text-actual-revenue">{fmt(received)}<span className="text-slate-300"> / {fmt(total || 0)}</span></span>;
+        if (received == null || received === 0) return <span className="font-mono text-[10px]"><span className="text-slate-500">R0</span><span className="text-slate-600"> / {fmt(total || 0)}</span></span>;
+        return <span className="font-mono text-emerald-600 text-[10px]" data-testid="text-actual-revenue">{fmt(received)}<span className="text-slate-600"> / {fmt(total || 0)}</span></span>;
       },
     },
     {
@@ -1734,10 +1734,10 @@ export default function ProjectsSummary() {
       render: (p) => {
         const paid = p.actual_expenses;
         const total = p.total_expenses;
-        if ((paid == null || paid === 0) && (total == null || total === 0)) return <span className="text-slate-400 text-[10px]">—</span>;
+        if ((paid == null || paid === 0) && (total == null || total === 0)) return <span className="text-slate-500 text-[10px]">—</span>;
         const fmt = (v: number) => "R" + v.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-        if (paid == null || paid === 0) return <span className="font-mono text-[10px]"><span className="text-slate-400">R0</span><span className="text-slate-300"> / {fmt(total || 0)}</span></span>;
-        return <span className="font-mono text-foreground text-[10px]" data-testid="text-actual-expenses">{fmt(paid)}<span className="text-slate-300"> / {fmt(total || 0)}</span></span>;
+        if (paid == null || paid === 0) return <span className="font-mono text-[10px]"><span className="text-slate-500">R0</span><span className="text-slate-600"> / {fmt(total || 0)}</span></span>;
+        return <span className="font-mono text-foreground text-[10px]" data-testid="text-actual-expenses">{fmt(paid)}<span className="text-slate-600"> / {fmt(total || 0)}</span></span>;
       },
     },
     {
@@ -1745,7 +1745,7 @@ export default function ProjectsSummary() {
       header: "GP%",
       align: "right",
       render: (p) => {
-        if (p.gp_percent == null) return <span className="text-slate-400 text-[10px]">—</span>;
+        if (p.gp_percent == null) return <span className="text-slate-500 text-[10px]">—</span>;
         const val = p.gp_percent * 100;
         const color = val >= 20 ? "text-emerald-600" : val >= 0 ? "text-amber-600" : "text-red-600";
         return <span className={`font-mono text-[10px] font-semibold ${color}`}>{val.toFixed(1)}%</span>;
@@ -1757,7 +1757,7 @@ export default function ProjectsSummary() {
       align: "right",
       render: (p) => {
         const val = p.revenue_outstanding;
-        if (val == null || val === 0) return <span className="text-slate-400 text-[10px]">—</span>;
+        if (val == null || val === 0) return <span className="text-slate-500 text-[10px]">—</span>;
         return <span className="font-mono text-amber-600 text-[10px]">R{val.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
       },
     },
@@ -1767,7 +1767,7 @@ export default function ProjectsSummary() {
       align: "right",
       render: (p) => {
         const val = p.expenses_due;
-        if (val == null || val === 0) return <span className="text-slate-400 text-[10px]">—</span>;
+        if (val == null || val === 0) return <span className="text-slate-500 text-[10px]">—</span>;
         return <span className="font-mono text-red-600 text-[10px]">R{val.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
       },
     },
@@ -1923,7 +1923,7 @@ export default function ProjectsSummary() {
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[140px] sm:flex-none">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <Input
             data-testid="input-search"
             placeholder="Search projects..."
@@ -1985,7 +1985,7 @@ export default function ProjectsSummary() {
             <div className="max-h-64 overflow-y-auto p-2 space-y-3">
               {COLUMN_GROUPS_META.map(group => (
                 <div key={group.label}>
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 mb-1">{group.label}</div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-1 mb-1">{group.label}</div>
                   {group.keys.map(key => {
                     const col = columns.find(c => c.key === key);
                     if (!col) return null;
@@ -2003,7 +2003,7 @@ export default function ProjectsSummary() {
                           className="h-3.5 w-3.5"
                         />
                         <span className="text-xs text-foreground">{col.header}</span>
-                        {isProjectName && <span className="text-[9px] text-slate-400 ml-auto">Required</span>}
+                        {isProjectName && <span className="text-[9px] text-slate-500 ml-auto">Required</span>}
                       </label>
                     );
                   })}

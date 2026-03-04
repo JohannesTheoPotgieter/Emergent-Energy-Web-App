@@ -14,12 +14,12 @@ interface DataSourceDebugProps {
 }
 
 function StaleWarning({ lastImport }: { lastImport: string | null }) {
-  if (!lastImport) return <span className="text-amber-500 text-[10px]">No import recorded</span>;
+  if (!lastImport) return <span className="text-amber-400 text-[10px]">No import recorded</span>;
   const importDate = new Date(lastImport);
   const daysSince = Math.floor((Date.now() - importDate.getTime()) / (1000 * 60 * 60 * 24));
   const isStale = daysSince > 14;
   return (
-    <span className={`text-[10px] ${isStale ? "text-red-500 font-semibold" : "text-emerald-600"}`}>
+    <span className={`text-[10px] ${isStale ? "text-red-400 font-semibold" : "text-emerald-400"}`}>
       {isStale && <AlertTriangle className="inline h-3 w-3 mr-0.5" />}
       {daysSince}d ago {isStale ? "(STALE)" : ""}
     </span>
@@ -92,7 +92,7 @@ export default function DataSourceDebug({ pageName, dataSources }: DataSourceDeb
                   <div>
                     <code className="text-emerald-300 break-all">{ds.endpoint}</code>
                     {ds.description && (
-                      <p className="text-muted-foreground text-[10px] mt-0.5">{ds.description}</p>
+                      <p className="text-gray-500 text-[10px] mt-0.5">{ds.description}</p>
                     )}
                   </div>
                 </div>

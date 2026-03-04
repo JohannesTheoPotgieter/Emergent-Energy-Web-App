@@ -146,7 +146,7 @@ export default function CollabEmailPage() {
         </div>
       ) : ssoUnavailable && filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <ShieldAlert className="h-12 w-12 text-blue-400 mb-3" />
+          <ShieldAlert className="h-12 w-12 text-blue-600 mb-3" />
           <p className="text-sm font-medium text-foreground">Microsoft 365 integration not available</p>
           <p className="text-xs text-muted-foreground mt-1 max-w-md">Your Microsoft account is not connected. Sign in with Microsoft SSO to sync your Outlook emails, calendar, and Teams data.</p>
         </div>

@@ -74,7 +74,7 @@ export default function MyToolHelpPage() {
       content: (
         <>
           <p>My Tool is your personal execution cockpit — a private workspace for planning your day, tracking your own tasks, and staying on top of company priorities that matter to you. It helps you organise what you need to get done, block out focused time, and reflect on progress at the end of each day.</p>
-          <p className="mt-2 text-amber-700 dark:text-amber-400 font-medium">Important: My Tool is not a replacement for the company project tracking system. Projects, milestones, and team deliverables still live in the main dashboard. My Tool is your personal layer on top of that — a place to pull in what's relevant to you and manage your own workflow.</p>
+          <p className="mt-2 text-amber-700 font-medium">Important: My Tool is not a replacement for the company project tracking system. Projects, milestones, and team deliverables still live in the main dashboard. My Tool is your personal layer on top of that — a place to pull in what's relevant to you and manage your own workflow.</p>
         </>
       ),
     },
@@ -194,7 +194,7 @@ export default function MyToolHelpPage() {
       <div className="space-y-5" data-testid="mytool-help-page">
 
       <div className="flex items-center justify-between" data-testid="help-header">
-        <p className="text-sm text-muted-foreground dark:text-gray-400">
+        <p className="text-sm text-muted-foreground">
           Everything you need to know about using My Tool effectively.
         </p>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -272,7 +272,7 @@ export default function MyToolHelpPage() {
                 {section.title}
               </CardTitle>
             </CardHeader>
-            <CardContent className="text-sm text-foreground dark:text-gray-300 leading-relaxed">
+            <CardContent className="text-sm text-foreground leading-relaxed">
               {section.content}
             </CardContent>
           </Card>

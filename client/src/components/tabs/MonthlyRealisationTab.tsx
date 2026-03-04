@@ -185,7 +185,7 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3" data-testid="loading-cos-tracker">
-        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
         <span className="text-sm font-medium">Loading COS data...</span>
       </div>
     );
@@ -301,7 +301,7 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
                       {kpi.value}
                     </p>
                     {kpi.count !== null && (
-                      <p className="text-[11px] text-slate-400 mt-0.5">{kpi.count} items</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{kpi.count} items</p>
                     )}
                   </div>
                 </div>
@@ -313,7 +313,7 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
 
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
           <Input
             placeholder="Search by description, supplier, PO, or invoice..."
             value={search}
@@ -327,7 +327,7 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
             Clear filter
           </Button>
         )}
-        <span className="text-xs text-slate-400 ml-auto">
+        <span className="text-xs text-slate-500 ml-auto">
           Showing {filtered.length} of {totalItems} items
         </span>
       </div>
@@ -382,11 +382,11 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
                       >
                         <td colSpan={5} className="px-5 py-2.5 font-medium text-sm">
                           <div className="flex items-center gap-2">
-                            <span className="text-slate-400">
+                            <span className="text-slate-500">
                               {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             </span>
                             <span className="font-semibold text-foreground">{category}</span>
-                            <span className="text-xs text-slate-400">
+                            <span className="text-xs text-slate-500">
                               {catItems.length} items
                             </span>
                             <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${catRealisedPct >= 80 ? "text-green-600 border-green-200" : catRealisedPct >= 40 ? "text-amber-600 border-amber-200" : "text-muted-foreground border-border"}`}>
@@ -418,7 +418,7 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
                                   {item.expensePoNumber}
                                 </span>
                               ) : (
-                                <span className="text-slate-300">—</span>
+                                <span className="text-slate-600">—</span>
                               )}
                             </td>
                             <td className="px-4 py-2.5">
@@ -427,7 +427,7 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
                                   {item.expenseInvoiceNumber}
                                 </span>
                               ) : (
-                                <span className="text-slate-300">—</span>
+                                <span className="text-slate-600">—</span>
                               )}
                             </td>
                             <td className="px-4 py-2.5 text-sm text-muted-foreground whitespace-nowrap">

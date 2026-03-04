@@ -136,7 +136,7 @@ function LifecycleFlowPanel({
           <div key={stage.id} className="relative pl-10" data-testid={`lifecycle-stage-${stage.slug}`}>
             <div className="absolute left-3 top-4 w-4 h-4 rounded-full bg-card border-2 border-border z-10" />
             {idx < stages.length - 1 && (
-              <ArrowDown className="absolute left-3.5 -bottom-2 h-3 w-3 text-slate-300 z-10" />
+              <ArrowDown className="absolute left-3.5 -bottom-2 h-3 w-3 text-slate-600 z-10" />
             )}
             <TooltipProvider>
               <Tooltip>
@@ -647,7 +647,7 @@ function NodeDetailPanel({
                       <TableCell>
                         <button
                           onClick={() => setEditData(prev => ({ ...prev, raci: prev.raci.filter((_, j) => j !== i) }))}
-                          className="text-red-400 hover:text-red-600"
+                          className="text-red-600 hover:text-red-600"
                           data-testid={`raci-delete-${i}`}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -728,7 +728,7 @@ function NodeDetailPanel({
                   />
                   <button
                     onClick={() => setEditData(prev => ({ ...prev, toolsDocs: prev.toolsDocs.filter((_, j) => j !== i) }))}
-                    className="text-red-400 hover:text-red-600"
+                    className="text-red-600 hover:text-red-600"
                     data-testid={`tool-delete-${i}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -867,7 +867,7 @@ function EditorsPanel({ nodeId, editors }: { nodeId: string; editors: any[] }) {
               <span>User #{e.userId} {e.canEdit ? "(edit)" : "(view)"}</span>
               <button
                 onClick={() => removeEditorMutation.mutate(e.id)}
-                className="text-red-400 hover:text-red-600"
+                className="text-red-600 hover:text-red-600"
                 data-testid={`remove-editor-${e.id}`}
               >
                 <Trash2 className="h-3 w-3" />

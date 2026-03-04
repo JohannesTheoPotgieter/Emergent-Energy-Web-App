@@ -51,8 +51,8 @@ function MetricStrip({ metrics, className, ...props }: MetricStripProps) {
                   data-testid={`metric-change-${i}`}
                   className={cn(
                     "text-xs font-medium",
-                    metric.trend === "up" && "text-green-400",
-                    metric.trend === "down" && "text-red-400",
+                    metric.trend === "up" && "text-green-600",
+                    metric.trend === "down" && "text-red-600",
                     metric.trend === "neutral" && "text-muted-foreground"
                   )}
                 >
