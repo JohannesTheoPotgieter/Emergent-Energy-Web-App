@@ -1,12 +1,13 @@
 import { db } from "./db";
 import { users } from "@shared/schema";
-import { asc } from "drizzle-orm";
+import { asc, isNotNull } from "drizzle-orm";
 
 export interface ResolvedUser {
   id: number;
   name: string;
   username: string;
   role: string;
+  microsoft_id?: string | null;
 }
 
 let cachedUsers: ResolvedUser[] = [];
@@ -22,10 +23,16 @@ export async function getAllUsers(): Promise<ResolvedUser[]> {
     name: users.name,
     username: users.username,
     role: users.role,
+    microsoft_id: users.microsoft_id,
   }).from(users).orderBy(asc(users.name));
   cachedUsers = rows;
   cacheTimestamp = Date.now();
   return cachedUsers;
+}
+
+export async function getAssignableUsers(): Promise<ResolvedUser[]> {
+  const allUsers = await getAllUsers();
+  return allUsers.filter(u => u.microsoft_id != null && u.microsoft_id !== "");
 }
 
 export function invalidateUserCache() {

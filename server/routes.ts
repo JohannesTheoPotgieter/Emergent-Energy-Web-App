@@ -1046,8 +1046,10 @@ export async function registerRoutes(
         name: users.name,
         username: users.username,
         role: users.role,
+        microsoft_id: users.microsoft_id,
       }).from(users).where(eq(users.role, "PROJECT_MANAGER_SITE"));
-      res.json(pmUsers.map(u => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
+      const filtered = pmUsers.filter(u => u.microsoft_id != null && u.microsoft_id !== "");
+      res.json(filtered.map(u => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch PM users" });
     }
@@ -1060,8 +1062,10 @@ export async function registerRoutes(
         name: users.name,
         username: users.username,
         role: users.role,
+        microsoft_id: users.microsoft_id,
       }).from(users).where(eq(users.role, "PROJECT_DEVELOPER"));
-      res.json(pdUsers.map(u => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
+      const filtered = pdUsers.filter(u => u.microsoft_id != null && u.microsoft_id !== "");
+      res.json(filtered.map(u => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch PD users" });
     }
