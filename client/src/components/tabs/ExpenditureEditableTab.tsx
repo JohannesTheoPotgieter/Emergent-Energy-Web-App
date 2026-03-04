@@ -1264,8 +1264,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         ) : (
           <div ref={tableContainerRef} className="relative overflow-auto" style={{ maxHeight: "calc(100vh - 380px)", minHeight: "400px" }}>
             <Table>
-              <TableHeader className="sticky top-0 z-20">
-                <TableRow className="bg-muted  border-b-2 border-border hover:bg-muted">
+              <TableHeader className="sticky top-0 z-20 bg-muted">
+                <TableRow className="bg-muted border-b-2 border-border hover:bg-muted">
                   <TableHead className="px-2 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap w-[40px] text-center sticky left-0 z-30 bg-muted ">
                     #
                   </TableHead>
