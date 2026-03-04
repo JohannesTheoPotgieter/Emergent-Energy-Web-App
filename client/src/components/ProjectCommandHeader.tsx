@@ -62,7 +62,7 @@ function RagIndicator({ color, label }: { color: "green" | "amber" | "red"; labe
   const cls = color === "green" ? "bg-[var(--cmd-green)]" : color === "amber" ? "bg-[var(--cmd-amber)]" : "bg-[var(--cmd-red)]";
   return (
     <div className="flex items-center gap-1.5" title={`${label}: ${color}`}>
-      <span className={`w-2 h-2 rounded-full ${cls} shadow-sm shadow-current`} />
+      <span className={`w-2 h-2 rounded-full ${cls}`} />
       <span className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase">{label}</span>
     </div>
   );
@@ -138,7 +138,7 @@ export function ProjectCommandHeader({
   return (
     <div className="command-header" data-testid="project-command-header">
       <div className="flex items-center gap-2 mb-3">
-        <Button variant="ghost" size="sm" onClick={() => setLocation("/projects")} className="gap-1.5 text-[var(--cmd-text-muted)] hover:text-[var(--cmd-text)] hover:bg-card/5 h-7 px-2" data-testid="button-back">
+        <Button variant="ghost" size="sm" onClick={() => setLocation("/projects")} className="gap-1.5 text-[var(--cmd-text-muted)] hover:text-[var(--cmd-text)] hover:bg-gray-100 h-7 px-2" data-testid="button-back">
           <ArrowLeft className="h-3.5 w-3.5" />
           <span className="text-xs">Projects</span>
         </Button>
@@ -155,7 +155,7 @@ export function ProjectCommandHeader({
                   </h1>
                   <button
                     onClick={onPhaseChangeClick}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-[var(--cmd-border)] bg-[var(--cmd-bg-card)] text-[var(--cmd-text-secondary)] hover:bg-[var(--cmd-bg-panel)] transition-colors ${isAdmin ? "cursor-pointer" : "cursor-default"}`}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-[var(--cmd-border)] bg-white text-[var(--cmd-text-secondary)] hover:bg-gray-50 transition-colors ${isAdmin ? "cursor-pointer" : "cursor-default"}`}
                     disabled={!isAdmin}
                     data-testid="badge-project-phase"
                   >
@@ -247,7 +247,7 @@ export function ProjectCommandHeader({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => { if (canSetRag && projectInfoId) { setNewRag(ragStatus || ""); setRagDialogOpen(true); } }}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--cmd-border)] bg-[var(--cmd-bg-card)] transition-colors ${canSetRag ? "hover:bg-[var(--cmd-bg-panel)] cursor-pointer" : "cursor-default"}`}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--cmd-border)] bg-white transition-colors ${canSetRag ? "hover:bg-gray-50 cursor-pointer" : "cursor-default"}`}
                     data-testid="button-rag-status"
                   >
                     <span className={`w-3 h-3 rounded-full ${ragDotClass} shadow-sm`} />
@@ -256,7 +256,7 @@ export function ProjectCommandHeader({
                   </button>
                 </div>
 
-                <div className="flex items-center gap-3 bg-[var(--cmd-bg-card)] rounded-lg border border-[var(--cmd-border)] px-3 py-2">
+                <div className="flex items-center gap-3 bg-white rounded-lg border border-[var(--cmd-border)] px-3 py-2">
                   <RagIndicator color={scheduleRag} label="Sch" />
                   <RagIndicator color={costRag} label="Cost" />
                   <RagIndicator color={qualityRag} label="Qual" />
@@ -304,7 +304,7 @@ export function ProjectCommandHeader({
           </div>
 
           <div className="border-t border-[var(--cmd-border)] bg-[var(--cmd-bg)]">
-            <div className="h-1 bg-[var(--cmd-bg-card)] overflow-hidden">
+            <div className="h-1 bg-gray-200 overflow-hidden">
               <div
                 className="h-full transition-all duration-700 ease-out"
                 style={{

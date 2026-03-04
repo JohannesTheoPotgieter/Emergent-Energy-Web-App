@@ -65,15 +65,92 @@ import ApprovalsPage from "@/pages/admin-approvals";
 import DatabaseMigrationPage from "@/pages/database-migration";
 import ClientsPage from "@/pages/clients";
 import { useAuth } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
+import { checkPermission, type PermissionEntity } from "@shared/schema";
+import { ShieldAlert, ArrowLeft } from "lucide-react";
+
+const ROUTE_TO_ENTITY: Record<string, PermissionEntity> = {
+  "/dashboard": "execution_board",
+  "/cashflow": "cashflow",
+  "/cos": "cos",
+  "/revenue-tracker": "revenue_tracker",
+  "/revenue": "revenue",
+  "/subcontractor-dashboard": "subcontractors",
+  "/engineering": "engineering",
+  "/engineering/tasks": "eng_tasks",
+  "/quality": "quality",
+  "/pd": "pd_dashboard",
+  "/pd/tickets": "pd_tickets",
+  "/clients": "pd_clients",
+  "/lifecycle-board": "lifecycle",
+  "/projects": "projects",
+  "/portfolios": "portfolios",
+  "/pm-dashboard": "pm_dashboard",
+  "/pm/on-the-go": "pm_on_the_go",
+  "/weekly-reviews": "weekly_review_wizard",
+  "/smart-import": "smart_import",
+  "/excel-updates": "excel_updates",
+  "/invoice-patterns": "invoice_patterns",
+  "/ee-info": "ee_info",
+  "/feedback": "feedback",
+  "/leaderboard": "leaderboard",
+  "/company-priorities": "company_priorities",
+  "/my-work": "home",
+  "/my-work/tasks": "my_tool",
+  "/my-work/approvals": "my_work",
+  "/my-work/calendar": "my_work",
+  "/my-work/meetings": "meetings",
+  "/my-work/email": "collaboration_hub",
+  "/my-work/teams": "teams_chat",
+  "/collaboration": "collaboration_hub",
+  "/collaboration/email": "collaboration_hub",
+  "/collaboration/teams": "teams_chat",
+  "/teams/chats": "teams_chat",
+  "/my-tool": "my_tool",
+  "/admin/activity-log": "activity_log",
+  "/admin/roles": "admin_roles",
+  "/admin/settings": "admin",
+};
 
 const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams"];
 const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams"];
+
+function AccessDenied() {
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="text-center space-y-4 max-w-md px-4">
+        <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto">
+          <ShieldAlert className="h-8 w-8 text-red-500" />
+        </div>
+        <h2 className="text-xl font-semibold text-foreground">Access Denied</h2>
+        <p className="text-sm text-muted-foreground">You don't have permission to view this page. Contact your administrator if you need access.</p>
+        <a href="/" className="inline-flex items-center gap-2 text-sm font-medium text-emerald-600 hover:text-emerald-700">
+          <ArrowLeft className="h-4 w-4" /> Back to Home
+        </a>
+      </div>
+    </div>
+  );
+}
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [location] = useLocation();
 
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+
+  const { data: permissions } = useQuery<{ role?: string; entityPermissions?: Record<string, Record<string, boolean>> | null }>({
+    queryKey: ["auth-permissions", user?.role],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      if (user?.role) headers["x-company-role"] = user.role;
+      const res = await fetch("/api/auth/permissions", { headers, credentials: "include" });
+      return res.json();
+    },
+    enabled: !!user?.role,
+    staleTime: 60_000,
+  });
 
   if (companyRole === "PROJECT_MANAGER_SITE") {
     const allowed = PM_ALLOWED_PATHS.some(p =>
@@ -107,6 +184,24 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   const hasAdminAccess = user?.role === "admin" || (companyRole && ADMIN_COMPANY_ROLES.includes(companyRole));
   if (!hasAdminAccess && location.startsWith("/admin")) {
     return <Redirect to="/" />;
+  }
+
+  const entity = ROUTE_TO_ENTITY[location] || (() => {
+    const sorted = Object.keys(ROUTE_TO_ENTITY).sort((a, b) => b.length - a.length);
+    const match = sorted.find(p => location.startsWith(p + "/") || location === p);
+    return match ? ROUTE_TO_ENTITY[match] : undefined;
+  })();
+  if (entity && user?.role) {
+    const ep = permissions?.entityPermissions;
+    let hasView = true;
+    if (ep && ep[entity]) {
+      hasView = ep[entity]["view"] === true;
+    } else {
+      hasView = checkPermission(user.role, entity, "view");
+    }
+    if (!hasView) {
+      return <AccessDenied />;
+    }
   }
 
   return <>{children}</>;

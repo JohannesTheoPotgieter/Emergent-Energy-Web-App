@@ -92,19 +92,19 @@
 }
 
 .command-header {
-  --cmd-bg: hsl(222 47% 11%);
-  --cmd-bg-panel: hsl(220 26% 14%);
-  --cmd-bg-card: hsl(215 28% 17%);
-  --cmd-border: hsl(215 19% 30%);
-  --cmd-text: #F8FAFC;
-  --cmd-text-secondary: #CBD5E1;
-  --cmd-text-muted: #94A3B8;
+  --cmd-bg: #FFFFFF;
+  --cmd-bg-panel: hsl(210 40% 97%);
+  --cmd-bg-card: hsl(210 40% 96%);
+  --cmd-border: hsl(214 32% 91%);
+  --cmd-text: hsl(222 47% 11%);
+  --cmd-text-secondary: hsl(215 16% 37%);
+  --cmd-text-muted: hsl(215 16% 57%);
   --cmd-brand: #16A34A;
   --cmd-brand-light: #22C55E;
-  --cmd-green: #22C55E;
-  --cmd-amber: #F59E0B;
-  --cmd-red: #EF4444;
-  --cmd-blue: #3B82F6;
+  --cmd-green: #16A34A;
+  --cmd-amber: #D97706;
+  --cmd-red: #DC2626;
+  --cmd-blue: #2563EB;
 }
 
 @layer base {
