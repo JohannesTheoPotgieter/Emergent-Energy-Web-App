@@ -272,7 +272,7 @@ export function ProjectCommandHeader({
                 <p className="text-base sm:text-lg font-bold text-[var(--cmd-text)]">R{(contractValue / 1000000).toFixed(1)}M</p>
               </div>
               <div className="p-3 text-center" data-testid="kpi-revenue">
-                <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">Rev Realised</p>
+                <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">Inflows Realised</p>
                 <p className={`text-base sm:text-lg font-bold ${revenueRealisedPct >= 80 ? "text-[var(--cmd-green)]" : revenueRealisedPct >= 40 ? "text-[var(--cmd-amber)]" : "text-[var(--cmd-text)]"}`}>{revenueRealisedPct.toFixed(1)}%</p>
               </div>
               <div className="p-3 text-center" data-testid="kpi-cos">

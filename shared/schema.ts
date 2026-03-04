@@ -3632,6 +3632,7 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   patternRuleId: integer("pattern_rule_id"),
   patternClassifiedAt: timestamp("pattern_classified_at"),
   patternInferredType: text("pattern_inferred_type"),
+  noRevenueLinked: boolean("no_revenue_linked").default(false),
 });
 export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true });
 export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;

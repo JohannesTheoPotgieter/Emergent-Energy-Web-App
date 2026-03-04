@@ -14,6 +14,7 @@ import Dashboard from "@/pages/dashboard";
 import ProjectsSummary from "@/pages/projects";
 import CashflowPage from "@/pages/cashflow";
 import RevenueTracker from "@/pages/revenue";
+import RevenueTrackerPage from "@/pages/revenue-tracker";
 import CostTracker from "@/pages/cos";
 import NotFound from "@/pages/not-found";
 import ProjectDetailPage from "@/pages/project-detail";
@@ -128,6 +129,7 @@ function ProtectedPages() {
         <Route path="/cashflow" component={CashflowPage} />
         <Route path="/revenue" component={RevenueTracker} />
         <Route path="/cos" component={CostTracker} />
+        <Route path="/revenue-tracker" component={RevenueTrackerPage} />
         <Route path="/my-tool" component={MyToolTodayPage} />
         <Route path="/my-tool/week" component={MyToolWeekPage} />
         <Route path="/my-tool/backlog" component={MyToolBacklogPage} />

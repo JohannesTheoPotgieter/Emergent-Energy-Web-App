@@ -15,8 +15,10 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Forms**: React Hook Form with Zod validation.
 -   **Key Features**: Financial tracking, project and quality management, Smart Excel Import, Subcontractor Dashboard, UX Guidance System, Project Awareness Bar, Weekly Review Wizard, Execution Dashboard, Permission Gate System, PM Dashboard, and Gamification System.
 -   **Project Plan Tab**: MS Project-style grid with WBS, duration/date editing, predecessors, resource assignment, inline % complete, auto-calculated RAG status, and baseline tracking.
--   **Revenue Tracking Tab**: KPI summary strip and `shadcn/ui` table with sticky headers, status badges, inline editing, override indicators, and full audit logging.
--   **Expenditure Breakdown Tab**: KPI cards and a table with collapsible category grouping, status badges, override indicators, inline editing, and task linking.
+-   **Inflows Tab (formerly Revenue)**: KPI summary strip and `shadcn/ui` table with sticky headers, status badges, inline editing, override indicators, and full audit logging. Renamed from "Revenue" to "Inflows" to distinguish from COS-linked revenue.
+-   **Revenue Tracker Tab**: Monthly COS-linked revenue tracker matching COS tracker design. Formula: `revenue = (item_cost / total_COS) * total_milestone_revenue`. KPI strip, chart, monthly grid with drill-down. Component: `RevenueTrackerTab.tsx`.
+-   **Program Revenue Tracker**: Executive-level revenue tracker page at `/revenue-tracker`. Same COS-linked formula aggregated across all projects with project breakdown.
+-   **Expenditure Breakdown Tab**: KPI cards and a table with collapsible category grouping, status badges, override indicators, inline editing, task linking, and "No Revenue Linked" toggle per line item.
 -   **Execution Dashboard**: Card-based UI for project plan tasks and financial items, KPI summary, dual progress bars, and direct project links.
 -   **Lifecycle Board**: Kanban-style board with drag-and-drop, detailed project cards, RAG status, and progress bars (PD%, Eng%, QA%, PM%).
 -   **Portfolio Management**: Enhanced Gantt Chart with hierarchical milestones, two-layer progress bars, and slippage warnings.
@@ -65,6 +67,8 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Email/Message to Task**: Enables creating project-linked tasks from Outlook emails or Teams messages.
 -   **PO Generator Backend**: Manages purchase orders with routes for listing, generating, downloading PDFs, and updating status. Uses `pdfkit` for PDF generation.
 -   **COS Realised Logic**: Font color dictates confirmation status of `invoiceDateConfirmed`.
+-   **Revenue-COS Linking**: Revenue calculated from COS realisation: `revenue = (item_cost / total_COS) * total_milestone_revenue`. Items flagged `no_revenue_linked` stay in COS denominator but get no revenue attributed. Total milestone revenue = sum of ALL milestone amounts regardless of payment status. Endpoints: `/api/revenue-tracker`, `/api/revenue-tracker/project/:projectName`, `/api/revenue-tracker/month-detail`.
+-   **Inflows vs Revenue**: "Inflows Realised" = milestone payments confirmed in bank. "Revenue" = COS-linked calculated value. All former "Revenue Realised" labels renamed to "Inflows Realised".
 
 
 ### Database Architecture

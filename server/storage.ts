@@ -829,6 +829,7 @@ export class DatabaseStorage implements IStorage {
       invoiceDateFontColor: 'invoiceDateFontColor',
       paymentDateConfirmed: 'paidDateConfirmed',
       paymentDateFontColor: 'paidDateFontColor',
+      noRevenueLinked: 'noRevenueLinked',
     };
     const validDbColumns = new Set(Object.values(fieldMap));
     for (const [key, value] of Object.entries(fields)) {

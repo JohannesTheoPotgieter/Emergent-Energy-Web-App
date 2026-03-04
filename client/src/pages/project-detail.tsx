@@ -24,6 +24,7 @@ import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
 import { MonthlyRealisationTab } from "@/components/tabs/MonthlyRealisationTab";
+import { RevenueTrackerTab } from "@/components/tabs/RevenueTrackerTab";
 import { CashflowTab } from "@/components/tabs/CashflowTab";
 import { ProjectSubcontractorsTab } from "@/components/tabs/ProjectSubcontractorsTab";
 import TaskDetailDrawer from "@/components/TaskDetailDrawer";
@@ -711,6 +712,7 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "revenue-tracking": { section: "project-management", subTab: "revenue-tracking" },
   "expenditure": { section: "project-management", subTab: "expenditure" },
   "monthly-realisation": { section: "project-management", subTab: "monthly-realisation" },
+  "revenue-tracker": { section: "project-management", subTab: "revenue-tracker" },
   "cashflow": { section: "project-management", subTab: "cashflow" },
   "subcontractors": { section: "project-management", subTab: "subcontractors" },
   "quality": { section: "quality", subTab: "quality" },
@@ -1583,7 +1585,7 @@ export default function ProjectDetailPage() {
             <div className="w-px h-5 bg-border self-center mx-1" />
             {canViewTab.finance && canViewSubTab.revenue && (
             <Button size="sm" variant={activeSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("revenue-tracking")} data-testid="subtab-revenue">
-              <DollarSign className="h-3 w-3 mr-1" /> Revenue
+              <DollarSign className="h-3 w-3 mr-1" /> Inflows
             </Button>
             )}
             {canViewTab.finance && canViewSubTab.expenditure && (
@@ -1594,6 +1596,11 @@ export default function ProjectDetailPage() {
             {canViewTab.finance && canViewSubTab.cosTracker && (
             <Button size="sm" variant={activeSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("monthly-realisation")} data-testid="subtab-monthly-realisation">
               <TrendingUp className="h-3 w-3 mr-1" /> COS
+            </Button>
+            )}
+            {canViewTab.finance && canViewSubTab.cosTracker && (
+            <Button size="sm" variant={activeSubTab === "revenue-tracker" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("revenue-tracker")} data-testid="subtab-revenue-tracker">
+              <TrendingUp className="h-3 w-3 mr-1" /> Revenue
             </Button>
             )}
             {canViewTab.finance && canViewSubTab.cashflow && (
@@ -1620,6 +1627,7 @@ export default function ProjectDetailPage() {
           {activeSubTab === "revenue-tracking" && canViewTab.finance && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
           {activeSubTab === "expenditure" && canViewTab.finance && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
           {activeSubTab === "monthly-realisation" && canViewTab.finance && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
+          {activeSubTab === "revenue-tracker" && canViewTab.finance && canViewSubTab.cosTracker && <RevenueTrackerTab projectName={projectName} />}
           {activeSubTab === "cashflow" && canViewTab.finance && canViewSubTab.cashflow && <CashflowTab projectName={projectName} />}
           {activeSubTab === "subcontractors" && canViewTab.finance && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
           {activeSubTab === "history" && canViewTab.history && (
