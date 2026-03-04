@@ -4,13 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   ArrowUpDown,
   ArrowUp,
@@ -1018,19 +1012,16 @@ function EditProjectInfoModal({
           </div>
           <div>
             <Label className="text-xs font-medium text-muted-foreground mb-1 block">Execution Phase</Label>
-            <Select value={formData.phase} onValueChange={(v) => updateField("phase", v)}>
-              <SelectTrigger data-testid="select-edit-phase">
-                <SelectValue placeholder="Select execution phase" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__blank">(blank)</SelectItem>
-                {EXECUTION_PHASES.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={formData.phase}
+              onValueChange={(v) => updateField("phase", v)}
+              placeholder="Select execution phase"
+              data-testid="select-edit-phase"
+              options={[
+                { value: "__blank", label: "(blank)" },
+                ...EXECUTION_PHASES.map((p) => ({ value: p, label: p })),
+              ]}
+            />
           </div>
           <div>
             <Label className="text-xs font-medium text-muted-foreground mb-1 block">Size kWp</Label>
@@ -1051,17 +1042,16 @@ function EditProjectInfoModal({
           </div>
           <div>
             <Label className="text-xs font-medium text-muted-foreground mb-1 block">PM</Label>
-            <Select value={formData.pm || "__unassigned"} onValueChange={(val) => updateField("pm", val === "__unassigned" ? "" : val)}>
-              <SelectTrigger data-testid="select-edit-pm">
-                <SelectValue placeholder="Select PM..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__unassigned">Unassigned</SelectItem>
-                {pmUsers.map((u) => (
-                  <SelectItem key={u.id} value={u.name}>{u.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={formData.pm || "__unassigned"}
+              onValueChange={(val) => updateField("pm", val === "__unassigned" ? "" : val)}
+              placeholder="Select PM..."
+              data-testid="select-edit-pm"
+              options={[
+                { value: "__unassigned", label: "Unassigned" },
+                ...pmUsers.map((u) => ({ value: u.name, label: u.name })),
+              ]}
+            />
           </div>
           <div>
             <Label className="text-xs font-medium text-muted-foreground mb-1 block">Construction Start Date</Label>
@@ -1489,7 +1479,7 @@ export default function ProjectsSummary() {
       key: "pm",
       header: "PM",
       render: (p) => p.project_info_id ? (
-        <Select
+        <SearchableSelect
           value={p.pm || "__unassigned"}
           onValueChange={(val) => {
             if (val === "__unassigned" || !p.project_info_id) return;
@@ -1500,20 +1490,13 @@ export default function ProjectsSummary() {
               pmUserId: matchedUser?.id ?? null,
             });
           }}
-        >
-          <SelectTrigger
-            className="h-7 w-[120px] text-xs border-0 bg-transparent hover:bg-muted px-1 shadow-none focus:ring-0"
-            data-testid={`select-pm-${p.project_name}`}
-          >
-            <span className="truncate">{p.pm ? truncateName(p.pm, 14) : "—"}</span>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__unassigned" disabled>Unassigned</SelectItem>
-            {pmUsers.map((u) => (
-              <SelectItem key={u.id} value={u.name}>{u.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          triggerClassName="h-7 w-[120px] text-xs border-0 bg-transparent hover:bg-muted px-1 shadow-none focus:ring-0"
+          data-testid={`select-pm-${p.project_name}`}
+          options={[
+            { value: "__unassigned", label: "Unassigned", disabled: true },
+            ...pmUsers.map((u) => ({ value: u.name, label: u.name })),
+          ]}
+        />
       ) : (
         <span className="text-muted-foreground truncate max-w-[80px] block" title={p.pm || ""}>{truncateName(p.pm, 12)}</span>
       ),
@@ -1933,29 +1916,29 @@ export default function ProjectsSummary() {
           />
         </div>
 
-        <Select value={pmFilter} onValueChange={setPmFilter}>
-          <SelectTrigger className="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-border" data-testid="select-pm-filter">
-            <SelectValue placeholder="All PMs" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All PMs</SelectItem>
-            {uniquePMs.map((pm) => (
-              <SelectItem key={pm} value={pm}>{pm}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={pmFilter}
+          onValueChange={setPmFilter}
+          placeholder="All PMs"
+          triggerClassName="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-border"
+          data-testid="select-pm-filter"
+          options={[
+            { value: "all", label: "All PMs" },
+            ...uniquePMs.map((pm) => ({ value: pm, label: pm })),
+          ]}
+        />
 
-        <Select value={phaseFilter} onValueChange={setPhaseFilter}>
-          <SelectTrigger className="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-border" data-testid="select-phase-filter">
-            <SelectValue placeholder="All Phases" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Phases</SelectItem>
-            {uniquePhases.map((ph) => (
-              <SelectItem key={ph} value={ph}>{getPhaseLabel(ph)}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={phaseFilter}
+          onValueChange={setPhaseFilter}
+          placeholder="All Phases"
+          triggerClassName="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-border"
+          data-testid="select-phase-filter"
+          options={[
+            { value: "all", label: "All Phases" },
+            ...uniquePhases.map((ph) => ({ value: ph, label: getPhaseLabel(ph) })),
+          ]}
+        />
 
         <Popover>
           <PopoverTrigger asChild>
@@ -2037,19 +2020,17 @@ export default function ProjectsSummary() {
         </Popover>
 
         {savedViews.length > 0 && (
-          <Select value={activeViewName || "__default__"} onValueChange={applyView}>
-            <SelectTrigger className="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-border" data-testid="select-view">
-              <SelectValue placeholder="Default (All)" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__default__">Default (All)</SelectItem>
-              {savedViews.map((v) => (
-                <SelectItem key={v.name} value={v.name}>
-                  {v.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={activeViewName || "__default__"}
+            onValueChange={applyView}
+            placeholder="Default (All)"
+            triggerClassName="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-border"
+            data-testid="select-view"
+            options={[
+              { value: "__default__", label: "Default (All)" },
+              ...savedViews.map((v) => ({ value: v.name, label: v.name })),
+            ]}
+          />
         )}
 
         {activeViewName && (

@@ -4,13 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Dialog,
   DialogContent,
@@ -844,10 +838,14 @@ function UsersTab({ toast, shared }: { toast: any; shared: ReturnType<typeof use
                       <Badge className={`text-[10px] mt-0.5 border ${rc}`} variant="outline" data-testid={`text-user-role-${user.id}`}>{roleLabel}</Badge>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <Select value={user.role} onValueChange={val => changeRole(user.id, val)} disabled={changingId === user.id}>
-                        <SelectTrigger className="w-28 sm:w-44 h-7 text-xs" data-testid={`select-role-${user.id}`}><SelectValue /></SelectTrigger>
-                        <SelectContent>{roles.map(r => <SelectItem key={r.role} value={r.role}>{r.label}</SelectItem>)}</SelectContent>
-                      </Select>
+                      <SearchableSelect
+                        value={user.role}
+                        onValueChange={val => changeRole(user.id, val)}
+                        disabled={changingId === user.id}
+                        triggerClassName="w-28 sm:w-44 h-7 text-xs"
+                        data-testid={`select-role-${user.id}`}
+                        options={roles.map(r => ({ value: r.role, label: r.label }))}
+                      />
                       <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setResetUser(user); setResetPw(""); }} title="Reset password" data-testid={`btn-reset-password-${user.id}`}>
                         <KeyRound className="h-3.5 w-3.5 text-blue-500" />
                       </Button>
@@ -874,10 +872,13 @@ function UsersTab({ toast, shared }: { toast: any; shared: ReturnType<typeof use
             <div><Label>Password</Label><Input type="password" placeholder="Enter password" value={newUser.password} onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))} data-testid="input-new-user-password" /></div>
             <div>
               <Label>Role</Label>
-              <Select value={newUser.role} onValueChange={val => setNewUser(p => ({ ...p, role: val }))}>
-                <SelectTrigger className="h-9" data-testid="select-new-user-role"><SelectValue /></SelectTrigger>
-                <SelectContent>{roles.map(r => <SelectItem key={r.role} value={r.role}>{r.label}</SelectItem>)}</SelectContent>
-              </Select>
+              <SearchableSelect
+                value={newUser.role}
+                onValueChange={val => setNewUser(p => ({ ...p, role: val }))}
+                triggerClassName="h-9"
+                data-testid="select-new-user-role"
+                options={roles.map(r => ({ value: r.role, label: r.label }))}
+              />
             </div>
           </div>
           <DialogFooter>

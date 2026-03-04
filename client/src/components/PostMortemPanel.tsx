@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Slider } from "@/components/ui/slider";
 import { Star, ClipboardCheck, Save, AlertCircle } from "lucide-react";
 
@@ -214,43 +214,36 @@ export default function PostMortemPanel({ projectName, checklistId }: PostMortem
 
           <div data-testid={`postmortem-score-${metric.id}`}>
             {metric.inputType === "choice" ? (
-              <Select
+              <SearchableSelect
                 value={currentChoice || ""}
                 onValueChange={(val) =>
                   updateLocalMetric(metric.id, { inputValueChoice: val })
                 }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select an option" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(() => {
-                    const rule = metric.scoringRuleJson;
-                    if (rule?.choices) {
-                      const descParts = (rule.description || "").split(",").map((s: string) => s.trim());
-                      const labelMap: Record<string, string> = {};
-                      descParts.forEach((part: string) => {
-                        const match = part.match(/^(\d+)\s*=\s*(.+)/);
-                        if (match) labelMap[match[1]] = match[2];
-                      });
-                      return Object.keys(rule.choices).map((key) => (
-                        <SelectItem key={key} value={key}>
-                          {labelMap[key] ? `${key} — ${labelMap[key]}` : key}
-                        </SelectItem>
-                      ));
-                    }
-                    return (
-                      <>
-                        <SelectItem value="none">None</SelectItem>
-                        <SelectItem value="minor">Minor</SelectItem>
-                        <SelectItem value="moderate">Moderate</SelectItem>
-                        <SelectItem value="major">Major</SelectItem>
-                        <SelectItem value="critical">Critical</SelectItem>
-                      </>
-                    );
-                  })()}
-                </SelectContent>
-              </Select>
+                placeholder="Select an option"
+                triggerClassName="w-full"
+                options={(() => {
+                  const rule = metric.scoringRuleJson;
+                  if (rule?.choices) {
+                    const descParts = (rule.description || "").split(",").map((s: string) => s.trim());
+                    const labelMap: Record<string, string> = {};
+                    descParts.forEach((part: string) => {
+                      const match = part.match(/^(\d+)\s*=\s*(.+)/);
+                      if (match) labelMap[match[1]] = match[2];
+                    });
+                    return Object.keys(rule.choices).map((key) => ({
+                      value: key,
+                      label: labelMap[key] ? `${key} — ${labelMap[key]}` : key,
+                    }));
+                  }
+                  return [
+                    { value: "none", label: "None" },
+                    { value: "minor", label: "Minor" },
+                    { value: "moderate", label: "Moderate" },
+                    { value: "major", label: "Major" },
+                    { value: "critical", label: "Critical" },
+                  ];
+                })()}
+              />
             ) : (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">

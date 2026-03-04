@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation, useRoute } from "wouter";
@@ -166,21 +166,23 @@ export default function PdTicketDetailPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <div className="space-y-1">
                 <Label className="text-xs">Status</Label>
-                <Select value={editForm.status} onValueChange={v => setEditForm(p => ({ ...p, status: v }))}>
-                  <SelectTrigger className="h-8 text-xs" data-testid="edit-status"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={editForm.status}
+                  onValueChange={v => setEditForm(p => ({ ...p, status: v }))}
+                  triggerClassName="h-8 text-xs"
+                  options={STATUSES.map(s => ({ value: s, label: s }))}
+                  data-testid="edit-status"
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Priority</Label>
-                <Select value={editForm.priority} onValueChange={v => setEditForm(p => ({ ...p, priority: v }))}>
-                  <SelectTrigger className="h-8 text-xs" data-testid="edit-priority"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={editForm.priority}
+                  onValueChange={v => setEditForm(p => ({ ...p, priority: v }))}
+                  triggerClassName="h-8 text-xs"
+                  options={PRIORITIES.map(p => ({ value: p, label: p }))}
+                  data-testid="edit-priority"
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Due Date</Label>
@@ -192,13 +194,17 @@ export default function PdTicketDetailPage() {
               </div>
               <div className="col-span-2 md:col-span-4 space-y-1">
                 <Label className="text-xs">Linked Project</Label>
-                <Select value={editForm.projectId ? String(editForm.projectId) : "__none__"} onValueChange={v => setEditForm(p => ({ ...p, projectId: v === "__none__" ? null : parseInt(v) }))}>
-                  <SelectTrigger className="h-8 text-xs" data-testid="edit-project"><SelectValue placeholder="Select a project..." /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Not linked</SelectItem>
-                    {projectsList.map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={editForm.projectId ? String(editForm.projectId) : "__none__"}
+                  onValueChange={v => setEditForm(p => ({ ...p, projectId: v === "__none__" ? null : parseInt(v) }))}
+                  placeholder="Select a project..."
+                  triggerClassName="h-8 text-xs"
+                  options={[
+                    { value: "__none__", label: "Not linked" },
+                    ...projectsList.map((p: any) => ({ value: String(p.id), label: p.name })),
+                  ]}
+                  data-testid="edit-project"
+                />
               </div>
               <div className="col-span-2 md:col-span-4 space-y-1">
                 <Label className="text-xs">Comments</Label>

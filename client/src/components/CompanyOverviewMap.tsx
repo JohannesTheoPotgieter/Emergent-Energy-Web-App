@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -265,29 +265,34 @@ function NetworkPanel({
           />
         </div>
         <div className="flex gap-2">
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="h-8 text-xs flex-1" data-testid="filter-node-type">
-              <SelectValue placeholder="All Types" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="department">Department</SelectItem>
-              <SelectItem value="lifecycle_stage">Lifecycle Stage</SelectItem>
-              <SelectItem value="process">Process</SelectItem>
-              <SelectItem value="gate">Gate</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={deptFilter} onValueChange={setDeptFilter}>
-            <SelectTrigger className="h-8 text-xs flex-1" data-testid="filter-department">
-              <SelectValue placeholder="All Depts" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Departments</SelectItem>
-              {departments.map(ds => (
-                <SelectItem key={ds} value={ds}>{ds.replace("os-dept-", "").replace(/-/g, " ")}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={typeFilter}
+            onValueChange={setTypeFilter}
+            placeholder="All Types"
+            triggerClassName="h-8 text-xs flex-1"
+            data-testid="filter-node-type"
+            options={[
+              { value: "all", label: "All Types" },
+              { value: "department", label: "Department" },
+              { value: "lifecycle_stage", label: "Lifecycle Stage" },
+              { value: "process", label: "Process" },
+              { value: "gate", label: "Gate" },
+            ]}
+          />
+          <SearchableSelect
+            value={deptFilter}
+            onValueChange={setDeptFilter}
+            placeholder="All Depts"
+            triggerClassName="h-8 text-xs flex-1"
+            data-testid="filter-department"
+            options={[
+              { value: "all", label: "All Departments" },
+              ...departments.map(ds => ({
+                value: ds,
+                label: ds.replace("os-dept-", "").replace(/-/g, " "),
+              })),
+            ]}
+          />
         </div>
       </div>
       <p className="text-xs text-muted-foreground">{filtered.length} nodes</p>

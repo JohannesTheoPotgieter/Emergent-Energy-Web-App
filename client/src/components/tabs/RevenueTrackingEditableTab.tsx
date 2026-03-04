@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
@@ -531,16 +531,13 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
                 <span className="text-sm font-medium text-muted-foreground">
                   {edits.size + newRows.length} {edits.size + newRows.length === 1 ? "change" : "changes"} pending
                 </span>
-                <Select value={overrideCategory} onValueChange={(v) => setOverrideCategory(v as OverrideCategory)}>
-                  <SelectTrigger data-testid="select-override-category" className="w-[180px] h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {OVERRIDE_CATEGORIES.map(cat => (
-                      <SelectItem key={cat} value={cat}>{CATEGORY_LABELS[cat]}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={overrideCategory}
+                  onValueChange={(v) => setOverrideCategory(v as OverrideCategory)}
+                  triggerClassName="w-[180px] h-8"
+                  data-testid="select-override-category"
+                  options={OVERRIDE_CATEGORIES.map(cat => ({ value: cat, label: CATEGORY_LABELS[cat] }))}
+                />
                 <Input
                   data-testid="input-override-comment"
                   value={overrideComment}

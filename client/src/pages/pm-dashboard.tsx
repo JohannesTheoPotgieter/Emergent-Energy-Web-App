@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useLocation } from "wouter";
 import {
   startOfMonth,
@@ -790,18 +790,16 @@ export default function PMDashboard() {
           <p className="text-sm text-muted-foreground">Select a project manager to view their portfolio</p>
         </div>
         <div className="max-w-xs">
-          <Select value={selectedPmId} onValueChange={setSelectedPmId} data-testid="pm-selector">
-            <SelectTrigger data-testid="pm-selector-trigger">
-              <SelectValue placeholder="Choose a PM..." />
-            </SelectTrigger>
-            <SelectContent>
-              {pmUsers.map(u => (
-                <SelectItem key={u.id} value={String(u.id)} data-testid={`pm-option-${u.id}`}>
-                  {u.name || u.username} ({u.project_count} projects)
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={selectedPmId}
+            onValueChange={setSelectedPmId}
+            placeholder="Choose a PM..."
+            data-testid="pm-selector-trigger"
+            options={pmUsers.map(u => ({
+              value: String(u.id),
+              label: `${u.name || u.username} (${u.project_count} projects)`,
+            }))}
+          />
         </div>
       </div>
     );
@@ -848,18 +846,17 @@ export default function PMDashboard() {
         </div>
         {isCooView && (
           <div className="w-56">
-            <Select value={selectedPmId} onValueChange={setSelectedPmId} data-testid="pm-selector">
-              <SelectTrigger className="h-9" data-testid="pm-selector-trigger">
-                <SelectValue placeholder="Select PM" />
-              </SelectTrigger>
-              <SelectContent>
-                {pmUsers.map(u => (
-                  <SelectItem key={u.id} value={String(u.id)} data-testid={`pm-option-${u.id}`}>
-                    {u.name || u.username} ({u.project_count})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={selectedPmId}
+              onValueChange={setSelectedPmId}
+              placeholder="Select PM"
+              triggerClassName="h-9"
+              data-testid="pm-selector-trigger"
+              options={pmUsers.map(u => ({
+                value: String(u.id),
+                label: `${u.name || u.username} (${u.project_count})`,
+              }))}
+            />
           </div>
         )}
       </div>

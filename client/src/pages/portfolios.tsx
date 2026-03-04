@@ -8,9 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -694,31 +692,30 @@ export default function PortfoliosPage() {
             </div>
             <div>
               <label className="text-sm font-medium">Owner</label>
-              <Select value={formData.ownerUserId} onValueChange={v => setFormData(f => ({ ...f, ownerUserId: v }))}>
-                <SelectTrigger data-testid="select-portfolio-owner">
-                  <SelectValue placeholder="Select owner..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No owner</SelectItem>
-                  {allUsers.map(u => (
-                    <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={formData.ownerUserId}
+                onValueChange={v => setFormData(f => ({ ...f, ownerUserId: v }))}
+                placeholder="Select owner..."
+                data-testid="select-portfolio-owner"
+                options={[
+                  { value: "none", label: "No owner" },
+                  ...allUsers.map(u => ({ value: String(u.id), label: u.name })),
+                ]}
+              />
             </div>
             <div>
               <label className="text-sm font-medium">Status</label>
-              <Select value={formData.status} onValueChange={v => setFormData(f => ({ ...f, status: v }))}>
-                <SelectTrigger data-testid="select-portfolio-status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="On Hold">On Hold</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                  <SelectItem value="Archived">Archived</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={formData.status}
+                onValueChange={v => setFormData(f => ({ ...f, status: v }))}
+                data-testid="select-portfolio-status"
+                options={[
+                  { value: "Active", label: "Active" },
+                  { value: "On Hold", label: "On Hold" },
+                  { value: "Completed", label: "Completed" },
+                  { value: "Archived", label: "Archived" },
+                ]}
+              />
             </div>
             <div>
               <label className="text-sm font-medium">Description</label>

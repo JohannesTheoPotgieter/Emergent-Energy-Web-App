@@ -5,9 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -167,14 +165,16 @@ function CounterpartiesSection() {
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Default Type</label>
-                <Select value={form.typeDefault} onValueChange={v => setForm(p => ({ ...p, typeDefault: v }))}>
-                  <SelectTrigger data-testid="select-cp-type"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="INSTALLER">Installer</SelectItem>
-                    <SelectItem value="SUPPLIER">Supplier</SelectItem>
-                    <SelectItem value="OTHER">Other</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={form.typeDefault}
+                  onValueChange={v => setForm(p => ({ ...p, typeDefault: v }))}
+                  options={[
+                    { value: "INSTALLER", label: "Installer" },
+                    { value: "SUPPLIER", label: "Supplier" },
+                    { value: "OTHER", label: "Other" },
+                  ]}
+                  data-testid="select-cp-type"
+                />
               </div>
               <div className="flex items-end gap-2">
                 <label className="flex items-center gap-2 cursor-pointer mb-2">
@@ -591,14 +591,16 @@ export default function InvoicePatternsPage() {
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div>
                     <label className="text-xs font-medium text-muted-foreground mb-1 block">Pattern Type</label>
-                    <Select value={newRule.patternType} onValueChange={v => setNewRule(p => ({ ...p, patternType: v }))}>
-                      <SelectTrigger data-testid="select-pattern-type"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="PREFIX">Prefix</SelectItem>
-                        <SelectItem value="REGEX">Regex</SelectItem>
-                        <SelectItem value="TOKEN_SHAPE">Token Shape</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={newRule.patternType}
+                      onValueChange={v => setNewRule(p => ({ ...p, patternType: v }))}
+                      options={[
+                        { value: "PREFIX", label: "Prefix" },
+                        { value: "REGEX", label: "Regex" },
+                        { value: "TOKEN_SHAPE", label: "Token Shape" },
+                      ]}
+                      data-testid="select-pattern-type"
+                    />
                   </div>
                   <div>
                     <label className="text-xs font-medium text-muted-foreground mb-1 block">Pattern Value</label>
@@ -607,14 +609,16 @@ export default function InvoicePatternsPage() {
                   </div>
                   <div>
                     <label className="text-xs font-medium text-muted-foreground mb-1 block">Inferred Type</label>
-                    <Select value={newRule.inferredType} onValueChange={v => setNewRule(p => ({ ...p, inferredType: v }))}>
-                      <SelectTrigger data-testid="select-inferred-type"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="INSTALLER">Installer</SelectItem>
-                        <SelectItem value="SUPPLIER">Supplier</SelectItem>
-                        <SelectItem value="OTHER">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={newRule.inferredType}
+                      onValueChange={v => setNewRule(p => ({ ...p, inferredType: v }))}
+                      options={[
+                        { value: "INSTALLER", label: "Installer" },
+                        { value: "SUPPLIER", label: "Supplier" },
+                        { value: "OTHER", label: "Other" },
+                      ]}
+                      data-testid="select-inferred-type"
+                    />
                   </div>
                   <div>
                     <label className="text-xs font-medium text-muted-foreground mb-1 block">Confidence Weight</label>

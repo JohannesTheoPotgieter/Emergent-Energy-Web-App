@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -447,25 +447,19 @@ export default function FinancialLinkingPage() {
                                     </span>
                                   </div>
                                 ) : (
-                                  <Select
+                                  <SearchableSelect
                                     value=""
                                     onValueChange={(val) => {
                                       linkRevenueMutation.mutate({ milestoneRowNumber: m.rowNumber, taskId: Number(val) });
                                     }}
-                                    data-testid={`select-link-revenue-${m.rowNumber}`}
-                                  >
-                                    <SelectTrigger className="h-7 text-[10px]" data-testid={`select-trigger-link-revenue-${m.rowNumber}`}>
-                                      <SelectValue placeholder="Select task..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {planTasks.map((t) => (
-                                        <SelectItem key={t.id} value={String(t.id)} className="text-xs">
-                                          {t.taskNo ? `${t.taskNo}: ` : ""}{t.highLevelProgramme}
-                                          {suggestedTaskId === t.id && " ⭐"}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                    placeholder="Select task..."
+                                    triggerClassName="h-7 text-[10px]"
+                                    data-testid={`select-trigger-link-revenue-${m.rowNumber}`}
+                                    options={planTasks.map((t) => ({
+                                      value: String(t.id),
+                                      label: `${t.taskNo ? `${t.taskNo}: ` : ""}${t.highLevelProgramme}${suggestedTaskId === t.id ? " ⭐" : ""}`,
+                                    }))}
+                                  />
                                 )}
                               </TableCell>
                               <TableCell>
@@ -587,24 +581,19 @@ export default function FinancialLinkingPage() {
                                       </span>
                                     </div>
                                   ) : (
-                                    <Select
+                                    <SearchableSelect
                                       value=""
                                       onValueChange={(val) => {
                                         linkExpenseMutation.mutate({ expenseId: e.id, taskId: Number(val) });
                                       }}
-                                    >
-                                      <SelectTrigger className="h-7 text-[10px]" data-testid={`select-trigger-link-expense-${e.id}`}>
-                                        <SelectValue placeholder="Select task..." />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {planTasks.map((t) => (
-                                          <SelectItem key={t.id} value={String(t.id)} className="text-xs">
-                                            {t.taskNo ? `${t.taskNo}: ` : ""}{t.highLevelProgramme}
-                                            {suggestedTaskId === t.id && " ⭐"}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
+                                      placeholder="Select task..."
+                                      triggerClassName="h-7 text-[10px]"
+                                      data-testid={`select-trigger-link-expense-${e.id}`}
+                                      options={planTasks.map((t) => ({
+                                        value: String(t.id),
+                                        label: `${t.taskNo ? `${t.taskNo}: ` : ""}${t.highLevelProgramme}${suggestedTaskId === t.id ? " ⭐" : ""}`,
+                                      }))}
+                                    />
                                   )}
                                 </TableCell>
                                 <TableCell>
@@ -752,28 +741,25 @@ function BulkLinkSection({
   return (
     <div className="flex items-center gap-2 p-3 bg-muted/50 rounded-lg" data-testid="bulk-link-section">
       <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">Bulk link by category:</span>
-      <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-        <SelectTrigger className="h-7 text-[10px] max-w-[200px]" data-testid="select-bulk-category">
-          <SelectValue placeholder="Select category..." />
-        </SelectTrigger>
-        <SelectContent>
-          {categories.map((c) => (
-            <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={selectedTask} onValueChange={setSelectedTask}>
-        <SelectTrigger className="h-7 text-[10px] max-w-[200px]" data-testid="select-bulk-task">
-          <SelectValue placeholder="Select task..." />
-        </SelectTrigger>
-        <SelectContent>
-          {planTasks.map((t) => (
-            <SelectItem key={t.id} value={String(t.id)} className="text-xs">
-              {t.taskNo ? `${t.taskNo}: ` : ""}{t.highLevelProgramme}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <SearchableSelect
+        value={selectedCategory}
+        onValueChange={setSelectedCategory}
+        placeholder="Select category..."
+        triggerClassName="h-7 text-[10px] max-w-[200px]"
+        data-testid="select-bulk-category"
+        options={categories.map((c) => ({ value: c, label: c }))}
+      />
+      <SearchableSelect
+        value={selectedTask}
+        onValueChange={setSelectedTask}
+        placeholder="Select task..."
+        triggerClassName="h-7 text-[10px] max-w-[200px]"
+        data-testid="select-bulk-task"
+        options={planTasks.map((t) => ({
+          value: String(t.id),
+          label: `${t.taskNo ? `${t.taskNo}: ` : ""}${t.highLevelProgramme}`,
+        }))}
+      />
       <Button
         variant="outline"
         size="sm"

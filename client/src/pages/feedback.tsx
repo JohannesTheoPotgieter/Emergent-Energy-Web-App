@@ -9,13 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Dialog,
   DialogContent,
@@ -197,28 +191,32 @@ export default function FeedbackPage() {
 
       <div className="flex items-center gap-3">
         <Filter className="h-4 w-4 text-muted-foreground" />
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-[150px] h-8 text-xs" data-testid="select-type-filter">
-            <SelectValue placeholder="Type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            <SelectItem value="bug">Bug Reports</SelectItem>
-            <SelectItem value="feature">Feature Requests</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[150px] h-8 text-xs" data-testid="select-status-filter">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="in_progress">In Progress</SelectItem>
-            <SelectItem value="resolved">Resolved</SelectItem>
-            <SelectItem value="closed">Closed</SelectItem>
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={typeFilter}
+          onValueChange={setTypeFilter}
+          placeholder="Type"
+          triggerClassName="w-[150px] h-8 text-xs"
+          data-testid="select-type-filter"
+          options={[
+            { value: "all", label: "All Types" },
+            { value: "bug", label: "Bug Reports" },
+            { value: "feature", label: "Feature Requests" },
+          ]}
+        />
+        <SearchableSelect
+          value={statusFilter}
+          onValueChange={setStatusFilter}
+          placeholder="Status"
+          triggerClassName="w-[150px] h-8 text-xs"
+          data-testid="select-status-filter"
+          options={[
+            { value: "all", label: "All Statuses" },
+            { value: "open", label: "Open" },
+            { value: "in_progress", label: "In Progress" },
+            { value: "resolved", label: "Resolved" },
+            { value: "closed", label: "Closed" },
+          ]}
+        />
       </div>
 
       {isLoading ? (
@@ -330,17 +328,17 @@ export default function FeedbackPage() {
             </div>
             <div className="space-y-2">
               <Label>Priority</Label>
-              <Select value={formPriority} onValueChange={setFormPriority}>
-                <SelectTrigger data-testid="select-ticket-priority">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="critical">Critical</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={formPriority}
+                onValueChange={setFormPriority}
+                data-testid="select-ticket-priority"
+                options={[
+                  { value: "low", label: "Low" },
+                  { value: "medium", label: "Medium" },
+                  { value: "high", label: "High" },
+                  { value: "critical", label: "Critical" },
+                ]}
+              />
             </div>
           </div>
           <DialogFooter>
@@ -370,31 +368,31 @@ export default function FeedbackPage() {
               </div>
               <div className="space-y-2">
                 <Label>Status</Label>
-                <Select value={adminStatus} onValueChange={setAdminStatus}>
-                  <SelectTrigger data-testid="select-admin-status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="open">Open</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="resolved">Resolved</SelectItem>
-                    <SelectItem value="closed">Closed</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={adminStatus}
+                  onValueChange={setAdminStatus}
+                  data-testid="select-admin-status"
+                  options={[
+                    { value: "open", label: "Open" },
+                    { value: "in_progress", label: "In Progress" },
+                    { value: "resolved", label: "Resolved" },
+                    { value: "closed", label: "Closed" },
+                  ]}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Priority</Label>
-                <Select value={adminPriority} onValueChange={setAdminPriority}>
-                  <SelectTrigger data-testid="select-admin-priority">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="critical">Critical</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={adminPriority}
+                  onValueChange={setAdminPriority}
+                  data-testid="select-admin-priority"
+                  options={[
+                    { value: "low", label: "Low" },
+                    { value: "medium", label: "Medium" },
+                    { value: "high", label: "High" },
+                    { value: "critical", label: "Critical" },
+                  ]}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Admin Notes / Response</Label>

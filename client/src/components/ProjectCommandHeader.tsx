@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -168,7 +168,7 @@ export function ProjectCommandHeader({
                   {isAdmin ? (
                     <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
                       <User className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" /> PD:
-                      <Select
+                      <SearchableSelect
                         value={pd === "—" ? "__unassigned" : pd}
                         onValueChange={(val) => {
                           const newPd = val === "__unassigned" ? "" : val;
@@ -177,17 +177,14 @@ export function ProjectCommandHeader({
                               .then(() => { queryClient.invalidateQueries({ queryKey: ["projects-summary"] }); queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] }); });
                           }
                         }}
-                      >
-                        <SelectTrigger className="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed" data-testid="select-detail-pd">
-                          <SelectValue placeholder="Unassigned" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__unassigned">Unassigned</SelectItem>
-                          {pdAssignableUsers.map((u) => (
-                            <SelectItem key={u.id} value={u.name}>{u.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        triggerClassName="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed"
+                        placeholder="Unassigned"
+                        data-testid="select-detail-pd"
+                        options={[
+                          { value: "__unassigned", label: "Unassigned" },
+                          ...pdAssignableUsers.map((u) => ({ value: u.name, label: u.name })),
+                        ]}
+                      />
                     </span>
                   ) : (
                     <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
@@ -198,7 +195,7 @@ export function ProjectCommandHeader({
                   {isAdmin ? (
                     <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
                       <User className="h-3.5 w-3.5 text-[var(--cmd-text-muted)]" /> PM:
-                      <Select
+                      <SearchableSelect
                         value={pm === "—" ? "__unassigned" : pm}
                         onValueChange={(val) => {
                           const newPm = val === "__unassigned" ? "" : val;
@@ -208,17 +205,14 @@ export function ProjectCommandHeader({
                               .then(() => { queryClient.invalidateQueries({ queryKey: ["projects-summary"] }); queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] }); });
                           }
                         }}
-                      >
-                        <SelectTrigger className="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed" data-testid="select-detail-pm">
-                          <SelectValue placeholder="Unassigned" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__unassigned">Unassigned</SelectItem>
-                          {pmAssignableUsers.map((u) => (
-                            <SelectItem key={u.id} value={u.name}>{u.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        triggerClassName="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed"
+                        placeholder="Unassigned"
+                        data-testid="select-detail-pm"
+                        options={[
+                          { value: "__unassigned", label: "Unassigned" },
+                          ...pmAssignableUsers.map((u) => ({ value: u.name, label: u.name })),
+                        ]}
+                      />
                     </span>
                   ) : (
                     <span className="flex items-center gap-1.5 text-[var(--cmd-text-secondary)]">
@@ -328,22 +322,17 @@ export function ProjectCommandHeader({
           <div className="space-y-4 py-2">
             <div>
               <Label className="text-xs">Health Status</Label>
-              <Select value={newRag} onValueChange={setNewRag}>
-                <SelectTrigger data-testid="select-rag-status">
-                  <SelectValue placeholder="Select status..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="GREEN">
-                    <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Green — Healthy</span>
-                  </SelectItem>
-                  <SelectItem value="AMBER">
-                    <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-amber-500" /> Amber — At Risk</span>
-                  </SelectItem>
-                  <SelectItem value="RED">
-                    <span className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-red-500" /> Red — Critical</span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={newRag}
+                onValueChange={setNewRag}
+                placeholder="Select status..."
+                data-testid="select-rag-status"
+                options={[
+                  { value: "GREEN", label: "Green — Healthy" },
+                  { value: "AMBER", label: "Amber — At Risk" },
+                  { value: "RED", label: "Red — Critical" },
+                ]}
+              />
             </div>
             <div>
               <Label className="text-xs">Comment (optional)</Label>

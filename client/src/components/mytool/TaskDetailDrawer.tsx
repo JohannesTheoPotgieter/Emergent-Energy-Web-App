@@ -9,13 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Link } from "wouter";
 import {
   Save,
@@ -279,29 +273,23 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">Priority</Label>
-              <Select value={form.priority} onValueChange={(v) => setForm((f) => ({ ...f, priority: v as TaskPriority }))}>
-                <SelectTrigger className="h-8 text-sm" data-testid="select-priority">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PRIORITY_OPTIONS.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={form.priority}
+                onValueChange={(v) => setForm((f) => ({ ...f, priority: v as TaskPriority }))}
+                triggerClassName="h-8 text-sm"
+                data-testid="select-priority"
+                options={PRIORITY_OPTIONS.map((p) => ({ value: p.value, label: p.label }))}
+              />
             </div>
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">Status</Label>
-              <Select value={form.status} onValueChange={(v) => handleStatusChange(v as TaskStatus)}>
-                <SelectTrigger className="h-8 text-sm" data-testid="select-status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={form.status}
+                onValueChange={(v) => handleStatusChange(v as TaskStatus)}
+                triggerClassName="h-8 text-sm"
+                data-testid="select-status"
+                options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
+              />
             </div>
           </div>
 
@@ -337,35 +325,38 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
               <Label className="text-xs text-muted-foreground mb-1 block">
                 <FolderOpen className="h-3 w-3 inline mr-1" />Bucket
               </Label>
-              <Select value={form.bucket} onValueChange={(v) => setForm((f) => ({ ...f, bucket: v, projectName: v !== "project" ? "" : f.projectName }))}>
-                <SelectTrigger className="h-8 text-sm" data-testid="select-bucket">
-                  <SelectValue placeholder="Select bucket" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="project">Project</SelectItem>
-                  <SelectItem value="company_ops">Company Ops</SelectItem>
-                  <SelectItem value="personal">Personal</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={form.bucket}
+                onValueChange={(v) => setForm((f) => ({ ...f, bucket: v, projectName: v !== "project" ? "" : f.projectName }))}
+                placeholder="Select bucket"
+                triggerClassName="h-8 text-sm"
+                data-testid="select-bucket"
+                options={[
+                  { value: "project", label: "Project" },
+                  { value: "company_ops", label: "Company Ops" },
+                  { value: "personal", label: "Personal" },
+                ]}
+              />
             </div>
             {form.bucket === "project" && (
               <div>
                 <Label className="text-xs text-muted-foreground mb-1 block">
                   <FolderOpen className="h-3 w-3 inline mr-1" />Project
                 </Label>
-                <Select value={form.projectName || "__none__"} onValueChange={(v) => setForm((f) => ({ ...f, projectName: v === "__none__" ? "" : v }))}>
-                  <SelectTrigger className="h-8 text-sm" data-testid="select-project">
-                    <SelectValue placeholder="None" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
-                    {allProjects.map((p) => (
-                      <SelectItem key={p.project_name} value={p.project_name}>
-                        {p.project_name.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={form.projectName || "__none__"}
+                  onValueChange={(v) => setForm((f) => ({ ...f, projectName: v === "__none__" ? "" : v }))}
+                  placeholder="None"
+                  triggerClassName="h-8 text-sm"
+                  data-testid="select-project"
+                  options={[
+                    { value: "__none__", label: "None" },
+                    ...allProjects.map((p) => ({
+                      value: p.project_name,
+                      label: p.project_name.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
+                    })),
+                  ]}
+                />
               </div>
             )}
             {form.bucket !== "project" && (
@@ -373,17 +364,17 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
                 <Label className="text-xs text-muted-foreground mb-1 block">
                   <Building2 className="h-3 w-3 inline mr-1" />Department
                 </Label>
-                <Select value={form.department || "__none__"} onValueChange={(v) => setForm((f) => ({ ...f, department: v === "__none__" ? "" : v }))}>
-                  <SelectTrigger className="h-8 text-sm" data-testid="select-department">
-                    <SelectValue placeholder="None" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">None</SelectItem>
-                    {DEPARTMENTS.map((d) => (
-                      <SelectItem key={d} value={d}>{d}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={form.department || "__none__"}
+                  onValueChange={(v) => setForm((f) => ({ ...f, department: v === "__none__" ? "" : v }))}
+                  placeholder="None"
+                  triggerClassName="h-8 text-sm"
+                  data-testid="select-department"
+                  options={[
+                    { value: "__none__", label: "None" },
+                    ...DEPARTMENTS.map((d) => ({ value: d, label: d })),
+                  ]}
+                />
               </div>
             )}
           </div>

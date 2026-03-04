@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Input } from "@/components/ui/input";
 import { Calendar } from "lucide-react";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -71,19 +71,20 @@ export function DateRangeBar({ onDateChange, onProjectChange }: DateRangeBarProp
           <span className="text-sm font-medium text-foreground">Filter by:</span>
         </div>
 
-        <Select value={selectedProject} onValueChange={handleProjectChange}>
-          <SelectTrigger className="w-[250px]" data-testid="select-project">
-            <SelectValue placeholder="All Projects" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Projects</SelectItem>
-            {(projectsSummary || []).map((project: ProjectSummary) => (
-              <SelectItem key={project.project_name} value={project.project_name}>
-                {project.project_name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={selectedProject}
+          onValueChange={handleProjectChange}
+          placeholder="All Projects"
+          triggerClassName="w-[250px]"
+          data-testid="select-project"
+          options={[
+            { value: "all", label: "All Projects" },
+            ...(projectsSummary || []).map((project: ProjectSummary) => ({
+              value: project.project_name,
+              label: project.project_name,
+            })),
+          ]}
+        />
 
         <div className="flex items-center gap-2">
           <Input

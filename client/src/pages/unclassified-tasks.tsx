@@ -6,13 +6,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Table,
   TableBody,
@@ -220,49 +214,33 @@ export default function UnclassifiedTasksPage() {
                     <TableCell>
                       {editingTaskId === task.id ? (
                         <div className="flex items-center gap-2">
-                          <Select
+                          <SearchableSelect
                             value={selectedBucket}
                             onValueChange={(v) => {
                               setSelectedBucket(v);
                               if (v !== "project") setSelectedProject("");
                             }}
-                          >
-                            <SelectTrigger
-                              className="w-[140px]"
-                              data-testid={`select-bucket-${task.id}`}
-                            >
-                              <SelectValue placeholder="Set bucket" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="personal">Personal</SelectItem>
-                              <SelectItem value="company_ops">
-                                Company Ops
-                              </SelectItem>
-                              <SelectItem value="project">Project</SelectItem>
-                            </SelectContent>
-                          </Select>
+                            placeholder="Set bucket"
+                            triggerClassName="w-[140px]"
+                            data-testid={`select-bucket-${task.id}`}
+                            options={[
+                              { value: "personal", label: "Personal" },
+                              { value: "company_ops", label: "Company Ops" },
+                              { value: "project", label: "Project" },
+                            ]}
+                          />
                           {selectedBucket === "project" && (
-                            <Select
+                            <SearchableSelect
                               value={selectedProject}
                               onValueChange={setSelectedProject}
-                            >
-                              <SelectTrigger
-                                className="w-[180px]"
-                                data-testid={`select-project-${task.id}`}
-                              >
-                                <SelectValue placeholder="Pick project" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {projects.map((p) => (
-                                  <SelectItem
-                                    key={p.project_name}
-                                    value={p.project_name}
-                                  >
-                                    {p.project_name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                              placeholder="Pick project"
+                              triggerClassName="w-[180px]"
+                              data-testid={`select-project-${task.id}`}
+                              options={projects.map((p) => ({
+                                value: p.project_name,
+                                label: p.project_name,
+                              }))}
+                            />
                           )}
                           <Button
                             size="sm"

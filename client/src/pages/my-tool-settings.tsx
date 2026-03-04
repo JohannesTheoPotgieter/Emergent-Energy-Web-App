@@ -11,13 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Link, useLocation, useSearch } from "wouter";
 import MyToolLayout from "@/components/mytool/MyToolLayout";
 import {
@@ -214,19 +208,18 @@ export default function MyToolSettingsPage() {
           <div className="space-y-5 pl-6">
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">Default View</Label>
-              <Select
+              <SearchableSelect
                 value={form.defaultView}
                 onValueChange={(val) => setForm({ ...form, defaultView: val as UserPreferences["defaultView"] })}
-              >
-                <SelectTrigger className="w-48 h-8 text-sm" data-testid="select-default-view">
-                  <SelectValue placeholder="Select default view" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="week">Week</SelectItem>
-                  <SelectItem value="backlog">Backlog</SelectItem>
-                </SelectContent>
-              </Select>
+                placeholder="Select default view"
+                triggerClassName="w-48 h-8 text-sm"
+                options={[
+                  { value: "today", label: "Today" },
+                  { value: "week", label: "Week" },
+                  { value: "backlog", label: "Backlog" },
+                ]}
+                data-testid="select-default-view"
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-4 max-w-sm">
@@ -324,15 +317,17 @@ export default function MyToolSettingsPage() {
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground mb-1 block">Department (optional)</Label>
-                    <Select value={newTemplate.department || "__none__"} onValueChange={(v) => setNewTemplate(t => ({ ...t, department: v === "__none__" ? "" : v }))}>
-                      <SelectTrigger className="h-8 text-sm" data-testid="select-template-department">
-                        <SelectValue placeholder="Any" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Any</SelectItem>
-                        {DEPARTMENTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={newTemplate.department || "__none__"}
+                      onValueChange={(v) => setNewTemplate(t => ({ ...t, department: v === "__none__" ? "" : v }))}
+                      placeholder="Any"
+                      triggerClassName="h-8 text-sm"
+                      options={[
+                        { value: "__none__", label: "Any" },
+                        ...DEPARTMENTS.map(d => ({ value: d, label: d })),
+                      ]}
+                      data-testid="select-template-department"
+                    />
                   </div>
                 </div>
                 <div>

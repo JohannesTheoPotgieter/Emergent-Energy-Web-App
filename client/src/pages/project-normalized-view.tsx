@@ -5,9 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Loader2, AlertCircle, FileSpreadsheet, ArrowUpDown, ChevronDown, ChevronRight,
   Upload, Calendar, CheckCircle2, Clock,
@@ -334,18 +332,17 @@ export default function ProjectNormalizedView() {
         </div>
         <div className="flex items-center gap-2">
           {committedRuns.length > 1 && (
-            <Select value={selectedRunId} onValueChange={setSelectedRunId} data-testid="select-import-history">
-              <SelectTrigger className="w-[220px] text-xs" data-testid="select-trigger-history">
-                <SelectValue placeholder="Select import run" />
-              </SelectTrigger>
-              <SelectContent>
-                {committedRuns.map((r) => (
-                  <SelectItem key={r.id} value={String(r.id)} data-testid={`select-item-run-${r.id}`}>
-                    {r.sourceFileName} — {formatDate(r.committedAt || r.uploadedAt)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={selectedRunId}
+              onValueChange={setSelectedRunId}
+              placeholder="Select import run"
+              triggerClassName="w-[220px] text-xs"
+              data-testid="select-trigger-history"
+              options={committedRuns.map((r) => ({
+                value: String(r.id),
+                label: `${r.sourceFileName} — ${formatDate(r.committedAt || r.uploadedAt)}`,
+              }))}
+            />
           )}
           <Button variant="outline" size="sm" onClick={() => navigate("/smart-import")} data-testid="btn-import-new">
             <Upload className="w-4 h-4 mr-1" />

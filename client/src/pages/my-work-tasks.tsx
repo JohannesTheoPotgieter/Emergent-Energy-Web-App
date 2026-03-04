@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -919,28 +919,34 @@ export default function MyWorkTasksPage() {
             <div className={`grid ${newTask.type === "personal" ? "grid-cols-3" : "grid-cols-2"} gap-2`}>
               <div>
                 <Label className="text-xs font-medium">Priority</Label>
-                <Select value={newTask.priority} onValueChange={v => setNewTask(t => ({ ...t, priority: v as TaskPriority }))}>
-                  <SelectTrigger className="mt-1 h-7 text-xs" data-testid="select-new-priority"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="critical">P1 — Critical</SelectItem>
-                    <SelectItem value="high">P2 — High</SelectItem>
-                    <SelectItem value="normal">P3 — Normal</SelectItem>
-                    <SelectItem value="low">P4 — Low</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={newTask.priority}
+                  onValueChange={v => setNewTask(t => ({ ...t, priority: v as TaskPriority }))}
+                  triggerClassName="mt-1 h-7 text-xs"
+                  data-testid="select-new-priority"
+                  options={[
+                    { value: "critical", label: "P1 — Critical" },
+                    { value: "high", label: "P2 — High" },
+                    { value: "normal", label: "P3 — Normal" },
+                    { value: "low", label: "P4 — Low" },
+                  ]}
+                />
               </div>
               {newTask.type === "personal" && (
                 <div>
                   <Label className="text-xs font-medium">Status</Label>
-                  <Select value={newTask.status} onValueChange={v => setNewTask(t => ({ ...t, status: v as TaskStatus }))}>
-                    <SelectTrigger className="mt-1 h-7 text-xs" data-testid="select-new-status"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="inbox">Not Started</SelectItem>
-                      <SelectItem value="in_progress">In Progress</SelectItem>
-                      <SelectItem value="blocked">Blocked</SelectItem>
-                      <SelectItem value="done">Done</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={newTask.status}
+                    onValueChange={v => setNewTask(t => ({ ...t, status: v as TaskStatus }))}
+                    triggerClassName="mt-1 h-7 text-xs"
+                    data-testid="select-new-status"
+                    options={[
+                      { value: "inbox", label: "Not Started" },
+                      { value: "in_progress", label: "In Progress" },
+                      { value: "blocked", label: "Blocked" },
+                      { value: "done", label: "Done" },
+                    ]}
+                  />
                 </div>
               )}
               <div>
@@ -951,23 +957,31 @@ export default function MyWorkTasksPage() {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="text-xs font-medium">Project</Label>
-                <Select value={newTask.projectName} onValueChange={v => setNewTask(t => ({ ...t, projectName: v === "__none" ? "" : v }))}>
-                  <SelectTrigger className="mt-1 h-7 text-xs" data-testid="select-new-project"><SelectValue placeholder="None" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none">None</SelectItem>
-                    {allProjects.map(p => (<SelectItem key={p} value={p}>{p.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</SelectItem>))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={newTask.projectName}
+                  onValueChange={v => setNewTask(t => ({ ...t, projectName: v === "__none" ? "" : v }))}
+                  placeholder="None"
+                  triggerClassName="mt-1 h-7 text-xs"
+                  data-testid="select-new-project"
+                  options={[
+                    { value: "__none", label: "None" },
+                    ...allProjects.map(p => ({ value: p, label: p.replace(/_Tracker.*$/i, "").replace(/_/g, " ") })),
+                  ]}
+                />
               </div>
               <div>
                 <Label className="text-xs font-medium">Department</Label>
-                <Select value={newTask.department} onValueChange={v => setNewTask(t => ({ ...t, department: v === "__none" ? "" : v }))}>
-                  <SelectTrigger className="mt-1 h-7 text-xs" data-testid="select-new-dept"><SelectValue placeholder="None" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none">None</SelectItem>
-                    {DEPARTMENTS.map(d => (<SelectItem key={d} value={d}>{d}</SelectItem>))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={newTask.department}
+                  onValueChange={v => setNewTask(t => ({ ...t, department: v === "__none" ? "" : v }))}
+                  placeholder="None"
+                  triggerClassName="mt-1 h-7 text-xs"
+                  data-testid="select-new-dept"
+                  options={[
+                    { value: "__none", label: "None" },
+                    ...DEPARTMENTS.map(d => ({ value: d, label: d })),
+                  ]}
+                />
               </div>
             </div>
             <div>
@@ -1001,7 +1015,7 @@ export default function MyWorkTasksPage() {
           <DialogHeader><DialogTitle className="text-base">Add Subtask</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div><label className="text-xs font-medium text-muted-foreground">Title</label><Input placeholder="Subtask title..." value={newSubtaskTitle} onChange={e => setNewSubtaskTitle(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && newSubtaskTitle.trim() && subtaskDialog) createSubtaskMutation.mutate({ parentId: subtaskDialog.parentId, title: newSubtaskTitle.trim(), priority: newSubtaskPriority }); }} className="h-8" data-testid="input-subtask-title" /></div>
-            <div><label className="text-xs font-medium text-muted-foreground">Priority</label><Select value={newSubtaskPriority} onValueChange={setNewSubtaskPriority}><SelectTrigger className="h-7 text-xs" data-testid="select-subtask-priority"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="High">High</SelectItem><SelectItem value="Med">Medium</SelectItem><SelectItem value="Low">Low</SelectItem></SelectContent></Select></div>
+            <div><label className="text-xs font-medium text-muted-foreground">Priority</label><SearchableSelect value={newSubtaskPriority} onValueChange={setNewSubtaskPriority} triggerClassName="h-7 text-xs" data-testid="select-subtask-priority" options={[{ value: "High", label: "High" }, { value: "Med", label: "Medium" }, { value: "Low", label: "Low" }]} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setSubtaskDialog(null)} data-testid="button-cancel-subtask">Cancel</Button>

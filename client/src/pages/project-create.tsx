@@ -5,7 +5,7 @@ import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Plus, CheckCircle } from "lucide-react";
 
@@ -128,14 +128,15 @@ export default function ProjectCreatePage() {
           </div>
           <div>
             <label className="text-sm font-medium">Initial Phase</label>
-            <Select value={form.initialPhase} onValueChange={(v) => setForm(f => ({ ...f, initialPhase: v }))}>
-              <SelectTrigger data-testid="select-initial-phase"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {(constants?.projectPhases || ["P0_FIRST_ASSESSMENT"]).map((p) => (
-                  <SelectItem key={p} value={p}>{phaseLabels[p] || p}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={form.initialPhase}
+              onValueChange={(v) => setForm(f => ({ ...f, initialPhase: v }))}
+              data-testid="select-initial-phase"
+              options={(constants?.projectPhases || ["P0_FIRST_ASSESSMENT"]).map((p) => ({
+                value: p,
+                label: phaseLabels[p] || p,
+              }))}
+            />
           </div>
           <Button className="w-full" onClick={handleSubmit} disabled={saving || !form.projectName.trim()} data-testid="button-create-project">
             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />} Create Project

@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Loader2, AlertTriangle, RotateCcw, Save, Trash2, Link, ChevronLeft, ChevronRight, Calendar, GitBranch, Search, ZoomIn, Target, Split, X, AlertCircle } from "lucide-react";
@@ -640,17 +640,19 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
             data-testid="input-search-tasks"
           />
         </div>
-        <Select value={filter} onValueChange={(v) => setFilter(v as FilterType)}>
-          <SelectTrigger className="w-[140px] h-8" data-testid="select-filter">
-            <SelectValue placeholder="Filter" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Tasks</SelectItem>
-            <SelectItem value="critical">Critical Only</SelectItem>
-            <SelectItem value="late">Late Tasks</SelectItem>
-            <SelectItem value="blocked">Blocked</SelectItem>
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={filter}
+          onValueChange={(v) => setFilter(v as FilterType)}
+          placeholder="Filter"
+          triggerClassName="w-[140px] h-8"
+          data-testid="select-filter"
+          options={[
+            { value: "all", label: "All Tasks" },
+            { value: "critical", label: "Critical Only" },
+            { value: "late", label: "Late Tasks" },
+            { value: "blocked", label: "Blocked" },
+          ]}
+        />
         <div className="flex items-center gap-2">
           <Switch
             id="split-view"
@@ -914,16 +916,17 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <Select value={zoomLevel} onValueChange={(v) => setZoomLevel(v as ZoomLevel)}>
-            <SelectTrigger className="w-[100px] h-8" data-testid="select-zoom">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="week">Week</SelectItem>
-              <SelectItem value="month">Month</SelectItem>
-              <SelectItem value="quarter">Quarter</SelectItem>
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={zoomLevel}
+            onValueChange={(v) => setZoomLevel(v as ZoomLevel)}
+            triggerClassName="w-[100px] h-8"
+            data-testid="select-zoom"
+            options={[
+              { value: "week", label: "Week" },
+              { value: "month", label: "Month" },
+              { value: "quarter", label: "Quarter" },
+            ]}
+          />
           <div className="flex items-center gap-3 text-xs" data-testid="gantt-legend">
             <div className="flex items-center gap-1">
               <div className="w-4 h-2.5 bg-destructive rounded border-2 border-destructive" />

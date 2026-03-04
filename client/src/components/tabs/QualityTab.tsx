@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -639,18 +639,15 @@ export function QualityTab({ projectName }: QualityTabProps) {
             <div className="flex items-center gap-2">
               {linkingPhaseId === selectedPhaseId ? (
                 <div className="flex items-center gap-2 flex-1">
-                  <Select onValueChange={(val) => { addPlanLinkMutation.mutate({ planItemId: parseInt(val), phaseId: selectedPhaseId! }); }}>
-                    <SelectTrigger className="h-8 text-xs flex-1" data-testid={`select-link-task-${selectedPhaseId}`}>
-                      <SelectValue placeholder="Select a project task to link..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {meaningfulTasks
-                        .filter((t: any) => !selectedPhaseLinkedTasks.some((l: any) => l.planItemId === t.id))
-                        .map((task: any) => (
-                          <SelectItem key={task.id} value={String(task.id)}>{task.taskNo} — {task.highLevelProgramme}</SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    onValueChange={(val) => { addPlanLinkMutation.mutate({ planItemId: parseInt(val), phaseId: selectedPhaseId! }); }}
+                    placeholder="Select a project task to link..."
+                    triggerClassName="h-8 text-xs flex-1"
+                    data-testid={`select-link-task-${selectedPhaseId}`}
+                    options={meaningfulTasks
+                      .filter((t: any) => !selectedPhaseLinkedTasks.some((l: any) => l.planItemId === t.id))
+                      .map((task: any) => ({ value: String(task.id), label: `${task.taskNo} — ${task.highLevelProgramme}` }))}
+                  />
                   <Button variant="ghost" size="sm" className="h-8" onClick={() => setLinkingPhaseId(null)} data-testid="cancel-link-phase-task">Cancel</Button>
                 </div>
               ) : (
@@ -827,25 +824,21 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                       <div>
                                         <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Assignee</Label>
-                                        <Select
+                                        <SearchableSelect
                                           disabled={!canEdit}
                                           value={String(instance.assigneeUserId || "unassigned")}
                                           onValueChange={(val) => {
                                             const userId = val === "unassigned" ? null : parseInt(val);
                                             updateItemMutation.mutate({ itemInstanceId: instance.id, updates: { assigneeUserId: userId } });
                                           }}
-                                        >
-                                          <SelectTrigger className="h-9 text-xs mt-1" data-testid={`select-assignee-${instance.id}`}>
-                                            <User className="w-3 h-3 shrink-0 mr-1" />
-                                            <SelectValue placeholder="Unassigned" />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            <SelectItem value="unassigned">Unassigned</SelectItem>
-                                            {teamMembers.map((m: any) => (
-                                              <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                          placeholder="Unassigned"
+                                          triggerClassName="h-9 text-xs mt-1"
+                                          data-testid={`select-assignee-${instance.id}`}
+                                          options={[
+                                            { value: "unassigned", label: "Unassigned" },
+                                            ...teamMembers.map((m: any) => ({ value: String(m.id), label: m.name })),
+                                          ]}
+                                        />
                                       </div>
                                       <div>
                                         <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Start Date</Label>
@@ -884,16 +877,14 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                         {sendForApprovalItem === instance.id ? (
                                           <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                                             <Send className="w-4 h-4 text-amber-600 shrink-0" />
-                                            <Select value={sfaApprover} onValueChange={setSfaApprover}>
-                                              <SelectTrigger className="h-8 text-xs flex-1" data-testid={`select-approver-${instance.id}`}>
-                                                <SelectValue placeholder="Select approver..." />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                {teamMembers.map((m: any) => (
-                                                  <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
-                                                ))}
-                                              </SelectContent>
-                                            </Select>
+                                            <SearchableSelect
+                                              value={sfaApprover}
+                                              onValueChange={setSfaApprover}
+                                              placeholder="Select approver..."
+                                              triggerClassName="h-8 text-xs flex-1"
+                                              data-testid={`select-approver-${instance.id}`}
+                                              options={teamMembers.map((m: any) => ({ value: String(m.id), label: m.name }))}
+                                            />
                                             <Button
                                               size="sm"
                                               className="h-8 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700"
@@ -1033,18 +1024,15 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                       <div className="flex items-center gap-2">
                                         {linkingItemId === instance.id ? (
                                           <div className="flex items-center gap-2 flex-1">
-                                            <Select onValueChange={(val) => { addPlanLinkMutation.mutate({ planItemId: parseInt(val), itemInstanceId: instance.id, phaseId: selectedPhaseId! }); }}>
-                                              <SelectTrigger className="h-8 text-xs flex-1" data-testid={`select-link-item-task-${instance.id}`}>
-                                                <SelectValue placeholder="Link a project task..." />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                {meaningfulTasks
-                                                  .filter((t: any) => !itemLinks.some((l: any) => l.planItemId === t.id))
-                                                  .map((task: any) => (
-                                                    <SelectItem key={task.id} value={String(task.id)}>{task.taskNo} — {task.highLevelProgramme}</SelectItem>
-                                                  ))}
-                                              </SelectContent>
-                                            </Select>
+                                            <SearchableSelect
+                                              onValueChange={(val) => { addPlanLinkMutation.mutate({ planItemId: parseInt(val), itemInstanceId: instance.id, phaseId: selectedPhaseId! }); }}
+                                              placeholder="Link a project task..."
+                                              triggerClassName="h-8 text-xs flex-1"
+                                              data-testid={`select-link-item-task-${instance.id}`}
+                                              options={meaningfulTasks
+                                                .filter((t: any) => !itemLinks.some((l: any) => l.planItemId === t.id))
+                                                .map((task: any) => ({ value: String(task.id), label: `${task.taskNo} — ${task.highLevelProgramme}` }))}
+                                            />
                                             <Button variant="ghost" size="sm" className="h-8" onClick={() => setLinkingItemId(null)} data-testid={`cancel-link-item-task-${instance.id}`}>Cancel</Button>
                                           </div>
                                         ) : (
@@ -1158,21 +1146,20 @@ export function QualityTab({ projectName }: QualityTabProps) {
                           </div>
                           {canEdit && answer && (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 ml-6">
-                              <Select
+                              <SearchableSelect
                                 value={answer.answerValue || "unanswered"}
                                 onValueChange={(val) => updateRiskMutation.mutate({ riskAnswerId: answer.id, updates: { answerValue: val === "unanswered" ? null : val } })}
-                              >
-                                <SelectTrigger className="h-8 text-xs" data-testid={`select-risk-answer-${rq.id}`}>
-                                  <SelectValue placeholder="Select answer..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="unanswered">Unanswered</SelectItem>
-                                  <SelectItem value="yes">Yes</SelectItem>
-                                  <SelectItem value="no">No</SelectItem>
-                                  <SelectItem value="partial">Partial</SelectItem>
-                                  <SelectItem value="na">N/A</SelectItem>
-                                </SelectContent>
-                              </Select>
+                                placeholder="Select answer..."
+                                triggerClassName="h-8 text-xs"
+                                data-testid={`select-risk-answer-${rq.id}`}
+                                options={[
+                                  { value: "unanswered", label: "Unanswered" },
+                                  { value: "yes", label: "Yes" },
+                                  { value: "no", label: "No" },
+                                  { value: "partial", label: "Partial" },
+                                  { value: "na", label: "N/A" },
+                                ]}
+                              />
                               <Textarea
                                 className="text-xs"
                                 placeholder="Notes..."

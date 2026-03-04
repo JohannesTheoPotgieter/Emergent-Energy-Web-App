@@ -17,7 +17,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, BarChart3, Percent,
   CircleDot, Wallet, CheckCircle2
 } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1218,17 +1218,21 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[160px] h-7 text-xs" data-testid="select-status-filter"><SelectValue placeholder="Filter by status" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All ({kpis.totalItems})</SelectItem>
-            <SelectItem value="COS Realised">COS Realised ({kpis.countByCos["COS Realised"]})</SelectItem>
-            <SelectItem value="Committed">Committed ({kpis.countByCos["Committed"]})</SelectItem>
-            <SelectItem value="Out of Bank">Out of Bank ({kpis.countByPayment["Out of Bank"]})</SelectItem>
-            <SelectItem value="Payment Planned">Payment Planned ({kpis.countByPayment["Payment Planned"]})</SelectItem>
-            <SelectItem value="Planned">Planned ({kpis.countByCos.Planned})</SelectItem>
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={statusFilter}
+          onValueChange={setStatusFilter}
+          placeholder="Filter by status"
+          triggerClassName="w-[160px] h-7 text-xs"
+          data-testid="select-status-filter"
+          options={[
+            { value: "all", label: `All (${kpis.totalItems})` },
+            { value: "COS Realised", label: `COS Realised (${kpis.countByCos["COS Realised"]})` },
+            { value: "Committed", label: `Committed (${kpis.countByCos["Committed"]})` },
+            { value: "Out of Bank", label: `Out of Bank (${kpis.countByPayment["Out of Bank"]})` },
+            { value: "Payment Planned", label: `Payment Planned (${kpis.countByPayment["Payment Planned"]})` },
+            { value: "Planned", label: `Planned (${kpis.countByCos.Planned})` },
+          ]}
+        />
 
         <div className="ml-auto flex items-center gap-2">
           {isAdmin && (
@@ -1352,16 +1356,18 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
               <span className="font-medium">{edits.size} {edits.size === 1 ? "row" : "rows"} modified</span>
             </div>
             <div className="flex flex-1 flex-wrap items-center gap-2">
-              <Select value={overrideCategory} onValueChange={setOverrideCategory}>
-                <SelectTrigger className="w-[180px] h-8 text-xs" data-testid="select-override-category">
-                  <SelectValue placeholder="Override category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="DATA_CORRECTION">Data Correction</SelectItem>
-                  <SelectItem value="BUSINESS_DECISION">Business Decision</SelectItem>
-                  <SelectItem value="TIMING_ADJUSTMENT">Timing Adjustment</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={overrideCategory}
+                onValueChange={setOverrideCategory}
+                placeholder="Override category"
+                triggerClassName="w-[180px] h-8 text-xs"
+                data-testid="select-override-category"
+                options={[
+                  { value: "DATA_CORRECTION", label: "Data Correction" },
+                  { value: "BUSINESS_DECISION", label: "Business Decision" },
+                  { value: "TIMING_ADJUSTMENT", label: "Timing Adjustment" },
+                ]}
+              />
               <Input
                 placeholder="Comment (min 3 chars)..."
                 value={overrideComment}
@@ -1395,47 +1401,55 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="text-xs">Category</Label>
-                <Select value={drawerFilter.category || "all"} onValueChange={v => setDrawerFilter(f => ({ ...f, category: v === "all" ? "" : v }))}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={drawerFilter.category || "all"}
+                  onValueChange={v => setDrawerFilter(f => ({ ...f, category: v === "all" ? "" : v }))}
+                  triggerClassName="h-8 text-xs"
+                  options={[
+                    { value: "all", label: "All Categories" },
+                    ...categories.map(c => ({ value: c, label: c })),
+                  ]}
+                />
               </div>
               <div>
                 <Label className="text-xs">COS Status</Label>
-                <Select value={drawerFilter.cosStatus || "all"} onValueChange={v => setDrawerFilter(f => ({ ...f, cosStatus: v === "all" ? "" : v }))}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="COS Realised">COS Realised</SelectItem>
-                    <SelectItem value="Committed">Committed</SelectItem>
-                    <SelectItem value="Planned">Planned</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={drawerFilter.cosStatus || "all"}
+                  onValueChange={v => setDrawerFilter(f => ({ ...f, cosStatus: v === "all" ? "" : v }))}
+                  triggerClassName="h-8 text-xs"
+                  options={[
+                    { value: "all", label: "All" },
+                    { value: "COS Realised", label: "COS Realised" },
+                    { value: "Committed", label: "Committed" },
+                    { value: "Planned", label: "Planned" },
+                  ]}
+                />
               </div>
               <div>
                 <Label className="text-xs">Payment Status</Label>
-                <Select value={drawerFilter.paymentStatus || "all"} onValueChange={v => setDrawerFilter(f => ({ ...f, paymentStatus: v === "all" ? "" : v }))}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="Out of Bank">Out of Bank</SelectItem>
-                    <SelectItem value="Payment Planned">Payment Planned</SelectItem>
-                    <SelectItem value="Planned">Planned</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={drawerFilter.paymentStatus || "all"}
+                  onValueChange={v => setDrawerFilter(f => ({ ...f, paymentStatus: v === "all" ? "" : v }))}
+                  triggerClassName="h-8 text-xs"
+                  options={[
+                    { value: "all", label: "All" },
+                    { value: "Out of Bank", label: "Out of Bank" },
+                    { value: "Payment Planned", label: "Payment Planned" },
+                    { value: "Planned", label: "Planned" },
+                  ]}
+                />
               </div>
               <div>
                 <Label className="text-xs">Planned Month</Label>
-                <Select value={drawerFilter.plannedMonth || "all"} onValueChange={v => setDrawerFilter(f => ({ ...f, plannedMonth: v === "all" ? "" : v }))}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Months</SelectItem>
-                    {allMonths.map(m => <SelectItem key={m} value={m}>{formatMonth(m)}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={drawerFilter.plannedMonth || "all"}
+                  onValueChange={v => setDrawerFilter(f => ({ ...f, plannedMonth: v === "all" ? "" : v }))}
+                  triggerClassName="h-8 text-xs"
+                  options={[
+                    { value: "all", label: "All Months" },
+                    ...allMonths.map(m => ({ value: m, label: formatMonth(m) })),
+                  ]}
+                />
               </div>
               <div>
                 <Label className="text-xs">Invoice No</Label>
@@ -1449,14 +1463,16 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
               </div>
               <div>
                 <Label className="text-xs">Task Linked</Label>
-                <Select value={drawerFilter.taskLinked || "all"} onValueChange={v => setDrawerFilter(f => ({ ...f, taskLinked: v === "all" ? "" : v }))}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="yes">Linked</SelectItem>
-                    <SelectItem value="no">Not Linked</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={drawerFilter.taskLinked || "all"}
+                  onValueChange={v => setDrawerFilter(f => ({ ...f, taskLinked: v === "all" ? "" : v }))}
+                  triggerClassName="h-8 text-xs"
+                  options={[
+                    { value: "all", label: "All" },
+                    { value: "yes", label: "Linked" },
+                    { value: "no", label: "Not Linked" },
+                  ]}
+                />
               </div>
               <div className="flex items-end">
                 <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setDrawerFilter({})}>Clear Filters</Button>
@@ -1522,12 +1538,13 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
           <div className="space-y-3">
             <div>
               <Label className="text-xs">Category</Label>
-              <Select value={newLineData.category} onValueChange={v => setNewLineData(d => ({ ...d, category: v }))}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select category" /></SelectTrigger>
-                <SelectContent>
-                  {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={newLineData.category}
+                onValueChange={v => setNewLineData(d => ({ ...d, category: v }))}
+                placeholder="Select category"
+                triggerClassName="h-8 text-xs"
+                options={categories.map(c => ({ value: c, label: c }))}
+              />
             </div>
             <div>
               <Label className="text-xs">Description</Label>
@@ -1597,12 +1614,13 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
           <div className="space-y-3">
             <div>
               <Label className="text-xs">Category</Label>
-              <Select value={insertTaskCategory} onValueChange={setInsertTaskCategory}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select category" /></SelectTrigger>
-                <SelectContent>
-                  {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={insertTaskCategory}
+                onValueChange={setInsertTaskCategory}
+                placeholder="Select category"
+                triggerClassName="h-8 text-xs"
+                options={categories.map(c => ({ value: c, label: c }))}
+              />
             </div>
             <div>
               <Label className="text-xs">Search Tasks</Label>
@@ -1656,16 +1674,16 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
               </div>
               <div className="space-y-2">
                 <Label>New Status</Label>
-                <Select value={cosOverrideStatus} onValueChange={setCosOverrideStatus}>
-                  <SelectTrigger data-testid="cos-override-status-select">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="COS Realised">COS Realised</SelectItem>
-                    <SelectItem value="Committed">Committed</SelectItem>
-                    <SelectItem value="Planned">Planned</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={cosOverrideStatus}
+                  onValueChange={setCosOverrideStatus}
+                  data-testid="cos-override-status-select"
+                  options={[
+                    { value: "COS Realised", label: "COS Realised" },
+                    { value: "Committed", label: "Committed" },
+                    { value: "Planned", label: "Planned" },
+                  ]}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Reason for Override</Label>

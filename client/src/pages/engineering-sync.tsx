@@ -12,13 +12,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Shield,
   RefreshCw,
@@ -848,19 +842,17 @@ function SyncDashboard() {
                     <p className="break-words">{String(values.sp ?? "—")}</p>
                   </div>
                 </div>
-                <Select
+                <SearchableSelect
                   value={resolutions[field] || "keep_app"}
                   onValueChange={v => setResolutions(prev => ({ ...prev, [field]: v }))}
-                >
-                  <SelectTrigger className="h-7 text-xs" data-testid={`select-resolution-${field}`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="keep_app">Keep App</SelectItem>
-                    <SelectItem value="keep_sp">Keep SharePoint</SelectItem>
-                    <SelectItem value="merge">Merge</SelectItem>
-                  </SelectContent>
-                </Select>
+                  triggerClassName="h-7 text-xs"
+                  data-testid={`select-resolution-${field}`}
+                  options={[
+                    { value: "keep_app", label: "Keep App" },
+                    { value: "keep_sp", label: "Keep SharePoint" },
+                    { value: "merge", label: "Merge" },
+                  ]}
+                />
               </div>
             ))}
           </div>

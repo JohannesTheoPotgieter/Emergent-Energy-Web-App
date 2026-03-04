@@ -6,9 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
@@ -993,15 +991,17 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             data-testid="input-search-plan"
           />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[130px] h-7 text-xs" data-testid="select-status-filter">
-            <SelectValue placeholder="All Statuses" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="All">All Statuses</SelectItem>
-            {STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={statusFilter}
+          onValueChange={setStatusFilter}
+          placeholder="All Statuses"
+          triggerClassName="w-[130px] h-7 text-xs"
+          data-testid="select-status-filter"
+          options={[
+            { value: "All", label: "All Statuses" },
+            ...STATUSES.map(s => ({ value: s, label: s })),
+          ]}
+        />
 
         <div className="flex items-center border rounded-md overflow-hidden bg-card shadow-sm" data-testid="toolbar-actions">
           <TooltipProvider delayDuration={200}>
@@ -1149,15 +1149,16 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
-          <Select value={zoomLevel} onValueChange={(v) => setZoomLevel(v as ZoomLevel)}>
-            <SelectTrigger className="w-[90px] h-7 text-xs" data-testid="select-zoom">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="week">Week</SelectItem>
-              <SelectItem value="month">Month</SelectItem>
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={zoomLevel}
+            onValueChange={(v) => setZoomLevel(v as ZoomLevel)}
+            triggerClassName="w-[90px] h-7 text-xs"
+            data-testid="select-zoom"
+            options={[
+              { value: "week", label: "Week" },
+              { value: "month", label: "Month" },
+            ]}
+          />
           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={jumpToToday} data-testid="button-today">
             <Target className="h-3 w-3 mr-1" /> Today
           </Button>

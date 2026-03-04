@@ -16,13 +16,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Video,
   CheckCircle2,
@@ -590,24 +584,27 @@ export default function MyToolMeetingsPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs font-medium text-muted-foreground">Priority</label>
-                      <Select value={convertForm.priority || "normal"} onValueChange={(v) => setConvertForm((p) => ({ ...p, priority: v }))}>
-                        <SelectTrigger data-testid="select-priority"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="low">Low</SelectItem>
-                          <SelectItem value="normal">Normal</SelectItem>
-                          <SelectItem value="high">High</SelectItem>
-                          <SelectItem value="critical">Critical</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <SearchableSelect
+                        value={convertForm.priority || "normal"}
+                        onValueChange={(v) => setConvertForm((p) => ({ ...p, priority: v }))}
+                        options={[
+                          { value: "low", label: "Low" },
+                          { value: "normal", label: "Normal" },
+                          { value: "high", label: "High" },
+                          { value: "critical", label: "Critical" },
+                        ]}
+                        data-testid="select-priority"
+                      />
                     </div>
                     <div>
                       <label className="text-xs font-medium text-muted-foreground">Department</label>
-                      <Select value={convertForm.department || ""} onValueChange={(v) => setConvertForm((p) => ({ ...p, department: v }))}>
-                        <SelectTrigger data-testid="select-department"><SelectValue placeholder="Select..." /></SelectTrigger>
-                        <SelectContent>
-                          {DEPARTMENTS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      <SearchableSelect
+                        value={convertForm.department || ""}
+                        onValueChange={(v) => setConvertForm((p) => ({ ...p, department: v }))}
+                        placeholder="Select..."
+                        options={DEPARTMENTS.map((d) => ({ value: d, label: d }))}
+                        data-testid="select-department"
+                      />
                     </div>
                   </div>
                   <div>
@@ -621,12 +618,13 @@ export default function MyToolMeetingsPage() {
                   </div>
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">Link to Project</label>
-                    <Select value={convertForm.projectName || ""} onValueChange={(v) => setConvertForm((p) => ({ ...p, projectName: v }))}>
-                      <SelectTrigger data-testid="select-project-link"><SelectValue placeholder="None (optional)" /></SelectTrigger>
-                      <SelectContent>
-                        {projects.map((p) => <SelectItem key={p.id} value={p.projectName}>{p.projectName}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={convertForm.projectName || ""}
+                      onValueChange={(v) => setConvertForm((p) => ({ ...p, projectName: v }))}
+                      placeholder="None (optional)"
+                      options={projects.map((p) => ({ value: p.projectName, label: p.projectName }))}
+                      data-testid="select-project-link"
+                    />
                   </div>
                 </>
               )}
@@ -636,36 +634,41 @@ export default function MyToolMeetingsPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs font-medium text-muted-foreground">Severity</label>
-                      <Select value={convertForm.severity || "normal"} onValueChange={(v) => setConvertForm((p) => ({ ...p, severity: v }))}>
-                        <SelectTrigger data-testid="select-severity"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="normal">Normal</SelectItem>
-                          <SelectItem value="important">Important</SelectItem>
-                          <SelectItem value="critical">Critical</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <SearchableSelect
+                        value={convertForm.severity || "normal"}
+                        onValueChange={(v) => setConvertForm((p) => ({ ...p, severity: v }))}
+                        options={[
+                          { value: "normal", label: "Normal" },
+                          { value: "important", label: "Important" },
+                          { value: "critical", label: "Critical" },
+                        ]}
+                        data-testid="select-severity"
+                      />
                     </div>
                     <div>
                       <label className="text-xs font-medium text-muted-foreground">Horizon</label>
-                      <Select value={convertForm.horizon || "week"} onValueChange={(v) => setConvertForm((p) => ({ ...p, horizon: v }))}>
-                        <SelectTrigger data-testid="select-horizon"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="today">Today</SelectItem>
-                          <SelectItem value="week">This Week</SelectItem>
-                          <SelectItem value="month">This Month</SelectItem>
-                          <SelectItem value="quarter">This Quarter</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <SearchableSelect
+                        value={convertForm.horizon || "week"}
+                        onValueChange={(v) => setConvertForm((p) => ({ ...p, horizon: v }))}
+                        options={[
+                          { value: "today", label: "Today" },
+                          { value: "week", label: "This Week" },
+                          { value: "month", label: "This Month" },
+                          { value: "quarter", label: "This Quarter" },
+                        ]}
+                        data-testid="select-horizon"
+                      />
                     </div>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">Department</label>
-                    <Select value={convertForm.department || ""} onValueChange={(v) => setConvertForm((p) => ({ ...p, department: v }))}>
-                      <SelectTrigger data-testid="select-priority-department"><SelectValue placeholder="Select..." /></SelectTrigger>
-                      <SelectContent>
-                        {DEPARTMENTS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={convertForm.department || ""}
+                      onValueChange={(v) => setConvertForm((p) => ({ ...p, department: v }))}
+                      placeholder="Select..."
+                      options={DEPARTMENTS.map((d) => ({ value: d, label: d }))}
+                      data-testid="select-priority-department"
+                    />
                   </div>
                 </>
               )}
@@ -692,14 +695,16 @@ export default function MyToolMeetingsPage() {
                     </div>
                     <div>
                       <label className="text-xs font-medium text-muted-foreground">PM</label>
-                      <Select value={convertForm.pm || ""} onValueChange={(v) => setConvertForm((p) => ({ ...p, pm: v }))}>
-                        <SelectTrigger data-testid="select-pm"><SelectValue placeholder="Select PM..." /></SelectTrigger>
-                        <SelectContent>
-                          {pmUsers.sort((a: any, b: any) => a.name.localeCompare(b.name)).map((u: any) => (
-                            <SelectItem key={u.id} value={u.name}>{u.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <SearchableSelect
+                        value={convertForm.pm || ""}
+                        onValueChange={(v) => setConvertForm((p) => ({ ...p, pm: v }))}
+                        placeholder="Select PM..."
+                        options={pmUsers.sort((a: any, b: any) => a.name.localeCompare(b.name)).map((u: any) => ({
+                          value: u.name,
+                          label: u.name,
+                        }))}
+                        data-testid="select-pm"
+                      />
                     </div>
                   </div>
                 </>

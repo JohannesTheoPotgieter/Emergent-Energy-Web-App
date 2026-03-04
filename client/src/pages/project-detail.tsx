@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -151,18 +151,17 @@ function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
           </div>
           <div>
             <Label htmlFor="toPhase">New Phase</Label>
-            <Select value={toPhase} onValueChange={setToPhase}>
-              <SelectTrigger data-testid="select-to-phase">
-                <SelectValue placeholder="Select phase..." />
-              </SelectTrigger>
-              <SelectContent>
-                {LIFECYCLE_PHASES.map(p => (
-                  <SelectItem key={p} value={p} disabled={p === currentPhase}>
-                    {PROJECT_PHASE_LABELS[p] || p}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={toPhase}
+              onValueChange={setToPhase}
+              placeholder="Select phase..."
+              data-testid="select-to-phase"
+              options={LIFECYCLE_PHASES.map(p => ({
+                value: p,
+                label: PROJECT_PHASE_LABELS[p] || p,
+                disabled: p === currentPhase,
+              }))}
+            />
           </div>
           <div>
             <Label htmlFor="reason">Reason (required)</Label>
@@ -536,37 +535,25 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
                               </div>
                               <div>
                                 <Label className="text-[10px] uppercase text-muted-foreground">Status</Label>
-                                <Select
-                                  defaultValue={displayStatus}
+                                <SearchableSelect
+                                  value={displayStatus}
                                   onValueChange={(v) => updateMutation.mutate({ taskId: tid, updates: { status: v } })}
-                                >
-                                  <SelectTrigger className="h-8 text-sm mt-1" data-testid={`select-status-${task.id}`}>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {ALL_STATUSES.map(s => (
-                                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                  triggerClassName="h-8 text-sm mt-1"
+                                  data-testid={`select-status-${task.id}`}
+                                  options={ALL_STATUSES.map(s => ({ value: s, label: s }))}
+                                />
                               </div>
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                               <div>
                                 <Label className="text-[10px] uppercase text-muted-foreground">Priority</Label>
-                                <Select
-                                  defaultValue={task.priority || "Med"}
+                                <SearchableSelect
+                                  value={task.priority || "Med"}
                                   onValueChange={(v) => updateMutation.mutate({ taskId: tid, updates: { priority: v } })}
-                                >
-                                  <SelectTrigger className="h-8 text-sm mt-1" data-testid={`select-priority-${task.id}`}>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {ALL_PRIORITIES.map(p => (
-                                      <SelectItem key={p} value={p}>{p}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                  triggerClassName="h-8 text-sm mt-1"
+                                  data-testid={`select-priority-${task.id}`}
+                                  options={ALL_PRIORITIES.map(p => ({ value: p, label: p }))}
+                                />
                               </div>
                               <div>
                                 <Label className="text-[10px] uppercase text-muted-foreground">% Complete</Label>
@@ -611,8 +598,8 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                               <div>
                                 <Label className="text-[10px] uppercase text-muted-foreground">Assignee</Label>
-                                <Select
-                                  defaultValue={task.ownerUserId ? String(task.ownerUserId) : "__unassigned"}
+                                <SearchableSelect
+                                  value={task.ownerUserId ? String(task.ownerUserId) : "__unassigned"}
                                   onValueChange={(v) => {
                                     if (v === "__unassigned") {
                                       updateMutation.mutate({ taskId: tid, updates: { ownerUserId: null } });
@@ -621,17 +608,14 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
                                       if (!isNaN(uid)) updateMutation.mutate({ taskId: tid, updates: { ownerUserId: uid } });
                                     }
                                   }}
-                                >
-                                  <SelectTrigger className="h-8 text-sm mt-1" data-testid={`select-assignee-${task.id}`}>
-                                    <SelectValue placeholder="Unassigned" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="__unassigned">Unassigned</SelectItem>
-                                    {(allUsers || []).map((u: any) => (
-                                      <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                  triggerClassName="h-8 text-sm mt-1"
+                                  placeholder="Unassigned"
+                                  data-testid={`select-assignee-${task.id}`}
+                                  options={[
+                                    { value: "__unassigned", label: "Unassigned" },
+                                    ...(allUsers || []).map((u: any) => ({ value: String(u.id), label: u.name })),
+                                  ]}
+                                />
                               </div>
                               <div>
                                 <Label className="text-[10px] uppercase text-muted-foreground">Description</Label>

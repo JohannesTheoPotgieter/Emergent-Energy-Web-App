@@ -11,13 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Mail,
   Flag,
@@ -369,16 +363,17 @@ export default function TriageInboxPage() {
               <div className="flex items-end gap-3" data-testid="add-rule-form">
                 <div className="space-y-1.5">
                   <label className="text-xs text-muted-foreground">Type</label>
-                  <Select value={newRuleType} onValueChange={setNewRuleType}>
-                    <SelectTrigger className="w-36" data-testid="select-rule-type">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="keyword">Keyword</SelectItem>
-                      <SelectItem value="sender">Sender</SelectItem>
-                      <SelectItem value="domain">Domain</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={newRuleType}
+                    onValueChange={setNewRuleType}
+                    triggerClassName="w-36"
+                    data-testid="select-rule-type"
+                    options={[
+                      { value: "keyword", label: "Keyword" },
+                      { value: "sender", label: "Sender" },
+                      { value: "domain", label: "Domain" },
+                    ]}
+                  />
                 </div>
                 <div className="flex-1 space-y-1.5">
                   <label className="text-xs text-muted-foreground">Value</label>

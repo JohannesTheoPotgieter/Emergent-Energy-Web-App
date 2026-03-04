@@ -4,9 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
 import {
@@ -351,18 +349,18 @@ export default function ExecutionBoard() {
             data-testid="input-search-execution"
           />
         </div>
-        <Select value={phaseFilter} onValueChange={setPhaseFilter}>
-          <SelectTrigger className="w-[170px] h-9 text-xs" data-testid="select-trigger-phase-filter">
-            <SelectValue placeholder="All phases" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all" data-testid="select-item-all">All Phases</SelectItem>
-            <SelectItem value="awaiting" data-testid="select-item-awaiting">Awaiting Import</SelectItem>
-            {executionPhases.map(phase => (
-              <SelectItem key={phase} value={phase} data-testid={`select-item-${phase}`}>{phase}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={phaseFilter}
+          onValueChange={setPhaseFilter}
+          placeholder="All phases"
+          triggerClassName="w-[170px] h-9 text-xs"
+          data-testid="select-trigger-phase-filter"
+          options={[
+            { value: "all", label: "All Phases" },
+            { value: "awaiting", label: "Awaiting Import" },
+            ...executionPhases.map(phase => ({ value: phase, label: phase })),
+          ]}
+        />
         <span className="ml-auto text-[11px] text-muted-foreground font-medium" data-testid="text-filtered-count">
           {filtered.length} of {executionProjects.length} shown
         </span>
