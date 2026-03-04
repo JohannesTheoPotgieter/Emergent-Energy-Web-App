@@ -12964,10 +12964,55 @@ export async function registerRoutes(
         return res.status(400).json({ error: "start and end query params required (YYYY-MM-DD)" });
       }
       const userToken = await getUserSsoToken(req);
-      if (!userToken) {
-        return res.json([]);
+      let events: any[] = [];
+      if (userToken) {
+        events = await outlook.getCalendarEvents(start as string, end as string, userToken);
+      } else {
+        try {
+          events = await outlook.getCalendarEvents(start as string, end as string);
+        } catch (fallbackErr: any) {
+          console.log("[Outlook] Connector fallback failed:", fallbackErr.message);
+        }
       }
-      const events = await outlook.getCalendarEvents(start as string, end as string, userToken);
+      if (events.length === 0) {
+        const userId = (req.user as any)?.id;
+        if (userId) {
+          try {
+            const { db } = await import("./db");
+            const { msObjects } = await import("@shared/schema");
+            const { and, eq, gte, lte } = await import("drizzle-orm");
+            const startDate = `${start}T00:00:00`;
+            const endDate = `${end}T23:59:59`;
+            const synced = await db.select().from(msObjects).where(
+              and(
+                eq(msObjects.userId, userId),
+                eq(msObjects.type, "event"),
+                gte(msObjects.receivedOrStartDatetime, startDate),
+                lte(msObjects.receivedOrStartDatetime, endDate)
+              )
+            );
+            events = synced.map((s: any) => {
+              const meta = s.metadata || {};
+              return {
+                id: s.msId || String(s.id),
+                subject: s.subjectOrTitle || "No Subject",
+                start: s.receivedOrStartDatetime,
+                end: s.endDatetime || s.receivedOrStartDatetime,
+                isAllDay: meta.isAllDay || false,
+                location: meta.location || null,
+                organizer: s.senderOrOrganizer || null,
+                showAs: meta.showAs || "busy",
+                isCancelled: false,
+                isRecurring: meta.isRecurring || false,
+                source: "synced",
+                webLink: s.webLink,
+              };
+            });
+          } catch (dbErr: any) {
+            console.log("[Outlook] DB fallback failed:", dbErr.message);
+          }
+        }
+      }
       res.json(events);
     } catch (err: any) {
       if (err.message?.includes("not connected") || err.message?.includes("not available")) {

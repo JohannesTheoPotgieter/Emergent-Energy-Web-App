@@ -249,7 +249,7 @@ export function ProjectChatTab({ projectName, projectInfoId }: { projectName: st
                   className="flex-1"
                   data-testid="link-open-teams"
                 >
-                  <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white gap-2" data-testid="button-open-teams">
+                  <Button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white gap-2" data-testid="button-open-teams">
                     <ExternalLink className="h-4 w-4" />
                     Open in MS Teams
                   </Button>
@@ -316,7 +316,7 @@ export function ProjectChatTab({ projectName, projectInfoId }: { projectName: st
           <div className="flex items-center gap-2 justify-center">
             <Button
               onClick={() => setShowPicker(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
               data-testid="button-link-teams-chat"
             >
               <LinkIcon className="h-4 w-4" />
