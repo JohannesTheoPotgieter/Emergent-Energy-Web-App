@@ -138,11 +138,6 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "cos" as PermissionEntity, label: "COS Tracker", actions: ["view", "edit"] },
       { entity: "subcontractors" as PermissionEntity, label: "Procurement", actions: ["view", "edit", "delete"] },
       { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Patterns", actions: ["view", "edit"] },
-      { entity: "financials" as PermissionEntity, label: "Financials Overview", actions: ["view", "edit"] },
-      { entity: "revenue" as PermissionEntity, label: "Revenue Tracker", actions: ["view", "edit"] },
-      { entity: "procurement" as PermissionEntity, label: "Procurement Data", actions: ["view", "edit"] },
-      { entity: "financial_integration" as PermissionEntity, label: "Financial Integration", actions: ["view", "edit", "approve"] },
-      { entity: "financial_linking" as PermissionEntity, label: "Financial Linking", actions: ["view", "edit"] },
     ],
   },
   {
@@ -190,6 +185,10 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "pd_collaboration" as PermissionEntity, label: "Collaboration", actions: ["view", "edit"] },
       { entity: "pd_history" as PermissionEntity, label: "History / Audit", actions: ["view"] },
       { entity: "pd_gantt" as PermissionEntity, label: "CPM / Dependencies", actions: ["view"] },
+      { entity: "financials" as PermissionEntity, label: "Financials Overview", actions: ["view", "edit"] },
+      { entity: "revenue" as PermissionEntity, label: "Revenue Data", actions: ["view", "edit"] },
+      { entity: "financial_integration" as PermissionEntity, label: "Financial Integration", actions: ["view", "edit", "approve"] },
+      { entity: "financial_linking" as PermissionEntity, label: "Financial Linking", actions: ["view", "edit"] },
     ],
   },
   {
