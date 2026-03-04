@@ -6,9 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
-import { format, parseISO, isToday } from "date-fns";
+import { format, parseISO } from "date-fns";
 import {
   CheckCircle2,
   Circle,
@@ -131,6 +131,7 @@ export default function MyWorkHomePage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [sourceFilter, setSourceFilter] = useState<string>("all");
 
   const syncMutation = useMutation({
@@ -552,6 +553,33 @@ export default function MyWorkHomePage() {
 
   const tasksLoading = allTasksLoading;
 
+  const handleTaskClick = (task: TaskItem) => {
+    if (task.link) {
+      window.open(task.link, "_blank", "noopener,noreferrer");
+      return;
+    }
+    navigate("/my-work/tasks");
+  };
+
+  const handleActionClick = (item: ActionItem) => {
+    if (item.link) {
+      window.open(item.link, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (item.source === "ms_object") {
+      return;
+    }
+    if (item.source === "tr_register") {
+      navigate("/tr-register");
+      return;
+    }
+    if (item.projectName) {
+      navigate(`/project/${encodeURIComponent(item.projectName)}`);
+      return;
+    }
+    navigate("/my-work/tasks");
+  };
+
   const openTasks = useMemo(() =>
     tasks.filter(t => !DONE_STATUSES.includes(t.status)),
   [tasks]);
@@ -699,12 +727,13 @@ export default function MyWorkHomePage() {
                           {projectTasks.slice(0, 5).map(task => (
                             <div
                               key={task.id}
-                              className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50 transition-colors cursor-pointer group"
+                              className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-emerald-50/60 transition-colors cursor-pointer group"
+                              onClick={() => handleTaskClick(task)}
                               data-testid={`task-item-${task.id}`}
                             >
                               <StatusIcon status={task.status} />
                               <PriorityDot priority={task.priority} />
-                              <span className="text-sm truncate flex-1">{task.title}</span>
+                              <span className="text-sm truncate flex-1 group-hover:text-emerald-700">{task.title}</span>
                               {task.sourceLabel && (
                                 <Badge variant="outline" className={`text-[9px] h-4 px-1 shrink-0 ${SOURCE_BADGE_COLORS[task.source || ""] || "bg-gray-50 text-gray-600 border-gray-200"}`}>
                                   {task.sourceLabel}
@@ -715,10 +744,14 @@ export default function MyWorkHomePage() {
                                   {format(parseISO(task.dueAt), "MMM d")}
                                 </span>
                               )}
+                              <ChevronRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-emerald-600 transition-colors shrink-0" />
                             </div>
                           ))}
                           {projectTasks.length > 5 && (
-                            <p className="text-[10px] text-muted-foreground pl-2">
+                            <p
+                              className="text-[10px] text-emerald-600 pl-2 cursor-pointer hover:underline"
+                              onClick={() => navigate("/my-work/tasks")}
+                            >
                               +{projectTasks.length - 5} more
                             </p>
                           )}
@@ -839,17 +872,19 @@ export default function MyWorkHomePage() {
                     {escalatedItems.slice(0, 8).map(item => (
                       <div
                         key={item.id}
-                        className="flex items-start gap-2 p-2 rounded-md border border-amber-200/50 bg-amber-50/30 text-xs"
+                        className="flex items-start gap-2 p-2 rounded-md border border-amber-200/50 bg-amber-50/30 text-xs cursor-pointer hover:border-amber-300 hover:bg-amber-50/60 transition-colors group"
+                        onClick={() => item.projectName ? navigate(`/project/${encodeURIComponent(item.projectName)}`) : navigate("/my-work/tasks")}
                         data-testid={`alert-item-${item.id}`}
                       >
                         <AlertTriangle className="h-3 w-3 text-amber-600 mt-0.5 shrink-0" />
                         <div className="min-w-0">
-                          <p className="font-medium truncate">{item.title}</p>
+                          <p className="font-medium truncate group-hover:text-amber-800">{item.title}</p>
                           <p className="text-muted-foreground truncate">{item.projectName}</p>
                         </div>
                         <Badge variant="outline" className="text-[9px] shrink-0 ml-auto border-amber-300 text-amber-700">
                           {item.escalationLevel}
                         </Badge>
+                        <ChevronRight className="h-3 w-3 text-amber-400/0 group-hover:text-amber-600 mt-0.5 shrink-0 transition-colors" />
                       </div>
                     ))}
                   </div>
@@ -888,7 +923,8 @@ export default function MyWorkHomePage() {
                     {actionItems.slice(0, 20).map(item => (
                       <div
                         key={item.id}
-                        className="flex items-start gap-2 p-2 rounded-md border border-border/50 hover:bg-muted/50 transition-colors cursor-pointer"
+                        className="flex items-start gap-2 p-2 rounded-md border border-border/50 hover:bg-purple-50/40 hover:border-purple-200/60 transition-colors cursor-pointer group"
+                        onClick={() => handleActionClick(item)}
                         data-testid={`action-item-${item.id}`}
                       >
                         <div className="min-w-0 flex-1">
@@ -902,21 +938,15 @@ export default function MyWorkHomePage() {
                               </span>
                             )}
                           </div>
-                          <p className="text-xs font-medium truncate mt-0.5">{item.title}</p>
+                          <p className="text-xs font-medium truncate mt-0.5 group-hover:text-purple-700">{item.title}</p>
                           {item.subtitle && (
                             <p className="text-[10px] text-muted-foreground truncate">{item.subtitle}</p>
                           )}
                         </div>
-                        {item.link && (
-                          <a
-                            href={item.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="shrink-0"
-                            onClick={e => e.stopPropagation()}
-                          >
-                            <ExternalLink className="h-3 w-3 text-muted-foreground hover:text-purple-600" />
-                          </a>
+                        {item.link ? (
+                          <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-purple-600 shrink-0 mt-0.5" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-purple-600 shrink-0 mt-0.5 transition-colors" />
                         )}
                       </div>
                     ))}
