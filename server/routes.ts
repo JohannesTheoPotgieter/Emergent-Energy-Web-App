@@ -673,8 +673,9 @@ export async function registerRoutes(
       ]);
 
       const results: any[] = [];
+      const getRows = (result: any): any[] => Array.isArray(result) ? result : (result?.rows || []);
 
-      for (const r of (projectRows as any).rows || []) {
+      for (const r of getRows(projectRows)) {
         results.push({
           type: "project",
           id: r.project_name,
@@ -683,7 +684,7 @@ export async function registerRoutes(
           url: `/project/${encodeURIComponent(r.project_name)}`,
         });
       }
-      for (const r of (workItemRows as any).rows || []) {
+      for (const r of getRows(workItemRows)) {
         results.push({
           type: "task",
           id: `wi-${r.id}`,
@@ -692,7 +693,7 @@ export async function registerRoutes(
           url: r.project_name ? `/project/${encodeURIComponent(r.project_name)}?tab=plan` : null,
         });
       }
-      for (const r of (costRows as any).rows || []) {
+      for (const r of getRows(costRows)) {
         results.push({
           type: "cost",
           id: `cost-${r.id}`,
@@ -701,7 +702,7 @@ export async function registerRoutes(
           url: r.project_name ? `/project/${encodeURIComponent(r.project_name)}?tab=expenditure` : null,
         });
       }
-      for (const r of (revenueRows as any).rows || []) {
+      for (const r of getRows(revenueRows)) {
         results.push({
           type: "revenue",
           id: `rev-${r.id}`,
