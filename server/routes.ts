@@ -2404,6 +2404,7 @@ export async function registerRoutes(
           latest_update_at: editable?.latestUpdateAt || null,
           latest_update_by: editable?.latestUpdateBy || null,
           escalation_level: info?.escalationLevel || null,
+          rag_status: info?.ragStatus || null,
           task_status_counts: taskCountsByProject.get(projectName) || taskCountsByProject.get(cleanName) || {},
           phase_updated_at: info?.phaseUpdatedAt || null,
           has_tracker_import: nameVariants.some(v => importedProjectNames.has(v)) || importedProjectNames.has(cleanName),
