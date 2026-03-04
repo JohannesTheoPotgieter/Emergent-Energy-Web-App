@@ -122,7 +122,6 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "projects" as PermissionEntity, label: "Project Summary", actions: ["view", "edit", "delete"] },
       { entity: "pm_dashboard" as PermissionEntity, label: "PM Dashboard", actions: ["view"] },
       { entity: "pm_on_the_go" as PermissionEntity, label: "On-The-Go", actions: ["view", "edit"] },
-      { entity: "tr_register" as PermissionEntity, label: "TR Register", actions: ["view", "edit", "delete"] },
       { entity: "smart_import" as PermissionEntity, label: "Smart Import", actions: ["view", "edit"] },
       { entity: "excel_updates" as PermissionEntity, label: "Excel Updates", actions: ["view", "approve"] },
       { entity: "portfolios" as PermissionEntity, label: "Portfolios", actions: ["view", "edit", "delete"] },
@@ -130,8 +129,6 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "weekly_review_wizard" as PermissionEntity, label: "Weekly Reviews", actions: ["view", "edit"] },
       { entity: "weekly_reviews" as PermissionEntity, label: "Weekly Review Data", actions: ["view", "edit"] },
       { entity: "create_project" as PermissionEntity, label: "Create Project", actions: ["edit"] },
-      { entity: "approvals" as PermissionEntity, label: "Approvals", actions: ["view", "approve"] },
-      { entity: "project_normalized" as PermissionEntity, label: "Normalized View", actions: ["view"] },
     ],
   },
   {

@@ -25,7 +25,7 @@ import {
   ChevronDown,
   ChevronRight,
   Layers,
-  FolderPlus,
+
   InboxIcon,
   RefreshCw,
   Users,
@@ -167,7 +167,6 @@ function getLegacyNavGroups(): NavGroup[] {
       items: [
         { label: "Settings", icon: Settings, path: "/admin/settings" },
         { label: "Roles & Permissions", icon: ShieldAlert, path: "/admin/roles" },
-        { label: "New Project", icon: FolderPlus, path: "/project-create" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
         { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
       ],
