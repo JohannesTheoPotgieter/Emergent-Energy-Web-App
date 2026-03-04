@@ -1,18 +1,15 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import React, { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
 import {
   Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ComposedChart, Line,
 } from "recharts";
 import {
   DollarSign, TrendingUp, Activity, Percent, Search, Loader2,
-  Target, ChevronDown, ChevronRight, Check, X,
+  Target, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -52,28 +49,26 @@ function KpiCard({ icon: Icon, label, value, sub, color }: {
 
 const ROW_DEFS: {
   key: string; label: string; dataKey: string;
-  editable: boolean; colorClass: string; group: "monthly" | "ytd";
+  colorClass: string; group: "monthly" | "ytd";
   colorCoded?: boolean;
 }[] = [
-  { key: "totalGP", label: "GP (Actual)", dataKey: "totalGP", editable: false, colorClass: "text-foreground font-bold", group: "monthly" },
-  { key: "realisedGP", label: "Realised GP", dataKey: "realisedGP", editable: false, colorClass: "text-emerald-600 font-semibold", group: "monthly" },
-  { key: "unrealisedGP", label: "Unrealised GP", dataKey: "unrealisedGP", editable: false, colorClass: "text-red-600 font-semibold", group: "monthly" },
-  { key: "budget", label: "GP Budget", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
-  { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
-  { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
-  { key: "gpPct", label: "GP %", dataKey: "gpPct", editable: false, colorClass: "text-foreground font-semibold", group: "monthly" },
-  { key: "ytdGP", label: "YTD GP", dataKey: "ytdGP", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
-  { key: "ytdBudget", label: "YTD Budget", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
-  { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", editable: false, colorClass: "", group: "ytd", colorCoded: true },
-  { key: "ytdVariancePct", label: "YTD Var %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
-  { key: "ytdGpPct", label: "YTD GP %", dataKey: "ytdGpPct", editable: false, colorClass: "text-foreground font-semibold", group: "ytd" },
+  { key: "totalRevenue", label: "Revenue (Actual)", dataKey: "totalRevenue", colorClass: "text-blue-600 font-semibold", group: "monthly" },
+  { key: "totalCOS", label: "COS (Actual)", dataKey: "totalCOS", colorClass: "text-red-600 font-semibold", group: "monthly" },
+  { key: "totalGP", label: "GP (Actual)", dataKey: "totalGP", colorClass: "text-foreground font-bold", group: "monthly" },
+  { key: "realisedGP", label: "Realised GP", dataKey: "realisedGP", colorClass: "text-emerald-600 font-semibold", group: "monthly" },
+  { key: "unrealisedGP", label: "Unrealised GP", dataKey: "unrealisedGP", colorClass: "text-red-600 font-semibold", group: "monthly" },
+  { key: "revBudget", label: "Revenue Budget", dataKey: "revBudget", colorClass: "text-blue-400", group: "monthly" },
+  { key: "cosBudget", label: "COS Budget", dataKey: "cosBudget", colorClass: "text-red-400", group: "monthly" },
+  { key: "budget", label: "GP Budget (Rev - COS)", dataKey: "budget", colorClass: "text-purple-600 font-semibold", group: "monthly" },
+  { key: "variance", label: "Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
+  { key: "variancePct", label: "Variance %", dataKey: "variancePct", colorClass: "", group: "monthly", colorCoded: true },
+  { key: "gpPct", label: "GP %", dataKey: "gpPct", colorClass: "text-foreground font-semibold", group: "monthly" },
+  { key: "ytdGP", label: "YTD GP", dataKey: "ytdGP", colorClass: "text-foreground font-bold", group: "ytd" },
+  { key: "ytdBudget", label: "YTD Budget", dataKey: "ytdBudget", colorClass: "text-purple-600", group: "ytd" },
+  { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", colorClass: "", group: "ytd", colorCoded: true },
+  { key: "ytdVariancePct", label: "YTD Var %", dataKey: "ytdVariancePct", colorClass: "", group: "ytd", colorCoded: true },
+  { key: "ytdGpPct", label: "YTD GP %", dataKey: "ytdGpPct", colorClass: "text-foreground font-semibold", group: "ytd" },
 ];
-
-interface EditingCell {
-  field: string;
-  monthKey: string;
-  value: string;
-}
 
 export default function GpTrackerPage() {
   const [, navigate] = useLocation();
@@ -81,12 +76,6 @@ export default function GpTrackerPage() {
   const [showMonthly, setShowMonthly] = useState(true);
   const [showYtd, setShowYtd] = useState(true);
   const [showProjects, setShowProjects] = useState(true);
-  const [editing, setEditing] = useState<EditingCell | null>(null);
-  const editRef = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
-  const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN", "CFO", "PROGRAM_FINANCE_MANAGER"].includes(user?.role || "");
 
   const { data, isLoading } = useQuery<any>({
     queryKey: ["gp-tracker-portfolio"],
@@ -94,23 +83,6 @@ export default function GpTrackerPage() {
       const res = await fetch("/api/gp-tracker", { headers: authHeaders(), credentials: "include" });
       if (!res.ok) throw new Error("Failed to load GP tracker");
       return res.json();
-    },
-  });
-
-  const saveBudgetMutation = useMutation({
-    mutationFn: async (body: { trackerType: string; monthKey: string; budget?: string }) => {
-      const res = await fetch("/api/tracker-monthly", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        credentials: "include",
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error("Failed to save budget");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["gp-tracker-portfolio"] });
-      toast({ title: "GP Budget saved" });
     },
   });
 
@@ -131,31 +103,6 @@ export default function GpTrackerPage() {
     const q = search.toLowerCase();
     return projects.filter((p: any) => (p.projectName || "").toLowerCase().includes(q));
   }, [projects, search]);
-
-  const startEdit = useCallback((field: string, monthKey: string, currentValue: number) => {
-    if (!isAdmin) return;
-    setEditing({ field, monthKey, value: String(currentValue || "") });
-  }, [isAdmin]);
-
-  const saveEdit = useCallback(() => {
-    if (!editing) return;
-    const numVal = parseFloat(editing.value) || 0;
-    saveBudgetMutation.mutate({
-      trackerType: "GP",
-      monthKey: editing.monthKey,
-      budget: String(numVal),
-    });
-    setEditing(null);
-  }, [editing, saveBudgetMutation]);
-
-  const cancelEdit = useCallback(() => setEditing(null), []);
-
-  useEffect(() => {
-    if (editing && editRef.current) {
-      editRef.current.focus();
-      editRef.current.select();
-    }
-  }, [editing]);
 
   if (isLoading) {
     return (
@@ -261,43 +208,12 @@ export default function GpTrackerPage() {
                     <tr key={row.key} className="border-b border-border/40 hover:bg-muted/20" data-testid={`row-${row.key}`}>
                       <td className="py-2 px-3 font-medium text-muted-foreground sticky left-0 bg-white z-10 whitespace-nowrap">
                         {row.label}
-                        {row.editable && isAdmin && <span className="ml-1 text-[9px] text-purple-400">(editable)</span>}
                       </td>
                       {months.map((m: any) => {
                         const val = getCellValue(m, row.dataKey);
-                        const isEditing = editing && editing.field === row.key && editing.monthKey === m.monthKey;
-
-                        if (isEditing) {
-                          return (
-                            <td key={m.monthKey} className="py-1 px-1">
-                              <div className="flex items-center gap-0.5">
-                                <Input
-                                  ref={editRef}
-                                  value={editing!.value}
-                                  onChange={e => setEditing({ ...editing!, value: e.target.value })}
-                                  onKeyDown={e => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") cancelEdit(); }}
-                                  className="h-6 text-xs w-20 px-1"
-                                  data-testid={`input-budget-${m.monthKey}`}
-                                />
-                                <Button size="icon" variant="ghost" className="h-5 w-5" onClick={saveEdit} data-testid={`button-save-${m.monthKey}`}>
-                                  <Check className="h-3 w-3 text-emerald-600" />
-                                </Button>
-                                <Button size="icon" variant="ghost" className="h-5 w-5" onClick={cancelEdit}>
-                                  <X className="h-3 w-3 text-red-500" />
-                                </Button>
-                              </div>
-                            </td>
-                          );
-                        }
-
                         const colorClass = row.colorCoded ? getVarianceColor(val) : row.colorClass;
-
                         return (
-                          <td
-                            key={m.monthKey}
-                            className={`py-2 px-3 text-right ${colorClass} ${row.editable && isAdmin ? "cursor-pointer hover:bg-purple-50 rounded" : ""}`}
-                            onClick={row.editable ? () => startEdit(row.key, m.monthKey, val) : undefined}
-                          >
+                          <td key={m.monthKey} className={`py-2 px-3 text-right ${colorClass}`}>
                             {formatCellValue(val, row.dataKey)}
                           </td>
                         );
