@@ -20,7 +20,7 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Execution Dashboard**: Card-based UI for project plan tasks and financial items, KPI summary, dual progress bars, and direct project links.
 -   **Lifecycle Board**: Kanban-style board with drag-and-drop, detailed project cards, RAG status, and progress bars (PD%, Eng%, QA%, PM%).
 -   **Portfolio Management**: Enhanced Gantt Chart with hierarchical milestones, two-layer progress bars, and slippage warnings.
--   **Project Detail Page**: Section-based navigation for Project Management, Engineering, Quality, and Collaboration.
+-   **Project Detail Page**: "Command Center" layout with dark-themed header (`ProjectCommandHeader.tsx`), scoped CSS tokens (`.command-header`), user-settable RAG health status (COO/CEO/CCO), financial KPIs bar, left-accent overview cards, section-based navigation for Project Management, Engineering, Quality, and Collaboration.
 -   **Financials**: "Actual vs Costed" terminology; financial year September to August; AI-style Financial Integration Panel.
 -   **Project Creation**: COO/CEO initiated projects auto-generate engineering stage templates.
 -   **Portfolio Dashboard**: Four view modes (Project Management, Finance, Quality, Engineering) with Recharts visualizations.

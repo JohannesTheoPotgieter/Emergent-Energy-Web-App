@@ -46,6 +46,7 @@ import CaptureDeliverable from "@/components/CaptureDeliverable";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
+import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
 import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
 import { usePermission } from "@/hooks/use-permissions";
 
@@ -976,6 +977,8 @@ export default function ProjectDetailPage() {
     : "—";
   const completionNum = projectInfo?.project_pct_complete != null ? projectInfo.project_pct_complete * 100 : 0;
   const isAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
+  const canSetRag = ['admin', 'COO_ADMIN', 'CEO_ADMIN', 'CCO'].includes(user?.role || '');
+  const ragStatus = projectInfo?.rag_status || null;
   const totalRevenueActual = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
   const contractValue = projectInfo?.contract_value || totalRevenueActual || 0;
   const totalBudgetFromExpenses = (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
@@ -1084,149 +1087,31 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="space-y-4">
-      <Button variant="ghost" size="sm" onClick={() => setLocation("/projects")} className="gap-2" data-testid="button-back">
-        <ArrowLeft className="h-4 w-4" />
-        Back to Projects
-      </Button>
-
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-            <h2 className="text-xl sm:text-3xl font-heading font-bold text-foreground" data-testid="text-project-name">{displayName}</h2>
-            <PhaseBadge phase={phase} />
-          </div>
-          <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground">
-            {isAdmin ? (
-              <span className="flex items-center gap-1">
-                <User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PD:
-                <Select
-                  value={pd === "—" ? "__unassigned" : pd}
-                  onValueChange={(val) => {
-                    const newPd = val === "__unassigned" ? "" : val;
-                    if (projectInfoId) {
-                      engFetch(`/api/lifecycle-board/projects/${projectInfoId}`, {
-                        method: "PATCH",
-                        body: JSON.stringify({ pd: newPd }),
-                      }).then(() => queryClient.invalidateQueries({ queryKey: ["projects-summary"] }));
-                    }
-                  }}
-                >
-                  <SelectTrigger className="h-6 text-xs w-auto min-w-[100px] border-dashed" data-testid="select-detail-pd">
-                    <SelectValue placeholder="Unassigned" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__unassigned" data-testid="select-detail-pd-unassigned">Unassigned</SelectItem>
-                    {(pdAssignableUsers || []).map((u: any) => (
-                      <SelectItem key={u.id} value={u.name} data-testid={`select-detail-pd-${u.id}`}>{u.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </span>
-            ) : (
-              <span className="flex items-center gap-1"><User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PD: {pd}</span>
-            )}
-            {isAdmin ? (
-              <span className="flex items-center gap-1">
-                <User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PM:
-                <Select
-                  value={pm === "—" ? "__unassigned" : pm}
-                  onValueChange={(val) => {
-                    const newPm = val === "__unassigned" ? "" : val;
-                    const matched = (pmAssignableUsers || []).find((u: any) => u.name === newPm);
-                    if (projectInfoId) {
-                      engFetch(`/api/lifecycle-board/projects/${projectInfoId}`, {
-                        method: "PATCH",
-                        body: JSON.stringify({ pm: newPm, pmUserId: matched?.id ?? null }),
-                      }).then(() => queryClient.invalidateQueries({ queryKey: ["projects-summary"] }));
-                    }
-                  }}
-                >
-                  <SelectTrigger className="h-6 text-xs w-auto min-w-[100px] border-dashed" data-testid="select-detail-pm">
-                    <SelectValue placeholder="Unassigned" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__unassigned" data-testid="select-detail-pm-unassigned">Unassigned</SelectItem>
-                    {(pmAssignableUsers || []).map((u: any) => (
-                      <SelectItem key={u.id} value={u.name} data-testid={`select-detail-pm-${u.id}`}>{u.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </span>
-            ) : (
-              <span className="flex items-center gap-1"><User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> PM: {pm}</span>
-            )}
-            <span className="flex items-center gap-1"><Activity className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {sizeKwp}</span>
-            <span className="flex items-center gap-1"><TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> {completion} complete</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <CaptureDeliverable projectId={projectInfoId ?? undefined} projectName={projectName} />
-          <POGenerator projectName={projectName} projectManager={pm !== "—" ? pm : undefined} />
-        </div>
-      </div>
-
-      <Card className="sticky top-0 z-10 shadow-sm" data-testid="awareness-bar">
-        <CardContent className="p-3">
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 items-center">
-            <div className="flex flex-col gap-1" data-testid="awareness-execution-phase">
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Execution</span>
-              <span className="text-xs font-medium truncate">{executionPhase || "—"}</span>
-            </div>
-
-            <div className="flex flex-col gap-1" data-testid="awareness-rag">
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">RAG</span>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1" title={`Schedule: ${scheduleRag}`}>
-                  <RagDot color={scheduleRag} />
-                  <span className="text-[10px]">S</span>
-                </div>
-                <div className="flex items-center gap-1" title={`Cost: ${costRag}`}>
-                  <RagDot color={costRag} />
-                  <span className="text-[10px]">C</span>
-                </div>
-                <div className="flex items-center gap-1" title={`Quality: ${qualityRag}`}>
-                  <RagDot color={qualityRag} />
-                  <span className="text-[10px]">Q</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1" data-testid="awareness-milestone">
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Next Milestone</span>
-              <span className={`text-xs font-medium truncate ${nextMilestone?.allPaid ? "text-emerald-600" : ""}`}>
-                {nextMilestone
-                  ? nextMilestone.allPaid
-                    ? "All Paid"
-                    : `${nextMilestone.name} (${new Date(nextMilestone.date!).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })})`
-                  : "—"}
-              </span>
-            </div>
-
-            <div className="flex flex-col gap-1" data-testid="awareness-revenue">
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Rev Realised</span>
-              <span className="text-sm font-bold">{revenueRealisedPct.toFixed(1)}%</span>
-            </div>
-
-            <div className="flex flex-col gap-1" data-testid="awareness-cos">
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">COS Realised</span>
-              <span className="text-sm font-bold">{cosRealisedPct.toFixed(1)}%</span>
-            </div>
-
-            <div className="flex flex-col gap-1" data-testid="awareness-margin">
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Margin Delta</span>
-              <span className={`text-sm font-bold ${marginDelta >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                {marginDelta >= 0 ? "+" : ""}{marginDelta.toFixed(1)}%
-              </span>
-            </div>
-
-            <div className="flex flex-col gap-1" data-testid="awareness-contract">
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Contract</span>
-              <span className="text-sm font-bold">R{(contractValue / 1000000).toFixed(1)}M</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <ProjectCommandHeader
+        projectName={projectName}
+        displayName={displayName}
+        phase={phase}
+        pd={pd}
+        pm={pm}
+        sizeKwp={sizeKwp}
+        completion={completion}
+        completionNum={completionNum}
+        contractValue={contractValue}
+        revenueRealisedPct={revenueRealisedPct}
+        cosRealisedPct={cosRealisedPct}
+        marginDelta={marginDelta}
+        scheduleRag={scheduleRag}
+        costRag={costRag}
+        qualityRag={qualityRag}
+        ragStatus={ragStatus}
+        nextMilestone={nextMilestone}
+        projectInfoId={projectInfoId ?? null}
+        isAdmin={isAdmin}
+        canSetRag={canSetRag}
+        pdAssignableUsers={pdAssignableUsers || []}
+        pmAssignableUsers={pmAssignableUsers || []}
+        onPhaseChangeClick={() => setPhaseModalOpen(true)}
+      />
 
       {(() => {
         const phaseGuide = getPhaseGuidance(phase);
@@ -1242,96 +1127,16 @@ export default function ProjectDetailPage() {
 
 
       {activeSection === "overview" && (
-        <div className="space-y-6" data-testid="overview-section">
+        <div className="space-y-5" data-testid="overview-section">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {canViewTab.expenditure && (
-            <Card className="relative overflow-hidden" data-testid="overview-expenditure">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-violet-500" />
-              <CardContent className="p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-9 h-9 rounded-lg bg-violet-100 flex items-center justify-center">
-                      <DollarSign className="h-4.5 w-4.5 text-violet-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-sm">Expenditure Breakdown</h3>
-                      <p className="text-[10px] text-muted-foreground">Actual vs Costed by category</p>
-                    </div>
-                  </div>
-                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-violet-600" onClick={() => navigateToSection("project-management", "expenditure")} data-testid="button-goto-expenditure">
-                    View Details <ArrowRight className="h-3 w-3" />
-                  </Button>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Costed</p>
-                    <p className="text-sm font-bold">R{(budgetTotal / 1000).toFixed(0)}k</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Actual</p>
-                    <p className={`text-sm font-bold ${costRag === "red" ? "text-red-600" : costRag === "amber" ? "text-amber-600" : ""}`}>R{(totalExpenses / 1000).toFixed(0)}k</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Variance</p>
-                    <p className={`text-sm font-bold ${(budgetTotal - totalExpenses) < 0 ? "text-red-600" : "text-emerald-600"}`}>
-                      {(budgetTotal - totalExpenses) >= 0 ? "" : "-"}R{(Math.abs(budgetTotal - totalExpenses) / 1000).toFixed(0)}k
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
-                  {(() => {
-                    const categories = (expenseData as any[]).reduce((acc: Record<string, { actual: number; budget: number }>, e: any) => {
-                      const cat = e.expenseCategory || "Uncategorised";
-                      if (!acc[cat]) acc[cat] = { actual: 0, budget: 0 };
-                      acc[cat].actual += Number(e.expenseActualTotal) || 0;
-                      acc[cat].budget += Number(e.budgetTotal) || 0;
-                      return acc;
-                    }, {});
-                    const sorted = Object.entries(categories).sort((a, b) => b[1].actual - a[1].actual);
-                    const maxVal = Math.max(...sorted.map(([, v]) => Math.max(v.actual, v.budget)), 1);
-                    if (sorted.length === 0) return <p className="text-xs text-muted-foreground text-center py-4">No expenditure data</p>;
-                    return sorted.map(([cat, vals]) => {
-                      const overBudget = vals.actual > vals.budget && vals.budget > 0;
-                      return (
-                        <div key={cat} className="space-y-0.5" data-testid={`exp-cat-${cat.replace(/\s+/g, "-").toLowerCase()}`}>
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="truncate max-w-[140px] text-muted-foreground">{cat}</span>
-                            <span className={`font-medium ${overBudget ? "text-red-600" : ""}`}>
-                              R{(vals.actual / 1000).toFixed(0)}k / R{(vals.budget / 1000).toFixed(0)}k
-                            </span>
-                          </div>
-                          <div className="flex gap-0.5 h-2">
-                            <div className="h-full bg-violet-200 rounded-full overflow-hidden flex-1">
-                              <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${Math.min((vals.budget / maxVal) * 100, 100)}%` }} />
-                            </div>
-                            <div className="h-full bg-gray-100 rounded-full overflow-hidden flex-1">
-                              <div className={`h-full rounded-full transition-all ${overBudget ? "bg-red-500" : "bg-emerald-500"}`} style={{ width: `${Math.min((vals.actual / maxVal) * 100, 100)}%` }} />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-                <div className="flex items-center gap-4 text-[10px] text-muted-foreground pt-1 border-t">
-                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-violet-500" /> Costed</div>
-                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500" /> Actual</div>
-                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500" /> Over Budget</div>
-                </div>
-              </CardContent>
-            </Card>
-            )}
 
             {canViewTab.overview && (
-            <Card className="relative overflow-hidden" data-testid="overview-plan-summary">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-sky-500" />
+            <Card className="relative overflow-hidden border-l-[3px] border-l-sky-500" data-testid="overview-plan-summary">
               <CardContent className="p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="w-9 h-9 rounded-lg bg-sky-100 flex items-center justify-center">
-                      <CalendarDays className="h-4.5 w-4.5 text-sky-600" />
+                    <div className="w-8 h-8 rounded-lg bg-sky-50 flex items-center justify-center">
+                      <CalendarDays className="h-4 w-4 text-sky-600" />
                     </div>
                     <div>
                       <h3 className="font-semibold text-sm">Project Plan</h3>
@@ -1348,7 +1153,7 @@ export default function ProjectDetailPage() {
                     <span className="text-muted-foreground">Overall Progress</span>
                     <span className="font-semibold">{planCompletionPct.toFixed(0)}% ({completedPlanTasks.length}/{planTasks.length})</span>
                   </div>
-                  <div className="w-full h-3 bg-muted rounded-full overflow-hidden">
+                  <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden">
                     <div className="h-full bg-sky-500 rounded-full transition-all" style={{ width: `${planCompletionPct}%` }} />
                   </div>
                 </div>
@@ -1425,14 +1230,92 @@ export default function ProjectDetailPage() {
             </Card>
             )}
 
-            {canViewTab.engineering && (
-            <Card className="relative overflow-hidden" data-testid="overview-engineering-summary">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-orange-500" />
+            {canViewTab.expenditure && (
+            <Card className="relative overflow-hidden border-l-[3px] border-l-violet-500" data-testid="overview-expenditure">
               <CardContent className="p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center">
-                      <Wrench className="h-4.5 w-4.5 text-orange-600" />
+                    <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
+                      <DollarSign className="h-4 w-4 text-violet-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-sm">Expenditure Breakdown</h3>
+                      <p className="text-[10px] text-muted-foreground">Actual vs Costed by category</p>
+                    </div>
+                  </div>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-violet-600" onClick={() => navigateToSection("project-management", "expenditure")} data-testid="button-goto-expenditure">
+                    View Details <ArrowRight className="h-3 w-3" />
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Costed</p>
+                    <p className="text-sm font-bold">R{(budgetTotal / 1000).toFixed(0)}k</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Actual</p>
+                    <p className={`text-sm font-bold ${costRag === "red" ? "text-red-600" : costRag === "amber" ? "text-amber-600" : ""}`}>R{(totalExpenses / 1000).toFixed(0)}k</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Variance</p>
+                    <p className={`text-sm font-bold ${(budgetTotal - totalExpenses) < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                      {(budgetTotal - totalExpenses) >= 0 ? "" : "-"}R{(Math.abs(budgetTotal - totalExpenses) / 1000).toFixed(0)}k
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                  {(() => {
+                    const categories = (expenseData as any[]).reduce((acc: Record<string, { actual: number; budget: number }>, e: any) => {
+                      const cat = e.expenseCategory || "Uncategorised";
+                      if (!acc[cat]) acc[cat] = { actual: 0, budget: 0 };
+                      acc[cat].actual += Number(e.expenseActualTotal) || 0;
+                      acc[cat].budget += Number(e.budgetTotal) || 0;
+                      return acc;
+                    }, {});
+                    const sorted = Object.entries(categories).sort((a, b) => b[1].actual - a[1].actual);
+                    const maxVal = Math.max(...sorted.map(([, v]) => Math.max(v.actual, v.budget)), 1);
+                    if (sorted.length === 0) return <p className="text-xs text-muted-foreground text-center py-4">No expenditure data</p>;
+                    return sorted.map(([cat, vals]) => {
+                      const overBudget = vals.actual > vals.budget && vals.budget > 0;
+                      return (
+                        <div key={cat} className="space-y-0.5" data-testid={`exp-cat-${cat.replace(/\s+/g, "-").toLowerCase()}`}>
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="truncate max-w-[140px] text-muted-foreground">{cat}</span>
+                            <span className={`font-medium ${overBudget ? "text-red-600" : ""}`}>
+                              R{(vals.actual / 1000).toFixed(0)}k / R{(vals.budget / 1000).toFixed(0)}k
+                            </span>
+                          </div>
+                          <div className="flex gap-0.5 h-2">
+                            <div className="h-full bg-violet-200 rounded-full overflow-hidden flex-1">
+                              <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${Math.min((vals.budget / maxVal) * 100, 100)}%` }} />
+                            </div>
+                            <div className="h-full bg-gray-100 rounded-full overflow-hidden flex-1">
+                              <div className={`h-full rounded-full transition-all ${overBudget ? "bg-red-500" : "bg-emerald-500"}`} style={{ width: `${Math.min((vals.actual / maxVal) * 100, 100)}%` }} />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+                <div className="flex items-center gap-4 text-[10px] text-muted-foreground pt-1 border-t">
+                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-violet-500" /> Costed</div>
+                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500" /> Actual</div>
+                  <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500" /> Over Budget</div>
+                </div>
+              </CardContent>
+            </Card>
+            )}
+
+            {canViewTab.engineering && (
+            <Card className="relative overflow-hidden border-l-[3px] border-l-orange-500" data-testid="overview-engineering-summary">
+              <CardContent className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center">
+                      <Wrench className="h-4 w-4 text-orange-600" />
                     </div>
                     <div>
                       <h3 className="font-semibold text-sm">Engineering</h3>
@@ -1480,13 +1363,12 @@ export default function ProjectDetailPage() {
             )}
 
             {canViewTab.quality && (
-            <Card className="relative overflow-hidden" data-testid="overview-quality-summary">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-500" />
+            <Card className="relative overflow-hidden border-l-[3px] border-l-emerald-500" data-testid="overview-quality-summary">
               <CardContent className="p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center">
-                      <ShieldCheck className="h-4.5 w-4.5 text-emerald-600" />
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                      <ShieldCheck className="h-4 w-4 text-emerald-600" />
                     </div>
                     <div>
                       <h3 className="font-semibold text-sm">Quality</h3>
@@ -1535,13 +1417,12 @@ export default function ProjectDetailPage() {
             </Card>
             )}
 
-            <Card className="relative overflow-hidden" data-testid="overview-pd-summary">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-indigo-500" />
+            <Card className="relative overflow-hidden border-l-[3px] border-l-indigo-500" data-testid="overview-pd-summary">
               <CardContent className="p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center">
-                      <FileText className="h-4.5 w-4.5 text-indigo-600" />
+                    <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+                      <FileText className="h-4 w-4 text-indigo-600" />
                     </div>
                     <div>
                       <h3 className="font-semibold text-sm">Project Development</h3>
@@ -1742,9 +1623,6 @@ export default function ProjectDetailPage() {
             <Button size="sm" variant={activeSubTab === "chat" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("chat")} data-testid="subtab-chat">
               <MessageSquare className="h-3 w-3 mr-1" /> Chat
             </Button>
-            <Button size="sm" variant={activeSubTab === "sharepoint" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("sharepoint")} data-testid="subtab-sharepoint">
-              <FolderOpen className="h-3 w-3 mr-1" /> SharePoint Files
-            </Button>
             <div className="w-px h-5 bg-border self-center mx-1" />
             <Button size="sm" variant={activeSubTab === "approvals" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("approvals")} data-testid="subtab-approvals">
               <FileCheck className="h-3 w-3 mr-1" /> Approvals & Deliverables
@@ -1755,7 +1633,6 @@ export default function ProjectDetailPage() {
           </div>
 
           {activeSubTab === "chat" && <ProjectChatTab projectName={projectName} />}
-          {activeSubTab === "sharepoint" && <SharePointFilesTab projectName={projectName} />}
           {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "notifications" && <ProjectNotificationsTab projectName={projectName} />}
         </div>

@@ -50,6 +50,22 @@
   --radius-lg: var(--radius);
 }
 
+.command-header {
+  --cmd-bg: #0F172A;
+  --cmd-bg-panel: #111827;
+  --cmd-bg-card: #1E293B;
+  --cmd-border: #334155;
+  --cmd-text: #F8FAFC;
+  --cmd-text-secondary: #CBD5E1;
+  --cmd-text-muted: #64748B;
+  --cmd-brand: #16A34A;
+  --cmd-brand-light: #22C55E;
+  --cmd-green: #22C55E;
+  --cmd-amber: #F59E0B;
+  --cmd-red: #EF4444;
+  --cmd-blue: #3B82F6;
+}
+
 :root {
   --background: 210 20% 98%;
   --foreground: 220 25% 15%;
