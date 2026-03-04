@@ -1872,6 +1872,14 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
     const { startDate, endDate } = req.query;
     const projectName = (projectParam && typeof projectParam === 'string') ? projectParam : null;
 
+    if (!projectName) {
+      return res.status(400).json({
+        error: "Project filter required",
+        message: "Please select a specific project to view cashflow data. The full portfolio cashflow is available in the Cashflow 2026 view.",
+        hint: "Add ?project=ProjectName to filter by project"
+      });
+    }
+
     let points: any[];
     if (projectName) {
       points = await storage.getCashflowPointsByProject(projectName);
