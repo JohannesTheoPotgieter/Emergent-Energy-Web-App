@@ -2619,6 +2619,7 @@ export default function EngineeringTasksPage() {
   const [statusFilter, setStatusFilter] = useState<string>(savedDefaults?.statusFilter || "all");
   const [priorityFilter, setPriorityFilter] = useState<string>(savedDefaults?.priorityFilter || "all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>(savedDefaults?.assigneeFilter || "all");
+  const [projectFilter, setProjectFilter] = useState<string>("all");
   const [hasCustomDefault, setHasCustomDefault] = useState(!!savedDefaults);
   const [searchTerm, setSearchTerm] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -2769,6 +2770,7 @@ export default function EngineeringTasksPage() {
   }, [updateDueDateMutation]);
 
   const uniqueAssignees = Array.from(new Set(tasks.flatMap(t => t.assignees || []).filter(Boolean))).sort();
+  const uniqueProjects = useMemo(() => Array.from(new Set(tasks.map(t => t.projectName).filter(Boolean))).sort() as string[], [tasks]);
 
   const basePool = myTasksOnly ? myTasks : tasks;
 
@@ -2776,6 +2778,7 @@ export default function EngineeringTasksPage() {
     if (statusFilter !== "all" && t.status !== statusFilter) return false;
     if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
     if (assigneeFilter !== "all" && !(t.assignees || []).includes(assigneeFilter)) return false;
+    if (projectFilter !== "all" && (t.projectName || "") !== projectFilter) return false;
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       return t.title.toLowerCase().includes(term) || (t.projectName || "").toLowerCase().includes(term);
@@ -2787,6 +2790,7 @@ export default function EngineeringTasksPage() {
     setStatusFilter("all");
     setPriorityFilter("all");
     setAssigneeFilter("all");
+    setProjectFilter("all");
     setSearchTerm("");
     setMyTasksOnly(false);
     if (preset.filter.status) setStatusFilter(preset.filter.status);
@@ -3098,6 +3102,19 @@ export default function EngineeringTasksPage() {
               ...uniqueAssignees.map(a => ({ value: a, label: a })),
             ]}
             data-testid="filter-task-assignee"
+          />
+        )}
+        {uniqueProjects.length > 0 && (
+          <SearchableSelect
+            value={projectFilter}
+            onValueChange={setProjectFilter}
+            placeholder="Project"
+            triggerClassName="w-[130px] sm:w-[160px] h-8 text-xs"
+            options={[
+              { value: "all", label: "All Projects" },
+              ...uniqueProjects.map(p => ({ value: p, label: p.replace(/_Tracker.*$/i, "").replace(/_/g, " ") })),
+            ]}
+            data-testid="filter-task-project"
           />
         )}
       </div>

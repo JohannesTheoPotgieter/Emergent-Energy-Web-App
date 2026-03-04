@@ -679,7 +679,7 @@ export default function MyWorkTasksPage() {
             </div>
             <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" onClick={handleSaveDefaultView} data-testid="btn-save-default-view" title="Save default"><Save className="h-3 w-3" /></Button>
             {hasCustomDefault && <Button variant="ghost" size="sm" className="h-7 px-1.5 text-xs text-muted-foreground" onClick={handleResetDefaultView} data-testid="btn-reset-default-view" title="Reset default"><RotateCw className="h-3 w-3" /></Button>}
-            <Button variant={groomMode ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 ${groomMode ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}`} onClick={() => setGroomMode(!groomMode)} data-testid="button-groom-mode"><Eye className="h-3 w-3" /></Button>
+            <Button variant={groomMode ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 gap-1 ${groomMode ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}`} onClick={() => setGroomMode(!groomMode)} data-testid="button-groom-mode"><Eye className="h-3 w-3" />{groomMode && <span>Grooming</span>}</Button>
             <Button size="sm" className="h-7 gap-1 text-xs shadow-sm" onClick={() => setCreateDialogOpen(true)} data-testid="button-new-task"><Plus className="h-3.5 w-3.5" /> New</Button>
           </div>
         </div>
@@ -734,6 +734,20 @@ export default function MyWorkTasksPage() {
         </div>
       </div>
 
+      {(activeFilters > 0 || sourceFilter !== "all" || overdueOnly || groomMode) && (
+        <div className="shrink-0 flex items-center gap-1.5 mb-1.5 px-2 py-1 rounded-md bg-emerald-50/60 border border-emerald-200/50 text-[10px] text-emerald-800" data-testid="active-filter-summary">
+          <Filter className="h-3 w-3 shrink-0" />
+          <span className="font-medium">Showing:</span>
+          {sourceFilter !== "all" && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-white/70">{SOURCE_CONFIG[sourceFilter]?.shortLabel}</Badge>}
+          {statusFilter.length > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-white/70">{statusFilter.length} status</Badge>}
+          {priorityFilter.length > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-white/70">{priorityFilter.length} priority</Badge>}
+          {projectFilter && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-white/70 truncate max-w-[100px]">{projectFilter.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</Badge>}
+          {overdueOnly && <Badge variant="destructive" className="text-[9px] px-1 py-0 h-4">Overdue</Badge>}
+          {groomMode && <Badge className="text-[9px] px-1 py-0 h-4 bg-amber-500">Groom</Badge>}
+          <span className="text-muted-foreground ml-auto">{filteredTasks.length} task{filteredTasks.length !== 1 ? "s" : ""}</span>
+        </div>
+      )}
+
       <div className="shrink-0 flex items-center gap-2 mb-2">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -746,8 +760,8 @@ export default function MyWorkTasksPage() {
             const config = SOURCE_CONFIG[src]; const count = sourceCounts[src]; const active = sourceFilter === src;
             if (count === 0 && src !== "all") return null;
             return (
-              <button key={src} onClick={() => setSourceFilter(src)} className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all whitespace-nowrap ${active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted"}`} data-testid={`tab-source-${src}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-card/70" : config.dot}`} />
+              <button key={src} onClick={() => setSourceFilter(src)} className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all whitespace-nowrap border ${active ? "bg-emerald-600 text-white border-emerald-600 shadow-sm" : "text-muted-foreground hover:bg-muted border-transparent"}`} data-testid={`tab-source-${src}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-white/70" : config.dot}`} />
                 {config.shortLabel} {count > 0 && <span className={`text-[10px] ${active ? "opacity-80" : "opacity-50"}`}>{count}</span>}
               </button>
             );
@@ -789,10 +803,17 @@ export default function MyWorkTasksPage() {
           {allProjects.length > 0 && (
             <>
               <Separator orientation="vertical" className="h-4" />
-              <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} className="text-[10px] border border-border rounded px-1.5 py-0.5 bg-background h-5" data-testid="select-project-filter">
-                <option value="">All Projects</option>
-                {allProjects.map(p => (<option key={p} value={p}>{p.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</option>))}
-              </select>
+              <SearchableSelect
+                value={projectFilter}
+                onValueChange={setProjectFilter}
+                placeholder="All Projects"
+                triggerClassName="h-5 text-[10px] w-[140px] border-border"
+                options={[
+                  { value: "", label: "All Projects" },
+                  ...allProjects.map(p => ({ value: p, label: p.replace(/_Tracker.*$/i, "").replace(/_/g, " ") })),
+                ]}
+                data-testid="select-project-filter"
+              />
             </>
           )}
           {activeFilters > 0 && (<button onClick={() => { setStatusFilter([]); setPriorityFilter([]); setProjectFilter(""); setOverdueOnly(false); }} className="text-[10px] text-red-500 hover:underline ml-1" data-testid="button-clear-all-filters">Clear all</button>)}

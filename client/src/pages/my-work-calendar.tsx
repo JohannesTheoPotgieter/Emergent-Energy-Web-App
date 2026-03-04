@@ -188,6 +188,7 @@ export default function MyWorkCalendarPage() {
   const [draggedTask, setDraggedTask] = useState<CalendarTask | null>(null);
   const [dropTarget, setDropTarget] = useState<{ dayKey: string; hour: number } | null>(null);
   const [calSourceFilter, setCalSourceFilter] = useState<string>("all");
+  const [hiddenSources, setHiddenSources] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -499,14 +500,22 @@ export default function MyWorkCalendarPage() {
     ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
     : [currentDate];
 
+  const toggleSource = useCallback((source: string) => {
+    setHiddenSources(prev => {
+      const next = new Set(prev);
+      if (next.has(source)) next.delete(source); else next.add(source);
+      return next;
+    });
+  }, []);
+
   const scheduledTasksByDay = useMemo(() => {
     const map: Record<string, CalendarTask[]> = {};
     for (const day of days) {
       const key = format(day, "yyyy-MM-dd");
-      map[key] = calendarTasks.filter((t) => t.scheduledDate === key && t.scheduledStartTime);
+      map[key] = calendarTasks.filter((t) => t.scheduledDate === key && t.scheduledStartTime && !hiddenSources.has(t.taskType));
     }
     return map;
-  }, [calendarTasks, days]);
+  }, [calendarTasks, days, hiddenSources]);
 
   const completedStatuses = new Set(["done", "DONE", "Complete", "Completed", "COMPLETED", "cancelled", "CANCELLED", "closed", "resolved", "approved"]);
 
@@ -517,9 +526,11 @@ export default function MyWorkCalendarPage() {
   }, [calendarTasks]);
 
   const filteredUnscheduled = useMemo(() => {
-    if (calSourceFilter === "all") return unscheduledTasks;
-    return unscheduledTasks.filter(t => t.taskType === calSourceFilter);
-  }, [unscheduledTasks, calSourceFilter]);
+    let result = unscheduledTasks;
+    if (calSourceFilter !== "all") result = result.filter(t => t.taskType === calSourceFilter);
+    if (hiddenSources.size > 0) result = result.filter(t => !hiddenSources.has(t.taskType));
+    return result;
+  }, [unscheduledTasks, calSourceFilter, hiddenSources]);
 
   const calSourceCounts = useMemo(() => {
     const counts: Record<string, number> = { all: unscheduledTasks.length };
@@ -530,17 +541,22 @@ export default function MyWorkCalendarPage() {
   }, [unscheduledTasks]);
 
   const outlookByDay = useMemo(() => {
+    const isOutlookHidden = hiddenSources.has("outlook");
     const map: Record<string, OutlookEvent[]> = {};
     for (const day of days) {
       const key = format(day, "yyyy-MM-dd");
-      map[key] = outlookEvents.filter((ev) => {
-        const s = getStartStr(ev);
-        if (!s) return false;
-        try { return format(parseISO(s), "yyyy-MM-dd") === key; } catch { return false; }
-      });
+      if (isOutlookHidden) {
+        map[key] = [];
+      } else {
+        map[key] = outlookEvents.filter((ev) => {
+          const s = getStartStr(ev);
+          if (!s) return false;
+          try { return format(parseISO(s), "yyyy-MM-dd") === key; } catch { return false; }
+        });
+      }
     }
     return map;
-  }, [outlookEvents, days]);
+  }, [outlookEvents, days, hiddenSources]);
 
   const handleDragStart = useCallback((task: CalendarTask) => {
     setDraggedTask(task);
@@ -725,17 +741,48 @@ export default function MyWorkCalendarPage() {
               </Button>
             </div>
           </div>
-          <div className="flex items-center gap-3 sm:gap-4 mt-3 text-xs text-muted-foreground flex-wrap">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm bg-blue-100 border border-blue-200" />
-              Outlook Events
-            </div>
-            {Object.entries(TASK_TYPE_LABELS).map(([type, label]) => (
-              <div key={type} className="flex items-center gap-1.5">
-                <span className={`w-2.5 h-2.5 rounded-sm ${TASK_TYPE_COLORS[type].legendBg} border ${TASK_TYPE_COLORS[type].legendBorder}`} />
-                {label}
-              </div>
-            ))}
+          <div className="flex items-center gap-1.5 sm:gap-2 mt-3 text-xs flex-wrap" data-testid="calendar-source-toggles">
+            <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mr-0.5">Show:</span>
+            <button
+              onClick={() => toggleSource("outlook")}
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium transition-all cursor-pointer ${
+                hiddenSources.has("outlook")
+                  ? "opacity-40 bg-muted/30 border-border/30 text-muted-foreground line-through"
+                  : "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+              }`}
+              data-testid="toggle-source-outlook"
+            >
+              <span className="w-2 h-2 rounded-sm bg-blue-100 border border-blue-200" />
+              Outlook
+            </button>
+            {Object.entries(TASK_TYPE_LABELS).map(([type, label]) => {
+              const isHidden = hiddenSources.has(type);
+              const colors = TASK_TYPE_COLORS[type];
+              return (
+                <button
+                  key={type}
+                  onClick={() => toggleSource(type)}
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-medium transition-all cursor-pointer ${
+                    isHidden
+                      ? "opacity-40 bg-muted/30 border-border/30 text-muted-foreground line-through"
+                      : `${colors.legendBg} ${colors.legendBorder} ${colors.text} hover:opacity-80`
+                  }`}
+                  data-testid={`toggle-source-${type}`}
+                >
+                  <span className={`w-2 h-2 rounded-sm ${colors.legendBg} border ${colors.legendBorder}`} />
+                  {label}
+                </button>
+              );
+            })}
+            {hiddenSources.size > 0 && (
+              <button
+                onClick={() => setHiddenSources(new Set())}
+                className="text-[10px] text-red-500 hover:underline ml-1"
+                data-testid="calendar-show-all"
+              >
+                Show all
+              </button>
+            )}
           </div>
         </CardHeader>
         <CardContent className="flex-1 flex flex-col sm:flex-row min-h-0 gap-3">
