@@ -1423,6 +1423,8 @@ export default function ProjectDetailPage() {
                       });
                     })()}
                   </div>
+
+                  <FinancialIntegrationPanel projectName={projectName} />
                 </div>
               )}
 
@@ -1574,8 +1576,6 @@ export default function ProjectDetailPage() {
               )}
             </CardContent>
           </Card>
-
-          <FinancialIntegrationPanel projectName={projectName} />
 
           {projectInfoId && <PhaseHistoryTimeline projectId={projectInfoId} />}
         </div>
