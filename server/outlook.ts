@@ -496,6 +496,78 @@ export async function getMyChats(top: number = 30, ssoToken?: string | null): Pr
   }
 }
 
+export async function getChatMessages(chatId: string, top: number = 50, ssoToken?: string | null): Promise<any[]> {
+  try {
+    if (!ssoToken) throw new Error("User SSO token required for chat messages");
+    const data = await graphGetWithToken(`/me/chats/${chatId}/messages?$top=${top}&$orderby=createdDateTime desc`, ssoToken);
+    return (data.value || []).filter((m: any) => m.messageType === "message").map((m: any) => ({
+      id: m.id,
+      createdDateTime: m.createdDateTime,
+      from: m.from?.user?.displayName || m.from?.application?.displayName || "Unknown",
+      fromEmail: m.from?.user?.email || null,
+      body: m.body?.content || "",
+      bodyType: m.body?.contentType || "text",
+      attachments: (m.attachments || []).map((a: any) => ({ name: a.name, contentUrl: a.contentUrl })),
+    }));
+  } catch (err: any) {
+    console.warn("[Teams] Failed to fetch chat messages:", err.message);
+    return [];
+  }
+}
+
+export async function getChannelMessages(teamId: string, channelId: string, top: number = 50, ssoToken?: string | null): Promise<any[]> {
+  try {
+    if (!ssoToken) throw new Error("User SSO token required for channel messages");
+    const data = await graphGetWithToken(`/teams/${teamId}/channels/${channelId}/messages?$top=${top}`, ssoToken);
+    return (data.value || []).filter((m: any) => m.messageType === "message").map((m: any) => ({
+      id: m.id,
+      createdDateTime: m.createdDateTime,
+      from: m.from?.user?.displayName || m.from?.application?.displayName || "Unknown",
+      fromEmail: m.from?.user?.email || null,
+      body: m.body?.content || "",
+      bodyType: m.body?.contentType || "text",
+      attachments: (m.attachments || []).map((a: any) => ({ name: a.name, contentUrl: a.contentUrl })),
+    }));
+  } catch (err: any) {
+    console.warn("[Teams] Failed to fetch channel messages:", err.message);
+    return [];
+  }
+}
+
+export async function sendChatMessage(chatId: string, content: string, ssoToken?: string | null): Promise<any> {
+  if (!ssoToken) throw new Error("User SSO token required to send message");
+  const res = await fetch(`https://graph.microsoft.com/v1.0/me/chats/${chatId}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${ssoToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ body: { contentType: "text", content } }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Graph API error (${res.status}): ${body}`);
+  }
+  return res.json();
+}
+
+export async function sendChannelMessage(teamId: string, channelId: string, content: string, ssoToken?: string | null): Promise<any> {
+  if (!ssoToken) throw new Error("User SSO token required to send message");
+  const res = await fetch(`https://graph.microsoft.com/v1.0/teams/${teamId}/channels/${channelId}/messages`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${ssoToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ body: { contentType: "text", content } }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Graph API error (${res.status}): ${body}`);
+  }
+  return res.json();
+}
+
 export async function discoverSharePointSites(userAccessToken?: string | null): Promise<any[]> {
   try {
     const data = await graphGet("/sites?search=*&$select=id,displayName,webUrl&$top=30", userAccessToken);
