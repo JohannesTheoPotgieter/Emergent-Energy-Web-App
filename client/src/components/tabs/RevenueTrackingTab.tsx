@@ -106,7 +106,10 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   const { data, isLoading, error } = useQuery<RevenueTabData>({
     queryKey: ["revenue-tab", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}`, { credentials: "include" });
+      const token = localStorage.getItem('auth_token');
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}`, { credentials: "include", headers });
       if (!res.ok) throw new Error("Failed to fetch revenue data");
       return res.json();
     },
@@ -116,7 +119,10 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   const { data: taskAlerts = [] } = useQuery<TaskAlert[]>({
     queryKey: ["revenue-task-alerts", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/task-alerts`, { credentials: "include" });
+      const token = localStorage.getItem('auth_token');
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/task-alerts`, { credentials: "include", headers });
       if (!res.ok) return [];
       return res.json();
     },
@@ -125,10 +131,13 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
 
   const saveMutation = useMutation({
     mutationFn: async (overridesToSave: RevenueOverride[]) => {
+      const token = localStorage.getItem('auth_token');
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) hdrs["Authorization"] = `Bearer ${token}`;
       const res = await fetch(`/api/revenue-tracking/overrides`, {
         credentials: "include",
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: hdrs,
         body: JSON.stringify({ overrides: overridesToSave.map(o => ({ ...o, projectName })) }),
       });
       if (!res.ok) throw new Error("Failed to save changes");
@@ -160,10 +169,13 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
       } else {
         overrides.push({ projectName, rowNumber, fieldName: "paymentReceivedDate", overrideValue: null });
       }
+      const token = localStorage.getItem('auth_token');
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) hdrs["Authorization"] = `Bearer ${token}`;
       const res = await fetch(`/api/revenue-tracking/overrides`, {
         credentials: "include",
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: hdrs,
         body: JSON.stringify({ overrides }),
       });
       if (!res.ok) throw new Error("Failed to update");
@@ -182,7 +194,10 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   const { data: projectTasks = [] } = useQuery<any[]>({
     queryKey: ["operational-tasks", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`, { credentials: "include" });
+      const token = localStorage.getItem('auth_token');
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`, { credentials: "include", headers });
       if (!res.ok) return [];
       return res.json();
     },
@@ -191,10 +206,13 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
 
   const linkTaskMutation = useMutation({
     mutationFn: async ({ milestoneRowNumber, taskId }: { milestoneRowNumber: number; taskId: number }) => {
+      const token = localStorage.getItem('auth_token');
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) hdrs["Authorization"] = `Bearer ${token}`;
       const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/link-task`, {
         credentials: "include",
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: hdrs,
         body: JSON.stringify({ milestoneRowNumber, taskId }),
       });
       if (!res.ok) throw new Error("Failed to link task");
@@ -213,9 +231,13 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
 
   const unlinkTaskMutation = useMutation({
     mutationFn: async (milestoneRowNumber: number) => {
+      const token = localStorage.getItem('auth_token');
+      const hdrs: Record<string, string> = {};
+      if (token) hdrs["Authorization"] = `Bearer ${token}`;
       const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/link-task/${milestoneRowNumber}`, {
         credentials: "include",
         method: "DELETE",
+        headers: hdrs,
       });
       if (!res.ok) throw new Error("Failed to unlink task");
       return res.json();
@@ -231,10 +253,13 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
 
   const dateOverrideMutation = useMutation({
     mutationFn: async ({ milestoneRowNumber, dateOverride, reason }: { milestoneRowNumber: number; dateOverride: string; reason: string }) => {
+      const token = localStorage.getItem('auth_token');
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) hdrs["Authorization"] = `Bearer ${token}`;
       const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/date-override`, {
         credentials: "include",
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: hdrs,
         body: JSON.stringify({ milestoneRowNumber, dateOverride, reason }),
       });
       if (!res.ok) throw new Error("Failed to save date override");
@@ -265,10 +290,13 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
 
   const saveCostedMutation = useMutation({
     mutationFn: async (values: { revenue: string; expenditure: string }) => {
+      const token = localStorage.getItem('auth_token');
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch(`/api/revenue-tab/${encodeURIComponent(projectName)}/costed`, {
         credentials: "include",
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           revenue: parseFloat(values.revenue) || null,
           expenditure: parseFloat(values.expenditure) || null,
@@ -513,11 +541,10 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                     <TableHead className="text-right w-[140px] font-semibold">COSTED</TableHead>
                     <TableHead className="text-right w-[140px] font-semibold">
                       <div className="flex items-center justify-end gap-1">
-                        PLANNED
-                        <span className="text-[9px] font-normal text-muted-foreground" title="Live amounts not yet realised or paid">(live)</span>
+                        ACTUAL
+                        <span className="text-[9px] font-normal text-muted-foreground" title="Live amounts tracked against costed">(live)</span>
                       </div>
                     </TableHead>
-                    <TableHead className="text-right w-[140px] font-semibold">ACTUAL</TableHead>
                     <TableHead className="text-right w-[140px] font-semibold">Variance</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -531,9 +558,6 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                       ) : (
                         <span>{formatCurrency(highlevel.costed.revenue)}</span>
                       )}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-amber-700 bg-amber-50/30" data-testid="text-planned-revenue">
-                      {formatCurrency(highlevel.planned.revenue)}
                     </TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(highlevel.actual.revenue)}</TableCell>
                     <TableCell className={`text-right font-mono ${highlevel.actual.revenue - highlevel.costed.revenue < 0 ? "text-red-600" : "text-green-600"}`}>
@@ -550,9 +574,6 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                         <span>{formatCurrency(highlevel.costed.expenditure)}</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-amber-700 bg-amber-50/30" data-testid="text-planned-expenditure">
-                      {formatCurrency(highlevel.planned.expenditure)}
-                    </TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(highlevel.actual.expenditure)}</TableCell>
                     <TableCell className={`text-right font-mono ${highlevel.actual.expenditure - highlevel.costed.expenditure > 0 ? "text-red-600" : "text-green-600"}`}>
                       {formatCurrency(highlevel.actual.expenditure - highlevel.costed.expenditure)}
@@ -561,9 +582,6 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                   <TableRow className="bg-muted/30 font-semibold">
                     <TableCell className="font-semibold">Profit</TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(highlevel.costed.profit)}</TableCell>
-                    <TableCell className="text-right font-mono text-amber-700 bg-amber-50/30" data-testid="text-planned-profit">
-                      {formatCurrency(highlevel.planned.profit)}
-                    </TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(highlevel.actual.profit)}</TableCell>
                     <TableCell className={`text-right font-mono ${highlevel.actual.profit - highlevel.costed.profit < 0 ? "text-red-600" : "text-green-600"}`}>
                       {formatCurrency(highlevel.actual.profit - highlevel.costed.profit)}
@@ -572,9 +590,6 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                   <TableRow className="bg-muted/30">
                     <TableCell className="font-semibold">Margin</TableCell>
                     <TableCell className="text-right font-mono">{formatPercent(highlevel.costed.margin)}</TableCell>
-                    <TableCell className="text-right font-mono text-amber-700 bg-amber-50/30" data-testid="text-planned-margin">
-                      {formatPercent(highlevel.planned.margin)}
-                    </TableCell>
                     <TableCell className="text-right font-mono">{formatPercent(highlevel.actual.margin)}</TableCell>
                     <TableCell className={`text-right font-mono ${(highlevel.actual.margin - highlevel.costed.margin) < 0 ? "text-red-600" : "text-green-600"}`}>
                       {formatPercent(highlevel.actual.margin - highlevel.costed.margin)}
