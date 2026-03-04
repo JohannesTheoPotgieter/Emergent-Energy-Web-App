@@ -147,7 +147,7 @@ export default function TaskDetailDrawer({
           projectName,
           assignees: match.assignees || (match.owner ? [match.owner] : []),
           taskNumber: match.taskNumber || null,
-          rowNumber: match.rowNumber || null,
+          rowNumber: match.rowNumber ?? null,
           durationDays: computedDuration,
           expectedPercentComplete: expPct,
           ragStatus,
@@ -260,7 +260,7 @@ export default function TaskDetailDrawer({
       if (!taskId) return;
       if (isBaselineTask) {
         const taskData = data?.task as any;
-        if (taskData?.rowNumber) {
+        if (taskData?.rowNumber != null) {
           await apiRequest("POST", "/api/project-plan/delete-tasks", {
             projectName,
             rowNumbers: [taskData.rowNumber],
@@ -288,7 +288,7 @@ export default function TaskDetailDrawer({
   const convertToMilestoneMutation = useMutation({
     mutationFn: async () => {
       const taskData = data?.task as any;
-      if (!taskData?.rowNumber) throw new Error("Task has no row number");
+      if (taskData?.rowNumber == null) throw new Error("Task has no row number");
       await apiRequest("POST", "/api/project-plan/structure", {
         operation: "convertToMilestone",
         projectName,
@@ -439,7 +439,7 @@ function TaskDetailContent({
   const isMilestone = taskAny.isMilestone || false;
   const baselineStartDate = taskAny.baselineStartDate || null;
   const baselineEndDate = taskAny.baselineEndDate || null;
-  const rowNumber = taskAny.rowNumber || null;
+  const rowNumber = taskAny.rowNumber ?? null;
 
   const ragDotColor = ragStatus === "green"
     ? "bg-emerald-500"
@@ -846,7 +846,7 @@ function TaskDetailContent({
           <div data-testid="plan-actions-section">
             <label className="text-xs text-muted-foreground mb-2 block font-medium">Plan Actions</label>
             <div className="flex flex-wrap gap-2">
-              {!isMilestone && rowNumber && (
+              {!isMilestone && rowNumber != null && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -859,7 +859,7 @@ function TaskDetailContent({
                   {isConverting ? "Converting…" : "Convert to Milestone"}
                 </Button>
               )}
-              {!isMilestone && !rowNumber && (
+              {!isMilestone && rowNumber == null && (
                 <Button
                   variant="outline"
                   size="sm"
