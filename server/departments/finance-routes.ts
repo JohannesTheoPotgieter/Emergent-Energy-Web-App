@@ -1385,10 +1385,13 @@ router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin,
 router.get("/api/revenue-tracker/project/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = decodeURIComponent(req.params.projectName);
-    const [projectExpenses, revLines] = await Promise.all([
+    const [projectExpenses, revLines, manualEntries] = await Promise.all([
       storage.getProgramExpensesByProject(projectName),
       storage.getProgramInflowsByProject(projectName),
+      storage.getTrackerMonthlyManual('REV'),
     ]);
+
+    const manualBudgetMap = new Map(manualEntries.map(e => [e.monthKey, e]));
 
     const totalMilestoneRevenue = revLines.reduce((s: number, r: any) => {
       const amt = parseFloat(r.milestoneAmount as string) || 0;
@@ -1401,18 +1404,6 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, async (req,
       if (isNaN(amount) || amount === 0) return s;
       return s + amount;
     }, 0);
-
-    const budgetByMonth = new Map<string, number>();
-    for (const inflow of revLines) {
-      const amt = parseFloat(inflow.milestoneAmount as string) || 0;
-      if (amt === 0) continue;
-      const mDate = (inflow as any).effectiveDate || (inflow as any).plannedPaymentDate || (inflow as any).invoiceRaisedDate || null;
-      if (!mDate) continue;
-      const dm = String(mDate).match(/^(\d{4})-(\d{2})/);
-      if (!dm) continue;
-      const mk = `${dm[1]}-${dm[2]}`;
-      budgetByMonth.set(mk, (budgetByMonth.get(mk) || 0) + amt);
-    }
 
     const nowDate = new Date();
     const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
@@ -1475,7 +1466,8 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, async (req,
       const realisedRevenue = realisedRevByMonth.get(monthKey) ?? 0;
       const unrealisedRevenue = totalRevenue - realisedRevenue;
 
-      const budget = budgetByMonth.get(monthKey) ?? 0;
+      const manual = manualBudgetMap.get(monthKey);
+      const budget = manual?.budget ? parseFloat(manual.budget) : 0;
       const variance = totalRevenue - budget;
       const variancePct = budget !== 0 ? variance / budget : 0;
 
@@ -1522,10 +1514,13 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, async (req,
 
 router.get("/api/revenue-tracker", requireAuth, async (req, res) => {
   try {
-    const [allExpenses, allInflowsRaw] = await Promise.all([
+    const [allExpenses, allInflowsRaw, manualEntries] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
+      storage.getTrackerMonthlyManual('REV'),
     ]);
+
+    const manualBudgetMap = new Map(manualEntries.map(e => [e.monthKey, e]));
 
     const revenueByProject = new Map<string, number>();
     for (const inflow of allInflowsRaw) {
@@ -1533,22 +1528,6 @@ router.get("/api/revenue-tracker", requireAuth, async (req, res) => {
       if (amt === 0) continue;
       const pName = (inflow.projectName || '').replace(/_Tracker$/i, '');
       revenueByProject.set(pName, (revenueByProject.get(pName) || 0) + amt);
-    }
-
-    const budgetByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
-    for (const inflow of allInflowsRaw) {
-      const amt = parseFloat(inflow.milestoneAmount as string) || 0;
-      if (amt === 0) continue;
-      const mDate = (inflow as any).effectiveDate || (inflow as any).plannedPaymentDate || (inflow as any).invoiceRaisedDate || null;
-      if (!mDate) continue;
-      const dm = String(mDate).match(/^(\d{4})-(\d{2})/);
-      if (!dm) continue;
-      const mk = `${dm[1]}-${dm[2]}`;
-      const pName = (inflow.projectName || '').replace(/_Tracker$/i, '');
-      if (!budgetByMonth.has(mk)) budgetByMonth.set(mk, { total: 0, projects: new Map() });
-      const bBucket = budgetByMonth.get(mk)!;
-      bBucket.total += amt;
-      bBucket.projects.set(pName, (bBucket.projects.get(pName) || 0) + amt);
     }
 
     const cosByProject = new Map<string, number>();
@@ -1624,8 +1603,8 @@ router.get("/api/revenue-tracker", requireAuth, async (req, res) => {
       const realisedRevenue = realisedBucket?.total ?? 0;
       const unrealisedRevenue = totalRevenue - realisedRevenue;
 
-      const budgetBucket = budgetByMonth.get(monthKey);
-      const budget = budgetBucket?.total ?? 0;
+      const manual = manualBudgetMap.get(monthKey);
+      const budget = manual?.budget ? parseFloat(manual.budget) : 0;
       const variance = totalRevenue - budget;
       const variancePct = budget !== 0 ? variance / budget : 0;
 
@@ -1663,7 +1642,6 @@ router.get("/api/revenue-tracker", requireAuth, async (req, res) => {
           });
           return mapToArray(unrealMap);
         })(),
-        budgetProjects: mapToArray(budgetBucket?.projects ?? new Map()),
       });
     }
 

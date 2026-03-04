@@ -1,6 +1,8 @@
 import React, { useMemo, useState, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import {
   Bar,
   XAxis,
@@ -87,18 +89,19 @@ const ROW_DEFS: {
   colorClass: string;
   group: "monthly" | "ytd";
   clickable?: boolean;
+  editable?: boolean;
   colorCoded?: boolean;
 }[] = [
   { key: "totalRevenue", label: "Revenue", dataKey: "totalRevenue", colorClass: "text-foreground font-bold", group: "monthly", clickable: true },
   { key: "realisedRevenue", label: "Realised Revenue", dataKey: "realisedRevenue", colorClass: "text-emerald-700 font-bold", group: "monthly", clickable: true },
   { key: "unrealisedRevenue", label: "Unrealised Revenue", dataKey: "unrealisedRevenue", colorClass: "text-amber-600 font-semibold", group: "monthly", clickable: true },
-  { key: "budget", label: "Milestone Inflows", dataKey: "budget", colorClass: "text-purple-600", group: "monthly" },
+  { key: "budget", label: "Budget", dataKey: "budget", colorClass: "text-purple-600", group: "monthly", editable: true },
   { key: "variance", label: "Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdRevenue", label: "YTD Revenue", dataKey: "ytdRevenue", colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", colorClass: "text-emerald-700 font-bold", group: "ytd" },
   { key: "ytdUnrealised", label: "YTD Unrealised", dataKey: "ytdUnrealised", colorClass: "text-amber-600", group: "ytd" },
-  { key: "ytdBudget", label: "YTD Milestone Inflows", dataKey: "ytdBudget", colorClass: "text-purple-600", group: "ytd" },
+  { key: "ytdBudget", label: "YTD Budget", dataKey: "ytdBudget", colorClass: "text-purple-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", colorClass: "", group: "ytd", colorCoded: true },
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", colorClass: "", group: "ytd", colorCoded: true },
 ];
@@ -254,8 +257,13 @@ function RevenueDetailDrawer({ month, onClose, defaultFilter = "all" }: { month:
   );
 }
 
+type EditingCell = { field: string; monthKey: string; value: string };
+
 export function RevenueTrackerTab({ projectName }: RevenueTrackerTabProps) {
+  const qc = useQueryClient();
+  const { isAdmin } = useAuth();
   const [drawerMonth, setDrawerMonth] = useState<{ month: RevenueMonthData; defaultFilter: "all" | "realised" | "unrealised" } | null>(null);
+  const [editing, setEditing] = useState<EditingCell | null>(null);
 
   const { data, isLoading } = useQuery<RevenueTrackerResponse>({
     queryKey: ["revenue-tracker-project", projectName],
@@ -273,6 +281,38 @@ export function RevenueTrackerTab({ projectName }: RevenueTrackerTabProps) {
     enabled: !!projectName,
   });
 
+  const mutation = useMutation({
+    mutationFn: async (body: { trackerType: string; monthKey: string; budget?: string }) => {
+      await apiRequest("POST", "/api/tracker-monthly", body);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["revenue-tracker-project", projectName] });
+    },
+  });
+
+  const startEdit = useCallback((field: string, monthKey: string, currentValue: number) => {
+    setEditing({ field, monthKey, value: String(currentValue) });
+  }, []);
+
+  const commitEdit = useCallback(() => {
+    if (!editing) return;
+    const payload: Record<string, string> = {
+      trackerType: "REV",
+      monthKey: editing.monthKey,
+    };
+    payload[editing.field] = editing.value;
+    mutation.mutate(payload as any);
+    setEditing(null);
+  }, [editing, mutation]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter") commitEdit();
+      if (e.key === "Escape") setEditing(null);
+    },
+    [commitEdit],
+  );
+
   const months = data?.months ?? [];
   const totalMilestoneRevenue = data?.totalMilestoneRevenue ?? 0;
 
@@ -285,7 +325,7 @@ export function RevenueTrackerTab({ projectName }: RevenueTrackerTabProps) {
       month: m.monthLabel,
       "Realised": m.realisedRevenue,
       "Unrealised": m.unrealisedRevenue,
-      "Milestone Inflows": m.budget,
+      "Budget": m.budget,
       "YTD Variance": m.ytdVariance,
     })),
     [months],
@@ -350,7 +390,7 @@ export function RevenueTrackerTab({ projectName }: RevenueTrackerTabProps) {
     },
     {
       id: "total-milestone-inflows",
-      label: "Total Milestone Inflows",
+      label: "Total Budget",
       value: formatRand(totalMilestoneRevenue),
       icon: Target,
       iconBg: "bg-purple-100",
@@ -434,7 +474,7 @@ export function RevenueTrackerTab({ projectName }: RevenueTrackerTabProps) {
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
                 <Bar dataKey="Realised" stackId="revenue" fill="#059669" radius={[0, 0, 0, 0]} />
                 <Bar dataKey="Unrealised" stackId="revenue" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Milestone Inflows" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Budget" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
                 <Line type="monotone" dataKey="YTD Variance" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
@@ -482,6 +522,36 @@ export function RevenueTrackerTab({ projectName }: RevenueTrackerTabProps) {
                         </td>
                         {months.map((m) => {
                           const val = m[row.dataKey] as number;
+                          const isEditingCell = editing?.field === row.key && editing?.monthKey === m.monthKey;
+
+                          if (row.editable && isAdmin) {
+                            return (
+                              <td key={m.monthKey} className="px-2 py-1.5 text-right">
+                                {isEditingCell ? (
+                                  <Input
+                                    type="number"
+                                    className="h-8 w-full text-right font-mono text-sm border-purple-300 focus:ring-purple-400"
+                                    value={editing.value}
+                                    onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+                                    onBlur={commitEdit}
+                                    onKeyDown={handleKeyDown}
+                                    autoFocus
+                                    data-testid={`input-revenue-${row.key}-${m.monthKey}`}
+                                  />
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className={`w-full text-right font-mono cursor-pointer hover:bg-purple-50 rounded-lg px-3 py-1.5 transition-colors ${row.colorClass}`}
+                                    onClick={() => startEdit(row.key, m.monthKey, val)}
+                                    data-testid={`cell-revenue-${row.key}-${m.monthKey}`}
+                                  >
+                                    {formatRand(val)}
+                                  </button>
+                                )}
+                              </td>
+                            );
+                          }
+
                           const colorCodedClass = row.colorCoded
                             ? val < 0 ? "text-red-600 font-semibold" : val > 0 ? "text-green-600 font-semibold" : "text-slate-500"
                             : row.colorClass;
