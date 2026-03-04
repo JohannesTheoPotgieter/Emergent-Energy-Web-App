@@ -150,6 +150,7 @@ const PATH_TO_ENTITY: Record<string, PermissionEntity> = {
   "/admin/roles": "admin_roles",
   "/admin/settings": "admin",
   "/admin/activity-log": "activity_log",
+  "/admin/database-migration": "database_migration",
   "/smart-import": "smart_import",
   "/excel-updates": "excel_updates",
   "/ee-info": "ee_info",

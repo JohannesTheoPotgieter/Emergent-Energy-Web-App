@@ -2640,7 +2640,7 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'data_import' | 'data_export' | 'audit_trail'
   | 'ms_integration'
   | 'my_work' | 'ms_sync' | 'project_tagging' | 'excel_updates' | 'database_migration'
-  | 'revenue_tracker';
+  | 'revenue_tracker' | 'work_items';
 export type PermissionAction = 'view' | 'edit' | 'approve' | 'override' | 'delete';
 
 export interface EntityPermissionRule {
@@ -3375,6 +3375,22 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'ms_integration',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'excel_updates',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'database_migration',
     view_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],

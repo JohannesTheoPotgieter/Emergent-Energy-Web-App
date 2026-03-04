@@ -108,7 +108,7 @@ const ROUTE_TO_ENTITY: Record<string, PermissionEntity> = {
   "/teams/chats": "teams_chat",
   "/my-tool": "my_tool",
   "/execution-board": "execution_board",
-  "/admin/database-migration": "admin",
+  "/admin/database-migration": "database_migration",
   "/admin/my-tool-settings": "admin",
   "/admin/activity-log": "activity_log",
   "/admin/roles": "admin_roles",
