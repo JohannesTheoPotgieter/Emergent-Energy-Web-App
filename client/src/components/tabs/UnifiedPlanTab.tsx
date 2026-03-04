@@ -584,8 +584,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       }
       if (baselineIds.length > 0) {
         const matchedTasks = tasks.filter(t => baselineIds.includes(t.id));
-        const withRowNumber = matchedTasks.filter(t => t.rowNumber);
-        const withoutRowNumber = matchedTasks.filter(t => !t.rowNumber);
+        const withRowNumber = matchedTasks.filter(t => t.rowNumber != null);
+        const withoutRowNumber = matchedTasks.filter(t => t.rowNumber == null);
         if (withRowNumber.length > 0) {
           const byPlanProject = new Map<string, number[]>();
           for (const t of withRowNumber) {
@@ -976,7 +976,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     }
     const dragRn = draggedTask.rowNumber;
     const targetRn = targetTask.rowNumber;
-    if (!dragRn || !targetRn) {
+    if (dragRn == null || targetRn == null) {
       toast({ title: "Cannot reorder", description: "This task doesn't have a plan row number yet. Try refreshing WBS first.", variant: "destructive" });
       setDragTaskId(null);
       setDropTarget(null);
@@ -996,14 +996,14 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     } else {
       const items: Array<{ rowNumber: number; sortOrder: number; parentRowNumber?: number | null }> = [];
       const targetParent = targetTask.parentTaskId
-        ? (taskMap.get(targetTask.parentTaskId)?.rowNumber || null)
+        ? (taskMap.get(targetTask.parentTaskId)?.rowNumber ?? null)
         : null;
 
       const allSiblings = tasks.filter(t => {
         const tParent = t.parentTaskId
-          ? (taskMap.get(t.parentTaskId)?.rowNumber || null)
+          ? (taskMap.get(t.parentTaskId)?.rowNumber ?? null)
           : null;
-        return tParent === targetParent && t.id !== dragTaskId && t.rowNumber;
+        return tParent === targetParent && t.id !== dragTaskId && t.rowNumber != null;
       }).sort((a, b) => (a.sortOrder ?? a.rowNumber ?? 0) - (b.sortOrder ?? b.rowNumber ?? 0));
 
       const insertIdx = dropTarget.position === "above"
@@ -1186,8 +1186,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                     const idx = visibleTasks.findIndex(t => t.id === firstSel.id);
                     if (idx <= 0) return;
                     const above = visibleTasks[idx - 1];
-                    if (!above?.rowNumber) return;
-                    const rowNums = selTasks.map((t: any) => t.rowNumber).filter(Boolean);
+                    if (above?.rowNumber == null) return;
+                    const rowNums = selTasks.map((t: any) => t.rowNumber).filter((rn: any) => rn != null);
                     if (rowNums.length > 0) setParentMutation.mutate({ taskRowNumbers: rowNums, parentRowNumber: above.rowNumber });
                   }}
                   data-testid="toolbar-indent"
@@ -1226,7 +1226,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                     if (idx <= 0) return;
                     const task = visibleTasks[idx];
                     const above = visibleTasks[idx - 1];
-                    if (!task?.rowNumber || !above?.rowNumber) return;
+                    if (task?.rowNumber == null || above?.rowNumber == null) return;
                     bulkReorderMutation.mutate([
                       { rowNumber: task.rowNumber, sortOrder: (above.sortOrder ?? above.rowNumber ?? 0) - 1 },
                     ]);
@@ -1249,7 +1249,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                     if (idx < 0 || idx >= visibleTasks.length - 1) return;
                     const task = visibleTasks[idx];
                     const below = visibleTasks[idx + 1];
-                    if (!task?.rowNumber || !below?.rowNumber) return;
+                    if (task?.rowNumber == null || below?.rowNumber == null) return;
                     bulkReorderMutation.mutate([
                       { rowNumber: task.rowNumber, sortOrder: (below.sortOrder ?? below.rowNumber ?? 0) + 1 },
                     ]);
@@ -2005,7 +2005,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             <Button variant="outline" onClick={() => { setConvertMilestoneDialogOpen(false); setConvertMilestoneTask(null); setSelectedIds(new Set()); }}>Cancel</Button>
             <Button
               onClick={() => {
-                if (!convertMilestoneTask?.rowNumber) {
+                if (convertMilestoneTask?.rowNumber == null) {
                   toast({ title: "Cannot convert", description: "This task doesn't have a plan row number. Try refreshing WBS first.", variant: "destructive" });
                   return;
                 }
@@ -2043,7 +2043,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
               </p>
               <div className="max-h-60 overflow-y-auto border rounded-md p-2 space-y-0.5">
                 {tasks
-                  .filter(t => t.id !== groupUnderTask.id && t.rowNumber)
+                  .filter(t => t.id !== groupUnderTask.id && t.rowNumber != null)
                   .map(t => {
                     const isMil = t.isVirtualMilestone || t.isMilestone;
                     const hasCh = t.isParent || t.childCount > 0;
