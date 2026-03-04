@@ -34,7 +34,8 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **PM On-The-Go Mode**: Mobile-first interface for site managers, enforcing daily updates and supporting PO requests/invoice linking.
 -   **PO Generator**: Dialog-based Purchase Order generator creating PDFs with multiple line items, supplier auto-fill, and status tracking.
 -   **Procurement / Counter Parties**: Supplier details panel storing VAT#, registration#, address, contact, bank details, and payment terms, used for PO generation.
--   **Quality Dashboard**: KPI strip, Projects/Items view toggle, sortable items table, and collapsible warnings.
+-   **Quality Dashboard**: Compact 6-column KPI strip, Projects/Items view toggle, sortable projects table (not cards), sortable items table, and collapsible warnings.
+-   **Universal Search**: Big search bar on the home page (`/`) searching across projects, work items, cost lines, and revenue lines via `/api/search` endpoint. Debounced input, keyboard navigation, type-colored result badges, and click-to-navigate. Replaces the removed dead search input from the header.
 -   **Quality Tab**: Phase-tabbed navigation with progress indicators, group accordions, inline status buttons, evidence upload, approval workflows, and bulk actions.
 -   **MS SSO Unavailable Banner**: Informative banner on Outlook email and Teams chat pages when Microsoft 365 SSO is not configured.
 -   **Knowledge Base**: Wiki-style system with SOP-enriched nodes.
