@@ -223,7 +223,7 @@ export default function MyWorkCalendarPage() {
       const data = await res.json();
       return Array.isArray(data) ? data.filter((e: OutlookEvent) => !e.isCancelled) : [];
     },
-    enabled: connectionStatus?.connected === true,
+    enabled: connectionStatus !== undefined,
     staleTime: 0,
     gcTime: 0,
   });
