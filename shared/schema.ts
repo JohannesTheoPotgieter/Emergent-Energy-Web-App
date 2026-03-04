@@ -4765,6 +4765,7 @@ export const msObjects = pgTable("ms_objects", {
   linkedProjectId: integer("linked_project_id"),
   linkedTaskId: integer("linked_task_id"),
   metadata: jsonb("metadata"),
+  dismissed: boolean("dismissed").default(false),
 });
 
 export const insertMsObjectSchema = createInsertSchema(msObjects).omit({ id: true, lastSyncedAt: true });
