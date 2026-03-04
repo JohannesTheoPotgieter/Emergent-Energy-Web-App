@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, lazy, Suspense } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -58,6 +58,50 @@ export function useProjectsList() {
     },
     staleTime: 120_000,
   });
+}
+
+function EmailHtmlBody({ html }: { html: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(300);
+
+  const onLoad = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentDocument?.body) return;
+    const doc = iframe.contentDocument;
+    doc.body.style.margin = "0";
+    doc.body.style.padding = "8px";
+    doc.body.style.fontFamily = "system-ui, -apple-system, sans-serif";
+    doc.body.style.fontSize = "14px";
+    doc.body.style.lineHeight = "1.5";
+    doc.body.style.color = "#1a1a1a";
+    doc.body.style.overflowX = "hidden";
+    doc.body.style.wordBreak = "break-word";
+    const links = doc.querySelectorAll("a");
+    links.forEach((a) => { a.setAttribute("target", "_blank"); a.setAttribute("rel", "noopener noreferrer"); });
+    const images = doc.querySelectorAll("img");
+    images.forEach((img) => { img.style.maxWidth = "100%"; img.style.height = "auto"; });
+    setTimeout(() => {
+      const h = doc.body.scrollHeight || doc.documentElement.scrollHeight;
+      setHeight(Math.min(Math.max(h + 20, 100), 800));
+    }, 100);
+  }, []);
+
+  const srcDoc = useMemo(() => {
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;padding:8px;font-family:system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a;overflow-x:hidden;word-break:break-word}img{max-width:100%;height:auto}table{max-width:100%;border-collapse:collapse}pre{white-space:pre-wrap;word-break:break-word}</style></head><body>${html}</body></html>`;
+  }, [html]);
+
+  return (
+    <iframe
+      ref={iframeRef}
+      srcDoc={srcDoc}
+      onLoad={onLoad}
+      sandbox="allow-same-origin"
+      className="w-full border-0 rounded"
+      style={{ height: `${height}px`, minHeight: "100px", maxHeight: "800px" }}
+      title="Email content"
+      data-testid="email-body-iframe"
+    />
+  );
 }
 
 export function TagToProjectDialog({
@@ -1213,10 +1257,7 @@ function EmailTab() {
           </CardHeader>
           <CardContent>
             {(bodyType === "html" || bodyType === "HTML") ? (
-              <div
-                className="prose prose-sm max-w-none email-body"
-                dangerouslySetInnerHTML={{ __html: typeof bodyContent === "string" ? bodyContent : bodyContent?.content || "" }}
-              />
+              <EmailHtmlBody html={typeof bodyContent === "string" ? bodyContent : bodyContent?.content || ""} />
             ) : (
               <pre className="whitespace-pre-wrap text-sm">{typeof bodyContent === "string" ? bodyContent : bodyContent?.content || ""}</pre>
             )}
