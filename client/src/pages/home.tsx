@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
-import { MetricStrip } from "@/components/ui/metric-strip";
+
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { ROLE_QUICK_ACTIONS } from "@shared/schema";
@@ -40,7 +40,6 @@ import {
   Gauge,
   Zap,
   DollarSign,
-  Clock,
   Search,
   FolderOpenDot,
   Receipt,
@@ -630,32 +629,6 @@ export default function Home() {
     queryKey: ["/api/mytool/company-priorities"],
   });
 
-  const { data: projectsSummary } = useQuery<any[]>({
-    queryKey: ["projects-summary"],
-    queryFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const res = await fetch("/api/projects-summary", {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        credentials: "include",
-      });
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
-
-  const activeProjects = projectsSummary?.filter((p: any) => p.is_active)?.length ?? 0;
-  const totalRevenue = projectsSummary?.reduce((sum: number, p: any) => sum + (p.actual_revenue || 0), 0) ?? 0;
-  const totalExpenses = projectsSummary?.reduce((sum: number, p: any) => sum + (p.actual_expenses || 0), 0) ?? 0;
-  const avgCompletion = projectsSummary?.length
-    ? Math.round((projectsSummary.reduce((sum: number, p: any) => sum + (p.project_pct_complete || 0), 0) / projectsSummary.length) * 100)
-    : 0;
-
-  const formatCurrency = (val: number) => {
-    if (val >= 1_000_000) return `R${(val / 1_000_000).toFixed(1)}M`;
-    if (val >= 1_000) return `R${(val / 1_000).toFixed(0)}K`;
-    return `R${val.toFixed(0)}`;
-  };
-
   return (
     <div className="space-y-6 max-w-7xl mx-auto" data-testid="home-page">
       <PageHeader
@@ -664,31 +637,6 @@ export default function Home() {
       />
 
       <UniversalSearch />
-
-      <MetricStrip
-        metrics={[
-          {
-            label: "Active Projects",
-            value: activeProjects,
-            icon: <FolderKanban className="h-4 w-4" />,
-          },
-          {
-            label: "Inflows Realised",
-            value: formatCurrency(totalRevenue),
-            icon: <DollarSign className="h-4 w-4" />,
-          },
-          {
-            label: "Total Expenses",
-            value: formatCurrency(totalExpenses),
-            icon: <Wallet className="h-4 w-4" />,
-          },
-          {
-            label: "Avg Completion",
-            value: `${avgCompletion}%`,
-            icon: <Clock className="h-4 w-4" />,
-          },
-        ]}
-      />
 
       <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
 
