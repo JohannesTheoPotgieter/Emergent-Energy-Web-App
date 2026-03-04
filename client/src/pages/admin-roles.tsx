@@ -69,17 +69,17 @@ const ALL_SECTIONS = [
 ] as const;
 
 const SECTION_META: Record<string, { label: string; icon: any; color: string; bg: string; description: string }> = {
-  MY_WORK: { label: "My Work", icon: Briefcase, color: "text-sky-600", bg: "bg-sky-50 border-sky-200", description: "Personal tasks, calendar, meetings" },
+  MY_WORK: { label: "My Work", icon: Briefcase, color: "text-green-600", bg: "bg-green-50 border-green-200", description: "Personal tasks, calendar, meetings" },
+  PROJECT_DEVELOPMENT: { label: "Project Development", icon: FileEdit, color: "text-teal-600", bg: "bg-teal-50 border-teal-200", description: "PD dashboard, tickets, lifecycle board" },
+  DELIVERY: { label: "Engineering", icon: Wrench, color: "text-orange-600", bg: "bg-orange-50 border-orange-200", description: "Eng dashboard, task board" },
+  GOVERNANCE: { label: "Quality", icon: ShieldCheck, color: "text-purple-600", bg: "bg-purple-50 border-purple-200", description: "Quality dashboard, compliance" },
+  PROJECTS: { label: "Project Management", icon: FolderKanban, color: "text-blue-600", bg: "bg-blue-50 border-blue-200", description: "Projects, portfolios, execution, reviews" },
+  MONEY: { label: "Finance", icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", description: "Cashflow, COS, procurement" },
   COCKPIT: { label: "EXCO", icon: LayoutDashboard, color: "text-indigo-600", bg: "bg-indigo-50 border-indigo-200", description: "Executive cockpit, lifecycle board" },
   COLLABORATION: { label: "Collaboration", icon: MessageSquare, color: "text-pink-600", bg: "bg-pink-50 border-pink-200", description: "Email, Teams, SharePoint" },
-  PROJECTS: { label: "Project Management", icon: FolderKanban, color: "text-blue-600", bg: "bg-blue-50 border-blue-200", description: "Execution, portfolios, reviews" },
-  MONEY: { label: "Project Finance", icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", description: "Cashflow, COS, procurement" },
-  PROJECT_DEVELOPMENT: { label: "Project Development", icon: FileEdit, color: "text-teal-600", bg: "bg-teal-50 border-teal-200", description: "PD dashboard, tickets, clients" },
-  DELIVERY: { label: "Engineering", icon: Wrench, color: "text-orange-600", bg: "bg-orange-50 border-orange-200", description: "Task board, stages, pipeline" },
-  GOVERNANCE: { label: "Governance", icon: ShieldCheck, color: "text-purple-600", bg: "bg-purple-50 border-purple-200", description: "Quality dashboard, compliance" },
   PROJECT_DETAIL: { label: "Project Detail Tabs", icon: FileText, color: "text-cyan-600", bg: "bg-cyan-50 border-cyan-200", description: "Per-project tab access control" },
-  INFORMATION: { label: "Information", icon: BookOpen, color: "text-cyan-700", bg: "bg-cyan-50 border-cyan-200", description: "Feedback, knowledge base, leaderboard" },
-  SETTINGS: { label: "Admin", icon: Settings, color: "text-muted-foreground", bg: "bg-muted border-border", description: "Roles, audit, integrations" },
+  INFORMATION: { label: "System & Info", icon: BookOpen, color: "text-slate-500", bg: "bg-muted border-border", description: "Feedback, knowledge base, leaderboard" },
+  SETTINGS: { label: "Admin", icon: Settings, color: "text-muted-foreground", bg: "bg-muted border-border", description: "Roles, audit, settings" },
 };
 
 interface PermCat {
@@ -93,51 +93,14 @@ interface PermCat {
 
 const PERM_CATEGORIES: PermCat[] = [
   {
-    key: "my_work", section: "MY_WORK", label: "My Work", icon: Briefcase, color: "bg-sky-500",
+    key: "my_work", section: "MY_WORK", label: "My Work", icon: Briefcase, color: "bg-green-500",
     items: [
       { entity: "home" as PermissionEntity, label: "Home", actions: ["view"] },
       { entity: "my_work" as PermissionEntity, label: "Calendar", actions: ["view", "edit"] },
       { entity: "my_tool" as PermissionEntity, label: "Tasks", actions: ["view", "edit"] },
       { entity: "meetings" as PermissionEntity, label: "Meetings", actions: ["view", "edit"] },
-    ],
-  },
-  {
-    key: "exco", section: "COCKPIT", label: "EXCO", icon: LayoutDashboard, color: "bg-indigo-500",
-    items: [
-      { entity: "company_priorities" as PermissionEntity, label: "Company Priorities", actions: ["view", "edit", "delete"] },
-      { entity: "lifecycle" as PermissionEntity, label: "Company Lifecycle Board", actions: ["view", "edit", "override"] },
-    ],
-  },
-  {
-    key: "collaboration", section: "COLLABORATION", label: "Collaboration", icon: MessageSquare, color: "bg-pink-500",
-    items: [
       { entity: "collaboration_hub" as PermissionEntity, label: "Email", actions: ["view", "edit"] },
       { entity: "teams_chat" as PermissionEntity, label: "Teams Chat", actions: ["view", "edit", "delete"] },
-    ],
-  },
-  {
-    key: "pm", section: "PROJECTS", label: "Project Management", icon: FolderKanban, color: "bg-blue-500",
-    items: [
-      { entity: "execution_board" as PermissionEntity, label: "Execution Board", actions: ["view", "edit"] },
-      { entity: "projects" as PermissionEntity, label: "Project Summary", actions: ["view", "edit", "delete"] },
-      { entity: "pm_dashboard" as PermissionEntity, label: "PM Dashboard", actions: ["view"] },
-      { entity: "pm_on_the_go" as PermissionEntity, label: "On-The-Go", actions: ["view", "edit"] },
-      { entity: "smart_import" as PermissionEntity, label: "Smart Import", actions: ["view", "edit"] },
-      { entity: "excel_updates" as PermissionEntity, label: "Excel Updates", actions: ["view", "approve"] },
-      { entity: "portfolios" as PermissionEntity, label: "Portfolios", actions: ["view", "edit", "delete"] },
-      { entity: "portfolio_detail" as PermissionEntity, label: "Portfolio Detail", actions: ["view", "edit", "delete"] },
-      { entity: "weekly_review_wizard" as PermissionEntity, label: "Weekly Reviews", actions: ["view", "edit"] },
-      { entity: "weekly_reviews" as PermissionEntity, label: "Weekly Review Data", actions: ["view", "edit"] },
-      { entity: "create_project" as PermissionEntity, label: "Create Project", actions: ["edit"] },
-    ],
-  },
-  {
-    key: "finance", section: "MONEY", label: "Project Finance", icon: DollarSign, color: "bg-emerald-500",
-    items: [
-      { entity: "cashflow" as PermissionEntity, label: "Cashflow", actions: ["view", "edit"] },
-      { entity: "cos" as PermissionEntity, label: "COS Tracker", actions: ["view", "edit"] },
-      { entity: "subcontractors" as PermissionEntity, label: "Procurement", actions: ["view", "edit", "delete"] },
-      { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Patterns", actions: ["view", "edit"] },
     ],
   },
   {
@@ -146,19 +109,44 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "pd_dashboard" as PermissionEntity, label: "PD Dashboard", actions: ["view"] },
       { entity: "pd_tickets" as PermissionEntity, label: "PD Tickets", actions: ["view", "edit", "delete"] },
       { entity: "pd_clients" as PermissionEntity, label: "Clients", actions: ["view", "edit", "delete"] },
+      { entity: "lifecycle" as PermissionEntity, label: "Lifecycle Board", actions: ["view", "edit", "override"] },
+      { entity: "company_priorities" as PermissionEntity, label: "Company Priorities", actions: ["view", "edit", "delete"] },
     ],
   },
   {
     key: "engineering", section: "DELIVERY", label: "Engineering", icon: Wrench, color: "bg-orange-500",
     items: [
-      { entity: "engineering" as PermissionEntity, label: "Engineering Dashboard", actions: ["view", "edit"] },
+      { entity: "engineering" as PermissionEntity, label: "Eng Dashboard", actions: ["view", "edit"] },
       { entity: "eng_tasks" as PermissionEntity, label: "Task Board", actions: ["view", "edit", "delete"] },
     ],
   },
   {
-    key: "quality", section: "GOVERNANCE", label: "Governance", icon: ShieldCheck, color: "bg-purple-500",
+    key: "quality", section: "GOVERNANCE", label: "Quality", icon: ShieldCheck, color: "bg-purple-500",
     items: [
       { entity: "quality" as PermissionEntity, label: "Quality Dashboard", actions: ["view", "edit", "approve", "override"] },
+    ],
+  },
+  {
+    key: "pm", section: "PROJECTS", label: "Project Management", icon: FolderKanban, color: "bg-blue-500",
+    items: [
+      { entity: "projects" as PermissionEntity, label: "Project List", actions: ["view", "edit", "delete"] },
+      { entity: "portfolios" as PermissionEntity, label: "Portfolios", actions: ["view", "edit", "delete"] },
+      { entity: "portfolio_detail" as PermissionEntity, label: "Portfolio Detail", actions: ["view", "edit", "delete"] },
+      { entity: "execution_board" as PermissionEntity, label: "Execution Board", actions: ["view", "edit"] },
+      { entity: "pm_dashboard" as PermissionEntity, label: "PM Dashboard", actions: ["view"] },
+      { entity: "pm_on_the_go" as PermissionEntity, label: "On-The-Go", actions: ["view", "edit"] },
+      { entity: "weekly_review_wizard" as PermissionEntity, label: "Weekly Reviews", actions: ["view", "edit"] },
+      { entity: "weekly_reviews" as PermissionEntity, label: "Weekly Review Data", actions: ["view", "edit"] },
+      { entity: "create_project" as PermissionEntity, label: "Create Project", actions: ["edit"] },
+    ],
+  },
+  {
+    key: "finance", section: "MONEY", label: "Finance", icon: DollarSign, color: "bg-emerald-500",
+    items: [
+      { entity: "cashflow" as PermissionEntity, label: "Cashflow", actions: ["view", "edit"] },
+      { entity: "cos" as PermissionEntity, label: "COS Tracker", actions: ["view", "edit"] },
+      { entity: "subcontractors" as PermissionEntity, label: "Procurement", actions: ["view", "edit", "delete"] },
+      { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Patterns", actions: ["view", "edit"] },
     ],
   },
   {
@@ -183,8 +171,13 @@ const PERM_CATEGORIES: PermCat[] = [
     ],
   },
   {
-    key: "information", section: "INFORMATION", label: "Information", icon: BookOpen, color: "bg-cyan-600",
+    key: "system", section: "SETTINGS", label: "System", icon: Settings, color: "bg-slate-500",
     items: [
+      { entity: "admin_roles" as PermissionEntity, label: "Users & Roles", actions: ["view", "edit"] },
+      { entity: "admin" as PermissionEntity, label: "App Settings", actions: ["view", "edit"] },
+      { entity: "activity_log" as PermissionEntity, label: "Activity Log", actions: ["view"] },
+      { entity: "smart_import" as PermissionEntity, label: "Smart Import", actions: ["view", "edit"] },
+      { entity: "excel_updates" as PermissionEntity, label: "Excel Updates", actions: ["view", "approve"] },
       { entity: "feedback" as PermissionEntity, label: "Feedback & Support", actions: ["view", "edit"] },
       { entity: "ee_info" as PermissionEntity, label: "Emergent Energy Info", actions: ["view", "edit"] },
       { entity: "leaderboard" as PermissionEntity, label: "Leaderboard", actions: ["view"] },
@@ -193,14 +186,6 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "ee_info_departments" as PermissionEntity, label: "OS Map — Departments", actions: ["view", "edit", "delete"] },
       { entity: "ee_info_processes" as PermissionEntity, label: "OS Map — Processes", actions: ["view", "edit", "delete"] },
       { entity: "ee_info_templates" as PermissionEntity, label: "OS Map — Templates", actions: ["view", "edit", "delete"] },
-    ],
-  },
-  {
-    key: "settings", section: "SETTINGS", label: "Admin", icon: Settings, color: "bg-slate-500",
-    items: [
-      { entity: "admin_roles" as PermissionEntity, label: "Roles & Permissions", actions: ["view", "edit"] },
-      { entity: "admin" as PermissionEntity, label: "App Settings", actions: ["view", "edit"] },
-      { entity: "activity_log" as PermissionEntity, label: "Activity Log", actions: ["view"] },
     ],
   },
 ];
@@ -337,11 +322,18 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
     return raw.filter(s => (ALL_SECTIONS as readonly string[]).includes(s));
   }, [currentRole, pendingChanges, selectedRole]);
 
+  const SECTION_GROUPS: Record<string, string[]> = {
+    MY_WORK: ["MY_WORK", "COLLABORATION"],
+    PROJECT_DEVELOPMENT: ["PROJECT_DEVELOPMENT", "COCKPIT"],
+  };
+
   const toggleSection = (section: string) => {
     if (!currentRole) return;
-    const next = effectiveSections.includes(section)
-      ? effectiveSections.filter(s => s !== section)
-      : [...effectiveSections, section];
+    const related = SECTION_GROUPS[section] || [section];
+    const isActive = related.some(s => effectiveSections.includes(s));
+    const next = isActive
+      ? effectiveSections.filter(s => !related.includes(s))
+      : [...effectiveSections, ...related.filter(s => !effectiveSections.includes(s))];
     setPendingChanges(prev => ({ ...prev, [selectedRole]: { ...prev[selectedRole], sections: next } }));
   };
 
@@ -432,7 +424,7 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
     return <Card><CardContent className="py-12 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /><span className="ml-2 text-muted-foreground">Loading...</span></CardContent></Card>;
   }
 
-  const activeCats = PERM_CATEGORIES.filter(c => c.section === "PROJECT_DETAIL" || c.section === "SETTINGS" || effectiveSections.includes(c.section));
+  const activeCats = PERM_CATEGORIES.filter(c => c.section === "PROJECT_DETAIL" || c.section === "SETTINGS" || (SECTION_GROUPS[c.section] || [c.section]).some(s => effectiveSections.includes(s)));
   const activePermCount = activeCats.flatMap(c => c.items).filter(i => i.actions.some(a => getEntityPerm(selectedRole, i.entity, a))).length;
   const totalItems = activeCats.flatMap(c => c.items).length;
 
@@ -533,7 +525,8 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
                 {PERM_CATEGORIES.map(cat => {
                   const meta = SECTION_META[cat.section];
                   const Icon = cat.icon;
-                  const sectionActive = effectiveSections.includes(cat.section);
+                  const sectionRelated = SECTION_GROUPS[cat.section] || [cat.section];
+                  const sectionActive = sectionRelated.some(s => effectiveSections.includes(s));
                   const alwaysOn = cat.section === "PROJECT_DETAIL" || cat.section === "SETTINGS";
                   const isActive = alwaysOn || sectionActive;
                   const activeCount = cat.items.filter(i => i.actions.some(a => getEntityPerm(selectedRole, i.entity, a))).length;
