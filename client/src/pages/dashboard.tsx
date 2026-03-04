@@ -121,39 +121,40 @@ function KpiDrilldown({
   return (
     <div
       ref={ref}
-      className="absolute z-50 top-full left-0 right-0 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 mt-2 sm:w-80 bg-white border border-border rounded-xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+      className="absolute z-[100] top-full left-0 right-0 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 mt-2 sm:w-80 bg-white border border-gray-200 rounded-xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+      style={{ boxShadow: "0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08)" }}
       data-testid="kpi-drilldown"
     >
-      <div className="flex items-center justify-between px-4 py-2.5 bg-muted border-b border-border">
-        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200">
+        <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">
           {items.length} project{items.length !== 1 ? "s" : ""}
         </span>
         <button
           onClick={onClose}
-          className="p-1 rounded-md hover:bg-muted transition-colors"
+          className="p-1 rounded-md hover:bg-gray-200 transition-colors"
           data-testid="drilldown-close"
         >
-          <X className="h-3.5 w-3.5 text-muted-foreground" />
+          <X className="h-3.5 w-3.5 text-gray-500" />
         </button>
       </div>
       {items.length === 0 ? (
-        <div className="px-4 py-6 text-center text-sm text-muted-foreground">No projects</div>
+        <div className="px-4 py-6 text-center text-sm text-gray-500">No projects</div>
       ) : (
-        <div className="max-h-60 overflow-y-auto divide-y divide-border/50">
+        <div className="max-h-60 overflow-y-auto divide-y divide-gray-100">
           {items.map((item: any, i: number) => (
             <button
               key={i}
-              className="w-full text-left flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-primary/5 transition-colors group"
+              className="w-full text-left flex items-center justify-between gap-3 px-4 py-3 hover:bg-emerald-50 transition-colors group"
               onClick={() => onNavigate(item.projectName)}
               data-testid={`drilldown-item-${i}`}
             >
-              <span className="truncate text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+              <span className="truncate text-sm font-medium text-gray-900 group-hover:text-emerald-700 transition-colors">
                 {(item.projectName || "").replace("_Tracker", "")}
               </span>
               {isFinancial ? (
-                <span className="text-xs font-mono font-semibold text-muted-foreground whitespace-nowrap">{formatRand(item.amount ?? 0)}</span>
+                <span className="text-xs font-mono font-semibold text-gray-600 whitespace-nowrap">{formatRand(item.amount ?? 0)}</span>
               ) : (
-                <span className="text-xs text-muted-foreground whitespace-nowrap">{item.date || item.pm || "—"}</span>
+                <span className="text-xs font-medium text-gray-500 whitespace-nowrap">{item.date || item.pm || "—"}</span>
               )}
             </button>
           ))}
@@ -243,9 +244,9 @@ function KpiCard({
   const isOpen = activeDrilldown === drilldownKey;
 
   return (
-    <div className="relative">
+    <div className={`relative ${isOpen ? "z-50" : "z-0"}`}>
       <button
-        className={`w-full text-left rounded-xl border shadow-sm ${c.card} p-4 sm:p-5 cursor-pointer hover:shadow-md active:scale-[0.98] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary/30 ${isOpen ? "ring-2 ring-primary/20" : ""}`}
+        className={`w-full text-left rounded-xl border shadow-sm ${c.card} p-4 sm:p-5 cursor-pointer hover:shadow-md active:scale-[0.98] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary/30 ${isOpen ? "ring-2 ring-primary/30 shadow-lg" : ""}`}
         onClick={() => onToggle(drilldownKey)}
         data-testid={testId}
       >
