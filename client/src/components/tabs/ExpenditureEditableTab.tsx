@@ -367,6 +367,12 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                  key.startsWith('/api/dashboard') ||
                  key.startsWith('/api/data-quality') ||
                  key.startsWith('/api/program-dashboard') ||
+                 key.startsWith('/api/revenue-tracker') ||
+                 key.startsWith('/api/revenue-tab/') ||
+                 key.startsWith('/api/revenue-tracking/') ||
+                 key === 'revenue-tracker-project' ||
+                 key === 'revenue-tab' ||
+                 key === 'finance-revenue' ||
                  key === 'dashboard' ||
                  key === 'cashflow';
         }
@@ -374,6 +380,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       }});
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["cashflow"] });
+      invalidateDashboardQueries(queryClient);
       setEdits(new Map());
       setOverrideCategory("DATA_CORRECTION");
       setOverrideComment("");
