@@ -158,7 +158,6 @@ function getLegacyNavGroups(): NavGroup[] {
       items: [
         { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
         { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
-        { label: "Notifications", icon: Bell, path: "/notifications" },
         { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
       ],
     },
@@ -186,7 +185,6 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "My Tool", icon: Briefcase, path: "/my-tool" },
         { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
         { label: "Company Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
-        { label: "Clients", icon: Users, path: "/clients" },
       ],
     },
     {
@@ -194,9 +192,8 @@ function getRedesignedNavGroups(): NavGroup[] {
       section: "COLLABORATION",
       icon: Handshake,
       items: [
-        { label: "Collaboration Hub", icon: Handshake, path: "/collaboration" },
+        { label: "Email", icon: Mail, path: "/collaboration/email" },
         { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
-        { label: "Notifications", icon: Bell, path: "/notifications" },
       ],
     },
     {
@@ -306,7 +303,6 @@ function getUnifiedWorkNavGroups(): NavGroup[] {
         items: [
           { label: "Email", icon: Mail, path: "/collaboration/email" },
           { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
-          { label: "SharePoint", icon: FolderOpen, path: "/collaboration/sharepoint" },
         ],
       });
     } else {

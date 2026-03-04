@@ -33,8 +33,6 @@ import EngineeringDashboardPage from "@/pages/engineering-dashboard";
 import EngineeringTasksPage from "@/pages/engineering-tasks";
 import PhaseTemplatesPage from "@/pages/phase-templates";
 import ProjectCreatePage from "@/pages/project-create";
-import TriageInboxPage from "@/pages/triage-inbox";
-import UnclassifiedTasksPage from "@/pages/unclassified-tasks";
 import RoleSettingsPage from "@/pages/role-settings";
 import LifecycleBoardPage from "@/pages/lifecycle-board";
 import ExecutionBoardPage from "@/pages/execution-board";
@@ -52,7 +50,6 @@ import LeaderboardPage from "@/pages/leaderboard";
 import FeedbackPage from "@/pages/feedback";
 import EeInfoPage from "@/pages/ee-info";
 import PMDashboard from "@/pages/pm-dashboard";
-import NotificationCenterPage from "@/pages/notification-center";
 import ExcelUpdatesPage from "@/pages/excel-updates";
 import PortfoliosPage from "@/pages/portfolios";
 import PortfolioDetailPage from "@/pages/portfolio-detail";
@@ -66,7 +63,6 @@ import TeamsChatsPage from "@/pages/teams-chats";
 import CollaborationPage from "@/pages/collaboration";
 import CollabEmailPage from "@/pages/collab-email";
 import CollabTeamsPage from "@/pages/collab-teams";
-import CollabSharePointPage from "@/pages/collab-sharepoint";
 import FinancialLinkingPage from "@/pages/financial-linking";
 import PMOnTheGoHome from "@/pages/pm-on-the-go-home";
 import PMOnTheGoProject from "@/pages/pm-on-the-go-project";
@@ -74,11 +70,10 @@ import MyWorkHomePage from "@/pages/my-work-home";
 import MyWorkTasksPage from "@/pages/my-work-tasks";
 import MyWorkCalendarPage from "@/pages/my-work-calendar";
 import DatabaseMigrationPage from "@/pages/database-migration";
-import ClientsPage from "@/pages/clients";
 import { useAuth } from "@/hooks/use-auth";
 
-const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/collaboration/sharepoint", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
-const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/collaboration/sharepoint", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
+const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
+const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -105,7 +100,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (user?.role === "quality_manager") {
-    const qmAllowed = ["/", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/collaboration/sharepoint", "/notifications", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
+    const qmAllowed = ["/", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
     const allowed = qmAllowed.some(p => 
       p === location || (p === "/projects" && location.startsWith("/project/"))
     );
@@ -157,8 +152,6 @@ function ProtectedPages() {
         <Route path="/project-create" component={ProjectCreatePage} />
         <Route path="/lifecycle-board" component={LifecycleBoardPage} />
         <Route path="/execution-board" component={ExecutionBoardPage} />
-        <Route path="/my-tool/triage-inbox" component={TriageInboxPage} />
-        <Route path="/my-tool/unclassified-tasks" component={UnclassifiedTasksPage} />
         <Route path="/my-tool/meetings" component={MyToolMeetingsPage} />
         <Route path="/admin/settings" component={RoleSettingsPage} />
         <Route path="/smart-import" component={SmartImportPage} />
@@ -178,7 +171,6 @@ function ProtectedPages() {
         <Route path="/feedback" component={FeedbackPage} />
         <Route path="/ee-info" component={EeInfoPage} />
         <Route path="/pm-dashboard" component={PMDashboard} />
-        <Route path="/notifications" component={NotificationCenterPage} />
         <Route path="/excel-updates" component={ExcelUpdatesPage} />
         <Route path="/portfolios" component={PortfoliosPage} />
         <Route path="/portfolios/:id" component={PortfolioDetailPage} />
@@ -193,7 +185,6 @@ function ProtectedPages() {
         <Route path="/collaboration" component={CollaborationPage} />
         <Route path="/collaboration/email" component={CollabEmailPage} />
         <Route path="/collaboration/teams" component={CollabTeamsPage} />
-        <Route path="/collaboration/sharepoint" component={CollabSharePointPage} />
         <Route path="/pm/on-the-go" component={PMOnTheGoHome} />
         <Route path="/pm/on-the-go/project/:projectId" component={PMOnTheGoProject} />
         <Route path="/my-work" component={MyWorkHomePage} />
@@ -202,7 +193,6 @@ function ProtectedPages() {
         <Route path="/my-work/meetings" component={MyToolMeetingsPage} />
         <Route path="/admin/eng-templates">{() => <Redirect to="/admin/phase-templates" />}</Route>
         <Route path="/admin/database-migration" component={DatabaseMigrationPage} />
-        <Route path="/clients" component={ClientsPage} />
 
         <Route component={NotFound} />
       </Switch>
