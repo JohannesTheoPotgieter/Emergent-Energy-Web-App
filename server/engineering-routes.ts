@@ -2538,7 +2538,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== PROJECT ENGINEERING TASKS (for project detail page) ==========
 
-  app.get("/api/projects/:projectId/eng-tasks", requireAuth, async (req, res) => {
+  app.get("/api/projects/:projectId/eng-tasks", jwtAuth, requireAuth, async (req, res) => {
     try {
       const projectId = parseInt(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -2552,11 +2552,13 @@ export function registerEngineeringRoutes(app: Express) {
       let allTasks: any[];
 
       if (wiEnabled) {
-        const wiTasks = await getWorkItemsForProject(projectId);
-        const engWiTasks = wiTasks.map(t => ({
-          ...t,
-          id: t.legacyId ?? t.id,
-        }));
+        const allWiTasks = await getWorkItemsForProject(projectId);
+        const engWiTasks = allWiTasks
+          .filter(t => t.legacyTable === "operational_tasks" || (t.workstream && String(t.workstream).toUpperCase().startsWith("ENG")))
+          .map(t => ({
+            ...t,
+            id: t.legacyId ?? t.id,
+          }));
 
         const legacyTasks = await db.select().from(operationalTasks)
           .where(or(
@@ -2611,7 +2613,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/projects/:projectId/generate-eng-tasks", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/projects/:projectId/generate-eng-tasks", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
       const projectId = parseInt(req.params.projectId);
