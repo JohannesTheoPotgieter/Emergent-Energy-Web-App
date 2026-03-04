@@ -22,26 +22,123 @@
   </head>
   <body>
     <div id="root">
-      <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, #f0fdf4 0%, #f1f5f9 40%, #ecfdf5 100%); font-family: Inter, sans-serif;">
-        <div style="text-align: center;">
-          <div style="position: relative; width: 80px; height: 80px; margin: 0 auto 24px;">
-            <img src="/emergent-leaf.png" alt="Emergent Energy" style="width: 52px; height: 52px; object-fit: contain; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 2; animation: leaf-breathe 2.5s ease-in-out infinite;" />
-            <div style="position: absolute; inset: 0; border: 2px solid transparent; border-top-color: #16a34a; border-right-color: #16a34a; border-radius: 50%; animation: orbit 1.2s linear infinite;"></div>
-            <div style="position: absolute; inset: 4px; border: 1.5px solid transparent; border-bottom-color: #22c55e44; border-left-color: #22c55e44; border-radius: 50%; animation: orbit 2s linear infinite reverse;"></div>
-          </div>
-          <p style="color: #16a34a; font-weight: 500; font-size: 14px; letter-spacing: 0.5px;">Powering up...</p>
-          <div style="width: 120px; height: 3px; background: #e2e8f0; border-radius: 4px; margin: 12px auto 0; overflow: hidden;">
-            <div style="width: 40%; height: 100%; background: linear-gradient(90deg, #16a34a, #22c55e); border-radius: 4px; animation: charge 1.5s ease-in-out infinite;"></div>
+      <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(180deg, #e0f2fe 0%, #ecfdf5 50%, #f0fdf4 100%); font-family: Inter, sans-serif; overflow: hidden; position: relative;">
+        <div style="position: absolute; inset: 0; overflow: hidden;">
+          <svg viewBox="0 0 800 400" preserveAspectRatio="xMidYMax slice" style="width: 100%; height: 100%; position: absolute; bottom: 0;">
+            <defs>
+              <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#bae6fd"/>
+                <stop offset="100%" stop-color="#dcfce7"/>
+              </linearGradient>
+              <linearGradient id="panelFace" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#1e3a5f"/>
+                <stop offset="100%" stop-color="#2d5a8e"/>
+              </linearGradient>
+              <linearGradient id="panelShine" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#ffffff" stop-opacity="0.3"/>
+                <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <rect width="800" height="400" fill="url(#sky)"/>
+            <circle cx="680" cy="60" r="40" fill="#fbbf24" opacity="0.9">
+              <animate attributeName="opacity" values="0.9;1;0.9" dur="3s" repeatCount="indefinite"/>
+            </circle>
+            <circle cx="680" cy="60" r="52" fill="#fbbf24" opacity="0.15">
+              <animate attributeName="r" values="52;58;52" dur="3s" repeatCount="indefinite"/>
+            </circle>
+            <ellipse cx="150" cy="70" rx="60" ry="20" fill="white" opacity="0.7">
+              <animate attributeName="cx" values="150;200;150" dur="20s" repeatCount="indefinite"/>
+            </ellipse>
+            <ellipse cx="450" cy="50" rx="45" ry="14" fill="white" opacity="0.5">
+              <animate attributeName="cx" values="450;500;450" dur="25s" repeatCount="indefinite"/>
+            </ellipse>
+            <rect x="0" y="300" width="800" height="100" fill="#86efac" opacity="0.3"/>
+            <rect x="0" y="310" width="800" height="90" fill="#4ade80" opacity="0.2"/>
+            <path d="M0,320 Q200,290 400,315 T800,310 L800,400 L0,400 Z" fill="#16a34a" opacity="0.15"/>
+            <g transform="translate(80,240)">
+              <rect x="28" y="0" width="4" height="80" fill="#6b7280" rx="1"/>
+              <rect x="0" y="-5" width="60" height="35" rx="2" fill="url(#panelFace)" transform="rotate(-25, 30, 12)"/>
+              <rect x="0" y="-5" width="60" height="35" rx="2" fill="url(#panelShine)" transform="rotate(-25, 30, 12)"/>
+              <line x1="3" y1="7" x2="57" y2="7" stroke="#3b82f6" stroke-width="0.5" opacity="0.3" transform="rotate(-25, 30, 12)"/>
+              <line x1="3" y1="17" x2="57" y2="17" stroke="#3b82f6" stroke-width="0.5" opacity="0.3" transform="rotate(-25, 30, 12)"/>
+              <line x1="20" y1="-3" x2="20" y2="28" stroke="#3b82f6" stroke-width="0.5" opacity="0.3" transform="rotate(-25, 30, 12)"/>
+              <line x1="40" y1="-3" x2="40" y2="28" stroke="#3b82f6" stroke-width="0.5" opacity="0.3" transform="rotate(-25, 30, 12)"/>
+            </g>
+            <g transform="translate(170,250)">
+              <rect x="28" y="0" width="4" height="70" fill="#6b7280" rx="1"/>
+              <rect x="0" y="-5" width="60" height="35" rx="2" fill="url(#panelFace)" transform="rotate(-25, 30, 12)"/>
+              <rect x="0" y="-5" width="60" height="35" rx="2" fill="url(#panelShine)" transform="rotate(-25, 30, 12)"/>
+              <line x1="20" y1="-3" x2="20" y2="28" stroke="#3b82f6" stroke-width="0.5" opacity="0.3" transform="rotate(-25, 30, 12)"/>
+              <line x1="40" y1="-3" x2="40" y2="28" stroke="#3b82f6" stroke-width="0.5" opacity="0.3" transform="rotate(-25, 30, 12)"/>
+            </g>
+            <g transform="translate(260,245)">
+              <rect x="28" y="0" width="4" height="75" fill="#6b7280" rx="1"/>
+              <rect x="0" y="-5" width="60" height="35" rx="2" fill="url(#panelFace)" transform="rotate(-25, 30, 12)"/>
+              <rect x="0" y="-5" width="60" height="35" rx="2" fill="url(#panelShine)" transform="rotate(-25, 30, 12)"/>
+              <line x1="20" y1="-3" x2="20" y2="28" stroke="#3b82f6" stroke-width="0.5" opacity="0.3" transform="rotate(-25, 30, 12)"/>
+              <line x1="40" y1="-3" x2="40" y2="28" stroke="#3b82f6" stroke-width="0.5" opacity="0.3" transform="rotate(-25, 30, 12)"/>
+            </g>
+            <g transform="translate(500,200)">
+              <rect x="18" y="30" width="4" height="120" fill="#9ca3af" rx="1"/>
+              <rect x="-2" y="20" width="44" height="15" rx="2" fill="#d1d5db"/>
+              <rect x="8" y="25" width="24" height="5" rx="1" fill="#ef4444" opacity="0.6"/>
+              <line x1="20" y1="30" x2="20" y2="150" stroke="#9ca3af" stroke-width="1" stroke-dasharray="4,4" opacity="0.4"/>
+              <g>
+                <animateTransform attributeName="transform" type="translate" values="0,0; 0,-8; 0,0" dur="4s" repeatCount="indefinite"/>
+                <rect x="30" y="80" width="30" height="20" rx="2" fill="#f59e0b" stroke="#d97706" stroke-width="1"/>
+                <line x1="30" y1="85" x2="20" y2="30" stroke="#6b7280" stroke-width="1.5"/>
+              </g>
+            </g>
+            <g transform="translate(620,260)">
+              <rect x="0" y="0" width="80" height="60" rx="3" fill="#e5e7eb" stroke="#d1d5db" stroke-width="1"/>
+              <rect x="5" y="5" width="70" height="35" rx="2" fill="#f3f4f6"/>
+              <rect x="10" y="45" width="15" height="10" rx="1" fill="#9ca3af"/>
+              <rect x="55" y="45" width="15" height="10" rx="1" fill="#9ca3af"/>
+              <rect x="20" y="10" width="40" height="8" rx="1" fill="#16a34a" opacity="0.7">
+                <animate attributeName="width" values="10;40;10" dur="2s" repeatCount="indefinite"/>
+              </rect>
+              <rect x="20" y="22" width="30" height="6" rx="1" fill="#3b82f6" opacity="0.5">
+                <animate attributeName="width" values="5;30;5" dur="2.5s" repeatCount="indefinite"/>
+              </rect>
+            </g>
+            <g transform="translate(380,270)">
+              <rect x="0" y="0" width="14" height="50" fill="#f59e0b" rx="1"/>
+              <rect x="3" y="2" width="8" height="8" rx="1" fill="#fbbf24"/>
+              <circle cx="7" cy="6" r="2" fill="#ffffff" opacity="0.8"/>
+              <rect x="-3" y="50" width="20" height="4" rx="1" fill="#d97706"/>
+            </g>
+            <g transform="translate(420,275)">
+              <rect x="0" y="0" width="14" height="45" fill="#f59e0b" rx="1"/>
+              <rect x="3" y="2" width="8" height="8" rx="1" fill="#fbbf24"/>
+              <circle cx="7" cy="6" r="2" fill="#ffffff" opacity="0.8"/>
+              <rect x="-3" y="45" width="20" height="4" rx="1" fill="#d97706"/>
+            </g>
+            <g transform="translate(350,310)">
+              <rect x="0" y="-20" width="50" height="20" rx="2" fill="#dc2626"/>
+              <rect x="5" y="-15" width="12" height="10" rx="1" fill="#fbbf24"/>
+              <rect x="0" y="0" width="50" height="10" rx="1" fill="#b91c1c"/>
+              <circle cx="10" cy="10" r="6" fill="#374151"/>
+              <circle cx="10" cy="10" r="3" fill="#6b7280"/>
+              <circle cx="40" cy="10" r="6" fill="#374151"/>
+              <circle cx="40" cy="10" r="3" fill="#6b7280"/>
+            </g>
+          </svg>
+        </div>
+        <div style="text-align: center; position: relative; z-index: 10;">
+          <div style="background: white; border-radius: 16px; padding: 32px 40px; box-shadow: 0 8px 32px rgba(0,0,0,0.08); border: 1px solid #e2e8f0;">
+            <img src="/emergent-leaf.png" alt="Emergent Energy" style="width: 48px; height: 48px; object-fit: contain; margin: 0 auto 16px; display: block; animation: leaf-breathe 2.5s ease-in-out infinite;" />
+            <p style="color: #16a34a; font-weight: 600; font-size: 15px; letter-spacing: 0.3px; margin: 0 0 4px;">Building your workspace</p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 0 0 16px;">Connecting solar panels to your dashboard...</p>
+            <div style="width: 160px; height: 4px; background: #e2e8f0; border-radius: 4px; margin: 0 auto; overflow: hidden;">
+              <div style="width: 40%; height: 100%; background: linear-gradient(90deg, #16a34a, #22c55e); border-radius: 4px; animation: charge 1.5s ease-in-out infinite;"></div>
+            </div>
           </div>
         </div>
       </div>
       <style>
-        @keyframes orbit {
-          to { transform: rotate(360deg); }
-        }
         @keyframes leaf-breathe {
-          0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-          50% { transform: translate(-50%, -50%) scale(1.05); opacity: 0.85; }
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.05); opacity: 0.85; }
         }
         @keyframes charge {
           0% { transform: translateX(-100%); }
