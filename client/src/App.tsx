@@ -29,13 +29,10 @@ import MyToolMeetingsPage from "@/pages/my-tool-meetings";
 import QmDashboardPage from "@/pages/qm-dashboard";
 import EngineeringDashboardPage from "@/pages/engineering-dashboard";
 import EngineeringTasksPage from "@/pages/engineering-tasks";
-import PhaseTemplatesPage from "@/pages/phase-templates";
 import RoleSettingsPage from "@/pages/role-settings";
 import LifecycleBoardPage from "@/pages/lifecycle-board";
 import ExecutionBoardPage from "@/pages/execution-board";
 import SmartImportPage from "@/pages/smart-import";
-import EngineeringSyncPage from "@/pages/engineering-sync";
-import EngineeringInboxPage from "@/pages/engineering-inbox";
 import InvoicePatternsPage from "@/pages/invoice-patterns";
 import SubcontractorDashboardPage from "@/pages/subcontractor-dashboard";
 import SystemActivityLogPage from "@/pages/system-activity-log";
@@ -68,8 +65,8 @@ import DatabaseMigrationPage from "@/pages/database-migration";
 import ClientsPage from "@/pages/clients";
 import { useAuth } from "@/hooks/use-auth";
 
-const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
-const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/engineering/inbox", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
+const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
+const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/meetings"];
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -142,14 +139,11 @@ function ProtectedPages() {
         <Route path="/quality" component={QmDashboardPage} />
         <Route path="/engineering" component={EngineeringDashboardPage} />
         <Route path="/engineering/tasks" component={EngineeringTasksPage} />
-        <Route path="/admin/phase-templates" component={PhaseTemplatesPage} />
         <Route path="/lifecycle-board" component={LifecycleBoardPage} />
         <Route path="/execution-board" component={ExecutionBoardPage} />
         <Route path="/my-tool/meetings" component={MyToolMeetingsPage} />
         <Route path="/admin/settings" component={RoleSettingsPage} />
         <Route path="/smart-import" component={SmartImportPage} />
-        <Route path="/engineering/sync" component={EngineeringSyncPage} />
-        <Route path="/engineering/inbox" component={EngineeringInboxPage} />
         <Route path="/invoice-patterns" component={InvoicePatternsPage} />
         <Route path="/subcontractor-dashboard" component={SubcontractorDashboardPage} />
         <Route path="/admin/activity-log" component={SystemActivityLogPage} />

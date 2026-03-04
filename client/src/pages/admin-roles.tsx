@@ -153,10 +153,6 @@ const PERM_CATEGORIES: PermCat[] = [
     items: [
       { entity: "engineering" as PermissionEntity, label: "Engineering Dashboard", actions: ["view", "edit"] },
       { entity: "eng_tasks" as PermissionEntity, label: "Task Board", actions: ["view", "edit", "delete"] },
-      { entity: "eng_stages" as PermissionEntity, label: "Engineering Stages", actions: ["view", "edit", "approve"] },
-      { entity: "eng_inbox" as PermissionEntity, label: "Pipeline Intake Inbox", actions: ["view", "edit", "approve"] },
-      { entity: "eng_sync" as PermissionEntity, label: "SharePoint Sync", actions: ["view", "edit"] },
-      { entity: "phase_templates" as PermissionEntity, label: "Phase Templates", actions: ["view", "edit"] },
     ],
   },
   {
