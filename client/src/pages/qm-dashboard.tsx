@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -48,7 +47,6 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
-  ClipboardCheck,
   CheckCircle2,
   Eye,
   Plus,
@@ -63,8 +61,6 @@ import {
   ArrowDown,
   FileText,
   User,
-  Calendar,
-  TrendingUp,
   XCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -132,24 +128,6 @@ interface QualityItem {
 type ProjectSortKey = "name" | "completion" | "warnings" | "updated";
 type ProjectSortDir = "asc" | "desc";
 type ItemSortKey = "itemName" | "projectName" | "phaseName" | "groupName" | "qmStatus" | "assigneeName" | "endDate" | "evidenceCount";
-
-function CircularProgress({ value, size = 48, strokeWidth = 4, className = "" }: { value: number; size?: number; strokeWidth?: number; className?: string }) {
-  const radius = (size - strokeWidth) / 2;
-  const circumference = radius * 2 * Math.PI;
-  const offset = circumference - (value / 100) * circumference;
-  const color = value >= 80 ? "text-emerald-500" : value >= 50 ? "text-amber-500" : "text-red-600";
-  return (
-    <svg width={size} height={size} className={className}>
-      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={strokeWidth} className="text-muted/20" />
-      <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={strokeWidth}
-        strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round"
-        className={`${color} transition-all duration-700`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
-      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" className="fill-current text-foreground font-bold" fontSize={size * 0.24}>
-        {value}%
-      </text>
-    </svg>
-  );
-}
 
 function StatusBadge({ status }: { status: string }) {
   const config: Record<string, { bg: string; text: string; label: string; dot: string }> = {
@@ -436,15 +414,6 @@ export default function QmDashboardPage() {
   const mediumWarnings = useMemo(() => warnings.filter(w => w.severity === "Medium"), [warnings]);
   const lowWarnings = useMemo(() => warnings.filter(w => w.severity !== "High" && w.severity !== "Medium"), [warnings]);
 
-  const toggleSort = (key: ProjectSortKey) => {
-    if (projectSort === key) {
-      setProjectSortDir(d => d === "asc" ? "desc" : "asc");
-    } else {
-      setProjectSort(key);
-      setProjectSortDir("asc");
-    }
-  };
-
   const toggleItemSort = (key: string) => {
     if (itemSort === key) {
       setItemSortDir(d => d === "asc" ? "desc" : "asc");
@@ -512,80 +481,38 @@ export default function QmDashboardPage() {
       <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} />
       <ActionBar nextAction={qmNextAction} blockers={qmBlockers} />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2">
-        <Card className="relative overflow-hidden border-sky-200" data-testid="kpi-quality-progress">
-          <div className="absolute inset-0 bg-gradient-to-br from-sky-50/80 to-blue-50/40" />
-          <CardContent className="relative p-5">
-            <div className="flex items-center gap-5">
-              <CircularProgress value={overallProgress} size={72} strokeWidth={6} />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-sky-600 uppercase tracking-wider mb-1">Quality Progress</p>
-                <p className="text-sm font-semibold text-foreground" data-testid="stat-progress-label">
-                  {overallProgress >= 100 ? "All Reviewed" : overallProgress >= 75 ? "Nearly Complete" : overallProgress >= 50 ? "In Progress" : overallProgress > 0 ? "Early Stage" : "Not Started"}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {totalItemsReviewed} of {totalItemsAll} items reviewed across {totalProjects} projects
-                </p>
-                {totalItemsAll > 0 && (
-                  <div className="w-full h-1.5 bg-sky-100 rounded-full overflow-hidden mt-2">
-                    <div className="h-full bg-sky-500 rounded-full transition-all duration-700" style={{ width: `${overallProgress}%` }} />
-                  </div>
-                )}
-              </div>
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        <Card className="border-sky-100" data-testid="kpi-quality-progress">
+          <CardContent className="p-3 text-center">
+            <p className="text-xl font-bold tabular-nums text-sky-600" data-testid="stat-progress">{overallProgress}%</p>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Progress</p>
+            <div className="w-full h-1 bg-sky-100 rounded-full overflow-hidden mt-1.5">
+              <div className="h-full bg-sky-500 rounded-full" style={{ width: `${overallProgress}%` }} />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-emerald-200" data-testid="kpi-quality-score">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/80 to-green-50/40" />
-          <CardContent className="relative p-5">
-            <div className="flex items-center gap-5">
-              <CircularProgress value={overallScore} size={72} strokeWidth={6} />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-1">Quality Score</p>
-                <p className="text-sm font-semibold text-foreground" data-testid="stat-score-label">
-                  {overallScore >= 90 ? "Excellent" : overallScore >= 75 ? "Good" : overallScore >= 50 ? "Needs Improvement" : totalItemsReviewed > 0 ? "At Risk" : "No Data"}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {totalItemsPassed} passed, {totalItemsFailed} failed of {totalItemsReviewed} reviewed
-                </p>
-                {totalItemsReviewed > 0 && (
-                  <div className="w-full h-1.5 bg-emerald-100 rounded-full overflow-hidden mt-2">
-                    <div className="h-full bg-emerald-500 rounded-full transition-all duration-700" style={{ width: `${overallScore}%` }} />
-                  </div>
-                )}
-              </div>
+        <Card className="border-emerald-100" data-testid="kpi-quality-score">
+          <CardContent className="p-3 text-center">
+            <p className="text-xl font-bold tabular-nums text-emerald-600" data-testid="stat-score">{overallScore}%</p>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Score</p>
+            <div className="w-full h-1 bg-emerald-100 rounded-full overflow-hidden mt-1.5">
+              <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${overallScore}%` }} />
             </div>
           </CardContent>
         </Card>
-      </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Card className="border-blue-100" data-testid="kpi-total-projects">
-          <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-50">
-                <ClipboardCheck className="h-4 w-4 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-xl font-bold tabular-nums" data-testid="stat-total-projects">{totalProjects}</p>
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Projects</p>
-              </div>
-            </div>
+          <CardContent className="p-3 text-center">
+            <p className="text-xl font-bold tabular-nums" data-testid="stat-total-projects">{totalProjects}</p>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Projects</p>
           </CardContent>
         </Card>
 
         <Card className="border-emerald-100" data-testid="kpi-items-passed">
-          <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-emerald-50">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-xl font-bold tabular-nums" data-testid="stat-items-passed">{totalItemsPassed}<span className="text-sm font-normal text-muted-foreground">/{totalItemsAll}</span></p>
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Items Passed</p>
-              </div>
-            </div>
+          <CardContent className="p-3 text-center">
+            <p className="text-xl font-bold tabular-nums" data-testid="stat-items-passed">{totalItemsPassed}<span className="text-sm font-normal text-muted-foreground">/{totalItemsAll}</span></p>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Passed</p>
           </CardContent>
         </Card>
 
@@ -594,30 +521,16 @@ export default function QmDashboardPage() {
           onClick={() => setWarningFilter(!warningFilter)}
           data-testid="kpi-active-warnings"
         >
-          <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-amber-50">
-                <AlertTriangle className="h-4 w-4 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-xl font-bold tabular-nums" data-testid="stat-warnings">{activeWarnings}</p>
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Warnings</p>
-              </div>
-            </div>
+          <CardContent className="p-3 text-center">
+            <p className="text-xl font-bold tabular-nums text-amber-600" data-testid="stat-warnings">{activeWarnings}</p>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Warnings</p>
           </CardContent>
         </Card>
 
         <Card className="border-indigo-100" data-testid="kpi-avg-score">
-          <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-indigo-50">
-                <TrendingUp className="h-4 w-4 text-indigo-600" />
-              </div>
-              <div>
-                <p className="text-xl font-bold tabular-nums" data-testid="stat-avg-completion">{avgQmScore}%</p>
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Avg Completion</p>
-              </div>
-            </div>
+          <CardContent className="p-3 text-center">
+            <p className="text-xl font-bold tabular-nums" data-testid="stat-avg-completion">{avgQmScore}%</p>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Avg Score</p>
           </CardContent>
         </Card>
       </div>
@@ -684,23 +597,6 @@ export default function QmDashboardPage() {
                       <SelectItem value="completed">Completed</SelectItem>
                     </SelectContent>
                   </Select>
-                  <div className="flex items-center border rounded-md bg-muted/30">
-                    {(["name", "completion", "warnings", "updated"] as ProjectSortKey[]).map(key => (
-                      <Button
-                        key={key}
-                        variant="ghost"
-                        size="sm"
-                        className={`h-9 px-2.5 text-xs rounded-none first:rounded-l-md last:rounded-r-md ${projectSort === key ? "bg-background shadow-sm" : ""}`}
-                        onClick={() => toggleSort(key)}
-                        data-testid={`sort-${key}`}
-                      >
-                        {key === "name" ? "Name" : key === "completion" ? "%" : key === "warnings" ? "⚠" : "Date"}
-                        {projectSort === key && (
-                          projectSortDir === "asc" ? <ArrowUp className="h-3 w-3 ml-1" /> : <ArrowDown className="h-3 w-3 ml-1" />
-                        )}
-                      </Button>
-                    ))}
-                  </div>
                 </div>
               </div>
             </CardHeader>
@@ -725,108 +621,137 @@ export default function QmDashboardPage() {
                 </div>
               ) : (
                 <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {filteredProjects.map((checklist) => {
-                      const completion = getProjectCompletion(checklist);
-                      const progress = getProjectProgress(checklist);
-                      const score = getProjectScore(checklist);
-                      const warnCount = getProjectWarnings(checklist);
-                      const totalItems = checklist.phases?.reduce((t, p) => t + p.total, 0) ?? 0;
-                      const passedItems = checklist.phases?.reduce((t, p) => t + p.completed, 0) ?? 0;
-                      const failedItems = checklist.phases?.reduce((t, p) => t + (p.failed ?? 0), 0) ?? 0;
-                      const reviewedItems = passedItems + failedItems;
-                      return (
-                        <Card
-                          key={checklist.id}
-                          data-testid={`qm-project-card-${checklist.id}`}
-                          className="cursor-pointer hover:shadow-md hover:border-emerald-400/50 transition-all group"
-                          onClick={() => setLocation(`/project/${encodeURIComponent(checklist.projectName)}?tab=quality`)}
-                        >
-                          <CardContent className="p-4">
-                            <div className="flex items-start justify-between gap-3 mb-3">
-                              <div className="min-w-0 flex-1">
-                                <h3 className="font-semibold text-sm truncate group-hover:text-emerald-600 transition-colors" data-testid={`text-project-name-${checklist.id}`}>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm" data-testid="qm-projects-table">
+                      <thead>
+                        <tr className="border-b bg-muted/30">
+                          <th className="text-left py-2 px-3 font-medium text-muted-foreground text-xs">
+                            <SortHeader label="Project" sortKey="name" currentSort={projectSort} currentDir={projectSortDir} onSort={(k) => { if (projectSort === k) setProjectSortDir(d => d === "asc" ? "desc" : "asc"); else { setProjectSort(k as ProjectSortKey); setProjectSortDir("asc"); }}} className="text-xs" />
+                          </th>
+                          <th className="text-center py-2 px-2 font-medium text-muted-foreground text-xs w-[70px]">Status</th>
+                          <th className="text-center py-2 px-2 font-medium text-muted-foreground text-xs w-[80px]">
+                            <SortHeader label="Progress" sortKey="completion" currentSort={projectSort} currentDir={projectSortDir} onSort={(k) => { if (projectSort === k) setProjectSortDir(d => d === "asc" ? "desc" : "asc"); else { setProjectSort(k as ProjectSortKey); setProjectSortDir("asc"); }}} className="text-xs justify-center" />
+                          </th>
+                          <th className="text-center py-2 px-2 font-medium text-muted-foreground text-xs w-[70px]">Score</th>
+                          <th className="text-left py-2 px-2 font-medium text-muted-foreground text-xs hidden md:table-cell">Items</th>
+                          <th className="text-left py-2 px-2 font-medium text-muted-foreground text-xs hidden lg:table-cell min-w-[200px]">Phases</th>
+                          <th className="text-center py-2 px-2 font-medium text-muted-foreground text-xs w-[80px]">
+                            <SortHeader label="Warnings" sortKey="warnings" currentSort={projectSort} currentDir={projectSortDir} onSort={(k) => { if (projectSort === k) setProjectSortDir(d => d === "asc" ? "desc" : "asc"); else { setProjectSort(k as ProjectSortKey); setProjectSortDir("asc"); }}} className="text-xs justify-center" />
+                          </th>
+                          <th className="text-right py-2 px-3 font-medium text-muted-foreground text-xs w-[90px] hidden sm:table-cell">
+                            <SortHeader label="Updated" sortKey="updated" currentSort={projectSort} currentDir={projectSortDir} onSort={(k) => { if (projectSort === k) setProjectSortDir(d => d === "asc" ? "desc" : "asc"); else { setProjectSort(k as ProjectSortKey); setProjectSortDir("asc"); }}} className="text-xs justify-end" />
+                          </th>
+                          <th className="w-8"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredProjects.map((checklist) => {
+                          const progress = getProjectProgress(checklist);
+                          const score = getProjectScore(checklist);
+                          const warnCount = getProjectWarnings(checklist);
+                          const totalItems = checklist.phases?.reduce((t, p) => t + p.total, 0) ?? 0;
+                          const passedItems = checklist.phases?.reduce((t, p) => t + p.completed, 0) ?? 0;
+                          const failedItems = checklist.phases?.reduce((t, p) => t + (p.failed ?? 0), 0) ?? 0;
+                          const reviewedItems = passedItems + failedItems;
+                          const progressColor = progress >= 80 ? "bg-emerald-500" : progress >= 50 ? "bg-amber-500" : "bg-red-500";
+                          const scoreColor = score >= 80 ? "text-emerald-600" : score >= 50 ? "text-amber-600" : "text-red-600";
+                          return (
+                            <tr
+                              key={checklist.id}
+                              data-testid={`qm-project-row-${checklist.id}`}
+                              className="border-b last:border-0 hover:bg-emerald-50/40 cursor-pointer transition-colors group"
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setLocation(`/project/${encodeURIComponent(checklist.projectName)}?tab=quality`)}
+                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setLocation(`/project/${encodeURIComponent(checklist.projectName)}?tab=quality`); }}}
+                            >
+                              <td className="py-2.5 px-3">
+                                <span className="font-medium text-sm group-hover:text-emerald-600 transition-colors" data-testid={`text-project-name-${checklist.id}`}>
                                   {checklist.projectName}
-                                </h3>
-                                <div className="flex items-center gap-2 mt-1.5">
-                                  <Badge
-                                    variant="outline"
-                                    className={`text-[10px] ${
-                                      checklist.status === "completed"
-                                        ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-                                        : "bg-blue-50 text-blue-600 border-blue-200"
-                                    }`}
-                                  >
-                                    {checklist.status}
-                                  </Badge>
-                                  <span className="text-[10px] text-muted-foreground">
-                                    {passedItems}/{totalItems} items
-                                  </span>
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-2 text-center">
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[10px] ${
+                                    checklist.status === "completed"
+                                      ? "bg-emerald-50 text-emerald-600 border-emerald-200"
+                                      : "bg-blue-50 text-blue-600 border-blue-200"
+                                  }`}
+                                >
+                                  {checklist.status}
+                                </Badge>
+                              </td>
+                              <td className="py-2.5 px-2 text-center">
+                                <div className="flex items-center gap-1.5 justify-center" title={`${reviewedItems}/${totalItems} reviewed`}>
+                                  <div className="w-14 h-1.5 bg-muted rounded-full overflow-hidden">
+                                    <div className={`h-full rounded-full ${progressColor}`} style={{ width: `${progress}%` }} />
+                                  </div>
+                                  <span className="text-xs tabular-nums font-medium w-8">{progress}%</span>
                                 </div>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <div className="text-center" title={`Progress: ${reviewedItems}/${totalItems} reviewed`}>
-                                  <CircularProgress value={progress} size={44} strokeWidth={4} />
-                                  <p className="text-[9px] font-medium text-sky-600 mt-0.5">Progress</p>
-                                </div>
-                                <div className="text-center" title={`Score: ${passedItems} passed / ${reviewedItems} reviewed`}>
-                                  <CircularProgress value={score} size={44} strokeWidth={4} />
-                                  <p className="text-[9px] font-medium text-emerald-600 mt-0.5">Score</p>
-                                </div>
-                              </div>
-                            </div>
-
-                            {checklist.phases && checklist.phases.length > 0 && (
-                              <div className="mb-3 space-y-1.5">
-                                {checklist.phases.map((phase) => {
-                                  const pct = phase.total > 0 ? Math.round((phase.completed / phase.total) * 100) : 0;
-                                  const hasFailed = (phase.failed ?? 0) > 0;
-                                  const hasReview = (phase.inReview ?? 0) > 0;
-                                  return (
-                                    <div key={phase.phaseId} className="flex items-center gap-2" title={`${phase.phaseName}: ${phase.completed}/${phase.total}${hasFailed ? ` (${phase.failed} failed)` : ""}${hasReview ? ` (${phase.inReview} in review)` : ""}`}>
-                                      <span className="text-[10px] text-muted-foreground w-16 truncate">{phase.phaseName}</span>
-                                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                                        <div
-                                          className={`h-full rounded-full transition-all ${hasFailed ? "bg-red-400" : hasReview ? "bg-amber-500" : "bg-emerald-500"}`}
-                                          style={{ width: `${pct}%` }}
-                                        />
-                                      </div>
-                                      <span className="text-[10px] text-muted-foreground w-8 text-right tabular-nums">{pct}%</span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-
-                            <div className="flex items-center justify-between text-xs text-muted-foreground pt-2.5 border-t">
-                              <div className="flex items-center gap-1.5">
+                              </td>
+                              <td className="py-2.5 px-2 text-center">
+                                <span className={`text-xs font-bold tabular-nums ${scoreColor}`} title={`${passedItems} passed / ${reviewedItems} reviewed`}>
+                                  {score}%
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-2 hidden md:table-cell">
+                                <span className="text-xs text-muted-foreground tabular-nums">
+                                  <span className="text-emerald-600 font-medium">{passedItems}</span>
+                                  {failedItems > 0 && <> / <span className="text-red-500 font-medium">{failedItems}F</span></>}
+                                  <span className="text-muted-foreground"> / {totalItems}</span>
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-2 hidden lg:table-cell">
+                                {checklist.phases && checklist.phases.length > 0 ? (
+                                  <div className="flex items-center gap-1 flex-wrap">
+                                    {checklist.phases.map((phase) => {
+                                      const pct = phase.total > 0 ? Math.round((phase.completed / phase.total) * 100) : 0;
+                                      const hasFailed = (phase.failed ?? 0) > 0;
+                                      const barColor = hasFailed ? "bg-red-400" : pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-amber-500" : "bg-gray-300";
+                                      return (
+                                        <div key={phase.phaseId} className="flex items-center gap-1" title={`${phase.phaseName}: ${phase.completed}/${phase.total}${hasFailed ? ` (${phase.failed} failed)` : ""}`}>
+                                          <span className="text-[9px] text-muted-foreground truncate max-w-[50px]">{phase.phaseName}</span>
+                                          <div className="w-8 h-1 bg-muted rounded-full overflow-hidden">
+                                            <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground">—</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-2 text-center">
                                 {warnCount > 0 ? (
                                   <Badge variant="outline" className="bg-amber-50 text-amber-600 border-amber-200 text-[10px] gap-1">
                                     <AlertTriangle className="h-3 w-3" />
-                                    {warnCount} warning{warnCount !== 1 ? "s" : ""}
+                                    {warnCount}
                                   </Badge>
                                 ) : (
-                                  <Badge variant="outline" className="bg-emerald-50 text-emerald-600 border-emerald-200 text-[10px] gap-1">
-                                    <ShieldCheck className="h-3 w-3" />
-                                    Clear
-                                  </Badge>
+                                  <ShieldCheck className="h-4 w-4 text-emerald-400 mx-auto" />
                                 )}
-                              </div>
-                              <span className="tabular-nums">
-                                {checklist.updatedAt
-                                  ? new Date(checklist.updatedAt).toLocaleDateString()
-                                  : checklist.createdAt
-                                  ? new Date(checklist.createdAt).toLocaleDateString()
-                                  : "—"}
-                              </span>
-                              <ChevronRight className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
+                              </td>
+                              <td className="py-2.5 px-3 text-right hidden sm:table-cell">
+                                <span className="text-[11px] text-muted-foreground tabular-nums">
+                                  {checklist.updatedAt
+                                    ? new Date(checklist.updatedAt).toLocaleDateString()
+                                    : checklist.createdAt
+                                    ? new Date(checklist.createdAt).toLocaleDateString()
+                                    : "—"}
+                                </span>
+                              </td>
+                              <td className="py-2.5 pr-2">
+                                <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-emerald-500 transition-colors" />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                  <p className="text-xs text-muted-foreground text-right mt-3">
+                  <p className="text-xs text-muted-foreground text-right mt-3 px-3">
                     Showing {filteredProjects.length} of {checklists.length} projects
                   </p>
                 </>
