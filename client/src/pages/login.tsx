@@ -1,11 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Lock, User, Info, X, Zap, AlertCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Lock, User, Info, X, Zap, AlertCircle, KeyRound, ShieldCheck } from "lucide-react";
 
 const MS_ERROR_MESSAGES: Record<string, string> = {
   ms_auth_failed: "Microsoft sign-in failed. Please try again.",
@@ -26,7 +27,10 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [showVersion, setShowVersion] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
-  const [adminClickCount, setAdminClickCount] = useState(0);
+  const [accessCodeDialogOpen, setAccessCodeDialogOpen] = useState(false);
+  const [accessCode, setAccessCode] = useState("");
+  const [accessCodeError, setAccessCodeError] = useState("");
+  const accessCodeInputRef = useRef<HTMLInputElement>(null);
   const [msEnabled, setMsEnabled] = useState(false);
   const [versionInfo, setVersionInfo] = useState({ version: "0.0.005", buildTime: "", buildNumber: "" });
   const [releaseNotes, setReleaseNotes] = useState<{ title: string; description: string }[]>([]);
@@ -102,16 +106,8 @@ export default function LoginPage() {
             <img
               src="/emergent-logo.png"
               alt="Emergent Energy"
-              className="h-12 object-contain cursor-default"
+              className="h-12 object-contain"
               data-testid="img-logo"
-              onClick={() => {
-                const next = adminClickCount + 1;
-                setAdminClickCount(next);
-                if (next >= 5) {
-                  setShowAdminLogin(true);
-                  setAdminClickCount(0);
-                }
-              }}
             />
           </div>
           <p className="text-sm text-muted-foreground">Sign in to your account</p>
@@ -147,6 +143,33 @@ export default function LoginPage() {
                 <p className="text-xs text-center text-muted-foreground">
                   Sign in using your company Microsoft account. Your email must match an existing account in the system.
                 </p>
+
+                {!showAdminLogin && (
+                  <div className="pt-1">
+                    <div className="relative my-2">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t border-border" />
+                      </div>
+                      <div className="relative flex justify-center text-xs">
+                        <span className="bg-card px-2 text-muted-foreground">or</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAccessCode("");
+                        setAccessCodeError("");
+                        setAccessCodeDialogOpen(true);
+                        setTimeout(() => accessCodeInputRef.current?.focus(), 100);
+                      }}
+                      className="w-full flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground hover:text-emerald-600 transition-colors"
+                      data-testid="button-toggle-admin"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" />
+                      Sign in with username & password
+                    </button>
+                  </div>
+                )}
 
                 {showAdminLogin && (
                   <>
@@ -203,6 +226,14 @@ export default function LoginPage() {
                       >
                         {isLoading ? "Signing in..." : "Admin Sign In"}
                       </Button>
+                      <button
+                        type="button"
+                        onClick={() => setShowAdminLogin(false)}
+                        className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+                        data-testid="button-hide-admin"
+                      >
+                        Back to Microsoft sign-in
+                      </button>
                     </form>
                   </>
                 )}
@@ -268,6 +299,66 @@ export default function LoginPage() {
           </button>
         </div>
       </div>
+
+      <Dialog open={accessCodeDialogOpen} onOpenChange={(open) => { setAccessCodeDialogOpen(open); if (!open) { setAccessCode(""); setAccessCodeError(""); } }}>
+        <DialogContent className="max-w-xs" aria-describedby="access-code-description">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <ShieldCheck className="h-5 w-5 text-emerald-600" />
+              Access Code Required
+            </DialogTitle>
+          </DialogHeader>
+          <p id="access-code-description" className="text-sm text-muted-foreground">
+            Enter the access code to use username and password login.
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (accessCode === "2024") {
+                setAccessCodeDialogOpen(false);
+                setShowAdminLogin(true);
+                setAccessCode("");
+                setAccessCodeError("");
+              } else {
+                setAccessCodeError("Incorrect access code");
+              }
+            }}
+            className="space-y-3"
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="access-code" className="text-xs">Access Code</Label>
+              <Input
+                ref={accessCodeInputRef}
+                id="access-code"
+                type="password"
+                placeholder="Enter code"
+                value={accessCode}
+                onChange={(e) => { setAccessCode(e.target.value); setAccessCodeError(""); }}
+                autoComplete="off"
+                data-testid="input-access-code"
+              />
+              {accessCodeError && (
+                <p className="text-xs text-red-500 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  {accessCodeError}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" size="sm" onClick={() => setAccessCodeDialogOpen(false)}>Cancel</Button>
+              <Button
+                type="submit"
+                size="sm"
+                className="bg-[#16a34a] hover:bg-[#15803d]"
+                disabled={!accessCode}
+                data-testid="button-submit-access-code"
+              >
+                Continue
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {showVersion && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowVersion(false)}>
