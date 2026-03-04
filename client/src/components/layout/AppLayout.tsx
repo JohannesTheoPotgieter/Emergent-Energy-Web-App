@@ -148,6 +148,7 @@ function getLegacyNavGroups(): NavGroup[] {
         { label: "Project Summary", icon: FileSpreadsheet, path: "/projects" },
         { label: "Cashflow", icon: Wallet, path: "/cashflow" },
         { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
+        { label: "Revenue Tracker", icon: TrendingUp, path: "/revenue-tracker" },
         { label: "Procurement", icon: Users, path: "/subcontractor-dashboard" },
       ],
     },
@@ -250,6 +251,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "Cashflow", icon: Wallet, path: "/cashflow" },
         { label: "COS Tracker", icon: TrendingUp, path: "/cos" },
+        { label: "Revenue Tracker", icon: TrendingUp, path: "/revenue-tracker" },
         { label: "Procurement", icon: Truck, path: "/subcontractor-dashboard" },
         { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
       ],

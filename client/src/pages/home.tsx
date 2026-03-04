@@ -503,7 +503,7 @@ export default function Home() {
             icon: <FolderKanban className="h-4 w-4" />,
           },
           {
-            label: "Revenue Realised",
+            label: "Inflows Realised",
             value: formatCurrency(totalRevenue),
             icon: <DollarSign className="h-4 w-4" />,
           },

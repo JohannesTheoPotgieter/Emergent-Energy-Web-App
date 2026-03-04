@@ -94,6 +94,7 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     paymentDateConfirmed: rawPaidDateConfirmed ?? false,
     paymentDateFontColor,
     supplierName: cost.counterpartyName,
+    noRevenueLinked: cost.noRevenueLinked ?? false,
     _isNormalized: true,
   };
 }

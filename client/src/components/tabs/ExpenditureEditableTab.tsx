@@ -82,6 +82,7 @@ interface EnrichedExpense {
   hasDateOverride: boolean;
   dateOverrideReason: string | null;
   cosOverride: { reason: string; overriddenBy: string | null; originalStatus: string; overrideStatus: string } | null;
+  noRevenueLinked: boolean;
 }
 
 interface ExpenditureOverride {
@@ -109,7 +110,7 @@ interface ExpenditureEditableTabProps {
 type ColumnKey =
   | "description" | "actualTotal" | "poNumber" | "invoiceNo"
   | "invoiceDate" | "paymentDate" | "linkedTask" | "cosStatus"
-  | "paymentStatus" | "plannedMonth" | "budgetTotal" | "variance" | "revenueAmount" | "supplier";
+  | "paymentStatus" | "plannedMonth" | "budgetTotal" | "variance" | "revenueAmount" | "supplier" | "noRevLinked";
 
 interface ColumnDef {
   key: ColumnKey;
@@ -132,6 +133,7 @@ const COLUMNS: ColumnDef[] = [
   { key: "paymentStatus", label: "Payment Status", defaultVisible: true, align: "center", minWidth: "110px" },
   { key: "plannedMonth", label: "Planned Month", defaultVisible: true, align: "center", minWidth: "100px" },
   { key: "supplier", label: "Supplier", defaultVisible: false, align: "left", minWidth: "130px" },
+  { key: "noRevLinked", label: "No Rev", defaultVisible: true, align: "center", minWidth: "70px" },
   { key: "revenueAmount", label: "Rev Recognition", defaultVisible: false, align: "right", minWidth: "130px" },
   { key: "variance", label: "Variance", defaultVisible: false, align: "right", minWidth: "110px" },
 ];
@@ -499,6 +501,28 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       queryClient.invalidateQueries({ queryKey: breakdownKey });
       invalidateDashboardQueries(queryClient);
       toast({ title: "COS override removed" });
+    },
+  });
+
+  const noRevLinkedMutation = useMutation({
+    mutationFn: async ({ id, noRevenueLinked }: { id: number; noRevenueLinked: boolean }) => {
+      const canonicalId = id >= 900000 ? id - 900000 : id;
+      const res = await authFetch(`/api/cost-lines/${canonicalId}/no-revenue-linked`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ noRevenueLinked }),
+      });
+      if (!res.ok) throw new Error("Failed to update no-revenue-linked");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: breakdownKey });
+      invalidateDashboardQueries(queryClient);
+      queryClient.invalidateQueries({ predicate: (query) => {
+        const key = query.queryKey[0];
+        return typeof key === 'string' && (key.startsWith('/api/revenue-tracker') || key.startsWith('/api/cos-tracker'));
+      }});
+      toast({ title: "Revenue link updated" });
     },
   });
 
@@ -1060,6 +1084,21 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         return getPaymentStatusBadge(exp.paymentStatus);
       case "plannedMonth":
         return <span className="text-xs">{formatMonth(exp.plannedMonth)}</span>;
+      case "noRevLinked":
+        return (
+          <button
+            data-testid={`no-rev-toggle-${exp.id}`}
+            className={`inline-flex items-center justify-center w-5 h-5 rounded border text-[10px] font-bold transition-colors ${
+              exp.noRevenueLinked
+                ? "bg-amber-100 border-amber-400 text-amber-700"
+                : "bg-white border-gray-300 text-gray-400 hover:border-gray-400"
+            }`}
+            title={exp.noRevenueLinked ? "No revenue linked (click to link)" : "Revenue linked (click to unlink)"}
+            onClick={() => noRevLinkedMutation.mutate({ id: exp.id, noRevenueLinked: !exp.noRevenueLinked })}
+          >
+            {exp.noRevenueLinked ? "X" : ""}
+          </button>
+        );
       case "supplier":
         return <SupplierCell rowId={exp.id} value={extractSupplier(exp.expenseInvoiceNumber)} rowNumber={exp.rowNumber} />;
       case "variance":
