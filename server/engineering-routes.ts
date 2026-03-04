@@ -264,13 +264,16 @@ export function registerEngineeringRoutes(app: Express) {
         ? await query.where(and(...conditions)).orderBy(asc(operationalTasks.sortOrder))
         : await query.orderBy(asc(operationalTasks.sortOrder));
 
-      const { buildUserMap } = await import("./user-resolver");
+      const { buildUserMap, mergeResolvedWithTextNames } = await import("./user-resolver");
       const userMap = await buildUserMap();
-      const enriched = tasks.map((t: any) => ({
-        ...t,
-        resolvedAssignees: (t.assigneeUserIds || []).map((uid: number) => userMap.get(uid)).filter(Boolean),
-        resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
-      }));
+      const enriched = tasks.map((t: any) => {
+        const idResolved = (t.assigneeUserIds || []).map((uid: number) => userMap.get(uid)).filter(Boolean);
+        return {
+          ...t,
+          resolvedAssignees: mergeResolvedWithTextNames(idResolved, t.assignees, userMap),
+          resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
+        };
+      });
       res.json(enriched);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);

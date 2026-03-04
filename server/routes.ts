@@ -10164,9 +10164,10 @@ export async function registerRoutes(
         items: await storage.getChecklistItems(cl.id),
       })));
 
-      const { buildUserMap } = await import("./user-resolver");
+      const { buildUserMap, mergeResolvedWithTextNames } = await import("./user-resolver");
       const userMap = await buildUserMap();
-      const resolvedAssignees = (task.assigneeUserIds || []).map((uid: number) => userMap.get(uid)).filter(Boolean);
+      const idResolved = (task.assigneeUserIds || []).map((uid: number) => userMap.get(uid)).filter(Boolean);
+      const resolvedAssignees = mergeResolvedWithTextNames(idResolved, task.assignees, userMap);
       const resolvedOwner = task.ownerUserId ? userMap.get(task.ownerUserId) || null : null;
 
       res.json({ task: { ...task, resolvedAssignees, resolvedOwner }, comments, checklists: checklistsWithItems, attachments, activity });
@@ -10242,13 +10243,16 @@ export async function registerRoutes(
           };
         });
 
-      const { buildUserMap } = await import("./user-resolver");
+      const { buildUserMap, mergeResolvedWithTextNames } = await import("./user-resolver");
       const userMap = await buildUserMap();
-      const enriched = operationalTasks.map((t: any) => ({
-        ...t,
-        resolvedAssignees: (t.assigneeUserIds || []).map((uid: number) => userMap.get(uid)).filter(Boolean),
-        resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
-      }));
+      const enriched = operationalTasks.map((t: any) => {
+        const idResolved = (t.assigneeUserIds || []).map((uid: number) => userMap.get(uid)).filter(Boolean);
+        return {
+          ...t,
+          resolvedAssignees: mergeResolvedWithTextNames(idResolved, t.assignees, userMap),
+          resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
+        };
+      });
 
       const merged = [...baselineTasks, ...enriched];
       merged.sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));

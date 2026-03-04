@@ -18,7 +18,7 @@ import {
   convertToTask,
 } from "./project-linking-service";
 import { syncAllForUser, syncUserCalendar, syncUserEmail, syncUserTeams, getSyncStatus } from "./ms-sync-service";
-import { getAllUsers, resolveNameToUserId, buildUserMap, type ResolvedUser } from "./user-resolver";
+import { getAllUsers, resolveNameToUserId, buildUserMap, mergeResolvedWithTextNames, type ResolvedUser } from "./user-resolver";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -475,7 +475,7 @@ export function registerMsSyncRoutes(app: Express) {
           return {
             ...t,
             subtaskCount: subtaskCounts[t.id] || 0,
-            resolvedAssignees: resolveUserIds(t.assigneeUserIds),
+            resolvedAssignees: mergeResolvedWithTextNames(resolveUserIds(t.assigneeUserIds), t.assignees, userMap),
             resolvedOwner: resolveUserId(t.ownerUserId),
             trackingRole,
           };
@@ -486,7 +486,7 @@ export function registerMsSyncRoutes(app: Express) {
           const trackingRole = isOwner && isCreatorByEmail ? "both" : isOwner ? "assignee" : "creator";
           return {
             ...t,
-            resolvedOwners: resolveUserIds(t.ownerUserIds),
+            resolvedOwners: mergeResolvedWithTextNames(resolveUserIds(t.ownerUserIds), t.owners, userMap),
             trackingRole,
           };
         }),
