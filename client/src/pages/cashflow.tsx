@@ -708,20 +708,22 @@ export default function CashflowPage() {
     [showDetail]
   );
 
+  const isProjectFiltered = selectedProject !== "all";
+
   const chartData = useMemo(() => {
     return cashflowData.map((w) => ({
       week: formatWeek(w.weekStart),
       "Opening Balance": w.openingBalance,
       "Project Inflows": w.projectInflows,
-      "Total Outflows": (w.opexOutflows || 0) + (w.projectOutflows || 0),
+      "Total Outflows": isProjectFiltered ? (w.projectOutflows || 0) : (w.opexOutflows || 0) + (w.projectOutflows || 0),
       "Closing Balance": w.closingBalance,
     }));
-  }, [cashflowData]);
+  }, [cashflowData, isProjectFiltered]);
 
   const kpis = useMemo(() => {
     const totalInflows = cashflowData.reduce((s, w) => s + (w.projectInflows || 0), 0);
     const totalOutflows = cashflowData.reduce(
-      (s, w) => s + (w.opexOutflows || 0) + (w.projectOutflows || 0),
+      (s, w) => s + (isProjectFiltered ? 0 : (w.opexOutflows || 0)) + (w.projectOutflows || 0),
       0
     );
     const now = new Date();
