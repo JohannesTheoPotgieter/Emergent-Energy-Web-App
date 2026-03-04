@@ -2863,7 +2863,7 @@ export async function registerRoutes(
         }
 
         const computedOpening = runningBalance;
-        const hasManualOverride = manualMap.has(weekStart);
+        const hasManualOverride = !projectFilter && manualMap.has(weekStart);
         const openingBalance = hasManualOverride ? manualMap.get(weekStart)! : computedOpening;
         const balanceDelta = hasManualOverride ? openingBalance - computedOpening : 0;
 
@@ -2872,7 +2872,7 @@ export async function registerRoutes(
         const weeksCount = weeksInMonth.get(mk) || 1;
         const computedOpex = monthlyOpex / weeksCount;
         const hasOpexOverride = opexWeeklyMap.has(weekStart);
-        const opexOutflows = hasOpexOverride ? opexWeeklyMap.get(weekStart)! : computedOpex;
+        const opexOutflows = projectFilter ? 0 : (hasOpexOverride ? opexWeeklyMap.get(weekStart)! : computedOpex);
 
         const totalOutflows = opexOutflows + projectOutflowsSum;
         const closingBalance = openingBalance + projectInflowsSum - totalOutflows;
