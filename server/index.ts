@@ -323,6 +323,19 @@ async function backfillPmUserIds() {
   } catch (e) {}
 
   try {
+    await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS primary_instruction TEXT`));
+    await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS stage_code TEXT`));
+    await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS definition_of_done TEXT`));
+    await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS owner_role_id TEXT`));
+    await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS approver_role_id TEXT`));
+    await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS required_links JSONB`));
+    await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS example_artifacts JSONB`));
+    await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS example_notes TEXT`));
+    await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS common_pitfalls JSONB`));
+    await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS next_node_id TEXT`));
+  } catch (e) {}
+
+  try {
     await db.execute(sql.raw(`
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'pm_action_type') THEN
@@ -498,9 +511,26 @@ async function backfillPmUserIds() {
     console.error("[Seed] Feature flag seed error:", err.message);
   }
 
-  const { registerEeInfoRoutes, bootImportCheck } = await import("./ee-info-routes");
+  const { registerEeInfoRoutes, bootImportCheck, seedStoryLifecycleData, seedStoryDemoData } = await import("./ee-info-routes");
   registerEeInfoRoutes(app);
   await bootImportCheck().catch(err => console.error('[EE-Info] Boot import error:', err));
+
+  try {
+    const storyCheck = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM ee_info_nodes WHERE stage_code IS NOT NULL AND stage_code != 'DEMO' AND node_type = 'lifecycle_stage'`));
+    const storyCount = parseInt(String((storyCheck as any).rows?.[0]?.cnt || "0"));
+    if (storyCount === 0) {
+      const count = await seedStoryLifecycleData();
+      console.log(`[Story] Lifecycle stages seeded: ${count} nodes`);
+    }
+    const demoCheck = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM ee_info_nodes WHERE stage_code = 'DEMO'`));
+    const demoCount = parseInt(String((demoCheck as any).rows?.[0]?.cnt || "0"));
+    if (demoCount === 0) {
+      const count = await seedStoryDemoData();
+      console.log(`[Story] Demo walkthrough seeded: ${count} steps`);
+    }
+  } catch (err) {
+    console.error('[Story] Seed error (non-fatal):', err);
+  }
 
   const { seedEeInfoUpdates } = await import("./seed-ee-info-updates");
   await seedEeInfoUpdates().catch(err => console.error('[EE-Info-Update] Seed error:', err));

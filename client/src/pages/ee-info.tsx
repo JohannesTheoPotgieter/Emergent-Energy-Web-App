@@ -22,6 +22,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import CompanyOverviewMap from "@/components/CompanyOverviewMap";
+import LifecycleStoryMode from "@/components/LifecycleStoryMode";
 import { WALKTHROUGHS, WALKTHROUGH_CATEGORIES, type Walkthrough } from "@/data/walkthroughs";
 
 function authHeaders(): Record<string, string> {
@@ -2132,12 +2133,12 @@ function WalkthroughTab() {
 }
 
 type OsView = { type: "lifecycle" } | { type: "department"; slug: string } | { type: "process"; slug: string };
-type OsMode = "map" | "drilldown";
+type OsMode = "story" | "map" | "drilldown";
 
 export default function EeInfoPage() {
   const [activeTab, setActiveTab] = useState("os");
   const [osView, setOsView] = useState<OsView>({ type: "lifecycle" });
-  const [osMode, setOsMode] = useState<OsMode>("map");
+  const [osMode, setOsMode] = useState<OsMode>("story");
 
   const { user } = useAuth();
   const userRole = user?.role || (user as any)?.companyRole || null;
@@ -2182,13 +2183,28 @@ export default function EeInfoPage() {
 
         <TabsContent value="os" className="mt-3">
           <div className="flex items-center gap-1.5 mb-3">
+            <Button size="sm" variant={osMode === "story" ? "default" : "outline"} className="h-7 text-xs gap-1" onClick={() => setOsMode("story")} data-testid="button-os-story">
+              <Play className="h-3 w-3" /> Story Mode
+            </Button>
             <Button size="sm" variant={osMode === "map" ? "default" : "outline"} className="h-7 text-xs gap-1" onClick={() => setOsMode("map")} data-testid="button-os-map">
-              <Layers className="h-3 w-3" /> Overview Map
+              <Layers className="h-3 w-3" /> Explore Mode
             </Button>
             <Button size="sm" variant={osMode === "drilldown" ? "default" : "outline"} className="h-7 text-xs gap-1" onClick={() => setOsMode("drilldown")} data-testid="button-os-drilldown">
               <Network className="h-3 w-3" /> Drill Down
             </Button>
           </div>
+          {osMode === "story" && (
+            <LifecycleStoryMode
+              isCOO={isCOO}
+              onOpenExploreMode={(nodeId) => {
+                setOsMode("map");
+                if (nodeId) {
+                  const slug = nodeId.replace(/^story-stage-/, "").replace(/^story-proc-/, "");
+                  setOsView({ type: "process", slug });
+                }
+              }}
+            />
+          )}
           {osMode === "map" && (
             <CompanyOverviewMap isCOO={isCOO} userId={user?.id} />
           )}

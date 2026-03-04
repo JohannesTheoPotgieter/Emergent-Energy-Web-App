@@ -38,6 +38,7 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Universal Search**: Big search bar on the home page (`/`) searching across projects, work items, cost lines, and revenue lines via `/api/search` endpoint. Debounced input, keyboard navigation, type-colored result badges, and click-to-navigate. Replaces the removed dead search input from the header.
 -   **Quality Tab**: Phase-tabbed navigation with progress indicators, group accordions, inline status buttons, evidence upload, approval workflows, and bulk actions.
 -   **MS SSO Unavailable Banner**: Informative banner on Outlook email and Teams chat pages when Microsoft 365 SSO is not configured.
+-   **Company Lifecycle Map**: Interactive lifecycle management under EE Info → Operating System with Story Mode (default) and Explore Mode. Story Mode: three-panel layout (P0-P7 stages list, Step Player center, Tools/Related right rail). "explain like i'm new" toggle simplifies UI for onboarding. Demo Walkthrough follows a 500kWp solar project through 15 steps. COO-only edit permissions. Auto-seeds lifecycle stages and demo data at server startup. Component: `LifecycleStoryMode.tsx`.
 -   **Knowledge Base**: Wiki-style system with SOP-enriched nodes.
 -   **Navigation**: Redesigned sidebar with color-coded section indicators and promoted "Users & Roles" admin shortcut.
 
