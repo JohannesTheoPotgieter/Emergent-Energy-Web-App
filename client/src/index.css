@@ -505,8 +505,53 @@ thead th {
   animation: wave-flow 2s ease-in-out infinite;
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .page-enter {
   animation: float-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.energy-section-heading {
+  position: relative;
+  padding-left: 4px;
+}
+.energy-section-heading::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: hsl(142 76% 36%);
+  opacity: 0.6;
+}
+
+.energy-nav-item {
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.energy-nav-item:hover {
+  background: linear-gradient(90deg, hsl(142 76% 36% / 0.06), transparent);
+}
+.energy-nav-item.active {
+  background: linear-gradient(90deg, hsl(142 76% 36% / 0.08), hsl(142 76% 36% / 0.02));
+}
+
+.renewable-badge {
+  background: linear-gradient(135deg, hsl(142 76% 36% / 0.1), hsl(142 76% 50% / 0.05));
+  border: 1px solid hsl(142 76% 36% / 0.2);
+  color: hsl(142 76% 36%);
+}
+
+.energy-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, hsl(142 76% 36% / 0.15), transparent);
+  margin: 8px 0;
 }
 
 [data-page-content] > * {

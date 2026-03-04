@@ -51,6 +51,7 @@ import {
   Gauge,
   Percent,
 } from "lucide-react";
+import { EnergyLoader } from "@/components/ui/energy-loader";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import DataSourceDebug from "@/components/DataSourceDebug";
 
@@ -782,7 +783,7 @@ export default function PMDashboard() {
     if (pmUsers.length === 0) {
       return (
         <div className="flex items-center justify-center min-h-[60vh]" data-testid="pm-loading">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <EnergyLoader size="md" label="Loading project managers..." />
         </div>
       );
     }
@@ -813,7 +814,7 @@ export default function PMDashboard() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]" data-testid="pm-loading">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <EnergyLoader size="lg" label="Loading PM dashboard..." />
       </div>
     );
   }
@@ -830,7 +831,7 @@ export default function PMDashboard() {
   if (!data) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]" data-testid="pm-loading">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <EnergyLoader size="md" label="Connecting to project data..." />
       </div>
     );
   }

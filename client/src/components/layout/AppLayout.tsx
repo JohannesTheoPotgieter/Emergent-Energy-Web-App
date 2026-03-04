@@ -59,6 +59,12 @@ import {
   PanelLeft,
   ChevronLeft,
   FileUp,
+  Zap,
+  Sun,
+  Wind,
+  Battery,
+  Leaf,
+  CircuitBoard,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -102,17 +108,17 @@ interface NavGroup {
 
 const SECTION_COLORS: Record<string, string> = {
   MY_WORK: "text-green-600",
-  PROJECT_DEVELOPMENT: "text-teal-600",
+  PROJECT_DEVELOPMENT: "text-amber-600",
   ENGINEERING: "text-orange-600",
-  QUALITY: "text-purple-600",
-  PROJECT_MANAGEMENT: "text-blue-600",
+  QUALITY: "text-violet-600",
+  PROJECT_MANAGEMENT: "text-sky-600",
   FINANCE: "text-emerald-600",
   SYSTEM: "text-slate-500",
   COCKPIT: "text-amber-600",
-  COLLABORATION: "text-pink-600",
+  COLLABORATION: "text-green-600",
   MONEY: "text-emerald-600",
   DELIVERY: "text-orange-600",
-  GOVERNANCE: "text-purple-600",
+  GOVERNANCE: "text-violet-600",
   INFORMATION: "text-cyan-600",
   FEEDBACK: "text-cyan-600",
   ADMIN: "text-slate-500",
@@ -187,7 +193,7 @@ function getRedesignedNavGroups(): NavGroup[] {
     {
       heading: "MY WORK",
       section: "MY_WORK",
-      icon: Home,
+      icon: Zap,
       items: [
         { label: "Tasks", icon: ListChecks, path: "/my-work/tasks" },
         { label: "Approvals / Calendar", icon: CalendarCheck, path: "/my-work/calendar" },
@@ -199,9 +205,9 @@ function getRedesignedNavGroups(): NavGroup[] {
     {
       heading: "PROJECT DEVELOPMENT",
       section: "PROJECT_DEVELOPMENT",
-      icon: FileEdit,
+      icon: Sun,
       items: [
-        { label: "PD Dashboard", icon: FileEdit, path: "/pd" },
+        { label: "PD Dashboard", icon: Sun, path: "/pd" },
         { label: "PD Tickets", icon: ClipboardList, path: "/pd/tickets" },
         { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
       ],
@@ -226,7 +232,7 @@ function getRedesignedNavGroups(): NavGroup[] {
     {
       heading: "PROJECT MANAGEMENT",
       section: "PROJECT_MANAGEMENT",
-      icon: FolderKanban,
+      icon: Wind,
       items: [
         { label: "Project List", icon: FolderKanban, path: "/projects" },
         { label: "Portfolios", icon: FolderOpen, path: "/portfolios" },
@@ -239,7 +245,7 @@ function getRedesignedNavGroups(): NavGroup[] {
     {
       heading: "FINANCE",
       section: "FINANCE",
-      icon: Wallet,
+      icon: Battery,
       items: [
         { label: "Cashflow", icon: Wallet, path: "/cashflow" },
         { label: "COS Tracker", icon: TrendingUp, path: "/cos" },
@@ -250,14 +256,14 @@ function getRedesignedNavGroups(): NavGroup[] {
     {
       heading: "SYSTEM",
       section: "SYSTEM",
-      icon: Cog,
+      icon: CircuitBoard,
       items: [
         { label: "Users & Roles", icon: UserCog, path: "/admin/roles" },
         { label: "App Settings", icon: Settings, path: "/admin/settings" },
         { label: "Activity Log", icon: Activity, path: "/admin/activity-log" },
         { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
         { label: "Excel Updates", icon: ClipboardCheck, path: "/excel-updates" },
-        { label: "Emergent Energy Info", icon: BookOpen, path: "/ee-info" },
+        { label: "Emergent Energy Info", icon: Leaf, path: "/ee-info" },
         { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
         { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
       ],
