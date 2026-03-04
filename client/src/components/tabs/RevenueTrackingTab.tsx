@@ -152,11 +152,19 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
 
   const toggleInBankMutation = useMutation({
     mutationFn: async ({ rowNumber, inBank }: { rowNumber: number; inBank: boolean }) => {
+      const overrides: { projectName: string; rowNumber: number; fieldName: string; overrideValue: string | null }[] = [
+        { projectName, rowNumber, fieldName: "inBank", overrideValue: inBank ? "1" : "0" },
+      ];
+      if (inBank) {
+        overrides.push({ projectName, rowNumber, fieldName: "paymentReceivedDate", overrideValue: new Date().toISOString().split("T")[0] });
+      } else {
+        overrides.push({ projectName, rowNumber, fieldName: "paymentReceivedDate", overrideValue: null });
+      }
       const res = await fetch(`/api/revenue-tracking/overrides`, {
         credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ overrides: [{ projectName, rowNumber, fieldName: "inBank", overrideValue: inBank ? "1" : "0" }] }),
+        body: JSON.stringify({ overrides }),
       });
       if (!res.ok) throw new Error("Failed to update");
       return res.json();
@@ -164,7 +172,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
       invalidateDashboardQueries(queryClient);
-      toast({ title: variables.inBank ? "Marked as received" : "Marked as outstanding", description: variables.inBank ? "Payment confirmed in bank" : "Payment marked as not yet received" });
+      toast({ title: variables.inBank ? "Marked as In Bank" : "Marked as outstanding", description: variables.inBank ? "Payment confirmed in bank — received date set" : "Payment marked as not yet received — received date cleared" });
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to update payment status", variant: "destructive" });
@@ -382,24 +390,63 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
 
   const { milestones, summary, highlevel } = data;
 
-  const StatusBadge = ({ status, flags }: { status: string; flags: string[] }) => {
+  const StatusBadge = ({ status, flags, milestone }: { status: string; flags: string[]; milestone: Milestone }) => {
+    const hasInvoice = !!milestone.milestoneInvoiceNumber;
+    const isPending = toggleInBankMutation.isPending;
+
+    const handleStatusClick = () => {
+      if (isPending) return;
+
+      if (status === "inBank") {
+        toggleInBankMutation.mutate({ rowNumber: milestone.rowNumber, inBank: false });
+      } else if (status === "invoiced" || (status === "overdue" && hasInvoice)) {
+        toggleInBankMutation.mutate({ rowNumber: milestone.rowNumber, inBank: true });
+      } else if (status === "planned" || (status === "overdue" && !hasInvoice)) {
+        toast({ title: "Invoice required", description: "Add an invoice number before marking as In Bank", variant: "destructive" });
+      }
+    };
+
+    const canAdvance = (status === "invoiced") || (status === "overdue" && hasInvoice) || status === "inBank";
+    const cursorClass = canAdvance ? "cursor-pointer" : status === "planned" || status === "overdue" ? "cursor-not-allowed opacity-80" : "";
+
     if (status === "inBank") return (
-      <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-xs" data-testid="badge-inbank">
+      <Badge
+        className={`bg-green-100 text-green-800 hover:bg-green-200 text-xs transition-colors ${cursorClass}`}
+        onClick={handleStatusClick}
+        title="Click to undo — mark as outstanding"
+        data-testid="badge-inbank"
+      >
         <BanknoteIcon className="h-3 w-3 mr-1" /> In Bank
       </Badge>
     );
     if (status === "invoiced") return (
-      <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 text-xs" title={flags.join("; ")} data-testid="badge-invoiced">
+      <Badge
+        className={`bg-blue-100 text-blue-800 hover:bg-blue-200 text-xs transition-colors ${cursorClass}`}
+        onClick={handleStatusClick}
+        title="Click to mark as In Bank"
+        data-testid="badge-invoiced"
+      >
         <FileText className="h-3 w-3 mr-1" /> Invoiced
       </Badge>
     );
     if (status === "overdue") return (
-      <Badge className="bg-red-100 text-red-800 hover:bg-red-100 text-xs" title={flags.join("; ")} data-testid="badge-overdue">
+      <Badge
+        className={`bg-red-100 text-red-800 hover:bg-red-200 text-xs transition-colors ${cursorClass}`}
+        onClick={handleStatusClick}
+        title={hasInvoice ? "Click to mark as In Bank" : "Add invoice number first"}
+        data-testid="badge-overdue"
+      >
         <AlertTriangle className="h-3 w-3 mr-1" /> Overdue
       </Badge>
     );
     return (
-      <Badge variant="outline" className="text-xs" data-testid="badge-planned">
+      <Badge
+        variant="outline"
+        className={`text-xs bg-gray-50 hover:bg-gray-100 transition-colors ${cursorClass}`}
+        onClick={handleStatusClick}
+        title="Add invoice number to advance status"
+        data-testid="badge-planned"
+      >
         <Clock className="h-3 w-3 mr-1" /> Planned
       </Badge>
     );
@@ -811,33 +858,10 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                             )}
                           </TableCell>
 
-                          {/* Status + In Bank toggle */}
+                          {/* Status — clickable badge to toggle */}
                           <TableCell>
                             <div className="flex items-center gap-1">
-                              <StatusBadge status={m.status} flags={m.flags} />
-                              {m.status === "inBank" ? (
-                                <Button
-                                  variant="ghost" size="sm"
-                                  className="h-5 w-5 p-0 shrink-0"
-                                  onClick={() => toggleInBankMutation.mutate({ rowNumber: m.rowNumber, inBank: false })}
-                                  disabled={toggleInBankMutation.isPending}
-                                  title="Undo — mark as not yet received"
-                                  data-testid={`button-unmark-received-${m.rowNumber}`}
-                                >
-                                  <XCircle className="h-3 w-3 text-gray-400 hover:text-red-500" />
-                                </Button>
-                              ) : m.milestoneInvoiceNumber ? (
-                                <Button
-                                  variant="ghost" size="sm"
-                                  className="h-5 px-1.5 text-[9px] text-green-600 hover:text-green-700 hover:bg-green-50 gap-0.5 shrink-0"
-                                  onClick={() => toggleInBankMutation.mutate({ rowNumber: m.rowNumber, inBank: true })}
-                                  disabled={toggleInBankMutation.isPending}
-                                  title="Mark payment as received (in bank)"
-                                  data-testid={`button-mark-received-${m.rowNumber}`}
-                                >
-                                  <BanknoteIcon className="h-3 w-3" /> Received
-                                </Button>
-                              ) : null}
+                              <StatusBadge status={m.status} flags={m.flags} milestone={m} />
                             </div>
                           </TableCell>
 
@@ -952,7 +976,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                         <p className="font-medium text-sm">{m.milestoneNo}. {m.milestoneName}</p>
                         <p className="font-mono text-lg font-bold">{formatCurrency(m.milestoneAmount)}</p>
                       </div>
-                      <StatusBadge status={m.status} flags={m.flags} />
+                      <StatusBadge status={m.status} flags={m.flags} milestone={m} />
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
                       <div>Date: <span className={m.isRed ? "text-red-500 font-medium" : "text-foreground"}>{formatDate(m.date)}</span></div>
