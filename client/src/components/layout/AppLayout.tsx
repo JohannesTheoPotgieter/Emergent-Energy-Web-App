@@ -101,15 +101,15 @@ interface NavGroup {
 
 const SECTION_COLORS: Record<string, string> = {
   MY_WORK: "text-green-600",
-  PROJECTS: "text-blue-600",
-  PROJECT_DELIVERY: "text-orange-600",
+  PROJECT_DEVELOPMENT: "text-teal-600",
+  ENGINEERING: "text-orange-600",
+  QUALITY: "text-purple-600",
+  PROJECT_MANAGEMENT: "text-blue-600",
   FINANCE: "text-emerald-600",
-  OPERATIONS: "text-amber-600",
   SYSTEM: "text-slate-500",
   COCKPIT: "text-amber-600",
   COLLABORATION: "text-pink-600",
   MONEY: "text-emerald-600",
-  PROJECT_DEVELOPMENT: "text-teal-600",
   DELIVERY: "text-orange-600",
   GOVERNANCE: "text-purple-600",
   INFORMATION: "text-cyan-600",
@@ -117,9 +117,9 @@ const SECTION_COLORS: Record<string, string> = {
   ADMIN: "text-slate-500",
   SETTINGS: "text-slate-500",
   EXCO: "text-amber-600",
-  PROJECT_MANAGEMENT: "text-blue-600",
-  ENGINEERING: "text-purple-600",
-  QUALITY: "text-teal-600",
+  PROJECTS: "text-blue-600",
+  PROJECT_DELIVERY: "text-orange-600",
+  OPERATIONS: "text-amber-600",
 };
 
 function getLegacyNavGroups(): NavGroup[] {
@@ -194,25 +194,43 @@ function getRedesignedNavGroups(): NavGroup[] {
       ],
     },
     {
-      heading: "PROJECTS",
-      section: "PROJECTS",
+      heading: "PROJECT DEVELOPMENT",
+      section: "PROJECT_DEVELOPMENT",
+      icon: FileEdit,
+      items: [
+        { label: "PD Dashboard", icon: FileEdit, path: "/pd" },
+        { label: "PD Tickets", icon: ClipboardList, path: "/pd/tickets" },
+        { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
+      ],
+    },
+    {
+      heading: "ENGINEERING",
+      section: "ENGINEERING",
+      icon: HardHat,
+      items: [
+        { label: "Eng Dashboard", icon: HardHat, path: "/engineering" },
+        { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
+      ],
+    },
+    {
+      heading: "QUALITY",
+      section: "QUALITY",
+      icon: ShieldCheck,
+      items: [
+        { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
+      ],
+    },
+    {
+      heading: "PROJECT MANAGEMENT",
+      section: "PROJECT_MANAGEMENT",
       icon: FolderKanban,
       items: [
         { label: "Project List", icon: FolderKanban, path: "/projects" },
         { label: "Portfolios", icon: FolderOpen, path: "/portfolios" },
         { label: "Execution Board", icon: Gauge, path: "/dashboard" },
-        { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
-      ],
-    },
-    {
-      heading: "PROJECT DELIVERY",
-      section: "PROJECT_DELIVERY",
-      icon: HardHat,
-      items: [
         { label: "PM Dashboard", icon: Briefcase, path: "/pm-dashboard" },
-        { label: "Engineering", icon: HardHat, path: "/engineering" },
-        { label: "Quality", icon: ShieldCheck, path: "/quality" },
         { label: "On-The-Go", icon: Smartphone, path: "/pm/on-the-go" },
+        { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
       ],
     },
     {
@@ -227,18 +245,6 @@ function getRedesignedNavGroups(): NavGroup[] {
       ],
     },
     {
-      heading: "OPERATIONS",
-      section: "OPERATIONS",
-      icon: RefreshCw,
-      items: [
-        { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
-        { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
-        { label: "Excel Updates", icon: ClipboardCheck, path: "/excel-updates" },
-        { label: "PD Dashboard", icon: FileEdit, path: "/pd" },
-        { label: "PD Tickets", icon: ClipboardList, path: "/pd/tickets" },
-      ],
-    },
-    {
       heading: "SYSTEM",
       section: "SYSTEM",
       icon: Cog,
@@ -246,6 +252,8 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "Users & Roles", icon: UserCog, path: "/admin/roles" },
         { label: "App Settings", icon: Settings, path: "/admin/settings" },
         { label: "Activity Log", icon: Activity, path: "/admin/activity-log" },
+        { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
+        { label: "Excel Updates", icon: ClipboardCheck, path: "/excel-updates" },
         { label: "Emergent Energy Info", icon: BookOpen, path: "/ee-info" },
         { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
         { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
@@ -482,12 +490,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5 overscroll-contain scrollbar-thin">
           {navGroups.filter(group => {
             if (["FEEDBACK", "INFORMATION", "MY_WORK", "SYSTEM"].includes(group.section)) return true;
-            if (allowedSections.length === 0 && !activeRole) return group.section === "PROJECTS";
+            if (allowedSections.length === 0 && !activeRole) return group.section === "PROJECT_MANAGEMENT";
             const sectionAliases: Record<string, string[]> = {
-              PROJECTS: ["PROJECTS"],
-              PROJECT_DELIVERY: ["DELIVERY", "GOVERNANCE", "PROJECTS"],
+              PROJECT_DEVELOPMENT: ["PROJECT_DEVELOPMENT", "COCKPIT"],
+              ENGINEERING: ["DELIVERY"],
+              QUALITY: ["GOVERNANCE"],
+              PROJECT_MANAGEMENT: ["PROJECTS"],
               FINANCE: ["MONEY"],
-              OPERATIONS: ["PROJECTS", "PROJECT_DEVELOPMENT", "COCKPIT"],
             };
             const aliases = sectionAliases[group.section] || [group.section];
             return aliases.some(a => allowedSections.includes(a)) || allowedSections.includes(group.section);
