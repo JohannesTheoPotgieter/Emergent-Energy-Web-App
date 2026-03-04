@@ -16,6 +16,7 @@ import CashflowPage from "@/pages/cashflow";
 import RevenueTracker from "@/pages/revenue";
 import RevenueTrackerPage from "@/pages/revenue-tracker";
 import CostTracker from "@/pages/cos";
+import GpTrackerPage from "@/pages/gp-tracker";
 import NotFound from "@/pages/not-found";
 import ProjectDetailPage from "@/pages/project-detail";
 import AdminPage from "@/pages/admin";
@@ -74,6 +75,7 @@ const ROUTE_TO_ENTITY: Record<string, PermissionEntity> = {
   "/cashflow": "cashflow",
   "/cos": "cos",
   "/revenue-tracker": "revenue_tracker",
+  "/gp-tracker": "gp_tracker",
   "/revenue": "revenue",
   "/subcontractor-dashboard": "subcontractors",
   "/engineering": "engineering",
@@ -116,7 +118,7 @@ const ROUTE_TO_ENTITY: Record<string, PermissionEntity> = {
 };
 
 const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams"];
-const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams"];
+const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams"];
 
 function AccessDenied() {
   return (
@@ -228,6 +230,7 @@ function ProtectedPages() {
         <Route path="/revenue" component={RevenueTracker} />
         <Route path="/cos" component={CostTracker} />
         <Route path="/revenue-tracker" component={RevenueTrackerPage} />
+        <Route path="/gp-tracker" component={GpTrackerPage} />
         <Route path="/my-tool" component={MyToolTodayPage} />
         <Route path="/my-tool/week" component={MyToolWeekPage} />
         <Route path="/my-tool/backlog" component={MyToolBacklogPage} />
