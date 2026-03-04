@@ -84,8 +84,7 @@ interface ProjectFinancials {
   totalActual: number;
   spendPercent: number;
   cosRealised: number;
-  cosDeferred: number;
-  cosFlagged: number;
+  cosCommitted: number;
   cosPlanned: number;
 }
 
@@ -126,7 +125,7 @@ interface PMDashboardData {
     grossProfit: number;
     avgSpendPercent: number;
     cosRealisedTotal: number;
-    cosFlaggedTotal: number;
+    cosCommittedTotal: number;
   };
 }
 
@@ -257,10 +256,10 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
             <p className="text-xl font-bold text-green-800">{summary.cosRealisedTotal}</p>
           </CardContent>
         </Card>
-        <Card className="border-red-200 bg-red-50/50">
+        <Card className="border-amber-200 bg-amber-50/50">
           <CardContent className="p-3">
-            <div className="text-[10px] text-red-700 font-medium uppercase">COS Flagged</div>
-            <p className="text-xl font-bold text-red-800">{summary.cosFlaggedTotal}</p>
+            <div className="text-[10px] text-amber-700 font-medium uppercase">COS Committed</div>
+            <p className="text-xl font-bold text-amber-800">{summary.cosCommittedTotal || 0}</p>
           </CardContent>
         </Card>
         <Card className="border-blue-200 bg-blue-50/50">
@@ -350,11 +349,8 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
                   {project.financials.cosRealised > 0 && (
                     <Badge className="text-[9px] bg-green-100 text-green-800 hover:bg-green-100">R:{project.financials.cosRealised}</Badge>
                   )}
-                  {project.financials.cosDeferred > 0 && (
-                    <Badge className="text-[9px] bg-amber-100 text-amber-800 hover:bg-amber-100">D:{project.financials.cosDeferred}</Badge>
-                  )}
-                  {project.financials.cosFlagged > 0 && (
-                    <Badge className="text-[9px] bg-red-100 text-red-800 hover:bg-red-100">F:{project.financials.cosFlagged}</Badge>
+                  {(project.financials.cosCommitted || 0) > 0 && (
+                    <Badge className="text-[9px] bg-amber-100 text-amber-800 hover:bg-amber-100">C:{project.financials.cosCommitted}</Badge>
                   )}
                   {project.financials.cosPlanned > 0 && (
                     <Badge className="text-[9px] bg-muted text-muted-foreground hover:bg-muted">P:{project.financials.cosPlanned}</Badge>

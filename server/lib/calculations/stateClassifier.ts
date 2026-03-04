@@ -1,5 +1,5 @@
 export type ExpenseState = 'Planned' | 'Committed' | 'Invoiced' | 'Paid';
-export type CosStatus = 'Planned' | 'COS Realised' | 'Deferred' | 'Flagged';
+export type CosStatus = 'Planned' | 'COS Realised' | 'Committed';
 export type CashflowStatus = 'Planned' | 'Payment Planned' | 'Out of Bank' | 'Committed';
 
 export interface ExpenseLineInput {
@@ -46,18 +46,13 @@ export function classifyCosStatus(line: ExpenseLineInput): CosStatus {
   const hasInvoiceNumber = !!(line.expenseInvoiceNumber && String(line.expenseInvoiceNumber).trim() !== '');
   const hasInvoiceDate = !!(line.expenseInvoicedDate && String(line.expenseInvoicedDate).trim() !== '');
   const hasPO = !!(line.expensePoNumber && String(line.expensePoNumber).trim() !== '');
-  const invoiceDateBlack = hasInvoiceDate && isDateBlack(line.invoiceDateConfirmed, line.invoiceDateFontColor);
 
-  if (hasPO && hasInvoiceNumber && invoiceDateBlack) {
+  if (hasInvoiceNumber && hasInvoiceDate) {
     return 'COS Realised';
   }
 
-  if (hasPO && hasInvoiceNumber && hasInvoiceDate && !invoiceDateBlack) {
-    return 'Deferred';
-  }
-
-  if (invoiceDateBlack && (!hasPO || !hasInvoiceNumber)) {
-    return 'Flagged';
+  if (hasPO || hasInvoiceNumber) {
+    return 'Committed';
   }
 
   return 'Planned';

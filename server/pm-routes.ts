@@ -118,9 +118,8 @@ export function registerPmRoutes(app: Express) {
             project_name,
             COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) AS total_budget,
             COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) AS total_actual,
-            COUNT(*) FILTER (WHERE po_number IS NOT NULL AND po_number != '' AND invoice_number IS NOT NULL AND invoice_number != '' AND (invoice_date_confirmed = true OR invoice_date_font_color = 'black')) AS cos_realised,
-            COUNT(*) FILTER (WHERE po_number IS NOT NULL AND po_number != '' AND invoice_number IS NOT NULL AND invoice_number != '' AND invoice_date IS NOT NULL AND NOT (invoice_date_confirmed = true OR invoice_date_font_color = 'black')) AS cos_deferred,
-            COUNT(*) FILTER (WHERE (invoice_date_confirmed = true OR invoice_date_font_color = 'black') AND (invoice_number IS NULL OR invoice_number = '')) AS cos_flagged,
+            COUNT(*) FILTER (WHERE invoice_number IS NOT NULL AND invoice_number != '' AND invoice_date IS NOT NULL AND TRIM(CAST(invoice_date AS TEXT)) != '') AS cos_realised,
+            COUNT(*) FILTER (WHERE (po_number IS NOT NULL AND po_number != '' OR invoice_number IS NOT NULL AND invoice_number != '') AND (invoice_date IS NULL OR TRIM(CAST(invoice_date AS TEXT)) = '')) AS cos_committed,
             COUNT(*) AS total_lines
           FROM normalized_cost_lines
           WHERE project_name = ANY(${pgArray}::text[])
@@ -134,8 +133,7 @@ export function registerPmRoutes(app: Express) {
           totalBudget: parseFloat(row.total_budget) || 0,
           totalActual: parseFloat(row.total_actual) || 0,
           cosRealised: parseInt(row.cos_realised) || 0,
-          cosDeferred: parseInt(row.cos_deferred) || 0,
-          cosFlagged: parseInt(row.cos_flagged) || 0,
+          cosCommitted: parseInt(row.cos_committed) || 0,
           totalLines: parseInt(row.total_lines) || 0,
         };
       }
@@ -173,12 +171,12 @@ export function registerPmRoutes(app: Express) {
 
       const enrichedProjects = projects.map((p) => {
         const fin = financialsByProject[p.projectName] || {
-          totalBudget: 0, totalActual: 0, cosRealised: 0, cosDeferred: 0, cosFlagged: 0, totalLines: 0,
+          totalBudget: 0, totalActual: 0, cosRealised: 0, cosCommitted: 0, totalLines: 0,
         };
         const tasks = tasksByProject[p.projectName] || {
           total: 0, inProgress: 0, completed: 0, onHold: 0, needsApproval: 0, overdue: 0, active: 0,
         };
-        const cosPlanned = Math.max(0, fin.totalLines - fin.cosRealised - fin.cosDeferred - fin.cosFlagged);
+        const cosPlanned = Math.max(0, fin.totalLines - fin.cosRealised - fin.cosCommitted);
 
         return {
           id: p.id,
@@ -205,8 +203,7 @@ export function registerPmRoutes(app: Express) {
             totalActual: fin.totalActual,
             spendPercent: fin.totalBudget > 0 ? Math.round((fin.totalActual / fin.totalBudget) * 100) : 0,
             cosRealised: fin.cosRealised,
-            cosDeferred: fin.cosDeferred,
-            cosFlagged: fin.cosFlagged,
+            cosCommitted: fin.cosCommitted,
             cosPlanned,
           },
           tasks: {
@@ -240,7 +237,7 @@ export function registerPmRoutes(app: Express) {
           return Math.round(withBudget.reduce((s, p) => s + p.financials.spendPercent, 0) / withBudget.length);
         })(),
         cosRealisedTotal: enrichedProjects.reduce((s, p) => s + p.financials.cosRealised, 0),
-        cosFlaggedTotal: enrichedProjects.reduce((s, p) => s + p.financials.cosFlagged, 0),
+        cosCommittedTotal: enrichedProjects.reduce((s, p) => s + p.financials.cosCommitted, 0),
       };
 
       res.json({ projects: enrichedProjects, summary });
@@ -298,19 +295,7 @@ export function registerPmRoutes(app: Express) {
         `
       );
 
-      const flaggedCos = await db.execute(
-        sql`
-          SELECT id, project_name, cost_category AS expense_category, description AS expense_line_item,
-                 CAST(amount_ex_vat AS NUMERIC) AS amount,
-                 invoice_date AS expense_invoiced_date, paid_date AS expense_payment_date
-          FROM normalized_cost_lines
-          WHERE project_name = ANY(${pgArray}::text[])
-            AND (invoice_date_confirmed = true OR invoice_date_font_color = 'black')
-            AND (invoice_number IS NULL OR invoice_number = '')
-          ORDER BY project_name, source_row
-          LIMIT 30
-        `
-      );
+      const flaggedCos = { rows: [] as any[] };
 
       const budgetOverruns = { rows: [] as any[] };
 

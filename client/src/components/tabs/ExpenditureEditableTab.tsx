@@ -181,8 +181,7 @@ const getRowStatusBadge = (exp: EnrichedExpense) => {
 const getCosStatusBadge = (status: string) => {
   const colors: Record<string, string> = {
     "COS Realised": "bg-emerald-50 text-emerald-700 border-emerald-300",
-    "Deferred": "bg-amber-50 text-amber-700 border-amber-300",
-    "Flagged": "bg-red-50 text-red-700 border-red-300",
+    "Committed": "bg-amber-50 text-amber-700 border-amber-300",
     "Planned": "bg-muted text-muted-foreground border-border",
   };
   return (
@@ -555,8 +554,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     const gpPercent = totalBudget > 0 ? ((variance / totalBudget) * 100) : 0;
     const countByCos = {
       "COS Realised": items.filter(e => e.cosStatus === "COS Realised").length,
-      "Deferred": items.filter(e => e.cosStatus === "Deferred").length,
-      "Flagged": items.filter(e => e.cosStatus === "Flagged").length,
+      "Committed": items.filter(e => e.cosStatus === "Committed").length,
       "Planned": items.filter(e => e.cosStatus === "Planned").length,
     };
     const countByPayment = {
@@ -1050,7 +1048,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         return renderLinkedTask(exp);
       case "cosStatus": {
         const computedStatus = exp.computedCosStatus || exp.cosStatus;
-        const isClickable = computedStatus === "Flagged" || !!exp.cosOverride;
+        const isClickable = !!exp.cosOverride;
         const badge = getCosStatusBadge(exp.cosStatus);
         if (!isClickable && !exp.cosOverride) return badge;
         return (
@@ -1225,8 +1223,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
           <SelectContent>
             <SelectItem value="all">All ({kpis.totalItems})</SelectItem>
             <SelectItem value="COS Realised">COS Realised ({kpis.countByCos["COS Realised"]})</SelectItem>
-            <SelectItem value="Deferred">Deferred ({kpis.countByCos["Deferred"]})</SelectItem>
-            <SelectItem value="Flagged">Flagged ({kpis.countByCos["Flagged"]})</SelectItem>
+            <SelectItem value="Committed">Committed ({kpis.countByCos["Committed"]})</SelectItem>
             <SelectItem value="Out of Bank">Out of Bank ({kpis.countByPayment["Out of Bank"]})</SelectItem>
             <SelectItem value="Payment Planned">Payment Planned ({kpis.countByPayment["Payment Planned"]})</SelectItem>
             <SelectItem value="Planned">Planned ({kpis.countByCos.Planned})</SelectItem>
@@ -1413,8 +1410,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
                     <SelectItem value="COS Realised">COS Realised</SelectItem>
-                    <SelectItem value="Deferred">Deferred</SelectItem>
-                    <SelectItem value="Flagged">Flagged</SelectItem>
+                    <SelectItem value="Committed">Committed</SelectItem>
                     <SelectItem value="Planned">Planned</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1666,9 +1662,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="COS Realised">COS Realised</SelectItem>
-                    <SelectItem value="Deferred">Deferred</SelectItem>
+                    <SelectItem value="Committed">Committed</SelectItem>
                     <SelectItem value="Planned">Planned</SelectItem>
-                    <SelectItem value="Flagged">Flagged</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
