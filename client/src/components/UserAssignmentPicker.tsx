@@ -43,6 +43,24 @@ function getAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
+function nameMatchesAnyUser(textName: string, user: { name: string; username: string }): boolean {
+  const n = textName.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!n) return false;
+  const un = user.name.trim().toLowerCase().replace(/\s+/g, " ");
+  if (un === n) return true;
+  if (user.username.toLowerCase() === n) return true;
+  if (un.split(" ")[0] === n) return true;
+  const uParts = un.split(" ");
+  if (uParts.length >= 2 && uParts[uParts.length - 1] === n) return true;
+  if (n.includes(",")) {
+    const flipped = n.split(",").map(s => s.trim()).reverse().join(" ");
+    if (un === flipped) return true;
+  }
+  if (n.length >= 4 && (un.startsWith(n) || n.startsWith(un))) return true;
+  if (n.length >= 4 && (un.includes(n) || n.includes(un))) return true;
+  return false;
+}
+
 interface UserAssignmentPickerProps {
   taskId: number;
   taskSource: string;
@@ -119,33 +137,26 @@ export default function UserAssignmentPicker({
   const hasResolvedUsers = resolvedUsers && resolvedUsers.length > 0;
   const hasTextNames = textNames && textNames.filter(Boolean).length > 0;
 
-  const nameMatchesUser = (textName: string, user: ResolvedUser): boolean => {
-    const n = textName.trim().toLowerCase().replace(/\s+/g, " ");
-    const un = user.name.trim().toLowerCase().replace(/\s+/g, " ");
-    if (un === n) return true;
-    if (user.username.toLowerCase() === n) return true;
-    if (un.split(" ")[0] === n) return true;
-    const uParts = un.split(" ");
-    if (uParts.length >= 2 && uParts[uParts.length - 1] === n) return true;
-    if (n.includes(",")) {
-      const flipped = n.split(",").map(s => s.trim()).reverse().join(" ");
-      if (un === flipped) return true;
+  const effectiveResolved = [...(resolvedUsers || [])];
+  if (hasTextNames && allUsers.length > 0) {
+    const resolvedIds = new Set(effectiveResolved.map(u => u.id));
+    for (const textName of textNames!) {
+      if (!textName?.trim()) continue;
+      if (effectiveResolved.some(u => nameMatchesAnyUser(textName, u))) continue;
+      const match = allUsers.find(u => nameMatchesAnyUser(textName, u));
+      if (match && !resolvedIds.has(match.id)) {
+        effectiveResolved.push({ id: match.id, name: match.name, username: match.username, role: match.role });
+        resolvedIds.add(match.id);
+      }
     }
-    if (n.length >= 4 && (un.startsWith(n) || n.startsWith(un))) return true;
-    if (n.length >= 4 && (un.includes(n) || n.includes(un))) return true;
-    return false;
-  };
+  }
 
-  const isTextNameResolved = (n: string): boolean => {
-    if (!n) return true;
-    return (resolvedUsers || []).some(u => nameMatchesUser(n, u));
-  };
+  const unmatchedNames = hasTextNames ? textNames!.filter(n => {
+    if (!n?.trim()) return false;
+    return !effectiveResolved.some(u => nameMatchesAnyUser(n, u));
+  }) : [];
 
-  const hasUnmatchedNames = hasTextNames && textNames.some(n => n && !isTextNameResolved(n));
-
-  const unmatchedNames = hasTextNames ? textNames.filter(n => n && !isTextNameResolved(n)) : [];
-
-  const isUnassigned = !hasResolvedUsers && !hasTextNames;
+  const isUnassigned = effectiveResolved.length === 0 && unmatchedNames.length === 0 && !hasTextNames;
 
   const filteredUsers = allUsers.filter(u => {
     if (search) {
@@ -159,7 +170,7 @@ export default function UserAssignmentPicker({
 
   return (
     <div className="flex items-center gap-1 flex-wrap" data-testid={`user-assignment-${taskSource}-${taskId}`}>
-      {hasResolvedUsers && resolvedUsers!.map(u => (
+      {effectiveResolved.length > 0 && effectiveResolved.map(u => (
         <span
           key={u.id}
           className={`inline-flex items-center gap-1 ${isXs ? 'px-1 py-0.5 text-[10px]' : 'px-1.5 py-0.5 text-xs'} rounded-full bg-muted text-foreground font-medium`}
@@ -264,25 +275,43 @@ export function UserAvatarGroup({
   maxDisplay?: number;
   size?: "sm" | "xs";
 }) {
-  const users = resolvedUsers || [];
-  const displayed = users.slice(0, maxDisplay);
-  const remaining = users.length - maxDisplay;
-  const isXs = size === "xs";
-
-  const nameMatchesUser = (textName: string, user: ResolvedUser): boolean => {
-    const n = textName.trim().toLowerCase();
-    if (user.name.toLowerCase() === n) return true;
-    if (user.username.toLowerCase() === n) return true;
-    if (user.name.split(" ")[0].toLowerCase() === n) return true;
-    if (n.length >= 4 && (user.name.toLowerCase().startsWith(n) || n.startsWith(user.name.toLowerCase()))) return true;
-    return false;
-  };
-  const unmatchedNames = (textNames || []).filter(n => {
-    if (!n) return false;
-    return !users.some(u => nameMatchesUser(n, u));
+  const { data: allUsersFallback = [] } = useQuery<AssignableUser[]>({
+    queryKey: ["/api/users/assignable"],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const h: Record<string, string> = {};
+      if (token) h["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/users/assignable", { credentials: "include", headers: h });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60000,
   });
 
-  if (users.length === 0 && unmatchedNames.length === 0) {
+  const effectiveUsers = [...(resolvedUsers || [])];
+  if (textNames && textNames.length > 0 && allUsersFallback.length > 0) {
+    const ids = new Set(effectiveUsers.map(u => u.id));
+    for (const tn of textNames) {
+      if (!tn?.trim()) continue;
+      if (effectiveUsers.some(u => nameMatchesAnyUser(tn, u))) continue;
+      const match = allUsersFallback.find(u => nameMatchesAnyUser(tn, u));
+      if (match && !ids.has(match.id)) {
+        effectiveUsers.push({ id: match.id, name: match.name, username: match.username, role: match.role });
+        ids.add(match.id);
+      }
+    }
+  }
+
+  const displayed = effectiveUsers.slice(0, maxDisplay);
+  const remaining = effectiveUsers.length - maxDisplay;
+  const isXs = size === "xs";
+
+  const unmatchedNames = (textNames || []).filter(n => {
+    if (!n) return false;
+    return !effectiveUsers.some(u => nameMatchesAnyUser(n, u));
+  });
+
+  if (effectiveUsers.length === 0 && unmatchedNames.length === 0) {
     return <span className={`${isXs ? 'text-[10px]' : 'text-xs'} text-muted-foreground italic`}>Unassigned</span>;
   }
 

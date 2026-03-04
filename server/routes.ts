@@ -8115,6 +8115,7 @@ export async function registerRoutes(
           endDate: t.actualEnd,
           type: null,
           percentComplete: t.actualPctComplete ?? null,
+          isBaseline: true,
         })),
         taskOverrides
       );
@@ -8355,6 +8356,67 @@ export async function registerRoutes(
       res.json(created);
     } catch (error: any) {
       console.error("Error creating task:", error);
+      res.status(500).json({ error: "server_error", message: error.message });
+    }
+  });
+
+  app.post("/api/projects/:projectName/working-plan/renumber-wbs", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { projectName } = req.params;
+      const decodedName = decodeURIComponent(projectName);
+      const scenario = await storage.getOrCreateActiveScenario(decodedName);
+      const baseTasks = await storage.getProjectPlansByProject(decodedName);
+      const taskOverrides = await storage.getTaskOverridesByScenario(scenario.id);
+      const workingTasks = applyOverridesToTasks(
+        baseTasks.map(t => ({
+          id: t.id,
+          taskNo: t.taskNo,
+          name: t.highLevelProgramme,
+          startDate: t.actualStart,
+          endDate: t.actualEnd,
+          type: null,
+          percentComplete: t.actualPctComplete ?? null,
+          isBaseline: true,
+        })),
+        taskOverrides
+      );
+
+      let wbsNum = 1;
+      for (const task of workingTasks) {
+        const newWbs = String(wbsNum);
+        const absId = Math.abs(task.id);
+        if (task.id < 0) {
+          const existingOverrides = await storage.getTaskOverridesByScenario(scenario.id);
+          const existing = existingOverrides.find(o => o.id === absId && o.isNewTask === 1);
+          if (existing) {
+            await storage.updateTaskOverride(existing.id, { overrideTaskNo: newWbs });
+          }
+        } else {
+          const existingOverrides = await storage.getTaskOverridesByScenario(scenario.id);
+          const existing = existingOverrides.find(o => o.importedTaskId === task.id);
+          if (existing) {
+            await storage.updateTaskOverride(existing.id, { overrideTaskNo: newWbs });
+          } else {
+            await storage.createTaskOverride({
+              scenarioId: scenario.id,
+              importedTaskId: task.id,
+              overrideStartDate: null,
+              overrideEndDate: null,
+              overrideName: null,
+              overrideTaskNo: newWbs,
+              overrideComment: null,
+              deletedFlag: 0,
+              isNewTask: 0,
+            });
+          }
+        }
+        wbsNum++;
+      }
+
+      logAuditFromReq(req, { entityType: "working_plan", action: "renumber_wbs", projectName: decodedName, changesJson: { totalTasks: workingTasks.length } });
+      res.json({ success: true, totalRenamed: workingTasks.length });
+    } catch (error: any) {
+      console.error("Error renumbering WBS:", error);
       res.status(500).json({ error: "server_error", message: error.message });
     }
   });

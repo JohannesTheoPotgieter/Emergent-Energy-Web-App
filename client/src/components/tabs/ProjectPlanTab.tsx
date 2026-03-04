@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { invalidateDashboardQueries, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -14,7 +14,8 @@ import { Progress } from "@/components/ui/progress";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Loader2, AlertTriangle, RotateCcw, Save, Trash2, Link, ChevronLeft, ChevronRight, Calendar, GitBranch, Search, ZoomIn, Target, Split, X, AlertCircle } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+import { Loader2, AlertTriangle, RotateCcw, Save, Trash2, Link, ChevronLeft, ChevronRight, Calendar, GitBranch, Search, ZoomIn, Target, Split, X, AlertCircle, GripVertical, Hash, Diamond, Milestone } from "lucide-react";
 import { format, addDays, differenceInDays, eachDayOfInterval, parseISO, isValid, startOfDay, isBefore, isAfter, differenceInCalendarDays } from "date-fns";
 
 interface ProjectPlanTabProps {
@@ -39,6 +40,7 @@ interface CPMTask {
   isMilestone: boolean;
   type: string;
   percentComplete?: number;
+  isBaseline?: boolean;
 }
 
 interface CPMDependency {
@@ -269,13 +271,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
 
   const updateTaskMutation = useMutation({
     mutationFn: async ({ taskId, changes }: { taskId: number; changes: any }) => {
-      const res = await fetch(`/api/working-plan/tasks/${taskId}`, {
-        credentials: "include",
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectName, ...changes }),
-      });
-      if (!res.ok) throw new Error("Failed to update task");
+      const res = await apiRequest("PATCH", `/api/working-plan/tasks/${taskId}`, { projectName, ...changes });
       return res.json();
     },
     onSuccess: () => {
@@ -288,11 +284,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
 
   const resetPlanMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/working-plan/reset`, {
-        credentials: "include",
-        method: "POST",
-      });
-      if (!res.ok) throw new Error("Failed to reset plan");
+      const res = await apiRequest("POST", `/api/projects/${encodeURIComponent(projectName)}/working-plan/reset`);
       return res.json();
     },
     onSuccess: () => {
@@ -303,13 +295,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
 
   const createDependencyMutation = useMutation({
     mutationFn: async (dep: { predecessorTaskId: number; successorTaskId: number; dependencyType: string; lagDays: number }) => {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/dependencies`, {
-        credentials: "include",
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(dep),
-      });
-      if (!res.ok) throw new Error("Failed to create dependency");
+      const res = await apiRequest("POST", `/api/projects/${encodeURIComponent(projectName)}/dependencies`, dep);
       return res.json();
     },
     onSuccess: () => {
@@ -322,9 +308,18 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
 
   const deleteDependencyMutation = useMutation({
     mutationFn: async (depId: number) => {
-      const res = await fetch(`/api/dependencies/${depId}`, { credentials: "include",
-        method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete dependency");
+      const res = await apiRequest("DELETE", `/api/dependencies/${depId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["working-plan", projectName] });
+      invalidateDashboardQueries(queryClient);
+    },
+  });
+
+  const renumberWbsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/projects/${encodeURIComponent(projectName)}/working-plan/renumber-wbs`);
       return res.json();
     },
     onSuccess: () => {
@@ -349,13 +344,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
 
   const createChangeNoticeMutation = useMutation({
     mutationFn: async (notice: { summary: string; oldFinishDate?: string; newFinishDate?: string; changedTasks?: string; userNote?: string }) => {
-      const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/change-notices`, {
-        credentials: "include",
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(notice),
-      });
-      if (!res.ok) throw new Error("Failed to create change notice");
+      const res = await apiRequest("POST", `/api/projects/${encodeURIComponent(projectName)}/change-notices`, notice);
       return res.json();
     },
     onSuccess: () => {
@@ -565,8 +554,19 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
     setGanttEnd(addDays(today, Math.ceil(currentRange / 2)));
   }, [ganttStart, ganttEnd]);
 
+  const [draggedRowId, setDraggedRowId] = useState<number | null>(null);
+  const [dragOverRowId, setDragOverRowId] = useState<number | null>(null);
+  const [detailStartDate, setDetailStartDate] = useState("");
+  const [detailEndDate, setDetailEndDate] = useState("");
+  const [detailName, setDetailName] = useState("");
+  const [detailPct, setDetailPct] = useState(0);
+
   const handleTaskClick = useCallback((task: CPMTask) => {
     setSelectedTask(task);
+    setDetailName(task.name || "");
+    setDetailStartDate(task.startDate?.substring(0, 10) || "");
+    setDetailEndDate(task.endDate?.substring(0, 10) || "");
+    setDetailPct(Math.round((task.percentComplete || 0) * 100));
     setShowTaskDetail(true);
   }, []);
 
@@ -664,22 +664,24 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
         <Table>
           <TableHeader className="sticky top-0 bg-background z-10">
             <TableRow>
-              <TableHead className="w-14 sticky left-0 bg-background z-20">No.</TableHead>
-              <TableHead className="min-w-[200px] sticky left-14 bg-background z-20">Task Name</TableHead>
+              <TableHead className="w-8 px-1"></TableHead>
+              <TableHead className="w-10 px-1">#</TableHead>
+              <TableHead className="w-14 px-1">WBS</TableHead>
+              <TableHead className="min-w-[200px]">Task Name</TableHead>
+              <TableHead className="w-20">Duration</TableHead>
               <TableHead className="w-24">Start</TableHead>
-              <TableHead className="w-24">End</TableHead>
-              <TableHead className="w-16">Days</TableHead>
+              <TableHead className="w-24">Finish</TableHead>
+              <TableHead className="w-16">Pred.</TableHead>
               <TableHead className="w-28">% Complete</TableHead>
-              <TableHead className="w-28">Expected %</TableHead>
-              <TableHead className="w-16">Slack</TableHead>
-              <TableHead className="w-20">Status</TableHead>
-              <TableHead className="w-20">Actions</TableHead>
+              <TableHead className="w-24">Expected %</TableHead>
+              <TableHead className="w-16">Status</TableHead>
+              <TableHead className="w-12"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredTasks.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
                   {searchQuery || filter !== "all" ? "No tasks match your filters" : "No project plan data available"}
                 </TableCell>
               </TableRow>
@@ -692,15 +694,31 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                 const expectedPct = getExpectedPercent(task);
                 const isLate = expectedPct !== null && actualPct < expectedPct && actualPct < 100;
                 const hasQualityWarning = actualPct >= 100 && qualityWarningTaskIds.has(task.id);
+                const isDragOver = dragOverRowId === task.id;
+                const predDisplay = task.predecessorIds.length > 0
+                  ? task.predecessorIds.map(pid => tasks.find(t => t.id === pid)?.taskNo || String(pid)).join(", ")
+                  : "—";
                 
                 return (
                   <TableRow 
-                    key={task.id} 
+                    key={task.id}
+                    draggable
+                    onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; setDraggedRowId(task.id); }}
+                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverRowId(task.id); }}
+                    onDragLeave={() => setDragOverRowId(null)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragOverRowId(null);
+                      setDraggedRowId(null);
+                    }}
+                    onDragEnd={() => { setDraggedRowId(null); setDragOverRowId(null); }}
                     className={`
-                      ${hasQualityWarning ? "!bg-red-100 dark:!bg-red-950/30 ring-1 ring-inset ring-red-500/40" : ""}
+                      ${hasQualityWarning ? "!bg-red-100 ring-1 ring-inset ring-red-500/40" : ""}
                       ${isCritical && !hasQualityWarning ? "bg-red-50/50" : ""} 
                       ${isHovered && !hasQualityWarning ? "bg-emerald-50" : ""}
                       ${!hasQualityWarning && idx % 2 === 1 ? "bg-muted/20" : ""}
+                      ${isDragOver ? "!bg-emerald-100 border-t-2 border-emerald-500" : ""}
+                      ${draggedRowId === task.id ? "opacity-40" : ""}
                       hover:bg-muted/40 cursor-pointer transition-colors
                     `}
                     onMouseEnter={() => setHoveredTaskId(task.id)}
@@ -708,10 +726,19 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                     onClick={() => !isEditing && handleTaskClick(task)}
                     data-testid={`row-task-${task.id}`}
                   >
-                    <TableCell className="font-mono text-xs sticky left-0 bg-inherit" data-testid={`text-taskno-${task.id}`}>
-                      {task.taskNo || "-"}
+                    <TableCell className="px-1 cursor-grab active:cursor-grabbing" onClick={(e) => e.stopPropagation()}>
+                      <GripVertical className="h-3.5 w-3.5 text-muted-foreground/50" />
                     </TableCell>
-                    <TableCell className="sticky left-14 bg-inherit">
+                    <TableCell className="px-1 text-xs text-muted-foreground tabular-nums" data-testid={`text-rowno-${task.id}`}>
+                      {idx + 1}
+                    </TableCell>
+                    <TableCell className="px-1">
+                      <span className="text-xs font-mono tabular-nums" data-testid={`text-taskno-${task.id}`}>
+                        {task.taskNo || "—"}
+                      </span>
+                      {task.isMilestone && <Diamond className="h-3 w-3 text-amber-500 inline ml-0.5" />}
+                    </TableCell>
+                    <TableCell>
                       {isEditing ? (
                         <Input
                           value={editValues.name ?? task.name}
@@ -722,139 +749,68 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                         />
                       ) : (
                         <div className="flex items-center gap-1.5">
-                          {isCritical && (
-                            <Badge variant="destructive" className="text-[10px] px-1 py-0" data-testid={`badge-crit-${task.id}`}>
-                              CRIT
-                            </Badge>
-                          )}
-                          {hasQualityWarning && (
-                            <Badge variant="destructive" className="text-[10px] px-1 py-0 bg-red-600" data-testid={`badge-qwarn-${task.id}`}>
-                              QC
-                            </Badge>
-                          )}
-                          {isLate && (
-                            <AlertCircle className="h-3.5 w-3.5 text-amber-500" data-testid={`icon-late-${task.id}`} />
-                          )}
-                          <span className={`text-sm ${isCritical ? "font-medium" : ""} ${hasQualityWarning ? "text-red-600 font-medium" : ""}`} data-testid={`text-name-${task.id}`}>
-                            {task.name || "-"}
+                          {isCritical && <Badge variant="destructive" className="text-[10px] px-1 py-0">CRIT</Badge>}
+                          {hasQualityWarning && <Badge variant="destructive" className="text-[10px] px-1 py-0 bg-red-600">QC</Badge>}
+                          {isLate && <AlertCircle className="h-3.5 w-3.5 text-amber-500" />}
+                          <span className={`text-sm truncate ${isCritical ? "font-medium" : ""} ${hasQualityWarning ? "text-red-600 font-medium" : ""}`} data-testid={`text-name-${task.id}`}>
+                            {task.isMilestone ? "◆ " : task.taskNo ? "> " : ""}{task.name || "-"}
                           </span>
                         </div>
                       )}
                     </TableCell>
-                    <TableCell className="text-xs">
-                      {isEditing ? (
-                        <Input
-                          type="date"
-                          value={editValues.startDate ?? task.startDate}
-                          onChange={(e) => setEditValues({ ...editValues, startDate: e.target.value })}
-                          className="h-7 text-xs"
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`input-start-${task.id}`}
-                        />
-                      ) : (
-                        <span data-testid={`text-start-${task.id}`}>
-                          {task.startDate ? format(parseISO(task.startDate), "dd MMM yy") : "-"}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {isEditing ? (
-                        <Input
-                          type="date"
-                          value={editValues.endDate ?? task.endDate}
-                          onChange={(e) => setEditValues({ ...editValues, endDate: e.target.value })}
-                          className="h-7 text-xs"
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`input-end-${task.id}`}
-                        />
-                      ) : (
-                        <span data-testid={`text-end-${task.id}`}>
-                          {task.endDate ? format(parseISO(task.endDate), "dd MMM yy") : "-"}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs" data-testid={`text-duration-${task.id}`}>
+                    <TableCell className="text-xs tabular-nums" data-testid={`text-duration-${task.id}`}>
                       {task.durationDays}d
                     </TableCell>
+                    <TableCell className="text-xs tabular-nums">
+                      {isEditing ? (
+                        <Input type="date" value={editValues.startDate ?? task.startDate} onChange={(e) => setEditValues({ ...editValues, startDate: e.target.value })} className="h-7 text-xs" onClick={(e) => e.stopPropagation()} />
+                      ) : (
+                        <span data-testid={`text-start-${task.id}`}>
+                          {task.startDate ? format(parseISO(task.startDate), "dd MMM") : "—"}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs tabular-nums">
+                      {isEditing ? (
+                        <Input type="date" value={editValues.endDate ?? task.endDate} onChange={(e) => setEditValues({ ...editValues, endDate: e.target.value })} className="h-7 text-xs" onClick={(e) => e.stopPropagation()} />
+                      ) : (
+                        <span data-testid={`text-end-${task.id}`}>
+                          {task.endDate ? format(parseISO(task.endDate), "dd MMM") : "—"}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground" data-testid={`text-pred-${task.id}`}>
+                      {predDisplay}
+                    </TableCell>
                     <TableCell data-testid={`text-actual-pct-${task.id}`}>
-                      <InlinePctEditor taskId={task.id} pct={actualPct} projectName={projectName} />
+                      <CompactProgress actual={actualPct} expected={expectedPct} />
                     </TableCell>
                     <TableCell data-testid={`text-expected-pct-${task.id}`}>
                       {expectedPct !== null ? (
-                        <span className="text-xs text-muted-foreground">{expectedPct}%</span>
+                        <span className="text-xs text-muted-foreground tabular-nums">{expectedPct}%</span>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
                       )}
                     </TableCell>
                     <TableCell>
-                      <span className={`text-xs ${task.slack === 0 ? "text-destructive font-medium" : "text-muted-foreground"}`} data-testid={`text-slack-${task.id}`}>
-                        {task.slack}d
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {isCritical ? (
-                        <Badge variant="destructive" className="text-[10px]" data-testid={`badge-critical-${task.id}`}>Critical</Badge>
+                      {actualPct >= 100 ? (
+                        <span className="inline-block w-3 h-3 rounded-full bg-emerald-500" title="Complete" />
+                      ) : isCritical ? (
+                        <span className="inline-block w-3 h-3 rounded-full bg-red-500" title="Critical" />
+                      ) : isLate ? (
+                        <span className="inline-block w-3 h-3 rounded-full bg-amber-500" title="Late" />
                       ) : (
-                        <Badge variant="outline" className="text-[10px]" data-testid={`badge-normal-${task.id}`}>Normal</Badge>
+                        <span className="inline-block w-3 h-3 rounded-full bg-emerald-400" title="On Track" />
                       )}
                     </TableCell>
-                    <TableCell>
-                      {isEditing ? (
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 w-6 p-0"
-                            onClick={(e) => { e.stopPropagation(); handleSaveEdit(task.id); }}
-                            disabled={updateTaskMutation.isPending}
-                            data-testid={`button-save-${task.id}`}
-                          >
-                            <Save className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 w-6 p-0"
-                            onClick={(e) => { e.stopPropagation(); setEditingTaskId(null); setEditValues({}); }}
-                            data-testid={`button-cancel-${task.id}`}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 px-2 text-xs"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingTaskId(task.id);
-                              setEditValues({
-                                name: task.name,
-                                startDate: task.startDate,
-                                endDate: task.endDate,
-                              });
-                            }}
-                            data-testid={`button-edit-${task.id}`}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 w-6 p-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setTaskToDelete(task);
-                              setShowDeleteConfirm(true);
-                            }}
-                            data-testid={`button-delete-${task.id}`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                          </Button>
-                        </div>
-                      )}
+                    <TableCell className="px-1">
+                      <button
+                        className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
+                        onClick={(e) => { e.stopPropagation(); handleTaskClick(task); }}
+                        data-testid={`button-detail-${task.id}`}
+                      >
+                        •••
+                      </button>
                     </TableCell>
                   </TableRow>
                 );
@@ -1101,6 +1057,16 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => renumberWbsMutation.mutate()}
+                disabled={renumberWbsMutation.isPending}
+                data-testid="button-renumber-wbs"
+              >
+                <Hash className="h-4 w-4 mr-1" />
+                {renumberWbsMutation.isPending ? "..." : "Refresh WBS"}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"

@@ -545,15 +545,7 @@ async function backfillPmUserIds() {
   await backfillProjectIds().catch(err => console.error('[Backfill] Project IDs error:', err));
 
   try {
-    const { getAllUsers } = await import("./user-resolver");
-    const allUsers = await getAllUsers();
-    const nameToId = new Map<string, number>();
-    for (const u of allUsers) {
-      nameToId.set(u.name.toLowerCase(), u.id);
-      nameToId.set(u.username.toLowerCase(), u.id);
-      const firstName = u.name.split(" ")[0].toLowerCase();
-      if (!nameToId.has(firstName)) nameToId.set(firstName, u.id);
-    }
+    const { resolveNameToUserId } = await import("./user-resolver");
     const opRows: any[] = await db.execute(sql.raw(`SELECT id, assignees, assignee_user_ids FROM operational_tasks WHERE array_length(assignees, 1) > 0`)).then((r: any) => Array.isArray(r) ? r : r.rows || []);
     let opFixed = 0;
     for (const row of opRows) {
@@ -562,7 +554,7 @@ async function backfillPmUserIds() {
       const existingSet = new Set(existingIds);
       const newIds = [...existingIds];
       for (const name of names) {
-        const resolved = nameToId.get(name.trim().toLowerCase());
+        const resolved = await resolveNameToUserId(name);
         if (resolved && !existingSet.has(resolved)) {
           newIds.push(resolved);
           existingSet.add(resolved);
@@ -584,7 +576,7 @@ async function backfillPmUserIds() {
       const existingSet = new Set(existingIds);
       const newIds = [...existingIds];
       for (const name of names) {
-        const resolved = nameToId.get(name.trim().toLowerCase());
+        const resolved = await resolveNameToUserId(name);
         if (resolved && !existingSet.has(resolved)) {
           newIds.push(resolved);
           existingSet.add(resolved);
