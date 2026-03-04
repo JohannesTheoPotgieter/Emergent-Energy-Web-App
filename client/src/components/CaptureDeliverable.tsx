@@ -7,13 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
 import {
   Upload, FileText, Package, DollarSign, ListChecks,
   ChevronRight, Check, ChevronsUpDown, Loader2,
-  X, Paperclip, Download, ArrowLeft, Info,
+  X, Paperclip, Download, ArrowLeft, Info, FolderOpen,
 } from "lucide-react";
 
 function authHeaders() {
@@ -52,7 +53,8 @@ export default function CaptureDeliverable({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [deliverableType, setDeliverableType] = useState("document");
+  const [deliverableType, setDeliverableType] = useState("project_document");
+  const [ownerUserId, setOwnerUserId] = useState<string>("");
   const [itemSearch, setItemSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -69,7 +71,8 @@ export default function CaptureDeliverable({
       setTitle("");
       setDescription("");
       setFile(null);
-      setDeliverableType("document");
+      setDeliverableType("project_document");
+      setOwnerUserId("");
       setItemSearch("");
     }
   }, [open]);
@@ -103,6 +106,31 @@ export default function CaptureDeliverable({
     staleTime: 30_000,
   });
 
+  const { data: assignableUsers = [] } = useQuery<{ id: number; name: string; email: string }[]>({
+    queryKey: ["pm-assignable-users"],
+    queryFn: async () => {
+      const res = await fetch("/api/pm-assignable-users", { headers: authHeaders(), credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: open,
+    staleTime: 60_000,
+  });
+
+  const { data: linkedFolder } = useQuery<{ folderName?: string; folderPath?: string } | null>({
+    queryKey: ["user-project-folder", selectedProjectName],
+    queryFn: async () => {
+      const res = await fetch(`/api/user-project-folder/${encodeURIComponent(selectedProjectName)}`, {
+        headers: authHeaders(),
+        credentials: "include",
+      });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: open && !!selectedProjectName && step === "upload",
+    staleTime: 60_000,
+  });
+
   const uploadMutation = useMutation({
     mutationFn: async () => {
       const formData = new FormData();
@@ -110,6 +138,7 @@ export default function CaptureDeliverable({
       formData.append("projectName", selectedProjectName);
       formData.append("title", title);
       formData.append("deliverableType", deliverableType);
+      if (ownerUserId) formData.append("ownerUserId", ownerUserId);
       if (description) formData.append("description", description);
       if (linkType) formData.append("linkType", linkType);
       if (linkId) formData.append("linkId", String(linkId));
@@ -161,7 +190,7 @@ export default function CaptureDeliverable({
     setLinkLabel(label);
     if (type === "cost_line") setDeliverableType("invoice");
     else if (type === "revenue_line") setDeliverableType("invoice");
-    else setDeliverableType("document");
+    else setDeliverableType("project_document");
     setStep("upload");
   };
 
@@ -507,6 +536,28 @@ export default function CaptureDeliverable({
               />
             </div>
 
+            <div>
+              <Label className="text-xs mb-1.5 block">Document Type *</Label>
+              <div className="flex flex-wrap gap-1.5" data-testid="deliverable-type-pills">
+                {[
+                  { value: "po", label: "PO" },
+                  { value: "invoice", label: "Invoice" },
+                  { value: "engineering_document", label: "Engineering Document" },
+                  { value: "project_document", label: "Project Document" },
+                ].map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => setDeliverableType(t.value)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${deliverableType === t.value ? "bg-emerald-100 border-emerald-300 text-emerald-800 shadow-sm" : "bg-muted/50 border-border text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                    data-testid={`type-pill-${t.value}`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Title *</Label>
@@ -518,29 +569,19 @@ export default function CaptureDeliverable({
                 />
               </div>
               <div>
-                <Label className="text-xs">Type</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full justify-between text-sm" data-testid="btn-deliverable-type">
-                      {deliverableType === "invoice" ? "Invoice" : deliverableType === "report" ? "Report" : deliverableType === "certificate" ? "Certificate" : "Document"}
-                      <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[200px] p-0">
-                    <Command>
-                      <CommandList>
-                        <CommandGroup>
-                          {["document", "invoice", "report", "certificate"].map((t) => (
-                            <CommandItem key={t} value={t} onSelect={() => setDeliverableType(t)} data-testid={`type-${t}`}>
-                              <Check className={`mr-2 h-4 w-4 ${deliverableType === t ? "opacity-100" : "opacity-0"}`} />
-                              {t.charAt(0).toUpperCase() + t.slice(1)}
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+                <Label className="text-xs">Assign To</Label>
+                <Select value={ownerUserId} onValueChange={setOwnerUserId}>
+                  <SelectTrigger data-testid="select-owner-user">
+                    <SelectValue placeholder="Select user..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assignableUsers.map((u) => (
+                      <SelectItem key={u.id} value={String(u.id)} data-testid={`user-option-${u.id}`}>
+                        {u.name || u.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -554,6 +595,16 @@ export default function CaptureDeliverable({
                 data-testid="input-deliverable-description"
               />
             </div>
+
+            {linkedFolder?.folderName && (
+              <div className="flex items-center gap-2 p-2.5 bg-blue-50 rounded-lg border border-blue-100" data-testid="linked-folder-reference">
+                <FolderOpen className="h-4 w-4 text-blue-600 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[10px] text-muted-foreground">Linked Folder</p>
+                  <p className="text-xs font-medium text-blue-700 truncate">{linkedFolder.folderName}</p>
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-2 border-t">
               <Button variant="outline" onClick={() => setOpen(false)} data-testid="btn-cancel-upload">Cancel</Button>

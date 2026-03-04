@@ -798,20 +798,6 @@ export default function ProjectDetailPage() {
     expenditure: canViewPerm("pd_expenditure"),
   };
 
-  useEffect(() => {
-    if (overviewTab) return;
-    const tabs = [
-      { key: "plan", visible: canViewTab.overview },
-      { key: "engineering", visible: canViewTab.engineering },
-      { key: "quality", visible: canViewTab.quality },
-      { key: "finance", visible: canViewTab.expenditure },
-      { key: "collaboration", visible: true },
-      { key: "pd", visible: true },
-    ];
-    const first = tabs.find(t => t.visible);
-    if (first) setOverviewTab(first.key);
-  }, [canViewTab.overview, canViewTab.engineering, canViewTab.quality, canViewTab.expenditure, overviewTab]);
-
   const canViewSubTab = {
     revenue: canViewPerm("pd_revenue"),
     expenditure: canViewPerm("pd_expenditure"),
@@ -843,6 +829,20 @@ export default function ProjectDetailPage() {
   const [activeSection, setActiveSection] = useState<string>(resolvedFromUrl?.section || "overview");
   const [activeSubTab, setActiveSubTab] = useState<string>(resolvedFromUrl?.subTab || "");
   const [overviewTab, setOverviewTab] = useState<string>("");
+
+  useEffect(() => {
+    if (overviewTab) return;
+    const tabs = [
+      { key: "plan", visible: canViewTab.overview },
+      { key: "engineering", visible: canViewTab.engineering },
+      { key: "quality", visible: canViewTab.quality },
+      { key: "finance", visible: canViewTab.expenditure },
+      { key: "collaboration", visible: true },
+      { key: "pd", visible: true },
+    ];
+    const first = tabs.find(t => t.visible);
+    if (first) setOverviewTab(first.key);
+  }, [canViewTab.overview, canViewTab.engineering, canViewTab.quality, canViewTab.expenditure, overviewTab]);
 
   useEffect(() => {
     if (urlTab) {

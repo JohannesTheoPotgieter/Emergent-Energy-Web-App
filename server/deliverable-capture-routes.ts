@@ -140,7 +140,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
     try {
       const user = getUser(req);
       const file = req.file;
-      const { projectId, projectName, title, linkType, linkId, deliverableType, description } = req.body;
+      const { projectId, projectName, title, linkType, linkId, deliverableType, description, ownerUserId: bodyOwnerUserId } = req.body;
 
       if (!file) {
         return res.status(400).json({ error: "A file is required" });
@@ -162,7 +162,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         title,
         deliverableType: deliverableType || "document",
         description: description || null,
-        ownerUserId: user.id,
+        ownerUserId: bodyOwnerUserId ? parseInt(bodyOwnerUserId) : user.id,
         status: "UPLOADED",
       }).returning();
 

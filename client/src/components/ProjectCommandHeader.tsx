@@ -265,7 +265,7 @@ export function ProjectCommandHeader({
             </div>
           </div>
 
-          <div className="border-t border-[var(--cmd-border)] bg-[var(--cmd-bg-panel)]">
+          <div className="border-t border-[var(--cmd-border)]" style={{ background: 'var(--cmd-bg-panel)' }}>
             <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-[var(--cmd-border)]">
               <div className="p-3 text-center" data-testid="kpi-contract">
                 <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">Contract</p>
