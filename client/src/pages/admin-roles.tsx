@@ -187,6 +187,7 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "ee_info_departments" as PermissionEntity, label: "OS Map — Departments", actions: ["view", "edit", "delete"] },
       { entity: "ee_info_processes" as PermissionEntity, label: "OS Map — Processes", actions: ["view", "edit", "delete"] },
       { entity: "ee_info_templates" as PermissionEntity, label: "OS Map — Templates", actions: ["view", "edit", "delete"] },
+      { entity: "database_migration" as PermissionEntity, label: "Database Migration", actions: ["view", "edit"] },
     ],
   },
 ];
