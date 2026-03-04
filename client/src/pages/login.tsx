@@ -12,7 +12,7 @@ const MS_ERROR_MESSAGES: Record<string, string> = {
   ms_auth_denied: "Microsoft sign-in was cancelled or denied.",
   ms_profile_failed: "Could not retrieve your Microsoft profile.",
   ms_no_email: "No email address found on your Microsoft account.",
-  ms_no_account: "No matching account found. Contact your administrator.",
+  ms_no_account: "No matching account found. Your Microsoft email must match an existing account. Contact your administrator.",
   ms_session_failed: "Session could not be established. Please try again.",
   ms_parse_failed: "Sign-in completed but data was invalid. Please try again.",
 };
@@ -25,7 +25,8 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showVersion, setShowVersion] = useState(false);
-  const [showManualLogin, setShowManualLogin] = useState(false);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminClickCount, setAdminClickCount] = useState(0);
   const [msEnabled, setMsEnabled] = useState(false);
   const [versionInfo, setVersionInfo] = useState({ version: "0.0.005", buildTime: "", buildNumber: "" });
   const [releaseNotes, setReleaseNotes] = useState<{ title: string; description: string }[]>([]);
@@ -75,10 +76,15 @@ export default function LoginPage() {
       if (success) {
         setLocation("/");
       } else {
-        setError("Invalid username or password");
+        setError("Invalid username or password. Only administrators can use password login.");
       }
-    } catch {
-      setError("Connection error. Please try again.");
+    } catch (err: any) {
+      const msg = err?.message || "";
+      if (msg.includes("restricted to administrators") || msg.includes("ADMIN_ONLY")) {
+        setError("Password login is only available for administrators. Please use Microsoft 365 sign-in.");
+      } else {
+        setError("Connection error. Please try again.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -96,8 +102,16 @@ export default function LoginPage() {
             <img
               src="/emergent-logo.png"
               alt="Emergent Energy"
-              className="h-12 object-contain"
+              className="h-12 object-contain cursor-default"
               data-testid="img-logo"
+              onClick={() => {
+                const next = adminClickCount + 1;
+                setAdminClickCount(next);
+                if (next >= 5) {
+                  setShowAdminLogin(true);
+                  setAdminClickCount(0);
+                }
+              }}
             />
           </div>
           <p className="text-sm text-muted-foreground">Sign in to your account</p>
@@ -112,7 +126,7 @@ export default function LoginPage() {
 
         <Card className="border border-border energy-glow-border">
           <CardContent className="p-6 space-y-4">
-            {msEnabled && (
+            {msEnabled ? (
               <>
                 <Button
                   type="button"
@@ -130,33 +144,70 @@ export default function LoginPage() {
                   Sign in with Microsoft 365
                 </Button>
 
-                {!showManualLogin && (
-                  <div className="text-center">
-                    <button
-                      type="button"
-                      onClick={() => setShowManualLogin(true)}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                      data-testid="button-show-manual-login"
-                    >
-                      Use username & password instead
-                    </button>
-                  </div>
-                )}
+                <p className="text-xs text-center text-muted-foreground">
+                  Sign in using your company Microsoft account. Your email must match an existing account in the system.
+                </p>
 
-                {showManualLogin && (
-                  <div className="relative my-2">
-                    <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t border-border" />
+                {showAdminLogin && (
+                  <>
+                    <div className="relative my-2">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t border-border" />
+                      </div>
+                      <div className="relative flex justify-center text-xs">
+                        <span className="bg-card px-2 text-muted-foreground">Admin Login</span>
+                      </div>
                     </div>
-                    <div className="relative flex justify-center text-xs">
-                      <span className="bg-card px-2 text-muted-foreground">or</span>
-                    </div>
-                  </div>
+
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="username">Username</Label>
+                        <div className="relative">
+                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input
+                            id="username"
+                            type="text"
+                            placeholder="Admin username"
+                            value={username}
+                            onChange={(e) => { setUsername(e.target.value); setError(""); }}
+                            autoFocus
+                            autoComplete="username"
+                            disabled={isLoading}
+                            className="pl-10"
+                            data-testid="input-username"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="password">Password</Label>
+                        <div className="relative">
+                          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input
+                            id="password"
+                            type="password"
+                            placeholder="Admin password"
+                            value={password}
+                            onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                            autoComplete="current-password"
+                            disabled={isLoading}
+                            className="pl-10"
+                            data-testid="input-password"
+                          />
+                        </div>
+                      </div>
+                      <Button
+                        type="submit"
+                        className="w-full bg-[#16a34a] hover:bg-[#15803d] energy-button transition-all duration-300 hover:shadow-lg hover:shadow-emerald-500/20"
+                        disabled={isLoading || !username || !password}
+                        data-testid="button-login"
+                      >
+                        {isLoading ? "Signing in..." : "Admin Sign In"}
+                      </Button>
+                    </form>
+                  </>
                 )}
               </>
-            )}
-
-            {(!msEnabled || showManualLogin) && (
+            ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="username">Username</Label>

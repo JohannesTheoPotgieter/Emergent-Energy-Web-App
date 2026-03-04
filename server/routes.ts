@@ -744,7 +744,6 @@ export async function registerRoutes(
         console.error("[LOGIN ERROR] Full error:", err);
         console.error("[LOGIN ERROR] Stack trace:", err.stack);
         
-        // Provide better error messages for common DB connection issues
         if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
           return res.status(503).json({ 
             error: "Database connection unavailable",
@@ -770,6 +769,16 @@ export async function registerRoutes(
         return res.status(401).json({ 
           error: info?.message || "Invalid username or password",
           message: info?.message || "Login failed" 
+        });
+      }
+
+      const ADMIN_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN"];
+      if (!ADMIN_ROLES.includes(user.role || "")) {
+        console.log("[LOGIN] Non-admin password login blocked:", user.email, "role:", user.role);
+        return res.status(403).json({
+          error: "Password login is restricted to administrators. Please use Microsoft 365 sign-in.",
+          message: "Password login is restricted to administrators. Please use Microsoft 365 sign-in.",
+          code: "ADMIN_ONLY_PASSWORD_LOGIN"
         });
       }
       

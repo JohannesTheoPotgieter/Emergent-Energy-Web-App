@@ -38,7 +38,7 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 
 ### Backend
 -   **Frameworks & Libraries**: Express.js with TypeScript.
--   **Authentication & Authorization**: Passport.js with local strategy and Microsoft 365 SSO via `@azure/msal-node`, using PostgreSQL for sessions, RBAC, and granular permissions. Auto-logout on version change.
+-   **Authentication & Authorization**: Passport.js with local strategy and Microsoft 365 SSO via `@azure/msal-node`, using PostgreSQL for sessions, RBAC, and granular permissions. Auto-logout on version change. Password login restricted to admin roles (admin, COO_ADMIN, CEO_ADMIN) only — all other users must use Microsoft 365 SSO. The login page hides password form behind a 5-click logo reveal; backend enforces the restriction with a 403 on `/api/auth/login` for non-admin roles. Microsoft SSO matches users by `microsoft_id`, then email, then username prefix.
 -   **Roles & Permissions UI**: Compact grid-based page with single-letter action toggles and collapsible categories.
 -   **File Handling**: Multer for uploads, `exceljs` for parsing.
 -   **Data Storage**: PostgreSQL with Drizzle ORM.
