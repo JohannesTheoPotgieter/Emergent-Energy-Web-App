@@ -576,7 +576,15 @@ function TaskDetailContent({
                 <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
                   <Clock className="h-3 w-3" /> Duration
                 </label>
-                {editingDuration ? (
+                {isBaselineTask ? (
+                  <span
+                    className="text-sm font-medium text-muted-foreground"
+                    title="Baseline task duration is read-only"
+                    data-testid="text-duration"
+                  >
+                    {durationDays > 0 ? `${durationDays} working days` : "—"}
+                  </span>
+                ) : editingDuration ? (
                   <div className="flex items-center gap-1">
                     <Input
                       data-testid="input-duration"
@@ -740,15 +748,21 @@ function TaskDetailContent({
           <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
             <User className="h-3 w-3" /> Assignees
           </label>
-          <UserAssignmentPicker
-            taskId={task.id}
-            taskSource="operational"
-            resolvedUsers={task.resolvedAssignees || null}
-            textNames={task.assignees || null}
-            mode="multi"
-            size="sm"
-            invalidateKeys={[`/api/operational-tasks/task/${task.id}`, "/api/my-work/all-tasks"]}
-          />
+          {isBaselineTask ? (
+            <span className="text-sm text-muted-foreground" data-testid="text-assignees-readonly">
+              {task.assignees?.length ? task.assignees.join(", ") : "Unassigned (from imported plan)"}
+            </span>
+          ) : (
+            <UserAssignmentPicker
+              taskId={task.id}
+              taskSource="operational"
+              resolvedUsers={task.resolvedAssignees || null}
+              textNames={task.assignees || null}
+              mode="multi"
+              size="sm"
+              invalidateKeys={[`/api/operational-tasks/task/${task.id}`, "/api/my-work/all-tasks"]}
+            />
+          )}
         </div>
 
         <div>
