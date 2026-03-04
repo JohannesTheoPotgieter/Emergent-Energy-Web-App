@@ -50,6 +50,7 @@ import {
   Network,
   Plug,
   MessageSquare,
+  MessagesSquare,
   Handshake,
   Compass,
   Smartphone,
@@ -191,6 +192,8 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "Tasks", icon: ListChecks, path: "/my-work/tasks" },
         { label: "Approvals / Calendar", icon: CalendarCheck, path: "/my-work/calendar" },
         { label: "Meetings", icon: MessageSquareText, path: "/my-work/meetings" },
+        { label: "Email", icon: Mail, path: "/my-work/email" },
+        { label: "Teams Chat", icon: MessagesSquare, path: "/my-work/teams" },
       ],
     },
     {
