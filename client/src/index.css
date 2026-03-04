@@ -92,13 +92,13 @@
 }
 
 .command-header {
-  --cmd-bg: 222 47% 11%;
-  --cmd-bg-panel: 220 26% 14%;
-  --cmd-bg-card: 215 28% 17%;
-  --cmd-border: 215 19% 35%;
+  --cmd-bg: hsl(222 47% 11%);
+  --cmd-bg-panel: hsl(220 26% 14%);
+  --cmd-bg-card: hsl(215 28% 17%);
+  --cmd-border: hsl(215 19% 30%);
   --cmd-text: #F8FAFC;
   --cmd-text-secondary: #CBD5E1;
-  --cmd-text-muted: #64748B;
+  --cmd-text-muted: #94A3B8;
   --cmd-brand: #16A34A;
   --cmd-brand-light: #22C55E;
   --cmd-green: #22C55E;
