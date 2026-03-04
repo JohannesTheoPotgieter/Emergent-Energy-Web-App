@@ -1,6 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { invalidateDashboardQueries } from "@/lib/queryClient";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   LineChart,
   Line,
@@ -9,166 +8,114 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
 } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { cashflowApi } from "@/lib/api";
-import { useToast } from "@/hooks/use-toast";
-import { getErrorMessage } from "@/lib/errors";
-import { Save, RotateCcw, Loader2 } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Loader2,
+  DollarSign,
+  TrendingUp,
+  TrendingDown,
+  ArrowUpRight,
+  ArrowDownRight,
+} from "lucide-react";
+import { format, parseISO } from "date-fns";
 
-interface CashflowTabProps {
-  projectName: string;
+interface CashflowWeek {
+  weekStart: string;
+  weekEnd: string;
+  openingBalance: number;
+  computedOpening: number;
+  hasManualOverride: boolean;
+  balanceDelta: number;
+  projectInflows: number;
+  opexOutflows: number;
+  computedOpex: number;
+  hasOpexOverride: boolean;
+  projectOutflows: number;
+  closingBalance: number;
+  availablePayment: number;
 }
 
-export function CashflowTab({ projectName }: CashflowTabProps) {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [edits, setEdits] = useState<Map<string, number>>(new Map());
+interface CashflowTabProps {
+  projectName?: string;
+  projectNames?: string[];
+  title?: string;
+}
 
-  const { data: cashflowPoints = [], isLoading } = useQuery({
-    queryKey: ["cashflow", projectName],
-    queryFn: () => cashflowApi.getAll(projectName),
-    staleTime: 30000,
+function formatRand(val: number | null | undefined): string {
+  if (val === null || val === undefined || !Number.isFinite(val)) return "—";
+  const abs = Math.abs(val);
+  const sign = val < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(1)}K`;
+  return `${sign}R ${abs.toFixed(0)}`;
+}
+
+function formatWeek(dateStr: string): string {
+  try {
+    return format(parseISO(dateStr), "dd MMM");
+  } catch {
+    return dateStr;
+  }
+}
+
+function isCurrentWeek(weekStart: string, weekEnd: string): boolean {
+  const now = new Date();
+  const start = parseISO(weekStart);
+  const end = parseISO(weekEnd);
+  return now >= start && now < end;
+}
+
+export function CashflowTab({ projectName, projectNames, title }: CashflowTabProps) {
+  const filterParam = useMemo(() => {
+    if (projectNames && projectNames.length > 0) return projectNames.join(",");
+    if (projectName) return projectName;
+    return undefined;
+  }, [projectName, projectNames]);
+
+  const { data: cashflowData = [], isLoading } = useQuery<CashflowWeek[]>({
+    queryKey: ["/api/cashflow-2026", filterParam],
+    queryFn: async () => {
+      const url = filterParam
+        ? `/api/cashflow-2026?project=${encodeURIComponent(filterParam)}`
+        : "/api/cashflow-2026";
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(url, { credentials: "include", headers });
+      if (!res.ok) throw new Error("Failed to fetch cashflow data");
+      return res.json();
+    },
   });
 
-  const saveMutation = useMutation({
-    mutationFn: cashflowApi.savePlanningOverrides,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["cashflow", projectName] });
-      invalidateDashboardQueries(queryClient);
-      setEdits(new Map());
-      toast({
-        title: "Plan Saved",
-        description: "Planning changes have been saved successfully.",
-      });
-    },
-    onError: (error) => {
-      toast({
-        title: "Save Failed",
-        description: getErrorMessage(error, "Failed to save planning changes"),
-        variant: "destructive",
-      });
-    },
-  });
-
-  const resetMutation = useMutation({
-    mutationFn: () => cashflowApi.resetPlanningOverrides(projectName),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["cashflow", projectName] });
-      invalidateDashboardQueries(queryClient);
-      setEdits(new Map());
-      toast({
-        title: "Plan Reset",
-        description: "Planning overrides have been cleared.",
-      });
-    },
-    onError: (error) => {
-      toast({
-        title: "Reset Failed",
-        description: getErrorMessage(error, "Failed to reset plan"),
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Clear edits when project changes
-  useEffect(() => {
-    setEdits(new Map());
-  }, [projectName]);
-
-  // Get unique weekly dates (only dates with actual data values)
-  const weeklyDates = useMemo(() => {
-    const dates = new Set<string>();
-    cashflowPoints.forEach(point => {
-      // Only include dates that have actual non-null values
-      if (point.value !== null && point.value !== undefined) {
-        dates.add(point.pointDate);
-      }
-    });
-    return Array.from(dates).sort();
-  }, [cashflowPoints]);
-
-  // Calculate the actual data date range
-  const dateRange = useMemo(() => {
-    if (weeklyDates.length === 0) return { first: null, last: null };
-    return {
-      first: weeklyDates[0],
-      last: weeklyDates[weeklyDates.length - 1]
-    };
-  }, [weeklyDates]);
-
-  // Organize data by series and date
-  const seriesData = useMemo(() => {
-    const data: Record<string, Record<string, number | null>> = {};
-    cashflowPoints.forEach(point => {
-      if (!data[point.seriesName]) {
-        data[point.seriesName] = {};
-      }
-      data[point.seriesName][point.pointDate] = point.value;
-    });
-    return data;
-  }, [cashflowPoints]);
-
-  // Apply edits to display data
-  const displayData = useMemo(() => {
-    const result = JSON.parse(JSON.stringify(seriesData));
-    edits.forEach((value, key) => {
-      const [series, date] = key.split("|");
-      if (result[series]) {
-        result[series][date] = value;
-      }
-    });
-    return result;
-  }, [seriesData, edits]);
-
-  // Prepare chart data - only include dates within the actual data range
   const chartData = useMemo(() => {
-    if (!dateRange.first || !dateRange.last) return [];
-    
-    return weeklyDates
-      .filter(date => date >= dateRange.first! && date <= dateRange.last!)
-      .map(date => {
-        const point: any = { date: new Date(date).toLocaleDateString() };
-        Object.keys(displayData).forEach(series => {
-          point[series] = displayData[series][date] || 0;
-        });
-        return point;
-      });
-  }, [weeklyDates, displayData, dateRange]);
+    return cashflowData.map((w) => ({
+      week: formatWeek(w.weekStart),
+      "Opening Balance": w.openingBalance,
+      "Inflows": w.projectInflows,
+      "Outflows": w.projectOutflows,
+      "Closing Balance": w.closingBalance,
+    }));
+  }, [cashflowData]);
 
-  const handleSavePlan = async () => {
-    const overrides = Array.from(edits.entries()).map(([key, value]) => {
-      const [seriesName, weekStartDate] = key.split("|");
-      return {
-        projectName,
-        weekStartDate,
-        seriesName,
-        overrideValue: value.toString(),
-      };
+  const kpis = useMemo(() => {
+    const totalInflows = cashflowData.reduce((s, w) => s + (w.projectInflows || 0), 0);
+    const totalOutflows = cashflowData.reduce((s, w) => s + (w.projectOutflows || 0), 0);
+    const now = new Date();
+    const currentWeek = cashflowData.find((w) => {
+      const start = parseISO(w.weekStart);
+      const end = parseISO(w.weekEnd);
+      return now >= start && now < end;
     });
-    await saveMutation.mutateAsync(overrides);
-  };
+    const currentWeekOpeningBalance =
+      currentWeek?.openingBalance ?? (cashflowData.length > 0 ? cashflowData[0].openingBalance : 0);
+    const lastWeek = cashflowData.length > 0 ? cashflowData[cashflowData.length - 1] : null;
+    const forecastedEndOfFYPosition = lastWeek?.closingBalance ?? 0;
+    return { totalInflows, totalOutflows, currentWeekOpeningBalance, forecastedEndOfFYPosition };
+  }, [cashflowData]);
 
-  const handleResetPlan = async () => {
-    await resetMutation.mutateAsync();
-  };
-
-  const handleCellEdit = (series: string, date: string, value: string) => {
-    const key = `${series}|${date}`;
-    const numValue = parseFloat(value);
-    if (!isNaN(numValue)) {
-      const newEdits = new Map(edits);
-      newEdits.set(key, numValue);
-      setEdits(newEdits);
-    }
-  };
-
-  const editableSeries = ["Planned Revenue", "Planned Expenditure", "PLANNED CashFlow"];
-  const hasEdits = edits.size > 0;
+  const displayTitle = title || (projectName ? `Cashflow — ${projectName}` : "Cashflow FY26");
 
   if (isLoading) {
     return (
@@ -180,16 +127,15 @@ export function CashflowTab({ projectName }: CashflowTabProps) {
     );
   }
 
-  if (cashflowPoints.length === 0) {
+  if (cashflowData.length === 0) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Cashflow</CardTitle>
-          <CardDescription>Weekly cashflow planning and actuals</CardDescription>
+          <CardTitle className="text-sm">{displayTitle}</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-center text-muted-foreground py-8">
-            No cashflow data available for this project
+            No cashflow data available
           </p>
         </CardContent>
       </Card>
@@ -197,113 +143,196 @@ export function CashflowTab({ projectName }: CashflowTabProps) {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Cashflow Chart</CardTitle>
-          <CardDescription>Weekly cashflow visualization with live planning updates</CardDescription>
+    <div className="space-y-4" data-testid="cashflow-tab-fy26">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiMini
+          label="Total Inflows"
+          value={formatRand(kpis.totalInflows)}
+          icon={<TrendingUp className="h-4 w-4" />}
+          color="green"
+        />
+        <KpiMini
+          label="Total Outflows"
+          value={formatRand(kpis.totalOutflows)}
+          icon={<TrendingDown className="h-4 w-4" />}
+          color="red"
+        />
+        <KpiMini
+          label="Current Week Balance"
+          value={formatRand(kpis.currentWeekOpeningBalance)}
+          icon={<DollarSign className="h-4 w-4" />}
+          color={kpis.currentWeekOpeningBalance >= 0 ? "blue" : "red"}
+        />
+        <KpiMini
+          label="FY End Forecast"
+          value={formatRand(kpis.forecastedEndOfFYPosition)}
+          icon={kpis.forecastedEndOfFYPosition >= 0 ? <ArrowUpRight className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
+          color={kpis.forecastedEndOfFYPosition >= 0 ? "green" : "red"}
+        />
+      </div>
+
+      <Card className="border border-border shadow-sm rounded-xl overflow-hidden">
+        <CardHeader className="pb-2 pt-4 px-5">
+          <CardTitle className="text-sm font-semibold text-foreground">{displayTitle}</CardTitle>
         </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={400}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" fontSize={11} />
-              <YAxis fontSize={11} tickFormatter={(v) => `R${(v/1000000).toFixed(1)}M`} />
-              <Tooltip formatter={(value: number) => [`R${value.toLocaleString()}`, ""]} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="Planned Revenue" name="Planned Inflow" stroke="#3b82f6" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="Planned Expenditure" name="Planned Outflow" stroke="#f59e0b" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="Actual + Planned Revenue" name="Actual Inflow" stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-              <Line type="monotone" dataKey="Actual + Planned Expenditure" name="Actual Outflow" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+        <CardContent className="px-2 pb-3">
+          <div className="h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 40 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis
+                  dataKey="week"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  angle={-45}
+                  textAnchor="end"
+                  height={55}
+                  tick={{ fill: "#64748b" }}
+                />
+                <YAxis
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: "#64748b" }}
+                  tickFormatter={(val) => {
+                    const abs = Math.abs(val);
+                    if (abs >= 1_000_000) return `R${(val / 1_000_000).toFixed(1)}M`;
+                    if (abs >= 1_000) return `R${(val / 1_000).toFixed(0)}K`;
+                    return `R${val}`;
+                  }}
+                  width={65}
+                />
+                <Tooltip
+                  formatter={(value: number, name: string) => [formatRand(value), name]}
+                  contentStyle={{
+                    borderRadius: "10px",
+                    border: "1px solid #e2e8f0",
+                    boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
+                    fontSize: "12px",
+                    padding: "8px 12px",
+                  }}
+                  labelStyle={{ fontWeight: 600, marginBottom: 4, color: "#334155" }}
+                />
+                <Legend wrapperStyle={{ paddingTop: "8px", fontSize: "11px" }} iconType="circle" iconSize={8} />
+                <Line type="monotone" dataKey="Opening Balance" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+                <Line type="monotone" dataKey="Inflows" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+                <Line type="monotone" dataKey="Outflows" stroke="#ef4444" strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+                <Line type="monotone" dataKey="Closing Balance" stroke="#8b5cf6" strokeWidth={2} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Planning Grid */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Planning Grid</CardTitle>
-              <CardDescription>
-                Edit planned values • Click cells to modify • Changes reflect immediately in chart
-              </CardDescription>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={handleSavePlan}
-                disabled={!hasEdits || saveMutation.isPending}
-                variant="default"
-                size="sm"
-              >
-                <Save className="h-4 w-4 mr-2" />
-                {saveMutation.isPending ? "Saving..." : "Save Plan"}
-              </Button>
-              <Button
-                onClick={handleResetPlan}
-                disabled={resetMutation.isPending}
-                variant="outline"
-                size="sm"
-              >
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Reset Plan
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border overflow-auto max-h-[500px]">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Series</TableHead>
-                  {weeklyDates.slice(0, 10).map(date => (
-                    <TableHead key={date} className="text-right min-w-[100px]">
-                      {new Date(date).toLocaleDateString()}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Object.keys(displayData).map(series => (
-                  <TableRow key={series}>
-                    <TableCell className="font-medium">{series}</TableCell>
-                    {weeklyDates.slice(0, 10).map(date => {
-                      const value = displayData[series][date];
-                      const isEditable = editableSeries.includes(series);
-                      const key = `${series}|${date}`;
+      <Card className="border border-border shadow-sm rounded-xl overflow-hidden">
+        <CardContent className="p-0">
+          <div className="overflow-auto max-h-[50vh]">
+            <table className="w-full border-collapse text-sm">
+              <thead className="sticky top-0 z-20">
+                <tr className="bg-muted/80 border-b-2 border-border">
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground text-xs uppercase tracking-wider sticky left-0 bg-muted/80 z-30 min-w-[90px]">
+                    Week
+                  </th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[110px] bg-muted/80">
+                    Opening Bal
+                  </th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[110px] bg-muted/80">
+                    Inflows
+                  </th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[110px] bg-muted/80">
+                    Outflows
+                  </th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[110px] bg-muted/80">
+                    Closing Bal
+                  </th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[120px] bg-muted/80">
+                    Net Flow
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {cashflowData.map((week, idx) => {
+                  const current = isCurrentWeek(week.weekStart, week.weekEnd);
+                  const isEven = idx % 2 === 0;
+                  const netFlow = (week.projectInflows || 0) - (week.projectOutflows || 0);
 
-                      return (
-                        <TableCell key={date} className="text-right">
-                          {isEditable ? (
-                            <Input
-                              type="number"
-                              value={value || 0}
-                              onChange={(e) => handleCellEdit(series, date, e.target.value)}
-                              className="h-8 text-right"
-                            />
-                          ) : (
-                            <span className="font-mono text-muted-foreground">
-                              {value?.toLocaleString() || "-"}
+                  return (
+                    <tr
+                      key={week.weekStart}
+                      className={`border-b border-border transition-colors ${
+                        current
+                          ? "bg-blue-50/70 border-l-[3px] border-l-blue-500"
+                          : isEven
+                          ? "bg-card"
+                          : "bg-muted/30"
+                      } hover:bg-muted/60`}
+                    >
+                      <td
+                        className={`px-4 py-2.5 font-medium text-foreground sticky left-0 z-10 ${
+                          current ? "bg-blue-50/70" : isEven ? "bg-card" : "bg-muted/30"
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[13px]">{formatWeek(week.weekStart)}</span>
+                          {current && (
+                            <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-700">
+                              NOW
                             </span>
                           )}
-                        </TableCell>
-                      );
-                    })}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-[13px] text-blue-600">
+                        {formatRand(week.openingBalance)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-[13px] text-emerald-600">
+                        {formatRand(week.projectInflows)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-[13px] text-red-500">
+                        {formatRand(week.projectOutflows)}
+                      </td>
+                      <td className={`px-4 py-2.5 text-right font-mono text-[13px] font-bold ${(week.closingBalance || 0) >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                        {formatRand(week.closingBalance)}
+                      </td>
+                      <td className={`px-4 py-2.5 text-right font-mono text-[13px] font-semibold ${netFlow >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                        {formatRand(netFlow)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-          {hasEdits && (
-            <div className="mt-4 text-sm text-muted-foreground">
-              {edits.size} {edits.size === 1 ? "cell" : "cells"} modified. Click "Save Plan" to persist changes.
-            </div>
-          )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function KpiMini({
+  label,
+  value,
+  icon,
+  color,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  color: "green" | "red" | "blue";
+}) {
+  const colorMap = {
+    green: { bg: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", iconBg: "bg-emerald-100", iconColor: "text-emerald-600" },
+    red: { bg: "bg-red-50", border: "border-red-200", text: "text-red-700", iconBg: "bg-red-100", iconColor: "text-red-600" },
+    blue: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700", iconBg: "bg-blue-100", iconColor: "text-blue-600" },
+  };
+  const c = colorMap[color];
+  return (
+    <div className={`rounded-xl border ${c.border} ${c.bg} p-3 flex items-center gap-2.5`}>
+      <div className={`rounded-lg ${c.iconBg} p-2 ${c.iconColor}`}>{icon}</div>
+      <div className="min-w-0">
+        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide truncate">{label}</p>
+        <p className={`text-base font-bold font-mono ${c.text} truncate`}>{value}</p>
+      </div>
     </div>
   );
 }

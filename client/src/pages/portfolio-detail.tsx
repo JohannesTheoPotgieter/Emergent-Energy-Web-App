@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
+import { CashflowTab } from "@/components/tabs/CashflowTab";
 
 const MILESTONE_CONFIG = [
   { name: "PD Handover", color: "#6366f1", bgColor: "#eef2ff" },
@@ -588,6 +589,9 @@ export default function PortfolioDetailPage() {
           <TabsTrigger value="engineering" className="gap-1.5" data-testid="tab-engineering">
             <Wrench className="h-3.5 w-3.5" /> Engineering
           </TabsTrigger>
+          <TabsTrigger value="cashflow" className="gap-1.5" data-testid="tab-cashflow">
+            <TrendingUp className="h-3.5 w-3.5" /> Cashflow
+          </TabsTrigger>
           <TabsTrigger value="rollout" className="gap-1.5" data-testid="tab-rollout">
             <Calendar className="h-3.5 w-3.5" /> Project Plan
           </TabsTrigger>
@@ -963,6 +967,13 @@ export default function PortfolioDetailPage() {
               No engineering stage data available for this portfolio's projects.
             </CardContent></Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="cashflow" className="space-y-4">
+          <CashflowTab
+            projectNames={Array.from(portfolioProjectNames)}
+            title={`Cashflow — ${portfolio?.name || "Portfolio"}`}
+          />
         </TabsContent>
 
         <TabsContent value="rollout" className="space-y-4">
