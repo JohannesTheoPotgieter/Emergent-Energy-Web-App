@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { msObjects, msAccounts } from "@shared/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, isNotNull } from "drizzle-orm";
 import {
   getCalendarEvents,
   listMessages,
@@ -34,11 +34,8 @@ export async function syncUserCalendar(userId: number): Promise<SyncResult> {
 
   try {
     const ssoToken = await getUserToken(userId);
-    if (!ssoToken && !isOutlookConfigured()) {
-      result.errors.push("No SSO token or Outlook connector configured for calendar sync");
-      return result;
-    }
     if (!ssoToken) {
+      result.errors.push("No user SSO token — calendar sync requires individual Microsoft sign-in");
       return result;
     }
 
@@ -89,11 +86,8 @@ export async function syncUserEmail(userId: number): Promise<SyncResult> {
 
   try {
     const ssoToken = await getUserToken(userId);
-    if (!ssoToken && !isOutlookConfigured()) {
-      result.errors.push("No SSO token or Outlook connector configured for email sync");
-      return result;
-    }
     if (!ssoToken) {
+      result.errors.push("No user SSO token — email sync requires individual Microsoft sign-in");
       return result;
     }
 
