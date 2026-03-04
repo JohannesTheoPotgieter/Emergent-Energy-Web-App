@@ -52,6 +52,8 @@ import {
   FileText,
   MessageSquare,
   FileEdit,
+  Info,
+  Lock,
 } from "lucide-react";
 import {
   COMPANY_ROLE_LABELS,
@@ -348,7 +350,7 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
   const [editingLabel, setEditingLabel] = useState(false);
   const [editLabelValue, setEditLabelValue] = useState("");
   const [deletingRole, setDeletingRole] = useState(false);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [showSaveAllConfirm, setShowSaveAllConfirm] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
 
@@ -372,14 +374,6 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
       : [...effectiveSections, section];
     setPendingChanges(prev => ({ ...prev, [selectedRole]: { ...prev[selectedRole], sections: next } }));
   };
-
-  const visibleCategories = useMemo(() => {
-    return PERM_CATEGORIES.filter(cat => {
-      if (cat.section === "PROJECT_DETAIL") return true;
-      if (cat.section === "SETTINGS") return true;
-      return effectiveSections.includes(cat.section);
-    });
-  }, [effectiveSections]);
 
   const handleSave = async () => {
     const changes = pendingChanges[selectedRole];
@@ -468,8 +462,9 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
     return <Card><CardContent className="py-12 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /><span className="ml-2 text-muted-foreground">Loading...</span></CardContent></Card>;
   }
 
-  const activePermCount = PERM_CATEGORIES.flatMap(c => c.items).filter(i => i.actions.some(a => getEntityPerm(selectedRole, i.entity, a))).length;
-  const totalItems = PERM_CATEGORIES.flatMap(c => c.items).length;
+  const activeCats = PERM_CATEGORIES.filter(c => c.section === "PROJECT_DETAIL" || c.section === "SETTINGS" || effectiveSections.includes(c.section));
+  const activePermCount = activeCats.flatMap(c => c.items).filter(i => i.actions.some(a => getEntityPerm(selectedRole, i.entity, a))).length;
+  const totalItems = activeCats.flatMap(c => c.items).length;
 
   return (
     <>
@@ -528,7 +523,7 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
                     )}
                     {currentRole.isSystem && <Badge variant="outline" className="text-[10px]">System</Badge>}
                   </div>
-                  <span className="text-xs text-gray-400">{effectiveSections.length} sections, {activePermCount}/{totalItems} features active</span>
+                  <span className="text-xs text-gray-400">{effectiveSections.length} sections active, {activePermCount}/{totalItems} features enabled</span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   {!currentRole.isSystem && (
@@ -556,110 +551,107 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
                 </div>
               </div>
 
-              <Card data-testid="card-sidebar-access">
-                <CardHeader className="py-3 px-4">
-                  <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-                    <Shield className="h-4 w-4 text-gray-400" />
-                    Sidebar Sections
-                    <Badge variant="secondary" className="text-[10px] font-normal">{effectiveSections.length} of {ALL_SECTIONS.length} active</Badge>
-                  </CardTitle>
-                  <p className="text-xs text-muted-foreground">Toggle sections on/off. Disabled sections hide from the user's sidebar and their permissions below.</p>
-                </CardHeader>
-                <CardContent className="px-4 pb-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                    {ALL_SECTIONS.map(s => {
-                      const meta = SECTION_META[s];
-                      const active = effectiveSections.includes(s);
-                      const Icon = meta.icon;
-                      return (
-                        <button
-                          key={s}
-                          className={`flex items-center gap-3 p-3 rounded-lg border transition-all text-left ${
-                            active
-                              ? `${meta.bg} shadow-sm`
-                              : "border-gray-100 bg-gray-50/30 opacity-50 hover:opacity-75"
-                          }`}
-                          onClick={() => toggleSection(s)}
-                          data-testid={`toggle-section-${selectedRole}-${s}`}
-                        >
-                          <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
-                            active ? "bg-white/80 shadow-sm" : "bg-gray-100"
-                          }`}>
-                            <Icon className={`h-4 w-4 ${active ? meta.color : "text-gray-400"}`} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className={`text-xs font-semibold ${active ? "text-gray-800" : "text-gray-400"}`}>{meta.label}</p>
-                            <p className={`text-[10px] truncate ${active ? "text-gray-500" : "text-gray-300"}`}>{meta.description}</p>
-                          </div>
-                          <Switch
-                            checked={active}
-                            onCheckedChange={() => toggleSection(s)}
-                            className="shrink-0"
-                            onClick={e => e.stopPropagation()}
-                            data-testid={`switch-section-${selectedRole}-${s}`}
-                          />
-                        </button>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-4 py-3 flex items-start gap-3" data-testid="info-how-it-works">
+                <Info className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+                <div className="text-xs text-blue-700 space-y-1">
+                  <p className="font-semibold">How this works</p>
+                  <p>Each section below controls a sidebar area. The toggle on/off switch controls whether this role can see that section at all. When a section is <strong>off</strong>, all permissions within it are inactive — the user simply cannot reach those features.</p>
+                </div>
+              </div>
 
-              <div className="space-y-2" data-testid="permission-categories">
-                {visibleCategories.length === 0 && (
-                  <Card>
-                    <CardContent className="py-8 text-center">
-                      <p className="text-sm text-muted-foreground">Enable sidebar sections above to configure their permissions.</p>
-                    </CardContent>
-                  </Card>
-                )}
-                {visibleCategories.map(cat => {
+              <div className="space-y-3" data-testid="permission-categories">
+                {PERM_CATEGORIES.map(cat => {
+                  const meta = SECTION_META[cat.section];
                   const Icon = cat.icon;
+                  const sectionActive = effectiveSections.includes(cat.section);
+                  const alwaysOn = cat.section === "PROJECT_DETAIL" || cat.section === "SETTINGS";
+                  const isActive = alwaysOn || sectionActive;
                   const activeCount = cat.items.filter(i => i.actions.some(a => getEntityPerm(selectedRole, i.entity, a))).length;
-                  const isExpanded = !expanded.has(cat.key);
+                  const isCollapsed = collapsed.has(cat.key);
+
                   return (
-                    <Card key={cat.key} className="overflow-hidden" data-testid={`category-${cat.key}`}>
-                      <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-50/80 border-b">
+                    <Card
+                      key={cat.key}
+                      className={`overflow-hidden transition-all ${!isActive ? "opacity-60 border-dashed" : ""}`}
+                      data-testid={`category-${cat.key}`}
+                    >
+                      <div className={`flex items-center gap-2 px-4 py-2.5 border-b ${isActive ? "bg-gray-50/80" : "bg-gray-100/60"}`}>
                         <button
-                          className="flex items-center gap-2 flex-1 text-left"
-                          onClick={() => setExpanded(prev => { const n = new Set(prev); n.has(cat.key) ? n.delete(cat.key) : n.add(cat.key); return n; })}
+                          className="flex items-center gap-2 flex-1 text-left min-w-0"
+                          onClick={() => setCollapsed(prev => { const n = new Set(prev); n.has(cat.key) ? n.delete(cat.key) : n.add(cat.key); return n; })}
                           data-testid={`btn-expand-category-${cat.key}`}
                         >
-                          {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-gray-400 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400 shrink-0" />}
-                          <div className={`h-5 w-5 rounded ${cat.color} flex items-center justify-center shrink-0`}>
+                          {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-gray-400 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-gray-400 shrink-0" />}
+                          <div className={`h-5 w-5 rounded ${isActive ? cat.color : "bg-gray-300"} flex items-center justify-center shrink-0`}>
                             <Icon className="h-3 w-3 text-white" />
                           </div>
-                          <span className="text-xs font-semibold text-gray-700">{cat.label}</span>
-                          <Badge variant="secondary" className="text-[10px] font-normal ml-1">{activeCount}/{cat.items.length}</Badge>
+                          <span className={`text-xs font-semibold ${isActive ? "text-gray-700" : "text-gray-400"}`}>{cat.label}</span>
+                          {isActive ? (
+                            <Badge variant="secondary" className="text-[10px] font-normal ml-1">{activeCount}/{cat.items.length}</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] font-normal ml-1 border-dashed text-gray-400 bg-transparent flex items-center gap-1">
+                              <Lock className="h-2.5 w-2.5" /> Section Off
+                            </Badge>
+                          )}
                         </button>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] font-semibold text-green-600 hover:bg-green-50" onClick={() => setCategoryPreset(cat, "all")} data-testid={`preset-full-${cat.key}`}>All</Button>
-                          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] font-semibold text-blue-600 hover:bg-blue-50" onClick={() => setCategoryPreset(cat, "view")} data-testid={`preset-view-${cat.key}`}>View Only</Button>
-                          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] font-semibold text-red-500 hover:bg-red-50" onClick={() => setCategoryPreset(cat, "none")} data-testid={`preset-none-${cat.key}`}>Off</Button>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {isActive && (
+                            <div className="flex items-center gap-1">
+                              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] font-semibold text-green-600 hover:bg-green-50" onClick={() => setCategoryPreset(cat, "all")} data-testid={`preset-full-${cat.key}`}>All</Button>
+                              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] font-semibold text-blue-600 hover:bg-blue-50" onClick={() => setCategoryPreset(cat, "view")} data-testid={`preset-view-${cat.key}`}>View</Button>
+                              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] font-semibold text-red-500 hover:bg-red-50" onClick={() => setCategoryPreset(cat, "none")} data-testid={`preset-none-${cat.key}`}>Off</Button>
+                            </div>
+                          )}
+                          {!alwaysOn && (
+                            <Switch
+                              checked={sectionActive}
+                              onCheckedChange={() => toggleSection(cat.section)}
+                              className="shrink-0"
+                              data-testid={`switch-section-${selectedRole}-${cat.section}`}
+                            />
+                          )}
+                          {alwaysOn && (
+                            <Badge variant="outline" className="text-[10px] text-gray-400 bg-transparent border-dashed">Always On</Badge>
+                          )}
                         </div>
                       </div>
-                      {isExpanded && (
-                        <div className="divide-y divide-gray-50">
+
+                      {!isCollapsed && (
+                        <div className={`divide-y divide-gray-50 ${!isActive ? "pointer-events-none" : ""}`}>
+                          {!isActive && (
+                            <div className="px-4 py-2 bg-gray-50/50 flex items-center gap-2">
+                              <Lock className="h-3 w-3 text-gray-300" />
+                              <span className="text-[11px] text-gray-400">This section is turned off for this role. Toggle it on above to configure permissions.</span>
+                            </div>
+                          )}
                           {cat.items.map((item) => (
-                            <div key={item.entity} className="flex items-center gap-3 px-4 py-2 hover:bg-blue-50/30 transition-colors" data-testid={`entity-row-${selectedRole}-${item.entity}`}>
-                              <span className="text-xs text-gray-700 flex-1 min-w-0 truncate" title={item.label}>{item.label}</span>
+                            <div
+                              key={item.entity}
+                              className={`flex items-center gap-3 px-4 py-2 transition-colors ${isActive ? "hover:bg-blue-50/30" : "bg-gray-50/30"}`}
+                              data-testid={`entity-row-${selectedRole}-${item.entity}`}
+                            >
+                              <span className={`text-xs flex-1 min-w-0 truncate ${isActive ? "text-gray-700" : "text-gray-300"}`} title={item.label}>{item.label}</span>
                               <div className="flex items-center gap-1.5 shrink-0">
                                 {item.actions.map(action => {
-                                  const active = getEntityPerm(selectedRole, item.entity, action);
-                                  const meta = ACTION_META[action];
+                                  const active = isActive && getEntityPerm(selectedRole, item.entity, action);
+                                  const actionMeta = ACTION_META[action];
                                   return (
                                     <button
                                       key={action}
                                       className={`h-6 px-2 rounded-md text-[10px] font-semibold border transition-all flex items-center gap-1 ${
-                                        active
-                                          ? meta.activeBg
-                                          : "bg-gray-50 border-gray-200 text-gray-300 hover:bg-gray-100 hover:text-gray-500"
+                                        !isActive
+                                          ? "bg-gray-50 border-gray-100 text-gray-200 cursor-not-allowed"
+                                          : active
+                                            ? actionMeta.activeBg
+                                            : "bg-gray-50 border-gray-200 text-gray-300 hover:bg-gray-100 hover:text-gray-500"
                                       }`}
-                                      onClick={() => toggleEntityPerm(selectedRole, item.entity, action)}
-                                      title={`${meta.label}: ${item.label}`}
+                                      onClick={() => { if (isActive) toggleEntityPerm(selectedRole, item.entity, action); }}
+                                      title={isActive ? `${actionMeta.label}: ${item.label}` : "Enable section first"}
+                                      disabled={!isActive}
                                       data-testid={`perm-${selectedRole}-${item.entity}-${action}`}
                                     >
-                                      {meta.short}
+                                      {actionMeta.short}
                                     </button>
                                   );
                                 })}
