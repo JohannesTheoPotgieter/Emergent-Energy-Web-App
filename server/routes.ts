@@ -638,7 +638,7 @@ export async function registerRoutes(
 
       const [projectRows, workItemRows, costRows, revenueRows] = await Promise.all([
         db.execute(sql`
-          SELECT project_info_id as id, project_name, phase, pd, pm, size_kwp
+          SELECT id, project_name, phase, pd, pm, size_kwp
           FROM project_info
           WHERE LOWER(project_name) LIKE ${startsWithPattern}
              OR LOWER(project_name) LIKE ${containsPattern}
@@ -648,7 +648,7 @@ export async function registerRoutes(
         db.execute(sql`
           SELECT w.id, w.title, w.status, p.project_name, w.type as task_type, w.owner_name as assigned_to, w.percent_complete
           FROM work_items w
-          LEFT JOIN project_info p ON w.project_id = p.project_info_id
+          LEFT JOIN project_info p ON w.project_id = p.id
           WHERE LOWER(w.title) LIKE ${containsPattern}
              OR LOWER(p.project_name) LIKE ${containsPattern}
           ORDER BY CASE WHEN LOWER(w.title) LIKE ${startsWithPattern} THEN 0 ELSE 1 END, w.title

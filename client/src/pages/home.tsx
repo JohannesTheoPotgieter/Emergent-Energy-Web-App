@@ -435,7 +435,11 @@ function UniversalSearch() {
         headers,
         credentials: "include",
       });
-      if (!res.ok) return { results: [] };
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => "");
+        console.error(`[Search] API returned ${res.status}: ${errorText}`);
+        return { results: [] };
+      }
       return res.json();
     },
     enabled: debouncedQuery.length >= 2,
