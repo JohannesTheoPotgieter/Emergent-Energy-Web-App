@@ -774,6 +774,22 @@ async function backfillPmUserIds() {
     console.error("[Backfill] work_items backfill failed:", err.message);
   }
 
+  try {
+    await db.execute(sql.raw(`
+      CREATE TABLE IF NOT EXISTS user_project_folders (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        project_name TEXT NOT NULL,
+        folder_name TEXT NOT NULL,
+        folder_path TEXT,
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE(user_id, project_name)
+      );
+    `));
+  } catch (err: any) {
+    console.error('[Migration] user_project_folders error:', err.message);
+  }
+
   registerAdminRoutes(app);
   registerExcoRoutes(app);
   const { financialIntegrationRouter } = await import("./departments/financial-integration-routes");

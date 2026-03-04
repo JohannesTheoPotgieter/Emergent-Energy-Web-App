@@ -13467,6 +13467,7 @@ export async function registerRoutes(
   });
 
   registerFeedbackRoutes(app);
+  registerUserFolderRoutes(app);
 
   return httpServer;
 }
@@ -13546,7 +13547,7 @@ function generateCSV(data: any[], columns: string[]): string {
 
 // ========== FEEDBACK / BUG REPORT SYSTEM ==========
 
-import { feedbackTickets } from "@shared/schema";
+import { feedbackTickets, userProjectFolders } from "@shared/schema";
 
 function registerFeedbackRoutes(app: Express) {
   app.get("/api/feedback", requireAuth, async (req, res) => {
@@ -13602,6 +13603,78 @@ function registerFeedbackRoutes(app: Express) {
       const id = parseInt(req.params.id);
       await db.delete(feedbackTickets).where(eq(feedbackTickets.id, id));
       logAuditFromReq(req, { entityType: "feedback", action: "delete", entityId: String(id), changesJson: { description: "Feedback ticket deleted" } });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+}
+
+
+function registerUserFolderRoutes(app: Express) {
+  app.get("/api/user-project-folder/:projectName", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const projectName = decodeURIComponent(req.params.projectName);
+
+      const [folder] = await db.select()
+        .from(userProjectFolders)
+        .where(and(
+          eq(userProjectFolders.userId, userId),
+          eq(userProjectFolders.projectName, projectName)
+        ));
+
+      res.json(folder || null);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/user-project-folder/:projectName", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const projectName = decodeURIComponent(req.params.projectName);
+      const { folderName, folderPath } = req.body;
+
+      if (!folderName) return res.status(400).json({ error: "folderName is required" });
+
+      const [existing] = await db.select()
+        .from(userProjectFolders)
+        .where(and(
+          eq(userProjectFolders.userId, userId),
+          eq(userProjectFolders.projectName, projectName)
+        ));
+
+      if (existing) {
+        const [updated] = await db.update(userProjectFolders)
+          .set({ folderName, folderPath: folderPath || null, updatedAt: new Date() })
+          .where(eq(userProjectFolders.id, existing.id))
+          .returning();
+        return res.json(updated);
+      }
+
+      const [created] = await db.insert(userProjectFolders)
+        .values({ userId, projectName, folderName, folderPath: folderPath || null })
+        .returning();
+      res.json(created);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/user-project-folder/:projectName", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const projectName = decodeURIComponent(req.params.projectName);
+
+      await db.delete(userProjectFolders)
+        .where(and(
+          eq(userProjectFolders.userId, userId),
+          eq(userProjectFolders.projectName, projectName)
+        ));
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
