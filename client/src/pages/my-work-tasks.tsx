@@ -684,17 +684,17 @@ export default function MyWorkTasksPage() {
     <div className="flex flex-col min-h-0 flex-1 max-w-6xl mx-auto w-full" data-testid="my-work-tasks-page">
 
       <div className="shrink-0 mb-3" data-testid="tasks-header">
-        <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h2 className="text-lg font-bold tracking-tight text-foreground" data-testid="text-tasks-title">My Tasks</h2>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <div className="flex items-center border rounded-md overflow-hidden">
               <button onClick={() => setViewMode("list")} className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-list" title="List view"><LayoutList className="h-3.5 w-3.5" /></button>
               <button onClick={() => setViewMode("board")} className={`p-1.5 transition-colors ${viewMode === "board" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-board" title="Board view"><Columns3 className="h-3.5 w-3.5" /></button>
             </div>
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" onClick={handleSaveDefaultView} data-testid="btn-save-default-view" title="Save default"><Save className="h-3 w-3" /></Button>
-            {hasCustomDefault && <Button variant="ghost" size="sm" className="h-7 px-1.5 text-xs text-muted-foreground" onClick={handleResetDefaultView} data-testid="btn-reset-default-view" title="Reset default"><RotateCw className="h-3 w-3" /></Button>}
-            <Button variant={groomMode ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 gap-1 ${groomMode ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}`} onClick={() => setGroomMode(!groomMode)} data-testid="button-groom-mode"><Eye className="h-3 w-3" /><span>{groomMode ? "Grooming" : "Groom"}</span></Button>
-            <Button size="sm" className="h-7 gap-1 text-xs shadow-sm" onClick={() => setCreateDialogOpen(true)} data-testid="button-new-task"><Plus className="h-3.5 w-3.5" /> New</Button>
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 hidden sm:inline-flex" onClick={handleSaveDefaultView} data-testid="btn-save-default-view" title="Save default"><Save className="h-3 w-3" /></Button>
+            {hasCustomDefault && <Button variant="ghost" size="sm" className="h-7 px-1.5 text-xs text-muted-foreground hidden sm:inline-flex" onClick={handleResetDefaultView} data-testid="btn-reset-default-view" title="Reset default"><RotateCw className="h-3 w-3" /></Button>}
+            <Button variant={groomMode ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 gap-1 hidden sm:inline-flex ${groomMode ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}`} onClick={() => setGroomMode(!groomMode)} data-testid="button-groom-mode"><Eye className="h-3 w-3" /><span>{groomMode ? "Grooming" : "Groom"}</span></Button>
+            <Button size="sm" className="h-7 gap-1 text-xs shadow-sm" onClick={() => setCreateDialogOpen(true)} data-testid="button-new-task"><Plus className="h-3.5 w-3.5" /> <span className="hidden xs:inline">New</span></Button>
           </div>
         </div>
 
@@ -762,14 +762,27 @@ export default function MyWorkTasksPage() {
         </div>
       )}
 
-      <div className="shrink-0 flex items-center gap-2 mb-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input placeholder="Search tasks..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-8 h-8 text-xs" data-testid="input-task-search" />
-          {searchText && <button onClick={() => setSearchText("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>}
+      <div className="shrink-0 space-y-2 mb-2">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input placeholder="Search tasks..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-8 h-8 text-xs" data-testid="input-task-search" />
+            {searchText && <button onClick={() => setSearchText("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>}
+          </div>
+          <div className="flex items-center gap-0.5 shrink-0">
+            <Button variant={showFilters ? "secondary" : "ghost"} size="sm" className="h-7 px-2 text-xs" onClick={() => setShowFilters(!showFilters)} data-testid="button-toggle-filters">
+              <Filter className="h-3 w-3" /> {activeFilters > 0 && <span className="ml-0.5 text-[10px] bg-primary text-primary-foreground rounded-full w-4 h-4 flex items-center justify-center">{activeFilters}</span>}
+            </Button>
+            {(["priority", "dueDate", "status"] as SortField[]).map(field => (
+              <button key={field} onClick={() => handleSort(field)} className={`px-1.5 py-1 rounded text-[10px] font-medium transition-colors ${sortField === field ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"}`} data-testid={`sort-${field}`}>
+                {field === "priority" ? "Pri" : field === "dueDate" ? "Due" : "Stat"}
+                {sortField === field && <span className="ml-0.5">{sortDirection === "asc" ? "↑" : "↓"}</span>}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex items-center gap-0.5 overflow-x-auto" data-testid="source-filter-tabs">
+        <div className="flex items-center gap-0.5 overflow-x-auto pb-1 -mb-1 scrollbar-thin" data-testid="source-filter-tabs">
           {(Object.keys(SOURCE_CONFIG) as SourceFilter[]).map(src => {
             const config = SOURCE_CONFIG[src]; const count = sourceCounts[src]; const active = sourceFilter === src;
             if (count === 0 && src !== "all") return null;
@@ -780,18 +793,6 @@ export default function MyWorkTasksPage() {
               </button>
             );
           })}
-        </div>
-
-        <div className="flex items-center gap-0.5 ml-auto shrink-0">
-          <Button variant={showFilters ? "secondary" : "ghost"} size="sm" className="h-7 px-2 text-xs" onClick={() => setShowFilters(!showFilters)} data-testid="button-toggle-filters">
-            <Filter className="h-3 w-3" /> {activeFilters > 0 && <span className="ml-0.5 text-[10px] bg-primary text-primary-foreground rounded-full w-4 h-4 flex items-center justify-center">{activeFilters}</span>}
-          </Button>
-          {(["priority", "dueDate", "status"] as SortField[]).map(field => (
-            <button key={field} onClick={() => handleSort(field)} className={`px-1.5 py-1 rounded text-[10px] font-medium transition-colors ${sortField === field ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"}`} data-testid={`sort-${field}`}>
-              {field === "priority" ? "Pri" : field === "dueDate" ? "Due" : "Stat"}
-              {sortField === field && <span className="ml-0.5">{sortDirection === "asc" ? "↑" : "↓"}</span>}
-            </button>
-          ))}
         </div>
       </div>
 
@@ -804,7 +805,7 @@ export default function MyWorkTasksPage() {
       )}
 
       {showFilters && (
-        <div className="shrink-0 flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-muted/20 mb-2 text-[10px]" data-testid="filter-bar">
+        <div className="shrink-0 flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg border border-border/50 bg-muted/20 mb-2 text-[10px] overflow-x-auto" data-testid="filter-bar">
           <div className="flex items-center gap-1">
             <span className="font-semibold text-muted-foreground uppercase tracking-wider mr-1">Status:</span>
             {allStatuses.map(s => { const isActive = statusFilter.includes(s); return (<button key={s} onClick={() => toggleStatus(s)} className={`px-1.5 py-0.5 rounded font-medium border transition-colors ${isActive ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border/50 text-muted-foreground hover:border-border"}`} data-testid={`filter-status-${s}`}>{s.replace("_", " ")}</button>); })}
@@ -851,8 +852,8 @@ export default function MyWorkTasksPage() {
           )}
         </div>
       ) : (
-        <div className="flex-1 min-h-0 overflow-x-auto">
-          <div className="grid grid-cols-4 gap-2 h-full min-w-[800px]">
+        <div className="flex-1 min-h-0 overflow-x-auto -mx-2 px-2">
+          <div className="grid grid-cols-4 gap-2 h-full min-w-[700px] sm:min-w-[800px]">
             {BOARD_COLUMNS.map(col => {
               const colTasks = filteredTasks.filter(t => {
                 if (col.key === "inbox") return t.status === "inbox" || t.status === "planned";
@@ -930,7 +931,7 @@ export default function MyWorkTasksPage() {
       {unifiedDetailOpen && unifiedDetailTask && (<TaskDetailPanel task={unifiedDetailTask} open={unifiedDetailOpen} onOpenChange={setUnifiedDetailOpen} onInvalidate={invalidateAll} allProjects={allProjects} />)}
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-w-[95vw] sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base"><Plus className="h-4 w-4" /> New Task</DialogTitle>
           </DialogHeader>
@@ -1092,7 +1093,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
 
   return (
     <div data-testid={`task-row-${task._key}`}>
-      <div className={`flex items-center gap-2 px-3 py-2.5 transition-all hover:bg-muted/40 cursor-pointer group ${isDone ? "opacity-50" : ""} ${isOverdue && !isDone ? "bg-red-50/40 border-l-2 border-l-red-400" : ""} ${task.status === "blocked" && !isDone ? "bg-amber-50/30 border-l-2 border-l-amber-400" : ""}`} onClick={onOpenDrawer}>
+      <div className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 sm:py-2.5 transition-all hover:bg-muted/40 cursor-pointer group ${isDone ? "opacity-50" : ""} ${isOverdue && !isDone ? "bg-red-50/40 border-l-2 border-l-red-400" : ""} ${task.status === "blocked" && !isDone ? "bg-amber-50/30 border-l-2 border-l-amber-400" : ""}`} onClick={onOpenDrawer}>
 
         {task._source === "operational" && (task.subtaskCount || 0) > 0 ? (
           <button onClick={e => { e.stopPropagation(); onToggleExpand(); }} className="shrink-0 p-0.5 rounded hover:bg-muted" data-testid={`btn-expand-${task._key}`}>
@@ -1134,8 +1135,8 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
           </div>
         </div>
 
-        <span className={`shrink-0 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium border ${task._sourceColor}`} data-testid={`badge-source-${task._key}`}>{task._sourceLabel}</span>
-        {(task._trackingRole === "creator" || task._trackingRole === "both") && <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border bg-teal-50 border-teal-200 text-teal-700" data-testid={`badge-tracking-${task._key}`}><Eye className="h-2.5 w-2.5" />Tracking</span>}
+        <span className={`shrink-0 hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium border ${task._sourceColor}`} data-testid={`badge-source-${task._key}`}>{task._sourceLabel}</span>
+        {(task._trackingRole === "creator" || task._trackingRole === "both") && <span className="shrink-0 hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border bg-teal-50 border-teal-200 text-teal-700" data-testid={`badge-tracking-${task._key}`}><Eye className="h-2.5 w-2.5" />Tracking</span>}
 
         <div className="hidden sm:block shrink-0" onClick={e => e.stopPropagation()}>
           <UserAssignmentPicker taskId={task._rawId} taskSource={task._source === "approvals" ? "operational" : task._source} resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null} textNames={task.assignees || task.owners || null} mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"} size="xs" invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks", "/api/tr-register"]} />
@@ -1147,7 +1148,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
           </span>
         )}
 
-        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="shrink-0 flex items-center gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
           {canQuickStatus && !isDone && (
             <>
               <button onClick={e => { e.stopPropagation(); onQuickStatus("in_progress"); }} className={`p-1 rounded transition-colors ${task.status === "in_progress" ? "text-blue-500 bg-blue-50" : "text-muted-foreground/40 hover:text-blue-500 hover:bg-blue-50"}`} title="In Progress"><Clock className="h-3 w-3" /></button>

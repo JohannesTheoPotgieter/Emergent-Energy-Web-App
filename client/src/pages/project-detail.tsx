@@ -1133,7 +1133,7 @@ export default function ProjectDetailPage() {
 
       {activeSection === "overview" && (
         <div className="space-y-3" data-testid="overview-section">
-          <div className="flex items-center gap-1 bg-white border rounded-lg p-1 overflow-x-auto" data-testid="overview-tabs">
+          <div className="flex items-center gap-1 bg-white border rounded-lg p-1 overflow-x-auto scrollbar-hide" data-testid="overview-tabs">
             {[
               { key: "plan", label: "Plan", icon: CalendarDays, activeClass: "bg-sky-50 text-sky-700 shadow-sm", visible: canViewTab.overview },
               { key: "engineering", label: "Engineering", icon: Wrench, activeClass: "bg-orange-50 text-orange-700 shadow-sm", visible: canViewTab.engineering },
@@ -1148,7 +1148,7 @@ export default function ProjectDetailPage() {
                 <button
                   key={tab.key}
                   onClick={() => setOverviewTab(tab.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-all ${isActive ? tab.activeClass : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-all ${isActive ? tab.activeClass : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
                   data-testid={`overview-tab-${tab.key}`}
                 >
                   <Icon className="h-3.5 w-3.5" />
@@ -1173,8 +1173,8 @@ export default function ProjectDetailPage() {
                     </Button>
                   </div>
 
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
+                    <div className="flex-1 w-full sm:w-auto">
                       <div className="flex items-center justify-between text-xs mb-1">
                         <span className="text-muted-foreground">Progress</span>
                         <span className="font-semibold">{planCompletionPct.toFixed(0)}%</span>
@@ -1354,7 +1354,7 @@ export default function ProjectDetailPage() {
                     </Button>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-center">
                     <div className="rounded-lg bg-violet-50 py-2 px-3">
                       <p className="text-[10px] text-muted-foreground mb-0.5">Costed</p>
                       <p className="text-sm font-bold">R{(budgetTotal / 1000).toFixed(0)}k</p>
@@ -1575,59 +1575,59 @@ export default function ProjectDetailPage() {
             Back to Overview
           </Button>
 
-          <div className="flex gap-1.5 flex-wrap border-b pb-2" data-testid="pm-sub-tabs">
+          <div className="flex gap-1.5 flex-nowrap border-b pb-2 overflow-x-auto scrollbar-hide" data-testid="pm-sub-tabs">
             {canViewTab.overview && (
             <>
-              <Button size="sm" variant={activeSubTab === "task-grid" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("task-grid")} data-testid="subtab-task-grid">
+              <Button size="sm" variant={activeSubTab === "task-grid" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("task-grid")} data-testid="subtab-task-grid">
                 <ListTodo className="h-3 w-3 mr-1" /> Project Plan
               </Button>
-              <Button size="sm" variant={activeSubTab === "board" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("board")} data-testid="subtab-board">
+              <Button size="sm" variant={activeSubTab === "board" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("board")} data-testid="subtab-board">
                 <Columns className="h-3 w-3 mr-1" /> Board
               </Button>
-              <Button size="sm" variant={activeSubTab === "calendar" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("calendar")} data-testid="subtab-calendar">
+              <Button size="sm" variant={activeSubTab === "calendar" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("calendar")} data-testid="subtab-calendar">
                 <CalendarDays className="h-3 w-3 mr-1" /> Calendar
               </Button>
             </>
             )}
-            <div className="w-px h-5 bg-border self-center mx-1" />
+            <div className="w-px h-5 bg-border self-center mx-1 shrink-0" />
             {canViewTab.finance && canViewSubTab.revenue && (
-            <Button size="sm" variant={activeSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("revenue-tracking")} data-testid="subtab-revenue">
+            <Button size="sm" variant={activeSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("revenue-tracking")} data-testid="subtab-revenue">
               <DollarSign className="h-3 w-3 mr-1" /> Inflows
             </Button>
             )}
             {canViewTab.finance && canViewSubTab.expenditure && (
-            <Button size="sm" variant={activeSubTab === "expenditure" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("expenditure")} data-testid="subtab-expenditure">
+            <Button size="sm" variant={activeSubTab === "expenditure" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("expenditure")} data-testid="subtab-expenditure">
               <CreditCard className="h-3 w-3 mr-1" /> Expenditure
             </Button>
             )}
             {canViewTab.finance && canViewSubTab.cosTracker && (
-            <Button size="sm" variant={activeSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("monthly-realisation")} data-testid="subtab-monthly-realisation">
+            <Button size="sm" variant={activeSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("monthly-realisation")} data-testid="subtab-monthly-realisation">
               <TrendingUp className="h-3 w-3 mr-1" /> COS
             </Button>
             )}
             {canViewTab.finance && canViewSubTab.cosTracker && (
-            <Button size="sm" variant={activeSubTab === "revenue-tracker" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("revenue-tracker")} data-testid="subtab-revenue-tracker">
+            <Button size="sm" variant={activeSubTab === "revenue-tracker" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("revenue-tracker")} data-testid="subtab-revenue-tracker">
               <TrendingUp className="h-3 w-3 mr-1" /> Revenue
             </Button>
             )}
             {canViewTab.finance && canViewSubTab.cosTracker && (
-            <Button size="sm" variant={activeSubTab === "gp-tracker" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("gp-tracker")} data-testid="subtab-gp-tracker">
+            <Button size="sm" variant={activeSubTab === "gp-tracker" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("gp-tracker")} data-testid="subtab-gp-tracker">
               <BarChart3 className="h-3 w-3 mr-1" /> GP
             </Button>
             )}
             {canViewTab.finance && canViewSubTab.cashflow && (
-            <Button size="sm" variant={activeSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("cashflow")} data-testid="subtab-cashflow">
+            <Button size="sm" variant={activeSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("cashflow")} data-testid="subtab-cashflow">
               <Activity className="h-3 w-3 mr-1" /> Cashflow
             </Button>
             )}
             {canViewTab.finance && canViewSubTab.subcontractors && (
-            <Button size="sm" variant={activeSubTab === "subcontractors" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("subcontractors")} data-testid="subtab-subcontractors">
+            <Button size="sm" variant={activeSubTab === "subcontractors" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("subcontractors")} data-testid="subtab-subcontractors">
               <Users className="h-3 w-3 mr-1" /> Subcontractors
             </Button>
             )}
-            <div className="w-px h-5 bg-border self-center mx-1" />
+            <div className="w-px h-5 bg-border self-center mx-1 shrink-0" />
             {canViewTab.history && (
-            <Button size="sm" variant={activeSubTab === "history" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("history")} data-testid="subtab-history">
+            <Button size="sm" variant={activeSubTab === "history" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("history")} data-testid="subtab-history">
               <History className="h-3 w-3 mr-1" /> History
             </Button>
             )}
@@ -1690,19 +1690,19 @@ export default function ProjectDetailPage() {
             Back to Overview
           </Button>
 
-          <div className="flex gap-1.5 flex-wrap border-b pb-2" data-testid="collab-sub-tabs">
-            <Button size="sm" variant={activeSubTab === "chat" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("chat")} data-testid="subtab-chat">
+          <div className="flex gap-1.5 flex-nowrap border-b pb-2 overflow-x-auto scrollbar-hide" data-testid="collab-sub-tabs">
+            <Button size="sm" variant={activeSubTab === "chat" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("chat")} data-testid="subtab-chat">
               <MessageSquare className="h-3 w-3 mr-1" /> Chat
             </Button>
-            <div className="w-px h-5 bg-border self-center mx-1" />
-            <Button size="sm" variant={activeSubTab === "approvals" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("approvals")} data-testid="subtab-approvals">
+            <div className="w-px h-5 bg-border self-center mx-1 shrink-0" />
+            <Button size="sm" variant={activeSubTab === "approvals" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("approvals")} data-testid="subtab-approvals">
               <FileCheck className="h-3 w-3 mr-1" /> Approvals & Deliverables
             </Button>
-            <Button size="sm" variant={activeSubTab === "notifications" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("notifications")} data-testid="subtab-notifications">
+            <Button size="sm" variant={activeSubTab === "notifications" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("notifications")} data-testid="subtab-notifications">
               <Bell className="h-3 w-3 mr-1" /> Notifications
             </Button>
-            <div className="w-px h-5 bg-border self-center mx-1" />
-            <Button size="sm" variant={activeSubTab === "local-files" ? "default" : "ghost"} className="h-7 text-xs" onClick={() => setActiveSubTab("local-files")} data-testid="subtab-local-files">
+            <div className="w-px h-5 bg-border self-center mx-1 shrink-0" />
+            <Button size="sm" variant={activeSubTab === "local-files" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("local-files")} data-testid="subtab-local-files">
               <FolderOpen className="h-3 w-3 mr-1" /> Project Folder
             </Button>
           </div>

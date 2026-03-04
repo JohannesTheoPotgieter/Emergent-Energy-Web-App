@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   ArrowUpDown,
   ArrowUp,
@@ -37,6 +38,8 @@ import {
   EyeOff,
   Save,
   Trash2,
+  LayoutGrid,
+  Table2,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
@@ -296,7 +299,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
           <span className="font-mono text-[10px] w-8 text-right font-medium text-foreground">{currentPct.toFixed(0)}%</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[520px] p-0 max-h-[500px] overflow-hidden" align="start" side="bottom" data-testid={`popover-tasks-${projectName}`}>
+      <PopoverContent className="w-[90vw] sm:w-[520px] max-w-[520px] p-0 max-h-[500px] overflow-hidden" align="start" side="bottom" data-testid={`popover-tasks-${projectName}`}>
         <div className="p-3 border-b bg-muted">
           <div className="flex items-center justify-between mb-2">
             <div>
@@ -1001,8 +1004,8 @@ function EditProjectInfoModal({
         <DialogHeader>
           <DialogTitle>Edit Project Info</DialogTitle>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-4 py-4">
-          <div className="col-span-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
+          <div className="col-span-1 sm:col-span-2">
             <Label className="text-xs font-medium text-muted-foreground mb-1 block">Project Name</Label>
             <Input
               value={formData.projectName.replace(/_/g, " ")}
@@ -1110,8 +1113,77 @@ function EditProjectInfoModal({
   );
 }
 
+function MobileProjectCard({ project, setLocation }: { project: ProjectSummary; setLocation: (path: string) => void }) {
+  const pct = project.project_pct_complete != null ? project.project_pct_complete * 100 : 0;
+  const cfg = phaseConfig(project.phase);
+  const delta = project.delta_vs_expected != null ? project.delta_vs_expected * 100 : null;
+
+  return (
+    <Card className="border-border shadow-sm overflow-hidden" data-testid={`mobile-card-${project.project_name}`}>
+      <CardContent className="p-3 space-y-2">
+        <div className="flex items-start justify-between gap-2">
+          <button
+            className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline text-sm leading-tight min-w-0 truncate"
+            onClick={() => setLocation(`/project/${encodeURIComponent(project.project_name)}?tab=task-grid`)}
+            data-testid={`mobile-link-project-${project.project_name}`}
+          >
+            {cleanName(project.project_name)}
+          </button>
+          <span
+            className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap shrink-0 ${cfg.bg} ${cfg.text} ${cfg.border}`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+            {getPhaseLabel(project.phase)}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          {project.pm && <span>PM: <span className="text-foreground font-medium">{project.pm}</span></span>}
+          {project.size_kwp != null && <span>{project.size_kwp.toFixed(0)} kWp</span>}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${progressColor(pct)}`}
+              style={{ width: `${Math.min(pct, 100)}%` }}
+            />
+          </div>
+          <span className="font-mono text-xs font-medium text-foreground w-10 text-right">{pct.toFixed(0)}%</span>
+          {delta !== null && (
+            <span className={`font-mono text-[10px] font-semibold px-1 py-0.5 rounded ${delta >= 0 ? "text-emerald-700 bg-emerald-50" : delta > -5 ? "text-amber-700 bg-amber-50" : "text-rose-700 bg-rose-50"}`}>
+              {delta >= 0 ? "+" : ""}{delta.toFixed(1)}%
+            </span>
+          )}
+        </div>
+
+        {project.financial_close_achieved !== undefined && (
+          <div className="flex items-center gap-2 text-[10px]">
+            <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md font-bold ${
+              project.financial_close_achieved
+                ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                : "bg-red-50 text-red-600 border border-red-200"
+            }`}>
+              {project.financial_close_achieved ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+              Fin Close: {project.financial_close_achieved ? "Done" : "Open"}
+            </span>
+            {project.escalation_level && project.escalation_level !== "None" && (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                <Flag className="w-3 h-3" />
+                {project.escalation_level}
+              </span>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ProjectsSummary() {
   const [, setLocation] = useLocation();
+  const isMobile = useIsMobile();
+  const [mobileViewMode, setMobileViewMode] = useState<"cards" | "table">("cards");
   const [searchTerm, setSearchTerm] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get("project") || "";
@@ -2057,7 +2129,40 @@ export default function ProjectsSummary() {
             Clear filters
           </Button>
         )}
+
+        {isMobile && (
+          <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5 ml-auto">
+            <button
+              onClick={() => setMobileViewMode("cards")}
+              className={`p-1.5 rounded-md transition-colors ${mobileViewMode === "cards" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
+              data-testid="btn-mobile-card-view"
+              title="Card view"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setMobileViewMode("table")}
+              className={`p-1.5 rounded-md transition-colors ${mobileViewMode === "table" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
+              data-testid="btn-mobile-table-view"
+              title="Table view"
+            >
+              <Table2 className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
+
+      {isMobile && mobileViewMode === "cards" ? (
+        <div className="space-y-2" data-testid="mobile-cards-container">
+          {sorted.length === 0 ? (
+            <div className="p-8 text-center text-sm text-muted-foreground">No projects match your filters</div>
+          ) : (
+            sorted.map((project) => (
+              <MobileProjectCard key={project.project_name} project={project} setLocation={setLocation} />
+            ))
+          )}
+        </div>
+      ) : (
 
       <div className="border border-border rounded-xl overflow-hidden shadow-sm bg-card">
         <div className="overflow-auto max-h-[calc(100vh-280px)] sm:max-h-[calc(100vh-340px)]">
@@ -2149,6 +2254,8 @@ export default function ProjectsSummary() {
           </table>
         </div>
       </div>
+
+      )}
 
       {editProject && (
         <EditProjectInfoModal

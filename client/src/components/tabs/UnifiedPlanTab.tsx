@@ -25,7 +25,7 @@ import {
   Calendar, AlertCircle, ChevronLeft, ZoomIn, ArrowRight,
   GripVertical, MoreHorizontal, ArrowDownToLine, Unlink,
   ArrowUp, ArrowDown, Diamond, FolderOpen, Link2, Link2Off,
-  Columns3, Save, RotateCcw, X, Eye, EyeOff,
+  Columns3, Save, RotateCcw, X, Eye, EyeOff, Info,
 } from "lucide-react";
 import {
   Popover, PopoverContent, PopoverTrigger,
@@ -1072,7 +1072,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
 
   return (
     <div className="space-y-3" data-testid="unified-plan-tab">
-      <div className="flex items-center gap-3 flex-wrap" data-testid="plan-kpi-bar">
+      <div className="flex items-center gap-3 flex-wrap overflow-x-auto scrollbar-hide" data-testid="plan-kpi-bar">
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted border">
           <Clock className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs text-muted-foreground">Total</span>
@@ -1127,7 +1127,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
         )}
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap" data-testid="plan-toolbar">
+      <div className="flex items-center gap-2 flex-wrap overflow-x-auto scrollbar-hide" data-testid="plan-toolbar">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
@@ -1471,12 +1471,20 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
           padding-top: 0;
           padding-bottom: 0;
         }
+        @media (max-width: 640px) {
+          .plan-grid-table { font-size: 10px; }
+          .plan-grid-table tbody td,
+          .plan-grid-table thead th {
+            padding-left: 2px;
+            padding-right: 2px;
+          }
+        }
       `}} />
       <div className="flex border rounded-md overflow-hidden bg-card" style={{ height: "calc(100vh - 320px)", minHeight: "400px" }} data-testid="plan-grid-container">
         <div
           ref={bodyScrollRef}
           className="flex-shrink-0 overflow-y-auto overflow-x-auto border-r"
-          style={{ width: "clamp(600px, 60%, 850px)" }}
+          style={{ width: "clamp(280px, 60%, 850px)" }}
           onScroll={handleBodyScroll}
           data-testid="plan-grid-left"
         >

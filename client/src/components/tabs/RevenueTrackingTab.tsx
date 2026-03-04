@@ -969,7 +969,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
 
       {/* Drilldown Drawer */}
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <SheetContent className="w-[500px] sm:w-[600px] overflow-y-auto">
+        <SheetContent className="w-full sm:w-[500px] md:w-[600px] max-w-full overflow-y-auto">
           <SheetHeader>
             <SheetTitle className="text-lg">
               {drawerFilter === "totalContract" && "All Milestones"}

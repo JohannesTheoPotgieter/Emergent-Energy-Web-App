@@ -311,18 +311,18 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" data-testid="text-admin-title">{viewerOnly ? "Data Import" : "Admin Dashboard"}</h1>
-          <p className="text-muted-foreground">{viewerOnly ? "Upload tracker files to import project data" : "Data import, system health, and diagnostics"}</p>
+          <h1 className="text-xl sm:text-2xl font-bold" data-testid="text-admin-title">{viewerOnly ? "Data Import" : "Admin Dashboard"}</h1>
+          <p className="text-sm text-muted-foreground">{viewerOnly ? "Upload tracker files to import project data" : "Data import, system health, and diagnostics"}</p>
         </div>
         
       </div>
 
       <Tabs defaultValue="import" className="w-full">
         {!viewerOnly && (
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-3 h-auto">
             <TabsTrigger value="import" data-testid="tab-data-import">
               <FolderOpen className="h-4 w-4 mr-2" />
               Data Import
@@ -342,7 +342,7 @@ export default function AdminPage() {
         <TabsContent value="import" className="space-y-4 mt-4">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <FolderOpen className="h-5 w-5" />
@@ -352,7 +352,7 @@ export default function AdminPage() {
                     Choose a folder on your computer containing Excel tracker files (.xlsx, .xlsm, .xls). All Excel files in the folder will be imported.
                   </CardDescription>
                 </div>
-                <div>
+                <div className="shrink-0">
                   <input
                     ref={folderInputRef}
                     type="file"
@@ -365,6 +365,7 @@ export default function AdminPage() {
                     onClick={() => folderInputRef.current?.click()}
                     disabled={uploadLoading}
                     size="lg"
+                    className="w-full sm:w-auto"
                     data-testid="button-choose-folder"
                   >
                     {uploadLoading ? (
@@ -454,7 +455,7 @@ export default function AdminPage() {
           {/* Single Project Update */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <Upload className="h-5 w-5" />
@@ -464,7 +465,7 @@ export default function AdminPage() {
                     Upload an individual tracker file to update a single project's data. The file will be matched to the project automatically.
                   </CardDescription>
                 </div>
-                <div>
+                <div className="shrink-0">
                   <input
                     ref={singleFileRef}
                     type="file"
@@ -478,6 +479,7 @@ export default function AdminPage() {
                     disabled={singleUploadLoading || uploadLoading}
                     variant="outline"
                     size="lg"
+                    className="w-full sm:w-auto"
                     data-testid="button-upload-single"
                   >
                     {singleUploadLoading ? (
@@ -532,11 +534,11 @@ export default function AdminPage() {
                     )}
                     {scanResult.message}
                   </CardTitle>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 shrink-0">
                     <Badge variant="default">
                       {scanResult.totalRecordsProcessed.toLocaleString()} records
                     </Badge>
-                    <Badge variant="outline">
+                    <Badge variant="outline" className="hidden sm:inline-flex">
                       {scanResult.timestamps.durationMs}ms
                     </Badge>
                   </div>
@@ -553,7 +555,7 @@ export default function AdminPage() {
                   {scanResult.results.map((r, idx) => (
                     <div
                       key={idx}
-                      className={`flex items-center justify-between p-3 rounded-lg border ${
+                      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-lg border ${
                         r.status === "failed" ? "border-red-200 bg-red-50" : "bg-muted/50"
                       }`}
                       data-testid={`scan-result-${idx}`}
@@ -596,7 +598,7 @@ export default function AdminPage() {
         <TabsContent value="maintenance" className="space-y-4 mt-4">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <Database className="h-5 w-5" />
@@ -687,7 +689,7 @@ export default function AdminPage() {
 
           <Card className="border-destructive/50">
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2 text-destructive">
                     <Trash2 className="h-5 w-5" />

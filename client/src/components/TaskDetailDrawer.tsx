@@ -330,7 +330,7 @@ export default function TaskDetailDrawer({
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent
         side="right"
-        className="w-[500px] max-w-full p-0 sm:max-w-[500px]"
+        className="w-full sm:w-[500px] max-w-full p-0"
         data-testid="task-detail-drawer"
       >
         <SheetHeader className="sr-only">

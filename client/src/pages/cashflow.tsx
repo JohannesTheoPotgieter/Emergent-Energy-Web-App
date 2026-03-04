@@ -276,8 +276,8 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
   return (
     <tr>
       <td colSpan={colSpan} className="p-0">
-        <div className="bg-gradient-to-b from-slate-50/80 to-white border-y border-border/60 px-6 py-5">
-          <div className="flex items-center gap-3 mb-4">
+        <div className="bg-gradient-to-b from-slate-50/80 to-white border-y border-border/60 px-3 sm:px-6 py-3 sm:py-5">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
             <Input
               placeholder="Search inflows & outflows..."
               value={detailSearch}
@@ -758,13 +758,13 @@ export default function CashflowPage() {
   return (
     <div className="min-h-screen bg-background" data-testid="page-cashflow">
       <div className="bg-card border-b border-border shadow-sm">
-        <div className="px-6 py-5">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="px-3 sm:px-6 py-4 sm:py-5">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-foreground tracking-tight" data-testid="text-page-title">
+              <h1 className="text-xl sm:text-2xl font-bold text-foreground tracking-tight" data-testid="text-page-title">
                 Cashflow FY26
               </h1>
-              <p className="text-sm text-muted-foreground mt-0.5">
+              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
                 Weekly cashflow timeline — Sep 2025 to Aug 2026
               </p>
             </div>
@@ -788,7 +788,7 @@ export default function CashflowPage() {
                     <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[320px] p-0" align="start">
+                <PopoverContent className="w-[min(320px,90vw)] p-0" align="start">
                   <Command>
                     <CommandInput placeholder="Search projects..." />
                     <CommandList>
@@ -886,7 +886,7 @@ export default function CashflowPage() {
         </div>
       </div>
 
-      <div className="px-6 py-6 space-y-5">
+      <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-5">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
             <Loader2 className="h-8 w-8 animate-spin text-blue-500" data-testid="spinner-main" />
@@ -950,7 +950,7 @@ export default function CashflowPage() {
                 <CardTitle className="text-sm font-semibold text-foreground">Cashflow Trend</CardTitle>
               </CardHeader>
               <CardContent className="px-2 pb-3">
-                <div className="h-[280px] w-full">
+                <div className="h-[220px] sm:h-[280px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 40 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -1034,33 +1034,33 @@ export default function CashflowPage() {
             <Card className="border border-border shadow-sm rounded-xl overflow-hidden" data-testid="card-weekly-grid">
               <CardContent className="p-0">
                 <div className="overflow-auto max-h-[70vh]">
-                  <table className="w-full border-collapse text-sm" data-testid="table-cashflow">
+                  <table className="w-full border-collapse text-xs sm:text-sm" data-testid="table-cashflow">
                     <thead className="sticky top-0 z-20">
                       <tr className="bg-muted/80 border-b-2 border-border">
-                        <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider sticky left-0 bg-muted/80 z-30 min-w-[100px]">
+                        <th className="text-left px-2 sm:px-4 py-2 sm:py-3 font-semibold text-muted-foreground text-[10px] sm:text-xs uppercase tracking-wider sticky left-0 bg-muted/80 z-30 min-w-[80px] sm:min-w-[100px] border-r border-border">
                           Week
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px] bg-muted/80">
+                        <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-semibold text-muted-foreground text-[10px] sm:text-xs uppercase tracking-wider min-w-[100px] sm:min-w-[130px] bg-muted/80">
                           Opening Bal
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px] bg-muted/80">
+                        <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-semibold text-muted-foreground text-[10px] sm:text-xs uppercase tracking-wider min-w-[100px] sm:min-w-[130px] bg-muted/80">
                           Proj Inflows
                         </th>
                         {!isProjectFiltered && (
-                          <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[120px] bg-muted/80">
+                          <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-semibold text-muted-foreground text-[10px] sm:text-xs uppercase tracking-wider min-w-[90px] sm:min-w-[120px] bg-muted/80">
                             OPEX
                           </th>
                         )}
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px] bg-muted/80">
+                        <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-semibold text-muted-foreground text-[10px] sm:text-xs uppercase tracking-wider min-w-[100px] sm:min-w-[130px] bg-muted/80">
                           Proj Outflows
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px] bg-muted/80">
+                        <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-semibold text-muted-foreground text-[10px] sm:text-xs uppercase tracking-wider min-w-[100px] sm:min-w-[130px] bg-muted/80">
                           Total Out
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px] bg-muted/80">
+                        <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-semibold text-muted-foreground text-[10px] sm:text-xs uppercase tracking-wider min-w-[100px] sm:min-w-[130px] bg-muted/80">
                           Closing Bal
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[150px] bg-muted/80">
+                        <th className="text-right px-2 sm:px-4 py-2 sm:py-3 font-semibold text-muted-foreground text-[10px] sm:text-xs uppercase tracking-wider min-w-[110px] sm:min-w-[150px] bg-muted/80">
                           Avail Payment
                         </th>
                       </tr>
@@ -1086,7 +1086,7 @@ export default function CashflowPage() {
                               data-testid={`row-week-${week.weekStart}`}
                             >
                               <td
-                                className={`px-4 py-3 font-medium text-foreground sticky left-0 z-10 ${
+                                className={`px-2 sm:px-4 py-2 sm:py-3 font-medium text-foreground sticky left-0 z-10 border-r border-border ${
                                   current ? "bg-blue-50/70" : isEven ? "bg-card" : "bg-muted/30"
                                 }`}
                               >
@@ -1106,7 +1106,7 @@ export default function CashflowPage() {
                                   )}
                                 </div>
                               </td>
-                              <td className="px-4 py-3 text-right font-mono text-[13px] text-blue-600">
+                              <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] text-blue-600">
                                 <div className="flex items-center justify-end gap-1.5">
                                   {isAdmin && editingBalance === week.weekStart ? (
                                     <input
@@ -1175,14 +1175,14 @@ export default function CashflowPage() {
                                 </div>
                               </td>
                               <td
-                                className="px-4 py-3 text-right font-mono text-[13px] text-emerald-600"
+                                className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] text-emerald-600"
                                 data-testid={`text-inflows-${week.weekStart}`}
                               >
                                 {formatRand(week.projectInflows)}
                               </td>
                               {!isProjectFiltered && (
                               <td
-                                className="px-4 py-3 text-right font-mono text-[13px] text-red-500"
+                                className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] text-red-500"
                                 data-testid={`text-opex-${week.weekStart}`}
                               >
                                 <div className="flex items-center justify-end gap-1.5">
@@ -1244,19 +1244,19 @@ export default function CashflowPage() {
                               </td>
                               )}
                               <td
-                                className="px-4 py-3 text-right font-mono text-[13px] text-red-500"
+                                className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] text-red-500"
                                 data-testid={`text-proj-outflows-${week.weekStart}`}
                               >
                                 {formatRand(week.projectOutflows)}
                               </td>
                               <td
-                                className="px-4 py-3 text-right font-mono text-[13px] font-semibold text-red-700"
+                                className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] font-semibold text-red-700"
                                 data-testid={`text-total-outflows-${week.weekStart}`}
                               >
                                 {formatRand(totalOutflows)}
                               </td>
                               <td
-                                className={`px-4 py-3 text-right font-mono text-[13px] font-bold ${
+                                className={`px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] font-bold ${
                                   (week.closingBalance || 0) >= 0 ? "text-emerald-700" : "text-red-700"
                                 }`}
                                 data-testid={`text-closing-balance-${week.weekStart}`}
@@ -1264,7 +1264,7 @@ export default function CashflowPage() {
                                 {formatRand(week.closingBalance)}
                               </td>
                               <td
-                                className="px-4 py-3 text-right font-mono text-[13px]"
+                                className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px]"
                                 data-testid={`text-available-${week.weekStart}`}
                               >
                                 <div className="flex items-center justify-end gap-1.5">

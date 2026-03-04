@@ -129,8 +129,8 @@ export default function RoleSettingsPage() {
         </p>
       </header>
 
-      <div className="flex gap-6 flex-1 min-h-0">
-        <nav className="w-56 shrink-0 space-y-1" data-testid="settings-nav">
+      <div className="flex flex-col md:flex-row gap-4 md:gap-6 flex-1 min-h-0">
+        <nav className="w-full md:w-56 shrink-0 flex md:flex-col gap-1 overflow-x-auto md:overflow-x-visible pb-2 md:pb-0" data-testid="settings-nav">
           {SECTION_IDS.map((id) => {
             const meta = SECTION_META[id];
             const Icon = meta.icon;
@@ -139,7 +139,7 @@ export default function RoleSettingsPage() {
               <button
                 key={id}
                 onClick={() => setActiveSection(id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left text-sm transition-all ${
+                className={`flex items-center gap-2 md:gap-2.5 px-3 py-2 md:py-2.5 rounded-lg text-left text-sm transition-all whitespace-nowrap shrink-0 ${
                   isActive
                     ? "bg-blue-50 text-blue-700 font-medium border border-blue-200"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground border border-transparent"
@@ -153,7 +153,7 @@ export default function RoleSettingsPage() {
           })}
         </nav>
 
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto">
           <div className="mb-4">
             <h2 className="text-lg font-semibold text-foreground">{SECTION_META[activeSection].label}</h2>
             <p className="text-sm text-muted-foreground">{SECTION_META[activeSection].description}</p>
@@ -430,7 +430,7 @@ function TeamsSettingsSection() {
           <p className="text-xs text-muted-foreground">
             These thresholds determine when Teams messages are flagged as needing attention.
           </p>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs font-medium">Unanswered Threshold (hours)</Label>
               <Input
@@ -554,7 +554,7 @@ function UserMappingSection() {
         </CardContent>
       </Card>
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
         <div className="relative max-w-sm flex-1">
           <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -584,8 +584,8 @@ function UserMappingSection() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <div className="overflow-auto max-h-[500px]">
-              <table className="w-full text-sm" data-testid="users-mapping-table">
+            <div className="overflow-auto max-h-[500px] -mx-px">
+              <table className="w-full text-sm min-w-[600px]" data-testid="users-mapping-table">
                 <thead className="sticky top-0 z-10">
                   <tr className="bg-muted/40 border-b text-[11px] text-muted-foreground">
                     <th className="text-left p-2.5 pl-3 bg-muted/40">User</th>
@@ -771,11 +771,11 @@ function RolePasswordsSection() {
         return (
           <div
             key={role}
-            className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted transition-colors"
+            className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 rounded-lg border border-border hover:bg-muted transition-colors"
             data-testid={`role-password-row-${role}`}
           >
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-medium text-foreground" data-testid={`text-role-label-${role}`}>
                   {COMPANY_ROLE_LABELS[role]}
                 </span>
@@ -784,7 +784,7 @@ function RolePasswordsSection() {
               {info?.password && (
                 <div className="flex items-center gap-1.5 mt-1">
                   <span className="text-xs text-muted-foreground">Current:</span>
-                  <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono text-foreground" data-testid={`text-current-password-${role}`}>
+                  <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono text-foreground break-all" data-testid={`text-current-password-${role}`}>
                     {info.password}
                   </code>
                 </div>
@@ -798,7 +798,7 @@ function RolePasswordsSection() {
                   placeholder="New password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-48 h-8 text-sm"
+                  className="w-full sm:w-48 h-8 text-sm"
                   data-testid={`input-password-${role}`}
                   autoFocus
                   onKeyDown={(e) => {
