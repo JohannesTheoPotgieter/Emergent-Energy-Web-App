@@ -516,9 +516,6 @@ async function backfillPmUserIds() {
   const { registerMsSyncRoutes } = await import("./ms-sync-routes");
   registerMsSyncRoutes(app);
 
-  const { registerAiChatRoutes } = await import("./ai-chat-routes");
-  registerAiChatRoutes(app);
-
   const { startPeriodicSync } = await import("./ms-sync-service");
   startPeriodicSync();
 

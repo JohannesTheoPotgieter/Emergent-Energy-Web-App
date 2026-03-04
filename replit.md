@@ -13,7 +13,7 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Frameworks & Libraries**: React 18 with TypeScript, TanStack React Query, React Context.
 -   **UI/UX**: `shadcn/ui` and Tailwind CSS v4 for mobile-first responsive design; Recharts for data visualization.
 -   **Forms**: React Hook Form with Zod validation.
--   **Key Features**: Financial tracking, project and quality management, Smart Excel Import, Subcontractor Dashboard, UX Guidance System, Project Awareness Bar, Weekly Review Wizard, Execution Dashboard, Permission Gate System, PM Dashboard, Gamification System, and Emergent GPT AI Assistant.
+-   **Key Features**: Financial tracking, project and quality management, Smart Excel Import, Subcontractor Dashboard, UX Guidance System, Project Awareness Bar, Weekly Review Wizard, Execution Dashboard, Permission Gate System, PM Dashboard, and Gamification System.
 -   **Project Plan Tab**: MS Project-style grid with WBS, duration/date editing, predecessors, resource assignment, inline % complete, auto-calculated RAG status, and baseline tracking.
 -   **Revenue Tracking Tab**: KPI summary strip and `shadcn/ui` table with sticky headers, status badges, inline editing, override indicators, and full audit logging.
 -   **Expenditure Breakdown Tab**: KPI cards and a table with collapsible category grouping, status badges, override indicators, inline editing, and task linking.
@@ -33,7 +33,6 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Quality Dashboard**: KPI strip, Projects/Items view toggle, sortable items table, and collapsible warnings.
 -   **Quality Tab**: Phase-tabbed navigation with progress indicators, group accordions, inline status buttons, evidence upload, approval workflows, and bulk actions.
 -   **MS SSO Unavailable Banner**: Informative banner on Outlook email and Teams chat pages when Microsoft 365 SSO is not configured.
--   **Emergent GPT**: Floating AI chat bubble, uses OpenAI with live database context, permission-gated, streams responses via SSE. Data scoped by user role permissions.
 -   **Knowledge Base**: Wiki-style system with SOP-enriched nodes.
 -   **Navigation**: Redesigned sidebar with color-coded section indicators and promoted "Users & Roles" admin shortcut.
 
@@ -65,7 +64,7 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Email/Message to Task**: Enables creating project-linked tasks from Outlook emails or Teams messages.
 -   **PO Generator Backend**: Manages purchase orders with routes for listing, generating, downloading PDFs, and updating status. Uses `pdfkit` for PDF generation.
 -   **COS Realised Logic**: Font color dictates confirmation status of `invoiceDateConfirmed`.
--   **AI Chat Backend**: POST `/api/ai-chat` with SSE streaming, using OpenAI via Replit AI Integrations to gather live context from project, task, and financial data, scoped by user role.
+
 
 ### Database Architecture
 -   **Core Structure**: `project_info` as central entity, linked to `clients`.
@@ -100,5 +99,4 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 
 ### Third-Party Integrations
 -   **Microsoft Graph API**: For Outlook calendar, SharePoint, and Teams integration.
--   **OpenAI API**: Via Replit AI Integrations for Emergent GPT assistant.
 -   **Read.ai**: For meeting data ingestion via webhooks.
