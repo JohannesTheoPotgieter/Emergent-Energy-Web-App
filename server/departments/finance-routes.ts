@@ -1519,13 +1519,15 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, async (req,
 
 router.get("/api/gp-tracker", requireAuth, async (req, res) => {
   try {
-    const [allExpenses, allInflowsRaw, manualEntries] = await Promise.all([
+    const [allExpenses, allInflowsRaw, revManualEntries, cosManualEntries] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
-      storage.getTrackerMonthlyManual('GP'),
+      storage.getTrackerMonthlyManual('REV'),
+      storage.getTrackerMonthlyManual('COS'),
     ]);
 
-    const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
+    const revBudgetMap = new Map(revManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
+    const cosBudgetMap = new Map(cosManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
 
     const revByProject = new Map<string, number>();
     for (const rev of allInflowsRaw) {
@@ -1608,8 +1610,9 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
       const unrealisedGP = totalGP - realisedGP;
       const gpPct = totalRevenue !== 0 ? (totalGP / totalRevenue) * 100 : 0;
 
-      const manual = manualMap.get(monthKey);
-      const budget = manual?.budget ? parseFloat(manual.budget) : 0;
+      const revBudget = revBudgetMap.get(monthKey) || 0;
+      const cosBudget = cosBudgetMap.get(monthKey) || 0;
+      const budget = revBudget - cosBudget;
       const variance = totalGP - budget;
       const variancePct = budget !== 0 ? (totalGP - budget) / budget * 100 : 0;
 
@@ -1630,6 +1633,8 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
         realisedGP,
         unrealisedGP,
         gpPct,
+        revBudget,
+        cosBudget,
         budget,
         variance,
         variancePct,
