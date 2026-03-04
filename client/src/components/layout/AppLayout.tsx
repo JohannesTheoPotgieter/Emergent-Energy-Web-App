@@ -266,7 +266,6 @@ function getRedesignedNavGroups(): NavGroup[] {
         { label: "App Settings", icon: Cog, path: "/admin/settings" },
         { label: "Activity Log", icon: Activity, path: "/admin/activity-log" },
         { label: "Microsoft 365", icon: Plug, path: "/admin/ms-integration" },
-        { label: "Data Import", icon: FileUp, path: "/admin" },
       ],
     },
   ];
