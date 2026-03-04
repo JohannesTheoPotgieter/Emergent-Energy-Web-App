@@ -1816,7 +1816,7 @@ function ProjectKanbanView({
     const dashProjects = dashboardData?.projects || [];
     const phaseMap = new Map<string, { phase: string; phaseLabel: string; displayName: string }>();
     for (const dp of dashProjects) {
-      const norm = dp.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ").toLowerCase();
+      const norm = (dp.projectName || "").replace(/_Tracker$/i, "").replace(/_/g, " ").toLowerCase();
       phaseMap.set(norm, dp);
     }
 
@@ -2232,7 +2232,7 @@ function MyTasksView({
       if (myDueFilter === "week" && !isDueThisWeek(t.dueDate, t.status) && !isOverdue(t.dueDate, t.status)) return false;
       if (mySearch) {
         const term = mySearch.toLowerCase();
-        return t.title.toLowerCase().includes(term) || t.projectName.toLowerCase().includes(term);
+        return t.title.toLowerCase().includes(term) || (t.projectName || "").toLowerCase().includes(term);
       }
       return true;
     });
@@ -2784,7 +2784,7 @@ export default function EngineeringTasksPage() {
     if (assigneeFilter !== "all" && !(t.assignees || []).includes(assigneeFilter)) return false;
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      return t.title.toLowerCase().includes(term) || t.projectName.toLowerCase().includes(term);
+      return t.title.toLowerCase().includes(term) || (t.projectName || "").toLowerCase().includes(term);
     }
     return true;
   });

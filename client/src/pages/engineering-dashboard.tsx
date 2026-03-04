@@ -1433,8 +1433,6 @@ export default function EngineeringDashboard() {
         <StandupModeView />
       ) : (
       <>
-      <CompanyPrioritiesSection />
-
       <KpiStrip summary={summary} />
 
       {totalBlockers > 0 && (
