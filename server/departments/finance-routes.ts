@@ -1519,6 +1519,144 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, async (req,
   }
 });
 
+router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res) => {
+  try {
+    const projectName = decodeURIComponent(req.params.projectName);
+    const [projectExpenses, revLines] = await Promise.all([
+      storage.getProgramExpensesByProject(projectName),
+      storage.getProgramInflowsByProject(projectName),
+    ]);
+
+    const totalMilestoneRevenue = revLines.reduce((s: number, r: any) => {
+      const amt = parseFloat(r.milestoneAmount as string) || 0;
+      return s + amt;
+    }, 0);
+
+    const totalCOSAll = projectExpenses.reduce((s: number, exp: any) => {
+      if (exp.rowType !== 'item') return s;
+      const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
+      if (isNaN(amount) || amount === 0) return s;
+      return s + amount;
+    }, 0);
+
+    const nowDate = new Date();
+    const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+
+    const cosByMonth = new Map<string, number>();
+    const realisedCosByMonth = new Map<string, number>();
+    const revByMonth = new Map<string, number>();
+    const realisedRevByMonth = new Map<string, number>();
+    const itemsByMonth = new Map<string, any[]>();
+
+    for (const exp of projectExpenses) {
+      if (exp.rowType !== 'item') continue;
+      const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
+      if (isNaN(amount) || amount === 0) continue;
+
+      const invDate = exp.expenseInvoicedDate as string | null;
+      if (!invDate) continue;
+      const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+      if (!dateMatch) continue;
+      const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
+
+      cosByMonth.set(monthKey, (cosByMonth.get(monthKey) || 0) + amount);
+
+      const cosRealised = isCosRealised(exp) && monthKey <= currentMonthKey;
+      if (cosRealised) {
+        realisedCosByMonth.set(monthKey, (realisedCosByMonth.get(monthKey) || 0) + amount);
+      }
+
+      const isNoRevLinked = !!(exp as any).noRevenueLinked;
+      const revenueAmount = (totalCOSAll > 0 && !isNoRevLinked)
+        ? (amount / totalCOSAll) * totalMilestoneRevenue
+        : 0;
+
+      revByMonth.set(monthKey, (revByMonth.get(monthKey) || 0) + revenueAmount);
+      if (cosRealised) {
+        realisedRevByMonth.set(monthKey, (realisedRevByMonth.get(monthKey) || 0) + revenueAmount);
+      }
+
+      if (!itemsByMonth.has(monthKey)) itemsByMonth.set(monthKey, []);
+      itemsByMonth.get(monthKey)!.push({
+        id: exp.id,
+        category: exp.expenseCategory || null,
+        lineItem: exp.expenseLineItem || null,
+        costAmount: amount,
+        revenueAmount,
+        gpAmount: revenueAmount - amount,
+        invoiceNumber: exp.expenseInvoiceNumber || null,
+        poNumber: exp.expensePoNumber || null,
+        invoiceDate: exp.expenseInvoicedDate || null,
+        supplier: exp.supplierName || null,
+        isRealised: cosRealised,
+        noRevenueLinked: isNoRevLinked,
+      });
+    }
+
+    const months: any[] = [];
+    const startMonth = new Date(Date.UTC(2025, 8, 1));
+    let ytdCOS = 0, ytdRevenue = 0, ytdRealisedCOS = 0, ytdRealisedRev = 0;
+
+    for (let i = 0; i < 12; i++) {
+      const monthDate = new Date(startMonth);
+      monthDate.setUTCMonth(monthDate.getUTCMonth() + i);
+      const yr = monthDate.getUTCFullYear();
+      const mo = monthDate.getUTCMonth();
+      const monthKey = `${yr}-${String(mo + 1).padStart(2, '0')}`;
+
+      const totalCOS = cosByMonth.get(monthKey) ?? 0;
+      const realisedCOS = realisedCosByMonth.get(monthKey) ?? 0;
+      const totalRevenue = revByMonth.get(monthKey) ?? 0;
+      const realisedRevenue = realisedRevByMonth.get(monthKey) ?? 0;
+
+      const totalGP = totalRevenue - totalCOS;
+      const realisedGP = realisedRevenue - realisedCOS;
+      const unrealisedGP = totalGP - realisedGP;
+      const gpPct = totalRevenue !== 0 ? (totalGP / totalRevenue) * 100 : 0;
+
+      ytdCOS += totalCOS;
+      ytdRevenue += totalRevenue;
+      ytdRealisedCOS += realisedCOS;
+      ytdRealisedRev += realisedRevenue;
+      const ytdGP = ytdRevenue - ytdCOS;
+      const ytdRealisedGP = ytdRealisedRev - ytdRealisedCOS;
+      const ytdUnrealisedGP = ytdGP - ytdRealisedGP;
+      const ytdGpPct = ytdRevenue !== 0 ? (ytdGP / ytdRevenue) * 100 : 0;
+
+      const monthItems = itemsByMonth.get(monthKey) || [];
+
+      months.push({
+        monthKey,
+        monthLabel: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+        totalRevenue,
+        totalCOS,
+        totalGP,
+        realisedGP,
+        unrealisedGP,
+        gpPct,
+        ytdRevenue,
+        ytdCOS,
+        ytdGP,
+        ytdRealisedGP,
+        ytdUnrealisedGP,
+        ytdGpPct,
+        itemCount: monthItems.length,
+        realisedCount: monthItems.filter((it: any) => it.isRealised).length,
+        items: monthItems,
+      });
+    }
+
+    res.json({
+      months,
+      totalMilestoneRevenue,
+      totalCOS: totalCOSAll,
+    });
+  } catch (error) {
+    console.error("Project GP tracker error:", error);
+    res.status(500).json({ error: "Failed to fetch project GP tracker data" });
+  }
+});
+
 router.get("/api/revenue-tracker", requireAuth, async (req, res) => {
   try {
     const [allExpenses, allInflowsRaw, manualEntries] = await Promise.all([
