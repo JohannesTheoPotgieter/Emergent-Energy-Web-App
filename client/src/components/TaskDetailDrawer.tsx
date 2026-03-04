@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest, getQueryFn } from "@/lib/queryClient";
-import { format, formatDistanceToNow } from "date-fns";
+import { apiRequest, invalidateProjectQueries } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { format, formatDistanceToNow, differenceInDays } from "date-fns";
 import type {
   OperationalTask,
   TaskComment,
@@ -43,6 +44,11 @@ import {
   Clock,
   Flag,
   AlertCircle,
+  Hash,
+  Diamond,
+  ArrowRight,
+  Link2,
+  Target,
 } from "lucide-react";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 
@@ -100,19 +106,58 @@ export default function TaskDetailDrawer({
         const allTasks: any[] = await res.json();
         const match = allTasks.find((t: any) => t.id === taskId);
         if (!match) return null;
+        const startD = match.startDate || match.actualStart || match.actualStartDate || null;
+        const endD = match.dueDate || match.actualEnd || match.actualEndDate || null;
+        let computedDuration = match.plannedDurationDays || match.durationDays || 0;
+        if (!computedDuration && startD && endD) {
+          const sd = new Date(startD);
+          const ed = new Date(endD);
+          if (!isNaN(sd.getTime()) && !isNaN(ed.getTime())) {
+            computedDuration = Math.max(1, differenceInDays(ed, sd));
+          }
+        }
+        const expPct = match.computedExpectedPct ?? match.expectedPercentComplete ?? null;
+        const pct = match.percentComplete || 0;
+        let ragStatus: string = "neutral";
+        if (match.status === "Done" || pct >= 100) ragStatus = "green";
+        else if (expPct === null) ragStatus = pct > 0 ? "green" : "neutral";
+        else {
+          const delta = expPct - pct;
+          if (delta <= 5) ragStatus = "green";
+          else if (delta <= 20) ragStatus = "amber";
+          else ragStatus = "red";
+        }
+        const predecessorTasks = match.predecessorTaskId
+          ? allTasks.filter((t: any) => t.id === match.predecessorTaskId).map((t: any) => ({ id: t.id, title: t.title || t.name || "", taskNumber: t.taskNumber || "" }))
+          : [];
+        const successorTasks = allTasks
+          .filter((t: any) => t.predecessorTaskId === match.id)
+          .map((t: any) => ({ id: t.id, title: t.title || t.name || "", taskNumber: t.taskNumber || "" }));
         const task: any = {
           id: match.id,
           title: match.title || match.name || "",
           status: match.status || "Not Started",
           priority: match.priority || "Normal",
-          startDate: match.startDate || match.actualStart || null,
-          dueDate: match.dueDate || match.actualEnd || null,
-          percentComplete: match.percentComplete || 0,
+          startDate: startD,
+          dueDate: endD,
+          percentComplete: pct,
           description: match.comment || match.description || null,
           isBaseline: true,
           importedTaskId: match.importedTaskId || Math.abs(taskId!),
           projectName,
           assignees: match.assignees || (match.owner ? [match.owner] : []),
+          taskNumber: match.taskNumber || null,
+          rowNumber: match.rowNumber || null,
+          durationDays: computedDuration,
+          expectedPercentComplete: expPct,
+          ragStatus,
+          predecessors: match.dependencies || (match.predecessorTaskId ? `${match.predecessorTaskId} FS` : null),
+          predecessorTasks,
+          successorTasks,
+          isMilestone: match.isMilestone || match.isVirtualMilestone || false,
+          parentTaskId: match.parentTaskId || null,
+          baselineStartDate: match.baselineStart || match.startDate || null,
+          baselineEndDate: match.baselineEnd || match.dueDate || null,
         };
         return { task, comments: [], checklists: [], attachments: [], activity: [] } as TaskDetailResponse;
       }
@@ -208,6 +253,77 @@ export default function TaskDetailDrawer({
     onSuccess: invalidateAll,
   });
 
+  const { toast } = useToast();
+
+  const deleteTaskMutation = useMutation({
+    mutationFn: async () => {
+      if (!taskId) return;
+      if (isBaselineTask) {
+        const taskData = data?.task as any;
+        if (taskData?.rowNumber) {
+          await apiRequest("POST", "/api/project-plan/delete-tasks", {
+            projectName,
+            rowNumbers: [taskData.rowNumber],
+          });
+        } else {
+          await apiRequest("POST", "/api/work-items/delete", {
+            ids: [Math.abs(taskId)],
+          });
+        }
+      } else {
+        await apiRequest("DELETE", `/api/operational-tasks/${taskId}`);
+      }
+    },
+    onSuccess: () => {
+      invalidateAll();
+      invalidateProjectQueries(queryClient, projectName);
+      toast({ title: "Task deleted" });
+      onClose();
+    },
+    onError: () => {
+      toast({ title: "Delete failed", description: "Could not delete the task", variant: "destructive" });
+    },
+  });
+
+  const convertToMilestoneMutation = useMutation({
+    mutationFn: async () => {
+      const taskData = data?.task as any;
+      if (!taskData?.rowNumber) throw new Error("Task has no row number");
+      await apiRequest("POST", "/api/project-plan/structure", {
+        operation: "convertToMilestone",
+        projectName,
+        data: { milestoneRowNumber: taskData.rowNumber, subtaskRowNumbers: [] },
+      });
+    },
+    onSuccess: () => {
+      invalidateAll();
+      invalidateProjectQueries(queryClient, projectName);
+      toast({ title: "Converted to milestone" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Convert failed", description: err?.message || "Could not convert to milestone", variant: "destructive" });
+    },
+  });
+
+  const updateDurationMutation = useMutation({
+    mutationFn: async (duration: number) => {
+      if (isBaselineTask) {
+        toast({ title: "Duration is read-only", description: "Baseline task duration comes from the imported plan", variant: "destructive" });
+        throw new Error("Baseline task duration is read-only");
+      }
+      await apiRequest("PATCH", `/api/operational-tasks/${taskId}`, { duration });
+    },
+    onSuccess: () => {
+      invalidateAll();
+      toast({ title: "Duration updated" });
+    },
+    onError: (err: any) => {
+      if (!err?.message?.includes("read-only")) {
+        toast({ title: "Update failed", description: err?.message || "Could not update duration", variant: "destructive" });
+      }
+    },
+  });
+
   if (!open || taskId === null) return null;
 
   return (
@@ -241,6 +357,12 @@ export default function TaskDetailDrawer({
                 toggleChecklistItem={toggleChecklistItemMutation.mutate}
                 addAttachment={addAttachmentMutation.mutate}
                 onClose={onClose}
+                onDeleteTask={() => deleteTaskMutation.mutate()}
+                onConvertToMilestone={() => convertToMilestoneMutation.mutate()}
+                onUpdateDuration={(d) => updateDurationMutation.mutate(d)}
+                isDeleting={deleteTaskMutation.isPending}
+                isConverting={convertToMilestoneMutation.isPending}
+                isBaselineTask={isBaselineTask}
               />
             )}
           </div>
@@ -259,6 +381,12 @@ function TaskDetailContent({
   toggleChecklistItem,
   addAttachment,
   onClose,
+  onDeleteTask,
+  onConvertToMilestone,
+  onUpdateDuration,
+  isDeleting,
+  isConverting,
+  isBaselineTask,
 }: {
   data: TaskDetailResponse;
   updateTask: (updates: Record<string, unknown>) => void;
@@ -268,6 +396,12 @@ function TaskDetailContent({
   toggleChecklistItem: (p: { itemId: number; isDone: boolean }) => void;
   addAttachment: (p: { filename: string; url: string }) => void;
   onClose: () => void;
+  onDeleteTask: () => void;
+  onConvertToMilestone: () => void;
+  onUpdateDuration: (d: number) => void;
+  isDeleting: boolean;
+  isConverting: boolean;
+  isBaselineTask: boolean;
 }) {
   const { task, comments, checklists, attachments, activity } = data;
 
@@ -288,7 +422,40 @@ function TaskDetailContent({
   const [linkUrl, setLinkUrl] = useState("");
   const [linkName, setLinkName] = useState("");
 
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editingDuration, setEditingDuration] = useState(false);
+  const [durationVal, setDurationVal] = useState(String((task as any).durationDays || 0));
+
   const isBaseline = task.isBaseline || task.importedTaskId !== null;
+  const isPlanTask = isBaselineTask || isBaseline;
+  const taskAny = task as any;
+  const wbsNumber = taskAny.taskNumber || null;
+  const durationDays = taskAny.durationDays || 0;
+  const expectedPct = taskAny.expectedPercentComplete ?? null;
+  const ragStatus: string = taskAny.ragStatus || "neutral";
+  const predecessors = taskAny.predecessors || null;
+  const predecessorTasks: Array<{ id: number; title: string; taskNumber: string }> = taskAny.predecessorTasks || [];
+  const successorTasks: Array<{ id: number; title: string; taskNumber: string }> = taskAny.successorTasks || [];
+  const isMilestone = taskAny.isMilestone || false;
+  const baselineStartDate = taskAny.baselineStartDate || null;
+  const baselineEndDate = taskAny.baselineEndDate || null;
+  const rowNumber = taskAny.rowNumber || null;
+
+  const ragDotColor = ragStatus === "green"
+    ? "bg-emerald-500"
+    : ragStatus === "amber"
+      ? "bg-amber-500"
+      : ragStatus === "red"
+        ? "bg-red-500"
+        : "bg-slate-300";
+
+  const ragLabel = ragStatus === "green"
+    ? "On Track"
+    : ragStatus === "amber"
+      ? "At Risk"
+      : ragStatus === "red"
+        ? "Critical"
+        : "Not Started";
 
   const saveTitle = () => {
     if (titleVal.trim() && titleVal !== task.title) {
@@ -372,6 +539,172 @@ function TaskDetailContent({
           <X className="h-4 w-4" />
         </Button>
       </div>
+
+      {isPlanTask && (
+        <>
+          <div className="flex items-center gap-2 flex-wrap" data-testid="plan-info-strip">
+            {wbsNumber && (
+              <Badge variant="outline" className="text-xs font-mono gap-1" data-testid="badge-wbs">
+                <Hash className="h-3 w-3" />
+                {wbsNumber}
+              </Badge>
+            )}
+            {isMilestone && (
+              <Badge className="bg-violet-100 text-violet-800 text-xs gap-1" variant="secondary" data-testid="badge-milestone">
+                <Diamond className="h-3 w-3" />
+                Milestone
+              </Badge>
+            )}
+            <Badge
+              className={`text-xs gap-1 ${
+                ragStatus === "green" ? "bg-emerald-100 text-emerald-800" :
+                ragStatus === "amber" ? "bg-amber-100 text-amber-800" :
+                ragStatus === "red" ? "bg-red-100 text-red-800" :
+                "bg-slate-100 text-slate-600"
+              }`}
+              variant="secondary"
+              data-testid="badge-rag"
+            >
+              <span className={`inline-block h-2 w-2 rounded-full ${ragDotColor}`} />
+              {ragLabel}
+            </Badge>
+          </div>
+
+          <div className="rounded-lg border bg-muted/30 p-3 space-y-3" data-testid="plan-details-section">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+                  <Clock className="h-3 w-3" /> Duration
+                </label>
+                {editingDuration ? (
+                  <div className="flex items-center gap-1">
+                    <Input
+                      data-testid="input-duration"
+                      className="h-7 w-20 text-xs"
+                      type="number"
+                      min={0}
+                      value={durationVal}
+                      onChange={(e) => setDurationVal(e.target.value)}
+                      onBlur={() => {
+                        const v = Math.max(0, parseInt(durationVal) || 0);
+                        onUpdateDuration(v);
+                        setEditingDuration(false);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          const v = Math.max(0, parseInt(durationVal) || 0);
+                          onUpdateDuration(v);
+                          setEditingDuration(false);
+                        }
+                        if (e.key === "Escape") setEditingDuration(false);
+                      }}
+                      autoFocus
+                    />
+                    <span className="text-xs text-muted-foreground">days</span>
+                  </div>
+                ) : (
+                  <span
+                    className="text-sm font-medium cursor-pointer hover:text-primary"
+                    onClick={() => { setDurationVal(String(durationDays)); setEditingDuration(true); }}
+                    data-testid="text-duration"
+                  >
+                    {durationDays > 0 ? `${durationDays} working days` : "—"}
+                  </span>
+                )}
+              </div>
+              {expectedPct !== null && (
+                <div>
+                  <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+                    <Target className="h-3 w-3" /> Expected %
+                  </label>
+                  <span className="text-sm font-medium tabular-nums" data-testid="text-expected-pct">
+                    {expectedPct}%
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {expectedPct !== null && (
+              <div data-testid="progress-comparison">
+                <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                  <span>Progress: Actual vs Expected</span>
+                  <span className="tabular-nums">{task.percentComplete ?? 0}% / {expectedPct}%</span>
+                </div>
+                <div className="relative h-3 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="absolute inset-y-0 left-0 bg-slate-300/60 rounded-full"
+                    style={{ width: `${Math.min(expectedPct, 100)}%` }}
+                    data-testid="bar-expected"
+                  />
+                  <div
+                    className={`absolute inset-y-0 left-0 rounded-full ${
+                      (task.percentComplete ?? 0) >= expectedPct ? "bg-emerald-500" :
+                      (task.percentComplete ?? 0) >= expectedPct - 10 ? "bg-amber-500" :
+                      "bg-red-500"
+                    }`}
+                    style={{ width: `${Math.min(task.percentComplete ?? 0, 100)}%` }}
+                    data-testid="bar-actual"
+                  />
+                </div>
+              </div>
+            )}
+
+            {(predecessorTasks.length > 0 || successorTasks.length > 0 || predecessors) && (
+              <div className="space-y-2">
+                {(predecessorTasks.length > 0 || predecessors) && (
+                  <div>
+                    <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+                      <Link2 className="h-3 w-3" /> Predecessors
+                    </label>
+                    <div className="flex flex-wrap gap-1" data-testid="predecessors-list">
+                      {predecessorTasks.length > 0 ? predecessorTasks.map((p) => (
+                        <Badge key={p.id} variant="outline" className="text-xs gap-1">
+                          {p.taskNumber || `#${Math.abs(p.id)}`}
+                          <span className="text-muted-foreground truncate max-w-[120px]">{p.title}</span>
+                        </Badge>
+                      )) : predecessors ? (
+                        <Badge variant="outline" className="text-xs">{predecessors}</Badge>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
+                {successorTasks.length > 0 && (
+                  <div>
+                    <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+                      <ArrowRight className="h-3 w-3" /> Successors
+                    </label>
+                    <div className="flex flex-wrap gap-1" data-testid="successors-list">
+                      {successorTasks.map((s) => (
+                        <Badge key={s.id} variant="outline" className="text-xs gap-1">
+                          {s.taskNumber || `#${Math.abs(s.id)}`}
+                          <span className="text-muted-foreground truncate max-w-[120px]">{s.title}</span>
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(baselineStartDate || baselineEndDate) && (
+              <div>
+                <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+                  <Calendar className="h-3 w-3" /> Baseline Dates
+                </label>
+                <div className="flex items-center gap-2 text-xs" data-testid="baseline-dates">
+                  <Badge variant="outline" className="text-xs font-mono">
+                    {baselineStartDate ? format(new Date(baselineStartDate), "MMM d, yyyy") : "—"}
+                  </Badge>
+                  <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                  <Badge variant="outline" className="text-xs font-mono">
+                    {baselineEndDate ? format(new Date(baselineEndDate), "MMM d, yyyy") : "—"}
+                  </Badge>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       <Separator />
 
@@ -506,6 +839,78 @@ function TaskDetailContent({
           )}
         </div>
       </div>
+
+      {isPlanTask && (
+        <>
+          <Separator />
+          <div data-testid="plan-actions-section">
+            <label className="text-xs text-muted-foreground mb-2 block font-medium">Plan Actions</label>
+            <div className="flex flex-wrap gap-2">
+              {!isMilestone && rowNumber && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs gap-1"
+                  onClick={onConvertToMilestone}
+                  disabled={isConverting}
+                  data-testid="button-convert-milestone"
+                >
+                  <Diamond className="h-3 w-3" />
+                  {isConverting ? "Converting…" : "Convert to Milestone"}
+                </Button>
+              )}
+              {!isMilestone && !rowNumber && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs gap-1 opacity-50 cursor-not-allowed"
+                  disabled
+                  data-testid="button-convert-milestone-disabled"
+                  title="Task has no row number — cannot convert"
+                >
+                  <Diamond className="h-3 w-3" />
+                  Convert to Milestone
+                </Button>
+              )}
+              {confirmDelete ? (
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-red-600 font-medium">Confirm?</span>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="text-xs h-7"
+                    onClick={() => { onDeleteTask(); setConfirmDelete(false); }}
+                    disabled={isDeleting}
+                    data-testid="button-confirm-delete"
+                  >
+                    {isDeleting ? "Deleting…" : "Yes, Delete"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-7"
+                    onClick={() => setConfirmDelete(false)}
+                    data-testid="button-cancel-delete"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs gap-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                  onClick={() => setConfirmDelete(true)}
+                  data-testid="button-delete-task"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Delete Task
+                </Button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       <Separator />
 

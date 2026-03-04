@@ -437,6 +437,10 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     onSuccess: () => {
       invalidateProjectQueries(qc, projectName);
       setNewTaskTitle("");
+      toast({ title: "Task created" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Create task failed", description: err?.message || "Could not create task", variant: "destructive" });
     },
   });
 
@@ -447,6 +451,9 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     onSuccess: () => {
       invalidateProjectQueries(qc, projectName);
     },
+    onError: (err: any) => {
+      toast({ title: "Structure change failed", description: err?.message || "Could not update plan structure", variant: "destructive" });
+    },
   });
 
   const renumberMutation = useMutation({
@@ -455,7 +462,10 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     },
     onSuccess: () => {
       invalidateProjectQueries(qc, projectName);
-      toast({ title: "Numbering updated" });
+      toast({ title: "WBS numbering refreshed" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Refresh WBS failed", description: err?.message || "Could not renumber tasks", variant: "destructive" });
     },
   });
 
@@ -467,8 +477,9 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
         for (const id of opsIds) await apiRequest("DELETE", `/api/operational-tasks/${id}`);
       }
       if (baselineIds.length > 0) {
-        const withRowNumber = tasks.filter(t => baselineIds.includes(t.id) && t.isBaseline && t.rowNumber);
-        const withoutRowNumber = tasks.filter(t => baselineIds.includes(t.id) && t.isBaseline && !t.rowNumber);
+        const matchedTasks = tasks.filter(t => baselineIds.includes(t.id));
+        const withRowNumber = matchedTasks.filter(t => t.rowNumber);
+        const withoutRowNumber = matchedTasks.filter(t => !t.rowNumber);
         if (withRowNumber.length > 0) {
           const byPlanProject = new Map<string, number[]>();
           for (const t of withRowNumber) {
@@ -486,9 +497,13 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
         }
       }
     },
-    onSuccess: () => {
+    onSuccess: (_data, ids) => {
       invalidateProjectQueries(qc, projectName);
       setSelectedIds(new Set());
+      toast({ title: `${ids.length} task(s) deleted` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Delete failed", description: err?.message || "Could not delete task(s)", variant: "destructive" });
     },
   });
 
@@ -732,6 +747,9 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       invalidateProjectQueries(qc, projectName);
       toast({ title: "Task number updated" });
     },
+    onError: (err: any) => {
+      toast({ title: "Update failed", description: err?.message || "Could not update task number", variant: "destructive" });
+    },
   });
 
   const convertToMilestoneMutation = useMutation({
@@ -746,6 +764,9 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       toast({ title: "Converted to milestone" });
       setConvertMilestoneDialogOpen(false);
       setConvertMilestoneTask(null);
+    },
+    onError: (err: any) => {
+      toast({ title: "Convert to milestone failed", description: err?.message || "Could not convert task", variant: "destructive" });
     },
   });
 
@@ -765,6 +786,9 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       setGroupUnderDialogOpen(false);
       setGroupUnderTask(null);
     },
+    onError: (err: any) => {
+      toast({ title: "Group tasks failed", description: err?.message || "Could not group tasks under parent", variant: "destructive" });
+    },
   });
 
   const removeMilestoneMutation = useMutation({
@@ -781,6 +805,9 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       invalidateProjectQueries(qc, projectName);
       toast({ title: "Task ungrouped & WBS renumbered" });
     },
+    onError: (err: any) => {
+      toast({ title: "Ungroup failed", description: err?.message || "Could not remove from group", variant: "destructive" });
+    },
   });
 
   const bulkReorderMutation = useMutation({
@@ -794,7 +821,10 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     },
     onSuccess: () => {
       invalidateProjectQueries(qc, projectName);
-      toast({ title: "Tasks reordered & WBS renumbered" });
+      toast({ title: "Tasks reordered" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Reorder failed", description: err?.message || "Could not reorder tasks", variant: "destructive" });
     },
   });
 
@@ -840,7 +870,13 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     }
     const dragRn = draggedTask.rowNumber;
     const targetRn = targetTask.rowNumber;
-    if (!dragRn || !targetRn || dragRn === targetRn) {
+    if (!dragRn || !targetRn) {
+      toast({ title: "Cannot reorder", description: "This task doesn't have a plan row number yet. Try refreshing WBS first.", variant: "destructive" });
+      setDragTaskId(null);
+      setDropTarget(null);
+      return;
+    }
+    if (dragRn === targetRn) {
       setDragTaskId(null);
       setDropTarget(null);
       return;
@@ -1746,12 +1782,15 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             <Button variant="outline" onClick={() => { setConvertMilestoneDialogOpen(false); setConvertMilestoneTask(null); setSelectedIds(new Set()); }}>Cancel</Button>
             <Button
               onClick={() => {
-                if (!convertMilestoneTask?.rowNumber) return;
+                if (!convertMilestoneTask?.rowNumber) {
+                  toast({ title: "Cannot convert", description: "This task doesn't have a plan row number. Try refreshing WBS first.", variant: "destructive" });
+                  return;
+                }
                 const subtaskRows = Array.from(selectedIds)
                   .map(id => taskMap.get(id)?.rowNumber)
                   .filter((rn): rn is number => rn !== undefined && rn !== null);
                 if (subtaskRows.length === 0) {
-                  toast({ title: "Select at least one subtask", variant: "destructive" });
+                  toast({ title: "No valid subtasks", description: "Selected tasks don't have plan row numbers. Select different tasks.", variant: "destructive" });
                   return;
                 }
                 convertToMilestoneMutation.mutate({
