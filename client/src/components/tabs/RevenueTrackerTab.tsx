@@ -41,9 +41,15 @@ interface RevenueMonthData {
   totalRevenue: number;
   realisedRevenue: number;
   unrealisedRevenue: number;
+  budget: number;
+  variance: number;
+  variancePct: number;
   ytdRevenue: number;
   ytdRealised: number;
   ytdUnrealised: number;
+  ytdBudget: number;
+  ytdVariance: number;
+  ytdVariancePct: number;
   itemCount: number;
   realisedCount: number;
   items: RevenueItem[];
@@ -81,13 +87,20 @@ const ROW_DEFS: {
   colorClass: string;
   group: "monthly" | "ytd";
   clickable?: boolean;
+  colorCoded?: boolean;
 }[] = [
   { key: "totalRevenue", label: "Revenue", dataKey: "totalRevenue", colorClass: "text-foreground font-bold", group: "monthly", clickable: true },
   { key: "realisedRevenue", label: "Realised Revenue", dataKey: "realisedRevenue", colorClass: "text-emerald-700 font-bold", group: "monthly", clickable: true },
   { key: "unrealisedRevenue", label: "Unrealised Revenue", dataKey: "unrealisedRevenue", colorClass: "text-amber-600 font-semibold", group: "monthly", clickable: true },
+  { key: "budget", label: "Milestone Inflows", dataKey: "budget", colorClass: "text-purple-600", group: "monthly" },
+  { key: "variance", label: "Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
+  { key: "variancePct", label: "Variance %", dataKey: "variancePct", colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdRevenue", label: "YTD Revenue", dataKey: "ytdRevenue", colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", colorClass: "text-emerald-700 font-bold", group: "ytd" },
   { key: "ytdUnrealised", label: "YTD Unrealised", dataKey: "ytdUnrealised", colorClass: "text-amber-600", group: "ytd" },
+  { key: "ytdBudget", label: "YTD Milestone Inflows", dataKey: "ytdBudget", colorClass: "text-purple-600", group: "ytd" },
+  { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", colorClass: "", group: "ytd", colorCoded: true },
+  { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", colorClass: "", group: "ytd", colorCoded: true },
 ];
 
 function RevenueDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: RevenueMonthData; onClose: () => void; defaultFilter?: "all" | "realised" | "unrealised" }) {
@@ -272,9 +285,10 @@ export function RevenueTrackerTab({ projectName }: RevenueTrackerTabProps) {
       month: m.monthLabel,
       "Realised": m.realisedRevenue,
       "Unrealised": m.unrealisedRevenue,
-      Budget: totalMilestoneRevenue / Math.max(months.length, 1),
+      "Milestone Inflows": m.budget,
+      "YTD Variance": m.ytdVariance,
     })),
-    [months, totalMilestoneRevenue],
+    [months],
   );
 
   if (isLoading) {
@@ -298,46 +312,71 @@ export function RevenueTrackerTab({ projectName }: RevenueTrackerTabProps) {
     );
   }
 
+  const ytdVariance = lastMonth?.ytdVariance ?? 0;
+  const realisedPct = (lastMonth?.ytdRevenue ?? 0) > 0
+    ? (lastMonth?.ytdRealised ?? 0) / (lastMonth?.ytdRevenue ?? 1)
+    : 0;
+
   const kpiCards = [
     {
       id: "ytd-revenue",
       label: "YTD Revenue",
       value: formatRand(lastMonth?.ytdRevenue ?? 0),
       icon: DollarSign,
-      iconBg: "bg-emerald-100",
-      iconColor: "text-emerald-600",
-      valueColor: "text-slate-900 font-black",
-      borderColor: "border-emerald-200",
+      iconBg: "bg-muted",
+      iconColor: "text-muted-foreground",
+      valueColor: "text-foreground font-black",
+      borderColor: "",
     },
     {
       id: "ytd-realised-revenue",
-      label: "YTD Realised Revenue",
+      label: "YTD Realised",
       value: formatRand(lastMonth?.ytdRealised ?? 0),
       icon: TrendingUp,
-      iconBg: "bg-emerald-100",
-      iconColor: "text-emerald-700",
-      valueColor: "text-emerald-700 font-black",
-      borderColor: "border-emerald-200",
+      iconBg: "bg-muted",
+      iconColor: "text-foreground",
+      valueColor: "text-foreground font-black",
+      borderColor: "border-border",
     },
     {
       id: "ytd-unrealised-revenue",
-      label: "YTD Unrealised Revenue",
+      label: "YTD Unrealised",
       value: formatRand(lastMonth?.ytdUnrealised ?? 0),
       icon: Activity,
-      iconBg: "bg-amber-100",
-      iconColor: "text-amber-600",
-      valueColor: "text-amber-600",
-      borderColor: "border-amber-200",
+      iconBg: "bg-red-100",
+      iconColor: "text-red-600",
+      valueColor: "text-red-600",
+      borderColor: "border-red-200",
     },
     {
       id: "total-milestone-inflows",
       label: "Total Milestone Inflows",
       value: formatRand(totalMilestoneRevenue),
       icon: Target,
-      iconBg: "bg-green-100",
-      iconColor: "text-green-600",
-      valueColor: "text-green-700",
-      borderColor: "border-green-200",
+      iconBg: "bg-purple-100",
+      iconColor: "text-purple-600",
+      valueColor: "text-purple-700",
+      borderColor: "",
+    },
+    {
+      id: "ytd-variance",
+      label: "YTD Variance",
+      value: formatRand(ytdVariance),
+      icon: TrendingUp,
+      iconBg: ytdVariance >= 0 ? "bg-green-100" : "bg-red-100",
+      iconColor: ytdVariance >= 0 ? "text-green-600" : "text-red-600",
+      valueColor: ytdVariance >= 0 ? "text-green-600" : "text-red-600",
+      borderColor: ytdVariance >= 0 ? "border-green-200" : "border-red-200",
+    },
+    {
+      id: "realised-pct",
+      label: "Realised %",
+      value: `${(realisedPct * 100).toFixed(1)}%`,
+      icon: Activity,
+      iconBg: realisedPct >= 0.5 ? "bg-green-100" : "bg-amber-100",
+      iconColor: realisedPct >= 0.5 ? "text-green-600" : "text-amber-600",
+      valueColor: realisedPct >= 0.5 ? "text-green-600" : "text-amber-600",
+      borderColor: realisedPct >= 0.5 ? "border-green-200" : "border-amber-200",
     },
   ];
 
@@ -357,7 +396,7 @@ export function RevenueTrackerTab({ projectName }: RevenueTrackerTabProps) {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         {kpiCards.map((kpi) => (
           <Card key={kpi.id} className={`shadow-sm hover:shadow-md transition-shadow bg-white ${kpi.borderColor}`} data-testid={`card-${kpi.id}`}>
             <CardContent className="pt-5 pb-4 px-4">
@@ -395,7 +434,8 @@ export function RevenueTrackerTab({ projectName }: RevenueTrackerTabProps) {
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
                 <Bar dataKey="Realised" stackId="revenue" fill="#059669" radius={[0, 0, 0, 0]} />
                 <Bar dataKey="Unrealised" stackId="revenue" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                <Line type="monotone" dataKey="Budget" stroke="#10b981" strokeWidth={2} strokeDasharray="6 3" dot={false} />
+                <Bar dataKey="Milestone Inflows" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
+                <Line type="monotone" dataKey="YTD Variance" stroke="#ef4444" strokeWidth={2} strokeDasharray="5 5" dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -442,17 +482,22 @@ export function RevenueTrackerTab({ projectName }: RevenueTrackerTabProps) {
                         </td>
                         {months.map((m) => {
                           const val = m[row.dataKey] as number;
+                          const colorCodedClass = row.colorCoded
+                            ? val < 0 ? "text-red-600 font-semibold" : val > 0 ? "text-green-600 font-semibold" : "text-slate-500"
+                            : row.colorClass;
+                          const isVariancePct = row.key === "variancePct" || row.key === "ytdVariancePct";
+                          const displayVal = isVariancePct ? `${(val * 100).toFixed(1)}%` : formatRand(val);
                           return (
                             <td
                               key={m.monthKey}
-                              className={`px-4 py-2.5 text-right font-mono text-sm ${row.colorClass} ${isClickable && val !== 0 ? "cursor-pointer hover:bg-emerald-50 hover:underline decoration-emerald-300 underline-offset-2 transition-colors rounded" : ""}`}
+                              className={`px-4 py-2.5 text-right font-mono text-sm ${colorCodedClass} ${isClickable && val !== 0 ? "cursor-pointer hover:bg-emerald-50 hover:underline decoration-emerald-300 underline-offset-2 transition-colors rounded" : ""}`}
                               onClick={isClickable && val !== 0 ? () => setDrawerMonth({
                                 month: m,
                                 defaultFilter: row.key === 'realisedRevenue' ? 'realised' : row.key === 'unrealisedRevenue' ? 'unrealised' : 'all'
                               }) : undefined}
                               data-testid={`cell-revenue-${row.key}-${m.monthKey}`}
                             >
-                              {formatRand(val)}
+                              {displayVal}
                             </td>
                           );
                         })}
