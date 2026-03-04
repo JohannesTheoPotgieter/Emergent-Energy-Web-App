@@ -15,7 +15,6 @@ import {
   projectEngApprovals,
   projectInfo,
 } from "@shared/schema";
-import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "eng-deliverables");
@@ -590,13 +589,6 @@ export function registerEngStageRoutes(app: Express) {
           const [proj] = await db.select({ projectName: projectInfo.projectName })
             .from(projectInfo).where(eq(projectInfo.id, currentStage.projectId));
           if (proj) {
-            sendExcelSyncNotification({
-              projectName: proj.projectName,
-              changedByUserId: user.id,
-              changeType: "engineering_task_update",
-              changeDescription: `Engineering stage task updated${status ? ` to "${status}"` : ""}.`,
-              details: { taskId, status, notes },
-            }).catch(() => {});
           }
         }
       }
@@ -786,13 +778,6 @@ export function registerEngStageRoutes(app: Express) {
         const [proj] = await db.select({ projectName: projectInfo.projectName })
           .from(projectInfo).where(eq(projectInfo.id, stage.projectId));
         if (proj) {
-          sendExcelSyncNotification({
-            projectName: proj.projectName,
-            changedByUserId: user.id,
-            changeType: "engineering_stage_gate",
-            changeDescription: `Stage gate "${stage.templateName}" ${status} by ${user.name || "unknown"}.`,
-            details: { approvalId: id, stageName: stage.templateName, status, comments },
-          }).catch(() => {});
         }
       }
 
@@ -883,13 +868,6 @@ export function registerEngStageRoutes(app: Express) {
       const [stageProj] = await db.select({ projectName: projectInfo.projectName })
         .from(projectInfo).where(eq(projectInfo.id, stage.projectId));
       if (stageProj) {
-        sendExcelSyncNotification({
-          projectName: stageProj.projectName,
-          changedByUserId: getUser(req).id,
-          changeType: "engineering_stage_complete",
-          changeDescription: `Engineering stage "${stage.templateName}" completed.`,
-          details: { stageId, stageName: stage.templateName },
-        }).catch(() => {});
       }
 
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "approve", changesJson: { description: "Stage completed", stageName: stage.templateName } });
@@ -923,13 +901,6 @@ export function registerEngStageRoutes(app: Express) {
         const [proj] = await db.select({ projectName: projectInfo.projectName })
           .from(projectInfo).where(eq(projectInfo.id, overrideStage.projectId));
         if (proj) {
-          sendExcelSyncNotification({
-            projectName: proj.projectName,
-            changedByUserId: user.id,
-            changeType: "engineering_stage_override",
-            changeDescription: `Engineering stage override-completed: ${reason}`,
-            details: { stageId, reason },
-          }).catch(() => {});
         }
       }
 
@@ -959,13 +930,6 @@ export function registerEngStageRoutes(app: Express) {
         const [proj] = await db.select({ projectName: projectInfo.projectName })
           .from(projectInfo).where(eq(projectInfo.id, statusStage.projectId));
         if (proj) {
-          sendExcelSyncNotification({
-            projectName: proj.projectName,
-            changedByUserId: getUser(req).id,
-            changeType: "engineering_stage_status",
-            changeDescription: `Engineering stage status changed to "${status}".`,
-            details: { stageId, status },
-          }).catch(() => {});
         }
       }
 
