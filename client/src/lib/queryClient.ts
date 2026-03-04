@@ -88,6 +88,19 @@ export function invalidateDashboardQueries(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ["dashboard"] });
   qc.invalidateQueries({ queryKey: ["overview"] });
   qc.invalidateQueries({ queryKey: ["projects-summary"] });
+  qc.invalidateQueries({ queryKey: ["/api/revenue-tracker"] });
+  qc.invalidateQueries({ predicate: (query) => {
+    const key = query.queryKey[0];
+    if (typeof key === 'string') {
+      return key.startsWith('/api/revenue-tracker') ||
+             key.startsWith('/api/revenue-tab/') ||
+             key.startsWith('/api/revenue-tracking/') ||
+             key === 'revenue-tracker-project' ||
+             key === 'revenue-tab' ||
+             key === 'finance-revenue';
+    }
+    return false;
+  }});
 }
 
 export function invalidateProjectQueries(qc: QueryClient, projectName: string) {
