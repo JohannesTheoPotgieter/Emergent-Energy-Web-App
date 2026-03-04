@@ -263,9 +263,8 @@ function getRedesignedNavGroups(): NavGroup[] {
       icon: Cog,
       items: [
         { label: "Users & Roles", icon: UserCog, path: "/admin/roles" },
-        { label: "App Settings", icon: Cog, path: "/admin/settings" },
+        { label: "App Settings", icon: Settings, path: "/admin/settings" },
         { label: "Activity Log", icon: Activity, path: "/admin/activity-log" },
-        { label: "Microsoft 365", icon: Plug, path: "/admin/ms-integration" },
       ],
     },
   ];

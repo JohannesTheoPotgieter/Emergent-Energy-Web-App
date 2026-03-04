@@ -49,7 +49,6 @@ import PdDashboardPage from "@/pages/pd-dashboard";
 import PdTicketsPage from "@/pages/pd-tickets";
 import PdTicketCreatePage from "@/pages/pd-ticket-create";
 import PdTicketDetailPage from "@/pages/pd-ticket-detail";
-import MsIntegrationSettingsPage from "@/pages/ms-integration-settings";
 import MsCallbackPage from "@/pages/ms-callback";
 import TeamsChatsPage from "@/pages/teams-chats";
 import CollaborationPage from "@/pages/collaboration";
@@ -163,10 +162,10 @@ function ProtectedPages() {
         <Route path="/pd/tickets" component={PdTicketsPage} />
         <Route path="/pd/tickets/create" component={PdTicketCreatePage} />
         <Route path="/pd/tickets/:id" component={PdTicketDetailPage} />
-        <Route path="/settings/integrations" component={MsIntegrationSettingsPage} />
-        <Route path="/admin/ms-integration" component={MsIntegrationSettingsPage} />
+        <Route path="/settings/integrations">{() => <Redirect to="/admin/settings" />}</Route>
+        <Route path="/admin/ms-integration">{() => <Redirect to="/admin/settings" />}</Route>
         <Route path="/teams/chats" component={TeamsChatsPage} />
-        <Route path="/admin/ms-mapping" component={MsIntegrationSettingsPage} />
+        <Route path="/admin/ms-mapping">{() => <Redirect to="/admin/settings" />}</Route>
         <Route path="/collaboration" component={CollaborationPage} />
         <Route path="/collaboration/email" component={CollabEmailPage} />
         <Route path="/collaboration/teams" component={CollabTeamsPage} />
