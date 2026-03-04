@@ -2640,7 +2640,7 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'data_import' | 'data_export' | 'audit_trail'
   | 'ms_integration'
   | 'my_work' | 'ms_sync' | 'project_tagging' | 'excel_updates' | 'database_migration'
-  | 'revenue_tracker' | 'work_items';
+  | 'revenue_tracker' | 'gp_tracker' | 'work_items';
 export type PermissionAction = 'view' | 'edit' | 'approve' | 'override' | 'delete';
 
 export interface EntityPermissionRule {
@@ -2687,6 +2687,14 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'revenue_tracker',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'gp_tracker',
     view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],

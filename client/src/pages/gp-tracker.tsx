@@ -59,18 +59,18 @@ export default function GpTrackerPage() {
 
   const chartData = useMemo(() => {
     return months.map((m: any) => ({
-      name: m.monthLabel,
-      Revenue: Math.round(m.totalRevenue),
-      COS: Math.round(m.totalCOS),
-      GP: Math.round(m.totalGP),
-      "GP%": parseFloat(m.gpPct?.toFixed(1) || "0"),
+      name: m.monthLabel || "",
+      Revenue: Math.round(m.totalRevenue || 0),
+      COS: Math.round(m.totalCOS || 0),
+      GP: Math.round(m.totalGP || 0),
+      "GP%": parseFloat((m.gpPct ?? 0).toFixed(1)),
     }));
   }, [months]);
 
   const filteredProjects = useMemo(() => {
     if (!search.trim()) return projects;
     const q = search.toLowerCase();
-    return projects.filter((p: any) => p.projectName.toLowerCase().includes(q));
+    return projects.filter((p: any) => (p.projectName || "").toLowerCase().includes(q));
   }, [projects, search]);
 
   if (isLoading) {
@@ -163,9 +163,9 @@ export default function GpTrackerPage() {
                     <td className="py-2 text-right text-blue-600">{formatRand(m.totalRevenue)}</td>
                     <td className="py-2 text-right text-red-600">{formatRand(m.totalCOS)}</td>
                     <td className={`py-2 text-right font-semibold ${m.totalGP >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatRand(m.totalGP)}</td>
-                    <td className={`py-2 text-right ${m.gpPct >= 15 ? 'text-emerald-600' : 'text-red-600'}`}>{m.gpPct.toFixed(1)}%</td>
+                    <td className={`py-2 text-right ${(m.gpPct ?? 0) >= 15 ? 'text-emerald-600' : 'text-red-600'}`}>{(m.gpPct ?? 0).toFixed(1)}%</td>
                     <td className={`py-2 text-right font-semibold ${m.ytdGP >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatRand(m.ytdGP)}</td>
-                    <td className={`py-2 text-right ${m.ytdGpPct >= 15 ? 'text-emerald-600' : 'text-red-600'}`}>{m.ytdGpPct.toFixed(1)}%</td>
+                    <td className={`py-2 text-right ${(m.ytdGpPct ?? 0) >= 15 ? 'text-emerald-600' : 'text-red-600'}`}>{(m.ytdGpPct ?? 0).toFixed(1)}%</td>
                   </tr>
                 ))}
               </tbody>
@@ -213,8 +213,8 @@ export default function GpTrackerPage() {
                     <td className="py-2 text-right">{formatRand(p.cos)}</td>
                     <td className={`py-2 text-right font-semibold ${p.gp >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatRand(p.gp)}</td>
                     <td className="py-2 text-right">
-                      <Badge className={`text-[9px] ${p.gpPct >= 15 ? 'bg-emerald-50 text-emerald-700' : p.gpPct >= 0 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>
-                        {p.gpPct.toFixed(1)}%
+                      <Badge className={`text-[9px] ${(p.gpPct ?? 0) >= 15 ? 'bg-emerald-50 text-emerald-700' : (p.gpPct ?? 0) >= 0 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>
+                        {(p.gpPct ?? 0).toFixed(1)}%
                       </Badge>
                     </td>
                   </tr>
