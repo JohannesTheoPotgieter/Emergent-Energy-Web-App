@@ -265,7 +265,11 @@ function useRolesData() {
   const loadRoles = useCallback(async () => {
     try {
       const res = await fetch("/api/roles", { headers: getAuthHeaders(), credentials: "include" });
-      if (res.ok) setRoles(await res.json());
+      if (res.ok) {
+        const data: RolePermission[] = await res.json();
+        data.sort((a, b) => a.label.localeCompare(b.label));
+        setRoles(data);
+      }
     } catch {} finally { setLoading(false); }
   }, []);
 
