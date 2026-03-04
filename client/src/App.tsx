@@ -32,12 +32,10 @@ import QmDashboardPage from "@/pages/qm-dashboard";
 import EngineeringDashboardPage from "@/pages/engineering-dashboard";
 import EngineeringTasksPage from "@/pages/engineering-tasks";
 import PhaseTemplatesPage from "@/pages/phase-templates";
-import ProjectCreatePage from "@/pages/project-create";
 import RoleSettingsPage from "@/pages/role-settings";
 import LifecycleBoardPage from "@/pages/lifecycle-board";
 import ExecutionBoardPage from "@/pages/execution-board";
 import SmartImportPage from "@/pages/smart-import";
-import ProjectNormalizedViewPage from "@/pages/project-normalized-view";
 import EngineeringSyncPage from "@/pages/engineering-sync";
 import EngineeringInboxPage from "@/pages/engineering-inbox";
 import InvoicePatternsPage from "@/pages/invoice-patterns";
@@ -45,7 +43,6 @@ import SubcontractorDashboardPage from "@/pages/subcontractor-dashboard";
 import SystemActivityLogPage from "@/pages/system-activity-log";
 import WeeklyReviewsPage from "@/pages/weekly-reviews";
 import AdminRolesPage from "@/pages/admin-roles";
-import AdminApprovalsPage from "@/pages/admin-approvals";
 import LeaderboardPage from "@/pages/leaderboard";
 import FeedbackPage from "@/pages/feedback";
 import EeInfoPage from "@/pages/ee-info";
@@ -150,13 +147,11 @@ function ProtectedPages() {
         <Route path="/engineering" component={EngineeringDashboardPage} />
         <Route path="/engineering/tasks" component={EngineeringTasksPage} />
         <Route path="/admin/phase-templates" component={PhaseTemplatesPage} />
-        <Route path="/project-create" component={ProjectCreatePage} />
         <Route path="/lifecycle-board" component={LifecycleBoardPage} />
         <Route path="/execution-board" component={ExecutionBoardPage} />
         <Route path="/my-tool/meetings" component={MyToolMeetingsPage} />
         <Route path="/admin/settings" component={RoleSettingsPage} />
         <Route path="/smart-import" component={SmartImportPage} />
-        <Route path="/project-normalized/:projectName" component={ProjectNormalizedViewPage} />
         <Route path="/engineering/sync" component={EngineeringSyncPage} />
         <Route path="/engineering/inbox" component={EngineeringInboxPage} />
         <Route path="/invoice-patterns" component={InvoicePatternsPage} />
@@ -164,7 +159,6 @@ function ProtectedPages() {
         <Route path="/admin/activity-log" component={SystemActivityLogPage} />
         <Route path="/weekly-reviews" component={WeeklyReviewsPage} />
         <Route path="/admin/roles" component={AdminRolesPage} />
-        <Route path="/admin/approvals" component={AdminApprovalsPage} />
         <Route path="/leaderboard" component={LeaderboardPage} />
         <Route path="/tr-register">
           <Redirect to="/my-work/tasks" />
