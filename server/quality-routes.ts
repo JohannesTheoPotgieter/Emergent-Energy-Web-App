@@ -16,7 +16,6 @@ import {
   users,
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
-import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 
@@ -442,13 +441,6 @@ export function registerQualityRoutes(app: Express) {
       const pName = decodeURIComponent(req.params.projectName);
       recalculateWarnings(pName).catch(() => {});
 
-      sendExcelSyncNotification({
-        projectName: pName,
-        changedByUserId: getUser(req).id,
-        changeType: "quality_update",
-        changeDescription: "Quality checklist item was updated.",
-        details: { itemInstanceId: itemId, qmStatus: qmStatus || undefined },
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: pName, changesJson: { description: "Quality checklist item updated", qmStatus } });
       res.json(updated);
@@ -613,13 +605,6 @@ export function registerQualityRoutes(app: Express) {
 
       recalculateWarnings(projectName).catch(() => {});
 
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: getUser(req).id,
-        changeType: "quality_update",
-        changeDescription: "Quality item submitted for approval.",
-        details: { itemInstanceId: itemId, approverUserId },
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName, changesJson: { description: "Sent for approval", approverUserId } });
       res.json({
@@ -685,13 +670,6 @@ export function registerQualityRoutes(app: Express) {
         qmStatus: "not_started",
       }).returning();
 
-      sendExcelSyncNotification({
-        projectName: pName,
-        changedByUserId: getUser(req).id,
-        changeType: "quality_update",
-        changeDescription: `Quality item created: ${itemName}.`,
-        details: { itemInstanceId: item.id, itemName },
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(item.id), action: "create", projectName: pName, changesJson: { description: "Quality item created", itemName } });
       res.json(item);
@@ -722,13 +700,6 @@ export function registerQualityRoutes(app: Express) {
 
       recalculateWarnings(pName).catch(() => {});
 
-      sendExcelSyncNotification({
-        projectName: pName,
-        changedByUserId: getUser(req).id,
-        changeType: "quality_update",
-        changeDescription: "Quality item deleted.",
-        details: { itemInstanceId: itemId },
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "delete", projectName: pName, changesJson: { description: "Quality item deleted" } });
       res.json({ success: true });
@@ -752,13 +723,6 @@ export function registerQualityRoutes(app: Express) {
       const pName = decodeURIComponent(req.params.projectName);
       recalculateWarnings(pName).catch(() => {});
 
-      sendExcelSyncNotification({
-        projectName: pName,
-        changedByUserId: getUser(req).id,
-        changeType: "quality_update",
-        changeDescription: "QC risk answer updated.",
-        details: { riskAnswerId, answerYesno, answerText },
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "qc_risk_answer", entityId: String(riskAnswerId), action: "update", projectName: pName, changesJson: { description: "Risk answer updated", answerYesno, answerText } });
       res.json(updated);
@@ -849,13 +813,6 @@ export function registerQualityRoutes(app: Express) {
 
       const [warning] = await db.select().from(qcWarning).where(eq(qcWarning.id, warningId));
       if (warning) {
-        sendExcelSyncNotification({
-          projectName: warning.projectName,
-          changedByUserId: getUser(req).id,
-          changeType: "quality_update",
-          changeDescription: `QC warning acknowledged: ${warning.title}`,
-          details: { warningId, warningType: warning.warningType, note },
-        }).catch(() => {});
       }
 
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(warningId), action: "update", projectName: warning?.projectName, changesJson: { description: "QC warning acknowledged", warningType: warning?.warningType } });
@@ -877,13 +834,6 @@ export function registerQualityRoutes(app: Express) {
 
       const [resolvedWarning] = await db.select().from(qcWarning).where(eq(qcWarning.id, warningId));
       if (resolvedWarning) {
-        sendExcelSyncNotification({
-          projectName: resolvedWarning.projectName,
-          changedByUserId: getUser(req).id,
-          changeType: "quality_update",
-          changeDescription: `QC warning resolved: ${resolvedWarning.title}`,
-          details: { warningId, warningType: resolvedWarning.warningType, note },
-        }).catch(() => {});
       }
 
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(warningId), action: "update", changesJson: { description: "QC warning resolved" } });
