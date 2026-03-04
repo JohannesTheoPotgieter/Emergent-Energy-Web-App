@@ -69,7 +69,7 @@ const ALL_SECTIONS = [
 ] as const;
 
 const SECTION_META: Record<string, { label: string; icon: any; color: string; bg: string; description: string }> = {
-  MY_WORK: { label: "My Work", icon: Briefcase, color: "text-green-600", bg: "bg-green-50 border-green-200", description: "Personal tasks, calendar, meetings" },
+  MY_WORK: { label: "My Work", icon: Briefcase, color: "text-green-600", bg: "bg-green-50 border-green-200", description: "Tasks, approvals/calendar, meetings, email, teams" },
   PROJECT_DEVELOPMENT: { label: "Project Development", icon: FileEdit, color: "text-teal-600", bg: "bg-teal-50 border-teal-200", description: "PD dashboard, tickets, lifecycle board" },
   DELIVERY: { label: "Engineering", icon: Wrench, color: "text-orange-600", bg: "bg-orange-50 border-orange-200", description: "Eng dashboard, task board" },
   GOVERNANCE: { label: "Quality", icon: ShieldCheck, color: "text-purple-600", bg: "bg-purple-50 border-purple-200", description: "Quality dashboard, compliance" },
@@ -96,8 +96,8 @@ const PERM_CATEGORIES: PermCat[] = [
     key: "my_work", section: "MY_WORK", label: "My Work", icon: Briefcase, color: "bg-green-500",
     items: [
       { entity: "home" as PermissionEntity, label: "Home", actions: ["view"] },
-      { entity: "my_work" as PermissionEntity, label: "Calendar", actions: ["view", "edit"] },
       { entity: "my_tool" as PermissionEntity, label: "Tasks", actions: ["view", "edit"] },
+      { entity: "my_work" as PermissionEntity, label: "Approvals / Calendar", actions: ["view", "edit"] },
       { entity: "meetings" as PermissionEntity, label: "Meetings", actions: ["view", "edit"] },
       { entity: "collaboration_hub" as PermissionEntity, label: "Email", actions: ["view", "edit"] },
       { entity: "teams_chat" as PermissionEntity, label: "Teams Chat", actions: ["view", "edit", "delete"] },
