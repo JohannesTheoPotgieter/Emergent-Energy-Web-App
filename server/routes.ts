@@ -5871,6 +5871,24 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/work-items/delete", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "ids[] required" });
+      }
+      const userId = (req as any).user?.id || (req as any).jwtPayload?.userId || null;
+      for (const id of ids) {
+        await db.execute(sql`DELETE FROM work_items WHERE id = ${id}`);
+      }
+      logAuditFromReq(req, { entityType: "work_item", action: "delete", changesJson: { description: `${ids.length} work item(s) deleted directly`, ids } });
+      res.json({ message: `Deleted ${ids.length} work item(s)` });
+    } catch (error: any) {
+      console.error("[WorkItemsDelete] Error:", error);
+      res.status(500).json({ error: "Failed to delete work items" });
+    }
+  });
+
   // Revenue Tracking Overrides API
   app.get("/api/revenue-tracking/overrides", requireAuth, async (req, res) => {
     try {

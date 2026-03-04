@@ -469,10 +469,11 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
         for (const id of opsIds) await apiRequest("DELETE", `/api/operational-tasks/${id}`);
       }
       if (baselineIds.length > 0) {
-        const baselineTasks = tasks.filter(t => baselineIds.includes(t.id) && t.isBaseline && t.rowNumber);
-        if (baselineTasks.length > 0) {
+        const withRowNumber = tasks.filter(t => baselineIds.includes(t.id) && t.isBaseline && t.rowNumber);
+        const withoutRowNumber = tasks.filter(t => baselineIds.includes(t.id) && t.isBaseline && !t.rowNumber);
+        if (withRowNumber.length > 0) {
           const byPlanProject = new Map<string, number[]>();
-          for (const t of baselineTasks) {
+          for (const t of withRowNumber) {
             const pName = (t as any).planProjectName || projectName;
             if (!byPlanProject.has(pName)) byPlanProject.set(pName, []);
             byPlanProject.get(pName)!.push(t.rowNumber);
@@ -480,6 +481,10 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
           for (const [pName, rowNumbers] of Array.from(byPlanProject.entries())) {
             await apiRequest("POST", "/api/project-plan/delete-tasks", { projectName: pName, rowNumbers });
           }
+        }
+        if (withoutRowNumber.length > 0) {
+          const workItemIds = withoutRowNumber.map(t => Math.abs(t.id));
+          await apiRequest("POST", "/api/work-items/delete", { ids: workItemIds });
         }
       }
     },
