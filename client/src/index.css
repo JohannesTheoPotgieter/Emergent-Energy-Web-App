@@ -93,7 +93,8 @@
 
 .command-header {
   --cmd-bg: #FFFFFF;
-  --cmd-bg-panel: hsl(210 40% 97%);
+  --cmd-bg-panel: linear-gradient(135deg, hsl(210 20% 97%) 0%, hsl(142 30% 96%) 100%);
+  --cmd-bg-panel-fallback: hsl(210 20% 97%);
   --cmd-bg-card: hsl(210 40% 96%);
   --cmd-border: hsl(214 32% 91%);
   --cmd-text: hsl(222 47% 11%);
