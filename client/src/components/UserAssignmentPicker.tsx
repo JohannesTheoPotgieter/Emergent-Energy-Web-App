@@ -120,11 +120,19 @@ export default function UserAssignmentPicker({
   const hasTextNames = textNames && textNames.filter(Boolean).length > 0;
 
   const nameMatchesUser = (textName: string, user: ResolvedUser): boolean => {
-    const n = textName.trim().toLowerCase();
-    if (user.name.toLowerCase() === n) return true;
+    const n = textName.trim().toLowerCase().replace(/\s+/g, " ");
+    const un = user.name.trim().toLowerCase().replace(/\s+/g, " ");
+    if (un === n) return true;
     if (user.username.toLowerCase() === n) return true;
-    if (user.name.split(" ")[0].toLowerCase() === n) return true;
-    if (n.length >= 4 && (user.name.toLowerCase().startsWith(n) || n.startsWith(user.name.toLowerCase()))) return true;
+    if (un.split(" ")[0] === n) return true;
+    const uParts = un.split(" ");
+    if (uParts.length >= 2 && uParts[uParts.length - 1] === n) return true;
+    if (n.includes(",")) {
+      const flipped = n.split(",").map(s => s.trim()).reverse().join(" ");
+      if (un === flipped) return true;
+    }
+    if (n.length >= 4 && (un.startsWith(n) || n.startsWith(un))) return true;
+    if (n.length >= 4 && (un.includes(n) || n.includes(un))) return true;
     return false;
   };
 

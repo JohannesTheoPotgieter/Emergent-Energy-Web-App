@@ -81,6 +81,53 @@ export async function buildUserMap(): Promise<Map<number, ResolvedUser>> {
   return map;
 }
 
+function normalizeForMatch(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function matchTextNameToUser(textName: string, allUsers: ResolvedUser[]): ResolvedUser | undefined {
+  const n = normalizeForMatch(textName);
+  if (!n) return undefined;
+
+  let found: ResolvedUser | undefined;
+  found = allUsers.find(u => normalizeForMatch(u.name) === n || u.username.toLowerCase() === n);
+  if (found) return found;
+
+  found = allUsers.find(u => normalizeForMatch(u.name).split(" ")[0] === n);
+  if (found) return found;
+
+  const parts = n.split(" ");
+  if (parts.length >= 2) {
+    const lastName = parts[parts.length - 1];
+    found = allUsers.find(u => {
+      const uParts = normalizeForMatch(u.name).split(" ");
+      return uParts.length >= 2 && uParts[uParts.length - 1] === lastName && uParts[0] === parts[0];
+    });
+    if (found) return found;
+  }
+
+  if (n.includes(",")) {
+    const flipped = n.split(",").map(s => s.trim()).reverse().join(" ");
+    found = allUsers.find(u => normalizeForMatch(u.name) === flipped);
+    if (found) return found;
+  }
+
+  found = allUsers.find(u => {
+    const uParts = normalizeForMatch(u.name).split(" ");
+    return uParts.length >= 2 && uParts[uParts.length - 1] === n;
+  });
+  if (found) return found;
+
+  if (n.length >= 4) {
+    found = allUsers.find(u => normalizeForMatch(u.name).startsWith(n) || n.startsWith(normalizeForMatch(u.name)));
+    if (found) return found;
+
+    found = allUsers.find(u => normalizeForMatch(u.name).includes(n) || n.includes(normalizeForMatch(u.name)));
+  }
+
+  return found;
+}
+
 export function mergeResolvedWithTextNames(
   resolvedFromIds: ResolvedUser[],
   textNames: string[] | null | undefined,
@@ -92,16 +139,18 @@ export function mergeResolvedWithTextNames(
   const merged = [...resolvedFromIds];
   for (const name of textNames) {
     if (!name || !name.trim()) continue;
-    const alreadyCovered = resolvedFromIds.some(
-      u => u.name.toLowerCase() === name.trim().toLowerCase()
-        || u.name.split(" ")[0].toLowerCase() === name.trim().toLowerCase()
-    );
+    const n = normalizeForMatch(name);
+    const alreadyCovered = merged.some(u => {
+      const un = normalizeForMatch(u.name);
+      if (un === n) return true;
+      if (un.split(" ")[0] === n) return true;
+      const uParts = un.split(" ");
+      if (uParts.length >= 2 && uParts[uParts.length - 1] === n) return true;
+      if (n.length >= 4 && (un.startsWith(n) || n.startsWith(un))) return true;
+      return false;
+    });
     if (alreadyCovered) continue;
-    const n = name.trim().toLowerCase();
-    let found: ResolvedUser | undefined;
-    found = allUsers.find(u => u.name.toLowerCase() === n || u.username.toLowerCase() === n);
-    if (!found) found = allUsers.find(u => u.name.split(" ")[0].toLowerCase() === n);
-    if (!found && n.length >= 4) found = allUsers.find(u => u.name.toLowerCase().startsWith(n) || n.startsWith(u.name.toLowerCase()));
+    const found = matchTextNameToUser(name, allUsers);
     if (found && !resolvedIds.has(found.id)) {
       merged.push(found);
       resolvedIds.add(found.id);
