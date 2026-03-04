@@ -13263,6 +13263,76 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/ms-teams/chats/:chatId/messages", requireAuth, async (req, res) => {
+    try {
+      const ssoToken = await getUserSsoToken(req);
+      if (!ssoToken) {
+        return res.json({ messages: [], ssoRequired: true });
+      }
+      const messages = await outlook.getChatMessages(req.params.chatId, 50, ssoToken);
+      res.json({ messages });
+    } catch (err: any) {
+      if (err.message?.includes("403")) {
+        return res.json({ messages: [], ssoRequired: true });
+      }
+      console.error("[Teams] Chat messages error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/ms-teams/channels/:teamId/:channelId/messages", requireAuth, async (req, res) => {
+    try {
+      const ssoToken = await getUserSsoToken(req);
+      if (!ssoToken) {
+        return res.json({ messages: [], ssoRequired: true });
+      }
+      const messages = await outlook.getChannelMessages(req.params.teamId, req.params.channelId, 50, ssoToken);
+      res.json({ messages });
+    } catch (err: any) {
+      if (err.message?.includes("403")) {
+        return res.json({ messages: [], ssoRequired: true });
+      }
+      console.error("[Teams] Channel messages error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/ms-teams/chats/:chatId/messages", requireAuth, async (req, res) => {
+    try {
+      const ssoToken = await getUserSsoToken(req);
+      if (!ssoToken) {
+        return res.status(401).json({ error: "Microsoft sign-in required" });
+      }
+      const { content } = req.body;
+      if (!content || !content.trim()) {
+        return res.status(400).json({ error: "Message content is required" });
+      }
+      const result = await outlook.sendChatMessage(req.params.chatId, content.trim(), ssoToken);
+      res.json({ success: true, message: result });
+    } catch (err: any) {
+      console.error("[Teams] Send chat message error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/ms-teams/channels/:teamId/:channelId/messages", requireAuth, async (req, res) => {
+    try {
+      const ssoToken = await getUserSsoToken(req);
+      if (!ssoToken) {
+        return res.status(401).json({ error: "Microsoft sign-in required" });
+      }
+      const { content } = req.body;
+      if (!content || !content.trim()) {
+        return res.status(400).json({ error: "Message content is required" });
+      }
+      const result = await outlook.sendChannelMessage(req.params.teamId, req.params.channelId, content.trim(), ssoToken);
+      res.json({ success: true, message: result });
+    } catch (err: any) {
+      console.error("[Teams] Send channel message error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/sharepoint/discover-sites", requireAuth, async (req, res) => {
     try {
       const userToken = await getUserSsoToken(req);
