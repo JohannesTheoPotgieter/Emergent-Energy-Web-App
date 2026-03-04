@@ -687,9 +687,9 @@ export function registerEeInfoRoutes(app: Express) {
 
       await upsertNode({
         slug: "cos-realisation-logic", title: "COS Realisation Logic", category: "governance",
-        contentMarkdown: "# COS Realisation Logic\n\nDefines how Cost of Sales status is determined for each expenditure line item.\n\n## Status Definitions\n\n### Realised\nPO number present + Invoice number present + Invoice date font is BLACK\n- Logic: `hasPO && hasInvoice && (invoiceDateConfirmed === true || invoiceDateFontColor === 'black')`\n- NULL/empty font color does NOT default to confirmed\n\n### Deferred\nPO + Invoice present + Invoice date exists but font is RED\n- Cost is committed but not yet realised in the accounting period\n\n### Flagged\nInvoice date font IS black but missing either PO or Invoice number\n- Needs attention — data is incomplete\n- Users can override Flagged status via dialog with reason\n- Overrides stored in `cos_status_overrides` table\n\n### Planned\nDefault state for all other lines\n- No PO, no invoice, or insufficient data\n\n## Font Color Rule\nOnly explicit black font means confirmed. NULL or empty font color is treated as NOT confirmed.",
+        contentMarkdown: "# COS Realisation Logic\n\nDefines how Cost of Sales status is determined for each expenditure line item.\n\n## Status Definitions\n\n### COS Realised\nInvoice number present + Invoice date present\n- Logic: `hasInvoice && hasInvoiceDate`\n- An item is realised once an invoice has been captured with a date\n\n### Committed\nPO number or Invoice number present, but invoice date is missing\n- Cost is committed but not yet realised\n\n### Planned\nDefault state for all other lines\n- No PO, no invoice, or insufficient data",
         tags: ["governance", "financial", "cos"],
-        gateConditions: ["PO number present", "Invoice number present", "Invoice date font color is black"],
+        gateConditions: ["Invoice number present", "Invoice date present"],
         responsibleRole: "Financial Manager",
         escalationRole: "COO",
       });

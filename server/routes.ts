@@ -39,9 +39,7 @@ function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: 
 function isCosRealisedCheck(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
   const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
-  const hasPO = !!(exp.expensePoNumber && String(exp.expensePoNumber).trim());
-  if (!hasInvoice || !hasInvDate || !hasPO) return false;
-  return isDateConfirmedCheck(exp.invoiceDateConfirmed, exp.invoiceDateFontColor);
+  return hasInvoice && hasInvDate;
 }
 
 function isCashflowConfirmedCheck(exp: any): boolean {

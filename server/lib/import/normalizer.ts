@@ -660,7 +660,7 @@ function extractCostLines(
       paidDateConfirmed = fc.isBlack;
     }
 
-    const cosRealised = !!(invoiceNumber && invoiceDateConfirmed);
+    const cosRealised = !!(invoiceNumber && invoiceDate);
     const cashflowConfirmed = !!(invoiceNumber && poNumber && paidDateConfirmed);
 
     const budgetQty = budgetQtyCol >= 0 ? parseNumber(row[budgetQtyCol]) : null;
