@@ -1,61 +1,25 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from "@/hooks/use-toast";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Link } from "wouter";
-import {
-  Send,
   Loader2,
   Users,
-  Paperclip,
-  Image as ImageIcon,
-  FileText,
-  Download,
-  UserPlus,
   ExternalLink,
-  X,
   MessageSquare,
+  Search,
+  LinkIcon,
+  Unlink,
+  AlertTriangle,
+  RefreshCw,
+  Clock,
+  Hash,
 } from "lucide-react";
-
-const AVATAR_COLORS = [
-  "#4F46E5", "#0EA5E9", "#10B981", "#F59E0B", "#EF4444",
-  "#8B5CF6", "#EC4899", "#14B8A6", "#F97316", "#6366F1",
-];
-
-function getAvatarColor(name: string) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
-
-function formatTime(dateStr: string) {
-  const d = new Date(dateStr);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function formatDate(dateStr: string) {
-  const d = new Date(dateStr);
-  const today = new Date();
-  if (d.toDateString() === today.toDateString()) return "Today";
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
-
-function isImageFile(type: string | null) {
-  return type?.startsWith("image/") ?? false;
-}
 
 function authHeaders() {
   const token = localStorage.getItem("auth_token");
@@ -64,370 +28,413 @@ function authHeaders() {
   return h;
 }
 
-export function ProjectChatTab({ projectName }: { projectName: string }) {
+interface TeamsChat {
+  id: number;
+  msId?: string;
+  title: string;
+  webLink: string | null;
+  memberCount: number | null;
+  lastUpdated: string | null;
+  chatType: string;
+  preview: string | null;
+}
+
+interface ProjectChatData {
+  found: boolean;
+  autoMatched?: boolean;
+  ssoRequired?: boolean;
+  message?: string;
+  chat?: TeamsChat;
+  allChats?: TeamsChat[];
+}
+
+function formatRelativeDate(dateStr: string | null) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDays = Math.floor(diffHr / 24);
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+export function ProjectChatTab({ projectName, projectInfoId }: { projectName: string; projectInfoId: number | null }) {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [message, setMessage] = useState("");
-  const [showMembers, setShowMembers] = useState(false);
-  const [addMemberOpen, setAddMemberOpen] = useState(false);
-  const [memberSearch, setMemberSearch] = useState("");
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const { data: group, isLoading: groupLoading } = useQuery({
-    queryKey: ["project-chat-group", projectName],
-    queryFn: async () => {
-      const res = await fetch(`/api/teams/project-group/${encodeURIComponent(projectName)}`, {
-        headers: authHeaders(),
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to load project chat");
-      return res.json();
-    },
-  });
-
-  const groupId = group?.id;
+  const { toast } = useToast();
+  const [chatSearch, setChatSearch] = useState("");
+  const [showPicker, setShowPicker] = useState(false);
   const userRole = user?.role || "";
-  const isGroupAdmin = (group?.members || []).some((m: any) => m.userId === user?.id && m.role === "admin");
-  const canManageMembers = isGroupAdmin || ["COO_ADMIN", "CEO_ADMIN", "admin"].includes(userRole);
+  const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(userRole);
 
-  const { data: messages = [], isLoading: msgsLoading } = useQuery({
-    queryKey: ["project-chat-messages", groupId],
+  const { data: chatData, isLoading } = useQuery<ProjectChatData>({
+    queryKey: ["ms-teams-project-chat", projectInfoId],
     queryFn: async () => {
-      const res = await fetch(`/api/teams/groups/${groupId}/messages`, {
+      const res = await fetch(`/api/ms-teams/project-chat/${projectInfoId}`, {
         headers: authHeaders(),
         credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to load messages");
+      if (!res.ok) throw new Error("Failed to load Teams chat data");
       return res.json();
     },
-    enabled: !!groupId,
-    refetchInterval: 5000,
+    enabled: !!projectInfoId,
   });
 
-  const { data: allUsers = [] } = useQuery({
-    queryKey: ["all-users-for-chat"],
-    queryFn: async () => {
-      const res = await fetch("/api/users", { headers: authHeaders(), credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: addMemberOpen,
-  });
-
-  const sendMutation = useMutation({
-    mutationFn: async (content: string) => {
-      const res = await fetch(`/api/teams/groups/${groupId}/messages`, {
+  const linkMutation = useMutation({
+    mutationFn: async (msObjectId: number) => {
+      const res = await fetch(`/api/ms-objects/${msObjectId}/tag-project`, {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ projectId: projectInfoId }),
       });
-      if (!res.ok) throw new Error("Failed to send");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to link chat");
+      }
       return res.json();
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["project-chat-messages", groupId] });
-      setMessage("");
+      qc.invalidateQueries({ queryKey: ["ms-teams-project-chat", projectInfoId] });
+      toast({ title: "Teams chat linked", description: "This project is now linked to the selected Teams chat." });
+      setShowPicker(false);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to link chat", description: err.message, variant: "destructive" });
     },
   });
 
-  const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch(`/api/teams/groups/${groupId}/files`, {
-        method: "POST",
+  const unlinkMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/ms-teams/project-chat/${projectInfoId}/unlink`, {
+        method: "DELETE",
         headers: authHeaders(),
         credentials: "include",
-        body: fd,
       });
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) throw new Error("Failed to unlink");
       return res.json();
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["project-chat-messages", groupId] });
+      qc.invalidateQueries({ queryKey: ["ms-teams-project-chat", projectInfoId] });
+      toast({ title: "Chat unlinked", description: "You can now link a different Teams chat." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to unlink", description: err.message, variant: "destructive" });
     },
   });
 
-  const addMemberMutation = useMutation({
-    mutationFn: async (userId: number) => {
-      const res = await fetch(`/api/teams/groups/${groupId}/members`, {
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/ms-sync/trigger", {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ userIds: [userId] }),
+        body: JSON.stringify({ type: "teams" }),
       });
-      if (!res.ok) throw new Error("Failed to add member");
+      if (!res.ok) throw new Error("Sync failed");
       return res.json();
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["project-chat-group", projectName] });
+      qc.invalidateQueries({ queryKey: ["ms-teams-project-chat", projectInfoId] });
+      toast({ title: "Teams data refreshed", description: "Your Teams chats have been synced." });
     },
   });
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  const filteredChats = useMemo(() => {
+    const chats = chatData?.allChats || [];
+    if (!chatSearch.trim()) return chats;
+    const q = chatSearch.toLowerCase();
+    return chats.filter(c =>
+      (c.title || "").toLowerCase().includes(q) ||
+      (c.preview || "").toLowerCase().includes(q)
+    );
+  }, [chatData?.allChats, chatSearch]);
 
-  const handleSend = () => {
-    if (!message.trim() || !groupId) return;
-    sendMutation.mutate(message.trim());
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) uploadMutation.mutate(file);
-    e.target.value = "";
-  };
-
-  if (groupLoading) {
+  if (!projectInfoId) {
     return (
-      <div className="flex items-center justify-center py-16">
+      <div className="flex flex-col items-center justify-center py-16 text-center" data-testid="project-chat-tab">
+        <AlertTriangle className="h-8 w-8 text-amber-500 mb-3" />
+        <p className="text-sm text-muted-foreground">Project information not available</p>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-16" data-testid="project-chat-tab">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
-  const memberIds = new Set((group?.members || []).map((m: any) => m.userId));
-  const availableUsers = allUsers.filter((u: any) => !memberIds.has(u.id));
-  const filteredAvailable = memberSearch
-    ? availableUsers.filter((u: any) => u.name?.toLowerCase().includes(memberSearch.toLowerCase()))
-    : availableUsers;
-
-  let lastDate = "";
-
-  return (
-    <div className="flex flex-col h-[500px] border rounded-lg overflow-hidden bg-card" data-testid="project-chat-tab">
-      <div className="flex items-center justify-between px-4 py-2.5 bg-[#292929] text-white">
-        <div className="flex items-center gap-2">
-          <MessageSquare className="h-4 w-4 text-blue-600" />
-          <span className="font-medium text-sm">{group?.name || "Project Chat"}</span>
-          <Badge variant="outline" className="text-[10px] border-gray-500 text-gray-300">
-            {group?.memberCount || 0} members
-          </Badge>
-          <Link href={`/project/${encodeURIComponent(projectName)}`}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 text-[10px] text-gray-300 hover:text-white hover:bg-gray-700 gap-1 px-2"
-              data-testid="button-goto-project"
-            >
-              <ExternalLink className="h-3 w-3" />
-              View Project
-            </Button>
-          </Link>
+  if (chatData?.ssoRequired) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center" data-testid="project-chat-tab">
+        <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
+          <MessageSquare className="h-8 w-8 text-indigo-500" />
         </div>
-        <div className="flex items-center gap-1">
-          {canManageMembers && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0 text-gray-300 hover:text-white hover:bg-gray-700"
-            onClick={() => setAddMemberOpen(true)}
-            data-testid="button-add-chat-member"
-          >
-            <UserPlus className="h-3.5 w-3.5" />
-          </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0 text-gray-300 hover:text-white hover:bg-gray-700"
-            onClick={() => setShowMembers(!showMembers)}
-            data-testid="button-toggle-members"
-          >
-            <Users className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+        <h3 className="text-base font-semibold mb-1">Microsoft 365 Sign-In Required</h3>
+        <p className="text-sm text-muted-foreground max-w-md mb-4">
+          Sign in with your Microsoft account to link this project to your MS Teams group chat.
+        </p>
+        <Badge variant="outline" className="text-xs text-amber-700 border-amber-300 bg-amber-50">
+          <AlertTriangle className="h-3 w-3 mr-1" />
+          SSO not connected
+        </Badge>
       </div>
+    );
+  }
 
-      <div className="flex flex-1 min-h-0">
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 bg-muted/50">
-            {msgsLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                <MessageSquare className="h-8 w-8 mb-2 opacity-30" />
-                <p className="text-sm">No messages yet. Start the conversation!</p>
-              </div>
-            ) : (
-              messages.map((msg: any) => {
-                const msgDate = formatDate(msg.sentAt || msg.createdAt);
-                const showDate = msgDate !== lastDate;
-                lastDate = msgDate;
-                const isMe = msg.senderUserId === user?.id;
-                const senderName = msg.senderName || "Unknown";
-                const avatarColor = getAvatarColor(senderName);
-
-                return (
-                  <div key={msg.id}>
-                    {showDate && (
-                      <div className="flex items-center gap-2 my-3">
-                        <div className="flex-1 h-px bg-gray-200" />
-                        <span className="text-[10px] text-muted-foreground font-medium px-2">{msgDate}</span>
-                        <div className="flex-1 h-px bg-gray-200" />
-                      </div>
+  if (chatData?.found && chatData.chat) {
+    const chat = chatData.chat;
+    return (
+      <div className="flex flex-col items-center py-8" data-testid="project-chat-tab">
+        <Card className="w-full max-w-lg border-emerald-200 shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center">
+                  <MessageSquare className="h-6 w-6 text-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-base" data-testid="text-teams-chat-title">{chat.title}</h3>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {chat.memberCount && (
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Users className="h-3 w-3" />
+                        {chat.memberCount} members
+                      </span>
                     )}
-                    <div className={`flex gap-2 mb-2 ${isMe ? "flex-row-reverse" : ""}`} data-testid={`chat-message-${msg.id}`}>
-                      <div
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0"
-                        style={{ backgroundColor: avatarColor }}
-                      >
-                        {senderName.split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
-                      </div>
-                      <div className={`max-w-[70%] ${isMe ? "text-right" : ""}`}>
-                        <p className="text-[10px] text-muted-foreground mb-0.5">
-                          {senderName} · {formatTime(msg.sentAt || msg.createdAt)}
-                        </p>
-                        <div className={`rounded-lg px-3 py-2 text-sm ${isMe ? "bg-blue-600 text-white" : "bg-card border shadow-sm"}`}>
-                          {msg.content}
-                        </div>
-                        {msg.fileName && (
-                          <div className="mt-1">
-                            {isImageFile(msg.fileType) ? (
-                              <img
-                                src={msg.filePath}
-                                alt={msg.fileName}
-                                className="max-w-[200px] rounded-lg border cursor-pointer"
-                                onClick={() => window.open(msg.filePath, "_blank")}
-                              />
-                            ) : (
-                              <a
-                                href={msg.filePath}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline bg-blue-50 rounded px-2 py-1"
-                              >
-                                <FileText className="h-3 w-3" />
-                                {msg.fileName}
-                                <Download className="h-3 w-3" />
-                              </a>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    {chat.chatType && (
+                      <Badge variant="outline" className="text-[9px] px-1.5 py-0">
+                        <Hash className="h-2.5 w-2.5 mr-0.5" />
+                        {chat.chatType}
+                      </Badge>
+                    )}
                   </div>
-                );
-              })
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          <div className="border-t p-2 flex items-center gap-2 bg-card">
-            <input
-              type="file"
-              ref={fileInputRef}
-              className="hidden"
-              onChange={handleFileSelect}
-              data-testid="input-chat-file"
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadMutation.isPending}
-              data-testid="button-attach-file"
-            >
-              {uploadMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Paperclip className="h-4 w-4 text-muted-foreground" />
-              )}
-            </Button>
-            <Input
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Type a message..."
-              className="h-8 text-sm"
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              data-testid="input-chat-message"
-            />
-            <Button
-              size="sm"
-              className="h-8 w-8 p-0"
-              onClick={handleSend}
-              disabled={!message.trim() || sendMutation.isPending}
-              data-testid="button-send-message"
-            >
-              {sendMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-        </div>
-
-        {showMembers && (
-          <div className="w-48 border-l bg-muted p-3 overflow-y-auto">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-2">Members</p>
-            {(group?.members || []).map((m: any) => (
-              <div key={m.id} className="flex items-center gap-2 py-1.5">
-                <div
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0"
-                  style={{ backgroundColor: getAvatarColor(m.userName || "?") }}
-                >
-                  {(m.userName || "?").split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs truncate">{m.userName}</p>
-                  {m.role === "admin" && (
-                    <Badge variant="outline" className="text-[8px] px-1 py-0">Admin</Badge>
-                  )}
                 </div>
               </div>
-            ))}
-          </div>
+              {chatData.autoMatched && (
+                <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[9px]">
+                  Auto-matched
+                </Badge>
+              )}
+            </div>
+
+            {chat.preview && (
+              <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2 mb-4">
+                <span className="font-medium">Members:</span> {chat.preview}
+              </div>
+            )}
+
+            {chat.lastUpdated && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-4">
+                <Clock className="h-3 w-3" />
+                Last activity: {formatRelativeDate(chat.lastUpdated)}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              {chat.webLink ? (
+                <a
+                  href={chat.webLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1"
+                  data-testid="link-open-teams"
+                >
+                  <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white gap-2" data-testid="button-open-teams">
+                    <ExternalLink className="h-4 w-4" />
+                    Open in MS Teams
+                  </Button>
+                </a>
+              ) : (
+                <Button className="flex-1" disabled>
+                  <AlertTriangle className="h-4 w-4 mr-2" />
+                  No Teams link available
+                </Button>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between mt-4 pt-3 border-t">
+              <div className="flex items-center gap-2">
+                {isAdmin && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-muted-foreground hover:text-red-600 gap-1"
+                    onClick={() => unlinkMutation.mutate()}
+                    disabled={unlinkMutation.isPending}
+                    data-testid="button-unlink-chat"
+                  >
+                    {unlinkMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
+                    Change Chat
+                  </Button>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground gap-1"
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+                data-testid="button-sync-teams"
+              >
+                <RefreshCw className={`h-3 w-3 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {chatData.autoMatched && (
+          <p className="text-xs text-muted-foreground mt-3 text-center max-w-sm">
+            This chat was auto-matched by project name. Click "Change Chat" to link a different one.
+          </p>
         )}
       </div>
+    );
+  }
 
-      <Dialog open={addMemberOpen} onOpenChange={setAddMemberOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-sm">
-              <UserPlus className="h-4 w-4" />
-              Add Member
-            </DialogTitle>
-          </DialogHeader>
-          <Input
-            placeholder="Search users..."
-            className="h-8 text-xs"
-            value={memberSearch}
-            onChange={(e) => setMemberSearch(e.target.value)}
-            data-testid="input-search-add-member"
-          />
-          <div className="max-h-48 overflow-y-auto space-y-1">
-            {filteredAvailable.map((u: any) => (
-              <div
-                key={u.id}
-                className="flex items-center justify-between p-2 hover:bg-muted/50 rounded cursor-pointer"
-                onClick={() => addMemberMutation.mutate(u.id)}
-                data-testid={`button-add-user-${u.id}`}
-              >
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[8px] font-bold"
-                    style={{ backgroundColor: getAvatarColor(u.name || "?") }}
-                  >
-                    {(u.name || "?").split(" ").map((w: string) => w[0]).join("").slice(0, 2).toUpperCase()}
-                  </div>
-                  <span className="text-xs">{u.name}</span>
-                </div>
-                <Badge variant="outline" className="text-[9px]">{u.role}</Badge>
-              </div>
-            ))}
-            {filteredAvailable.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-4">No users to add</p>
-            )}
+  return (
+    <div className="flex flex-col items-center py-8" data-testid="project-chat-tab">
+      {!showPicker ? (
+        <div className="text-center">
+          <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto mb-4">
+            <MessageSquare className="h-8 w-8 text-muted-foreground/50" />
           </div>
-        </DialogContent>
-      </Dialog>
+          <h3 className="text-base font-semibold mb-1">No Teams Chat Linked</h3>
+          <p className="text-sm text-muted-foreground max-w-sm mb-6">
+            Link this project to an MS Teams group chat to open conversations directly from here.
+          </p>
+          <div className="flex items-center gap-2 justify-center">
+            <Button
+              onClick={() => setShowPicker(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2"
+              data-testid="button-link-teams-chat"
+            >
+              <LinkIcon className="h-4 w-4" />
+              Link a Teams Chat
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
+              className="gap-1"
+              data-testid="button-sync-teams-empty"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+              Sync Teams
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Card className="w-full max-w-lg">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <LinkIcon className="h-4 w-4 text-indigo-600" />
+                Select a Teams Chat
+              </h4>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => setShowPicker(false)}
+                data-testid="button-cancel-link"
+              >
+                Cancel
+              </Button>
+            </div>
+
+            <div className="relative mb-3">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search your Teams chats..."
+                className="h-8 pl-8 text-sm"
+                value={chatSearch}
+                onChange={(e) => setChatSearch(e.target.value)}
+                data-testid="input-search-teams-chats"
+              />
+            </div>
+
+            <ScrollArea className="max-h-[350px]">
+              <div className="space-y-1">
+                {filteredChats.length === 0 ? (
+                  <div className="text-center py-8">
+                    <MessageSquare className="h-6 w-6 text-muted-foreground/30 mx-auto mb-2" />
+                    <p className="text-xs text-muted-foreground">
+                      {(chatData?.allChats || []).length === 0
+                        ? "No Teams chats synced yet. Click \"Sync Teams\" to pull your chats."
+                        : "No chats match your search."}
+                    </p>
+                    {(chatData?.allChats || []).length === 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 gap-1 text-xs"
+                        onClick={() => syncMutation.mutate()}
+                        disabled={syncMutation.isPending}
+                        data-testid="button-sync-teams-picker"
+                      >
+                        <RefreshCw className={`h-3 w-3 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                        Sync Teams Data
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  filteredChats.map((chat) => (
+                    <div
+                      key={chat.id}
+                      className="flex items-center gap-3 p-2.5 rounded-lg border border-border/50 hover:border-indigo-200 hover:bg-indigo-50/30 cursor-pointer transition-colors group"
+                      onClick={() => linkMutation.mutate(chat.id)}
+                      data-testid={`chat-option-${chat.id}`}
+                    >
+                      <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
+                        <MessageSquare className="h-4 w-4 text-indigo-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{chat.title}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {chat.memberCount && (
+                            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                              <Users className="h-2.5 w-2.5" />
+                              {chat.memberCount}
+                            </span>
+                          )}
+                          {chat.lastUpdated && (
+                            <span className="text-[10px] text-muted-foreground">
+                              {formatRelativeDate(chat.lastUpdated)}
+                            </span>
+                          )}
+                          <Badge variant="outline" className="text-[8px] px-1 py-0">
+                            {chat.chatType}
+                          </Badge>
+                        </div>
+                      </div>
+                      <LinkIcon className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                    </div>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+
+            {linkMutation.isPending && (
+              <div className="flex items-center justify-center gap-2 mt-3 py-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Linking chat...
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -8,7 +8,7 @@ import {
   projectEngApprovals, projectEngStages, engStageTemplates,
   qcItemInstance, qcChecklist, qcTemplateItem,
   projectInfo, users, normalizedPlanTasks, engineeringTasks,
-  msAccounts,
+  msAccounts, msObjects,
 } from "@shared/schema";
 import {
   tagToProject,
@@ -556,6 +556,137 @@ export function registerMsSyncRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[MyWork AllTasks] Error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/ms-teams/project-chat/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "auth_required" });
+
+      const projectId = parseInt(String(req.params.projectId));
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project id" });
+
+      const [project] = await db.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const [msAccount] = await db.select({ id: msAccounts.id }).from(msAccounts).where(eq(msAccounts.userId, userId));
+      if (!msAccount) {
+        return res.json({ found: false, ssoRequired: true, message: "Sign in with Microsoft to link Teams chats" });
+      }
+
+      const linkedChat = await db.select().from(msObjects).where(
+        and(eq(msObjects.linkedProjectId, projectId), eq(msObjects.type, "teams"))
+      ).limit(1);
+
+      if (linkedChat.length > 0) {
+        const chat = linkedChat[0];
+        const meta = chat.metadata as any;
+        return res.json({
+          found: true,
+          chat: {
+            id: chat.id,
+            msId: chat.msId,
+            title: chat.subjectOrTitle || "Teams Chat",
+            webLink: chat.webLink,
+            memberCount: meta?.memberCount || null,
+            lastUpdated: chat.receivedOrStartDatetime,
+            chatType: meta?.chatType || "group",
+            preview: chat.preview,
+          },
+        });
+      }
+
+      const pName = project.projectName || "";
+      const normalizedName = pName.replace(/_/g, " ").replace(/Tracker.*$/i, "").trim().toLowerCase();
+      const words = normalizedName.split(/\s+/).filter(w => w.length > 2);
+
+      const userTeamsChats = await db.select().from(msObjects).where(
+        and(eq(msObjects.userId, userId), eq(msObjects.type, "teams"))
+      ).orderBy(desc(msObjects.receivedOrStartDatetime));
+
+      let autoMatch = null;
+      if (words.length > 0) {
+        for (const chat of userTeamsChats) {
+          const chatTitle = (chat.subjectOrTitle || "").toLowerCase();
+          const matchCount = words.filter(w => chatTitle.includes(w)).length;
+          if (matchCount >= Math.ceil(words.length * 0.6)) {
+            autoMatch = chat;
+            break;
+          }
+        }
+      }
+
+      if (autoMatch) {
+        const meta = autoMatch.metadata as any;
+        return res.json({
+          found: true,
+          autoMatched: true,
+          chat: {
+            id: autoMatch.id,
+            msId: autoMatch.msId,
+            title: autoMatch.subjectOrTitle || "Teams Chat",
+            webLink: autoMatch.webLink,
+            memberCount: meta?.memberCount || null,
+            lastUpdated: autoMatch.receivedOrStartDatetime,
+            chatType: meta?.chatType || "group",
+            preview: autoMatch.preview,
+          },
+          allChats: userTeamsChats.map(c => {
+            const m = c.metadata as any;
+            return {
+              id: c.id,
+              title: c.subjectOrTitle || "Unnamed Chat",
+              memberCount: m?.memberCount || null,
+              chatType: m?.chatType || "unknown",
+              preview: c.preview,
+              webLink: c.webLink,
+              lastUpdated: c.receivedOrStartDatetime,
+            };
+          }),
+        });
+      }
+
+      return res.json({
+        found: false,
+        allChats: userTeamsChats.map(c => {
+          const m = c.metadata as any;
+          return {
+            id: c.id,
+            title: c.subjectOrTitle || "Unnamed Chat",
+            memberCount: m?.memberCount || null,
+            chatType: m?.chatType || "unknown",
+            preview: c.preview,
+            webLink: c.webLink,
+            lastUpdated: c.receivedOrStartDatetime,
+          };
+        }),
+      });
+    } catch (err: any) {
+      console.error("[MS Teams Project Chat] Error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/ms-teams/project-chat/:projectId/unlink", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const userRole = (req as any).user?.role || "";
+      if (!["admin", "COO_ADMIN", "CEO_ADMIN"].includes(userRole)) {
+        return res.status(403).json({ error: "Only admin/COO can unlink Teams chats" });
+      }
+
+      const projectId = parseInt(String(req.params.projectId));
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project id" });
+
+      await db.update(msObjects)
+        .set({ linkedProjectId: null })
+        .where(and(eq(msObjects.linkedProjectId, projectId), eq(msObjects.type, "teams")));
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[MS Teams Unlink] Error:", err);
       res.status(500).json({ error: err.message });
     }
   });

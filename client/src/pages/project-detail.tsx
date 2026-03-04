@@ -1715,7 +1715,7 @@ export default function ProjectDetailPage() {
             </Button>
           </div>
 
-          {activeSubTab === "chat" && <ProjectChatTab projectName={projectName} />}
+          {activeSubTab === "chat" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "notifications" && <ProjectNotificationsTab projectName={projectName} />}
           {activeSubTab === "local-files" && <LocalFolderTab projectName={projectName} />}
