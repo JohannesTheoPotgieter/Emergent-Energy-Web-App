@@ -14,6 +14,20 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +51,8 @@ import {
   ArrowDownRight,
   ArrowRight,
   X,
+  Check,
+  ChevronsUpDown,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -498,7 +514,8 @@ export default function CashflowPage() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [selectedProject, setSelectedProject] = useState("all");
+  const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [showDetail, setShowDetail] = useState(false);
   const [expandedWeek, setExpandedWeek] = useState<string | null>(null);
   const [opexOpen, setOpexOpen] = useState(false);
@@ -512,7 +529,7 @@ export default function CashflowPage() {
   const [availPayReason, setAvailPayReason] = useState("");
   const [availPayHistoryWeek, setAvailPayHistoryWeek] = useState<string | null>(null);
 
-  const projectParam = selectedProject !== "all" ? selectedProject : undefined;
+  const projectParam = selectedProjects.length > 0 ? selectedProjects.join(",") : undefined;
 
   const { data: cashflowData = [], isLoading } = useQuery<CashflowWeek[]>({
     queryKey: ["/api/cashflow-2026", projectParam],
@@ -708,7 +725,7 @@ export default function CashflowPage() {
     [showDetail]
   );
 
-  const isProjectFiltered = selectedProject !== "all";
+  const isProjectFiltered = selectedProjects.length > 0;
 
   const chartData = useMemo(() => {
     return cashflowData.map((w) => ({
@@ -752,22 +769,89 @@ export default function CashflowPage() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <select
-                  value={selectedProject}
-                  onChange={(e) => setSelectedProject(e.target.value)}
-                  className="appearance-none border border-border rounded-lg px-3 py-2 pr-8 text-sm bg-card text-foreground cursor-pointer hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
-                  data-testid="select-project-filter"
-                >
-                  <option value="all">All Projects</option>
-                  {projectNames.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
+              <Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={projectPickerOpen}
+                    className="min-w-[200px] max-w-[400px] justify-between text-sm font-normal rounded-lg border-border hover:border-slate-400"
+                    data-testid="select-project-filter"
+                  >
+                    <span className="truncate">
+                      {selectedProjects.length === 0
+                        ? "All Projects"
+                        : selectedProjects.length === 1
+                        ? selectedProjects[0]
+                        : `${selectedProjects.length} projects selected`}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[320px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search projects..." />
+                    <CommandList>
+                      <CommandEmpty>No projects found.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem
+                          value="__all__"
+                          onSelect={() => {
+                            setSelectedProjects([]);
+                            setProjectPickerOpen(false);
+                          }}
+                          data-testid="option-all-projects"
+                        >
+                          <Check className={`mr-2 h-4 w-4 ${selectedProjects.length === 0 ? "opacity-100" : "opacity-0"}`} />
+                          All Projects
+                        </CommandItem>
+                        {projectNames.map((name) => (
+                          <CommandItem
+                            key={name}
+                            value={name}
+                            onSelect={() => {
+                              setSelectedProjects((prev) =>
+                                prev.includes(name)
+                                  ? prev.filter((p) => p !== name)
+                                  : [...prev, name]
+                              );
+                            }}
+                            data-testid={`option-project-${name}`}
+                          >
+                            <Check className={`mr-2 h-4 w-4 ${selectedProjects.includes(name) ? "opacity-100" : "opacity-0"}`} />
+                            {name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              {selectedProjects.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1">
+                  {selectedProjects.map((p) => (
+                    <Badge
+                      key={p}
+                      variant="secondary"
+                      className="text-xs gap-1 cursor-pointer hover:bg-destructive/10"
+                      onClick={() => setSelectedProjects((prev) => prev.filter((x) => x !== p))}
+                      data-testid={`badge-selected-${p}`}
+                    >
+                      {p}
+                      <X className="h-3 w-3" />
+                    </Badge>
                   ))}
-                </select>
-                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500 pointer-events-none" />
-              </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs text-muted-foreground px-2"
+                    onClick={() => setSelectedProjects([])}
+                    data-testid="button-clear-all-projects"
+                  >
+                    Clear all
+                  </Button>
+                </div>
+              )}
               <Button
                 variant={showDetail ? "default" : "outline"}
                 size="sm"
@@ -1233,7 +1317,7 @@ export default function CashflowPage() {
                             {showDetail && isExpanded && (
                               <DetailRow
                                 weekStart={week.weekStart}
-                                project={selectedProject}
+                                project={selectedProjects.length > 0 ? selectedProjects.join(",") : "all"}
                                 colSpan={isProjectFiltered ? 7 : 8}
                               />
                             )}

@@ -505,7 +505,11 @@ router.get("/api/program/cos", requireAuth, async (req, res) => {
 
 router.get("/api/cashflow-2026", requireAuth, async (req, res) => {
   try {
-    const projectFilter = req.query.project ? String(req.query.project) : null;
+    const projectFilterRaw = req.query.project ? String(req.query.project) : null;
+    const projectFilters: Set<string> | null = projectFilterRaw
+      ? new Set(projectFilterRaw.split(",").map(s => s.trim()).filter(Boolean))
+      : null;
+    const isFiltered = projectFilters !== null && projectFilters.size > 0;
 
     const [allExpenses, rawInflows, manualBalances, opexBudgets, opexWeeklyOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
       storage.getAllProgramExpenses(),
@@ -547,7 +551,7 @@ router.get("/api/cashflow-2026", requireAuth, async (req, res) => {
 
       let projectInflowsSum = 0;
       for (const inflow of allInflows) {
-        if (projectFilter && inflow.projectName !== projectFilter) continue;
+        if (projectFilters && !projectFilters.has(inflow.projectName || "")) continue;
         const d = inflow.effectiveDate;
         if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
         if (d >= weekStart && d < weekEnd && inflow.milestoneAmount) {
@@ -557,7 +561,7 @@ router.get("/api/cashflow-2026", requireAuth, async (req, res) => {
 
       let projectOutflowsSum = 0;
       for (const expense of allExpenses) {
-        if (projectFilter && expense.projectName !== projectFilter) continue;
+        if (projectFilters && !projectFilters.has(expense.projectName || "")) continue;
         const d = expense.expensePaymentDate;
         if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
         if (d >= weekStart && d < weekEnd && expense.expenseActualTotal) {
@@ -566,7 +570,7 @@ router.get("/api/cashflow-2026", requireAuth, async (req, res) => {
       }
 
       const computedOpening = runningBalance;
-      const hasManualOverride = manualMap.has(weekStart);
+      const hasManualOverride = !isFiltered && manualMap.has(weekStart);
       const openingBalance = hasManualOverride ? manualMap.get(weekStart)! : computedOpening;
       const balanceDelta = hasManualOverride ? openingBalance - computedOpening : 0;
 
@@ -613,7 +617,10 @@ router.get("/api/cashflow-2026/detail", requireAuth, async (req, res) => {
     if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
       return res.status(400).json({ error: "Invalid week parameter", message: "Provide ?week=YYYY-MM-DD" });
     }
-    const projectFilter = req.query.project ? String(req.query.project) : null;
+    const projectFilterRaw = req.query.project ? String(req.query.project) : null;
+    const projectFilters: Set<string> | null = projectFilterRaw
+      ? new Set(projectFilterRaw.split(",").map(s => s.trim()).filter(Boolean))
+      : null;
 
     const [y, m, d] = weekStart.split('-').map(Number);
     const wsDate = new Date(Date.UTC(y, m - 1, d));
@@ -632,7 +639,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, async (req, res) => {
 
     const outflows = allExpenses
       .filter(e => {
-        if (projectFilter && e.projectName !== projectFilter) return false;
+        if (projectFilters && !projectFilters.has(e.projectName || "")) return false;
         const pd = e.expensePaymentDate;
         if (!pd || !/^\d{4}-\d{2}-\d{2}$/.test(pd)) return false;
         return pd >= weekStart && pd < weekEnd;
@@ -648,7 +655,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, async (req, res) => {
 
     const inflows = resolvedInflows
       .filter((inf: any) => {
-        if (projectFilter && inf.projectName !== projectFilter) return false;
+        if (projectFilters && !projectFilters.has(inf.projectName || "")) return false;
         const pd = inf.effectiveDate;
         if (!pd || !/^\d{4}-\d{2}-\d{2}$/.test(pd)) return false;
         return pd >= weekStart && pd < weekEnd;
