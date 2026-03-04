@@ -70,10 +70,10 @@ function RagIndicator({ color, label }: { color: "green" | "amber" | "red"; labe
 
 function StatBlock({ label, value, color, suffix }: { label: string; value: string; color?: string; suffix?: string }) {
   return (
-    <div className="text-center px-2">
-      <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">{label}</p>
-      <p className={`text-lg font-bold leading-tight ${color || "text-[var(--cmd-text)]"}`}>
-        {value}{suffix && <span className="text-xs font-normal text-[var(--cmd-text-muted)]">{suffix}</span>}
+    <div className="text-center px-3 py-1">
+      <p className="text-[10px] font-semibold text-[var(--cmd-text-muted)] uppercase tracking-wider mb-1">{label}</p>
+      <p className={`text-lg sm:text-xl font-bold leading-none ${color || "text-[var(--cmd-text)]"}`}>
+        {value}{suffix && <span className="text-xs font-normal text-[var(--cmd-text-muted)] ml-0.5">{suffix}</span>}
       </p>
     </div>
   );
