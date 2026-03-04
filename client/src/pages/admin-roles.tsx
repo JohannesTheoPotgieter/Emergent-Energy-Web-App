@@ -202,7 +202,6 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "admin" as PermissionEntity, label: "App Settings", actions: ["view", "edit"] },
       { entity: "activity_log" as PermissionEntity, label: "Activity Log", actions: ["view"] },
       { entity: "ms_integration" as PermissionEntity, label: "Microsoft 365", actions: ["view", "edit"] },
-      { entity: "data_import" as PermissionEntity, label: "Data Import", actions: ["view", "edit"] },
     ],
   },
 ];
