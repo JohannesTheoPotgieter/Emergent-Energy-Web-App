@@ -185,7 +185,7 @@ export function NotificationBell() {
                               <div className="flex items-center gap-1.5 text-[11px] text-emerald-600 font-medium">
                                 <Check className="w-3.5 h-3.5" />
                                 Confirmed in tracker
-                                {n.confirmedAt && <span className="text-slate-400 font-normal">({new Date(n.confirmedAt).toLocaleString()})</span>}
+                                {n.confirmedAt && <span className="text-slate-500 font-normal">({new Date(n.confirmedAt).toLocaleString()})</span>}
                               </div>
                             ) : (
                               <Button

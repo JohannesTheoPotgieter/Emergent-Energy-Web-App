@@ -17,12 +17,12 @@ export function SmartValidation({ issue, fix, onFix, onOverride, allowOverride =
   const [overrideReason, setOverrideReason] = useState("");
 
   return (
-    <div className={`rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-sm ${className}`} data-testid="smart-validation">
+    <div className={`rounded-md border border-amber-300 bg-amber-50 p-3 text-sm ${className}`} data-testid="smart-validation">
       <div className="flex items-start gap-2">
         <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
         <div className="flex-1 space-y-1.5">
-          <p className="font-medium text-amber-800 dark:text-amber-200" data-testid="validation-issue">{issue}</p>
-          <p className="text-amber-700 dark:text-amber-300 text-xs" data-testid="validation-fix">{fix}</p>
+          <p className="font-medium text-amber-800" data-testid="validation-issue">{issue}</p>
+          <p className="text-amber-700 text-xs" data-testid="validation-fix">{fix}</p>
           <div className="flex items-center gap-2 flex-wrap pt-1">
             {onFix && (
               <Button

@@ -163,7 +163,7 @@ export default function ExcelUpdatesPage() {
             <h1 className="text-xl font-bold text-foreground dark:text-white" data-testid="text-page-title">
               Excel Updates
             </h1>
-            <p className="text-sm text-muted-foreground dark:text-slate-400">
+            <p className="text-sm text-muted-foreground">
               Changes that need to be captured in Excel trackers
             </p>
           </div>
@@ -178,35 +178,35 @@ export default function ExcelUpdatesPage() {
       </div>
 
       <div className="grid grid-cols-3 gap-3" data-testid="excel-updates-kpis">
-        <Card className="border-amber-200 dark:border-amber-800/50">
+        <Card className="border-amber-200/50">
           <CardContent className="p-3 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-900/30">
+            <div className="p-2 rounded-lg bg-amber-50">
               <Clock className="w-5 h-5 text-amber-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-amber-700 dark:text-amber-400" data-testid="kpi-pending">{pendingCount}</p>
+              <p className="text-2xl font-bold text-amber-700" data-testid="kpi-pending">{pendingCount}</p>
               <p className="text-xs text-muted-foreground">Pending</p>
             </div>
           </CardContent>
         </Card>
-        <Card className="border-emerald-200 dark:border-emerald-800/50">
+        <Card className="border-emerald-200/50">
           <CardContent className="p-3 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/30">
+            <div className="p-2 rounded-lg bg-emerald-50">
               <CheckCircle2 className="w-5 h-5 text-emerald-600" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-400" data-testid="kpi-confirmed">{confirmedCount}</p>
+              <p className="text-2xl font-bold text-emerald-700" data-testid="kpi-confirmed">{confirmedCount}</p>
               <p className="text-xs text-muted-foreground">Confirmed</p>
             </div>
           </CardContent>
         </Card>
-        <Card className="border-border dark:border-slate-700">
+        <Card className="border-border">
           <CardContent className="p-3 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-muted dark:bg-slate-800">
+            <div className="p-2 rounded-lg bg-muted">
               <LayoutList className="w-5 h-5 text-muted-foreground" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-foreground dark:text-slate-300" data-testid="kpi-total">{pendingCount + confirmedCount}</p>
+              <p className="text-2xl font-bold text-foreground" data-testid="kpi-total">{pendingCount + confirmedCount}</p>
               <p className="text-xs text-muted-foreground">Total</p>
             </div>
           </CardContent>
@@ -231,13 +231,13 @@ export default function ExcelUpdatesPage() {
         </Tabs>
 
         <div className="relative flex-1 max-w-xs">
-          <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+          <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
           <input
             type="text"
             placeholder="Filter by project..."
             value={projectFilter}
             onChange={(e) => { setProjectFilter(e.target.value); setPage(0); }}
-            className="w-full pl-8 pr-3 py-1.5 text-sm border border-border dark:border-slate-700 rounded-md bg-card dark:bg-slate-900 text-foreground dark:text-white placeholder:text-slate-400"
+            className="w-full pl-8 pr-3 py-1.5 text-sm border border-border rounded-md bg-card text-foreground dark:text-white placeholder:text-slate-500"
             data-testid="input-project-filter"
           />
         </div>
@@ -283,21 +283,21 @@ export default function ExcelUpdatesPage() {
 
       {isLoading ? (
         <div className="flex items-center justify-center py-16" data-testid="loading-state">
-          <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+          <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
         </div>
       ) : items.length === 0 ? (
         <Card data-testid="empty-state">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             {tab === "pending" ? (
               <>
-                <CheckCircle2 className="w-12 h-12 text-emerald-400 mb-3" />
-                <p className="text-lg font-medium text-foreground dark:text-slate-200">All caught up!</p>
+                <CheckCircle2 className="w-12 h-12 text-emerald-600 mb-3" />
+                <p className="text-lg font-medium text-foreground">All caught up!</p>
                 <p className="text-sm text-muted-foreground">No pending Excel updates to confirm.</p>
               </>
             ) : (
               <>
-                <FileSpreadsheet className="w-12 h-12 text-slate-300 mb-3" />
-                <p className="text-lg font-medium text-foreground dark:text-slate-200">No updates found</p>
+                <FileSpreadsheet className="w-12 h-12 text-slate-600 mb-3" />
+                <p className="text-lg font-medium text-foreground">No updates found</p>
                 <p className="text-sm text-muted-foreground">No Excel sync notifications match your filters.</p>
               </>
             )}
@@ -308,8 +308,8 @@ export default function ExcelUpdatesPage() {
           {grouped.map(([project, projectItems]) => (
             <div key={project} data-testid={`group-${project}`}>
               <div className="flex items-center gap-2 mb-2 px-1">
-                <GitBranch className="w-3.5 h-3.5 text-slate-400" />
-                <span className="text-sm font-semibold text-foreground dark:text-slate-200">{project}</span>
+                <GitBranch className="w-3.5 h-3.5 text-slate-500" />
+                <span className="text-sm font-semibold text-foreground">{project}</span>
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0">
                   {projectItems.length}
                 </Badge>
@@ -324,7 +324,7 @@ export default function ExcelUpdatesPage() {
                   return (
                     <Card
                       key={n.id}
-                      className={`transition-all ${isConfirmed ? "bg-muted/80 dark:bg-slate-900/50 border-border dark:border-slate-800 opacity-75" : "bg-card dark:bg-slate-900 border-l-4 border-l-amber-400 border-t border-r border-b border-amber-200 dark:border-amber-800/50"} ${isSelected && !isConfirmed ? "ring-2 ring-amber-300 dark:ring-amber-700" : ""}`}
+                      className={`transition-all ${isConfirmed ? "bg-muted/80 border-border opacity-75" : "bg-card border-l-4 border-l-amber-400 border-t border-r border-b border-amber-200/50"} ${isSelected && !isConfirmed ? "ring-2 ring-amber-300 dark:ring-amber-700" : ""}`}
                       data-testid={`card-update-${n.id}`}
                     >
                       <CardContent className="p-3">
@@ -346,8 +346,8 @@ export default function ExcelUpdatesPage() {
                               <Badge
                                 variant="outline"
                                 className={`text-[10px] px-1.5 py-0 ${isExcelSync
-                                  ? "text-orange-600 border-orange-200 bg-orange-50 dark:bg-orange-900/30"
-                                  : "text-blue-600 border-blue-200 bg-blue-50 dark:bg-blue-900/30"
+                                  ? "text-orange-600 border-orange-200 bg-orange-50"
+                                  : "text-blue-600 border-blue-200 bg-blue-50"
                                 }`}
                               >
                                 {isExcelSync ? "Excel Sync" : "Plan Change"}
@@ -355,50 +355,50 @@ export default function ExcelUpdatesPage() {
                               <Badge
                                 variant="outline"
                                 className={`text-[10px] px-1.5 py-0 ${isConfirmed
-                                  ? "text-emerald-600 border-emerald-200 bg-emerald-50 dark:bg-emerald-900/30"
-                                  : "text-amber-600 border-amber-200 bg-amber-50 dark:bg-amber-900/30"
+                                  ? "text-emerald-600 border-emerald-200 bg-emerald-50"
+                                  : "text-amber-600 border-amber-200 bg-amber-50"
                                 }`}
                                 data-testid={`badge-status-${n.id}`}
                               >
                                 {isConfirmed ? <><CheckCircle2 className="w-3 h-3 mr-0.5" /> Confirmed</> : <><Clock className="w-3 h-3 mr-0.5" /> Pending</>}
                               </Badge>
-                              <span className="text-[10px] text-slate-400">{timeAgo(n.createdAt)}</span>
+                              <span className="text-[10px] text-slate-500">{timeAgo(n.createdAt)}</span>
                             </div>
 
-                            <p className="text-sm text-foreground dark:text-slate-200 leading-snug" data-testid={`text-body-${n.id}`}>
+                            <p className="text-sm text-foreground leading-snug" data-testid={`text-body-${n.id}`}>
                               {n.body || n.title}
                             </p>
 
                             {details && (
                               <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-muted-foreground">
                                 {details.changedBy && (
-                                  <span>By: <strong className="text-foreground dark:text-slate-300">{details.changedBy}</strong></span>
+                                  <span>By: <strong className="text-foreground">{details.changedBy}</strong></span>
                                 )}
                                 {details.changeType && (
-                                  <span>Type: <strong className="text-foreground dark:text-slate-300">{details.changeType.replace(/_/g, " ")}</strong></span>
+                                  <span>Type: <strong className="text-foreground">{details.changeType.replace(/_/g, " ")}</strong></span>
                                 )}
                                 {details.details && typeof details.details === "object" && Object.keys(details.details).length > 0 && (
-                                  <div className="w-full mt-1 p-1.5 bg-muted dark:bg-slate-800 rounded border border-border dark:border-slate-700 text-[11px]">
+                                  <div className="w-full mt-1 p-1.5 bg-muted rounded border border-border text-[11px]">
                                     {Object.entries(details.details).map(([k, v]) => (
                                       <div key={k} className="flex gap-2">
-                                        <span className="text-slate-400 min-w-[70px]">{k}:</span>
-                                        <span className="text-foreground dark:text-slate-300 truncate">{String(v)}</span>
+                                        <span className="text-slate-500 min-w-[70px]">{k}:</span>
+                                        <span className="text-foreground truncate">{String(v)}</span>
                                       </div>
                                     ))}
                                   </div>
                                 )}
                                 {details.changes && Array.isArray(details.changes) && details.changes.length > 0 && (
-                                  <div className="w-full mt-1 p-1.5 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-100 dark:border-blue-800 text-[11px]">
+                                  <div className="w-full mt-1 p-1.5 bg-blue-50 rounded border border-blue-100 text-[11px]">
                                     {details.changes.map((ch: any, i: number) => (
                                       <div key={i} className="flex items-center gap-2">
-                                        <ArrowRight className="w-2.5 h-2.5 text-blue-400 flex-shrink-0" />
-                                        <span className="text-foreground dark:text-slate-300">
+                                        <ArrowRight className="w-2.5 h-2.5 text-blue-600 flex-shrink-0" />
+                                        <span className="text-foreground">
                                           {ch.field && <strong>{ch.field}: </strong>}
-                                          {ch.oldValue && <span className="line-through text-red-400 mr-1">{ch.oldValue}</span>}
+                                          {ch.oldValue && <span className="line-through text-red-600 mr-1">{ch.oldValue}</span>}
                                           {ch.newValue && <span className="text-emerald-600">{ch.newValue}</span>}
                                           {ch.operation && <span>{ch.operation}</span>}
                                           {ch.tasks && Array.isArray(ch.tasks) && ch.tasks.length > 0 && (
-                                            <span className="text-slate-400"> ({ch.tasks.join(", ")})</span>
+                                            <span className="text-slate-500"> ({ch.tasks.join(", ")})</span>
                                           )}
                                         </span>
                                       </div>

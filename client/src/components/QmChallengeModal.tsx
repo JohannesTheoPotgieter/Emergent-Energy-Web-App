@@ -101,14 +101,14 @@ export function QmChallengeModal({ open, onSuccess, onClose }: QmChallengeModalP
 
         {success ? (
           <div className="flex flex-col items-center py-6 gap-3">
-            <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center">
+            <div className="w-16 h-16 rounded-full bg-green-50 flex items-center justify-center">
               <ShieldCheck className="w-8 h-8 text-green-500" />
             </div>
             <p className="text-sm font-medium text-green-500">Access Granted</p>
           </div>
         ) : isLocked ? (
           <div className="space-y-4 py-4">
-            <div className="flex items-start gap-3 p-4 rounded-lg bg-red-500/10 border border-red-500/20">
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-red-50 border border-red-500/20">
               <Lock className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
               <div>
                 <p className="text-sm font-medium text-red-500">Account Locked</p>

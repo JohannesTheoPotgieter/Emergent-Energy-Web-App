@@ -137,7 +137,7 @@ function CircularProgress({ value, size = 48, strokeWidth = 4, className = "" }:
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
   const offset = circumference - (value / 100) * circumference;
-  const color = value >= 80 ? "text-emerald-500" : value >= 50 ? "text-amber-500" : "text-red-400";
+  const color = value >= 80 ? "text-emerald-500" : value >= 50 ? "text-amber-500" : "text-red-600";
   return (
     <svg width={size} height={size} className={className}>
       <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeWidth={strokeWidth} className="text-muted/20" />
@@ -153,11 +153,11 @@ function CircularProgress({ value, size = 48, strokeWidth = 4, className = "" }:
 
 function StatusBadge({ status }: { status: string }) {
   const config: Record<string, { bg: string; text: string; label: string; dot: string }> = {
-    pass: { bg: "bg-emerald-500/15", text: "text-emerald-600 dark:text-emerald-400", label: "Pass", dot: "bg-emerald-500" },
-    fail: { bg: "bg-red-500/15", text: "text-red-600 dark:text-red-400", label: "Fail", dot: "bg-red-500" },
-    review: { bg: "bg-amber-500/15", text: "text-amber-600 dark:text-amber-400", label: "Review", dot: "bg-amber-500" },
+    pass: { bg: "bg-emerald-50", text: "text-emerald-600", label: "Pass", dot: "bg-emerald-500" },
+    fail: { bg: "bg-red-50", text: "text-red-600", label: "Fail", dot: "bg-red-500" },
+    review: { bg: "bg-amber-50", text: "text-amber-600", label: "Review", dot: "bg-amber-500" },
     na: { bg: "bg-gray-500/15", text: "text-muted-foreground", label: "N/A", dot: "bg-gray-400" },
-    pending: { bg: "bg-blue-500/15", text: "text-blue-600 dark:text-blue-400", label: "Pending", dot: "bg-blue-500" },
+    pending: { bg: "bg-blue-50", text: "text-blue-600", label: "Pending", dot: "bg-blue-500" },
   };
   const c = config[status] || config.pending;
   return (
@@ -463,7 +463,7 @@ export default function QmDashboardPage() {
   return (
     <div className="space-y-6 pb-8" data-testid="qm-dashboard-page">
       <div className="flex items-center gap-4 flex-wrap">
-        <div className="p-2.5 rounded-xl bg-emerald-500/10">
+        <div className="p-2.5 rounded-xl bg-emerald-50">
           <ShieldCheck className="h-7 w-7 text-emerald-500" />
         </div>
         <div className="flex-1 min-w-0">
@@ -487,8 +487,8 @@ export default function QmDashboardPage() {
       <ActionBar nextAction={qmNextAction} blockers={qmBlockers} />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="relative overflow-hidden border-blue-200/50 dark:border-blue-800/40" data-testid="kpi-total-projects">
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-blue-100/30 dark:from-blue-950/30 dark:to-blue-900/10" />
+        <Card className="relative overflow-hidden border-blue-200/50/40" data-testid="kpi-total-projects">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-blue-100/30/10" />
           <CardContent className="relative p-4 sm:p-5">
             <div className="flex items-start justify-between">
               <div>
@@ -496,15 +496,15 @@ export default function QmDashboardPage() {
                 <p className="text-3xl font-bold tabular-nums" data-testid="stat-total-projects">{totalProjects}</p>
                 <p className="text-xs text-muted-foreground mt-1">With quality checklists</p>
               </div>
-              <div className="p-2 rounded-lg bg-blue-500/10">
-                <ClipboardCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <div className="p-2 rounded-lg bg-blue-50">
+                <ClipboardCheck className="h-5 w-5 text-blue-600" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-emerald-200/50 dark:border-emerald-800/40" data-testid="kpi-items-passed">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 to-emerald-100/30 dark:from-emerald-950/30 dark:to-emerald-900/10" />
+        <Card className="relative overflow-hidden border-emerald-200/50/40" data-testid="kpi-items-passed">
+          <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 to-emerald-100/30/10" />
           <CardContent className="relative p-4 sm:p-5">
             <div className="flex items-start justify-between">
               <div>
@@ -512,8 +512,8 @@ export default function QmDashboardPage() {
                 <p className="text-3xl font-bold tabular-nums" data-testid="stat-items-passed">{totalItemsPassed}</p>
                 <p className="text-xs text-muted-foreground mt-1">of {totalItemsAll} total items</p>
               </div>
-              <div className="p-2 rounded-lg bg-emerald-500/10">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              <div className="p-2 rounded-lg bg-emerald-50">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
               </div>
             </div>
             {totalItemsAll > 0 && (
@@ -523,11 +523,11 @@ export default function QmDashboardPage() {
         </Card>
 
         <Card
-          className="relative overflow-hidden border-amber-200/50 dark:border-amber-800/40 cursor-pointer hover:shadow-md transition-shadow"
+          className="relative overflow-hidden border-amber-200/50/40 cursor-pointer hover:shadow-md transition-shadow"
           onClick={() => setWarningFilter(!warningFilter)}
           data-testid="kpi-active-warnings"
         >
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-50 to-amber-100/30 dark:from-amber-950/30 dark:to-amber-900/10" />
+          <div className="absolute inset-0 bg-gradient-to-br from-amber-50 to-amber-100/30/10" />
           <CardContent className="relative p-4 sm:p-5">
             <div className="flex items-start justify-between">
               <div>
@@ -537,20 +537,20 @@ export default function QmDashboardPage() {
                   {activeWarnings === 0 ? "All clear" : `${highSeverityWarnings.length} high severity`}
                 </p>
               </div>
-              <div className="p-2 rounded-lg bg-amber-500/10">
-                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              <div className="p-2 rounded-lg bg-amber-50">
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
               </div>
             </div>
             {warningFilter && (
-              <Badge variant="outline" className="absolute top-2 right-2 text-[10px] bg-amber-500/10 border-amber-500/30 text-amber-600">
+              <Badge variant="outline" className="absolute top-2 right-2 text-[10px] bg-amber-50 border-amber-200 text-amber-600">
                 Filtering
               </Badge>
             )}
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-indigo-200/50 dark:border-indigo-800/40" data-testid="kpi-avg-score">
-          <div className="absolute inset-0 bg-gradient-to-br from-indigo-50 to-indigo-100/30 dark:from-indigo-950/30 dark:to-indigo-900/10" />
+        <Card className="relative overflow-hidden border-indigo-200/50/40" data-testid="kpi-avg-score">
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-50 to-indigo-100/30/10" />
           <CardContent className="relative p-4 sm:p-5">
             <div className="flex items-center gap-4">
               <CircularProgress value={avgQmScore} size={56} strokeWidth={5} />
@@ -693,8 +693,8 @@ export default function QmDashboardPage() {
                                     variant="outline"
                                     className={`text-[10px] ${
                                       checklist.status === "completed"
-                                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
-                                        : "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30"
+                                        ? "bg-emerald-50 text-emerald-600 border-emerald-200"
+                                        : "bg-blue-50 text-blue-600 border-blue-200"
                                     }`}
                                   >
                                     {checklist.status}
@@ -732,12 +732,12 @@ export default function QmDashboardPage() {
                             <div className="flex items-center justify-between text-xs text-muted-foreground pt-2.5 border-t">
                               <div className="flex items-center gap-1.5">
                                 {warnCount > 0 ? (
-                                  <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 text-[10px] gap-1">
+                                  <Badge variant="outline" className="bg-amber-50 text-amber-600 border-amber-200 text-[10px] gap-1">
                                     <AlertTriangle className="h-3 w-3" />
                                     {warnCount} warning{warnCount !== 1 ? "s" : ""}
                                   </Badge>
                                 ) : (
-                                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[10px] gap-1">
+                                  <Badge variant="outline" className="bg-emerald-50 text-emerald-600 border-emerald-200 text-[10px] gap-1">
                                     <ShieldCheck className="h-3 w-3" />
                                     Clear
                                   </Badge>
@@ -931,16 +931,16 @@ export default function QmDashboardPage() {
 
       {!warningsLoading && warnings.length > 0 && (
         <Collapsible open={warningsExpanded} onOpenChange={setWarningsExpanded}>
-          <Card className="border-amber-200/50 dark:border-amber-800/40">
+          <Card className="border-amber-200/50/40">
             <CollapsibleTrigger asChild>
               <CardHeader className="pb-3 cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg" data-testid="warnings-section-header">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base font-semibold flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-amber-500/10">
+                    <div className="p-1.5 rounded-lg bg-amber-50">
                       <AlertTriangle className="h-4 w-4 text-amber-500" />
                     </div>
                     Active Warnings
-                    <Badge variant="outline" className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30 ml-1">
+                    <Badge variant="outline" className="bg-amber-50 text-amber-600 border-amber-200 ml-1">
                       {warnings.length}
                     </Badge>
                   </CardTitle>
@@ -954,7 +954,7 @@ export default function QmDashboardPage() {
                   <div className="mb-5">
                     <div className="flex items-center gap-2 mb-2.5">
                       <span className="h-2 w-2 rounded-full bg-red-500" />
-                      <p className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider">High Severity ({highSeverityWarnings.length})</p>
+                      <p className="text-xs font-semibold text-red-600 uppercase tracking-wider">High Severity ({highSeverityWarnings.length})</p>
                     </div>
                     <div className="space-y-2">
                       {highSeverityWarnings.map((warning) => (
@@ -972,7 +972,7 @@ export default function QmDashboardPage() {
                   <div className="mb-5">
                     <div className="flex items-center gap-2 mb-2.5">
                       <span className="h-2 w-2 rounded-full bg-amber-500" />
-                      <p className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Medium Severity ({mediumWarnings.length})</p>
+                      <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider">Medium Severity ({mediumWarnings.length})</p>
                     </div>
                     <div className="space-y-2">
                       {mediumWarnings.map((warning) => (
@@ -990,7 +990,7 @@ export default function QmDashboardPage() {
                   <div>
                     <div className="flex items-center gap-2 mb-2.5">
                       <span className="h-2 w-2 rounded-full bg-blue-400" />
-                      <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Low / Other ({lowWarnings.length})</p>
+                      <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider">Low / Other ({lowWarnings.length})</p>
                     </div>
                     <div className="space-y-2">
                       {lowWarnings.map((warning) => (
@@ -1024,8 +1024,8 @@ export default function QmDashboardPage() {
                 <div className="flex items-center gap-2 mt-1.5">
                   <Badge variant="outline" className={
                     selectedWarning.severity === "High"
-                      ? "bg-red-500/10 text-red-500 border-red-500/30 text-xs"
-                      : "bg-amber-500/10 text-amber-500 border-amber-500/30 text-xs"
+                      ? "bg-red-50 text-red-500 border-red-200 text-xs"
+                      : "bg-amber-50 text-amber-500 border-amber-200 text-xs"
                   }>
                     {selectedWarning.severity}
                   </Badge>
@@ -1069,7 +1069,7 @@ export default function QmDashboardPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/30"
+                  className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50"
                   onClick={() => setActionType("override")}
                   data-testid="btn-override-warning"
                 >
@@ -1245,18 +1245,18 @@ function WarningRow({ warning, severity, onView, onOverride, onResolve }: {
   onResolve: () => void;
 }) {
   const borderClass = severity === "high"
-    ? "border-red-200/50 dark:border-red-800/40 bg-red-50/30 dark:bg-red-950/10 hover:bg-red-50/60 dark:hover:bg-red-950/20"
+    ? "border-red-200/50/40 bg-red-50/30 hover:bg-red-50/60"
     : severity === "medium"
-    ? "border-amber-200/50 dark:border-amber-800/40 bg-amber-50/30 dark:bg-amber-950/10 hover:bg-amber-50/60 dark:hover:bg-amber-950/20"
+    ? "border-amber-200/50/40 bg-amber-50/30 hover:bg-amber-50/60"
     : "border-border/50 hover:bg-muted/30";
 
-  const iconClass = severity === "high" ? "text-red-500" : severity === "medium" ? "text-amber-500" : "text-blue-400";
+  const iconClass = severity === "high" ? "text-red-500" : severity === "medium" ? "text-amber-500" : "text-blue-600";
 
   const badgeClass = severity === "high"
-    ? "bg-red-500/10 text-red-500 border-red-500/30"
+    ? "bg-red-50 text-red-500 border-red-200"
     : severity === "medium"
-    ? "bg-amber-500/10 text-amber-500 border-amber-500/30"
-    : "bg-blue-500/10 text-blue-500 border-blue-500/30";
+    ? "bg-amber-50 text-amber-500 border-amber-200"
+    : "bg-blue-50 text-blue-500 border-blue-200";
 
   return (
     <div
@@ -1278,7 +1278,7 @@ function WarningRow({ warning, severity, onView, onOverride, onResolve }: {
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 px-2 text-xs hover:bg-amber-500/10"
+          className="h-7 px-2 text-xs hover:bg-amber-50"
           onClick={(e) => { e.stopPropagation(); onOverride(); }}
           data-testid={`btn-override-${warning.id}`}
         >
@@ -1287,7 +1287,7 @@ function WarningRow({ warning, severity, onView, onOverride, onResolve }: {
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 px-2 text-xs text-emerald-600 hover:bg-emerald-500/10"
+          className="h-7 px-2 text-xs text-emerald-600 hover:bg-emerald-50"
           onClick={(e) => { e.stopPropagation(); onResolve(); }}
           data-testid={`btn-resolve-${warning.id}`}
         >

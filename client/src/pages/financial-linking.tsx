@@ -473,7 +473,7 @@ export default function FinancialLinkingPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-7 w-7 p-0 text-red-400 hover:text-red-600"
+                                    className="h-7 w-7 p-0 text-red-600 hover:text-red-600"
                                     onClick={() => unlinkRevenueMutation.mutate(m.rowNumber)}
                                     disabled={unlinkRevenueMutation.isPending}
                                     data-testid={`button-unlink-revenue-${m.rowNumber}`}
@@ -612,7 +612,7 @@ export default function FinancialLinkingPage() {
                                     <Button
                                       variant="ghost"
                                       size="sm"
-                                      className="h-7 w-7 p-0 text-red-400 hover:text-red-600"
+                                      className="h-7 w-7 p-0 text-red-600 hover:text-red-600"
                                       onClick={() => unlinkExpenseMutation.mutate(e.id)}
                                       disabled={unlinkExpenseMutation.isPending}
                                       data-testid={`button-unlink-expense-${e.id}`}

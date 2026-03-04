@@ -1043,7 +1043,7 @@ export default function LifecycleBoardPage() {
                             )}
                             {p.lastEngineer && (
                               <div className="flex items-center gap-1 italic" data-testid={`text-last-eng-${p.id}`} title={`Last eng activity: ${p.lastEngineer.name}`}>
-                                <Wrench className="w-3 h-3 text-purple-400 shrink-0" />
+                                <Wrench className="w-3 h-3 text-purple-600 shrink-0" />
                                 <span className="break-words">{p.lastEngineer.name}</span>
                                 <span className="text-[8px] opacity-60 shrink-0">{timeAgo(p.lastEngineer.at)}</span>
                               </div>

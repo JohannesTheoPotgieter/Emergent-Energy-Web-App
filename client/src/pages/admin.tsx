@@ -421,14 +421,14 @@ export default function AdminPage() {
                       <p className="text-sm font-medium" data-testid="text-total-projects">{folderConfig.projectCounts?.total ?? 0}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 p-3 rounded-lg border border-green-200 dark:border-green-900">
+                  <div className="flex items-center gap-2 p-3 rounded-lg border border-green-200">
                     <CheckCircle className="h-4 w-4 text-green-500" />
                     <div>
                       <p className="text-xs text-muted-foreground">Active Projects</p>
                       <p className="text-sm font-medium text-green-600" data-testid="text-active-projects">{folderConfig.projectCounts?.active ?? 0}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 p-3 rounded-lg border border-orange-200 dark:border-orange-900">
+                  <div className="flex items-center gap-2 p-3 rounded-lg border border-orange-200">
                     <Clock className="h-4 w-4 text-orange-500" />
                     <div>
                       <p className="text-xs text-muted-foreground">Historical Projects</p>
@@ -499,8 +499,8 @@ export default function AdminPage() {
               <CardContent>
                 <div className={`flex items-center gap-3 p-3 rounded-lg border ${
                   singleUploadResult.status === "success"
-                    ? "border-green-200 bg-green-50 dark:bg-green-950/20"
-                    : "border-red-200 bg-red-50 dark:bg-red-950/20"
+                    ? "border-green-200 bg-green-50"
+                    : "border-red-200 bg-red-50"
                 }`}>
                   {singleUploadResult.status === "success" ? (
                     <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
@@ -554,7 +554,7 @@ export default function AdminPage() {
                     <div
                       key={idx}
                       className={`flex items-center justify-between p-3 rounded-lg border ${
-                        r.status === "failed" ? "border-red-200 bg-red-50 dark:bg-red-950/20" : "bg-muted/50"
+                        r.status === "failed" ? "border-red-200 bg-red-50" : "bg-muted/50"
                       }`}
                       data-testid={`scan-result-${idx}`}
                     >

@@ -127,14 +127,14 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const LEVEL_CONFIG: Record<number, { color: string; bg: string; glow: string; emoji: string }> = {
-  1: { color: "text-muted-foreground", bg: "bg-muted dark:bg-slate-800", glow: "", emoji: "🌱" },
-  2: { color: "text-blue-600", bg: "bg-blue-100 dark:bg-blue-900/40", glow: "", emoji: "⚡" },
-  3: { color: "text-green-600", bg: "bg-green-100 dark:bg-green-900/40", glow: "", emoji: "🌟" },
-  4: { color: "text-purple-600", bg: "bg-purple-100 dark:bg-purple-900/40", glow: "shadow-purple-200/50", emoji: "💜" },
-  5: { color: "text-orange-600", bg: "bg-orange-100 dark:bg-orange-900/40", glow: "shadow-orange-200/50", emoji: "🔥" },
-  6: { color: "text-red-600", bg: "bg-red-100 dark:bg-red-900/40", glow: "shadow-red-200/50", emoji: "👑" },
-  7: { color: "text-yellow-700", bg: "bg-yellow-100 dark:bg-yellow-900/40", glow: "shadow-yellow-300/50", emoji: "⚔️" },
-  8: { color: "text-fuchsia-600", bg: "bg-gradient-to-r from-purple-100 to-pink-100 dark:from-purple-900/40 dark:to-pink-900/40", glow: "shadow-fuchsia-300/60", emoji: "💎" },
+  1: { color: "text-muted-foreground", bg: "bg-muted", glow: "", emoji: "🌱" },
+  2: { color: "text-blue-600", bg: "bg-blue-100", glow: "", emoji: "⚡" },
+  3: { color: "text-green-600", bg: "bg-green-100", glow: "", emoji: "🌟" },
+  4: { color: "text-purple-600", bg: "bg-purple-100", glow: "shadow-purple-200/50", emoji: "💜" },
+  5: { color: "text-orange-600", bg: "bg-orange-100", glow: "shadow-orange-200/50", emoji: "🔥" },
+  6: { color: "text-red-600", bg: "bg-red-100", glow: "shadow-red-200/50", emoji: "👑" },
+  7: { color: "text-yellow-700", bg: "bg-yellow-100", glow: "shadow-yellow-300/50", emoji: "⚔️" },
+  8: { color: "text-fuchsia-600", bg: "bg-gradient-to-r from-purple-100 to-pink-100/40", glow: "shadow-fuchsia-300/60", emoji: "💎" },
 };
 
 const STAT_CONFIG = [
@@ -235,7 +235,7 @@ function DetailLineItems({ cat, expanded, onToggle, config, type }: {
       {expanded && cat.items.length > 0 && (
         <div className="border-t border-border max-h-[200px] overflow-y-auto">
           {cat.items.map((item, idx) => (
-            <div key={idx} className="flex items-center gap-2 px-3 py-1.5 text-[11px] border-b border-gray-50 dark:border-gray-900 last:border-b-0 hover:bg-muted/20">
+            <div key={idx} className="flex items-center gap-2 px-3 py-1.5 text-[11px] border-b border-gray-50 last:border-b-0 hover:bg-muted/20">
               <span className="text-muted-foreground w-4 text-right shrink-0">{idx + 1}.</span>
               <div className="flex-1 min-w-0">
                 <span className="truncate block text-foreground ">{item.name || 'Unnamed'}</span>
@@ -262,7 +262,7 @@ function XpBar({ current, max, level, title, color }: { current: number; max: nu
         <span className={`font-bold ${color}`}>Lv.{level} {title}</span>
         <span className="text-muted-foreground">{current} / {max} XP</span>
       </div>
-      <div className="h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden relative">
+      <div className="h-2.5 rounded-full bg-gray-200 overflow-hidden relative">
         <div
           className="h-full rounded-full transition-all duration-1000 ease-out relative overflow-hidden"
           style={{
@@ -362,11 +362,11 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
           </div>
 
           <div className="flex items-center gap-3 mt-3 text-xs">
-            <span className="bg-green-500/20 text-green-200 px-2 py-0.5 rounded-full font-medium">
+            <span className="bg-green-50 text-green-200 px-2 py-0.5 rounded-full font-medium">
               +{selectedUser.pointsEarned.toLocaleString()} earned
             </span>
             {selectedUser.pointsPenalty < 0 && (
-              <span className="bg-red-500/20 text-red-200 px-2 py-0.5 rounded-full font-medium">
+              <span className="bg-red-50 text-red-200 px-2 py-0.5 rounded-full font-medium">
                 {selectedUser.pointsPenalty.toLocaleString()} penalties
               </span>
             )}
@@ -383,11 +383,11 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
                 {selectedUser.badges.map(b => (
                   <div
                     key={b.key}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/30 dark:to-yellow-950/30 border border-amber-200/50 dark:border-amber-800/30 text-[11px] hover:scale-105 transition-transform cursor-default"
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-50 to-yellow-50/30 border border-amber-200/50/30 text-[11px] hover:scale-105 transition-transform cursor-default"
                     title={b.description}
                   >
                     <span className="text-sm">{b.icon}</span>
-                    <span className="font-medium text-amber-800 dark:text-amber-200">{b.name}</span>
+                    <span className="font-medium text-amber-800">{b.name}</span>
                   </div>
                 ))}
               </div>
@@ -396,7 +396,7 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
 
           {loadingDetails && (
             <div className="text-center py-6 text-xs text-muted-foreground">
-              <Sparkles className="w-6 h-6 mx-auto mb-2 animate-spin text-purple-400" />
+              <Sparkles className="w-6 h-6 mx-auto mb-2 animate-spin text-purple-600" />
               Loading point breakdown...
             </div>
           )}
@@ -405,7 +405,7 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
             <div>
               <div className="flex items-center gap-1 mb-3 bg-muted/30 rounded-lg p-1">
                 <button
-                  className={`flex-1 text-xs px-3 py-2 rounded-md font-medium transition-all ${detailTab === 'earned' ? 'bg-card dark:bg-gray-800 shadow-sm text-green-700 dark:text-green-400' : 'text-muted-foreground hover:text-foreground'}`}
+                  className={`flex-1 text-xs px-3 py-2 rounded-md font-medium transition-all ${detailTab === 'earned' ? 'bg-card shadow-sm text-green-700' : 'text-muted-foreground hover:text-foreground'}`}
                   onClick={() => setDetailTab("earned")}
                   data-testid="btn-earned-tab"
                 >
@@ -413,7 +413,7 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
                   Earned (+{earnedTotal.toLocaleString()})
                 </button>
                 <button
-                  className={`flex-1 text-xs px-3 py-2 rounded-md font-medium transition-all ${detailTab === 'penalties' ? 'bg-card dark:bg-gray-800 shadow-sm text-red-700 dark:text-red-400' : 'text-muted-foreground hover:text-foreground'}`}
+                  className={`flex-1 text-xs px-3 py-2 rounded-md font-medium transition-all ${detailTab === 'penalties' ? 'bg-card shadow-sm text-red-700' : 'text-muted-foreground hover:text-foreground'}`}
                   onClick={() => setDetailTab("penalties")}
                   data-testid="btn-penalties-tab"
                 >
@@ -439,15 +439,15 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
                     );
                   })}
                   {participationPts > 0 && (
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-100 dark:border-blue-900/30">
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50/20 border border-blue-100/30">
                       <Sparkles className="w-4 h-4 text-blue-500 shrink-0" />
                       <span className="text-xs font-medium flex-1">Active User Bonus</span>
                       <span className="text-xs font-bold text-green-600">+{participationPts}</span>
                     </div>
                   )}
-                  <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 border border-green-200 dark:border-green-900/40 mt-2">
-                    <span className="text-xs font-semibold text-green-700 dark:text-green-400">Total Earned</span>
-                    <span className="text-sm font-bold text-green-700 dark:text-green-400">+{earnedTotal.toLocaleString()}</span>
+                  <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50/20 border border-green-200/40 mt-2">
+                    <span className="text-xs font-semibold text-green-700">Total Earned</span>
+                    <span className="text-sm font-bold text-green-700">+{earnedTotal.toLocaleString()}</span>
                   </div>
                 </div>
               )}
@@ -476,16 +476,16 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
                           />
                         );
                       })}
-                      <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-gradient-to-r from-red-50 to-rose-50 dark:from-red-950/20 dark:to-rose-950/20 border border-red-200 dark:border-red-900/40 mt-2">
-                        <span className="text-xs font-semibold text-red-700 dark:text-red-400">Total Penalties</span>
-                        <span className="text-sm font-bold text-red-700 dark:text-red-400">{penaltyTotal.toLocaleString()}</span>
+                      <div className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-gradient-to-r from-red-50 to-rose-50/20 border border-red-200/40 mt-2">
+                        <span className="text-xs font-semibold text-red-700">Total Penalties</span>
+                        <span className="text-sm font-bold text-red-700">{penaltyTotal.toLocaleString()}</span>
                       </div>
                     </>
                   )}
                 </div>
               )}
 
-              <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 dark:from-indigo-950/20 dark:via-purple-950/20 dark:to-pink-950/20 border border-indigo-200/50 dark:border-indigo-800/30 mt-3">
+              <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 dark:via-purple-950/20/20 border border-indigo-200/50/30 mt-3">
                 <div className="flex items-center gap-2">
                   <Trophy className="w-5 h-5 text-amber-500" />
                   <span className="text-sm font-bold">Net Score</span>
@@ -506,9 +506,9 @@ function PodiumCard({ entry, rank, onClick }: { entry: LeaderboardEntry; rank: n
   const lvlCfg = LEVEL_CONFIG[entry.level.level] || LEVEL_CONFIG[1];
   const podiumHeightByRank: Record<number, number> = { 1: 200, 2: 160, 3: 140 };
   const podiumColorByRank: Record<number, string> = {
-    1: "from-yellow-400 via-amber-300 to-yellow-200 dark:from-yellow-600 dark:via-amber-700 dark:to-yellow-800",
-    2: "from-gray-300 via-gray-200 to-gray-100 dark:from-gray-600 dark:via-gray-700 dark:to-gray-800",
-    3: "from-amber-700 via-amber-600 to-amber-500 dark:from-amber-800 dark:via-amber-700 dark:to-amber-600",
+    1: "from-yellow-400 via-amber-300 to-yellow-200 dark:via-amber-700",
+    2: "from-gray-300 via-gray-200 to-gray-100 dark:via-gray-700",
+    3: "from-amber-700 via-amber-600 to-amber-500 dark:via-amber-700",
   };
   const orderIndex = rank === 1 ? 1 : rank === 2 ? 0 : 2;
 
@@ -541,12 +541,12 @@ function PodiumCard({ entry, rank, onClick }: { entry: LeaderboardEntry; rank: n
       >
         {rank === 1 && <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/10 to-white/20" />}
         <div className="text-center pb-4 relative z-10">
-          <div className={`text-3xl sm:text-4xl font-black ${rank === 1 ? 'text-white' : rank === 2 ? 'text-foreground dark:text-gray-200' : 'text-white'}`}>
+          <div className={`text-3xl sm:text-4xl font-black ${rank === 1 ? 'text-white' : rank === 2 ? 'text-foreground' : 'text-white'}`}>
             {entry.points.toLocaleString()}
           </div>
-          <div className={`text-[10px] font-medium ${rank === 1 ? 'text-white/70' : rank === 2 ? 'text-muted-foreground dark:text-gray-400' : 'text-white/70'}`}>XP</div>
+          <div className={`text-[10px] font-medium ${rank === 1 ? 'text-white/70' : rank === 2 ? 'text-muted-foreground' : 'text-white/70'}`}>XP</div>
           {entry.pointsPenalty < 0 && (
-            <div className="text-[10px] text-red-300 font-medium mt-0.5">{entry.pointsPenalty}</div>
+            <div className="text-[10px] text-red-700 font-medium mt-0.5">{entry.pointsPenalty}</div>
           )}
           <div className="flex justify-center gap-0.5 mt-2">
             {entry.badges.slice(0, 4).map(b => (
@@ -688,7 +688,7 @@ export default function LeaderboardPage() {
       {isLoading && (
         <div className="text-center py-16" data-testid="text-loading">
           <div className="inline-flex items-center gap-3 text-muted-foreground">
-            <Sparkles className="w-6 h-6 animate-spin text-purple-400" />
+            <Sparkles className="w-6 h-6 animate-spin text-purple-600" />
             <span className="text-sm font-medium">Computing rankings...</span>
           </div>
         </div>
@@ -724,7 +724,7 @@ export default function LeaderboardPage() {
                     onClick={() => setSelectedUser(entry)}
                     data-testid={`card-rank-${rank}`}
                   >
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center text-sm font-black text-muted-foreground dark:text-gray-400 shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-sm font-black text-muted-foreground shrink-0">
                       {rank}
                     </div>
 
@@ -734,11 +734,11 @@ export default function LeaderboardPage() {
                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${lvlCfg.bg} ${lvlCfg.color}`}>
                           {lvlCfg.emoji} Lv.{entry.level.level}
                         </span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted dark:bg-gray-800 text-muted-foreground hidden sm:inline">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground hidden sm:inline">
                           {ROLE_LABELS[entry.role] || entry.role}
                         </span>
                       </div>
-                      <div className="h-1.5 rounded-full bg-muted dark:bg-gray-800 mt-1.5 max-w-[180px] overflow-hidden">
+                      <div className="h-1.5 rounded-full bg-muted mt-1.5 max-w-[180px] overflow-hidden">
                         <div
                           className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-purple-500 transition-all duration-700"
                           style={{ width: `${Math.min(100, (entry.points / (activeEntries[0]?.points || 1)) * 100)}%` }}
@@ -790,7 +790,7 @@ export default function LeaderboardPage() {
                 key={key}
                 className={`flex items-center gap-3 p-4 rounded-xl border transition-all animate-scale-in ${
                   earned
-                    ? "bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/20 dark:to-yellow-950/20 border-amber-200 dark:border-amber-800/40 shadow-sm"
+                    ? "bg-gradient-to-r from-amber-50 to-yellow-50/20 border-amber-200/40 shadow-sm"
                     : "bg-muted  border-border opacity-50"
                 }`}
                 style={{ animationDelay: `${Math.min(idx * 0.03, 0.4)}s`, animationFillMode: 'both' }}
@@ -801,14 +801,14 @@ export default function LeaderboardPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className={`font-bold text-sm ${earned ? "text-amber-800 dark:text-amber-200" : "text-gray-400"}`}>{badge.name}</span>
+                    <span className={`font-bold text-sm ${earned ? "text-amber-800" : "text-gray-400"}`}>{badge.name}</span>
                     {earned && <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />}
                   </div>
                   <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{badge.description}</p>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full inline-block mt-1 capitalize ${
-                    badge.category === 'penalties' ? 'bg-red-100 text-red-600 dark:bg-red-950/30 dark:text-red-400' :
-                    badge.category === 'excellence' ? 'bg-green-100 text-green-600 dark:bg-green-950/30 dark:text-green-400' :
-                    'bg-muted text-muted-foreground dark:bg-gray-800 dark:text-gray-400'
+                    badge.category === 'penalties' ? 'bg-red-100 text-red-600' :
+                    badge.category === 'excellence' ? 'bg-green-100 text-green-600' :
+                    'bg-muted text-muted-foreground'
                   }`}>{badge.category}</span>
                 </div>
               </div>
@@ -821,7 +821,7 @@ export default function LeaderboardPage() {
 
       {!isLoading && tab === "leaderboard" && data?.pointValues && (
         <div className="rounded-xl border border-border bg-card  overflow-hidden">
-          <div className="px-5 py-3 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800/50 dark:to-gray-900 border-b border-border">
+          <div className="px-5 py-3 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-border">
             <h3 className="text-sm font-bold flex items-center gap-2">
               <Zap className="w-4 h-4 text-yellow-500" />
               How XP Works
@@ -835,7 +835,7 @@ export default function LeaderboardPage() {
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {Object.entries(data.pointValues).map(([key, pts]) => (
-                  <div key={key} className="text-center p-2.5 rounded-lg bg-gradient-to-b from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 border border-green-100 dark:border-green-900/30">
+                  <div key={key} className="text-center p-2.5 rounded-lg bg-gradient-to-b from-green-50 to-emerald-50/20 border border-green-100/30">
                     <div className="text-lg font-black text-green-600">+{pts}</div>
                     <div className="text-[10px] text-green-600/70 capitalize font-medium">{key.replace(/_/g, " ")}</div>
                   </div>
@@ -850,9 +850,9 @@ export default function LeaderboardPage() {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {Object.entries(data.penaltyValues).map(([key, pts]) => (
-                    <div key={key} className="text-center p-2.5 rounded-lg bg-gradient-to-b from-red-50 to-rose-50 dark:from-red-950/20 dark:to-rose-950/20 border border-red-100 dark:border-red-900/30">
+                    <div key={key} className="text-center p-2.5 rounded-lg bg-gradient-to-b from-red-50 to-rose-50/20 border border-red-100/30">
                       <div className="text-lg font-black text-red-500">{pts}</div>
-                      <div className="text-[10px] text-red-400/80 capitalize font-medium">{key.replace(/_/g, " ")}</div>
+                      <div className="text-[10px] text-red-600/80 capitalize font-medium">{key.replace(/_/g, " ")}</div>
                     </div>
                   ))}
                 </div>

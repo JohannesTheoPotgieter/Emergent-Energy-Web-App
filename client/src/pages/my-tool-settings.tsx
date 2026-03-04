@@ -419,7 +419,7 @@ export default function MyToolSettingsPage() {
               {outlookStatus?.connected ? (
                 <>
                   <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                  <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Connected</span>
+                  <span className="text-sm font-medium text-emerald-700">Connected</span>
                   {outlookStatus.email && (
                     <Badge variant="secondary" className="text-xs">{outlookStatus.email}</Badge>
                   )}
@@ -427,7 +427,7 @@ export default function MyToolSettingsPage() {
               ) : (
                 <>
                   <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
-                  <span className="text-sm text-amber-600 dark:text-amber-400">
+                  <span className="text-sm text-amber-600">
                     {outlookStatus?.configured === false ? "Not configured" : "Connection issue"}
                   </span>
                 </>

@@ -594,7 +594,7 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
                 {hasApprovedDeliverable && <CheckCircle2 className="h-3 w-3 text-green-500" />}
                 {!hasApprovedDeliverable && hasPendingDeliverable && <Clock className="h-3 w-3 text-amber-500" />}
                 {!hasApprovedDeliverable && !hasPendingDeliverable && taskDeliverables.length === 0 && (
-                  <AlertTriangle className="h-3 w-3 text-red-400" />
+                  <AlertTriangle className="h-3 w-3 text-red-600" />
                 )}
               </div>
             )}
@@ -1029,7 +1029,7 @@ function DeliverablesSection({ stageId, projectId, templates, uploaded }: {
                       <div key={i} className="flex items-center gap-2 py-0.5">
                         <span className="flex-1 truncate font-mono text-muted-foreground">{p}</span>
                         <button
-                          className="text-red-400 hover:text-red-600 shrink-0"
+                          className="text-red-600 hover:text-red-600 shrink-0"
                           onClick={() => handleRemoveSavedPath(p)}
                           title="Remove saved path"
                         >

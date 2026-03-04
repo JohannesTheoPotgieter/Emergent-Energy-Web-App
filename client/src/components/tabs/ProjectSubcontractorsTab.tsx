@@ -61,7 +61,7 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-16 text-slate-400">
+      <div className="flex items-center justify-center py-16 text-slate-500">
         <Loader2 className="w-5 h-5 animate-spin mr-2" />
         Loading subcontractors...
       </div>
@@ -81,9 +81,9 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
     return (
       <Card>
         <CardContent className="py-12 text-center">
-          <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+          <Users className="w-10 h-10 text-slate-600 mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">No subcontractors linked to this project yet.</p>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs text-slate-500 mt-1">
             Run a procurement analysis from the Subcontractors page to populate supplier data.
           </p>
         </CardContent>
@@ -143,7 +143,7 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
 
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
           <Input
             placeholder="Filter subcontractors..."
             value={search}
@@ -201,7 +201,7 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
                       )}
                     </div>
                   </div>
-                  {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />}
+                  {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-500 shrink-0" /> : <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />}
                 </button>
 
                 {isExpanded && (
@@ -214,7 +214,7 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
       </div>
 
       {filtered.length === 0 && search && (
-        <p className="text-center text-sm text-slate-400 py-6">No subcontractors match "{search}"</p>
+        <p className="text-center text-sm text-slate-500 py-6">No subcontractors match "{search}"</p>
       )}
     </div>
   );
@@ -237,14 +237,14 @@ function ExpandedDetail({ counterpartyName }: { counterpartyName: string }) {
   if (isLoading) {
     return (
       <div className="px-4 pb-3 text-center">
-        <Loader2 className="w-4 h-4 animate-spin text-slate-400 inline" />
+        <Loader2 className="w-4 h-4 animate-spin text-slate-500 inline" />
       </div>
     );
   }
 
   const lines = data?.lines || [];
   if (lines.length === 0) {
-    return <div className="px-4 pb-3 text-xs text-slate-400">No cost lines found.</div>;
+    return <div className="px-4 pb-3 text-xs text-slate-500">No cost lines found.</div>;
   }
 
   return (
@@ -252,7 +252,7 @@ function ExpandedDetail({ counterpartyName }: { counterpartyName: string }) {
       <div className="overflow-x-auto mt-2">
         <table className="w-full text-[11px]">
           <thead>
-            <tr className="text-slate-400 border-b border-border">
+            <tr className="text-slate-500 border-b border-border">
               <th className="text-left py-1 px-1 font-medium">Category</th>
               <th className="text-left py-1 px-1 font-medium">Invoice #</th>
               <th className="text-right py-1 px-1 font-medium">Amount</th>

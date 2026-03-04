@@ -163,7 +163,7 @@ export default function UserAssignmentPicker({
         >
           <User className={isXs ? "w-2.5 h-2.5" : "w-3 h-3"} />
           {name}
-          <span className="text-amber-400">(unmatched)</span>
+          <span className="text-amber-600">(unmatched)</span>
         </span>
       ))}
 

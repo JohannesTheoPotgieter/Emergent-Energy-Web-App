@@ -358,7 +358,7 @@ function SpawnedTasksCard({ tasks, ticket, spawnMutation, navigate }: {
                 </span>
                 {other > 0 && (
                   <span className="flex items-center gap-1">
-                    <Circle className="h-3 w-3 text-purple-400" />
+                    <Circle className="h-3 w-3 text-purple-600" />
                     <strong>{other}</strong> Other
                   </span>
                 )}
@@ -391,7 +391,7 @@ function SpawnedTasksCard({ tasks, ticket, spawnMutation, navigate }: {
                     return (
                       <tr
                         key={task.id}
-                        className={`border-b hover:bg-muted/20 cursor-pointer transition-colors ${taskOverdue ? "bg-red-50/40 dark:bg-red-950/10" : ""}`}
+                        className={`border-b hover:bg-muted/20 cursor-pointer transition-colors ${taskOverdue ? "bg-red-50/40" : ""}`}
                         onClick={() => navigate(`/engineering/tasks?taskId=${task.id}`)}
                         data-testid={`spawned-task-${task.id}`}
                       >

@@ -447,7 +447,7 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
                 <div key={m.key} className="flex items-center gap-3 group hover:bg-muted rounded-lg px-2 py-1.5 transition-colors">
                   <span className="text-sm font-medium text-muted-foreground w-24 flex-shrink-0">{m.label}</span>
                   <div className="relative flex-1">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">R</span>
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 font-mono">R</span>
                     <Input
                       type="number"
                       value={currentVal}
@@ -764,7 +764,7 @@ export default function CashflowPage() {
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500 pointer-events-none" />
               </div>
               <Button
                 variant={showDetail ? "default" : "outline"}
@@ -811,7 +811,7 @@ export default function CashflowPage() {
             <CardContent className="py-16">
               <div className="text-center">
                 <div className="rounded-full bg-muted w-14 h-14 flex items-center justify-center mx-auto mb-4">
-                  <DollarSign className="h-7 w-7 text-slate-400" />
+                  <DollarSign className="h-7 w-7 text-slate-500" />
                 </div>
                 <p className="text-lg font-semibold text-foreground" data-testid="text-empty-state">No cashflow data available</p>
                 <p className="text-sm text-muted-foreground mt-1.5 max-w-sm mx-auto">
@@ -1007,7 +1007,7 @@ export default function CashflowPage() {
                                     isExpanded ? (
                                       <ChevronDown className="h-3.5 w-3.5 text-blue-500 flex-shrink-0" />
                                     ) : (
-                                      <ChevronRight className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                                      <ChevronRight className="h-3.5 w-3.5 text-slate-500 flex-shrink-0" />
                                     )
                                   )}
                                   <span className="text-[13px]">{formatWeek(week.weekStart)}</span>
@@ -1069,7 +1069,7 @@ export default function CashflowPage() {
                                           </span>
                                           {isAdmin && (
                                             <button
-                                              className="p-0.5 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
+                                              className="p-0.5 rounded hover:bg-red-100 text-red-600 hover:text-red-600 transition-colors"
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 clearOverrideMutation.mutate(week.weekStart);
@@ -1136,7 +1136,7 @@ export default function CashflowPage() {
                                           </span>
                                           {isAdmin && (
                                             <button
-                                              className="p-0.5 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
+                                              className="p-0.5 rounded hover:bg-red-100 text-red-600 hover:text-red-600 transition-colors"
                                               onClick={(e) => {
                                                 e.stopPropagation();
                                                 clearOpexMutation.mutate(week.weekStart);
@@ -1208,7 +1208,7 @@ export default function CashflowPage() {
                                       </span>
                                       {isAdmin && (
                                         <button
-                                          className="p-0.5 rounded hover:bg-red-100 text-red-400 hover:text-red-600 transition-colors"
+                                          className="p-0.5 rounded hover:bg-red-100 text-red-600 hover:text-red-600 transition-colors"
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             clearAvailPayMutation.mutate(week.weekStart);
@@ -1340,8 +1340,8 @@ export default function CashflowPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-3 font-mono text-sm">
-                      <span className="text-slate-400">{prev != null ? formatRand(prev) : "—"}</span>
-                      <ArrowRight className="h-3 w-3 text-slate-300 flex-shrink-0" />
+                      <span className="text-slate-500">{prev != null ? formatRand(prev) : "—"}</span>
+                      <ArrowRight className="h-3 w-3 text-slate-600 flex-shrink-0" />
                       <span className="font-semibold text-foreground">{formatRand(newVal)}</span>
                     </div>
                     {entry.reason && (
@@ -1350,7 +1350,7 @@ export default function CashflowPage() {
                       </div>
                     )}
                     {computed != null && (
-                      <div className="mt-1 text-[11px] text-slate-400">
+                      <div className="mt-1 text-[11px] text-slate-500">
                         Computed: {formatRand(computed)}
                       </div>
                     )}
@@ -1411,8 +1411,8 @@ export default function CashflowPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-3 font-mono text-sm">
-                      <span className="text-slate-400">{prev != null ? formatRand(prev) : "—"}</span>
-                      <ArrowRight className="h-3 w-3 text-slate-300 flex-shrink-0" />
+                      <span className="text-slate-500">{prev != null ? formatRand(prev) : "—"}</span>
+                      <ArrowRight className="h-3 w-3 text-slate-600 flex-shrink-0" />
                       <span className="font-semibold text-foreground">{formatRand(newVal)}</span>
                       {delta != null && delta !== 0 && (
                         <span
@@ -1427,7 +1427,7 @@ export default function CashflowPage() {
                       )}
                     </div>
                     {computed != null && (
-                      <div className="mt-1 text-[11px] text-slate-400">
+                      <div className="mt-1 text-[11px] text-slate-500">
                         Computed: {formatRand(computed)}
                       </div>
                     )}

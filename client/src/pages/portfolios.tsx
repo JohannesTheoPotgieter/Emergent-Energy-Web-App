@@ -362,7 +362,7 @@ function QualityCharts({ portfolio }: { portfolio: any }) {
                   <span className="text-muted-foreground">Approved</span>
                   <span className="font-medium text-emerald-600">{qs.approved} / {qs.total}</span>
                 </div>
-                <div className="w-full bg-muted dark:bg-gray-800 rounded-full h-2">
+                <div className="w-full bg-muted rounded-full h-2">
                   <div className="bg-emerald-500 h-2 rounded-full transition-all" style={{ width: `${qs.total > 0 ? (qs.approved / qs.total) * 100 : 0}%` }} />
                 </div>
               </div>
@@ -371,7 +371,7 @@ function QualityCharts({ portfolio }: { portfolio: any }) {
                   <span className="text-muted-foreground">Pending</span>
                   <span className="font-medium text-amber-600">{qs.pending} / {qs.total}</span>
                 </div>
-                <div className="w-full bg-muted dark:bg-gray-800 rounded-full h-2">
+                <div className="w-full bg-muted rounded-full h-2">
                   <div className="bg-amber-500 h-2 rounded-full transition-all" style={{ width: `${qs.total > 0 ? (qs.pending / qs.total) * 100 : 0}%` }} />
                 </div>
               </div>
@@ -380,7 +380,7 @@ function QualityCharts({ portfolio }: { portfolio: any }) {
                   <span className="text-muted-foreground">Failed / Rejected</span>
                   <span className="font-medium text-red-600">{qs.failed} / {qs.total}</span>
                 </div>
-                <div className="w-full bg-muted dark:bg-gray-800 rounded-full h-2">
+                <div className="w-full bg-muted rounded-full h-2">
                   <div className="bg-red-500 h-2 rounded-full transition-all" style={{ width: `${qs.total > 0 ? (qs.failed / qs.total) * 100 : 0}%` }} />
                 </div>
               </div>
@@ -451,7 +451,7 @@ function EngineeringCharts({ portfolio }: { portfolio: any }) {
                   <span className="flex items-center gap-1 text-muted-foreground"><CheckCircle2 className="h-3 w-3 text-emerald-500" /> Complete</span>
                   <span className="font-medium text-emerald-600">{eng.complete} / {eng.total}</span>
                 </div>
-                <div className="w-full bg-muted dark:bg-gray-800 rounded-full h-2.5">
+                <div className="w-full bg-muted rounded-full h-2.5">
                   <div className="bg-emerald-500 h-2.5 rounded-full transition-all" style={{ width: `${eng.total > 0 ? (eng.complete / eng.total) * 100 : 0}%` }} />
                 </div>
               </div>
@@ -460,7 +460,7 @@ function EngineeringCharts({ portfolio }: { portfolio: any }) {
                   <span className="flex items-center gap-1 text-muted-foreground"><Activity className="h-3 w-3 text-blue-500" /> In Progress</span>
                   <span className="font-medium text-blue-600">{eng.inProgress} / {eng.total}</span>
                 </div>
-                <div className="w-full bg-muted dark:bg-gray-800 rounded-full h-2.5">
+                <div className="w-full bg-muted rounded-full h-2.5">
                   <div className="bg-blue-500 h-2.5 rounded-full transition-all" style={{ width: `${eng.total > 0 ? (eng.inProgress / eng.total) * 100 : 0}%` }} />
                 </div>
               </div>
@@ -469,7 +469,7 @@ function EngineeringCharts({ portfolio }: { portfolio: any }) {
                   <span className="flex items-center gap-1 text-muted-foreground"><Clock className="h-3 w-3 text-gray-400" /> Not Started</span>
                   <span className="font-medium">{eng.notStarted} / {eng.total}</span>
                 </div>
-                <div className="w-full bg-muted dark:bg-gray-800 rounded-full h-2.5">
+                <div className="w-full bg-muted rounded-full h-2.5">
                   <div className="bg-gray-300 h-2.5 rounded-full transition-all" style={{ width: `${eng.total > 0 ? (eng.notStarted / eng.total) * 100 : 0}%` }} />
                 </div>
               </div>

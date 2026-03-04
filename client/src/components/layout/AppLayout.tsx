@@ -100,22 +100,26 @@ interface NavGroup {
 }
 
 const SECTION_COLORS: Record<string, string> = {
-  MY_WORK: "text-sky-400",
-  PROJECTS: "text-blue-400",
-  PROJECT_DELIVERY: "text-orange-400",
-  FINANCE: "text-emerald-400",
-  OPERATIONS: "text-amber-400",
-  SYSTEM: "text-slate-400",
-  COCKPIT: "text-amber-400",
-  COLLABORATION: "text-pink-400",
-  MONEY: "text-emerald-400",
-  PROJECT_DEVELOPMENT: "text-teal-400",
-  DELIVERY: "text-orange-400",
-  GOVERNANCE: "text-purple-400",
-  INFORMATION: "text-cyan-400",
-  FEEDBACK: "text-cyan-400",
-  ADMIN: "text-slate-400",
-  SETTINGS: "text-slate-400",
+  MY_WORK: "text-green-600",
+  PROJECTS: "text-blue-600",
+  PROJECT_DELIVERY: "text-orange-600",
+  FINANCE: "text-emerald-600",
+  OPERATIONS: "text-amber-600",
+  SYSTEM: "text-slate-500",
+  COCKPIT: "text-amber-600",
+  COLLABORATION: "text-pink-600",
+  MONEY: "text-emerald-600",
+  PROJECT_DEVELOPMENT: "text-teal-600",
+  DELIVERY: "text-orange-600",
+  GOVERNANCE: "text-purple-600",
+  INFORMATION: "text-cyan-600",
+  FEEDBACK: "text-cyan-600",
+  ADMIN: "text-slate-500",
+  SETTINGS: "text-slate-500",
+  EXCO: "text-amber-600",
+  PROJECT_MANAGEMENT: "text-blue-600",
+  ENGINEERING: "text-purple-600",
+  QUALITY: "text-teal-600",
 };
 
 function getLegacyNavGroups(): NavGroup[] {
@@ -435,29 +439,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   const getRoleBadgeColor = (role: string | undefined | null): string => {
-    if (!role) return "bg-slate-500/20 text-slate-300 border-slate-500/30";
-    if (['COO_ADMIN', 'CEO_ADMIN'].includes(role)) return "bg-amber-500/20 text-amber-300 border-amber-500/30";
-    if (['CCO'].includes(role)) return "bg-orange-500/20 text-orange-300 border-orange-500/30";
-    if (['CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'].includes(role)) return "bg-emerald-500/20 text-emerald-300 border-emerald-500/30";
-    if (['QUALITY_MANAGER'].includes(role)) return "bg-purple-500/20 text-purple-300 border-purple-500/30";
-    if (['ENGINEER', 'ENGINEERING_MANAGER'].includes(role)) return "bg-orange-500/20 text-orange-300 border-orange-500/30";
-    if (['PROJECT_MANAGER_SITE', 'CONSTRUCTION_MANAGER'].includes(role)) return "bg-cyan-500/20 text-cyan-300 border-cyan-500/30";
-    if (['PROJECT_DEVELOPER'].includes(role)) return "bg-violet-500/20 text-violet-300 border-violet-500/30";
-    return "bg-blue-500/20 text-blue-300 border-blue-500/30";
+    if (!role) return "bg-slate-100 text-slate-600 border-slate-200";
+    if (['COO_ADMIN', 'CEO_ADMIN'].includes(role)) return "bg-amber-50 text-amber-700 border-amber-200";
+    if (['CCO'].includes(role)) return "bg-orange-50 text-orange-700 border-orange-200";
+    if (['CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'].includes(role)) return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    if (['QUALITY_MANAGER'].includes(role)) return "bg-purple-50 text-purple-700 border-purple-200";
+    if (['ENGINEER', 'ENGINEERING_MANAGER'].includes(role)) return "bg-orange-50 text-orange-700 border-orange-200";
+    if (['PROJECT_MANAGER_SITE', 'CONSTRUCTION_MANAGER'].includes(role)) return "bg-cyan-50 text-cyan-700 border-cyan-200";
+    if (['PROJECT_DEVELOPER'].includes(role)) return "bg-violet-50 text-violet-700 border-violet-200";
+    return "bg-blue-50 text-blue-700 border-blue-200";
   };
 
   const sidebarContent = (
     <TooltipProvider delayDuration={200}>
       <>
-        <div className="h-14 md:h-16 flex items-center px-3 border-b border-sidebar-border/60 bg-sidebar">
+        <div className="h-14 md:h-16 flex items-center px-3 border-b border-border bg-white">
           <Link href="/" className="flex items-center gap-2.5 min-w-0">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-emerald-400 to-green-600 flex items-center justify-center shrink-0 shadow-lg shadow-emerald-900/40">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shrink-0 shadow-md">
               <img src="/emergent-leaf.png" className="h-5 w-5 object-contain" alt="Emergent Energy" />
             </div>
             {sidebarShowLabels && (
               <div className="flex flex-col leading-tight min-w-0">
-                <span className="text-sm font-bold text-sidebar-foreground tracking-tight">Emergent</span>
-                <span className="text-[10px] font-medium text-emerald-400/80 uppercase tracking-widest">Energy</span>
+                <span className="text-sm font-bold text-foreground tracking-tight">Emergent</span>
+                <span className="text-[10px] font-medium text-green-600 uppercase tracking-widest">Energy</span>
               </div>
             )}
           </Link>
@@ -467,7 +471,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 if (mobileOpen) setMobileOpen(false);
                 else setDesktopCollapsed(true);
               }}
-              className="ml-auto p-1.5 rounded-md text-sidebar-foreground/40 hover:text-sidebar-foreground/70 hover:bg-sidebar-accent transition-colors"
+              className="ml-auto p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
               aria-label="Collapse sidebar"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -515,34 +519,32 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 ? collapsedSections[group.heading]
                 : !hasActiveItem
             );
-            const sectionColor = SECTION_COLORS[group.section] || "text-sidebar-foreground/40";
+            const sectionColor = SECTION_COLORS[group.section] || "text-muted-foreground";
 
             return (
               <div key={group.heading} className="pt-2 first:pt-1">
                 {sidebarShowLabels ? (
                   <button
                     onClick={() => toggleSection(group.heading)}
-                    className={cn(
-                      "w-full flex items-center justify-between px-3 pb-1 transition-colors group/section",
-                    )}
+                    className="w-full flex items-center justify-between px-3 pb-1 transition-colors group/section"
                   >
                     <div className="flex items-center gap-1.5">
-                      <div className={cn("w-1 h-3 rounded-full transition-colors", hasActiveItem ? sectionColor.replace("text-", "bg-") : "bg-sidebar-foreground/15")} />
+                      <div className={cn("w-1 h-3 rounded-full transition-colors", hasActiveItem ? sectionColor.replace("text-", "bg-") : "bg-border")} />
                       <span className={cn(
                         "text-[10px] font-semibold uppercase tracking-[0.08em] transition-colors",
-                        hasActiveItem ? sectionColor : "text-sidebar-foreground/40 group-hover/section:text-sidebar-foreground/55"
+                        hasActiveItem ? sectionColor : "text-muted-foreground/70 group-hover/section:text-muted-foreground"
                       )}>{group.heading}</span>
                     </div>
                     <span className={cn("transition-transform duration-200", isCollapsed ? "" : "rotate-0")}>
                       {isCollapsed ? (
-                        <ChevronRight className="w-3 h-3 text-sidebar-foreground/30" />
+                        <ChevronRight className="w-3 h-3 text-muted-foreground/50" />
                       ) : (
-                        <ChevronDown className="w-3 h-3 text-sidebar-foreground/30" />
+                        <ChevronDown className="w-3 h-3 text-muted-foreground/50" />
                       )}
                     </span>
                   </button>
                 ) : (
-                  <div className="h-px bg-sidebar-border/40 mx-3 my-1" />
+                  <div className="h-px bg-border mx-3 my-1" />
                 )}
                 {!isCollapsed && (
                   <div className="space-y-px">
@@ -565,8 +567,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                               className={cn(
                                 "w-full flex items-center gap-3 px-3 py-[7px] rounded-lg transition-all duration-150 group text-[13px] select-none",
                                 isActive || childActive
-                                  ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md shadow-emerald-900/20"
-                                  : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                                  ? "bg-green-50 text-green-700 font-medium border border-green-200"
+                                  : "text-muted-foreground hover:bg-accent hover:text-foreground"
                               )}
                             >
                               <item.icon className={cn("w-[18px] h-[18px] shrink-0", item.className)} />
@@ -574,9 +576,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 <>
                                   <span className="flex-1 text-left">{item.label}</span>
                                   {item.badge && (
-                                    <span className="text-[10px] font-medium bg-sidebar-foreground/10 text-sidebar-foreground/60 px-1.5 py-0.5 rounded-md">{item.badge}</span>
+                                    <span className="text-[10px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded-md">{item.badge}</span>
                                   )}
-                                  {isParentExpanded ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-sidebar-foreground/40" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-sidebar-foreground/40" />}
+                                  {isParentExpanded ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />}
                                 </>
                               )}
                             </button>
@@ -584,15 +586,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             <a href={item.path} className={cn(
                               "flex items-center gap-3 px-3 py-[7px] rounded-lg transition-all duration-150 group text-[13px] select-none cursor-pointer",
                               isActive
-                                ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md shadow-emerald-900/20"
-                                : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                                ? "bg-green-50 text-green-700 font-medium border border-green-200"
+                                : "text-muted-foreground hover:bg-accent hover:text-foreground"
                             )}>
                               <item.icon className={cn("w-[18px] h-[18px] shrink-0", item.className)} />
                               {sidebarShowLabels && (
                                 <>
                                   <span className="flex-1">{item.label}</span>
                                   {item.badge && (
-                                    <span className="text-[10px] font-medium bg-sidebar-foreground/10 text-sidebar-foreground/60 px-1.5 py-0.5 rounded-md">{item.badge}</span>
+                                    <span className="text-[10px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded-md">{item.badge}</span>
                                   )}
                                 </>
                               )}
@@ -601,35 +603,35 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             <Link href={item.path} className={cn(
                               "flex items-center gap-3 px-3 py-[7px] rounded-lg transition-all duration-150 group text-[13px] select-none",
                               isActive
-                                ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md shadow-emerald-900/20"
-                                : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                                ? "bg-green-50 text-green-700 font-medium border border-green-200"
+                                : "text-muted-foreground hover:bg-accent hover:text-foreground"
                             )}>
                               <item.icon className={cn("w-[18px] h-[18px] shrink-0", item.className)} />
                               {sidebarShowLabels && (
                                 <>
                                   <span className="flex-1">{item.label}</span>
                                   {item.badge && (
-                                    <span className="text-[10px] font-medium bg-sidebar-foreground/10 text-sidebar-foreground/60 px-1.5 py-0.5 rounded-md">{item.badge}</span>
+                                    <span className="text-[10px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded-md">{item.badge}</span>
                                   )}
                                 </>
                               )}
                             </Link>
                           )}
                           {hasChildren && isParentExpanded && sidebarShowLabels && (
-                            <div className="ml-4 pl-3 border-l border-sidebar-border/30 space-y-px mt-0.5">
+                            <div className="ml-4 pl-3 border-l border-border space-y-px mt-0.5">
                               {item.children!.map(child => {
                                 const isChildActive = location === child.path || location.startsWith(child.path);
                                 return (
                                   <Link key={child.path} href={child.path} className={cn(
                                     "flex items-center gap-2.5 px-2.5 py-[5px] rounded-md transition-all duration-150 text-[12px] select-none",
                                     isChildActive
-                                      ? "bg-sidebar-primary/70 text-sidebar-primary-foreground font-medium"
-                                      : "text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground/80"
+                                      ? "bg-green-50 text-green-700 font-medium"
+                                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
                                   )}>
                                     <child.icon className="w-3.5 h-3.5 shrink-0" />
                                     <span>{child.label}</span>
                                     {child.badge && (
-                                      <span className="text-[10px] font-medium bg-sidebar-foreground/10 text-sidebar-foreground/50 px-1.5 py-0.5 rounded-md ml-auto">{child.badge}</span>
+                                      <span className="text-[10px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded-md ml-auto">{child.badge}</span>
                                     )}
                                   </Link>
                                 );
@@ -659,20 +661,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="border-t border-sidebar-border/60 bg-sidebar/80">
+        <div className="border-t border-border bg-card/50">
           <div className="p-2.5">
             <div className={cn(
               "flex items-center gap-2.5 p-2 rounded-lg transition-colors",
-              sidebarShowLabels ? "hover:bg-sidebar-accent/50" : ""
+              sidebarShowLabels ? "hover:bg-accent" : ""
             )}>
-              <Avatar className="w-9 h-9 border-2 border-sidebar-border/40 shrink-0 shadow-sm">
-                <AvatarFallback className="bg-gradient-to-br from-emerald-600/30 to-green-600/30 text-emerald-300 text-xs font-bold">
+              <Avatar className="w-9 h-9 border-2 border-border shrink-0">
+                <AvatarFallback className="bg-green-50 text-green-700 text-xs font-bold">
                   {(user?.name || "U").substring(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
               {sidebarShowLabels && (
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-sidebar-foreground truncate">{user?.name}</p>
+                  <p className="text-sm font-medium text-foreground truncate">{user?.name}</p>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className={cn(
                       "text-[10px] font-semibold px-1.5 py-0.5 rounded-md border inline-flex items-center",
@@ -686,7 +688,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="h-8 w-8 text-sidebar-foreground/40 hover:text-red-400 hover:bg-red-500/10 shrink-0"
+                className="h-8 w-8 text-muted-foreground hover:text-red-600 hover:bg-red-50 shrink-0"
                 onClick={() => { localStorage.removeItem("company_role"); localStorage.removeItem("auth_token"); logout(); }}
                 title="Log out"
               >
@@ -694,7 +696,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </Button>
             </div>
             {sidebarShowLabels && appVersion && (
-              <p className="text-[10px] text-sidebar-foreground/25 mt-1 text-center" data-testid="text-app-version">
+              <p className="text-[10px] text-muted-foreground/50 mt-1 text-center" data-testid="text-app-version">
                 v{appVersion.version}{appVersion.buildNumber ? ` (${appVersion.buildNumber})` : ""}
               </p>
             )}
@@ -708,7 +710,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-background flex overflow-hidden">
       <div
         className={cn(
-          "fixed inset-0 bg-black/50 backdrop-blur-sm z-40 md:hidden transition-opacity duration-300",
+          "fixed inset-0 bg-black/20 backdrop-blur-sm z-40 md:hidden transition-opacity duration-300",
           mobileOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         )}
         onClick={() => setMobileOpen(false)}
@@ -717,7 +719,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 bg-sidebar text-sidebar-foreground flex flex-col border-r border-sidebar-border/60 shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] w-[280px] md:hidden will-change-transform",
+          "fixed inset-y-0 left-0 z-50 bg-white text-foreground flex flex-col border-r border-border shadow-lg transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] w-[280px] md:hidden will-change-transform",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -726,15 +728,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <aside 
         className={cn(
-          "hidden md:flex bg-sidebar text-sidebar-foreground flex-col transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] border-r border-sidebar-border/60 shadow-xl z-20 will-change-[width]",
-          desktopCollapsed ? "w-[68px]" : "w-[260px]"
+          "hidden md:flex bg-white text-foreground flex-col transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] border-r border-border z-20 will-change-[width]",
+          desktopCollapsed ? "w-[68px]" : "w-[240px]"
         )}
       >
         {sidebarContent}
       </aside>
 
-      <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-background/50">
-        <header className="h-14 md:h-16 border-b bg-background/95 backdrop-blur-sm flex items-center justify-between px-3 md:px-6 sticky top-0 z-10">
+      <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-background">
+        <header className="h-14 md:h-14 border-b border-border bg-white flex items-center justify-between px-3 md:px-6 sticky top-0 z-10">
           <div className="flex items-center gap-2 md:gap-4 min-w-0">
             <Button 
               variant="ghost" 
@@ -754,38 +756,37 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             >
               {desktopCollapsed ? <PanelLeft className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </Button>
-            <h1 className="text-base md:text-xl font-heading font-semibold text-foreground truncate">
+            <h1 className="text-base md:text-lg font-heading font-semibold text-foreground truncate">
               {currentPageLabel}
             </h1>
           </div>
 
-          <div className="flex items-center gap-2 md:gap-4 shrink-0">
-            <div className="relative hidden lg:block w-64">
+          <div className="flex items-center gap-2 md:gap-3 shrink-0">
+            <div className="relative hidden lg:block w-56">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search projects..." className="pl-9 h-9 bg-muted/30 border-none focus-visible:ring-1" />
+              <Input placeholder="Search projects..." className="pl-9 h-9 bg-card border-border focus-visible:ring-1 focus-visible:ring-primary" />
             </div>
             
             <PmModeToggle />
 
             <NotificationBell />
 
-            <div className="h-8 w-px bg-border mx-1 hidden sm:block" />
+            <div className="h-6 w-px bg-border mx-1 hidden sm:block" />
 
-            <div className="hidden sm:flex flex-col items-end mr-1">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">DB</span>
+            <div className="hidden sm:flex flex-col items-end">
               <div className="flex items-center gap-1">
                 <Database className="w-3 h-3 text-muted-foreground" />
-                <span className="text-xs font-mono font-medium text-foreground">
+                <span className="text-xs font-mono font-medium text-muted-foreground">
                   {healthStatus?.dbMode === 'postgres' ? 'PG' : healthStatus?.dbMode === 'sqlite' ? 'SQLite' : '?'}
                 </span>
               </div>
             </div>
 
-            <div className="h-8 w-px bg-border mx-1 hidden lg:block" />
+            <div className="h-6 w-px bg-border mx-1 hidden lg:block" />
 
-            <div className="flex-col items-end mr-1 hidden lg:flex">
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Data As Of</span>
-              <span className="text-xs font-mono font-medium text-foreground">
+            <div className="flex-col items-end hidden lg:flex">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Updated</span>
+              <span className="text-xs font-mono text-muted-foreground">
                 {overview?.data_as_of ? format(new Date(overview.data_as_of), "dd MMM HH:mm") : "No data"}
               </span>
             </div>
@@ -808,7 +809,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {screenTourSteps && location !== "/" && (
           <button
             onClick={() => setScreenTourActive(true)}
-            className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 py-2.5 shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 text-sm font-medium"
+            className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-green-600 text-white px-4 py-2.5 shadow-lg hover:shadow-xl hover:bg-green-700 transition-all duration-200 text-sm font-medium"
             data-testid="button-screen-tour"
           >
             <Compass className="h-4 w-4" />

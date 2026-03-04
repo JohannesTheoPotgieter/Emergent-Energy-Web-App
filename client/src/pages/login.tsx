@@ -104,9 +104,9 @@ export default function LoginPage() {
         </div>
 
         {error && (
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30" data-testid="text-login-error">
-            <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-            <p className="text-xs text-red-400">{error}</p>
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200" data-testid="text-login-error">
+            <AlertCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-red-600">{error}</p>
           </div>
         )}
 
@@ -249,7 +249,7 @@ export default function LoginPage() {
                   return (
                     <div
                       key={i}
-                      className={`flex gap-3 ${isEasterEgg ? "cursor-pointer hover:bg-amber-500/10 rounded-lg p-2 -m-2 transition-all" : ""}`}
+                      className={`flex gap-3 ${isEasterEgg ? "cursor-pointer hover:bg-amber-50 rounded-lg p-2 -m-2 transition-all" : ""}`}
                       data-testid={`version-item-${i}`}
                       onClick={isEasterEgg ? () => {
                         const next = easterEggClicks + 1;
@@ -257,8 +257,8 @@ export default function LoginPage() {
                         if (next >= 7) setShowEasterEgg(true);
                       } : undefined}
                     >
-                      <div className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center mt-0.5 ${isEasterEgg ? "bg-amber-500/10" : "bg-emerald-500/10"}`}>
-                        <Zap className={`w-3.5 h-3.5 ${isEasterEgg ? "text-amber-400" : "text-emerald-400"}`} />
+                      <div className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center mt-0.5 ${isEasterEgg ? "bg-amber-50" : "bg-emerald-50"}`}>
+                        <Zap className={`w-3.5 h-3.5 ${isEasterEgg ? "text-amber-600" : "text-emerald-600"}`} />
                       </div>
                       <div className="min-w-0 flex-1">
                         <h3 className="text-sm font-semibold text-foreground">{item.title}</h3>
@@ -266,7 +266,7 @@ export default function LoginPage() {
                           <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{item.description}</p>
                         )}
                         {isEasterEgg && easterEggClicks > 0 && easterEggClicks < 7 && (
-                          <p className="text-[10px] text-amber-400 mt-1">{7 - easterEggClicks} more click{7 - easterEggClicks !== 1 ? "s" : ""}...</p>
+                          <p className="text-[10px] text-amber-600 mt-1">{7 - easterEggClicks} more click{7 - easterEggClicks !== 1 ? "s" : ""}...</p>
                         )}
                       </div>
                     </div>
@@ -276,12 +276,12 @@ export default function LoginPage() {
                 <p className="text-sm text-muted-foreground text-center py-4">No release notes available yet.</p>
               )}
               {showEasterEgg && (
-                <div className="mt-4 p-4 bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-amber-500/10 rounded-xl border border-amber-500/30 text-center animate-pulse" data-testid="easter-egg-reveal">
+                <div className="mt-4 p-4 bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-amber-500/10 rounded-xl border border-amber-200 text-center animate-pulse" data-testid="easter-egg-reveal">
                   <p className="text-2xl mb-2">⚡🎉⚡</p>
-                  <p className="text-sm font-bold text-emerald-400">You found The First Electron!</p>
+                  <p className="text-sm font-bold text-emerald-600">You found The First Electron!</p>
                   <p className="text-xs text-muted-foreground mt-1">You are now officially part of the Emergent Energy story.</p>
                   <p className="text-xs text-muted-foreground mt-1">V1.0 — Built by humans, powered by electrons, deployed with courage.</p>
-                  <p className="text-[10px] text-amber-400 mt-2 italic">Achievement Unlocked: Curious Clicker 🏆</p>
+                  <p className="text-[10px] text-amber-600 mt-2 italic">Achievement Unlocked: Curious Clicker 🏆</p>
                 </div>
               )}
             </div>

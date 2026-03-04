@@ -20,7 +20,7 @@ export function InlineTip({ tipId, summary, details, learnMoreUrl, className = "
 
   return (
     <div className={`flex items-start gap-2 text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2 ${className}`} data-testid={`tip-${tipId}`}>
-      <HelpCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-blue-400" />
+      <HelpCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-blue-600" />
       <div className="flex-1 min-w-0">
         <span>{summary}</span>
         {details && (

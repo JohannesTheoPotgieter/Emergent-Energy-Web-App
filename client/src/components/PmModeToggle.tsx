@@ -90,7 +90,7 @@ export function PmModeToggle() {
         className={cn(
           "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-200 border",
           mode === "on_the_go"
-            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25"
+            ? "bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-500/25"
             : "bg-muted/50 text-muted-foreground border-border hover:bg-muted"
         )}
         data-testid="btn-pm-mode-toggle"

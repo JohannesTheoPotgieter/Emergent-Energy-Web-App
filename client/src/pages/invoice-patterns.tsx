@@ -138,7 +138,7 @@ function CounterpartiesSection() {
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <Input
             placeholder="Search counterparties..."
             value={search}
@@ -231,7 +231,7 @@ function CounterpartiesSection() {
       )}
 
       {isLoading ? (
-        <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
+        <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-slate-500" /></div>
       ) : filtered.length === 0 ? (
         <Card className="bg-card">
           <CardContent className="py-8 text-center text-muted-foreground" data-testid="text-no-counterparties">
@@ -269,11 +269,11 @@ function CounterpartiesSection() {
                         ? cp.nameAliases.map((a: string, i: number) => (
                             <Badge key={i} variant="outline" className="text-[10px] text-muted-foreground">{a}</Badge>
                           ))
-                        : <span className="text-xs text-slate-400">--</span>}
+                        : <span className="text-xs text-slate-500">--</span>}
                     </div>
                   </td>
                   <td className="px-4 py-2">
-                    {cp.isCore ? <Star className="w-4 h-4 text-amber-500 fill-amber-500" /> : <span className="text-xs text-slate-400">--</span>}
+                    {cp.isCore ? <Star className="w-4 h-4 text-amber-500 fill-amber-500" /> : <span className="text-xs text-slate-500">--</span>}
                   </td>
                   <td className="px-4 py-2 text-xs text-muted-foreground">
                     {cp.lastSeenAt ? new Date(cp.lastSeenAt).toLocaleDateString() : "--"}
@@ -486,28 +486,28 @@ export default function InvoicePatternsPage() {
                 <CardContent className="pt-4 pb-3 px-4">
                   <div className="text-xs text-muted-foreground mb-1">Eligible Lines</div>
                   <div className="text-xl font-bold" data-testid="stat-eligible">{patternStats.eligibleLines}</div>
-                  <div className="text-[10px] text-slate-400">with invoice & amount</div>
+                  <div className="text-[10px] text-slate-500">with invoice & amount</div>
                 </CardContent>
               </Card>
               <Card className="bg-card">
                 <CardContent className="pt-4 pb-3 px-4">
                   <div className="text-xs text-muted-foreground mb-1">Tagged</div>
                   <div className="text-xl font-bold text-green-600" data-testid="stat-tagged">{patternStats.taggedLines}</div>
-                  <div className="text-[10px] text-slate-400">pattern matched</div>
+                  <div className="text-[10px] text-slate-500">pattern matched</div>
                 </CardContent>
               </Card>
               <Card className="bg-card">
                 <CardContent className="pt-4 pb-3 px-4">
                   <div className="text-xs text-muted-foreground mb-1">Untagged</div>
                   <div className="text-xl font-bold text-amber-600" data-testid="stat-untagged">{patternStats.untaggedLines}</div>
-                  <div className="text-[10px] text-slate-400">awaiting classification</div>
+                  <div className="text-[10px] text-slate-500">awaiting classification</div>
                 </CardContent>
               </Card>
               <Card className="bg-card">
                 <CardContent className="pt-4 pb-3 px-4">
                   <div className="text-xs text-muted-foreground mb-1">Classification Rate</div>
                   <div className="text-xl font-bold" data-testid="stat-rate">{patternStats.classificationRate}%</div>
-                  <div className="text-[10px] text-slate-400">tagged / eligible</div>
+                  <div className="text-[10px] text-slate-500">tagged / eligible</div>
                 </CardContent>
               </Card>
               <Card className="bg-card">
@@ -521,7 +521,7 @@ export default function InvoicePatternsPage() {
                       </Badge>
                     ))}
                     {Object.keys(patternStats.typeCounts || {}).length === 0 && (
-                      <span className="text-[10px] text-slate-400">No classified lines yet</span>
+                      <span className="text-[10px] text-slate-500">No classified lines yet</span>
                     )}
                   </div>
                 </CardContent>
@@ -531,7 +531,7 @@ export default function InvoicePatternsPage() {
 
           <div className="flex items-center gap-3 flex-wrap">
             <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <Input
                 placeholder="Search patterns..."
                 value={search}
@@ -647,7 +647,7 @@ export default function InvoicePatternsPage() {
           )}
 
           {isLoading ? (
-            <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
+            <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-slate-500" /></div>
           ) : filtered.length === 0 ? (
             <Card className="bg-card">
               <CardContent className="py-8 text-center text-muted-foreground">
@@ -677,7 +677,7 @@ export default function InvoicePatternsPage() {
                       <td className="px-4 py-2 font-mono text-xs">
                         {r.patternValue}
                         {r.normalizedExample && (
-                          <span className="text-slate-400 ml-2 text-[10px]">e.g. {r.normalizedExample}</span>
+                          <span className="text-slate-500 ml-2 text-[10px]">e.g. {r.normalizedExample}</span>
                         )}
                       </td>
                       <td className="px-4 py-2">
@@ -700,7 +700,7 @@ export default function InvoicePatternsPage() {
                           {r.isActive ? (
                             <ToggleRight className="w-5 h-5 text-green-600" />
                           ) : (
-                            <ToggleLeft className="w-5 h-5 text-slate-400" />
+                            <ToggleLeft className="w-5 h-5 text-slate-500" />
                           )}
                         </button>
                       </td>

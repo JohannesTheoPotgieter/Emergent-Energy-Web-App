@@ -201,10 +201,10 @@ export default function PostMortemPanel({ projectName, checklistId }: PostMortem
                 variant="outline"
                 className={
                   existing.score >= 0.85
-                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                    ? "bg-emerald-50 text-emerald-600 border-emerald-200"
                     : existing.score >= 0.5
-                    ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
-                    : "bg-red-500/10 text-red-400 border-red-500/30"
+                    ? "bg-amber-50 text-amber-600 border-amber-200"
+                    : "bg-red-50 text-red-600 border-red-200"
                 }
               >
                 {Math.round(existing.score * 100)}%
@@ -298,7 +298,7 @@ export default function PostMortemPanel({ projectName, checklistId }: PostMortem
   return (
     <div data-testid="postmortem-panel" className="space-y-6">
       {summary && (
-        <Card className={summary.redFlag ? "border-red-500/50" : "border-emerald-500/30"}>
+        <Card className={summary.redFlag ? "border-red-500/50" : "border-emerald-200"}>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
               <Star className="h-5 w-5 text-amber-500" />
@@ -310,7 +310,7 @@ export default function PostMortemPanel({ projectName, checklistId }: PostMortem
                 </Badge>
               )}
               {data.postmortem.completedAt && (
-                <Badge variant="outline" className="ml-auto bg-emerald-500/10 text-emerald-400 border-emerald-500/30 text-xs">
+                <Badge variant="outline" className="ml-auto bg-emerald-50 text-emerald-600 border-emerald-200 text-xs">
                   Completed
                 </Badge>
               )}

@@ -652,7 +652,7 @@ export default function PortfolioDetailPage() {
                     const dColor = deltaColor(deltaVal);
                     const DeltaIcon = deltaVal >= 0 ? TrendingUp : TrendingDown;
                     const fmtMoney = (v: number | null) => {
-                      if (v == null || v === 0) return <span className="text-slate-400">—</span>;
+                      if (v == null || v === 0) return <span className="text-slate-500">—</span>;
                       return <span className="font-mono text-foreground">R{v.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
                     };
 
@@ -690,7 +690,7 @@ export default function PortfolioDetailPage() {
                               <DeltaIcon className="w-3 h-3" />
                               {deltaVal >= 0 ? "+" : ""}{deltaVal.toFixed(1)}%
                             </span>
-                          ) : <span className="text-slate-400">—</span>}
+                          ) : <span className="text-slate-500">—</span>}
                         </td>
                         <td className="px-2 py-2 text-right">{fmtMoney(revenue)}</td>
                         <td className="px-2 py-2 text-right">{fmtMoney(expenses)}</td>
@@ -699,7 +699,7 @@ export default function PortfolioDetailPage() {
                             <span className={`font-mono font-semibold ${gpPct >= 20 ? "text-emerald-600" : gpPct >= 0 ? "text-amber-600" : "text-red-600"}`}>
                               {gpPct.toFixed(1)}%
                             </span>
-                          ) : <span className="text-slate-400">—</span>}
+                          ) : <span className="text-slate-500">—</span>}
                         </td>
                         <td className="px-2 py-2 text-right">
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-600"

@@ -260,7 +260,7 @@ function ActivitySection() {
         ) : ssoUnavailable && items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
-              <AlertTriangle className="h-8 w-8 text-blue-400" />
+              <AlertTriangle className="h-8 w-8 text-blue-600" />
             </div>
             <p className="text-sm font-medium text-foreground">Microsoft 365 integration not available</p>
             <p className="text-xs text-muted-foreground mt-1 max-w-md">Your Microsoft account is not connected. Sign in with Microsoft SSO to sync your Teams chats and activity.</p>
@@ -268,7 +268,7 @@ function ActivitySection() {
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="w-16 h-16 rounded-2xl bg-purple-50 flex items-center justify-center mb-4">
-              <Zap className="h-8 w-8 text-purple-400" />
+              <Zap className="h-8 w-8 text-purple-600" />
             </div>
             <p className="text-muted-foreground text-sm font-medium">No Teams activity synced</p>
             <p className="text-xs text-muted-foreground mt-1">Click "Sync Now" to pull your Teams chats from Microsoft 365</p>

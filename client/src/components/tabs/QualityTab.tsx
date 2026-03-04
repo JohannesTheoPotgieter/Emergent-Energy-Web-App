@@ -28,10 +28,10 @@ function qFetch(url: string, options?: RequestInit) {
 }
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string; progress: string; lightBg: string; gradient: string }> = {
-  "planning_design": { bg: "bg-blue-500/10", text: "text-blue-600", border: "border-blue-200", progress: "bg-blue-500", lightBg: "bg-blue-50", gradient: "from-blue-500 to-blue-600" },
-  "construction": { bg: "bg-orange-500/10", text: "text-orange-600", border: "border-orange-200", progress: "bg-orange-500", lightBg: "bg-orange-50", gradient: "from-orange-500 to-orange-600" },
-  "commissioning": { bg: "bg-purple-500/10", text: "text-purple-600", border: "border-purple-200", progress: "bg-purple-500", lightBg: "bg-purple-50", gradient: "from-purple-500 to-purple-600" },
-  "handover": { bg: "bg-green-500/10", text: "text-green-600", border: "border-green-200", progress: "bg-green-500", lightBg: "bg-green-50", gradient: "from-green-500 to-green-600" },
+  "planning_design": { bg: "bg-blue-50", text: "text-blue-600", border: "border-blue-200", progress: "bg-blue-500", lightBg: "bg-blue-50", gradient: "from-blue-500 to-blue-600" },
+  "construction": { bg: "bg-orange-50", text: "text-orange-600", border: "border-orange-200", progress: "bg-orange-500", lightBg: "bg-orange-50", gradient: "from-orange-500 to-orange-600" },
+  "commissioning": { bg: "bg-purple-50", text: "text-purple-600", border: "border-purple-200", progress: "bg-purple-500", lightBg: "bg-purple-50", gradient: "from-purple-500 to-purple-600" },
+  "handover": { bg: "bg-green-50", text: "text-green-600", border: "border-green-200", progress: "bg-green-500", lightBg: "bg-green-50", gradient: "from-green-500 to-green-600" },
 };
 
 function getPhaseColor(phaseKey: string) {
@@ -40,8 +40,8 @@ function getPhaseColor(phaseKey: string) {
 
 function getRiskSeverityColor(severity: string) {
   switch (severity?.toLowerCase()) {
-    case "high": return "text-red-500 bg-red-500/10 border-red-500/20";
-    case "medium": return "text-orange-500 bg-orange-500/10 border-orange-500/20";
+    case "high": return "text-red-500 bg-red-50 border-red-500/20";
+    case "medium": return "text-orange-500 bg-orange-50 border-orange-500/20";
     case "low": return "text-yellow-500 bg-yellow-500/10 border-yellow-500/20";
     default: return "text-muted-foreground bg-muted/50 border-border";
   }
@@ -52,7 +52,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   review: { label: "In Review", color: "text-amber-600", bg: "bg-amber-50 border-amber-200", dot: "bg-amber-500", btnClass: "border-amber-300 text-amber-600 hover:bg-amber-100", icon: "◔" },
   pass: { label: "Passed", color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", dot: "bg-emerald-500", btnClass: "border-emerald-300 text-emerald-600 hover:bg-emerald-100", icon: "✓" },
   fail: { label: "Failed", color: "text-red-600", bg: "bg-red-50 border-red-200", dot: "bg-red-500", btnClass: "border-red-300 text-red-600 hover:bg-red-100", icon: "✗" },
-  na: { label: "N/A", color: "text-slate-400", bg: "bg-muted border-border", dot: "bg-slate-300", btnClass: "border-border text-slate-400 hover:bg-muted", icon: "—" },
+  na: { label: "N/A", color: "text-slate-500", bg: "bg-muted border-border", dot: "bg-slate-300", btnClass: "border-border text-slate-500 hover:bg-muted", icon: "—" },
 };
 
 function getStatusConfig(status: string) {
@@ -465,7 +465,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
               <p className="text-sm font-semibold text-red-700 flex-1">
                 {activeWarnings.length} Active Warning{activeWarnings.length !== 1 ? "s" : ""}
               </p>
-              <ChevronDown className="w-4 h-4 text-red-400" />
+              <ChevronDown className="w-4 h-4 text-red-600" />
             </div>
           </CollapsibleTrigger>
           <CollapsibleContent>
@@ -549,7 +549,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                     <p className="text-[11px] text-muted-foreground">In Review</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-lg font-bold text-slate-400">{selectedPhaseProgress.applicable - selectedPhaseProgress.completed - selectedPhaseProgress.failed - selectedPhaseProgress.inReview}</p>
+                    <p className="text-lg font-bold text-slate-500">{selectedPhaseProgress.applicable - selectedPhaseProgress.completed - selectedPhaseProgress.failed - selectedPhaseProgress.inReview}</p>
                     <p className="text-[11px] text-muted-foreground">Pending</p>
                   </div>
                 </div>

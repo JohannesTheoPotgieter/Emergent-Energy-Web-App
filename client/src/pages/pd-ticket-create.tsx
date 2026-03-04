@@ -201,7 +201,7 @@ export default function PdTicketCreatePage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {selectedClient ? (
-              <div className="flex items-center justify-between p-3 border rounded-lg bg-green-50 dark:bg-green-950/20">
+              <div className="flex items-center justify-between p-3 border rounded-lg bg-green-50">
                 <div>
                   <p className="font-medium">{selectedClient.name}</p>
                   <p className="text-xs text-muted-foreground">Client ID: {selectedClient.clientId}</p>
@@ -279,7 +279,7 @@ export default function PdTicketCreatePage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {selectedProject ? (
-              <div className="flex items-center justify-between p-3 border rounded-lg bg-green-50 dark:bg-green-950/20">
+              <div className="flex items-center justify-between p-3 border rounded-lg bg-green-50">
                 <div>
                   <p className="font-medium">{selectedProject.projectName}</p>
                   {selectedProject.phase && <p className="text-xs text-muted-foreground">Phase: {selectedProject.phase}</p>}
@@ -503,7 +503,7 @@ export default function PdTicketCreatePage() {
                     {availableTaskTemplates.map((tmpl, idx) => (
                       <label
                         key={idx}
-                        className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors ${selectedTasks.has(tmpl.title) ? "bg-violet-50/50 dark:bg-violet-950/10" : "hover:bg-muted/30"}`}
+                        className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors ${selectedTasks.has(tmpl.title) ? "bg-violet-50/50" : "hover:bg-muted/30"}`}
                         data-testid={`task-template-${idx}`}
                       >
                         <Checkbox

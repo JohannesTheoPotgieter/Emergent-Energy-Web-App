@@ -207,7 +207,7 @@ function TaskRow({ task, showProject = true }: { task: StandupTask; showProject?
 
   return (
     <div
-      className={`flex items-center gap-2.5 px-3 py-2.5 border-b last:border-b-0 hover:bg-muted/40 transition-all text-xs group cursor-pointer border-l-3 ${priorityBorderDash[task.priority] || "border-l-gray-200"} ${isOverdue ? "bg-red-50/30 dark:bg-red-950/10" : ""}`}
+      className={`flex items-center gap-2.5 px-3 py-2.5 border-b last:border-b-0 hover:bg-muted/40 transition-all text-xs group cursor-pointer border-l-3 ${priorityBorderDash[task.priority] || "border-l-gray-200"} ${isOverdue ? "bg-red-50/30" : ""}`}
       onClick={() => setLocation(`/engineering/tasks?taskId=${task.id}`)}
       data-testid={`standup-task-${task.id}`}
     >
@@ -239,8 +239,8 @@ function TaskRow({ task, showProject = true }: { task: StandupTask; showProject?
       <div className="flex items-center gap-1.5 shrink-0">
         {task.dueDate && (
           <span className={`text-[10px] flex items-center gap-0.5 px-1.5 py-0.5 rounded-md ${
-            isOverdue ? "text-red-700 bg-red-100 dark:bg-red-900/40 font-bold" :
-            isDueSoon ? "text-amber-700 bg-amber-100 dark:bg-amber-900/40 font-semibold" :
+            isOverdue ? "text-red-700 bg-red-100 font-bold" :
+            isDueSoon ? "text-amber-700 bg-amber-100 font-semibold" :
             "text-muted-foreground"
           }`}>
             <Calendar className="h-3 w-3 shrink-0" />
@@ -270,11 +270,11 @@ function CollapsibleSection({
 }) {
   const [open, setOpen] = useState(defaultOpen);
 
-  const countBg = color.includes("red") ? "bg-red-100 text-red-700 dark:bg-red-900/40" :
-    color.includes("purple") ? "bg-purple-100 text-purple-700 dark:bg-purple-900/40" :
-    color.includes("indigo") ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40" :
-    color.includes("blue") ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40" :
-    color.includes("emerald") ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40" :
+  const countBg = color.includes("red") ? "bg-red-100 text-red-700" :
+    color.includes("purple") ? "bg-purple-100 text-purple-700" :
+    color.includes("indigo") ? "bg-indigo-100 text-indigo-700" :
+    color.includes("blue") ? "bg-blue-100 text-blue-700" :
+    color.includes("emerald") ? "bg-emerald-100 text-emerald-700" :
     "bg-muted text-muted-foreground";
 
   return (
@@ -299,13 +299,13 @@ function CollapsibleSection({
 
 function KpiStrip({ summary }: { summary: StandupData["summary"] }) {
   const stats = [
-    { label: "Projects", value: summary.totalProjects, icon: <Layers className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-950/30", border: "border-blue-200 dark:border-blue-800", pulse: false },
-    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-950/30", border: "border-blue-200 dark:border-blue-800", pulse: false },
-    { label: "Overdue", value: summary.overdueTasks, icon: <AlertTriangle className="w-4 h-4" />, color: summary.overdueTasks > 0 ? "text-red-600" : "text-muted-foreground", bg: summary.overdueTasks > 0 ? "bg-red-50 dark:bg-red-950/30" : "bg-muted", border: summary.overdueTasks > 0 ? "border-red-200 dark:border-red-800" : "", pulse: summary.overdueTasks > 0 },
-    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50 dark:bg-amber-950/30" : "bg-muted", border: summary.holdTasks > 0 ? "border-amber-200 dark:border-amber-800" : "", pulse: false },
-    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50 dark:bg-purple-950/30" : "bg-muted", border: summary.needsApprovalCount > 0 ? "border-purple-200 dark:border-purple-800" : "", pulse: false },
-    { label: "Due This Week", value: summary.upcomingThisWeekCount, icon: <Timer className="w-4 h-4" />, color: "text-indigo-600", bg: "bg-indigo-50 dark:bg-indigo-950/30", border: "border-indigo-200 dark:border-indigo-800", pulse: false },
-    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-950/30", border: "border-emerald-200 dark:border-emerald-800", pulse: false },
+    { label: "Projects", value: summary.totalProjects, icon: <Layers className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false },
+    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false },
+    { label: "Overdue", value: summary.overdueTasks, icon: <AlertTriangle className="w-4 h-4" />, color: summary.overdueTasks > 0 ? "text-red-600" : "text-muted-foreground", bg: summary.overdueTasks > 0 ? "bg-red-50" : "bg-muted", border: summary.overdueTasks > 0 ? "border-red-200" : "", pulse: summary.overdueTasks > 0 },
+    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50" : "bg-muted", border: summary.holdTasks > 0 ? "border-amber-200" : "", pulse: false },
+    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50" : "bg-muted", border: summary.needsApprovalCount > 0 ? "border-purple-200" : "", pulse: false },
+    { label: "Due This Week", value: summary.upcomingThisWeekCount, icon: <Timer className="w-4 h-4" />, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200", pulse: false },
+    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", pulse: false },
   ];
 
   return (
@@ -374,8 +374,8 @@ function ProjectHealthGrid({ projects }: { projects: ProjectHealth[] }) {
 
               <div className="flex gap-2 text-[10px] flex-wrap">
                 <span className="text-muted-foreground">{p.active} active</span>
-                {p.overdue > 0 && <span className="text-red-700 bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 rounded-full font-bold">{p.overdue} overdue</span>}
-                {p.hold > 0 && <span className="text-amber-700 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded-full font-semibold">{p.hold} hold</span>}
+                {p.overdue > 0 && <span className="text-red-700 bg-red-100 px-1.5 py-0.5 rounded-full font-bold">{p.overdue} overdue</span>}
+                {p.hold > 0 && <span className="text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full font-semibold">{p.hold} hold</span>}
                 {p.dueThisWeek > 0 && <span className="text-indigo-600">{p.dueThisWeek} due this wk</span>}
               </div>
             </CardContent>
@@ -427,7 +427,7 @@ function WorkloadTable({ workload }: { workload: WorkloadEntry[] }) {
               </td>
               <td className="text-center px-2 py-2.5">
                 {w.overdue > 0 ? (
-                  <span className="inline-flex items-center gap-0.5 text-red-700 bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 rounded-full font-bold text-[10px]">
+                  <span className="inline-flex items-center gap-0.5 text-red-700 bg-red-100 px-1.5 py-0.5 rounded-full font-bold text-[10px]">
                     {w.overdue}
                   </span>
                 ) : (
@@ -436,7 +436,7 @@ function WorkloadTable({ workload }: { workload: WorkloadEntry[] }) {
               </td>
               <td className="text-center px-2 py-2.5">
                 {w.hold > 0 ? (
-                  <span className="inline-flex items-center gap-0.5 text-amber-700 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded-full font-bold text-[10px]">
+                  <span className="inline-flex items-center gap-0.5 text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full font-bold text-[10px]">
                     {w.hold}
                   </span>
                 ) : (
@@ -634,7 +634,7 @@ function StandupTaskDrawer({
           </div>
 
           {(task.holdReason || task.blockerReason) && (
-            <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-2.5">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-2.5">
               <p className="text-[10px] font-medium text-red-700 uppercase tracking-wider mb-1">
                 {task.holdReason ? "Hold Reason" : "Blocker"}
               </p>
@@ -795,7 +795,7 @@ function InlineTaskRow({ task, onUpdate, onOpenTask }: { task: FullTask; onUpdat
 
   return (
     <div
-      className={`border-b last:border-b-0 hover:bg-muted/30 transition-all text-xs border-l-3 ${priorityBorderDash[task.priority] || "border-l-gray-200"} ${isOverdue ? "bg-red-50/30 dark:bg-red-950/10" : ""}`}
+      className={`border-b last:border-b-0 hover:bg-muted/30 transition-all text-xs border-l-3 ${priorityBorderDash[task.priority] || "border-l-gray-200"} ${isOverdue ? "bg-red-50/30" : ""}`}
       data-testid={`standup-inline-task-${task.id}`}
     >
       <div className="flex items-center gap-2 px-3 py-2.5">
@@ -862,8 +862,8 @@ function InlineTaskRow({ task, onUpdate, onOpenTask }: { task: FullTask; onUpdat
 
           {task.dueDate && (
             <span className={`text-[10px] px-1.5 py-0.5 rounded-md min-w-[44px] text-center ${
-              isOverdue ? "text-red-700 bg-red-100 dark:bg-red-900/40 font-bold" :
-              isDueSoon ? "text-amber-700 bg-amber-100 dark:bg-amber-900/40 font-semibold" :
+              isOverdue ? "text-red-700 bg-red-100 font-bold" :
+              isDueSoon ? "text-amber-700 bg-amber-100 font-semibold" :
               "text-muted-foreground"
             }`}>
               {daysFromNow(task.dueDate)}
@@ -964,7 +964,7 @@ function AssigneeGroup({ name, tasks, onUpdate, defaultOpen, onOpenTask }: { nam
         </div>
         <span className="font-medium text-xs">{name}</span>
         {overdueCount > 0 && (
-          <span className="text-[9px] font-bold text-red-600 bg-red-100 dark:bg-red-900/40 px-1.5 py-0.5 rounded-full">{overdueCount} overdue</span>
+          <span className="text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">{overdueCount} overdue</span>
         )}
         <span className="text-[10px] text-muted-foreground ml-auto">{tasks.length}</span>
       </button>
@@ -996,10 +996,10 @@ function StandupBucket({
 
   if (tasks.length === 0) return null;
 
-  const countBg = color.includes("red") ? "bg-red-100 text-red-700 dark:bg-red-900/40" :
-    color.includes("amber") ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40" :
-    color.includes("indigo") ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40" :
-    color.includes("blue") ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40" :
+  const countBg = color.includes("red") ? "bg-red-100 text-red-700" :
+    color.includes("amber") ? "bg-amber-100 text-amber-700" :
+    color.includes("indigo") ? "bg-indigo-100 text-indigo-700" :
+    color.includes("blue") ? "bg-blue-100 text-blue-700" :
     "bg-muted text-muted-foreground";
 
   return (
@@ -1122,10 +1122,10 @@ function StandupModeView() {
       {blockerCount > 0 && (
         <button
           onClick={scrollToBlockers}
-          className="flex items-center gap-2 text-red-700 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 px-4 py-2 rounded-xl text-xs font-bold hover:bg-red-100 dark:hover:bg-red-950/50 transition-all w-fit shadow-sm"
+          className="flex items-center gap-2 text-red-700 bg-red-50 border border-red-200 px-4 py-2 rounded-xl text-xs font-bold hover:bg-red-100 transition-all w-fit shadow-sm"
           data-testid="standup-blocker-badge"
         >
-          <div className="w-6 h-6 bg-red-100 dark:bg-red-900/40 rounded-full flex items-center justify-center">
+          <div className="w-6 h-6 bg-red-100 rounded-full flex items-center justify-center">
             <ShieldAlert className="h-3.5 w-3.5" />
           </div>
           {blockerCount} blocker{blockerCount !== 1 ? "s" : ""} need attention
@@ -1353,7 +1353,7 @@ export default function EngineeringDashboard() {
     return (
       <div data-testid="eng-dashboard" className="flex items-center justify-center py-20">
         <div className="text-center">
-          <AlertTriangle className="h-10 w-10 text-red-400 mx-auto mb-2" />
+          <AlertTriangle className="h-10 w-10 text-red-600 mx-auto mb-2" />
           <p className="font-medium">Failed to load dashboard data</p>
           <p className="text-sm text-muted-foreground mt-1">{(error as Error)?.message || "Unknown error"}</p>
         </div>
@@ -1420,7 +1420,7 @@ export default function EngineeringDashboard() {
             </Button>
           )}
           {!standupMode && totalBlockers > 0 && (
-            <div className="flex items-center gap-1.5 text-red-600 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 px-3 py-1.5 rounded-lg text-xs font-bold animate-pulse" data-testid="blocker-alert">
+            <div className="flex items-center gap-1.5 text-red-600 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-bold animate-pulse" data-testid="blocker-alert">
               <ShieldAlert className="h-4 w-4" />
               {totalBlockers} blocker{totalBlockers !== 1 ? "s" : ""} need attention
             </div>
@@ -1450,7 +1450,7 @@ export default function EngineeringDashboard() {
         >
           {blockers.overdue.length > 0 && (
             <div>
-              <div className="px-3 py-2 bg-gradient-to-r from-red-50 to-transparent dark:from-red-950/20 text-[10px] font-bold text-red-700 dark:text-red-400 uppercase tracking-wider flex items-center gap-1.5 border-b">
+              <div className="px-3 py-2 bg-gradient-to-r from-red-50 to-transparent text-[10px] font-bold text-red-700 uppercase tracking-wider flex items-center gap-1.5 border-b">
                 <AlertTriangle className="h-3 w-3" />
                 Overdue ({blockers.overdue.length})
               </div>
@@ -1459,7 +1459,7 @@ export default function EngineeringDashboard() {
           )}
           {blockers.hold.length > 0 && (
             <div>
-              <div className="px-3 py-2 bg-gradient-to-r from-amber-50 to-transparent dark:from-amber-950/20 text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5 border-b">
+              <div className="px-3 py-2 bg-gradient-to-r from-amber-50 to-transparent text-[10px] font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1.5 border-b">
                 <PauseCircle className="h-3 w-3" />
                 On Hold ({blockers.hold.length})
               </div>
@@ -1528,7 +1528,7 @@ export default function EngineeringDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card className="shadow-sm" data-testid="section-workload">
           <div className="px-4 py-3 border-b flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center">
               <Users className="h-4 w-4 text-indigo-600" />
             </div>
             <span className="font-semibold text-sm">Team Workload</span>
@@ -1539,7 +1539,7 @@ export default function EngineeringDashboard() {
 
         <Card className="shadow-sm" data-testid="section-pipeline">
           <div className="px-4 py-3 border-b flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center">
               <TrendingUp className="h-4 w-4 text-emerald-600" />
             </div>
             <span className="font-semibold text-sm">Status Pipeline</span>

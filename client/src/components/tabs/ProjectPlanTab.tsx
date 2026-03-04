@@ -702,8 +702,8 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                     key={task.id} 
                     className={`
                       ${hasQualityWarning ? "!bg-red-100 dark:!bg-red-950/30 ring-1 ring-inset ring-red-500/40" : ""}
-                      ${isCritical && !hasQualityWarning ? "bg-red-50/50 dark:bg-red-950/10" : ""} 
-                      ${isHovered && !hasQualityWarning ? "bg-emerald-50 dark:bg-emerald-950/20" : ""}
+                      ${isCritical && !hasQualityWarning ? "bg-red-50/50" : ""} 
+                      ${isHovered && !hasQualityWarning ? "bg-emerald-50" : ""}
                       ${!hasQualityWarning && idx % 2 === 1 ? "bg-muted/20" : ""}
                       hover:bg-muted/40 cursor-pointer transition-colors
                     `}
@@ -739,7 +739,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                           {isLate && (
                             <AlertCircle className="h-3.5 w-3.5 text-amber-500" data-testid={`icon-late-${task.id}`} />
                           )}
-                          <span className={`text-sm ${isCritical ? "font-medium" : ""} ${hasQualityWarning ? "text-red-600 dark:text-red-400 font-medium" : ""}`} data-testid={`text-name-${task.id}`}>
+                          <span className={`text-sm ${isCritical ? "font-medium" : ""} ${hasQualityWarning ? "text-red-600 font-medium" : ""}`} data-testid={`text-name-${task.id}`}>
                             {task.name || "-"}
                           </span>
                         </div>
@@ -972,8 +972,8 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                 key={task.id} 
                 className={`flex border-b transition-colors cursor-pointer
                   ${ganttQualityWarning ? "!bg-red-100 dark:!bg-red-950/30 ring-1 ring-inset ring-red-500/40" : ""}
-                  ${task.isCritical && !ganttQualityWarning ? "bg-red-50/30 dark:bg-red-950/10" : ""}
-                  ${isHovered && !ganttQualityWarning ? "bg-emerald-50 dark:bg-emerald-950/20" : ""}
+                  ${task.isCritical && !ganttQualityWarning ? "bg-red-50/30" : ""}
+                  ${isHovered && !ganttQualityWarning ? "bg-emerald-50" : ""}
                   ${!ganttQualityWarning && idx % 2 === 1 && !isHovered ? "bg-muted/10" : ""}
                   hover:bg-muted/30
                 `}
@@ -982,7 +982,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                 onClick={() => handleTaskClick(task)}
                 data-testid={`gantt-row-${task.id}`}
               >
-                <div className={`w-40 flex-shrink-0 p-1.5 border-r text-xs truncate flex items-center gap-1 ${ganttQualityWarning ? "text-red-600 dark:text-red-400 font-medium" : ""}`} data-testid={`gantt-label-${task.id}`}>
+                <div className={`w-40 flex-shrink-0 p-1.5 border-r text-xs truncate flex items-center gap-1 ${ganttQualityWarning ? "text-red-600 font-medium" : ""}`} data-testid={`gantt-label-${task.id}`}>
                   {task.isCritical && (
                     <span className="text-destructive font-bold">!</span>
                   )}
@@ -1003,8 +1003,8 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                     <div
                       className={`absolute top-1 h-5 rounded-sm overflow-hidden
                         ${task.isCritical 
-                          ? "bg-red-200 dark:bg-red-900/50 border-2 border-destructive" 
-                          : "bg-emerald-200 dark:bg-emerald-900/30"
+                          ? "bg-red-200 border-2 border-destructive" 
+                          : "bg-emerald-200"
                         }`}
                       style={barStyle}
                       title={`${task.name}: ${task.startDate} - ${task.endDate} (${actualPct}% complete)`}
@@ -1016,7 +1016,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
                       />
                       {expectedPct !== null && expectedPct > 0 && (
                         <div 
-                          className="absolute top-0 bottom-0 w-0.5 bg-slate-700 dark:bg-slate-300"
+                          className="absolute top-0 bottom-0 w-0.5 bg-slate-700"
                           style={{ left: `${expectedPct}%` }}
                           title={`Expected: ${expectedPct}%`}
                         />
@@ -1035,7 +1035,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
   return (
     <div className="space-y-4">
       {projectStats && (
-        <Card className="bg-gradient-to-r from-emerald-50 to-white dark:from-emerald-950/20 dark:to-background" data-testid="card-summary">
+        <Card className="bg-gradient-to-r from-emerald-50 to-white dark:to-background" data-testid="card-summary">
           <CardContent className="py-3">
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
               <div className="flex items-center gap-2">

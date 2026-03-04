@@ -85,24 +85,24 @@ interface CompanyPriority {
 }
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
-  active: { label: "Active", color: "text-green-700 dark:text-green-400", bg: "bg-green-100 dark:bg-green-950/40" },
-  not_started: { label: "Not started", color: "text-muted-foreground dark:text-slate-400", bg: "bg-muted dark:bg-slate-800" },
-  in_progress: { label: "In progress", color: "text-amber-700 dark:text-amber-400", bg: "bg-amber-100 dark:bg-amber-950/40" },
-  complete: { label: "Complete", color: "text-green-700 dark:text-green-400", bg: "bg-green-100 dark:bg-green-950/40" },
-  monitoring: { label: "Monitoring", color: "text-blue-700 dark:text-blue-400", bg: "bg-blue-100 dark:bg-blue-950/40" },
-  closed: { label: "Closed", color: "text-muted-foreground dark:text-gray-400", bg: "bg-muted dark:bg-gray-800" },
+  active: { label: "Active", color: "text-green-700", bg: "bg-green-100" },
+  not_started: { label: "Not started", color: "text-muted-foreground", bg: "bg-muted" },
+  in_progress: { label: "In progress", color: "text-amber-700", bg: "bg-amber-100" },
+  complete: { label: "Complete", color: "text-green-700", bg: "bg-green-100" },
+  monitoring: { label: "Monitoring", color: "text-blue-700", bg: "bg-blue-100" },
+  closed: { label: "Closed", color: "text-muted-foreground", bg: "bg-muted" },
 };
 
 const departmentColors: Record<string, string> = {
-  Accounts: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-400",
-  "Project Development": "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400",
-  "Project Management": "bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400",
-  Operations: "bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-400",
-  Engineering: "bg-orange-100 text-orange-800 dark:bg-orange-950/40 dark:text-orange-400",
-  Finance: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-400",
+  Accounts: "bg-yellow-100 text-yellow-800",
+  "Project Development": "bg-emerald-100 text-emerald-800",
+  "Project Management": "bg-blue-100 text-blue-800",
+  Operations: "bg-purple-100 text-purple-800",
+  Engineering: "bg-orange-100 text-orange-800",
+  Finance: "bg-indigo-100 text-indigo-800",
 };
 
-const defaultDeptColor = "bg-muted text-foreground dark:bg-slate-800 dark:text-slate-300";
+const defaultDeptColor = "bg-muted text-foreground";
 
 interface PendingLink {
   linkType: string;
@@ -869,7 +869,7 @@ export default function MyToolPrioritiesPage() {
                       </div>
                     ))}
                     {pendingLinks.map((l, idx) => (
-                      <div key={`pending-${idx}`} className="flex items-center gap-2 text-xs bg-blue-50 dark:bg-blue-950/20 rounded px-2 py-1.5" data-testid={`link-pending-${idx}`}>
+                      <div key={`pending-${idx}`} className="flex items-center gap-2 text-xs bg-blue-50 rounded px-2 py-1.5" data-testid={`link-pending-${idx}`}>
                         <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-700">
                           {l.linkType === "project" ? "Project" : "Task"} (new)
                         </Badge>
