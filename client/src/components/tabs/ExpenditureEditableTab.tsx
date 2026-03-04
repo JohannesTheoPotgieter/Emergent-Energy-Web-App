@@ -1124,53 +1124,73 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3" data-testid="kpi-summary-strip">
-        <div className="bg-card  rounded-xl shadow-sm border border-border border-l-4 border-l-slate-400 p-3 sm:p-4">
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <DollarSign className="h-4 w-4 text-slate-500" />
-            <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Total Budget</span>
-          </div>
-          <div className="text-base sm:text-lg font-bold font-mono text-foreground" data-testid="text-kpi-budget">{formatCurrency(kpis.totalBudget)}</div>
-        </div>
-        <div className="bg-card  rounded-xl shadow-sm border border-border border-l-4 border-l-blue-500 p-3 sm:p-4">
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <BarChart3 className="h-4 w-4 text-blue-500" />
-            <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Total Actual</span>
-          </div>
-          <div className={`text-base sm:text-lg font-bold font-mono ${kpis.totalActual > kpis.totalBudget ? "text-red-600" : "text-blue-700"}`} data-testid="text-kpi-actual">
-            {formatCurrency(kpis.totalActual)}
-          </div>
-          <div className="text-[10px] text-slate-500 mt-0.5">{kpis.totalItems} lines</div>
-        </div>
-        <div className="bg-card  rounded-xl shadow-sm border border-border border-l-4 border-l-emerald-500 p-3 sm:p-4">
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-            <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">COS Realised</span>
-          </div>
-          <div className="text-base sm:text-lg font-bold text-emerald-600 font-mono" data-testid="text-kpi-cos">{formatCurrency(kpis.cosRealised)}</div>
-          <div className="text-[10px] text-slate-500 mt-0.5">{kpis.countByCos["COS Realised"]} lines</div>
-        </div>
-        <div className={`bg-card  rounded-xl shadow-sm border border-border border-l-4 ${kpis.variance >= 0 ? "border-l-emerald-500" : "border-l-red-500"} p-3 sm:p-4`}>
-          <div className="flex items-center gap-1.5 mb-1.5">
-            {kpis.variance >= 0 ? <TrendingUp className="h-4 w-4 text-emerald-500" /> : <TrendingDown className="h-4 w-4 text-red-500" />}
-            <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Variance</span>
-          </div>
-          <div className={`text-base sm:text-lg font-bold font-mono ${kpis.variance >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="text-kpi-variance">
-            {formatCurrency(kpis.variance)}
-          </div>
-          <div className={`text-[10px] mt-0.5 font-medium ${kpis.totalBudget === 0 ? "text-muted-foreground" : kpis.variance >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-            {kpis.totalBudget === 0 ? "No budget set" : kpis.variance >= 0 ? "Under budget" : "Over budget"}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 sm:p-4 hover:shadow-md transition-shadow">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-slate-100 p-2 shrink-0">
+              <DollarSign className="h-4 w-4 text-slate-600" />
+            </div>
+            <div className="min-w-0">
+              <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">Total Budget</span>
+              <div className="text-base sm:text-lg font-bold font-mono text-slate-900 mt-0.5" data-testid="text-kpi-budget">{formatCurrency(kpis.totalBudget)}</div>
+            </div>
           </div>
         </div>
-        <div className={`bg-card  rounded-xl shadow-sm border border-border border-l-4 ${kpis.totalBudget === 0 ? "border-l-slate-300" : kpis.gpPercent >= 20 ? "border-l-emerald-500" : kpis.gpPercent >= 10 ? "border-l-amber-500" : "border-l-red-500"} p-3 sm:p-4`}>
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <Percent className="h-4 w-4 text-slate-500" />
-            <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">GP%</span>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 sm:p-4 hover:shadow-md transition-shadow">
+          <div className="flex items-start gap-3">
+            <div className={`rounded-xl p-2 shrink-0 ${kpis.totalActual > kpis.totalBudget && kpis.totalBudget > 0 ? "bg-red-50" : "bg-blue-50"}`}>
+              <BarChart3 className={`h-4 w-4 ${kpis.totalActual > kpis.totalBudget && kpis.totalBudget > 0 ? "text-red-600" : "text-blue-600"}`} />
+            </div>
+            <div className="min-w-0">
+              <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">Total Actual</span>
+              <div className={`text-base sm:text-lg font-bold font-mono mt-0.5 ${kpis.totalActual > kpis.totalBudget && kpis.totalBudget > 0 ? "text-red-600" : "text-blue-700"}`} data-testid="text-kpi-actual">
+                {formatCurrency(kpis.totalActual)}
+              </div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{kpis.totalItems} lines</div>
+            </div>
           </div>
-          <div className={`text-base sm:text-lg font-bold font-mono ${kpis.totalBudget === 0 ? "text-muted-foreground" : kpis.gpPercent >= 20 ? "text-emerald-600" : kpis.gpPercent >= 10 ? "text-amber-600" : "text-red-600"}`} data-testid="text-kpi-gp">
-            {kpis.totalBudget === 0 ? "N/A" : `${kpis.gpPercent.toFixed(1)}%`}
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-emerald-200 p-3 sm:p-4 hover:shadow-md transition-shadow">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-emerald-50 p-2 shrink-0">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            </div>
+            <div className="min-w-0">
+              <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">COS Realised</span>
+              <div className="text-base sm:text-lg font-bold text-emerald-600 font-mono mt-0.5" data-testid="text-kpi-cos">{formatCurrency(kpis.cosRealised)}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{kpis.countByCos["COS Realised"]} lines</div>
+            </div>
           </div>
-          <div className="text-[10px] text-slate-500 mt-0.5 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => setDrawerOpen(true)}>
-            Drilldown →
+        </div>
+        <div className={`bg-white rounded-xl shadow-sm border p-3 sm:p-4 hover:shadow-md transition-shadow ${kpis.variance >= 0 ? "border-emerald-200" : "border-red-200"}`}>
+          <div className="flex items-start gap-3">
+            <div className={`rounded-xl p-2 shrink-0 ${kpis.variance >= 0 ? "bg-emerald-50" : "bg-red-50"}`}>
+              {kpis.variance >= 0 ? <TrendingUp className="h-4 w-4 text-emerald-600" /> : <TrendingDown className="h-4 w-4 text-red-600" />}
+            </div>
+            <div className="min-w-0">
+              <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">Variance</span>
+              <div className={`text-base sm:text-lg font-bold font-mono mt-0.5 ${kpis.variance >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="text-kpi-variance">
+                {formatCurrency(kpis.variance)}
+              </div>
+              <div className={`text-[10px] mt-0.5 font-medium ${kpis.totalBudget === 0 ? "text-slate-400" : kpis.variance >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                {kpis.totalBudget === 0 ? "No budget set" : kpis.variance >= 0 ? "Under budget" : "Over budget"}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className={`bg-white rounded-xl shadow-sm border p-3 sm:p-4 hover:shadow-md transition-shadow ${kpis.totalBudget === 0 ? "border-slate-200" : kpis.gpPercent >= 20 ? "border-emerald-200" : kpis.gpPercent >= 10 ? "border-amber-200" : "border-red-200"}`}>
+          <div className="flex items-start gap-3">
+            <div className={`rounded-xl p-2 shrink-0 ${kpis.totalBudget === 0 ? "bg-slate-100" : kpis.gpPercent >= 20 ? "bg-emerald-50" : kpis.gpPercent >= 10 ? "bg-amber-50" : "bg-red-50"}`}>
+              <Percent className={`h-4 w-4 ${kpis.totalBudget === 0 ? "text-slate-500" : kpis.gpPercent >= 20 ? "text-emerald-600" : kpis.gpPercent >= 10 ? "text-amber-600" : "text-red-600"}`} />
+            </div>
+            <div className="min-w-0">
+              <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">GP%</span>
+              <div className={`text-base sm:text-lg font-bold font-mono mt-0.5 ${kpis.totalBudget === 0 ? "text-slate-400" : kpis.gpPercent >= 20 ? "text-emerald-600" : kpis.gpPercent >= 10 ? "text-amber-600" : "text-red-600"}`} data-testid="text-kpi-gp">
+                {kpis.totalBudget === 0 ? "N/A" : `${kpis.gpPercent.toFixed(1)}%`}
+              </div>
+              <div className="text-[10px] text-emerald-600 mt-0.5 cursor-pointer hover:text-emerald-700 font-medium transition-colors" onClick={() => setDrawerOpen(true)}>
+                Drilldown →
+              </div>
+            </div>
           </div>
         </div>
       </div>
