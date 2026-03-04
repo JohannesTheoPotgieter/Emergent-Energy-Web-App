@@ -159,7 +159,6 @@ const PERM_CATEGORIES: PermCat[] = [
     key: "quality", section: "GOVERNANCE", label: "Governance", icon: ShieldCheck, color: "bg-purple-500",
     items: [
       { entity: "quality" as PermissionEntity, label: "Quality Dashboard", actions: ["view", "edit", "approve", "override"] },
-      { entity: "governance" as PermissionEntity, label: "Governance", actions: ["view", "edit"] },
     ],
   },
   {
