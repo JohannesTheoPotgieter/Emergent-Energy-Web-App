@@ -141,8 +141,6 @@ function getLegacyNavGroups(): NavGroup[] {
       items: [
         { label: "Eng Standup", icon: Wrench, path: "/engineering" },
         { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
-        { label: "Pipeline Inbox", icon: InboxIcon, path: "/engineering/inbox" },
-        { label: "SP Sync", icon: RefreshCw, path: "/engineering/sync" },
       ],
     },
     {
