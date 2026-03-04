@@ -805,9 +805,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 bg-white text-foreground flex flex-col border-r border-border shadow-lg transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] w-[280px] md:hidden will-change-transform",
+          "fixed inset-y-0 left-0 z-50 bg-white text-foreground flex flex-col border-r border-border shadow-lg transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] w-[280px] max-w-[85vw] md:hidden will-change-transform",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
+        style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         {sidebarContent}
       </aside>
@@ -822,7 +823,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden bg-background">
-        <header className="h-14 md:h-14 border-b border-border bg-white flex items-center justify-between px-3 md:px-6 sticky top-0 z-10">
+        <header className="h-14 md:h-14 border-b border-border bg-white flex items-center justify-between px-2 sm:px-3 md:px-6 sticky top-0 z-10">
           <div className="flex items-center gap-2 md:gap-4 min-w-0">
             <Button 
               variant="ghost" 
@@ -891,6 +892,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => setScreenTourActive(true)}
             className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-green-600 text-white px-4 py-2.5 shadow-lg hover:shadow-xl hover:bg-green-700 transition-all duration-200 text-sm font-medium"
+            style={{ bottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
             data-testid="button-screen-tour"
           >
             <Compass className="h-4 w-4" />

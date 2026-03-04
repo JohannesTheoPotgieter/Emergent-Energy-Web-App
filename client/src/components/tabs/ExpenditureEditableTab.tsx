@@ -1393,7 +1393,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       )}
 
       <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <SheetContent side="right" className="w-[500px] sm:w-[600px] overflow-auto">
+        <SheetContent side="right" className="w-full sm:w-[500px] md:w-[600px] max-w-full overflow-auto">
           <SheetHeader>
             <SheetTitle>Expenditure Drilldown</SheetTitle>
           </SheetHeader>

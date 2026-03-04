@@ -630,12 +630,12 @@ export default function MyWorkHomePage() {
 
   return (
     <div className="space-y-6" data-testid="my-work-home">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground" data-testid="text-my-work-title">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground" data-testid="text-my-work-title">
             My Work
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
             {format(new Date(), "EEEE, MMMM d, yyyy")}
           </p>
         </div>

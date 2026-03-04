@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
+import { useIsMobile } from "@/hooks/use-mobile";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { format } from "date-fns";
 import {
@@ -401,6 +402,7 @@ export default function Dashboard() {
   const { allowed: canView } = usePermission('execution_board', 'view');
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [activeDrilldown, setActiveDrilldown] = useState<string | null>(null);
   const [hpRefreshing, setHpRefreshing] = useState(false);
@@ -759,14 +761,14 @@ export default function Dashboard() {
 
       <Card className="border-l-4 border-l-red-500 shadow-sm animate-float-in stagger-6" data-testid="card-high-priority">
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-red-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between w-full gap-2">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2 rounded-lg bg-red-100 shrink-0">
                 <AlertTriangle className="h-5 w-5 text-red-600" />
               </div>
-              <div>
-                <CardTitle className="text-lg font-bold text-foreground">High Priority Actions</CardTitle>
-                <p className="text-xs text-muted-foreground mt-0.5">
+              <div className="min-w-0">
+                <CardTitle className="text-base sm:text-lg font-bold text-foreground">High Priority Actions</CardTitle>
+                <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 line-clamp-1 sm:line-clamp-none">
                   Overdue expenses · Revenue outstanding · Projects behind plan · Upcoming milestones · Overdue tasks
                 </p>
               </div>
@@ -807,9 +809,9 @@ export default function Dashboard() {
                 onToggle={() => toggle("overdue")}
                 renderItem={(item, i) => (
                   <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=expenditure&highlightId=${item.id}&highlightType=expense`}>
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-red-50/60 cursor-pointer group transition-colors" data-testid={`item-overdue-${i}`}>
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-red-50/60 cursor-pointer group transition-colors" data-testid={`item-overdue-${i}`}>
                       <SeverityBadge severity={item.severity} />
-                      <span className="text-sm truncate flex-1 text-foreground group-hover:text-red-700 transition-colors font-medium">
+                      <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-red-700 transition-colors font-medium">
                         {item.projectName.replace("_Tracker", "")}
                       </span>
                       {item.hasInvoice !== undefined && (
@@ -817,8 +819,8 @@ export default function Dashboard() {
                           {item.hasInvoice ? "INV" : "No INV"}
                         </Badge>
                       )}
-                      <span className="text-sm font-mono font-semibold text-red-600 whitespace-nowrap">{formatRand(item.amount)}</span>
-                      <span className="text-[11px] text-muted-foreground whitespace-nowrap">{item.paymentDate}</span>
+                      <span className="text-xs sm:text-sm font-mono font-semibold text-red-600 whitespace-nowrap">{formatRand(item.amount)}</span>
+                      <span className="text-[10px] sm:text-[11px] text-muted-foreground whitespace-nowrap hidden xs:inline">{item.paymentDate}</span>
                     </div>
                   </Link>
                 )}
@@ -834,14 +836,14 @@ export default function Dashboard() {
                 onToggle={() => toggle("revenue")}
                 renderItem={(item, i) => (
                   <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=revenue-tracking&highlightId=${item.id}&highlightType=revenue`}>
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-amber-50/60 cursor-pointer group transition-colors" data-testid={`item-revenue-${i}`}>
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-amber-50/60 cursor-pointer group transition-colors" data-testid={`item-revenue-${i}`}>
                       <SeverityBadge severity={item.severity} />
-                      <span className="text-sm truncate flex-1 text-foreground group-hover:text-amber-700 transition-colors font-medium">
+                      <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-amber-700 transition-colors font-medium">
                         {item.projectName.replace("_Tracker", "")}
                       </span>
-                      <span className="text-sm font-mono font-semibold text-amber-600 whitespace-nowrap">{formatRand(item.amount)}</span>
+                      <span className="text-xs sm:text-sm font-mono font-semibold text-amber-600 whitespace-nowrap">{formatRand(item.amount)}</span>
                       {item.invoiceNumber && (
-                        <span className="text-[11px] text-muted-foreground truncate max-w-[80px]">{item.invoiceNumber}</span>
+                        <span className="text-[10px] sm:text-[11px] text-muted-foreground truncate max-w-[80px] hidden xs:inline">{item.invoiceNumber}</span>
                       )}
                     </div>
                   </Link>
@@ -858,13 +860,13 @@ export default function Dashboard() {
                 onToggle={() => toggle("behind")}
                 renderItem={(item, i) => (
                   <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=plan`}>
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-50/60 cursor-pointer group transition-colors" data-testid={`item-behind-${i}`}>
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-orange-50/60 cursor-pointer group transition-colors" data-testid={`item-behind-${i}`}>
                       <SeverityBadge severity={item.severity} />
-                      <span className="text-sm truncate flex-1 text-foreground group-hover:text-orange-700 transition-colors font-medium">
+                      <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-orange-700 transition-colors font-medium">
                         {item.projectName.replace("_Tracker", "")}
                       </span>
                       <Badge variant="destructive" className="text-[10px] px-1.5 py-0 font-mono font-bold">{formatPct(item.delta)}</Badge>
-                      {item.pm && <span className="text-[11px] text-muted-foreground whitespace-nowrap">{item.pm}</span>}
+                      {item.pm && <span className="text-[11px] text-muted-foreground whitespace-nowrap hidden sm:inline">{item.pm}</span>}
                     </div>
                   </Link>
                 )}
@@ -880,14 +882,14 @@ export default function Dashboard() {
                 onToggle={() => toggle("milestones")}
                 renderItem={(item, i) => (
                   <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=finance`}>
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-blue-50/60 cursor-pointer group transition-colors" data-testid={`item-milestone-${i}`}>
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-blue-50/60 cursor-pointer group transition-colors" data-testid={`item-milestone-${i}`}>
                       <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] font-bold px-1.5" variant="outline">{item.milestoneType}</Badge>
-                      <span className="text-sm truncate flex-1 text-foreground group-hover:text-blue-700 transition-colors font-medium">
+                      <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-blue-700 transition-colors font-medium">
                         {item.projectName.replace("_Tracker", "")}
                       </span>
-                      <span className="text-[11px] font-semibold text-emerald-600 whitespace-nowrap">R {(item.amount / 1000000).toFixed(2)}M</span>
-                      <span className="text-[11px] font-mono text-muted-foreground whitespace-nowrap">{item.date}</span>
-                      {item.pm && <span className="text-[11px] text-muted-foreground whitespace-nowrap">{item.pm}</span>}
+                      <span className="text-[10px] sm:text-[11px] font-semibold text-emerald-600 whitespace-nowrap">R {(item.amount / 1000000).toFixed(2)}M</span>
+                      <span className="text-[10px] sm:text-[11px] font-mono text-muted-foreground whitespace-nowrap hidden xs:inline">{item.date}</span>
+                      {item.pm && <span className="text-[11px] text-muted-foreground whitespace-nowrap hidden sm:inline">{item.pm}</span>}
                     </div>
                   </Link>
                 )}
@@ -904,17 +906,17 @@ export default function Dashboard() {
                   onToggle={() => toggle("overdueTasks")}
                   renderItem={(item, i) => (
                     <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=plan&highlightId=${item.id}&highlightType=task`}>
-                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-orange-50/60 cursor-pointer group transition-colors" data-testid={`item-overdue-task-${i}`}>
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-orange-50/60 cursor-pointer group transition-colors" data-testid={`item-overdue-task-${i}`}>
                         <Badge className={`text-[9px] px-1 py-0 font-mono font-bold ${item.percentComplete === 0 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`} variant="outline">
                           {item.percentComplete}%
                         </Badge>
-                        <span className="text-sm truncate flex-1 text-foreground group-hover:text-orange-700 transition-colors font-medium">
+                        <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-orange-700 transition-colors font-medium">
                           {item.taskName}
                         </span>
-                        <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">
+                        <span className="text-[10px] text-muted-foreground truncate max-w-[100px] hidden xs:inline">
                           {item.projectName.replace(/_Tracker.*/, "")}
                         </span>
-                        <span className="text-[11px] font-mono text-red-500 whitespace-nowrap">due {item.endDate}</span>
+                        <span className="text-[10px] sm:text-[11px] font-mono text-red-500 whitespace-nowrap">due {item.endDate}</span>
                       </div>
                     </Link>
                   )}
@@ -925,8 +927,8 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:gap-6 grid-cols-1 xl:grid-cols-5 animate-fade-in stagger-7">
-        <Card className="xl:col-span-2 shadow-sm" data-testid="card-pm-summary">
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-5 animate-fade-in stagger-7">
+        <Card className="lg:col-span-2 shadow-sm" data-testid="card-pm-summary">
           <CardHeader className="pb-2">
             <CardTitle className="text-base font-bold text-foreground">PM Summary</CardTitle>
           </CardHeader>
@@ -964,7 +966,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="xl:col-span-3 shadow-sm" data-testid="card-projects-overview">
+        <Card className="lg:col-span-3 shadow-sm" data-testid="card-projects-overview">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base font-bold text-foreground">Top 10 Projects at Risk</CardTitle>
@@ -984,13 +986,13 @@ export default function Dashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="text-left py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Project</th>
-                    <th className="text-left py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Phase</th>
-                    <th className="text-center py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Money</th>
-                    <th className="text-center py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Plan</th>
-                    <th className="text-center py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Quality</th>
-                    <th className="text-right py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Delta</th>
-                    <th className="text-right py-2.5 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Revenue</th>
+                    <th className="text-left py-2.5 px-2 sm:px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Project</th>
+                    <th className="text-left py-2.5 px-2 sm:px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground hidden sm:table-cell">Phase</th>
+                    <th className="text-center py-2.5 px-2 sm:px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Money</th>
+                    <th className="text-center py-2.5 px-2 sm:px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Plan</th>
+                    <th className="text-center py-2.5 px-2 sm:px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground hidden xs:table-cell">Quality</th>
+                    <th className="text-right py-2.5 px-2 sm:px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Delta</th>
+                    <th className="text-right py-2.5 px-2 sm:px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground hidden sm:table-cell">Revenue</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1014,19 +1016,19 @@ export default function Dashboard() {
                         onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}`)}
                         data-testid={`row-project-${i}`}
                       >
-                        <td className="py-2.5 px-3 font-medium text-foreground max-w-[180px] truncate">
+                        <td className="py-2.5 px-2 sm:px-3 font-medium text-foreground max-w-[120px] sm:max-w-[180px] truncate text-xs sm:text-sm">
                           {(p.project_name || "").replace("_Tracker", "")}
                         </td>
-                        <td className="py-2.5 px-3 text-muted-foreground text-xs">{p.phase || "--"}</td>
-                        <td className="py-2.5 px-3 text-center">{riskDot(p.moneyRisk)}</td>
-                        <td className="py-2.5 px-3 text-center">{riskDot(p.planRisk)}</td>
-                        <td className="py-2.5 px-3 text-center">{riskDot(p.qualityRisk)}</td>
-                        <td className="py-2.5 px-3 text-right">
-                          <span className={`inline-block px-2 py-0.5 rounded-md text-xs font-mono font-bold ${deltaColor}`}>
+                        <td className="py-2.5 px-2 sm:px-3 text-muted-foreground text-xs hidden sm:table-cell">{p.phase || "--"}</td>
+                        <td className="py-2.5 px-2 sm:px-3 text-center">{riskDot(p.moneyRisk)}</td>
+                        <td className="py-2.5 px-2 sm:px-3 text-center">{riskDot(p.planRisk)}</td>
+                        <td className="py-2.5 px-2 sm:px-3 text-center hidden xs:table-cell">{riskDot(p.qualityRisk)}</td>
+                        <td className="py-2.5 px-2 sm:px-3 text-right">
+                          <span className={`inline-block px-1.5 sm:px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-mono font-bold ${deltaColor}`}>
                             {formatPct(p.delta_vs_expected)}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-muted-foreground">{formatRand(p.actual_revenue ?? 0)}</td>
+                        <td className="py-2.5 px-2 sm:px-3 text-right font-mono text-muted-foreground hidden sm:table-cell">{formatRand(p.actual_revenue ?? 0)}</td>
                       </tr>
                     );
                   })}
@@ -1050,8 +1052,8 @@ export default function Dashboard() {
                 <YAxis
                   type="category"
                   dataKey="phase"
-                  width={160}
-                  tick={{ fontSize: 12 }}
+                  width={isMobile ? 90 : 160}
+                  tick={{ fontSize: isMobile ? 10 : 12 }}
                 />
                 <Tooltip
                   contentStyle={{ borderRadius: 8, fontSize: 13 }}
@@ -1083,8 +1085,8 @@ export default function Dashboard() {
                 <YAxis
                   type="category"
                   dataKey="name"
-                  width={140}
-                  tick={{ fontSize: 10 }}
+                  width={isMobile ? 80 : 140}
+                  tick={{ fontSize: isMobile ? 8 : 10 }}
                 />
                 <Tooltip
                   contentStyle={{ borderRadius: 8, fontSize: 13 }}
@@ -1165,8 +1167,8 @@ export default function Dashboard() {
                 </button>
               )}
             </div>
-            <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0">
-              <div style={{ minWidth: 700 }}>
+            <div className="overflow-x-auto -mx-3 sm:mx-0 px-3 sm:px-0" style={{ "--gantt-label-w": isMobile ? "120px" : "220px" } as React.CSSProperties}>
+              <div style={{ minWidth: isMobile ? 500 : 700 }}>
                 {(() => {
                   const allDates = ganttData
                     .flatMap(p => [p.startDate, p.endDate])
@@ -1204,7 +1206,7 @@ export default function Dashboard() {
 
                   return (
                     <div className="flex flex-col">
-                      <div className="flex mb-1 pl-[160px] sm:pl-[220px]">
+                      <div className="flex mb-1 pl-[120px] sm:pl-[220px]">
                         <div className="relative flex-1 h-5">
                           {dateMarkers.map((m, i) => (
                             <span
@@ -1221,7 +1223,7 @@ export default function Dashboard() {
                         {todayPct !== null && (
                           <div
                             className="absolute top-0 bottom-0 border-l-2 border-red-400 border-dashed z-10 pointer-events-none"
-                            style={{ left: `calc(var(--gantt-label-w, 160px) + (100% - var(--gantt-label-w, 160px)) * ${todayPct / 100})` }}
+                            style={{ left: `calc(var(--gantt-label-w, 120px) + (100% - var(--gantt-label-w, 120px)) * ${todayPct / 100})` }}
                             title={`Today: ${format(new Date(), "yyyy/MM/dd")}`}
                           >
                             <span className="absolute -top-4 -translate-x-1/2 text-[9px] font-semibold text-red-500">Today</span>
@@ -1250,7 +1252,7 @@ export default function Dashboard() {
                               onMouseLeave={() => setGanttHover(null)}
                               data-testid={`gantt-row-${i}`}
                             >
-                              <div className="w-[160px] sm:w-[220px] shrink-0 pr-2 text-right flex items-center justify-end gap-1">
+                              <div className="w-[120px] sm:w-[220px] shrink-0 pr-2 text-right flex items-center justify-end gap-1">
                                 {row.behind && (
                                   <AlertTriangle className="w-3 h-3 text-red-500 shrink-0" />
                                 )}
@@ -1294,7 +1296,7 @@ export default function Dashboard() {
                               </div>
 
                               {ganttHover === i && (
-                                <div className="absolute left-[170px] sm:left-[230px] top-full z-50 bg-card  border border-border rounded-lg shadow-xl p-3 min-w-[240px] text-xs pointer-events-none" style={{ marginTop: -4 }}>
+                                <div className="absolute left-[130px] sm:left-[230px] top-full z-50 bg-card border border-border rounded-lg shadow-xl p-2 sm:p-3 min-w-[200px] sm:min-w-[240px] text-xs pointer-events-none" style={{ marginTop: -4 }}>
                                   <div className="font-semibold text-foreground mb-1.5">{row.displayName}</div>
                                   <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted-foreground">
                                     <span className="text-muted-foreground">PM</span><span>{row.pm || '—'}</span>

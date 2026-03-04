@@ -1250,7 +1250,7 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
       )}
 
       <Sheet open={showTaskDetail} onOpenChange={setShowTaskDetail}>
-        <SheetContent className="w-[400px] sm:w-[540px]">
+        <SheetContent className="w-full sm:w-[400px] md:w-[540px] max-w-full">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2">
               {selectedTask?.isCritical && (

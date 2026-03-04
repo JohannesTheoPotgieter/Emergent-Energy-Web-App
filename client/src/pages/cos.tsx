@@ -241,8 +241,8 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
           </div>
         </div>
 
-        <div className="px-6 py-3 border-b flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[220px]">
+        <div className="px-3 sm:px-6 py-3 border-b flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+          <div className="relative flex-1 min-w-0 sm:min-w-[220px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search project, category, invoice, PO, supplier…"
@@ -252,30 +252,32 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
               data-testid="input-search-detail"
             />
           </div>
-          <select
-            value={stateFilter}
-            onChange={(e) => setStateFilter(e.target.value as any)}
-            className="h-9 px-3 text-sm border border-border rounded-lg bg-muted/50 hover:bg-card transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300"
-            data-testid="select-state-filter"
-          >
-            <option value="all">All States</option>
-            <option value="realised">Realised Only</option>
-            <option value="unrealised">Unrealised Only</option>
-          </select>
-          <select
-            value={projectFilter}
-            onChange={(e) => setProjectFilter(e.target.value)}
-            className="h-9 px-3 text-sm border border-border rounded-lg bg-muted/50 hover:bg-card transition-colors cursor-pointer max-w-[220px] focus:outline-none focus:ring-2 focus:ring-slate-300"
-            data-testid="select-project-filter"
-          >
-            <option value="all">All Projects</option>
-            {allProjects.map(p => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
+          <div className="flex gap-2">
+            <select
+              value={stateFilter}
+              onChange={(e) => setStateFilter(e.target.value as any)}
+              className="h-9 px-3 text-sm border border-border rounded-lg bg-muted/50 hover:bg-card transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300 flex-1 sm:flex-none"
+              data-testid="select-state-filter"
+            >
+              <option value="all">All States</option>
+              <option value="realised">Realised Only</option>
+              <option value="unrealised">Unrealised Only</option>
+            </select>
+            <select
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+              className="h-9 px-3 text-sm border border-border rounded-lg bg-muted/50 hover:bg-card transition-colors cursor-pointer max-w-[50vw] sm:max-w-[220px] focus:outline-none focus:ring-2 focus:ring-slate-300 flex-1 sm:flex-none"
+              data-testid="select-project-filter"
+            >
+              <option value="all">All Projects</option>
+              {allProjects.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <div className="px-6 py-2.5 border-b bg-muted/80 flex items-center justify-between text-sm">
+        <div className="px-3 sm:px-6 py-2.5 border-b bg-muted/80 flex items-center justify-between text-sm">
           <span className="font-medium text-muted-foreground">
             <span className="text-foreground font-semibold">{filtered.length}</span> items
           </span>
@@ -616,11 +618,11 @@ export default function CosTracker() {
         </div>
 
         <Card className="shadow-sm overflow-hidden">
-          <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-6 py-4">
-            <CardTitle className="text-lg font-semibold tracking-tight">COS Overview</CardTitle>
+          <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-3 sm:px-6 py-3 sm:py-4">
+            <CardTitle className="text-base sm:text-lg font-semibold tracking-tight">COS Overview</CardTitle>
           </CardHeader>
-          <CardContent className="p-6">
-            <div className="h-[420px]" data-testid="chart-cos">
+          <CardContent className="p-3 sm:p-6">
+            <div className="h-[280px] sm:h-[420px]" data-testid="chart-cos">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -649,11 +651,11 @@ export default function CosTracker() {
         </Card>
 
         <Card className="shadow-sm overflow-hidden" data-testid="card-cos-breakdown">
-          <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-6 py-4">
-            <CardTitle className="text-lg font-semibold tracking-tight">COS Monthly Breakdown</CardTitle>
+          <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-3 sm:px-6 py-3 sm:py-4">
+            <CardTitle className="text-base sm:text-lg font-semibold tracking-tight">COS Monthly Breakdown</CardTitle>
           </CardHeader>
-          <CardContent className="p-6">
-            <div className="h-[420px]" data-testid="chart-cos-breakdown">
+          <CardContent className="p-3 sm:p-6">
+            <div className="h-[280px] sm:h-[420px]" data-testid="chart-cos-breakdown">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={cosBreakdownData} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -675,19 +677,19 @@ export default function CosTracker() {
         </Card>
 
         <Card className="shadow-sm overflow-hidden">
-          <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-6 py-4">
-            <CardTitle className="text-lg font-semibold tracking-tight">Monthly COS Grid</CardTitle>
+          <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-3 sm:px-6 py-3 sm:py-4">
+            <CardTitle className="text-base sm:text-lg font-semibold tracking-tight">Monthly COS Grid</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" data-testid="table-cos-grid">
+              <table className="w-full text-xs sm:text-sm" data-testid="table-cos-grid">
                 <thead>
                   <tr className="border-b bg-muted/80">
-                    <th className="sticky left-0 z-10 bg-muted/95 backdrop-blur-sm px-5 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-[11px] min-w-[200px] border-r border-border">
+                    <th className="sticky left-0 z-10 bg-muted/95 backdrop-blur-sm px-3 sm:px-5 py-2 sm:py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px] min-w-[140px] sm:min-w-[200px] border-r border-border">
                       Metric
                     </th>
                     {months.map((m) => (
-                      <th key={m.monthKey} className="px-4 py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[11px] whitespace-nowrap min-w-[110px]">
+                      <th key={m.monthKey} className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[10px] sm:text-[11px] whitespace-nowrap min-w-[85px] sm:min-w-[110px]">
                         {m.monthLabel}
                       </th>
                     ))}
@@ -710,7 +712,7 @@ export default function CosTracker() {
                           className={`border-b border-border transition-colors ${isYtd ? "bg-muted/40" : "bg-card"} hover:bg-muted/40`}
                           data-testid={`row-${row.key}`}
                         >
-                          <td className={`sticky left-0 z-10 px-5 py-2.5 font-medium text-sm border-r border-border ${isYtd ? "bg-muted/95" : "bg-card/95"} backdrop-blur-sm`}>
+                          <td className={`sticky left-0 z-10 px-3 sm:px-5 py-2 sm:py-2.5 font-medium text-xs sm:text-sm border-r border-border ${isYtd ? "bg-muted/95" : "bg-card/95"} backdrop-blur-sm`}>
                             {row.expandable ? (
                               <button
                                 type="button"
@@ -733,11 +735,11 @@ export default function CosTracker() {
 
                             if (row.editable) {
                               return (
-                                <td key={m.monthKey} className="px-2 py-1.5 text-right">
+                                <td key={m.monthKey} className="px-1 sm:px-2 py-1 sm:py-1.5 text-right">
                                   {isEditingCell ? (
                                     <Input
                                       type="number"
-                                      className="h-8 w-full text-right font-mono text-sm border-purple-300 focus:ring-purple-400"
+                                      className="h-7 sm:h-8 w-full text-right font-mono text-xs sm:text-sm border-purple-300 focus:ring-purple-400"
                                       value={editing.value}
                                       onChange={(e) => setEditing({ ...editing, value: e.target.value })}
                                       onBlur={commitEdit}
@@ -748,7 +750,7 @@ export default function CosTracker() {
                                   ) : (
                                     <button
                                       type="button"
-                                      className={`w-full text-right font-mono cursor-pointer hover:bg-purple-50 rounded-lg px-3 py-1.5 transition-colors ${row.colorClass}`}
+                                      className={`w-full text-right font-mono cursor-pointer hover:bg-purple-50 rounded-lg px-1.5 sm:px-3 py-1 sm:py-1.5 transition-colors ${row.colorClass}`}
                                       onClick={() => startEdit(row.key as EditableField, m.monthKey, val)}
                                       data-testid={`cell-${row.key}-${m.monthKey}`}
                                     >
@@ -765,7 +767,7 @@ export default function CosTracker() {
                             return (
                               <td
                                 key={m.monthKey}
-                                className={`px-4 py-2.5 text-right font-mono text-sm ${colorClass} ${isClickable ? "cursor-pointer hover:bg-blue-50/80 hover:underline decoration-blue-300 underline-offset-2 transition-colors rounded" : ""}`}
+                                className={`px-2 sm:px-4 py-1.5 sm:py-2.5 text-right font-mono text-xs sm:text-sm ${colorClass} ${isClickable ? "cursor-pointer hover:bg-blue-50/80 hover:underline decoration-blue-300 underline-offset-2 transition-colors rounded" : ""}`}
                                 onClick={isClickable ? () => setDrawerMonth({
                                   monthKey: m.monthKey,
                                   monthLabel: m.monthLabel,
@@ -784,7 +786,7 @@ export default function CosTracker() {
                             className="border-b border-slate-50 bg-blue-50/20 hover:bg-blue-50/50 transition-colors"
                             data-testid={`row-detail-${row.key}-${pName}`}
                           >
-                            <td className="sticky left-0 z-10 bg-blue-50/30 backdrop-blur-sm pl-11 pr-4 py-1.5 text-xs text-muted-foreground truncate max-w-[200px] border-r border-border" title={pName}>
+                            <td className="sticky left-0 z-10 bg-blue-50/30 backdrop-blur-sm pl-7 sm:pl-11 pr-2 sm:pr-4 py-1 sm:py-1.5 text-[10px] sm:text-xs text-muted-foreground truncate max-w-[140px] sm:max-w-[200px] border-r border-border" title={pName}>
                               <span className="cursor-pointer hover:text-blue-600 hover:underline decoration-dashed underline-offset-2 transition-colors">
                                 {pName}
                               </span>
@@ -797,7 +799,7 @@ export default function CosTracker() {
                               return (
                                 <td
                                   key={m.monthKey}
-                                  className={`px-4 py-1.5 text-right font-mono text-xs text-blue-600/70 ${val !== 0 ? "cursor-pointer hover:bg-blue-50/80 hover:underline decoration-blue-300 underline-offset-2 transition-colors rounded" : ""}`}
+                                  className={`px-2 sm:px-4 py-1 sm:py-1.5 text-right font-mono text-[10px] sm:text-xs text-blue-600/70 ${val !== 0 ? "cursor-pointer hover:bg-blue-50/80 hover:underline decoration-blue-300 underline-offset-2 transition-colors rounded" : ""}`}
                                   onClick={val !== 0 ? () => setDrawerMonth({
                                     monthKey: m.monthKey,
                                     monthLabel: m.monthLabel,

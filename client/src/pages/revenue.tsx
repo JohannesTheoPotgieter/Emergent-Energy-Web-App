@@ -158,26 +158,26 @@ export default function RevenueTracker() {
 
   return (
     <div className="space-y-0">
-      <div className="bg-card border-b border-border px-6 py-6">
-        <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">
+      <div className="bg-card border-b border-border px-3 sm:px-6 py-4 sm:py-6">
+        <h2 className="text-xl sm:text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">
           Revenue Tracker FY26
         </h2>
-        <p className="text-muted-foreground mt-1" data-testid="text-page-subtitle">
+        <p className="text-muted-foreground mt-1 text-xs sm:text-sm" data-testid="text-page-subtitle">
           Monthly revenue tracking with planned vs costed analysis
         </p>
       </div>
 
-      <div className="p-6 space-y-6">
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
           <Card data-testid="card-ytd-planned">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
                 <div className="rounded-lg bg-blue-100 p-2">
                   <DollarSign className="h-5 w-5 text-blue-600" />
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">YTD Revenue (Planned)</p>
-                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-planned-value">
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm text-muted-foreground truncate">YTD Revenue (Planned)</p>
+                  <p className="text-lg sm:text-2xl font-bold font-mono" data-testid="text-ytd-planned-value">
                     {formatRand(lastMonth?.ytdPlanned ?? 0)}
                   </p>
                 </div>
@@ -191,9 +191,9 @@ export default function RevenueTracker() {
                 <div className="rounded-lg bg-green-100 p-2">
                   <TrendingUp className="h-5 w-5 text-green-600" />
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">YTD Revenue (Realised)</p>
-                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-realised-value">
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm text-muted-foreground truncate">YTD Revenue (Realised)</p>
+                  <p className="text-lg sm:text-2xl font-bold font-mono" data-testid="text-ytd-realised-value">
                     {formatRand(lastMonth?.ytdRealised ?? 0)}
                   </p>
                 </div>
@@ -207,9 +207,9 @@ export default function RevenueTracker() {
                 <div className="rounded-lg bg-purple-100 p-2">
                   <Target className="h-5 w-5 text-purple-600" />
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">YTD Costed</p>
-                  <p className="text-2xl font-bold font-mono" data-testid="text-ytd-budget-value">
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm text-muted-foreground truncate">YTD Costed</p>
+                  <p className="text-lg sm:text-2xl font-bold font-mono" data-testid="text-ytd-budget-value">
                     {formatRand(lastMonth?.ytdBudget ?? 0)}
                   </p>
                 </div>
@@ -223,10 +223,10 @@ export default function RevenueTracker() {
                 <div className={`rounded-lg p-2 ${(lastMonth?.ytdVariance ?? 0) >= 0 ? "bg-green-100" : "bg-red-100"}`}>
                   <Activity className={`h-5 w-5 ${(lastMonth?.ytdVariance ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`} />
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">YTD Variance</p>
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm text-muted-foreground truncate">YTD Variance</p>
                   <p
-                    className={`text-2xl font-bold font-mono ${(lastMonth?.ytdVariance ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}
+                    className={`text-lg sm:text-2xl font-bold font-mono ${(lastMonth?.ytdVariance ?? 0) >= 0 ? "text-green-600" : "text-red-600"}`}
                     data-testid="text-ytd-variance-value"
                   >
                     {formatRand(lastMonth?.ytdVariance ?? 0)}
@@ -243,14 +243,14 @@ export default function RevenueTracker() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" data-testid="table-revenue-grid">
+              <table className="w-full text-xs sm:text-sm" data-testid="table-revenue-grid">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left font-semibold min-w-[160px]">
+                    <th className="sticky left-0 z-10 bg-muted/50 px-2 sm:px-4 py-2 sm:py-3 text-left font-semibold min-w-[120px] sm:min-w-[160px] border-r border-border">
                       Metric
                     </th>
                     {months.map((m) => (
-                      <th key={m.monthKey} className="px-4 py-3 text-right font-semibold whitespace-nowrap min-w-[110px]">
+                      <th key={m.monthKey} className="px-2 sm:px-4 py-2 sm:py-3 text-right font-semibold whitespace-nowrap min-w-[90px] sm:min-w-[110px]">
                         {m.monthLabel}
                       </th>
                     ))}
@@ -265,7 +265,7 @@ export default function RevenueTracker() {
                         className={`border-b ${isYtd ? "bg-muted" : "bg-card"} hover:bg-muted/30`}
                         data-testid={`row-${row.key}`}
                       >
-                        <td className={`sticky left-0 z-10 px-4 py-2 font-medium ${isYtd ? "bg-muted" : "bg-card"}`}>
+                        <td className={`sticky left-0 z-10 px-2 sm:px-4 py-1.5 sm:py-2 font-medium text-xs sm:text-sm border-r border-border ${isYtd ? "bg-muted" : "bg-card"}`}>
                           {row.label}
                         </td>
                         {months.map((m) => {
@@ -275,11 +275,11 @@ export default function RevenueTracker() {
 
                           if (row.editable) {
                             return (
-                              <td key={m.monthKey} className="px-2 py-1 text-right">
+                              <td key={m.monthKey} className="px-1 sm:px-2 py-1 text-right">
                                 {isEditing ? (
                                   <Input
                                     type="number"
-                                    className="h-8 w-full text-right font-mono text-sm"
+                                    className="h-7 sm:h-8 w-full text-right font-mono text-xs sm:text-sm"
                                     value={editing.value}
                                     onChange={(e) =>
                                       setEditing({ ...editing, value: e.target.value })
@@ -292,7 +292,7 @@ export default function RevenueTracker() {
                                 ) : (
                                   <button
                                     type="button"
-                                    className={`w-full text-right font-mono cursor-pointer hover:bg-muted rounded px-2 py-1 ${row.colorClass}`}
+                                    className={`w-full text-right font-mono cursor-pointer hover:bg-muted rounded px-1 sm:px-2 py-1 ${row.colorClass}`}
                                     onClick={() =>
                                       startEdit(row.key as EditableField, m.monthKey, val)
                                     }
@@ -312,7 +312,7 @@ export default function RevenueTracker() {
                           return (
                             <td
                               key={m.monthKey}
-                              className={`px-4 py-2 text-right font-mono ${colorClass}`}
+                              className={`px-2 sm:px-4 py-1.5 sm:py-2 text-right font-mono ${colorClass}`}
                               data-testid={`cell-${row.key}-${m.monthKey}`}
                             >
                               {formatCell(row, val)}
@@ -333,7 +333,7 @@ export default function RevenueTracker() {
             <CardTitle>Revenue Overview Chart</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-[400px]" data-testid="chart-revenue">
+            <div className="h-[280px] sm:h-[400px]" data-testid="chart-revenue">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" />
