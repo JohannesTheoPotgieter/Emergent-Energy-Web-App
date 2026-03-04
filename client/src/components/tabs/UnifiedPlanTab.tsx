@@ -492,7 +492,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   const ganttScrollRef = useRef<HTMLDivElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
 
-  const { data: tasks = [], isLoading } = useQuery<any[]>({
+  const { data: planData, isLoading } = useQuery<{ tasks: any[]; unlinkedOperationalCount: number }>({
     queryKey: ["planning-tasks", projectName],
     queryFn: async () => {
       const token = localStorage.getItem('auth_token');
@@ -501,12 +501,17 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       const res = await fetch(`/api/planning-tasks/${encodeURIComponent(projectName)}`, { credentials: "include", headers });
       if (!res.ok) {
         const fallback = await fetch(`/api/operational-tasks/${encodeURIComponent(projectName)}`, { credentials: "include", headers });
-        if (!fallback.ok) return [];
-        return fallback.json();
+        if (!fallback.ok) return { tasks: [], unlinkedOperationalCount: 0 };
+        const fallbackData = await fallback.json();
+        return { tasks: Array.isArray(fallbackData) ? fallbackData : [], unlinkedOperationalCount: 0 };
       }
-      return res.json();
+      const data = await res.json();
+      if (Array.isArray(data)) return { tasks: data, unlinkedOperationalCount: 0 };
+      return { tasks: data.tasks || [], unlinkedOperationalCount: data.unlinkedOperationalCount || 0 };
     },
   });
+  const tasks = planData?.tasks ?? [];
+  const unlinkedOperationalCount = planData?.unlinkedOperationalCount ?? 0;
 
   const { data: keyDates = [] } = useQuery<ResolvedKeyDate[]>({
     queryKey: ["key-dates", projectName],
@@ -1434,6 +1439,13 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
           <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => setSelectedIds(new Set())} data-testid="button-clear-selection">
             Clear
           </Button>
+        </div>
+      )}
+
+      {unlinkedOperationalCount > 0 && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-blue-50 border border-blue-200 text-xs text-blue-700" data-testid="unlinked-ops-banner">
+          <Info className="h-3.5 w-3.5 flex-shrink-0" />
+          <span>{unlinkedOperationalCount} operational task{unlinkedOperationalCount !== 1 ? "s" : ""} not linked to the project plan — view in My Tasks</span>
         </div>
       )}
 

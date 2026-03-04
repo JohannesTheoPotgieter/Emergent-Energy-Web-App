@@ -10683,12 +10683,15 @@ export async function registerRoutes(
 
       let baselineTasks: any[] = [];
       let operationalTasks: any[] = [];
+      let unlinkedOperationalCount = 0;
 
       if (useCanonical) {
         const canonicalTasks = await getWorkItemsAsNormalizedPlanTasks(projectName);
         if (canonicalTasks.length > 0) {
           const allOps = await storage.getOperationalTasksByProject(projectName);
-          operationalTasks = allOps.filter((t: any) => t.externalSource !== "clickup");
+          const nonClickupOps = allOps.filter((t: any) => t.externalSource !== "clickup");
+          operationalTasks = nonClickupOps.filter((t: any) => t.importedTaskId != null);
+          unlinkedOperationalCount = nonClickupOps.length - operationalTasks.length;
 
           const filteredCanonical = canonicalTasks.filter((ct: any) => {
             const hasWbs = ct.taskNo && String(ct.taskNo).trim().length > 0;
@@ -10782,7 +10785,9 @@ export async function registerRoutes(
           projectName !== trackerName ? storage.getProjectPlanOverridesByProject(trackerName) : Promise.resolve([]),
         ]);
 
-        operationalTasks = allOperationalTasks.filter((t: any) => t.externalSource !== "clickup");
+        const nonClickupOps = allOperationalTasks.filter((t: any) => t.externalSource !== "clickup");
+        operationalTasks = nonClickupOps.filter((t: any) => t.importedTaskId != null);
+        unlinkedOperationalCount = nonClickupOps.length - operationalTasks.length;
 
         const rawPlanTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
         const planOverrides = planTasksDirect.length > 0 ? planOverridesDirect : planOverridesTracker;
@@ -11073,7 +11078,7 @@ export async function registerRoutes(
       };
 
       const result = Array.from(taskMap.values()).sort(sortByTaskCode);
-      res.json(result);
+      res.json({ tasks: result, unlinkedOperationalCount });
     } catch (err: any) {
       console.error("Planning tasks error:", err);
       res.status(500).json({ error: err.message });
