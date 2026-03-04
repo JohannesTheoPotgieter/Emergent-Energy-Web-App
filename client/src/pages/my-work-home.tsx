@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 
 interface TaskItem {
-  id: number;
+  id: number | string;
   title: string;
   status: string;
   priority: string;
@@ -37,6 +37,9 @@ interface TaskItem {
   projectName: string | null;
   department: string | null;
   sortOrder: number;
+  source?: string;
+  sourceLabel?: string;
+  link?: string;
 }
 
 interface CalendarEvent {
@@ -64,6 +67,19 @@ interface MsObject {
 }
 
 const today = format(new Date(), "yyyy-MM-dd");
+
+const SOURCE_BADGE_COLORS: Record<string, string> = {
+  personal: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  operational: "bg-amber-50 text-amber-700 border-amber-200",
+  plan: "bg-violet-50 text-violet-700 border-violet-200",
+  engineering: "bg-cyan-50 text-cyan-700 border-cyan-200",
+  quality: "bg-rose-50 text-rose-700 border-rose-200",
+  approval: "bg-orange-50 text-orange-700 border-orange-200",
+  deliverable: "bg-pink-50 text-pink-700 border-pink-200",
+  tr_register: "bg-purple-50 text-purple-700 border-purple-200",
+  ms365: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  notification: "bg-blue-50 text-blue-700 border-blue-200",
+};
 
 function authHeaders() {
   const token = localStorage.getItem("auth_token");
@@ -97,10 +113,25 @@ function StatusIcon({ status }: { status: string }) {
   }
 }
 
+const SOURCE_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "personal", label: "Personal" },
+  { key: "operational", label: "Operational" },
+  { key: "plan", label: "Plan" },
+  { key: "engineering", label: "Engineering" },
+  { key: "quality", label: "Quality" },
+  { key: "approval", label: "Approvals" },
+  { key: "deliverable", label: "Deliverables" },
+  { key: "notification", label: "Notifications" },
+  { key: "ms365", label: "MS 365" },
+  { key: "tr_register", label: "Action Items" },
+];
+
 export default function MyWorkHomePage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
 
   const syncMutation = useMutation({
     mutationFn: async () => {
@@ -297,7 +328,7 @@ export default function MyWorkHomePage() {
     queryKey: ["/api/mytool/escalated-priorities"],
   });
 
-  const DONE_STATUSES = ["done", "cancelled", "completed", "closed", "COMPLETE", "DONE", "CANCELLED"];
+  const DONE_STATUSES = ["done", "cancelled", "completed", "closed", "COMPLETE", "DONE", "CANCELLED", "resolved", "approved"];
 
   const tasks: TaskItem[] = useMemo(() => {
     const items: TaskItem[] = [];
@@ -318,6 +349,8 @@ export default function MyWorkHomePage() {
           sortOrder: t.sortOrder || t.sort_order || 0,
           projectName: t.projectName || t.project_name || null,
           department: t.department || null,
+          source: "personal",
+          sourceLabel: "Personal",
         });
       }
 
@@ -335,6 +368,8 @@ export default function MyWorkHomePage() {
           sortOrder: t.sortOrder || 0,
           projectName: t.projectName || t.project_name || null,
           department: null,
+          source: "operational",
+          sourceLabel: "Operational",
         });
       }
 
@@ -353,6 +388,8 @@ export default function MyWorkHomePage() {
           sortOrder: 0,
           projectName: t.projectName || null,
           department: null,
+          source: "plan",
+          sourceLabel: "Plan",
         });
       }
 
@@ -370,6 +407,8 @@ export default function MyWorkHomePage() {
           sortOrder: 0,
           projectName: t.projectName || null,
           department: null,
+          source: "engineering",
+          sourceLabel: "Engineering",
         });
       }
 
@@ -387,12 +426,129 @@ export default function MyWorkHomePage() {
           sortOrder: 0,
           projectName: t.projectName || null,
           department: null,
+          source: "quality",
+          sourceLabel: "Quality",
+        });
+      }
+
+      for (const a of (allTaskData.approvals?.engineering || [])) {
+        const key = `approval-eng-${a.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push({
+          id: `approval-eng-${a.id}`,
+          title: a.title || "",
+          status: (a.status || "pending").toLowerCase(),
+          priority: "high",
+          plannedForDate: null,
+          dueAt: a.createdAt || null,
+          sortOrder: 0,
+          projectName: a.projectName || null,
+          department: null,
+          source: "approval",
+          sourceLabel: "Approval",
+        });
+      }
+      for (const a of (allTaskData.approvals?.quality || [])) {
+        const key = `approval-qc-${a.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push({
+          id: `approval-qc-${a.id}`,
+          title: a.title || "",
+          status: (a.status || "review").toLowerCase(),
+          priority: "high",
+          plannedForDate: null,
+          dueAt: a.createdAt || null,
+          sortOrder: 0,
+          projectName: a.projectName || null,
+          department: null,
+          source: "approval",
+          sourceLabel: "QC Review",
+        });
+      }
+
+      for (const d of (allTaskData.deliverables || [])) {
+        const key = `del-${d.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const status = (d.status || "TO DO").toLowerCase().replace(/\s+/g, "_");
+        items.push({
+          id: `del-${d.id}`,
+          title: d.title || "",
+          status,
+          priority: "normal",
+          plannedForDate: null,
+          dueAt: d.createdAt || d.created_at || null,
+          sortOrder: 0,
+          projectName: d.projectName || d.project_name || null,
+          department: null,
+          source: "deliverable",
+          sourceLabel: "Deliverable",
+        });
+      }
+
+      for (const tr of (allTaskData.trRegister || [])) {
+        const key = `tr-${tr.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push({
+          id: `tr-${tr.id}`,
+          title: tr.actionDescription || tr.title || "",
+          status: (tr.status || "Active").toLowerCase().replace(/\s+/g, "_"),
+          priority: tr.ragStatus === "Red" ? "critical" : tr.ragStatus === "Amber" ? "high" : "normal",
+          plannedForDate: null,
+          dueAt: tr.dueDate ? (typeof tr.dueDate === "string" ? tr.dueDate.split("T")[0] : null) : null,
+          sortOrder: 0,
+          projectName: null,
+          department: tr.department || null,
+          source: "tr_register",
+          sourceLabel: "Action Item",
         });
       }
     }
 
+    for (const item of msActionItems) {
+      const key = `ms-${item.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push({
+        id: `ms-${item.id}`,
+        title: item.subject_or_title || "",
+        status: "action_required",
+        priority: "normal",
+        plannedForDate: null,
+        dueAt: item.received_or_start_datetime || null,
+        sortOrder: 999,
+        projectName: null,
+        department: null,
+        source: "ms365",
+        sourceLabel: "MS 365",
+        link: item.web_link || undefined,
+      });
+    }
+
+    for (const n of (unreadNotifs.items || [])) {
+      const key = `notif-${n.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push({
+        id: `notif-${n.id}`,
+        title: n.title || "",
+        status: "unread",
+        priority: "normal",
+        plannedForDate: null,
+        dueAt: n.createdAt || n.created_at || null,
+        sortOrder: 999,
+        projectName: n.projectName || n.project_name || null,
+        department: null,
+        source: "notification",
+        sourceLabel: "Notification",
+      });
+    }
+
     return items;
-  }, [allTaskData]);
+  }, [allTaskData, msActionItems, unreadNotifs]);
 
   const tasksLoading = allTasksLoading;
 
@@ -400,9 +556,24 @@ export default function MyWorkHomePage() {
     tasks.filter(t => !DONE_STATUSES.includes(t.status)),
   [tasks]);
 
+  const filteredTasks = useMemo(() => {
+    if (sourceFilter === "all") return openTasks;
+    return openTasks.filter(t => t.source === sourceFilter);
+  }, [openTasks, sourceFilter]);
+
+  const sourceCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: openTasks.length };
+    for (const t of openTasks) {
+      if (t.source) {
+        counts[t.source] = (counts[t.source] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [openTasks]);
+
   const groupedTasks = useMemo(() => {
     const groups: Record<string, TaskItem[]> = {};
-    openTasks.forEach(t => {
+    filteredTasks.forEach(t => {
       const key = t.projectName || "No Project";
       if (!groups[key]) groups[key] = [];
       groups[key].push(t);
@@ -419,7 +590,7 @@ export default function MyWorkHomePage() {
       })
     );
     return sortedGroups;
-  }, [openTasks]);
+  }, [filteredTasks]);
 
   const sortedEvents = useMemo(() =>
     [...calendarEvents].sort((a, b) => {
@@ -452,11 +623,11 @@ export default function MyWorkHomePage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" data-testid="my-work-grid">
         <div className="lg:col-span-1 space-y-4" data-testid="my-work-tasks-column">
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Target className="h-4 w-4 text-emerald-600" />
-                  Open Tasks
+                  My Tasks
                 </CardTitle>
                 <div className="flex items-center gap-1.5">
                   <Button
@@ -465,6 +636,8 @@ export default function MyWorkHomePage() {
                     className="h-6 w-6"
                     onClick={() => {
                       queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
+                      queryClient.invalidateQueries({ queryKey: ["/api/ms-objects/mine"] });
+                      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
                       toast({ title: "Refreshing tasks...", description: "Fetching latest task data." });
                     }}
                     data-testid="button-refresh-tasks"
@@ -473,10 +646,28 @@ export default function MyWorkHomePage() {
                     <RefreshCw className="h-3 w-3" />
                   </Button>
                   <Badge variant="secondary" className="text-xs" data-testid="badge-open-tasks-count">
-                    {openTasks.length}
+                    {filteredTasks.length}
                   </Badge>
                 </div>
               </div>
+              <ScrollArea className="w-full">
+                <div className="flex gap-1 pt-1 pb-0.5">
+                  {SOURCE_FILTERS.filter(f => f.key === "all" || (sourceCounts[f.key] || 0) > 0).map(f => (
+                    <button
+                      key={f.key}
+                      onClick={() => setSourceFilter(f.key)}
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap transition-colors border ${
+                        sourceFilter === f.key
+                          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                          : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
+                      }`}
+                      data-testid={`filter-${f.key}`}
+                    >
+                      {f.label} {(sourceCounts[f.key] || 0) > 0 ? `(${sourceCounts[f.key]})` : ""}
+                    </button>
+                  ))}
+                </div>
+              </ScrollArea>
             </CardHeader>
             <CardContent className="pt-0">
               {tasksLoading ? (
@@ -485,10 +676,10 @@ export default function MyWorkHomePage() {
                     <Skeleton key={i} className="h-10 w-full rounded-lg" />
                   ))}
                 </div>
-              ) : openTasks.length === 0 ? (
+              ) : filteredTasks.length === 0 ? (
                 <div className="flex flex-col items-center py-8 text-center" data-testid="empty-tasks">
                   <Inbox className="h-8 w-8 text-muted-foreground/50 mb-2" />
-                  <p className="text-sm text-muted-foreground">No open tasks for today</p>
+                  <p className="text-sm text-muted-foreground">{sourceFilter === "all" ? "No open tasks" : `No ${SOURCE_FILTERS.find(f => f.key === sourceFilter)?.label || ""} tasks`}</p>
                 </div>
               ) : (
                 <ScrollArea className="max-h-[500px]">
@@ -514,6 +705,11 @@ export default function MyWorkHomePage() {
                               <StatusIcon status={task.status} />
                               <PriorityDot priority={task.priority} />
                               <span className="text-sm truncate flex-1">{task.title}</span>
+                              {task.sourceLabel && (
+                                <Badge variant="outline" className={`text-[9px] h-4 px-1 shrink-0 ${SOURCE_BADGE_COLORS[task.source || ""] || "bg-gray-50 text-gray-600 border-gray-200"}`}>
+                                  {task.sourceLabel}
+                                </Badge>
+                              )}
                               {task.dueAt && (
                                 <span className="text-[10px] text-muted-foreground shrink-0">
                                   {format(parseISO(task.dueAt), "MMM d")}

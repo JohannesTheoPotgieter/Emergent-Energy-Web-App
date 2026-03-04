@@ -51,8 +51,8 @@ interface OutlookEvent {
 }
 
 interface CalendarTask {
-  id: number;
-  taskType: "mytool" | "operational" | "plan" | "engineering" | "quality" | "tr_register" | "deliverable" | "approval";
+  id: number | string;
+  taskType: "mytool" | "operational" | "plan" | "engineering" | "quality" | "tr_register" | "deliverable" | "approval" | "ms_object" | "notification";
   title: string;
   status: string;
   priority: string;
@@ -80,6 +80,8 @@ const TASK_TYPE_COLORS: Record<string, { bg: string; border: string; text: strin
   tr_register: { bg: "bg-purple-100", border: "border-purple-300", text: "text-purple-900", subText: "text-purple-700", hoverBg: "hover:bg-purple-200", bgLight: "bg-purple-50", hoverLight: "hover:bg-purple-100", legendBg: "bg-purple-100", legendBorder: "border-purple-200" },
   deliverable: { bg: "bg-pink-100", border: "border-pink-300", text: "text-pink-900", subText: "text-pink-700", hoverBg: "hover:bg-pink-200", bgLight: "bg-pink-50", hoverLight: "hover:bg-pink-100", legendBg: "bg-pink-100", legendBorder: "border-pink-200" },
   approval: { bg: "bg-orange-100", border: "border-orange-300", text: "text-orange-900", subText: "text-orange-700", hoverBg: "hover:bg-orange-200", bgLight: "bg-orange-50", hoverLight: "hover:bg-orange-100", legendBg: "bg-orange-100", legendBorder: "border-orange-200" },
+  ms_object: { bg: "bg-indigo-100", border: "border-indigo-300", text: "text-indigo-900", subText: "text-indigo-700", hoverBg: "hover:bg-indigo-200", bgLight: "bg-indigo-50", hoverLight: "hover:bg-indigo-100", legendBg: "bg-indigo-100", legendBorder: "border-indigo-200" },
+  notification: { bg: "bg-blue-100", border: "border-blue-300", text: "text-blue-900", subText: "text-blue-700", hoverBg: "hover:bg-blue-200", bgLight: "bg-blue-50", hoverLight: "hover:bg-blue-100", legendBg: "bg-blue-100", legendBorder: "border-blue-200" },
 };
 
 const TASK_TYPE_LABELS: Record<string, string> = {
@@ -91,6 +93,8 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   tr_register: "Action Item",
   deliverable: "Deliverable",
   approval: "Approval",
+  ms_object: "MS 365",
+  notification: "Notification",
 };
 
 function getStartStr(ev: OutlookEvent): string {
@@ -163,12 +167,27 @@ function formatTimeDisplay(t: string): string {
   return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
+const CAL_SOURCE_FILTERS = [
+  { key: "all", label: "All" },
+  { key: "mytool", label: "Personal" },
+  { key: "operational", label: "Operational" },
+  { key: "plan", label: "Plan" },
+  { key: "engineering", label: "Engineering" },
+  { key: "quality", label: "Quality" },
+  { key: "approval", label: "Approvals" },
+  { key: "deliverable", label: "Deliverables" },
+  { key: "tr_register", label: "Action Items" },
+  { key: "ms_object", label: "MS 365" },
+  { key: "notification", label: "Notifications" },
+];
+
 export default function MyWorkCalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
   const [showUnscheduled, setShowUnscheduled] = useState(true);
   const [draggedTask, setDraggedTask] = useState<CalendarTask | null>(null);
   const [dropTarget, setDropTarget] = useState<{ dayKey: string; hour: number } | null>(null);
+  const [calSourceFilter, setCalSourceFilter] = useState<string>("all");
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -221,6 +240,30 @@ export default function MyWorkCalendarPage() {
     },
     staleTime: 0,
     gcTime: 0,
+  });
+
+  const { data: msActionItems = [] } = useQuery<Array<{ id: number; type: string; subject_or_title: string; preview: string | null; web_link: string | null; received_or_start_datetime: string | null; action_required: boolean }>>({
+    queryKey: ["/api/ms-objects/mine", "action_required"],
+    queryFn: async () => {
+      const res = await fetch("/api/ms-objects/mine?action_required=true", {
+        credentials: "include",
+        headers: authHeaders(),
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: unreadNotifs = { items: [], total: 0 } } = useQuery<{ items: any[]; total: number }>({
+    queryKey: ["/api/notifications", "unread"],
+    queryFn: async () => {
+      const res = await fetch("/api/notifications?unreadOnly=true&limit=20", {
+        credentials: "include",
+        headers: authHeaders(),
+      });
+      if (!res.ok) return { items: [], total: 0 };
+      return res.json();
+    },
   });
 
   const calendarTasks: CalendarTask[] = useMemo(() => {
@@ -386,8 +429,42 @@ export default function MyWorkCalendarPage() {
       });
     }
 
+    for (const item of msActionItems) {
+      tasks.push({
+        id: `ms-${item.id}`,
+        taskType: "ms_object",
+        title: item.subject_or_title || "",
+        status: "action_required",
+        priority: "Medium",
+        projectName: null,
+        plannedForDate: null,
+        dueDate: item.received_or_start_datetime ? item.received_or_start_datetime.split("T")[0] : null,
+        startDate: null,
+        scheduledDate: null,
+        scheduledStartTime: null,
+        scheduledEndTime: null,
+      });
+    }
+
+    for (const n of (unreadNotifs.items || [])) {
+      tasks.push({
+        id: `notif-${n.id}`,
+        taskType: "notification",
+        title: n.title || "",
+        status: "unread",
+        priority: "Medium",
+        projectName: n.projectName || n.project_name || null,
+        plannedForDate: null,
+        dueDate: null,
+        startDate: null,
+        scheduledDate: null,
+        scheduledStartTime: null,
+        scheduledEndTime: null,
+      });
+    }
+
     return tasks;
-  }, [allTaskData]);
+  }, [allTaskData, msActionItems, unreadNotifs]);
 
   const scheduleMutation = useMutation({
     mutationFn: async (payload: {
@@ -431,13 +508,26 @@ export default function MyWorkCalendarPage() {
     return map;
   }, [calendarTasks, days]);
 
-  const completedStatuses = new Set(["done", "DONE", "Complete", "Completed", "COMPLETED"]);
+  const completedStatuses = new Set(["done", "DONE", "Complete", "Completed", "COMPLETED", "cancelled", "CANCELLED", "closed", "resolved", "approved"]);
 
   const unscheduledTasks = useMemo(() => {
     return calendarTasks.filter(
       (t) => !t.scheduledDate && !completedStatuses.has(t.status)
     );
   }, [calendarTasks]);
+
+  const filteredUnscheduled = useMemo(() => {
+    if (calSourceFilter === "all") return unscheduledTasks;
+    return unscheduledTasks.filter(t => t.taskType === calSourceFilter);
+  }, [unscheduledTasks, calSourceFilter]);
+
+  const calSourceCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: unscheduledTasks.length };
+    for (const t of unscheduledTasks) {
+      counts[t.taskType] = (counts[t.taskType] || 0) + 1;
+    }
+    return counts;
+  }, [unscheduledTasks]);
 
   const outlookByDay = useMemo(() => {
     const map: Record<string, OutlookEvent[]> = {};
@@ -631,7 +721,7 @@ export default function MyWorkCalendarPage() {
                 data-testid="calendar-toggle-unscheduled"
               >
                 <ListTodo className="h-4 w-4 mr-1" />
-                <span className="hidden sm:inline">Tasks</span> ({unscheduledTasks.length})
+                <span className="hidden sm:inline">My Tasks</span> ({unscheduledTasks.length})
               </Button>
             </div>
           </div>
@@ -671,21 +761,37 @@ export default function MyWorkCalendarPage() {
               </div>
 
               {showUnscheduled && (
-                <div className="w-full sm:w-64 shrink-0 border-t sm:border-t-0 sm:border-l pt-3 sm:pt-0 sm:pl-3 flex flex-col min-h-0 max-h-[200px] sm:max-h-none">
-                  <div className="flex items-center justify-between mb-2 shrink-0">
-                    <h4 className="text-sm font-semibold text-foreground">Unscheduled Tasks</h4>
+                <div className="w-full sm:w-72 shrink-0 border-t sm:border-t-0 sm:border-l pt-3 sm:pt-0 sm:pl-3 flex flex-col min-h-0 max-h-[200px] sm:max-h-none">
+                  <div className="flex items-center justify-between mb-1.5 shrink-0">
+                    <h4 className="text-sm font-semibold text-foreground">My Tasks</h4>
                     <Badge variant="secondary" className="text-xs" data-testid="badge-unscheduled-count">
-                      {unscheduledTasks.length}
+                      {filteredUnscheduled.length}
                     </Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mb-2 shrink-0">
+                    {CAL_SOURCE_FILTERS.filter(f => f.key === "all" || (calSourceCounts[f.key] || 0) > 0).map(f => (
+                      <button
+                        key={f.key}
+                        onClick={() => setCalSourceFilter(f.key)}
+                        className={`px-1.5 py-0.5 rounded-full text-[9px] font-medium whitespace-nowrap transition-colors border ${
+                          calSourceFilter === f.key
+                            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                            : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
+                        }`}
+                        data-testid={`cal-filter-${f.key}`}
+                      >
+                        {f.label} ({calSourceCounts[f.key] || 0})
+                      </button>
+                    ))}
                   </div>
                   <ScrollArea className="flex-1">
                     <div className="space-y-1.5 pr-2">
-                      {unscheduledTasks.length === 0 ? (
+                      {filteredUnscheduled.length === 0 ? (
                         <p className="text-xs text-muted-foreground italic py-4 text-center">
-                          All tasks are scheduled
+                          {calSourceFilter === "all" ? "All tasks are scheduled" : "No tasks in this category"}
                         </p>
                       ) : (
-                        unscheduledTasks.map((task) => (
+                        filteredUnscheduled.map((task) => (
                           <DraggableTaskCard
                             key={`${task.taskType}-${task.id}`}
                             task={task}
@@ -705,7 +811,7 @@ export default function MyWorkCalendarPage() {
   );
 }
 
-const NON_SCHEDULABLE_TYPES = new Set(["approval"]);
+const NON_SCHEDULABLE_TYPES = new Set(["approval", "ms_object", "notification"]);
 
 function DraggableTaskCard({
   task,
