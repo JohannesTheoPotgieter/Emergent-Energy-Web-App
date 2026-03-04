@@ -759,7 +759,7 @@ function SyncDashboard() {
                   {conflictRequests.map(req => (
                     <div
                       key={req.id}
-                      className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-amber-100"
+                      className="flex items-center justify-between p-2.5 bg-card rounded-lg border border-amber-100"
                       data-testid={`conflict-row-${req.id}`}
                     >
                       <div className="flex items-center gap-3 min-w-0">

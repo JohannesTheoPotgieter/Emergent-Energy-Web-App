@@ -149,7 +149,7 @@ function safeNum(val: number | null): number {
 
 function phaseConfig(phase: string | null): { bg: string; text: string; border: string; dot: string } {
   const map: Record<string, { bg: string; text: string; border: string; dot: string }> = {
-    P0_FIRST_ASSESSMENT: { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-200", dot: "bg-slate-500" },
+    P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", border: "border-border", dot: "bg-slate-500" },
     P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-50", text: "text-violet-700", border: "border-violet-200", dot: "bg-violet-500" },
     P2_PD_PM_HANDOVER: { bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200", dot: "bg-indigo-500" },
     P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-200", dot: "bg-blue-500" },
@@ -157,7 +157,7 @@ function phaseConfig(phase: string | null): { bg: string; text: string; border: 
     P5_COMMISSIONING_TESTING: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200", dot: "bg-orange-500" },
     P6_HANDOVER_CLIENT_MATRIARCH: { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200", dot: "bg-teal-500" },
     P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200", dot: "bg-emerald-500" },
-    "First Assessment": { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-200", dot: "bg-slate-500" },
+    "First Assessment": { bg: "bg-muted", text: "text-foreground", border: "border-border", dot: "bg-slate-500" },
     "Cost Proposal": { bg: "bg-violet-50", text: "text-violet-700", border: "border-violet-200", dot: "bg-violet-500" },
     "DLP": { bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200", dot: "bg-indigo-500" },
     "Financial Close": { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-200", dot: "bg-purple-500" },
@@ -170,7 +170,7 @@ function phaseConfig(phase: string | null): { bg: string; text: string; border: 
     "Hold": { bg: "bg-rose-50", text: "text-rose-700", border: "border-rose-200", dot: "bg-rose-500" },
     "Gone": { bg: "bg-red-50", text: "text-red-800", border: "border-red-300", dot: "bg-red-800" },
   };
-  return (phase && map[phase]) || { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200", dot: "bg-slate-400" };
+  return (phase && map[phase]) || { bg: "bg-muted", text: "text-muted-foreground", border: "border-border", dot: "bg-slate-400" };
 }
 
 function getPhaseLabel(phase: string | null): string {
@@ -293,21 +293,21 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
     <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEdits({}); setEditingRow(null); setSearchQ(""); } }}>
       <PopoverTrigger asChild>
         <button className="flex items-center gap-1 min-w-[60px] w-full cursor-pointer hover:opacity-80 transition-opacity" data-testid={`btn-act-pct-${projectName}`}>
-          <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${progressColor(currentPct)}`}
               style={{ width: `${Math.min(currentPct, 100)}%` }}
             />
           </div>
-          <span className="font-mono text-[10px] w-8 text-right font-medium text-slate-700">{currentPct.toFixed(0)}%</span>
+          <span className="font-mono text-[10px] w-8 text-right font-medium text-foreground">{currentPct.toFixed(0)}%</span>
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-[520px] p-0 max-h-[500px] overflow-hidden" align="start" side="bottom" data-testid={`popover-tasks-${projectName}`}>
-        <div className="p-3 border-b bg-slate-50">
+        <div className="p-3 border-b bg-muted">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <p className="text-sm font-semibold text-slate-800">Edit Tasks</p>
-              <p className="text-[11px] text-slate-500">{projectName.replace(/_Tracker$/i, "").replace(/_/g, " ")} — {(tasks as any[])?.length || 0} tasks</p>
+              <p className="text-sm font-semibold text-foreground">Edit Tasks</p>
+              <p className="text-[11px] text-muted-foreground">{projectName.replace(/_Tracker$/i, "").replace(/_/g, " ")} — {(tasks as any[])?.length || 0} tasks</p>
             </div>
             {hasEdits && (
               <div className="flex items-center gap-1.5">
@@ -326,7 +326,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
               placeholder="Search tasks..."
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
-              className="w-full h-7 text-xs pl-7 pr-2 border rounded bg-white"
+              className="w-full h-7 text-xs pl-7 pr-2 border rounded bg-card"
               data-testid="input-search-tasks"
             />
           </div>
@@ -336,8 +336,8 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
             <div className="p-6 text-center"><Loader2 className="h-4 w-4 animate-spin mx-auto text-slate-400" /></div>
           ) : filtered.length > 0 ? (
             <table className="w-full text-[11px]">
-              <thead className="sticky top-0 bg-slate-50 z-10">
-                <tr className="text-slate-500 font-medium border-b">
+              <thead className="sticky top-0 bg-muted z-10">
+                <tr className="text-muted-foreground font-medium border-b">
                   <th className="text-left px-2 py-1.5 w-8">#</th>
                   <th className="text-left px-2 py-1.5">Task</th>
                   <th className="text-left px-2 py-1.5 w-20">Start</th>
@@ -368,7 +368,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
                             data-testid={`input-task-name-${task.rowNumber}`}
                           />
                         ) : (
-                          <span className="truncate block max-w-[160px] font-medium text-slate-700" title={task.highLevelProgramme}>
+                          <span className="truncate block max-w-[160px] font-medium text-foreground" title={task.highLevelProgramme}>
                             {getField(task, "highLevelProgramme") || "-"}
                           </span>
                         )}
@@ -383,7 +383,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
                             data-testid={`input-task-start-${task.rowNumber}`}
                           />
                         ) : (
-                          <span className="text-slate-500 font-mono text-[10px]">{(getField(task, "actualStart") || "-").toString().substring(0, 10)}</span>
+                          <span className="text-muted-foreground font-mono text-[10px]">{(getField(task, "actualStart") || "-").toString().substring(0, 10)}</span>
                         )}
                       </td>
                       <td className="px-2 py-1.5">
@@ -396,7 +396,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
                             data-testid={`input-task-end-${task.rowNumber}`}
                           />
                         ) : (
-                          <span className="text-slate-500 font-mono text-[10px]">{(getField(task, "actualEnd") || "-").toString().substring(0, 10)}</span>
+                          <span className="text-muted-foreground font-mono text-[10px]">{(getField(task, "actualEnd") || "-").toString().substring(0, 10)}</span>
                         )}
                       </td>
                       <td className="px-2 py-1.5 text-center">
@@ -410,12 +410,12 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
                             data-testid={`input-task-dur-${task.rowNumber}`}
                           />
                         ) : (
-                          <span className="text-slate-600 font-mono">{getField(task, "durationDays") ?? "-"}</span>
+                          <span className="text-muted-foreground font-mono">{getField(task, "durationDays") ?? "-"}</span>
                         )}
                       </td>
                       <td className="px-2 py-1.5 text-center">
                         <div className="flex items-center gap-1">
-                          <div className="w-8 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="w-8 h-1.5 bg-muted rounded-full overflow-hidden">
                             <div className={`h-full rounded-full ${progressColor(actPct)}`} style={{ width: `${actPct}%` }} />
                           </div>
                           {isEditing ? (
@@ -429,14 +429,14 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
                               data-testid={`input-task-pct-${task.rowNumber}`}
                             />
                           ) : (
-                            <span className="font-mono text-slate-600 w-7 text-right">{actPct}%</span>
+                            <span className="font-mono text-muted-foreground w-7 text-right">{actPct}%</span>
                           )}
                         </div>
                       </td>
                       <td className="px-1 py-1.5">
                         <button
                           onClick={() => setEditingRow(isEditing ? null : task.rowNumber)}
-                          className={`p-0.5 rounded transition-colors ${isEditing ? 'text-blue-600 bg-blue-100' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+                          className={`p-0.5 rounded transition-colors ${isEditing ? 'text-blue-600 bg-blue-100' : 'text-slate-400 hover:text-muted-foreground hover:bg-muted'}`}
                           title={isEditing ? "Done editing" : "Edit task"}
                           data-testid={`btn-edit-task-${task.rowNumber}`}
                         >
@@ -453,7 +453,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
           )}
         </div>
         {hasEdits && (
-          <div className="p-2 border-t bg-slate-50 text-[10px] text-slate-500 text-center">
+          <div className="p-2 border-t bg-muted text-[10px] text-muted-foreground text-center">
             {Object.keys(edits).length} task(s) modified — edits are saved as overrides and preserved across imports
           </div>
         )}
@@ -593,7 +593,7 @@ function FinancialCloseCell({
           <span className="truncate">{isFile ? "File" : "Link"}</span>
         </a>
         {isAdmin && (
-          <button onClick={openDialog} className="p-0.5 hover:bg-slate-100 rounded transition-colors" title="Replace or edit document" data-testid={`btn-edit-${fieldPrefix}-${projectName}`}>
+          <button onClick={openDialog} className="p-0.5 hover:bg-muted rounded transition-colors" title="Replace or edit document" data-testid={`btn-edit-${fieldPrefix}-${projectName}`}>
             <Pencil className="w-3 h-3 text-slate-400" />
           </button>
         )}
@@ -604,14 +604,14 @@ function FinancialCloseCell({
     badge = (
       <div className="flex items-center gap-1" data-testid={`fclose-${fieldPrefix}-${projectName}`}>
         <span
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-medium cursor-help"
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border text-[10px] font-medium cursor-help"
           title={`N/A: ${naReason || "No reason provided"}`}
         >
           <Ban className="w-3 h-3" />
           N/A
         </span>
         {isAdmin && (
-          <button onClick={openDialog} className="p-0.5 hover:bg-slate-100 rounded transition-colors" title="Change document status" data-testid={`btn-edit-${fieldPrefix}-${projectName}`}>
+          <button onClick={openDialog} className="p-0.5 hover:bg-muted rounded transition-colors" title="Change document status" data-testid={`btn-edit-${fieldPrefix}-${projectName}`}>
             <Pencil className="w-3 h-3 text-slate-400" />
           </button>
         )}
@@ -648,18 +648,18 @@ function FinancialCloseCell({
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" data-testid={`dialog-fclose-${fieldPrefix}`}>
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setOpen(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+          <div className="relative bg-card rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
             <div className="bg-gradient-to-r from-slate-50 to-white px-6 py-5 border-b flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Shield className="w-5 h-5 text-blue-600" />
                 <h3 className="font-bold text-lg">{label} Signed</h3>
               </div>
-              <button onClick={() => setOpen(false)} className="p-1.5 hover:bg-slate-100 rounded-full transition-colors">
+              <button onClick={() => setOpen(false)} className="p-1.5 hover:bg-muted rounded-full transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
             <div className="px-6 py-5 space-y-4">
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-muted-foreground">
                 Project: <strong>{cleanName(projectName)}</strong>
               </p>
 
@@ -674,23 +674,23 @@ function FinancialCloseCell({
                 <button
                   onClick={() => setMode("link")}
                   className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
-                    mode === "link" ? "border-emerald-500 bg-emerald-50 shadow-sm" : "border-slate-200 hover:border-slate-300 bg-white"
+                    mode === "link" ? "border-emerald-500 bg-emerald-50 shadow-sm" : "border-border hover:border-border bg-card"
                   }`}
                   data-testid="btn-mode-link"
                 >
                   <Upload className={`w-6 h-6 ${mode === "link" ? "text-emerald-600" : "text-slate-400"}`} />
-                  <span className={`text-sm font-semibold ${mode === "link" ? "text-emerald-700" : "text-slate-600"}`}>{type === "link" ? "Replace File" : "Attach File"}</span>
+                  <span className={`text-sm font-semibold ${mode === "link" ? "text-emerald-700" : "text-muted-foreground"}`}>{type === "link" ? "Replace File" : "Attach File"}</span>
                   <span className="text-[10px] text-slate-400">Upload or link</span>
                 </button>
                 <button
                   onClick={() => setMode("na")}
                   className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${
-                    mode === "na" ? "border-slate-500 bg-slate-50 shadow-sm" : "border-slate-200 hover:border-slate-300 bg-white"
+                    mode === "na" ? "border-slate-500 bg-muted shadow-sm" : "border-border hover:border-border bg-card"
                   }`}
                   data-testid="btn-mode-na"
                 >
-                  <Ban className={`w-6 h-6 ${mode === "na" ? "text-slate-600" : "text-slate-400"}`} />
-                  <span className={`text-sm font-semibold ${mode === "na" ? "text-slate-700" : "text-slate-600"}`}>Not Applicable</span>
+                  <Ban className={`w-6 h-6 ${mode === "na" ? "text-muted-foreground" : "text-slate-400"}`} />
+                  <span className={`text-sm font-semibold ${mode === "na" ? "text-foreground" : "text-muted-foreground"}`}>Not Applicable</span>
                   <span className="text-[10px] text-slate-400">With reason</span>
                 </button>
               </div>
@@ -754,7 +754,7 @@ function FinancialCloseCell({
 
               {mode === "na" && (
                 <div className="space-y-2">
-                  <label className="text-xs font-medium text-slate-600">Reason for N/A</label>
+                  <label className="text-xs font-medium text-muted-foreground">Reason for N/A</label>
                   <Input
                     placeholder="e.g. Self-funded, no external funding required"
                     value={reason}
@@ -766,7 +766,7 @@ function FinancialCloseCell({
               )}
             </div>
 
-            <div className="px-6 py-4 border-t bg-slate-50/50 flex items-center justify-between">
+            <div className="px-6 py-4 border-t bg-muted/50 flex items-center justify-between">
               {type && (
                 <Button variant="ghost" size="sm" onClick={handleClear} className="text-red-600 hover:text-red-700 hover:bg-red-50" data-testid="btn-clear">
                   Clear
@@ -842,7 +842,7 @@ const COLUMN_WIDTHS: Record<string, string> = {
 };
 
 const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; stickyFirst?: boolean }[] = [
-  { label: "Project Info", keys: ["project_name", "size_kwp", "pd", "pm"], color: "bg-slate-50 text-slate-600", stickyFirst: true },
+  { label: "Project Info", keys: ["project_name", "size_kwp", "pd", "pm"], color: "bg-muted text-muted-foreground", stickyFirst: true },
   { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
   { label: "Phase & Schedule", keys: ["phase", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
@@ -907,7 +907,7 @@ function LatestUpdateCell({ project }: { project: ProjectSummary }) {
         />
         <div className="flex gap-1">
           <button onClick={save} className="text-[9px] px-1.5 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600" data-testid={`btn-save-update-${project.project_name}`}>Save</button>
-          <button onClick={() => { setEditing(false); setValue(project.latest_update || ""); }} className="text-[9px] px-1.5 py-0.5 bg-gray-100 rounded hover:bg-gray-200">Cancel</button>
+          <button onClick={() => { setEditing(false); setValue(project.latest_update || ""); }} className="text-[9px] px-1.5 py-0.5 bg-muted rounded hover:bg-gray-200">Cancel</button>
         </div>
       </div>
     );
@@ -932,7 +932,7 @@ function LatestUpdateCell({ project }: { project: ProjectSummary }) {
     >
       {project.latest_update ? (
         <div className="text-[10px] leading-tight">
-          <span className="text-slate-700 line-clamp-2">{project.latest_update}</span>
+          <span className="text-foreground line-clamp-2">{project.latest_update}</span>
           {timeAgo && <span className="text-[9px] text-slate-400 block">{project.latest_update_by?.split(" ")[0]} · {timeAgo}</span>}
         </div>
       ) : (
@@ -1009,7 +1009,7 @@ function EditProjectInfoModal({
         </DialogHeader>
         <div className="grid grid-cols-2 gap-4 py-4">
           <div className="col-span-2">
-            <Label className="text-xs font-medium text-slate-600 mb-1 block">Project Name</Label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1 block">Project Name</Label>
             <Input
               value={formData.projectName.replace(/_/g, " ")}
               onChange={(e) => updateField("projectName", e.target.value)}
@@ -1017,7 +1017,7 @@ function EditProjectInfoModal({
             />
           </div>
           <div>
-            <Label className="text-xs font-medium text-slate-600 mb-1 block">Execution Phase</Label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1 block">Execution Phase</Label>
             <Select value={formData.phase} onValueChange={(v) => updateField("phase", v)}>
               <SelectTrigger data-testid="select-edit-phase">
                 <SelectValue placeholder="Select execution phase" />
@@ -1033,7 +1033,7 @@ function EditProjectInfoModal({
             </Select>
           </div>
           <div>
-            <Label className="text-xs font-medium text-slate-600 mb-1 block">Size kWp</Label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1 block">Size kWp</Label>
             <Input
               type="number"
               value={formData.sizeKwp}
@@ -1042,7 +1042,7 @@ function EditProjectInfoModal({
             />
           </div>
           <div>
-            <Label className="text-xs font-medium text-slate-600 mb-1 block">PD</Label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1 block">PD</Label>
             <Input
               value={formData.pd}
               onChange={(e) => updateField("pd", e.target.value)}
@@ -1050,7 +1050,7 @@ function EditProjectInfoModal({
             />
           </div>
           <div>
-            <Label className="text-xs font-medium text-slate-600 mb-1 block">PM</Label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1 block">PM</Label>
             <Select value={formData.pm || "__unassigned"} onValueChange={(val) => updateField("pm", val === "__unassigned" ? "" : val)}>
               <SelectTrigger data-testid="select-edit-pm">
                 <SelectValue placeholder="Select PM..." />
@@ -1064,7 +1064,7 @@ function EditProjectInfoModal({
             </Select>
           </div>
           <div>
-            <Label className="text-xs font-medium text-slate-600 mb-1 block">Construction Start Date</Label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1 block">Construction Start Date</Label>
             <Input
               type="date"
               value={formData.constructionStartDate}
@@ -1073,7 +1073,7 @@ function EditProjectInfoModal({
             />
           </div>
           <div>
-            <Label className="text-xs font-medium text-slate-600 mb-1 block">Commissioning Date</Label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1 block">Commissioning Date</Label>
             <Input
               type="date"
               value={formData.commissioningDate}
@@ -1082,7 +1082,7 @@ function EditProjectInfoModal({
             />
           </div>
           <div>
-            <Label className="text-xs font-medium text-slate-600 mb-1 block">O&M Handover Date</Label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1 block">O&M Handover Date</Label>
             <Input
               type="date"
               value={formData.omHandoverDate}
@@ -1091,7 +1091,7 @@ function EditProjectInfoModal({
             />
           </div>
           <div>
-            <Label className="text-xs font-medium text-slate-600 mb-1 block">Client Handover Date</Label>
+            <Label className="text-xs font-medium text-muted-foreground mb-1 block">Client Handover Date</Label>
             <Input
               type="date"
               value={formData.clientHandoverDate}
@@ -1410,14 +1410,14 @@ export default function ProjectsSummary() {
             <BarChart3 className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-slate-900" data-testid="text-page-title">Projects Summary</h2>
-            <p className="text-sm text-slate-500">Loading portfolio data...</p>
+            <h2 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Projects Summary</h2>
+            <p className="text-sm text-muted-foreground">Loading portfolio data...</p>
           </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {[1,2,3,4].map(i => <div key={i} className="h-24 bg-slate-100 animate-pulse rounded-xl" />)}
+          {[1,2,3,4].map(i => <div key={i} className="h-24 bg-muted animate-pulse rounded-xl" />)}
         </div>
-        <div className="h-96 bg-slate-100 animate-pulse rounded-xl" />
+        <div className="h-96 bg-muted animate-pulse rounded-xl" />
       </div>
     );
   }
@@ -1430,17 +1430,17 @@ export default function ProjectsSummary() {
             <BarChart3 className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-slate-900" data-testid="text-page-title">Projects Summary</h2>
-            <p className="text-sm text-slate-500">Portfolio overview</p>
+            <h2 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Projects Summary</h2>
+            <p className="text-sm text-muted-foreground">Portfolio overview</p>
           </div>
         </div>
-        <Card className="border-2 border-dashed border-slate-200">
+        <Card className="border-2 border-dashed border-border">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
               <AlertCircle className="w-8 h-8 text-slate-400" />
             </div>
-            <h3 className="text-lg font-semibold text-slate-700 mb-2">No Projects Available</h3>
-            <p className="text-sm text-slate-500 max-w-md">
+            <h3 className="text-lg font-semibold text-foreground mb-2">No Projects Available</h3>
+            <p className="text-sm text-muted-foreground max-w-md">
               Upload tracker files to populate the Projects Summary dashboard with progress tracking and key dates.
             </p>
           </CardContent>
@@ -1482,9 +1482,9 @@ export default function ProjectsSummary() {
       key: "size_kwp",
       header: "kWp",
       align: "right",
-      render: (p) => <span className="font-mono text-slate-700">{p.size_kwp != null ? p.size_kwp.toFixed(0) : "—"}</span>,
+      render: (p) => <span className="font-mono text-foreground">{p.size_kwp != null ? p.size_kwp.toFixed(0) : "—"}</span>,
     },
-    { key: "pd", header: "PD", render: (p) => <span className="text-slate-600 truncate max-w-[80px] block" title={p.pd || ""}>{truncateName(p.pd, 12)}</span> },
+    { key: "pd", header: "PD", render: (p) => <span className="text-muted-foreground truncate max-w-[80px] block" title={p.pd || ""}>{truncateName(p.pd, 12)}</span> },
     {
       key: "pm",
       header: "PM",
@@ -1502,7 +1502,7 @@ export default function ProjectsSummary() {
           }}
         >
           <SelectTrigger
-            className="h-7 w-[120px] text-xs border-0 bg-transparent hover:bg-slate-50 px-1 shadow-none focus:ring-0"
+            className="h-7 w-[120px] text-xs border-0 bg-transparent hover:bg-muted px-1 shadow-none focus:ring-0"
             data-testid={`select-pm-${p.project_name}`}
           >
             <span className="truncate">{p.pm ? truncateName(p.pm, 14) : "—"}</span>
@@ -1515,7 +1515,7 @@ export default function ProjectsSummary() {
           </SelectContent>
         </Select>
       ) : (
-        <span className="text-slate-600 truncate max-w-[80px] block" title={p.pm || ""}>{truncateName(p.pm, 12)}</span>
+        <span className="text-muted-foreground truncate max-w-[80px] block" title={p.pm || ""}>{truncateName(p.pm, 12)}</span>
       ),
     },
     {
@@ -1602,7 +1602,7 @@ export default function ProjectsSummary() {
       render: (p) => {
         const level = p.escalation_level || "None";
         const cfg: Record<string, { bg: string; text: string; border: string; dot: string }> = {
-          None: { bg: "bg-slate-50", text: "text-slate-400", border: "border-slate-200", dot: "bg-slate-300" },
+          None: { bg: "bg-muted", text: "text-slate-400", border: "border-border", dot: "bg-slate-300" },
           Low: { bg: "bg-blue-50", text: "text-blue-600", border: "border-blue-200", dot: "bg-blue-400" },
           Medium: { bg: "bg-amber-50", text: "text-amber-600", border: "border-amber-200", dot: "bg-amber-400" },
           High: { bg: "bg-orange-50", text: "text-orange-600", border: "border-orange-200", dot: "bg-orange-500" },
@@ -1639,31 +1639,31 @@ export default function ProjectsSummary() {
       },
     },
     { key: "pd_handover_date", header: "PD H/O", render: (p) => (
-      <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.pd_handover === 'plan' ? 'From project plan' : p.date_sources?.pd_handover === 'info' ? 'From info table' : ''}>
+      <span className="flex items-center gap-1 text-muted-foreground" title={p.date_sources?.pd_handover === 'plan' ? 'From project plan' : p.date_sources?.pd_handover === 'info' ? 'From info table' : ''}>
         {formatDate(p.pd_handover_date)}
         {p.date_sources?.pd_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
       </span>
     )},
     { key: "construction_start_date", header: "C.Start", render: (p) => (
-      <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.construction_start === 'plan' ? 'From project plan' : p.date_sources?.construction_start === 'info' ? 'From info table' : ''}>
+      <span className="flex items-center gap-1 text-muted-foreground" title={p.date_sources?.construction_start === 'plan' ? 'From project plan' : p.date_sources?.construction_start === 'info' ? 'From info table' : ''}>
         {formatDate(p.construction_start_date)}
         {p.date_sources?.construction_start === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
       </span>
     )},
     { key: "commissioning_date", header: "Comm.", render: (p) => (
-      <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.commissioning === 'plan' ? 'From project plan' : p.date_sources?.commissioning === 'info' ? 'From info table' : ''}>
+      <span className="flex items-center gap-1 text-muted-foreground" title={p.date_sources?.commissioning === 'plan' ? 'From project plan' : p.date_sources?.commissioning === 'info' ? 'From info table' : ''}>
         {formatDate(p.commissioning_date)}
         {p.date_sources?.commissioning === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
       </span>
     )},
     { key: "om_handover_date", header: "O&M", render: (p) => (
-      <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.om_handover === 'plan' ? 'From project plan' : p.date_sources?.om_handover === 'info' ? 'From info table' : ''}>
+      <span className="flex items-center gap-1 text-muted-foreground" title={p.date_sources?.om_handover === 'plan' ? 'From project plan' : p.date_sources?.om_handover === 'info' ? 'From info table' : ''}>
         {formatDate(p.om_handover_date)}
         {p.date_sources?.om_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
       </span>
     )},
     { key: "client_handover_date", header: "Client", render: (p) => (
-      <span className="flex items-center gap-1 text-slate-600" title={p.date_sources?.client_handover === 'plan' ? 'From project plan' : p.date_sources?.client_handover === 'info' ? 'From info table' : ''}>
+      <span className="flex items-center gap-1 text-muted-foreground" title={p.date_sources?.client_handover === 'plan' ? 'From project plan' : p.date_sources?.client_handover === 'info' ? 'From info table' : ''}>
         {formatDate(p.client_handover_date)}
         {p.date_sources?.client_handover === 'plan' && <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block flex-shrink-0" title="From project plan" />}
       </span>
@@ -1672,13 +1672,13 @@ export default function ProjectsSummary() {
       key: "duration",
       header: "Days",
       align: "right",
-      render: (p) => <span className="font-mono text-slate-600">{p.duration != null ? p.duration : "—"}</span>,
+      render: (p) => <span className="font-mono text-muted-foreground">{p.duration != null ? p.duration : "—"}</span>,
     },
     {
       key: "kw_per_week",
       header: "kW/Wk",
       align: "right",
-      render: (p) => <span className="font-mono text-slate-600">{p.kw_per_week != null ? p.kw_per_week.toFixed(1) : "—"}</span>,
+      render: (p) => <span className="font-mono text-muted-foreground">{p.kw_per_week != null ? p.kw_per_week.toFixed(1) : "—"}</span>,
     },
     {
       key: "project_pct_complete",
@@ -1694,7 +1694,7 @@ export default function ProjectsSummary() {
       key: "expected_pct_complete",
       header: "Exp%",
       align: "right",
-      render: (p) => <span className="font-mono text-slate-600">{formatPct(p.expected_pct_complete)}</span>,
+      render: (p) => <span className="font-mono text-muted-foreground">{formatPct(p.expected_pct_complete)}</span>,
     },
     {
       key: "delta_vs_expected",
@@ -1737,7 +1737,7 @@ export default function ProjectsSummary() {
         if ((paid == null || paid === 0) && (total == null || total === 0)) return <span className="text-slate-400 text-[10px]">—</span>;
         const fmt = (v: number) => "R" + v.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
         if (paid == null || paid === 0) return <span className="font-mono text-[10px]"><span className="text-slate-400">R0</span><span className="text-slate-300"> / {fmt(total || 0)}</span></span>;
-        return <span className="font-mono text-slate-700 text-[10px]" data-testid="text-actual-expenses">{fmt(paid)}<span className="text-slate-300"> / {fmt(total || 0)}</span></span>;
+        return <span className="font-mono text-foreground text-[10px]" data-testid="text-actual-expenses">{fmt(paid)}<span className="text-slate-300"> / {fmt(total || 0)}</span></span>;
       },
     },
     {
@@ -1786,12 +1786,12 @@ export default function ProjectsSummary() {
             render: (p: ProjectSummary) => (
               <button
                 onClick={() => setEditProject(p)}
-                className="p-1 hover:bg-slate-100 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                className="p-1 hover:bg-muted rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                 title={p.project_info_id ? "Edit project info" : "No project info record"}
                 disabled={!p.project_info_id}
                 data-testid={`btn-edit-project-${p.project_name}`}
               >
-                <Pencil className="w-3.5 h-3.5 text-slate-500" />
+                <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
               </button>
             ),
           },
@@ -1803,7 +1803,7 @@ export default function ProjectsSummary() {
 
   const allGroupsMeta = [
     ...COLUMN_GROUPS_META,
-    ...(isAdmin ? [{ label: "", keys: ["actions"], color: "bg-white" }] : []),
+    ...(isAdmin ? [{ label: "", keys: ["actions"], color: "bg-card" }] : []),
   ];
 
   const dynamicColumnGroups = allGroupsMeta
@@ -1821,10 +1821,10 @@ export default function ProjectsSummary() {
             <BarChart3 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-lg sm:text-2xl font-bold text-slate-900 truncate" data-testid="text-page-title">
+            <h2 className="text-lg sm:text-2xl font-bold text-foreground truncate" data-testid="text-page-title">
               Projects Summary
             </h2>
-            <p className="text-xs sm:text-sm text-slate-500">
+            <p className="text-xs sm:text-sm text-muted-foreground">
               {sorted.length} of {currentProjects.length} {viewTab === "active" ? "active" : "archived"} projects
               {(pmFilter !== "all" || phaseFilter !== "all" || searchTerm) && " (filtered)"}
             </p>
@@ -1835,18 +1835,18 @@ export default function ProjectsSummary() {
           size="sm"
           onClick={handleExport}
           data-testid="button-export"
-          className="h-8 sm:h-9 gap-1 sm:gap-1.5 text-slate-600 border-slate-200 hover:bg-slate-50 shrink-0"
+          className="h-8 sm:h-9 gap-1 sm:gap-1.5 text-muted-foreground border-border hover:bg-muted shrink-0"
         >
           <Download className="w-4 h-4" />
           <span className="hidden sm:inline">Export</span>
         </Button>
       </div>
 
-      <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 w-fit">
+      <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5 w-fit">
         <button
           onClick={() => setViewTab("active")}
           className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-            viewTab === "active" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            viewTab === "active" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
           }`}
           data-testid="tab-active-projects"
         >
@@ -1855,7 +1855,7 @@ export default function ProjectsSummary() {
         <button
           onClick={() => setViewTab("archived")}
           className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-            viewTab === "archived" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            viewTab === "archived" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
           }`}
           data-testid="tab-archived-projects"
         >
@@ -1864,38 +1864,38 @@ export default function ProjectsSummary() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="border-slate-200 shadow-sm overflow-hidden card-hover animate-float-in stagger-1">
+        <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-1">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Total Projects</span>
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Projects</span>
               <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
                 <BarChart3 className="w-4 h-4 text-blue-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-slate-900 animate-number-pop" data-testid="stat-total-projects">{stats.total}</div>
-            <div className="text-xs text-slate-500 mt-1">{stats.totalKwp.toLocaleString()} kWp total capacity</div>
+            <div className="text-2xl font-bold text-foreground animate-number-pop" data-testid="stat-total-projects">{stats.total}</div>
+            <div className="text-xs text-muted-foreground mt-1">{stats.totalKwp.toLocaleString()} kWp total capacity</div>
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 shadow-sm overflow-hidden card-hover animate-float-in stagger-2">
+        <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-2">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Avg. Completion</span>
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Avg. Completion</span>
               <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
                 <Activity className="w-4 h-4 text-emerald-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-slate-900 animate-number-pop" data-testid="stat-avg-completion">{stats.avgCompletion.toFixed(0)}%</div>
-            <div className="w-full h-1.5 bg-slate-100 rounded-full mt-2 overflow-hidden">
+            <div className="text-2xl font-bold text-foreground animate-number-pop" data-testid="stat-avg-completion">{stats.avgCompletion.toFixed(0)}%</div>
+            <div className="w-full h-1.5 bg-muted rounded-full mt-2 overflow-hidden">
               <div className={`h-full rounded-full animate-progress-fill ${progressColor(stats.avgCompletion)}`} style={{ width: `${Math.min(stats.avgCompletion, 100)}%` }} />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 shadow-sm overflow-hidden card-hover animate-float-in stagger-3">
+        <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-3">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Behind Schedule</span>
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Behind Schedule</span>
               <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${stats.behindSchedule > 0 ? "bg-rose-50" : "bg-emerald-50"}`}>
                 <TrendingDown className={`w-4 h-4 ${stats.behindSchedule > 0 ? "text-rose-600" : "text-emerald-600"}`} />
               </div>
@@ -1903,20 +1903,20 @@ export default function ProjectsSummary() {
             <div className={`text-2xl font-bold animate-number-pop ${stats.behindSchedule > 0 ? "text-rose-600" : "text-emerald-600"}`} data-testid="stat-behind-schedule">
               {stats.behindSchedule}
             </div>
-            <div className="text-xs text-slate-500 mt-1">of {stats.total} projects ({stats.total > 0 ? ((stats.behindSchedule / stats.total) * 100).toFixed(0) : 0}%)</div>
+            <div className="text-xs text-muted-foreground mt-1">of {stats.total} projects ({stats.total > 0 ? ((stats.behindSchedule / stats.total) * 100).toFixed(0) : 0}%)</div>
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 shadow-sm overflow-hidden card-hover animate-float-in stagger-4">
+        <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-4">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">Financial Close</span>
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Financial Close</span>
               <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
                 <Zap className="w-4 h-4 text-violet-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-slate-900 animate-number-pop" data-testid="stat-fin-close">{stats.finCloseCount}</div>
-            <div className="text-xs text-slate-500 mt-1">of {stats.total} achieved ({stats.total > 0 ? ((stats.finCloseCount / stats.total) * 100).toFixed(0) : 0}%)</div>
+            <div className="text-2xl font-bold text-foreground animate-number-pop" data-testid="stat-fin-close">{stats.finCloseCount}</div>
+            <div className="text-xs text-muted-foreground mt-1">of {stats.total} achieved ({stats.total > 0 ? ((stats.finCloseCount / stats.total) * 100).toFixed(0) : 0}%)</div>
           </CardContent>
         </Card>
       </div>
@@ -1927,14 +1927,14 @@ export default function ProjectsSummary() {
           <Input
             data-testid="input-search"
             placeholder="Search projects..."
-            className="pl-9 h-9 w-full sm:w-56 text-sm border-slate-200 bg-white"
+            className="pl-9 h-9 w-full sm:w-56 text-sm border-border bg-card"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
 
         <Select value={pmFilter} onValueChange={setPmFilter}>
-          <SelectTrigger className="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-slate-200" data-testid="select-pm-filter">
+          <SelectTrigger className="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-border" data-testid="select-pm-filter">
             <SelectValue placeholder="All PMs" />
           </SelectTrigger>
           <SelectContent>
@@ -1946,7 +1946,7 @@ export default function ProjectsSummary() {
         </Select>
 
         <Select value={phaseFilter} onValueChange={setPhaseFilter}>
-          <SelectTrigger className="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-slate-200" data-testid="select-phase-filter">
+          <SelectTrigger className="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-border" data-testid="select-phase-filter">
             <SelectValue placeholder="All Phases" />
           </SelectTrigger>
           <SelectContent>
@@ -1959,7 +1959,7 @@ export default function ProjectsSummary() {
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm border-slate-200" data-testid="btn-column-toggle">
+            <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm border-border" data-testid="btn-column-toggle">
               {isDefaultView ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
               <span className="hidden sm:inline">Columns</span>
               {!isDefaultView && (
@@ -1970,9 +1970,9 @@ export default function ProjectsSummary() {
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-72 p-0" align="start" data-testid="popover-columns">
-            <div className="p-3 border-b border-slate-100">
+            <div className="p-3 border-b border-border">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-slate-700">Column Visibility</span>
+                <span className="text-xs font-semibold text-foreground">Column Visibility</span>
                 <button
                   onClick={isDefaultView ? deselectAllColumns : selectAllColumns}
                   className="text-[10px] font-medium text-blue-600 hover:text-blue-800"
@@ -1993,7 +1993,7 @@ export default function ProjectsSummary() {
                     return (
                       <label
                         key={key}
-                        className={`flex items-center gap-2 px-1 py-1 rounded hover:bg-slate-50 cursor-pointer ${isProjectName ? "opacity-60" : ""}`}
+                        className={`flex items-center gap-2 px-1 py-1 rounded hover:bg-muted cursor-pointer ${isProjectName ? "opacity-60" : ""}`}
                         data-testid={`toggle-col-${key}`}
                       >
                         <Checkbox
@@ -2002,7 +2002,7 @@ export default function ProjectsSummary() {
                           disabled={isProjectName}
                           className="h-3.5 w-3.5"
                         />
-                        <span className="text-xs text-slate-700">{col.header}</span>
+                        <span className="text-xs text-foreground">{col.header}</span>
                         {isProjectName && <span className="text-[9px] text-slate-400 ml-auto">Required</span>}
                       </label>
                     );
@@ -2010,8 +2010,8 @@ export default function ProjectsSummary() {
                 </div>
               ))}
             </div>
-            <div className="border-t border-slate-100 p-3 space-y-2">
-              <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Save as View</div>
+            <div className="border-t border-border p-3 space-y-2">
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Save as View</div>
               <div className="flex items-center gap-1.5">
                 <Input
                   placeholder="View name..."
@@ -2038,7 +2038,7 @@ export default function ProjectsSummary() {
 
         {savedViews.length > 0 && (
           <Select value={activeViewName || "__default__"} onValueChange={applyView}>
-            <SelectTrigger className="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-slate-200" data-testid="select-view">
+            <SelectTrigger className="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-border" data-testid="select-view">
               <SelectValue placeholder="Default (All)" />
             </SelectTrigger>
             <SelectContent>
@@ -2070,7 +2070,7 @@ export default function ProjectsSummary() {
             variant="ghost"
             size="sm"
             onClick={() => { setSearchTerm(""); setPmFilter("all"); setPhaseFilter("all"); }}
-            className="h-9 text-xs text-slate-500 hover:text-slate-700"
+            className="h-9 text-xs text-muted-foreground hover:text-foreground"
           >
             <X className="w-3 h-3 mr-1" />
             Clear filters
@@ -2078,7 +2078,7 @@ export default function ProjectsSummary() {
         )}
       </div>
 
-      <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm bg-white">
+      <div className="border border-border rounded-xl overflow-hidden shadow-sm bg-card">
         <div className="overflow-auto max-h-[calc(100vh-280px)] sm:max-h-[calc(100vh-340px)]">
           <table className="w-full text-[10px] border-collapse table-fixed" style={{ minWidth: "100%" }}>
             <colgroup>
@@ -2092,20 +2092,20 @@ export default function ProjectsSummary() {
                   <th
                     key={i}
                     colSpan={g.colSpan}
-                    className={`px-1 py-1 text-[9px] font-bold uppercase tracking-wider border-b border-slate-200 ${g.color} ${
+                    className={`px-1 py-1 text-[9px] font-bold uppercase tracking-wider border-b border-border ${g.color} ${
                       g.stickyFirst ? "sticky left-0 z-30" : ""
-                    } ${i > 0 ? "border-l border-slate-200" : ""}`}
+                    } ${i > 0 ? "border-l border-border" : ""}`}
                   >
                     {g.label}
                   </th>
                 ))}
               </tr>
-              <tr className="bg-white border-b-2 border-slate-200">
+              <tr className="bg-card border-b-2 border-border">
                 {filteredColumns.map((col) => (
                   <th
                     key={col.key}
-                    className={`px-1 py-1.5 text-left font-semibold text-slate-600 whitespace-nowrap cursor-pointer hover:bg-slate-50 select-none transition-colors text-[9px] relative ${
-                      col.sticky ? "sticky left-0 z-30 bg-white shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
+                    className={`px-1 py-1.5 text-left font-semibold text-muted-foreground whitespace-nowrap cursor-pointer hover:bg-muted select-none transition-colors text-[9px] relative ${
+                      col.sticky ? "sticky left-0 z-30 bg-card shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
                     } ${col.align === "right" ? "text-right" : ""}`}
                     onClick={() => handleSort(col.key)}
                     data-testid={`sort-${col.key}`}
@@ -2127,8 +2127,8 @@ export default function ProjectsSummary() {
               {sorted.map((project, idx) => (
                 <tr
                   key={project.project_name}
-                  className={`border-b border-slate-100 hover:bg-blue-50/40 transition-colors ${
-                    idx % 2 === 0 ? "bg-white" : "bg-slate-50/30"
+                  className={`border-b border-border hover:bg-blue-50/40 transition-colors ${
+                    idx % 2 === 0 ? "bg-card" : "bg-muted/30"
                   }`}
                   data-testid={`row-project-${idx}`}
                 >
@@ -2137,7 +2137,7 @@ export default function ProjectsSummary() {
                       key={col.key}
                       className={`px-1 py-1.5 whitespace-nowrap overflow-hidden text-ellipsis ${
                         col.sticky ? "sticky left-0 z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
-                      } ${col.sticky ? (idx % 2 === 0 ? "bg-white" : "bg-slate-50/80") : ""} ${
+                      } ${col.sticky ? (idx % 2 === 0 ? "bg-card" : "bg-muted/80") : ""} ${
                         col.align === "right" ? "text-right" : ""
                       }`}
                     >
@@ -2148,18 +2148,18 @@ export default function ProjectsSummary() {
               ))}
             </tbody>
             <tfoot className="sticky bottom-0 z-10">
-              <tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
+              <tr className="border-t-2 border-border bg-muted font-semibold">
                 {filteredColumns.map((col) => (
                   <td
                     key={col.key}
                     className={`px-1 py-1.5 whitespace-nowrap ${
-                      col.sticky ? "sticky left-0 z-10 bg-slate-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
+                      col.sticky ? "sticky left-0 z-10 bg-muted shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]" : ""
                     } ${col.align === "right" ? "text-right" : ""}`}
                   >
                     {col.key === "project_name" ? (
-                      <span className="font-bold text-slate-700 text-[10px]">Portfolio ({sorted.length})</span>
+                      <span className="font-bold text-foreground text-[10px]">Portfolio ({sorted.length})</span>
                     ) : col.key === "size_kwp" ? (
-                      <span className="font-mono font-bold text-slate-700">{stats.totalKwp.toFixed(0)}</span>
+                      <span className="font-mono font-bold text-foreground">{stats.totalKwp.toFixed(0)}</span>
                     ) : null}
                   </td>
                 ))}

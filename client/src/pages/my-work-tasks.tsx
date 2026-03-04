@@ -38,7 +38,7 @@ const statusOrder: Record<string, number> = { in_progress: 0, "IN PROGRESS": 0, 
 const allStatuses: TaskStatus[] = ["inbox", "planned", "in_progress", "blocked", "waiting", "done", "cancelled"];
 const allPriorities: TaskPriority[] = ["critical", "high", "normal", "low"];
 const BOARD_COLUMNS: { key: TaskStatus; label: string; color: string; dotColor: string; headerBg: string }[] = [
-  { key: "inbox", label: "To Do", color: "border-t-slate-400", dotColor: "bg-slate-400", headerBg: "bg-slate-50" },
+  { key: "inbox", label: "To Do", color: "border-t-slate-400", dotColor: "bg-slate-400", headerBg: "bg-muted" },
   { key: "in_progress", label: "In Progress", color: "border-t-blue-500", dotColor: "bg-blue-500", headerBg: "bg-blue-50" },
   { key: "blocked", label: "Blocked", color: "border-t-red-500", dotColor: "bg-red-500", headerBg: "bg-red-50" },
   { key: "done", label: "Done", color: "border-t-emerald-500", dotColor: "bg-emerald-500", headerBg: "bg-emerald-50" },
@@ -168,8 +168,8 @@ function clearMyWorkDefault(userId?: number) {
 const PRIORITY_BADGE: Record<string, { label: string; class: string }> = {
   critical: { label: "P1", class: "bg-red-500 text-white" },
   high: { label: "P2", class: "bg-orange-100 text-orange-700 border border-orange-200" },
-  normal: { label: "P3", class: "bg-slate-100 text-slate-500 border border-slate-200" },
-  low: { label: "P4", class: "bg-slate-50 text-slate-400 border border-slate-100" },
+  normal: { label: "P3", class: "bg-muted text-muted-foreground border border-border" },
+  low: { label: "P4", class: "bg-muted text-slate-400 border border-border" },
 };
 
 function smartDueLabel(dueAt: string | null): { label: string; urgency: "overdue" | "today" | "tomorrow" | "soon" | "future" | "none" } {
@@ -692,21 +692,21 @@ export default function MyWorkTasksPage() {
                 <p className="text-2xl font-bold mt-0.5">{kpiStats.active}</p>
                 <p className="text-[10px] text-blue-200 mt-0.5">{kpiStats.inProgress} in progress</p>
               </div>
-              <div className="rounded-full bg-white/20 p-2"><ListTodo className="h-5 w-5" /></div>
+              <div className="rounded-full bg-card/20 p-2"><ListTodo className="h-5 w-5" /></div>
             </div>
-            {kpiStats.dueToday > 0 && <div className="mt-1.5 text-[10px] font-semibold bg-white/20 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Zap className="h-2.5 w-2.5" /> {kpiStats.dueToday} due today</div>}
+            {kpiStats.dueToday > 0 && <div className="mt-1.5 text-[10px] font-semibold bg-card/20 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Zap className="h-2.5 w-2.5" /> {kpiStats.dueToday} due today</div>}
           </div>
 
-          <button onClick={() => setOverdueOnly(!overdueOnly)} className={`relative overflow-hidden rounded-xl border p-3 text-left shadow-sm transition-all ${kpiStats.overdue > 0 ? "bg-gradient-to-br from-red-500 to-red-600 text-white hover:shadow-md" : "bg-gradient-to-br from-slate-100 to-slate-50 text-slate-500 border-slate-200"} ${overdueOnly ? "ring-2 ring-red-300 ring-offset-1" : ""}`} data-testid="kpi-overdue">
+          <button onClick={() => setOverdueOnly(!overdueOnly)} className={`relative overflow-hidden rounded-xl border p-3 text-left shadow-sm transition-all ${kpiStats.overdue > 0 ? "bg-gradient-to-br from-red-500 to-red-600 text-white hover:shadow-md" : "bg-gradient-to-br from-slate-100 to-slate-50 text-muted-foreground border-border"} ${overdueOnly ? "ring-2 ring-red-300 ring-offset-1" : ""}`} data-testid="kpi-overdue">
             <div className="flex items-center justify-between">
               <div>
                 <p className={`text-[10px] font-medium uppercase tracking-wider ${kpiStats.overdue > 0 ? "text-red-100" : "text-slate-400"}`}>Overdue</p>
                 <p className="text-2xl font-bold mt-0.5">{kpiStats.overdue}</p>
                 <p className={`text-[10px] mt-0.5 ${kpiStats.overdue > 0 ? "text-red-200" : "text-slate-400"}`}>{kpiStats.blocked} blocked</p>
               </div>
-              <div className={`rounded-full p-2 ${kpiStats.overdue > 0 ? "bg-white/20" : "bg-slate-200"}`}><AlertCircle className="h-5 w-5" /></div>
+              <div className={`rounded-full p-2 ${kpiStats.overdue > 0 ? "bg-card/20" : "bg-slate-200"}`}><AlertCircle className="h-5 w-5" /></div>
             </div>
-            {overdueOnly && <div className="mt-1.5 text-[10px] font-semibold bg-white/20 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Filter className="h-2.5 w-2.5" /> Filtering</div>}
+            {overdueOnly && <div className="mt-1.5 text-[10px] font-semibold bg-card/20 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Filter className="h-2.5 w-2.5" /> Filtering</div>}
           </button>
 
           <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-amber-500 to-orange-500 p-3 text-white shadow-sm" data-testid="kpi-critical">
@@ -716,7 +716,7 @@ export default function MyWorkTasksPage() {
                 <p className="text-2xl font-bold mt-0.5">{kpiStats.critical}</p>
                 <p className="text-[10px] text-amber-200 mt-0.5">{kpiStats.dueSoon} due within 3d</p>
               </div>
-              <div className="rounded-full bg-white/20 p-2"><AlertTriangle className="h-5 w-5" /></div>
+              <div className="rounded-full bg-card/20 p-2"><AlertTriangle className="h-5 w-5" /></div>
             </div>
           </div>
 
@@ -727,9 +727,9 @@ export default function MyWorkTasksPage() {
                 <p className="text-2xl font-bold mt-0.5">{kpiStats.done}</p>
                 <p className="text-[10px] text-emerald-200 mt-0.5">{kpiStats.completionRate}% rate</p>
               </div>
-              <div className="rounded-full bg-white/20 p-2"><CheckCircle2 className="h-5 w-5" /></div>
+              <div className="rounded-full bg-card/20 p-2"><CheckCircle2 className="h-5 w-5" /></div>
             </div>
-            <div className="mt-1.5 h-1.5 bg-white/20 rounded-full overflow-hidden"><div className="h-full bg-white/60 rounded-full transition-all" style={{ width: `${kpiStats.completionRate}%` }} /></div>
+            <div className="mt-1.5 h-1.5 bg-card/20 rounded-full overflow-hidden"><div className="h-full bg-card/60 rounded-full transition-all" style={{ width: `${kpiStats.completionRate}%` }} /></div>
           </div>
         </div>
       </div>
@@ -747,7 +747,7 @@ export default function MyWorkTasksPage() {
             if (count === 0 && src !== "all") return null;
             return (
               <button key={src} onClick={() => setSourceFilter(src)} className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all whitespace-nowrap ${active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted"}`} data-testid={`tab-source-${src}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-white/70" : config.dot}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-card/70" : config.dot}`} />
                 {config.shortLabel} {count > 0 && <span className={`text-[10px] ${active ? "opacity-80" : "opacity-50"}`}>{count}</span>}
               </button>
             );
@@ -1056,7 +1056,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
         <button
           onClick={e => { e.stopPropagation(); if (canQuickStatus) onQuickStatus(isDone ? "inbox" : "done"); }}
           className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-            isDone ? "border-emerald-500 bg-emerald-500" : task.status === "in_progress" ? "border-blue-400 bg-blue-50" : task.status === "blocked" ? "border-red-400 bg-red-50" : "border-slate-300 hover:border-emerald-400 hover:bg-emerald-50"
+            isDone ? "border-emerald-500 bg-emerald-500" : task.status === "in_progress" ? "border-blue-400 bg-blue-50" : task.status === "blocked" ? "border-red-400 bg-red-50" : "border-border hover:border-emerald-400 hover:bg-emerald-50"
           }`}
           data-testid={`btn-complete-${task._key}`}
           title={isDone ? "Reopen" : "Complete"}
@@ -1117,7 +1117,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
             const stDone = stStatus === "done";
             return (
               <div key={st.id} className="flex items-center gap-1.5 px-1.5 py-1 hover:bg-muted/30 text-[12px]" data-testid={`subtask-${st.id}`}>
-                <span className={`w-3 h-3 rounded-full border-2 flex items-center justify-center ${stDone ? "border-emerald-500 bg-emerald-500" : "border-slate-300"}`}>
+                <span className={`w-3 h-3 rounded-full border-2 flex items-center justify-center ${stDone ? "border-emerald-500 bg-emerald-500" : "border-border"}`}>
                   {stDone && <CheckCircle2 className="h-2 w-2 text-white" />}
                 </span>
                 <span className={`flex-1 truncate ${stDone ? "line-through text-muted-foreground" : ""}`}>{st.title}</span>
@@ -1141,7 +1141,7 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
   const statusLabel = task.status === "done" ? "Done" : task.status === "in_progress" ? "In Progress" : task.status === "blocked" ? "Blocked" : task.status === "waiting" ? "Waiting" : task.status === "cancelled" ? "Cancelled" : task.status === "inbox" ? "To Do" : task.status === "planned" ? "Planned" : task.status;
   const priorityLabel = task.priority === "critical" ? "P1 — Critical" : task.priority === "high" ? "P2 — High" : task.priority === "low" ? "P4 — Low" : "P3 — Normal";
   const priorityColor = task.priority === "critical" ? "text-red-600" : task.priority === "high" ? "text-orange-600" : task.priority === "low" ? "text-slate-400" : "text-blue-600";
-  const statusColor = task.status === "done" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : task.status === "in_progress" ? "bg-blue-100 text-blue-700 border-blue-200" : task.status === "blocked" ? "bg-red-100 text-red-700 border-red-200" : task.status === "waiting" ? "bg-amber-100 text-amber-700 border-amber-200" : task.status === "cancelled" ? "bg-slate-100 text-slate-500 border-slate-200" : "bg-slate-100 text-slate-600 border-slate-200";
+  const statusColor = task.status === "done" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : task.status === "in_progress" ? "bg-blue-100 text-blue-700 border-blue-200" : task.status === "blocked" ? "bg-red-100 text-red-700 border-red-200" : task.status === "waiting" ? "bg-amber-100 text-amber-700 border-amber-200" : task.status === "cancelled" ? "bg-muted text-muted-foreground border-border" : "bg-muted text-muted-foreground border-border";
   const isOverdue = (() => { if (!task.dueAt || task.status === "done" || task.status === "cancelled") return false; try { return isPast(parseISO(task.dueAt)); } catch { return false; } })();
 
   const updateStatusMutation = useMutation({

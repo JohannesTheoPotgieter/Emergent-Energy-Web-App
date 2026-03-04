@@ -62,7 +62,7 @@ function SortableHeader({ label, active, dir, onClick, testId }: {
 }) {
   return (
     <th
-      className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider cursor-pointer select-none hover:text-slate-700 whitespace-nowrap"
+      className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer select-none hover:text-foreground whitespace-nowrap"
       onClick={onClick}
       data-testid={testId}
     >
@@ -77,7 +77,7 @@ function SortableHeader({ label, active, dir, onClick, testId }: {
 function revenueStatusBadge(status: string | null | undefined) {
   const s = (status || "PLANNED").toUpperCase();
   const map: Record<string, string> = {
-    PLANNED: "bg-slate-100 text-slate-600 border-slate-200",
+    PLANNED: "bg-muted text-muted-foreground border-border",
     INVOICED: "bg-blue-50 text-blue-700 border-blue-200",
     PAID: "bg-emerald-50 text-emerald-700 border-emerald-200",
     IN_BANK: "bg-purple-50 text-purple-700 border-purple-200",
@@ -93,7 +93,7 @@ function revenueStatusBadge(status: string | null | undefined) {
 function costStatusBadge(status: string | null | undefined) {
   const s = (status || "PLANNED").toUpperCase();
   const map: Record<string, string> = {
-    PLANNED: "bg-slate-100 text-slate-600 border-slate-200",
+    PLANNED: "bg-muted text-muted-foreground border-border",
     INVOICED: "bg-blue-50 text-blue-700 border-blue-200",
     APPROVED: "bg-amber-50 text-amber-700 border-amber-200",
     PAID: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -108,7 +108,7 @@ function costStatusBadge(status: string | null | undefined) {
 function planStatusBadge(status: string | null | undefined) {
   if (!status) return <span className="text-[10px] text-slate-400">—</span>;
   const s = status.toLowerCase();
-  let cls = "bg-slate-100 text-slate-600 border-slate-200";
+  let cls = "bg-muted text-muted-foreground border-border";
   if (s.includes("complete") || s.includes("done")) cls = "bg-emerald-50 text-emerald-700 border-emerald-200";
   else if (s.includes("progress") || s.includes("active")) cls = "bg-blue-50 text-blue-700 border-blue-200";
   else if (s.includes("delay") || s.includes("late") || s.includes("overdue")) cls = "bg-red-50 text-red-700 border-red-200";
@@ -293,7 +293,7 @@ export default function ProjectNormalizedView() {
           <h1 className="text-2xl font-bold" data-testid="text-project-name">{cleanName}</h1>
           <p className="text-sm text-muted-foreground">Normalized Import View</p>
         </div>
-        <Card className="bg-white rounded-xl shadow-sm">
+        <Card className="bg-card rounded-xl shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
             <FileSpreadsheet className="w-12 h-12 text-slate-300" />
             <p className="text-sm text-muted-foreground text-center max-w-md" data-testid="text-empty-message">
@@ -374,7 +374,7 @@ export default function ProjectNormalizedView() {
 
           <TabsContent value="plan" className="space-y-3 mt-3" data-testid="tab-content-plan">
             <div className="flex items-center gap-4">
-              <Card className="bg-white rounded-xl shadow-sm flex-1">
+              <Card className="bg-card rounded-xl shadow-sm flex-1">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Completion</span>
@@ -383,7 +383,7 @@ export default function ProjectNormalizedView() {
                   <Progress value={planCompletion} className="h-2" data-testid="progress-plan" />
                 </CardContent>
               </Card>
-              <Card className="bg-white rounded-xl shadow-sm">
+              <Card className="bg-card rounded-xl shadow-sm">
                 <CardContent className="p-4">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Tasks</div>
                   <div className="text-xl font-bold mt-1" data-testid="text-plan-count">{planTasks.length}</div>
@@ -392,17 +392,17 @@ export default function ProjectNormalizedView() {
             </div>
 
             {planTasks.length === 0 ? (
-              <Card className="bg-white rounded-xl shadow-sm">
+              <Card className="bg-card rounded-xl shadow-sm">
                 <CardContent className="py-12 text-center text-sm text-muted-foreground" data-testid="text-plan-empty">
                   No plan data available
                 </CardContent>
               </Card>
             ) : (
-              <Card className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <Card className="bg-card rounded-xl shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs" data-testid="table-plan">
                     <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200">
+                      <tr className="bg-muted border-b border-border">
                         <SortableHeader label="Task Name" active={planSort.sortKey === "taskName"} dir={planSort.sortDir} onClick={() => planSort.toggle("taskName" as any)} testId="sort-plan-taskName" />
                         <SortableHeader label="Phase" active={planSort.sortKey === "phase"} dir={planSort.sortDir} onClick={() => planSort.toggle("phase" as any)} testId="sort-plan-phase" />
                         <SortableHeader label="Start Date" active={planSort.sortKey === "startDate"} dir={planSort.sortDir} onClick={() => planSort.toggle("startDate" as any)} testId="sort-plan-startDate" />
@@ -415,13 +415,13 @@ export default function ProjectNormalizedView() {
                     </thead>
                     <tbody>
                       {planSort.sorted.map((t: any, idx: number) => (
-                        <tr key={idx} className={`border-b border-slate-100 hover:bg-slate-50/50 ${idx % 2 ? "bg-slate-25" : ""}`} data-testid={`row-plan-${idx}`}>
+                        <tr key={idx} className={`border-b border-border hover:bg-muted/50 ${idx % 2 ? "bg-slate-25" : ""}`} data-testid={`row-plan-${idx}`}>
                           <td className="px-3 py-2 text-xs font-medium max-w-[200px] truncate" data-testid={`text-plan-task-${idx}`}>{t.taskName || "—"}</td>
-                          <td className="px-3 py-2 text-[10px] text-slate-600">{t.phase || "—"}</td>
-                          <td className="px-3 py-2 text-[10px] text-slate-600">{formatDate(t.startDate)}</td>
-                          <td className="px-3 py-2 text-[10px] text-slate-600">{formatDate(t.endDate)}</td>
-                          <td className="px-3 py-2 text-[10px] text-slate-600">{t.durationDays != null ? `${t.durationDays}d` : "—"}</td>
-                          <td className="px-3 py-2 text-[10px] text-slate-600 truncate max-w-[100px]">{t.owner || "—"}</td>
+                          <td className="px-3 py-2 text-[10px] text-muted-foreground">{t.phase || "—"}</td>
+                          <td className="px-3 py-2 text-[10px] text-muted-foreground">{formatDate(t.startDate)}</td>
+                          <td className="px-3 py-2 text-[10px] text-muted-foreground">{formatDate(t.endDate)}</td>
+                          <td className="px-3 py-2 text-[10px] text-muted-foreground">{t.durationDays != null ? `${t.durationDays}d` : "—"}</td>
+                          <td className="px-3 py-2 text-[10px] text-muted-foreground truncate max-w-[100px]">{t.owner || "—"}</td>
                           <td className="px-3 py-2">{planStatusBadge(t.status)}</td>
                           <td className="px-3 py-2">
                             {t.pctComplete != null ? (
@@ -432,7 +432,7 @@ export default function ProjectNormalizedView() {
                                     style={{ width: `${Math.min(100, t.pctComplete)}%` }}
                                   />
                                 </div>
-                                <span className="text-[10px] text-slate-600 w-[28px] text-right">{Math.round(t.pctComplete)}%</span>
+                                <span className="text-[10px] text-muted-foreground w-[28px] text-right">{Math.round(t.pctComplete)}%</span>
                               </div>
                             ) : (
                               <span className="text-[10px] text-slate-400">—</span>
@@ -449,31 +449,31 @@ export default function ProjectNormalizedView() {
 
           <TabsContent value="revenue" className="space-y-3 mt-3" data-testid="tab-content-revenue">
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <Card className="bg-white rounded-xl shadow-sm">
+              <Card className="bg-card rounded-xl shadow-sm">
                 <CardContent className="p-3">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Revenue</div>
                   <div className="text-lg font-bold mt-1" data-testid="text-rev-total">{formatCurrency(revSummary.total)}</div>
                 </CardContent>
               </Card>
-              <Card className="bg-white rounded-xl shadow-sm">
+              <Card className="bg-card rounded-xl shadow-sm">
                 <CardContent className="p-3">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Invoiced</div>
                   <div className="text-lg font-bold mt-1 text-blue-600" data-testid="text-rev-invoiced">{formatCurrency(revSummary.invoiced)}</div>
                 </CardContent>
               </Card>
-              <Card className="bg-white rounded-xl shadow-sm">
+              <Card className="bg-card rounded-xl shadow-sm">
                 <CardContent className="p-3">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Paid</div>
                   <div className="text-lg font-bold mt-1 text-emerald-600" data-testid="text-rev-paid">{formatCurrency(revSummary.paid)}</div>
                 </CardContent>
               </Card>
-              <Card className="bg-white rounded-xl shadow-sm">
+              <Card className="bg-card rounded-xl shadow-sm">
                 <CardContent className="p-3">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Outstanding</div>
                   <div className="text-lg font-bold mt-1 text-amber-600" data-testid="text-rev-outstanding">{formatCurrency(revSummary.outstanding)}</div>
                 </CardContent>
               </Card>
-              <Card className="bg-white rounded-xl shadow-sm">
+              <Card className="bg-card rounded-xl shadow-sm">
                 <CardContent className="p-3">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                     <Clock className="w-3 h-3" /> Avg Turnaround
@@ -486,17 +486,17 @@ export default function ProjectNormalizedView() {
             </div>
 
             {revenueLines.length === 0 ? (
-              <Card className="bg-white rounded-xl shadow-sm">
+              <Card className="bg-card rounded-xl shadow-sm">
                 <CardContent className="py-12 text-center text-sm text-muted-foreground" data-testid="text-rev-empty">
                   No revenue data available
                 </CardContent>
               </Card>
             ) : (
-              <Card className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <Card className="bg-card rounded-xl shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs" data-testid="table-revenue">
                     <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200">
+                      <tr className="bg-muted border-b border-border">
                         <SortableHeader label="Milestone" active={revSort.sortKey === "milestoneName"} dir={revSort.sortDir} onClick={() => revSort.toggle("milestoneName" as any)} testId="sort-rev-milestone" />
                         <SortableHeader label="Amount (ex VAT)" active={revSort.sortKey === "amountExVat"} dir={revSort.sortDir} onClick={() => revSort.toggle("amountExVat" as any)} testId="sort-rev-amount" />
                         <SortableHeader label="Invoice #" active={revSort.sortKey === "invoiceNumber"} dir={revSort.sortDir} onClick={() => revSort.toggle("invoiceNumber" as any)} testId="sort-rev-invoice" />
@@ -505,21 +505,21 @@ export default function ProjectNormalizedView() {
                         <SortableHeader label="Paid Date" active={revSort.sortKey === "paidDate"} dir={revSort.sortDir} onClick={() => revSort.toggle("paidDate" as any)} testId="sort-rev-paidDate" />
                         <SortableHeader label="In Bank" active={revSort.sortKey === "inBankDate"} dir={revSort.sortDir} onClick={() => revSort.toggle("inBankDate" as any)} testId="sort-rev-inBank" />
                         <SortableHeader label="Status" active={revSort.sortKey === "status"} dir={revSort.sortDir} onClick={() => revSort.toggle("status" as any)} testId="sort-rev-status" />
-                        <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Turnaround</th>
+                        <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Turnaround</th>
                       </tr>
                     </thead>
                     <tbody>
                       {revSort.sorted.map((r: any, idx: number) => (
-                        <tr key={idx} className={`border-b border-slate-100 hover:bg-slate-50/50 ${idx % 2 ? "bg-slate-25" : ""}`} data-testid={`row-rev-${idx}`}>
+                        <tr key={idx} className={`border-b border-border hover:bg-muted/50 ${idx % 2 ? "bg-slate-25" : ""}`} data-testid={`row-rev-${idx}`}>
                           <td className="px-3 py-2 text-xs font-medium max-w-[180px] truncate" data-testid={`text-rev-milestone-${idx}`}>{r.milestoneName || r.description || "—"}</td>
-                          <td className="px-3 py-2 text-[10px] text-slate-600 text-right font-mono">{formatCurrency(r.amountExVat)}</td>
-                          <td className="px-3 py-2 text-[10px] text-slate-600">{r.invoiceNumber || "—"}</td>
-                          <td className="px-3 py-2 text-[10px] text-slate-600">{formatDate(r.invoiceDate)}</td>
-                          <td className="px-3 py-2 text-[10px] text-slate-600">{formatDate(r.expectedPaymentDate)}</td>
-                          <td className="px-3 py-2 text-[10px] text-slate-600">{formatDate(r.paidDate)}</td>
-                          <td className="px-3 py-2 text-[10px] text-slate-600">{formatDate(r.inBankDate)}</td>
+                          <td className="px-3 py-2 text-[10px] text-muted-foreground text-right font-mono">{formatCurrency(r.amountExVat)}</td>
+                          <td className="px-3 py-2 text-[10px] text-muted-foreground">{r.invoiceNumber || "—"}</td>
+                          <td className="px-3 py-2 text-[10px] text-muted-foreground">{formatDate(r.invoiceDate)}</td>
+                          <td className="px-3 py-2 text-[10px] text-muted-foreground">{formatDate(r.expectedPaymentDate)}</td>
+                          <td className="px-3 py-2 text-[10px] text-muted-foreground">{formatDate(r.paidDate)}</td>
+                          <td className="px-3 py-2 text-[10px] text-muted-foreground">{formatDate(r.inBankDate)}</td>
                           <td className="px-3 py-2">{revenueStatusBadge(r.status)}</td>
-                          <td className="px-3 py-2 text-[10px] text-slate-600">{r.turnaroundDays != null ? `${r.turnaroundDays}d` : "—"}</td>
+                          <td className="px-3 py-2 text-[10px] text-muted-foreground">{r.turnaroundDays != null ? `${r.turnaroundDays}d` : "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -531,31 +531,31 @@ export default function ProjectNormalizedView() {
 
           <TabsContent value="expenditure" className="space-y-3 mt-3" data-testid="tab-content-expenditure">
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <Card className="bg-white rounded-xl shadow-sm">
+              <Card className="bg-card rounded-xl shadow-sm">
                 <CardContent className="p-3">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Costs</div>
                   <div className="text-lg font-bold mt-1" data-testid="text-cost-total">{formatCurrency(costSummary.total)}</div>
                 </CardContent>
               </Card>
-              <Card className="bg-white rounded-xl shadow-sm">
+              <Card className="bg-card rounded-xl shadow-sm">
                 <CardContent className="p-3">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Invoiced</div>
                   <div className="text-lg font-bold mt-1 text-blue-600" data-testid="text-cost-invoiced">{formatCurrency(costSummary.invoiced)}</div>
                 </CardContent>
               </Card>
-              <Card className="bg-white rounded-xl shadow-sm">
+              <Card className="bg-card rounded-xl shadow-sm">
                 <CardContent className="p-3">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Paid</div>
                   <div className="text-lg font-bold mt-1 text-emerald-600" data-testid="text-cost-paid">{formatCurrency(costSummary.paid)}</div>
                 </CardContent>
               </Card>
-              <Card className="bg-white rounded-xl shadow-sm">
+              <Card className="bg-card rounded-xl shadow-sm">
                 <CardContent className="p-3">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Outstanding</div>
                   <div className="text-lg font-bold mt-1 text-amber-600" data-testid="text-cost-outstanding">{formatCurrency(costSummary.outstanding)}</div>
                 </CardContent>
               </Card>
-              <Card className="bg-white rounded-xl shadow-sm">
+              <Card className="bg-card rounded-xl shadow-sm">
                 <CardContent className="p-3">
                   <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                     <Clock className="w-3 h-3" /> Avg Turnaround
@@ -568,7 +568,7 @@ export default function ProjectNormalizedView() {
             </div>
 
             {costLines.length === 0 ? (
-              <Card className="bg-white rounded-xl shadow-sm">
+              <Card className="bg-card rounded-xl shadow-sm">
                 <CardContent className="py-12 text-center text-sm text-muted-foreground" data-testid="text-cost-empty">
                   No expenditure data available
                 </CardContent>
@@ -593,17 +593,17 @@ function CostCategoryGroup({ category, items }: { category: string; items: any[]
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <Card className="bg-white rounded-xl shadow-sm overflow-hidden">
+      <Card className="bg-card rounded-xl shadow-sm overflow-hidden">
         <CollapsibleTrigger className="w-full" data-testid={`trigger-category-${category}`}>
-          <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-200 hover:bg-slate-100 transition-colors">
+          <div className="flex items-center justify-between px-4 py-3 bg-muted border-b border-border hover:bg-muted transition-colors">
             <div className="flex items-center gap-2">
-              {open ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
-              <span className="text-xs font-semibold text-slate-700" data-testid={`text-category-name-${category}`}>{category}</span>
+              {open ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+              <span className="text-xs font-semibold text-foreground" data-testid={`text-category-name-${category}`}>{category}</span>
               <Badge variant="outline" className="text-[10px] px-1.5 py-0" data-testid={`badge-category-count-${category}`}>
                 {items.length} item{items.length !== 1 ? "s" : ""}
               </Badge>
             </div>
-            <span className="text-xs font-bold text-slate-700 font-mono" data-testid={`text-category-total-${category}`}>
+            <span className="text-xs font-bold text-foreground font-mono" data-testid={`text-category-total-${category}`}>
               {formatCurrency(catTotal)}
             </span>
           </div>
@@ -612,30 +612,30 @@ function CostCategoryGroup({ category, items }: { category: string; items: any[]
           <div className="overflow-x-auto">
             <table className="w-full text-xs" data-testid={`table-cost-${category}`}>
               <thead>
-                <tr className="bg-slate-50/50 border-b border-slate-100">
-                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Counterparty</th>
-                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Description</th>
-                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
-                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">PO #</th>
-                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Invoice #</th>
-                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Invoice Date</th>
-                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Paid Date</th>
-                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Turnaround</th>
+                <tr className="bg-muted/50 border-b border-border">
+                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Counterparty</th>
+                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Description</th>
+                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Amount</th>
+                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">PO #</th>
+                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Invoice #</th>
+                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Invoice Date</th>
+                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Paid Date</th>
+                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Status</th>
+                  <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Turnaround</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((c: any, idx: number) => (
-                  <tr key={idx} className={`border-b border-slate-100 hover:bg-slate-50/50 ${idx % 2 ? "bg-slate-25" : ""}`} data-testid={`row-cost-${category}-${idx}`}>
+                  <tr key={idx} className={`border-b border-border hover:bg-muted/50 ${idx % 2 ? "bg-slate-25" : ""}`} data-testid={`row-cost-${category}-${idx}`}>
                     <td className="px-3 py-2 text-xs font-medium truncate max-w-[140px]">{c.counterpartyName || "—"}</td>
-                    <td className="px-3 py-2 text-[10px] text-slate-600 truncate max-w-[160px]">{c.description || "—"}</td>
-                    <td className="px-3 py-2 text-[10px] text-slate-600 text-right font-mono">{formatCurrency(c.amountExVat)}</td>
-                    <td className="px-3 py-2 text-[10px] text-slate-600">{c.poNumber || "—"}</td>
-                    <td className="px-3 py-2 text-[10px] text-slate-600">{c.invoiceNumber || "—"}</td>
-                    <td className="px-3 py-2 text-[10px] text-slate-600">{formatDate(c.invoiceDate)}</td>
-                    <td className="px-3 py-2 text-[10px] text-slate-600">{formatDate(c.paidDate)}</td>
+                    <td className="px-3 py-2 text-[10px] text-muted-foreground truncate max-w-[160px]">{c.description || "—"}</td>
+                    <td className="px-3 py-2 text-[10px] text-muted-foreground text-right font-mono">{formatCurrency(c.amountExVat)}</td>
+                    <td className="px-3 py-2 text-[10px] text-muted-foreground">{c.poNumber || "—"}</td>
+                    <td className="px-3 py-2 text-[10px] text-muted-foreground">{c.invoiceNumber || "—"}</td>
+                    <td className="px-3 py-2 text-[10px] text-muted-foreground">{formatDate(c.invoiceDate)}</td>
+                    <td className="px-3 py-2 text-[10px] text-muted-foreground">{formatDate(c.paidDate)}</td>
                     <td className="px-3 py-2">{costStatusBadge(c.status)}</td>
-                    <td className="px-3 py-2 text-[10px] text-slate-600">{c.turnaroundDays != null ? `${c.turnaroundDays}d` : "—"}</td>
+                    <td className="px-3 py-2 text-[10px] text-muted-foreground">{c.turnaroundDays != null ? `${c.turnaroundDays}d` : "—"}</td>
                   </tr>
                 ))}
               </tbody>

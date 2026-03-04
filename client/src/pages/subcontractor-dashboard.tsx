@@ -551,37 +551,37 @@ export default function SubcontractorDashboardPage() {
 
       {patternStats && (patternStats.taggedLines > 0 || patternStats.eligibleLines > 0) && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3" data-testid="pattern-stats-strip">
-          <Card className="bg-white">
+          <Card className="bg-card">
             <CardContent className="pt-3 pb-2 px-3">
-              <div className="text-[10px] text-slate-500 mb-0.5">Eligible Lines</div>
+              <div className="text-[10px] text-muted-foreground mb-0.5">Eligible Lines</div>
               <div className="text-lg font-bold" data-testid="stat-eligible">{patternStats.eligibleLines.toLocaleString()}</div>
               <div className="text-[9px] text-slate-400">with invoice & amount</div>
             </CardContent>
           </Card>
-          <Card className="bg-white">
+          <Card className="bg-card">
             <CardContent className="pt-3 pb-2 px-3">
-              <div className="text-[10px] text-slate-500 mb-0.5">Tagged</div>
+              <div className="text-[10px] text-muted-foreground mb-0.5">Tagged</div>
               <div className="text-lg font-bold text-green-700" data-testid="stat-tagged">{patternStats.taggedLines.toLocaleString()}</div>
               <div className="text-[9px] text-slate-400">pattern-matched</div>
             </CardContent>
           </Card>
-          <Card className="bg-white">
+          <Card className="bg-card">
             <CardContent className="pt-3 pb-2 px-3">
-              <div className="text-[10px] text-slate-500 mb-0.5">Untagged</div>
+              <div className="text-[10px] text-muted-foreground mb-0.5">Untagged</div>
               <div className="text-lg font-bold text-amber-600" data-testid="stat-untagged">{patternStats.untaggedLines.toLocaleString()}</div>
               <div className="text-[9px] text-slate-400">awaiting classification</div>
             </CardContent>
           </Card>
-          <Card className="bg-white">
+          <Card className="bg-card">
             <CardContent className="pt-3 pb-2 px-3">
-              <div className="text-[10px] text-slate-500 mb-0.5">Classification Rate</div>
+              <div className="text-[10px] text-muted-foreground mb-0.5">Classification Rate</div>
               <div className="text-lg font-bold" data-testid="stat-rate">{patternStats.classificationRate}%</div>
               <div className="text-[9px] text-slate-400">tagged / eligible</div>
             </CardContent>
           </Card>
-          <Card className="bg-white">
+          <Card className="bg-card">
             <CardContent className="pt-3 pb-2 px-3">
-              <div className="text-[10px] text-slate-500 mb-0.5">Type Breakdown</div>
+              <div className="text-[10px] text-muted-foreground mb-0.5">Type Breakdown</div>
               <div className="flex flex-wrap gap-1 mt-1" data-testid="stat-types">
                 {Object.entries(patternStats.typeCounts || {}).map(([type, count]) => (
                   <Badge key={type} variant={type === "INSTALLER" ? "default" : type === "SUPPLIER" ? "secondary" : "outline"}
@@ -603,7 +603,7 @@ export default function SubcontractorDashboardPage() {
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 mb-1">
               <TrendingUp className="w-4 h-4 text-blue-600" />
-              <p className="text-xs text-slate-500">Biggest Account</p>
+              <p className="text-xs text-muted-foreground">Biggest Account</p>
             </div>
             <p className="text-lg font-bold truncate">{kpis.biggestAccount || "—"}</p>
             <p className="text-xs text-slate-400">{formatCurrency(kpis.biggestAccountSpend)}</p>
@@ -613,7 +613,7 @@ export default function SubcontractorDashboardPage() {
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 mb-1">
               <Users className="w-4 h-4 text-green-600" />
-              <p className="text-xs text-slate-500">Total Subcontractors</p>
+              <p className="text-xs text-muted-foreground">Total Subcontractors</p>
             </div>
             <p className="text-lg font-bold">{kpis.totalCounterparties || 0}</p>
           </CardContent>
@@ -622,7 +622,7 @@ export default function SubcontractorDashboardPage() {
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 mb-1">
               <DollarSign className="w-4 h-4 text-amber-600" />
-              <p className="text-xs text-slate-500">Total Open Amount</p>
+              <p className="text-xs text-muted-foreground">Total Open Amount</p>
             </div>
             <p className="text-lg font-bold">{formatCurrency(kpis.totalOpenAmount)}</p>
           </CardContent>
@@ -632,7 +632,7 @@ export default function SubcontractorDashboardPage() {
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 mb-1">
               <AlertCircle className="w-4 h-4 text-red-600" />
-              <p className="text-xs text-slate-500">Overdue</p>
+              <p className="text-xs text-muted-foreground">Overdue</p>
             </div>
             <p className="text-lg font-bold text-red-600">{formatCurrency(kpis.totalOverdueAmount)}</p>
             <p className="text-xs text-slate-400">{kpis.totalOverdueCount || 0} items — click to view</p>
@@ -642,7 +642,7 @@ export default function SubcontractorDashboardPage() {
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center gap-2 mb-1">
               <Clock className="w-4 h-4 text-purple-600" />
-              <p className="text-xs text-slate-500">Upcoming 30d</p>
+              <p className="text-xs text-muted-foreground">Upcoming 30d</p>
             </div>
             <p className="text-lg font-bold">{formatCurrency(kpis.totalUpcoming30d)}</p>
           </CardContent>
@@ -653,7 +653,7 @@ export default function SubcontractorDashboardPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" data-testid="dashboard-charts">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs text-slate-600">Top 10 by Spend</CardTitle>
+              <CardTitle className="text-xs text-muted-foreground">Top 10 by Spend</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-56">
@@ -679,7 +679,7 @@ export default function SubcontractorDashboardPage() {
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs text-slate-600">Spend by Type</CardTitle>
+              <CardTitle className="text-xs text-muted-foreground">Spend by Type</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-56">
@@ -723,7 +723,7 @@ export default function SubcontractorDashboardPage() {
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs text-slate-600">Counterparties by Project Count</CardTitle>
+              <CardTitle className="text-xs text-muted-foreground">Counterparties by Project Count</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-56">
@@ -758,7 +758,7 @@ export default function SubcontractorDashboardPage() {
                 Overdue Items
                 {overdueData && <Badge variant="destructive" className="text-[10px]">{overdueData.totalItems} items — {formatCurrency(overdueData.totalOverdue)}</Badge>}
               </CardTitle>
-              <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-500" onClick={() => setShowOverdue(false)} data-testid="btn-close-overdue">
+              <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground" onClick={() => setShowOverdue(false)} data-testid="btn-close-overdue">
                 <X className="w-3 h-3" />
               </Button>
             </div>
@@ -787,18 +787,18 @@ export default function SubcontractorDashboardPage() {
                       <tr key={item.id} className="border-b border-red-100 hover:bg-red-50/50 cursor-pointer"
                         onClick={() => { setSelectedCp(item.counterpartyName); setShowOverdue(false); }}
                         data-testid={`overdue-row-${item.id}`}>
-                        <td className="px-3 py-1.5 font-medium text-slate-800">{item.counterpartyName}</td>
+                        <td className="px-3 py-1.5 font-medium text-foreground">{item.counterpartyName}</td>
                         <td className="px-3 py-1.5">
                           <button className="text-blue-700 hover:underline text-left" onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(item.projectName)}`); }}
                             data-testid={`overdue-nav-project-${item.id}`}>
                             {item.projectName}
                           </button>
                         </td>
-                        <td className="px-3 py-1.5 text-slate-500">{item.costCategory || "—"}</td>
-                        <td className="px-3 py-1.5 text-slate-500 max-w-[180px] truncate" title={item.description || ""}>{item.description || "—"}</td>
+                        <td className="px-3 py-1.5 text-muted-foreground">{item.costCategory || "—"}</td>
+                        <td className="px-3 py-1.5 text-muted-foreground max-w-[180px] truncate" title={item.description || ""}>{item.description || "—"}</td>
                         <td className="px-3 py-1.5 font-mono">{item.invoiceNumber || "—"}</td>
                         <td className="px-3 py-1.5 font-mono text-right text-red-700">{formatCurrency(parseFloat(item.amountExVat || "0"))}</td>
-                        <td className="px-3 py-1.5 text-slate-500">{formatDate(item.invoiceDate)}</td>
+                        <td className="px-3 py-1.5 text-muted-foreground">{formatDate(item.invoiceDate)}</td>
                         <td className="px-3 py-1.5">
                           <Badge variant="outline" className="text-[9px] text-amber-700 border-amber-200 bg-amber-50">{item.status}</Badge>
                         </td>
@@ -813,7 +813,7 @@ export default function SubcontractorDashboardPage() {
                 </table>
               </div>
             ) : (
-              <p className="text-sm text-slate-500 text-center py-4">No overdue items found.</p>
+              <p className="text-sm text-muted-foreground text-center py-4">No overdue items found.</p>
             )}
           </CardContent>
         </Card>
@@ -847,7 +847,7 @@ export default function SubcontractorDashboardPage() {
             ))}
           </SelectContent>
         </Select>
-        <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
           <input type="checkbox" checked={coreOnly} onChange={e => setCoreOnly(e.target.checked)}
             data-testid="checkbox-core-only" />
           Core only
@@ -882,7 +882,7 @@ export default function SubcontractorDashboardPage() {
                     onClick={() => setBulkDeleteConfirm(false)} data-testid="btn-cancel-bulk-delete">No</Button>
                 </div>
               )}
-              <Button size="sm" variant="ghost" className="h-7 text-xs text-slate-500"
+              <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground"
                 onClick={() => { setSelectedForMerge(new Set()); setBulkDeleteConfirm(false); }}
                 data-testid="btn-clear-selection">
                 Clear
@@ -943,18 +943,18 @@ export default function SubcontractorDashboardPage() {
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
       ) : filtered.length === 0 ? (
         <Card>
-          <CardContent className="py-12 text-center text-slate-500">
+          <CardContent className="py-12 text-center text-muted-foreground">
             <AlertCircle className="w-8 h-8 mx-auto mb-2 text-slate-300" />
             No counterparty data available. Import expenditure data via Smart Import first.
           </CardContent>
         </Card>
       ) : (
-        <div className="border border-slate-200 rounded-lg overflow-x-auto">
+        <div className="border border-border rounded-lg overflow-x-auto">
           <table className="w-full text-sm" data-testid="counterparty-table">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
+              <tr className="bg-muted border-b border-border">
                 <th className="px-2 py-2 w-8">
-                  <input type="checkbox" className="rounded border-slate-300"
+                  <input type="checkbox" className="rounded border-border"
                     checked={filtered.length > 0 && filtered.every((c: any) => selectedForMerge.has(c.counterpartyName))}
                     onChange={e => {
                       if (e.target.checked) setSelectedForMerge(new Set(filtered.map((c: any) => c.counterpartyName)));
@@ -975,7 +975,7 @@ export default function SubcontractorDashboardPage() {
                   { key: "overdueAmount", label: "Overdue" },
                   { key: "upcomingAmount30d", label: "Upcoming 30d" },
                 ].map(col => (
-                  <th key={col.key} className="text-left px-3 py-2 font-medium text-slate-600 text-xs cursor-pointer hover:bg-slate-100"
+                  <th key={col.key} className="text-left px-3 py-2 font-medium text-muted-foreground text-xs cursor-pointer hover:bg-muted"
                     onClick={() => handleSort(col.key as SortField)}>
                     <span className="flex items-center gap-1">
                       {col.label}
@@ -988,16 +988,16 @@ export default function SubcontractorDashboardPage() {
             </thead>
             <tbody>
               {filtered.map((cp: any, i: number) => (
-                <tr key={cp.counterpartyName} className={`border-b border-slate-100 hover:bg-blue-50/30 cursor-pointer ${i % 2 === 0 ? "" : "bg-slate-50/50"} ${selectedForMerge.has(cp.counterpartyName) ? "bg-blue-50" : ""}`}
+                <tr key={cp.counterpartyName} className={`border-b border-border hover:bg-blue-50/30 cursor-pointer ${i % 2 === 0 ? "" : "bg-muted/50"} ${selectedForMerge.has(cp.counterpartyName) ? "bg-blue-50" : ""}`}
                   onClick={() => setSelectedCp(cp.counterpartyName)}
                   data-testid={`cp-row-${i}`}>
                   <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                    <input type="checkbox" className="rounded border-slate-300"
+                    <input type="checkbox" className="rounded border-border"
                       checked={selectedForMerge.has(cp.counterpartyName)}
                       onChange={() => toggleMergeSelection(cp.counterpartyName, { stopPropagation: () => {} } as any)}
                       data-testid={`checkbox-cp-${i}`} />
                   </td>
-                  <td className="px-3 py-2 font-medium text-slate-800">
+                  <td className="px-3 py-2 font-medium text-foreground">
                     {cp.counterpartyName}
                     {cp.isCore && <Badge className="ml-1 text-[8px] bg-blue-50 text-blue-600">Core</Badge>}
                   </td>
@@ -1015,8 +1015,8 @@ export default function SubcontractorDashboardPage() {
                       <span className="text-[10px] text-slate-400 ml-1 block truncate max-w-[120px]">{cp.projectNames.join(", ")}</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-xs text-slate-500">{formatDate(cp.lastInvoiceDate)}</td>
-                  <td className="px-3 py-2 text-xs text-slate-500">{formatDate(cp.lastPaidDate)}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{formatDate(cp.lastInvoiceDate)}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{formatDate(cp.lastPaidDate)}</td>
                   <td className="px-3 py-2 text-xs">{cp.avgTurnaroundDays != null ? `${cp.avgTurnaroundDays}d` : "\u2014"}</td>
                   <td className="px-3 py-2 text-xs font-mono text-amber-600">{cp.openAmount > 0 ? formatCurrency(cp.openAmount) : "\u2014"}</td>
                   <td className="px-3 py-2 text-xs font-mono text-red-600">{cp.overdueAmount > 0 ? formatCurrency(cp.overdueAmount) : "\u2014"}</td>
@@ -1031,7 +1031,7 @@ export default function SubcontractorDashboardPage() {
 
       <Dialog open={!!selectedCp} onOpenChange={(open) => { if (!open) { setSelectedCp(null); setInvoiceStatusFilter("all"); setIsRenaming(false); setDeleteConfirm(false); setLinkingLineIds([]); setLinkTarget(""); setLinkError(""); setLinkIsNew(false); setLinkNewName(""); } }}>
         <DialogContent className="max-w-[95vw] w-[95vw] h-[90vh] overflow-y-auto p-0" data-testid="cp-detail-fullscreen">
-          <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-6 py-4">
+          <div className="sticky top-0 z-10 bg-card border-b border-border px-6 py-4">
             <DialogHeader className="space-y-0">
               <div className="flex items-center gap-3">
                 <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0"
@@ -1053,7 +1053,7 @@ export default function SubcontractorDashboardPage() {
                       onClick={handleConfirmRename} disabled={renameLoading} data-testid="btn-confirm-rename">
                       {renameLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                     </Button>
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-slate-600"
+                    <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-muted-foreground"
                       onClick={handleCancelRename} data-testid="btn-cancel-rename">
                       <X className="w-4 h-4" />
                     </Button>
@@ -1158,7 +1158,7 @@ export default function SubcontractorDashboardPage() {
                   <>
                     <Card>
                       <CardContent className="p-3">
-                        <p className="text-[10px] text-slate-500 uppercase">Total Invoices</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">Total Invoices</p>
                         <p className="text-2xl font-bold">{detailData.invoiceSummary.totalInvoices}</p>
                         <p className="text-xs text-slate-400 font-mono">{formatCurrency(detailData.invoiceSummary.totalAmount)}</p>
                       </CardContent>
@@ -1185,15 +1185,15 @@ export default function SubcontractorDashboardPage() {
                       <CardContent className="p-3">
                         <div className="flex gap-4 text-xs mt-1">
                           <div>
-                            <span className="text-slate-500">Invoiced:</span>{" "}
+                            <span className="text-muted-foreground">Invoiced:</span>{" "}
                             <span className="font-bold">{detailData.invoiceSummary.invoiced.count}</span>
                           </div>
                           <div>
-                            <span className="text-slate-500">Approved:</span>{" "}
+                            <span className="text-muted-foreground">Approved:</span>{" "}
                             <span className="font-bold">{detailData.invoiceSummary.approved.count}</span>
                           </div>
                           <div>
-                            <span className="text-slate-500">Planned:</span>{" "}
+                            <span className="text-muted-foreground">Planned:</span>{" "}
                             <span className="font-bold">{detailData.invoiceSummary.planned.count}</span>
                           </div>
                         </div>
@@ -1206,19 +1206,19 @@ export default function SubcontractorDashboardPage() {
               <div className="grid grid-cols-3 gap-3">
                 <Card>
                   <CardContent className="p-3">
-                    <p className="text-[10px] text-slate-500 uppercase">Last Activity</p>
+                    <p className="text-[10px] text-muted-foreground uppercase">Last Activity</p>
                     <p className="text-sm font-medium">{formatDate(detailData.linkedDates?.lastActivity)}</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-3">
-                    <p className="text-[10px] text-slate-500 uppercase">Oldest Open</p>
+                    <p className="text-[10px] text-muted-foreground uppercase">Oldest Open</p>
                     <p className="text-sm font-medium">{formatDate(detailData.linkedDates?.oldestOpen)}</p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="p-3">
-                    <p className="text-[10px] text-slate-500 uppercase">Next Due</p>
+                    <p className="text-[10px] text-muted-foreground uppercase">Next Due</p>
                     <p className="text-sm font-medium">{formatDate(detailData.linkedDates?.nextDue)}</p>
                   </CardContent>
                 </Card>
@@ -1228,7 +1228,7 @@ export default function SubcontractorDashboardPage() {
                 {detailData.monthlyTrend?.length > 0 && (
                   <Card>
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-xs text-slate-600">Monthly Spend Trend</CardTitle>
+                      <CardTitle className="text-xs text-muted-foreground">Monthly Spend Trend</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="h-48">
@@ -1248,11 +1248,11 @@ export default function SubcontractorDashboardPage() {
                 {detailData.projectBreakdown?.length > 0 && (
                   <Card>
                     <CardHeader className="pb-2">
-                      <CardTitle className="text-xs text-slate-600">Project Breakdown</CardTitle>
+                      <CardTitle className="text-xs text-muted-foreground">Project Breakdown</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-1">
                       {detailData.projectBreakdown.map((p: any) => (
-                        <div key={p.projectName} className="flex justify-between items-center bg-slate-50 rounded px-3 py-2 group hover:bg-blue-50 transition-colors"
+                        <div key={p.projectName} className="flex justify-between items-center bg-muted rounded px-3 py-2 group hover:bg-blue-50 transition-colors"
                           data-testid={`project-breakdown-${p.projectName}`}>
                           <button
                             className="text-xs font-medium text-blue-700 hover:underline flex items-center gap-1"
@@ -1279,7 +1279,7 @@ export default function SubcontractorDashboardPage() {
               {detailData.upcoming?.length > 0 && (
                 <Card>
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-xs text-slate-600 flex items-center gap-1">
+                    <CardTitle className="text-xs text-muted-foreground flex items-center gap-1">
                       <Calendar className="w-3 h-3" /> Upcoming Items (30d)
                     </CardTitle>
                   </CardHeader>
@@ -1291,7 +1291,7 @@ export default function SubcontractorDashboardPage() {
                             onClick={() => { setSelectedCp(null); navigate(`/project/${encodeURIComponent(u.projectName)}`); }}>
                             {u.projectName}
                           </button>
-                          <span className="text-[10px] text-slate-500 ml-2">{u.description || ""}</span>
+                          <span className="text-[10px] text-muted-foreground ml-2">{u.description || ""}</span>
                         </div>
                         <div className="text-right">
                           <span className="text-xs font-mono">{formatCurrency(parseFloat(u.amountExVat || "0"))}</span>
@@ -1305,7 +1305,7 @@ export default function SubcontractorDashboardPage() {
 
               <div data-testid="invoice-lines-section">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm font-semibold text-slate-700">
+                  <p className="text-sm font-semibold text-foreground">
                     All Invoices ({(() => {
                       const lines = detailData.lines || [];
                       if (invoiceStatusFilter === "all") return lines.length;
@@ -1316,16 +1316,16 @@ export default function SubcontractorDashboardPage() {
                     <div className="flex flex-wrap items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2" data-testid="link-panel">
                       <Link2 className="w-4 h-4 text-blue-600 shrink-0" />
                       <span className="text-xs font-medium text-blue-800 shrink-0">{linkingLineIds.length} line{linkingLineIds.length > 1 ? "s" : ""} selected</span>
-                      <div className="flex items-center gap-1 border border-blue-200 rounded bg-white p-0.5 shrink-0">
+                      <div className="flex items-center gap-1 border border-blue-200 rounded bg-card p-0.5 shrink-0">
                         <button
-                          className={`text-[10px] px-2 py-0.5 rounded transition-colors ${!linkIsNew ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-700"}`}
+                          className={`text-[10px] px-2 py-0.5 rounded transition-colors ${!linkIsNew ? "bg-blue-600 text-white" : "text-muted-foreground hover:text-foreground"}`}
                           onClick={() => setLinkIsNew(false)}
                           data-testid="btn-link-existing"
                         >
                           Existing
                         </button>
                         <button
-                          className={`text-[10px] px-2 py-0.5 rounded transition-colors ${linkIsNew ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-700"}`}
+                          className={`text-[10px] px-2 py-0.5 rounded transition-colors ${linkIsNew ? "bg-blue-600 text-white" : "text-muted-foreground hover:text-foreground"}`}
                           onClick={() => setLinkIsNew(true)}
                           data-testid="btn-link-new"
                         >
@@ -1368,7 +1368,7 @@ export default function SubcontractorDashboardPage() {
                           </Select>
                         </div>
                       )}
-                      <label className="flex items-center gap-1.5 text-[10px] text-slate-600 cursor-pointer shrink-0">
+                      <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer shrink-0">
                         <Checkbox
                           checked={linkCreatePattern}
                           onCheckedChange={(v) => setLinkCreatePattern(!!v)}
@@ -1399,11 +1399,11 @@ export default function SubcontractorDashboardPage() {
                     <TabsTrigger value="PLANNED" className="text-[10px] px-2 h-6" data-testid="tab-planned">Planned</TabsTrigger>
                   </TabsList>
                 </Tabs>
-                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <div className="border border-border rounded-lg overflow-hidden">
                   <table className="w-full text-[11px]" data-testid="invoice-detail-table">
-                    <thead className="sticky top-0 bg-slate-50">
-                      <tr className="border-b border-slate-200">
-                        <th className="text-left px-2 py-1.5 font-medium text-slate-600 w-8">
+                    <thead className="sticky top-0 bg-muted">
+                      <tr className="border-b border-border">
+                        <th className="text-left px-2 py-1.5 font-medium text-muted-foreground w-8">
                           <Checkbox
                             checked={(() => {
                               const visibleLines = (detailData.lines || []).filter((l: any) => {
@@ -1430,14 +1430,14 @@ export default function SubcontractorDashboardPage() {
                             data-testid="checkbox-select-all"
                           />
                         </th>
-                        <th className="text-left px-2 py-1.5 font-medium text-slate-600">Project</th>
-                        <th className="text-left px-2 py-1.5 font-medium text-slate-600">Category</th>
-                        <th className="text-left px-2 py-1.5 font-medium text-slate-600">Description</th>
-                        <th className="text-left px-2 py-1.5 font-medium text-slate-600">Invoice #</th>
-                        <th className="text-right px-2 py-1.5 font-medium text-slate-600">Amount</th>
-                        <th className="text-left px-2 py-1.5 font-medium text-slate-600">Date</th>
-                        <th className="text-left px-2 py-1.5 font-medium text-slate-600">Paid</th>
-                        <th className="text-left px-2 py-1.5 font-medium text-slate-600">Status</th>
+                        <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Project</th>
+                        <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Category</th>
+                        <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Description</th>
+                        <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Invoice #</th>
+                        <th className="text-right px-2 py-1.5 font-medium text-muted-foreground">Amount</th>
+                        <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Date</th>
+                        <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Paid</th>
+                        <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Status</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1448,7 +1448,7 @@ export default function SubcontractorDashboardPage() {
                           return l.status === invoiceStatusFilter;
                         })
                         .map((l: any) => (
-                        <tr key={l.id} className={`border-b border-slate-100 hover:bg-blue-50/30 group ${linkingLineIds.includes(l.id) ? "bg-blue-50" : ""}`} data-testid={`invoice-row-${l.id}`}>
+                        <tr key={l.id} className={`border-b border-border hover:bg-blue-50/30 group ${linkingLineIds.includes(l.id) ? "bg-blue-50" : ""}`} data-testid={`invoice-row-${l.id}`}>
                           <td className="px-2 py-1.5">
                             <Checkbox
                               checked={linkingLineIds.includes(l.id)}
@@ -1470,18 +1470,18 @@ export default function SubcontractorDashboardPage() {
                               <ExternalLink className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
                             </button>
                           </td>
-                          <td className="px-2 py-1.5 text-slate-500">{l.costCategory || "\u2014"}</td>
-                          <td className="px-2 py-1.5 text-slate-500 max-w-[200px] truncate" title={l.description || ""}>{l.description || "\u2014"}</td>
+                          <td className="px-2 py-1.5 text-muted-foreground">{l.costCategory || "\u2014"}</td>
+                          <td className="px-2 py-1.5 text-muted-foreground max-w-[200px] truncate" title={l.description || ""}>{l.description || "\u2014"}</td>
                           <td className="px-2 py-1.5 font-mono">{l.invoiceNumber || "\u2014"}</td>
                           <td className="px-2 py-1.5 font-mono text-right">{formatCurrency(parseFloat(l.amountExVat || "0"))}</td>
-                          <td className="px-2 py-1.5 text-slate-500">{formatDate(l.invoiceDate)}</td>
-                          <td className={`px-2 py-1.5 ${l.paidDate && new Date(l.paidDate) > new Date() ? "text-red-500 font-medium" : "text-slate-500"}`}>
+                          <td className="px-2 py-1.5 text-muted-foreground">{formatDate(l.invoiceDate)}</td>
+                          <td className={`px-2 py-1.5 ${l.paidDate && new Date(l.paidDate) > new Date() ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
                             {formatDate(l.paidDate)}
                             {l.paidDate && new Date(l.paidDate) > new Date() && <span className="text-[8px] ml-0.5">(future)</span>}
                           </td>
                           <td className="px-2 py-1.5">
                             <Badge variant={l.status === "PAID" ? "default" : l.status === "INVOICED" ? "secondary" : "outline"}
-                              className={`text-[9px] ${l.status === "PAID" ? "bg-green-100 text-green-700 border-green-200" : l.status === "INVOICED" ? "bg-amber-50 text-amber-700 border-amber-200" : l.status === "APPROVED" ? "bg-blue-50 text-blue-700 border-blue-200" : "text-slate-500"}`}>
+                              className={`text-[9px] ${l.status === "PAID" ? "bg-green-100 text-green-700 border-green-200" : l.status === "INVOICED" ? "bg-amber-50 text-amber-700 border-amber-200" : l.status === "APPROVED" ? "bg-blue-50 text-blue-700 border-blue-200" : "text-muted-foreground"}`}>
                               {l.status}
                             </Badge>
                           </td>

@@ -138,7 +138,7 @@ export function ProjectCommandHeader({
   return (
     <div className="command-header" data-testid="project-command-header">
       <div className="flex items-center gap-2 mb-3">
-        <Button variant="ghost" size="sm" onClick={() => setLocation("/projects")} className="gap-1.5 text-[var(--cmd-text-muted)] hover:text-[var(--cmd-text)] hover:bg-white/5 h-7 px-2" data-testid="button-back">
+        <Button variant="ghost" size="sm" onClick={() => setLocation("/projects")} className="gap-1.5 text-[var(--cmd-text-muted)] hover:text-[var(--cmd-text)] hover:bg-card/5 h-7 px-2" data-testid="button-back">
           <ArrowLeft className="h-3.5 w-3.5" />
           <span className="text-xs">Projects</span>
         </Button>

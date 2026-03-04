@@ -42,7 +42,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const cls = STATUS_COLORS[status] || "bg-gray-100 text-gray-700 border-gray-200";
+  const cls = STATUS_COLORS[status] || "bg-muted text-foreground border-border";
   return (
     <Badge className={cls} variant="outline" data-testid={`badge-status-${status}`}>
       {status}

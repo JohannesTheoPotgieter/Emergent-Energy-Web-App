@@ -82,7 +82,7 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
       <Card>
         <CardContent className="py-12 text-center">
           <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <p className="text-sm text-slate-500">No subcontractors linked to this project yet.</p>
+          <p className="text-sm text-muted-foreground">No subcontractors linked to this project yet.</p>
           <p className="text-xs text-slate-400 mt-1">
             Run a procurement analysis from the Subcontractors page to populate supplier data.
           </p>
@@ -98,9 +98,9 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
           <CardContent className="p-3">
             <div className="flex items-center gap-2 mb-1">
               <Users className="w-4 h-4 text-blue-500" />
-              <span className="text-[10px] font-medium text-slate-500 uppercase">Linked</span>
+              <span className="text-[10px] font-medium text-muted-foreground uppercase">Linked</span>
             </div>
-            <p className="text-xl font-bold text-slate-800" data-testid="kpi-linked-count">{counterparties.length}</p>
+            <p className="text-xl font-bold text-foreground" data-testid="kpi-linked-count">{counterparties.length}</p>
             <div className="flex gap-2 mt-1">
               {installerCount > 0 && <Badge variant="default" className="text-[9px]">{installerCount} Installer{installerCount > 1 ? "s" : ""}</Badge>}
               {supplierCount > 0 && <Badge variant="secondary" className="text-[9px]">{supplierCount} Supplier{supplierCount > 1 ? "s" : ""}</Badge>}
@@ -111,18 +111,18 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
           <CardContent className="p-3">
             <div className="flex items-center gap-2 mb-1">
               <CreditCard className="w-4 h-4 text-emerald-500" />
-              <span className="text-[10px] font-medium text-slate-500 uppercase">Total Spend</span>
+              <span className="text-[10px] font-medium text-muted-foreground uppercase">Total Spend</span>
             </div>
-            <p className="text-xl font-bold text-slate-800 font-mono" data-testid="kpi-total-spend">{formatCurrency(totalSpend)}</p>
+            <p className="text-xl font-bold text-foreground font-mono" data-testid="kpi-total-spend">{formatCurrency(totalSpend)}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3">
             <div className="flex items-center gap-2 mb-1">
               <Clock className="w-4 h-4 text-amber-500" />
-              <span className="text-[10px] font-medium text-slate-500 uppercase">Open / Unpaid</span>
+              <span className="text-[10px] font-medium text-muted-foreground uppercase">Open / Unpaid</span>
             </div>
-            <p className={`text-xl font-bold font-mono ${totalOpen > 0 ? "text-amber-600" : "text-slate-800"}`} data-testid="kpi-open-amount">
+            <p className={`text-xl font-bold font-mono ${totalOpen > 0 ? "text-amber-600" : "text-foreground"}`} data-testid="kpi-open-amount">
               {formatCurrency(totalOpen)}
             </p>
           </CardContent>
@@ -131,12 +131,12 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
           <CardContent className="p-3">
             <div className="flex items-center gap-2 mb-1">
               <TrendingUp className="w-4 h-4 text-purple-500" />
-              <span className="text-[10px] font-medium text-slate-500 uppercase">Biggest Supplier</span>
+              <span className="text-[10px] font-medium text-muted-foreground uppercase">Biggest Supplier</span>
             </div>
-            <p className="text-sm font-bold text-slate-800 truncate" data-testid="kpi-biggest-supplier">
+            <p className="text-sm font-bold text-foreground truncate" data-testid="kpi-biggest-supplier">
               {counterparties[0]?.counterpartyName || "—"}
             </p>
-            <p className="text-xs text-slate-500 font-mono">{formatCurrency(counterparties[0]?.totalSpendExVat || 0)}</p>
+            <p className="text-xs text-muted-foreground font-mono">{formatCurrency(counterparties[0]?.totalSpendExVat || 0)}</p>
           </CardContent>
         </Card>
       </div>
@@ -181,7 +181,7 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
-                      <span className="font-medium text-sm text-slate-800 truncate">{cp.counterpartyName}</span>
+                      <span className="font-medium text-sm text-foreground truncate">{cp.counterpartyName}</span>
                       <Badge
                         variant={cp.counterpartyType === "INSTALLER" ? "default" : cp.counterpartyType === "SUPPLIER" ? "secondary" : "outline"}
                         className="text-[9px] shrink-0"
@@ -190,9 +190,9 @@ export function ProjectSubcontractorsTab({ projectName }: ProjectSubcontractorsT
                       </Badge>
                       {cp.isCore && <Badge className="text-[9px] bg-blue-50 text-blue-600 shrink-0">Core</Badge>}
                     </div>
-                    <div className="flex items-center gap-4 text-xs text-slate-500">
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
                       <span>{cp.invoiceCount} invoice{cp.invoiceCount !== 1 ? "s" : ""}</span>
-                      <span className="font-mono font-medium text-slate-700">{formatCurrency(cp.totalSpendExVat)}</span>
+                      <span className="font-mono font-medium text-foreground">{formatCurrency(cp.totalSpendExVat)}</span>
                       {cp.openAmount > 0 && (
                         <span className="text-amber-600 font-mono">{formatCurrency(cp.openAmount)} open</span>
                       )}
@@ -248,11 +248,11 @@ function ExpandedDetail({ counterpartyName }: { counterpartyName: string }) {
   }
 
   return (
-    <div className="px-4 pb-3 border-t border-slate-100">
+    <div className="px-4 pb-3 border-t border-border">
       <div className="overflow-x-auto mt-2">
         <table className="w-full text-[11px]">
           <thead>
-            <tr className="text-slate-400 border-b border-slate-100">
+            <tr className="text-slate-400 border-b border-border">
               <th className="text-left py-1 px-1 font-medium">Category</th>
               <th className="text-left py-1 px-1 font-medium">Invoice #</th>
               <th className="text-right py-1 px-1 font-medium">Amount</th>
@@ -265,12 +265,12 @@ function ExpandedDetail({ counterpartyName }: { counterpartyName: string }) {
             {lines.map((l: any, idx: number) => {
               const isFuture = l.paidDate && new Date(l.paidDate) > new Date();
               return (
-                <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50">
-                  <td className="py-1.5 px-1 text-slate-600">{l.costCategory || "—"}</td>
-                  <td className="py-1.5 px-1 font-mono text-slate-600">{l.invoiceNumber || "—"}</td>
+                <tr key={idx} className="border-b border-slate-50 hover:bg-muted/50">
+                  <td className="py-1.5 px-1 text-muted-foreground">{l.costCategory || "—"}</td>
+                  <td className="py-1.5 px-1 font-mono text-muted-foreground">{l.invoiceNumber || "—"}</td>
                   <td className="py-1.5 px-1 text-right font-mono font-medium">{formatCurrency(parseFloat(l.amountExVat || "0"))}</td>
-                  <td className="py-1.5 px-1 text-slate-500">{formatDate(l.invoiceDate)}</td>
-                  <td className={`py-1.5 px-1 ${isFuture ? "text-red-500 font-medium" : "text-slate-500"}`}>
+                  <td className="py-1.5 px-1 text-muted-foreground">{formatDate(l.invoiceDate)}</td>
+                  <td className={`py-1.5 px-1 ${isFuture ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
                     {formatDate(l.paidDate)}
                     {isFuture && <span className="text-[8px] ml-0.5">(future)</span>}
                   </td>
@@ -281,7 +281,7 @@ function ExpandedDetail({ counterpartyName }: { counterpartyName: string }) {
                         l.status === "PAID" ? "bg-green-100 text-green-700 border-green-200"
                         : l.status === "INVOICED" ? "bg-amber-50 text-amber-700 border-amber-200"
                         : l.status === "APPROVED" ? "bg-blue-50 text-blue-700 border-blue-200"
-                        : "text-slate-500"
+                        : "text-muted-foreground"
                       }`}
                     >
                       {l.status}

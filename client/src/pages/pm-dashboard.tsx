@@ -356,7 +356,7 @@ function OverviewTab({ data, navigate }: { data: PMDashboardData; navigate: (pat
                     <Badge className="text-[9px] bg-red-100 text-red-800 hover:bg-red-100">F:{project.financials.cosFlagged}</Badge>
                   )}
                   {project.financials.cosPlanned > 0 && (
-                    <Badge className="text-[9px] bg-gray-100 text-gray-600 hover:bg-gray-100">P:{project.financials.cosPlanned}</Badge>
+                    <Badge className="text-[9px] bg-muted text-muted-foreground hover:bg-muted">P:{project.financials.cosPlanned}</Badge>
                   )}
                 </div>
 

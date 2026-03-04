@@ -114,13 +114,13 @@ const ROW_DEFS: {
   projectsKey?: "cosProjects" | "realisedProjects" | "unrealisedProjects";
 }[] = [
   { key: "totalCOS", label: "COS (Finance)", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "cosProjects" },
-  { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", editable: false, colorClass: "text-slate-900 font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
+  { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
   { key: "unrealisedCOS", label: "Unrealised COS", dataKey: "unrealisedCOS", editable: false, colorClass: "text-red-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
   { key: "budget", label: "Costed", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdCOS", label: "YTD COS", dataKey: "ytdCOS", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
-  { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-slate-900 font-bold", group: "ytd" },
+  { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdUnrealised", label: "YTD Unrealised", dataKey: "ytdUnrealised", editable: false, colorClass: "text-red-600", group: "ytd" },
   { key: "ytdBudget", label: "YTD Costed", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", editable: false, colorClass: "", group: "ytd", colorCoded: true },
@@ -182,9 +182,9 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
 
   const stateBadgeColor = (state: string) => {
     switch (state) {
-      case 'Paid': return 'bg-slate-200 text-slate-900 ring-1 ring-slate-400 font-bold';
+      case 'Paid': return 'bg-slate-200 text-foreground ring-1 ring-slate-400 font-bold';
       case 'Invoiced':
-      case 'Realised': return 'bg-slate-100 text-slate-800 ring-1 ring-slate-300';
+      case 'Realised': return 'bg-muted text-foreground ring-1 ring-slate-300';
       case 'Committed': return 'bg-red-50 text-red-600 ring-1 ring-red-200';
       default: return 'bg-red-100 text-red-700 ring-1 ring-red-200';
     }
@@ -201,20 +201,20 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
               COS Line Item Detail · {data?.lineCount ?? 0} items · {formatRand(data?.totalAmount ?? 0)}
             </p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors" data-testid="button-close-drawer">
+          <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors" data-testid="button-close-drawer">
             <X className="h-5 w-5 text-muted-foreground" />
           </button>
         </div>
 
         <div className="px-3 sm:px-6 py-3 sm:py-4 border-b bg-gradient-to-b from-slate-50/50 to-transparent">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-slate-300/60 px-4 py-3">
+            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-border/60 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-slate-600 uppercase tracking-wider">Realised (Paid)</p>
-                  <p className="font-mono font-black text-slate-900 text-lg mt-0.5" data-testid="text-realised-total">{formatRand(data?.realisedTotal ?? 0)}</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Realised (Paid)</p>
+                  <p className="font-mono font-black text-foreground text-lg mt-0.5" data-testid="text-realised-total">{formatRand(data?.realisedTotal ?? 0)}</p>
                 </div>
-                <Badge variant="secondary" className="bg-slate-200/60 text-slate-700 text-xs font-semibold">{data?.realisedCount ?? 0}</Badge>
+                <Badge variant="secondary" className="bg-slate-200/60 text-foreground text-xs font-semibold">{data?.realisedCount ?? 0}</Badge>
               </div>
               <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-slate-200/20" />
             </div>
@@ -228,13 +228,13 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
               </div>
               <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-red-200/20" />
             </div>
-            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-slate-200/60 px-4 py-3">
+            <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-border/60 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Total</p>
-                  <p className="font-mono font-bold text-slate-800 text-lg mt-0.5">{formatRand(data?.totalAmount ?? 0)}</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total</p>
+                  <p className="font-mono font-bold text-foreground text-lg mt-0.5">{formatRand(data?.totalAmount ?? 0)}</p>
                 </div>
-                <Badge variant="secondary" className="bg-slate-200/60 text-slate-600 text-xs font-semibold">{data?.lineCount ?? 0}</Badge>
+                <Badge variant="secondary" className="bg-slate-200/60 text-muted-foreground text-xs font-semibold">{data?.lineCount ?? 0}</Badge>
               </div>
               <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-slate-200/20" />
             </div>
@@ -248,14 +248,14 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
               placeholder="Search project, category, invoice, PO, supplier…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9 bg-slate-50/50 border-slate-200 focus:bg-white transition-colors"
+              className="pl-9 h-9 bg-muted/50 border-border focus:bg-card transition-colors"
               data-testid="input-search-detail"
             />
           </div>
           <select
             value={stateFilter}
             onChange={(e) => setStateFilter(e.target.value as any)}
-            className="h-9 px-3 text-sm border border-slate-200 rounded-lg bg-slate-50/50 hover:bg-white transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300"
+            className="h-9 px-3 text-sm border border-border rounded-lg bg-muted/50 hover:bg-card transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300"
             data-testid="select-state-filter"
           >
             <option value="all">All States</option>
@@ -265,7 +265,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
           <select
             value={projectFilter}
             onChange={(e) => setProjectFilter(e.target.value)}
-            className="h-9 px-3 text-sm border border-slate-200 rounded-lg bg-slate-50/50 hover:bg-white transition-colors cursor-pointer max-w-[220px] focus:outline-none focus:ring-2 focus:ring-slate-300"
+            className="h-9 px-3 text-sm border border-border rounded-lg bg-muted/50 hover:bg-card transition-colors cursor-pointer max-w-[220px] focus:outline-none focus:ring-2 focus:ring-slate-300"
             data-testid="select-project-filter"
           >
             <option value="all">All Projects</option>
@@ -275,20 +275,20 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
           </select>
         </div>
 
-        <div className="px-6 py-2.5 border-b bg-slate-50/80 flex items-center justify-between text-sm">
-          <span className="font-medium text-slate-600">
-            <span className="text-slate-900 font-semibold">{filtered.length}</span> items
+        <div className="px-6 py-2.5 border-b bg-muted/80 flex items-center justify-between text-sm">
+          <span className="font-medium text-muted-foreground">
+            <span className="text-foreground font-semibold">{filtered.length}</span> items
           </span>
           <div className="flex items-center gap-5">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-slate-800" />
-              <span className="text-slate-900 font-mono text-xs font-bold">{formatRand(filteredRealised)}</span>
+              <span className="text-foreground font-mono text-xs font-bold">{formatRand(filteredRealised)}</span>
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-red-500" />
               <span className="text-red-600 font-mono text-xs font-medium">{formatRand(filteredUnrealised)}</span>
             </span>
-            <span className="font-mono font-bold text-slate-800">{formatRand(filteredTotal)}</span>
+            <span className="font-mono font-bold text-foreground">{formatRand(filteredTotal)}</span>
           </div>
         </div>
 
@@ -305,31 +305,31 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
             </div>
           ) : (
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-white/95 backdrop-blur-md z-10 border-b">
+              <thead className="sticky top-0 bg-card/95 backdrop-blur-md z-10 border-b">
                 <tr>
-                  <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px] w-8"></th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Project</th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Category</th>
-                  <th className="text-left px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Line Item</th>
-                  <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Status</th>
-                  <th className="text-center px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Realised</th>
-                  <th className="text-right px-3 py-2.5 font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Amount</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px] w-8"></th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Project</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Category</th>
+                  <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Line Item</th>
+                  <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Status</th>
+                  <th className="text-center px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Realised</th>
+                  <th className="text-right px-3 py-2.5 font-semibold text-muted-foreground uppercase tracking-wider text-[10px]">Amount</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.slice(0, 500).map((item, i) => (
                   <React.Fragment key={item.id}>
                     <tr
-                      className={`group cursor-pointer transition-colors ${expandedId === item.id ? 'bg-blue-50/60' : 'hover:bg-slate-50/80'}`}
+                      className={`group cursor-pointer transition-colors ${expandedId === item.id ? 'bg-blue-50/60' : 'hover:bg-muted/80'}`}
                       onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
                       data-testid={`row-detail-${i}`}
                     >
-                      <td className="px-3 py-2.5 text-slate-400 group-hover:text-slate-600 transition-colors">
+                      <td className="px-3 py-2.5 text-slate-400 group-hover:text-muted-foreground transition-colors">
                         {expandedId === item.id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                       </td>
-                      <td className="px-3 py-2.5 max-w-[150px] truncate font-medium text-slate-800" title={item.projectName}>{item.projectName}</td>
-                      <td className="px-3 py-2.5 text-slate-500 max-w-[110px] truncate" title={item.category || ""}>{item.category || "—"}</td>
-                      <td className="px-3 py-2.5 max-w-[200px] truncate text-slate-700" title={item.lineItem || ""}>{item.lineItem || "—"}</td>
+                      <td className="px-3 py-2.5 max-w-[150px] truncate font-medium text-foreground" title={item.projectName}>{item.projectName}</td>
+                      <td className="px-3 py-2.5 text-muted-foreground max-w-[110px] truncate" title={item.category || ""}>{item.category || "—"}</td>
+                      <td className="px-3 py-2.5 max-w-[200px] truncate text-foreground" title={item.lineItem || ""}>{item.lineItem || "—"}</td>
                       <td className="px-3 py-2.5 text-center">
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${stateBadgeColor(item.cosState)}`}>
                           {item.cosState}
@@ -339,8 +339,8 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                         <button
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition-colors ${
                             item.isRealised
-                              ? 'bg-slate-100 text-slate-900 ring-1 ring-slate-300 font-bold hover:bg-red-50 hover:text-red-600 hover:ring-red-200'
-                              : 'bg-red-50 text-red-600 ring-1 ring-red-200 hover:bg-slate-100 hover:text-slate-900 hover:ring-slate-300'
+                              ? 'bg-muted text-foreground ring-1 ring-slate-300 font-bold hover:bg-red-50 hover:text-red-600 hover:ring-red-200'
+                              : 'bg-red-50 text-red-600 ring-1 ring-red-200 hover:bg-muted hover:text-foreground hover:ring-slate-300'
                           }`}
                           title={item.isRealised ? 'Click to mark as Not Realised' : 'Click to mark as Realised'}
                           disabled={toggleRealisedMutation.isPending}
@@ -352,7 +352,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                             : 'Not Realised'}
                         </button>
                       </td>
-                      <td className={`px-3 py-2.5 text-right font-mono font-semibold ${item.isRealised ? 'text-slate-900' : 'text-red-600'}`}>{formatRand(item.amount)}</td>
+                      <td className={`px-3 py-2.5 text-right font-mono font-semibold ${item.isRealised ? 'text-foreground' : 'text-red-600'}`}>{formatRand(item.amount)}</td>
                     </tr>
                     {expandedId === item.id && (
                       <tr className="bg-gradient-to-r from-blue-50/40 to-slate-50/40">
@@ -360,11 +360,11 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-xs">
                             <div>
                               <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Invoice #</p>
-                              <p className="font-medium text-slate-700">{item.invoiceNumber || "—"}</p>
+                              <p className="font-medium text-foreground">{item.invoiceNumber || "—"}</p>
                             </div>
                             <div>
                               <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">PO #</p>
-                              <p className="font-medium text-slate-700">{item.poNumber || "—"}</p>
+                              <p className="font-medium text-foreground">{item.poNumber || "—"}</p>
                             </div>
                             <div>
                               <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Invoice Date</p>
@@ -378,7 +378,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                             </div>
                             <div>
                               <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Payment Date</p>
-                              <p className="font-medium text-slate-700 flex items-center gap-1.5">
+                              <p className="font-medium text-foreground flex items-center gap-1.5">
                                 {item.paymentDate || "—"}
                                 {item.paymentDate && (
                                   <span className={`inline-block w-2 h-2 rounded-full ${item.paymentDateConfirmed ? 'bg-green-500 ring-2 ring-green-200' : 'bg-red-400 ring-2 ring-red-200'}`}
@@ -388,11 +388,11 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                             </div>
                             <div>
                               <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Supplier</p>
-                              <p className="font-medium text-slate-700">{item.supplier || "—"}</p>
+                              <p className="font-medium text-foreground">{item.supplier || "—"}</p>
                             </div>
                             <div>
                               <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Realised Month</p>
-                              <p className="font-medium text-slate-700">{item.realisedMonth || "Not realised"}</p>
+                              <p className="font-medium text-foreground">{item.realisedMonth || "Not realised"}</p>
                             </div>
                             <div>
                               <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">COS State</p>
@@ -402,7 +402,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                             </div>
                             <div>
                               <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wider mb-0.5">Amount</p>
-                              <p className="font-mono font-bold text-slate-900">{formatRand(item.amount)}</p>
+                              <p className="font-mono font-bold text-foreground">{formatRand(item.amount)}</p>
                             </div>
                           </div>
                         </td>
@@ -542,8 +542,8 @@ export default function CosTracker() {
   }
 
   const kpiCards = [
-    { id: "ytd-total-cos", label: "YTD COS (Finance)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-slate-100", iconColor: "text-slate-600", valueColor: "text-slate-900", borderColor: "" },
-    { id: "ytd-realised", label: "YTD Realised (Paid)", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-slate-100", iconColor: "text-slate-800", valueColor: "text-slate-900 font-black", borderColor: "border-slate-300" },
+    { id: "ytd-total-cos", label: "YTD COS (Finance)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "" },
+    { id: "ytd-realised", label: "YTD Realised (Paid)", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border" },
     { id: "ytd-unrealised", label: "YTD Unrealised (Not Paid)", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200" },
     { id: "ytd-budget", label: "YTD Costed", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "" },
     {
@@ -566,13 +566,13 @@ export default function CosTracker() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50">
-      <div className="bg-white border-b border-slate-200/80 px-3 sm:px-6 py-4 sm:py-6 shadow-sm">
+      <div className="bg-card border-b border-border/80 px-3 sm:px-6 py-4 sm:py-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-[1800px] mx-auto">
           <div>
-            <h2 className="text-xl sm:text-3xl font-heading font-bold tracking-tight text-slate-900" data-testid="text-page-title">
+            <h2 className="text-xl sm:text-3xl font-heading font-bold tracking-tight text-foreground" data-testid="text-page-title">
               Cost of Sales Tracker FY26
             </h2>
-            <p className="text-slate-500 mt-1 sm:mt-1.5 text-xs sm:text-sm" data-testid="text-page-subtitle">
+            <p className="text-muted-foreground mt-1 sm:mt-1.5 text-xs sm:text-sm" data-testid="text-page-subtitle">
               Monthly COS tracking with planned vs costed analysis. Click any month cell to see contributing line items.
             </p>
           </div>
@@ -588,7 +588,7 @@ export default function CosTracker() {
             <div>
               <p className="font-semibold text-amber-900 text-sm">COS Realisation Tracker</p>
               <p className="text-sm text-amber-700/90 mt-0.5 leading-relaxed">
-                COS is "Realised" when the matching expenditure line has an Invoice Number AND the Invoice Raised Date has <strong className="text-slate-900">black font colour</strong> (paid). <strong className="text-red-600">Red font</strong> = not paid. Data sourced from Finance - COS sheets and Expenditure Breakdown.
+                COS is "Realised" when the matching expenditure line has an Invoice Number AND the Invoice Raised Date has <strong className="text-foreground">black font colour</strong> (paid). <strong className="text-red-600">Red font</strong> = not paid. Data sourced from Finance - COS sheets and Expenditure Breakdown.
               </p>
             </div>
           </CardContent>
@@ -604,7 +604,7 @@ export default function CosTracker() {
                     <kpi.icon className={`h-5 w-5 ${kpi.iconColor}`} />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs font-medium text-slate-500 truncate">{kpi.label}</p>
+                    <p className="text-xs font-medium text-muted-foreground truncate">{kpi.label}</p>
                     <p className={`text-xl font-bold font-mono mt-0.5 ${kpi.valueColor}`} data-testid={`text-${kpi.id}-value`}>
                       {kpi.value}
                     </p>
@@ -682,12 +682,12 @@ export default function CosTracker() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm" data-testid="table-cos-grid">
                 <thead>
-                  <tr className="border-b bg-slate-50/80">
-                    <th className="sticky left-0 z-10 bg-slate-50/95 backdrop-blur-sm px-5 py-3 text-left font-semibold text-slate-500 uppercase tracking-wider text-[11px] min-w-[200px] border-r border-slate-100">
+                  <tr className="border-b bg-muted/80">
+                    <th className="sticky left-0 z-10 bg-muted/95 backdrop-blur-sm px-5 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-[11px] min-w-[200px] border-r border-border">
                       Metric
                     </th>
                     {months.map((m) => (
-                      <th key={m.monthKey} className="px-4 py-3 text-right font-semibold text-slate-500 uppercase tracking-wider text-[11px] whitespace-nowrap min-w-[110px]">
+                      <th key={m.monthKey} className="px-4 py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[11px] whitespace-nowrap min-w-[110px]">
                         {m.monthLabel}
                       </th>
                     ))}
@@ -703,14 +703,14 @@ export default function CosTracker() {
                       <React.Fragment key={row.key}>
                         {isFirstYtd && (
                           <tr>
-                            <td colSpan={months.length + 1} className="bg-slate-100/60 h-px" />
+                            <td colSpan={months.length + 1} className="bg-muted/60 h-px" />
                           </tr>
                         )}
                         <tr
-                          className={`border-b border-slate-100 transition-colors ${isYtd ? "bg-slate-50/40" : "bg-white"} hover:bg-slate-100/40`}
+                          className={`border-b border-border transition-colors ${isYtd ? "bg-muted/40" : "bg-card"} hover:bg-muted/40`}
                           data-testid={`row-${row.key}`}
                         >
-                          <td className={`sticky left-0 z-10 px-5 py-2.5 font-medium text-sm border-r border-slate-100 ${isYtd ? "bg-slate-50/95" : "bg-white/95"} backdrop-blur-sm`}>
+                          <td className={`sticky left-0 z-10 px-5 py-2.5 font-medium text-sm border-r border-border ${isYtd ? "bg-muted/95" : "bg-card/95"} backdrop-blur-sm`}>
                             {row.expandable ? (
                               <button
                                 type="button"
@@ -724,7 +724,7 @@ export default function CosTracker() {
                                 <span>{row.label}</span>
                               </button>
                             ) : (
-                              <span className={isYtd ? "pl-5.5 text-slate-600" : ""}>{row.label}</span>
+                              <span className={isYtd ? "pl-5.5 text-muted-foreground" : ""}>{row.label}</span>
                             )}
                           </td>
                           {months.map((m) => {
@@ -784,7 +784,7 @@ export default function CosTracker() {
                             className="border-b border-slate-50 bg-blue-50/20 hover:bg-blue-50/50 transition-colors"
                             data-testid={`row-detail-${row.key}-${pName}`}
                           >
-                            <td className="sticky left-0 z-10 bg-blue-50/30 backdrop-blur-sm pl-11 pr-4 py-1.5 text-xs text-slate-500 truncate max-w-[200px] border-r border-slate-100" title={pName}>
+                            <td className="sticky left-0 z-10 bg-blue-50/30 backdrop-blur-sm pl-11 pr-4 py-1.5 text-xs text-muted-foreground truncate max-w-[200px] border-r border-border" title={pName}>
                               <span className="cursor-pointer hover:text-blue-600 hover:underline decoration-dashed underline-offset-2 transition-colors">
                                 {pName}
                               </span>

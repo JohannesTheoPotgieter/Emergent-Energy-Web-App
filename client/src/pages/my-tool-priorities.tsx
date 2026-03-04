@@ -86,11 +86,11 @@ interface CompanyPriority {
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   active: { label: "Active", color: "text-green-700 dark:text-green-400", bg: "bg-green-100 dark:bg-green-950/40" },
-  not_started: { label: "Not started", color: "text-slate-600 dark:text-slate-400", bg: "bg-slate-100 dark:bg-slate-800" },
+  not_started: { label: "Not started", color: "text-muted-foreground dark:text-slate-400", bg: "bg-muted dark:bg-slate-800" },
   in_progress: { label: "In progress", color: "text-amber-700 dark:text-amber-400", bg: "bg-amber-100 dark:bg-amber-950/40" },
   complete: { label: "Complete", color: "text-green-700 dark:text-green-400", bg: "bg-green-100 dark:bg-green-950/40" },
   monitoring: { label: "Monitoring", color: "text-blue-700 dark:text-blue-400", bg: "bg-blue-100 dark:bg-blue-950/40" },
-  closed: { label: "Closed", color: "text-gray-500 dark:text-gray-400", bg: "bg-gray-100 dark:bg-gray-800" },
+  closed: { label: "Closed", color: "text-muted-foreground dark:text-gray-400", bg: "bg-muted dark:bg-gray-800" },
 };
 
 const departmentColors: Record<string, string> = {
@@ -102,7 +102,7 @@ const departmentColors: Record<string, string> = {
   Finance: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-400",
 };
 
-const defaultDeptColor = "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300";
+const defaultDeptColor = "bg-muted text-foreground dark:bg-slate-800 dark:text-slate-300";
 
 interface PendingLink {
   linkType: string;

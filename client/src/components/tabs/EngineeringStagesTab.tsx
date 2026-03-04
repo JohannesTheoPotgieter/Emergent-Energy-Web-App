@@ -41,7 +41,7 @@ function engFetch(url: string, options?: RequestInit) {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
-  not_started: { label: "Not Started", color: "bg-gray-100 text-gray-700", icon: Circle },
+  not_started: { label: "Not Started", color: "bg-muted text-foreground", icon: Circle },
   in_progress: { label: "In Progress", color: "bg-blue-100 text-blue-700", icon: Clock },
   blocked: { label: "Blocked", color: "bg-red-100 text-red-700", icon: Lock },
   ready_for_review: { label: "Ready for Review", color: "bg-amber-100 text-amber-700", icon: AlertTriangle },
@@ -49,7 +49,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }>
 };
 
 const TASK_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  pending: { label: "Pending", color: "bg-gray-100 text-gray-600" },
+  pending: { label: "Pending", color: "bg-muted text-muted-foreground" },
   in_progress: { label: "In Progress", color: "bg-blue-100 text-blue-600" },
   complete: { label: "Complete", color: "bg-green-100 text-green-600" },
   skipped: { label: "Skipped", color: "bg-yellow-100 text-yellow-600" },
@@ -613,10 +613,10 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
                   type="checkbox"
                   checked={task.hasDeliverable}
                   onChange={toggleHasDeliverable}
-                  className="h-3.5 w-3.5 rounded border-gray-300"
+                  className="h-3.5 w-3.5 rounded border-border"
                   data-testid={`toggle-deliverable-${task.id}`}
                 />
-                <span className="text-[11px] font-medium text-slate-700">Has Deliverable</span>
+                <span className="text-[11px] font-medium text-foreground">Has Deliverable</span>
               </label>
               {task.hasDeliverable && (
                 <span className="text-[10px] text-amber-600">
@@ -626,9 +626,9 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
             </div>
 
             {task.hasDeliverable && (
-              <div className="border rounded-lg p-2 bg-slate-50/50 space-y-2">
+              <div className="border rounded-lg p-2 bg-muted/50 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-slate-700 flex items-center gap-1">
+                  <span className="text-[11px] font-semibold text-foreground flex items-center gap-1">
                     <FileText className="h-3 w-3" /> Task Deliverables
                   </span>
                   <Button
@@ -646,7 +646,7 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
                 )}
 
                 {taskDeliverables.map((d: any) => (
-                  <div key={d.id} className="border rounded p-2 bg-white space-y-1">
+                  <div key={d.id} className="border rounded p-2 bg-card space-y-1">
                     <div className="flex items-center gap-2 text-xs">
                       <FileText className="h-3 w-3 text-blue-500 shrink-0" />
                       <span className="flex-1 truncate font-medium">{d.fileName}</span>
@@ -717,7 +717,7 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
           </DialogHeader>
           <div className="space-y-4 py-2">
             {pendingFile && (
-              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border">
+              <div className="flex items-center gap-3 p-3 bg-muted rounded-lg border">
                 <FileText className="h-8 w-8 text-blue-500 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{pendingFile.name}</p>
@@ -957,7 +957,7 @@ function DeliverablesSection({ stageId, projectId, templates, uploaded }: {
           </DialogHeader>
           <div className="space-y-4 py-2">
             {pendingFile && (
-              <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border">
+              <div className="flex items-center gap-3 p-3 bg-muted rounded-lg border">
                 <FileText className="h-8 w-8 text-blue-500 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{pendingFile.name}</p>
@@ -1027,7 +1027,7 @@ function DeliverablesSection({ stageId, projectId, templates, uploaded }: {
                   <div className="mt-1.5 space-y-1">
                     {savedPaths.map((p, i) => (
                       <div key={i} className="flex items-center gap-2 py-0.5">
-                        <span className="flex-1 truncate font-mono text-slate-600">{p}</span>
+                        <span className="flex-1 truncate font-mono text-muted-foreground">{p}</span>
                         <button
                           className="text-red-400 hover:text-red-600 shrink-0"
                           onClick={() => handleRemoveSavedPath(p)}

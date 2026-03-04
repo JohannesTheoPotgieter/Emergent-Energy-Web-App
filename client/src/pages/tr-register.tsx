@@ -93,7 +93,7 @@ const RAG_STYLES: Record<string, string> = {
 
 const STATUS_STYLES: Record<string, string> = {
   Active: "bg-blue-100 text-blue-700",
-  Completed: "bg-gray-100 text-gray-700",
+  Completed: "bg-muted text-foreground",
 };
 
 function formatDate(d: string | null): string {
@@ -574,7 +574,7 @@ export default function TrRegisterPage() {
                       <TableCell className="text-xs" data-testid={`text-dept-${item.id}`}>{item.department}</TableCell>
                       <TableCell className="text-xs max-w-[200px] truncate" data-testid={`text-desc-${item.id}`}>{item.actionDescription}</TableCell>
                       <TableCell>
-                        <Badge className={`text-[10px] ${RAG_STYLES[item.ragStatus] || "bg-gray-100 text-gray-700"}`} data-testid={`badge-rag-${item.id}`}>
+                        <Badge className={`text-[10px] ${RAG_STYLES[item.ragStatus] || "bg-muted text-foreground"}`} data-testid={`badge-rag-${item.id}`}>
                           {item.ragStatus}
                         </Badge>
                       </TableCell>
@@ -596,7 +596,7 @@ export default function TrRegisterPage() {
                         {formatDate(item.dueDate)}
                       </TableCell>
                       <TableCell>
-                        <Badge className={`text-[10px] ${STATUS_STYLES[item.status] || "bg-gray-100 text-gray-700"}`} data-testid={`badge-status-${item.id}`}>
+                        <Badge className={`text-[10px] ${STATUS_STYLES[item.status] || "bg-muted text-foreground"}`} data-testid={`badge-status-${item.id}`}>
                           {item.status}
                         </Badge>
                       </TableCell>
@@ -711,7 +711,7 @@ export default function TrRegisterPage() {
               className={`min-h-[200px] rounded-lg p-2 transition-colors ${dragOverColumn === "Completed" ? "bg-green-50 ring-2 ring-green-300" : ""}`}
               data-testid="board-column-completed"
             >
-              <h3 className="text-sm font-semibold mb-2 text-gray-500" data-testid="text-board-completed-heading">
+              <h3 className="text-sm font-semibold mb-2 text-muted-foreground" data-testid="text-board-completed-heading">
                 Completed ({boardCompletedItems.length})
               </h3>
               <div className="space-y-2">
@@ -979,7 +979,7 @@ export default function TrRegisterPage() {
                       <Card key={s.projectId} className="p-2" data-testid={`suggestion-card-${s.projectId}`}>
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-medium" data-testid={`suggestion-name-${s.projectId}`}>{s.projectName}</span>
-                          <Badge className={`text-[10px] ${s.score >= 50 ? "bg-emerald-100 text-emerald-700" : s.score >= 20 ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-700"}`} data-testid={`suggestion-score-${s.projectId}`}>
+                          <Badge className={`text-[10px] ${s.score >= 50 ? "bg-emerald-100 text-emerald-700" : s.score >= 20 ? "bg-amber-100 text-amber-700" : "bg-muted text-foreground"}`} data-testid={`suggestion-score-${s.projectId}`}>
                             {s.score}
                           </Badge>
                         </div>

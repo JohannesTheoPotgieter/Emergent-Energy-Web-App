@@ -42,7 +42,7 @@ const EVENT_TYPE_LABELS: Record<string, { label: string; icon: typeof Bell; colo
 };
 
 function getEventTypeInfo(eventType: string) {
-  return EVENT_TYPE_LABELS[eventType] || { label: eventType, icon: Bell, color: "text-gray-600 bg-gray-50" };
+  return EVENT_TYPE_LABELS[eventType] || { label: eventType, icon: Bell, color: "text-muted-foreground bg-muted" };
 }
 
 const PAGE_SIZE = 30;
@@ -189,8 +189,8 @@ export default function NotificationCenterPage() {
     <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-50" data-testid="text-notification-center-title">Notification Center</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+          <h1 className="text-2xl font-bold text-foreground dark:text-gray-50" data-testid="text-notification-center-title">Notification Center</h1>
+          <p className="text-sm text-muted-foreground dark:text-gray-400 mt-0.5">
             {unreadCount > 0 ? <span className="text-primary font-medium">{unreadCount} unread</span> : "All caught up"} · {total} total
           </p>
         </div>
@@ -216,18 +216,18 @@ export default function NotificationCenterPage() {
           <input
             type="text"
             placeholder="Search notifications..."
-            className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300"
+            className="w-full pl-8 pr-3 py-1.5 text-sm border border-border dark:border-gray-700 rounded-md bg-card dark:bg-gray-900 text-foreground dark:text-gray-300"
             value={searchQuery}
             onChange={e => { setSearchQuery(e.target.value); searchTimeout(e.target.value); }}
             data-testid="input-notification-search"
           />
         </div>
-        <div className="flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 p-0.5">
+        <div className="flex items-center gap-1 rounded-md border border-border dark:border-gray-700 p-0.5">
           {(["all", "unread", "action_required", "read"] as const).map(status => (
             <button
               key={status}
               onClick={() => { setFilterStatus(status); setPage(0); }}
-              className={`px-2.5 py-1 text-xs rounded transition-colors ${filterStatus === status ? 'bg-primary text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+              className={`px-2.5 py-1 text-xs rounded transition-colors ${filterStatus === status ? 'bg-primary text-white' : 'text-muted-foreground dark:text-gray-400 hover:bg-muted dark:hover:bg-gray-800'}`}
               data-testid={`filter-status-${status}`}
             >
               {status === "all" ? "All" : status === "unread" ? "Unread" : status === "action_required" ? "Action Required" : "Read"}
@@ -235,7 +235,7 @@ export default function NotificationCenterPage() {
           ))}
         </div>
         <select
-          className="text-xs border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300"
+          className="text-xs border border-border dark:border-gray-700 rounded px-2 py-1.5 bg-card dark:bg-gray-900 text-foreground dark:text-gray-300"
           value={filterType}
           onChange={e => { setFilterType(e.target.value); setPage(0); }}
           data-testid="select-notification-type"
@@ -292,7 +292,7 @@ export default function NotificationCenterPage() {
                     key={n.id}
                     className={`p-4 cursor-pointer transition-colors ${
                       !n.isRead ? "bg-primary/[0.03] dark:bg-primary/[0.06]" : ""
-                    } ${isConfirmation && !isConfirmed ? "bg-amber-50/60 dark:bg-amber-950/20" : ""} hover:bg-gray-50 dark:hover:bg-gray-800/40`}
+                    } ${isConfirmation && !isConfirmed ? "bg-amber-50/60 dark:bg-amber-950/20" : ""} hover:bg-muted dark:hover:bg-gray-800/40`}
                     onClick={() => {
                       if (!n.isRead && !isConfirmation) markReadMutation.mutate([n.id]);
                       if (isConfirmation) setExpandedId(isExpanded ? null : n.id);
@@ -305,13 +305,13 @@ export default function NotificationCenterPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
-                          <p className={`text-sm font-medium truncate ${!n.isRead ? "text-gray-900 dark:text-gray-100" : "text-gray-600 dark:text-gray-400"}`}>
+                          <p className={`text-sm font-medium truncate ${!n.isRead ? "text-foreground dark:text-gray-100" : "text-muted-foreground dark:text-gray-400"}`}>
                             {n.title}
                           </p>
                           {!n.isRead && <div className="w-2 h-2 rounded-full bg-primary shrink-0" />}
                         </div>
                         {n.body && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{n.body}</p>
+                          <p className="text-xs text-muted-foreground dark:text-gray-400 mt-0.5 line-clamp-2">{n.body}</p>
                         )}
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                           <Badge variant="outline" className={`text-[10px] h-5 px-1.5 ${etInfo.color} border-none`}>
@@ -326,13 +326,13 @@ export default function NotificationCenterPage() {
                         </div>
 
                         {isConfirmation && isExpanded && details && (
-                          <div className="mt-3 p-2.5 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 text-[11px] space-y-1">
-                            <p className="font-medium text-slate-600 dark:text-slate-300">Change Details:</p>
+                          <div className="mt-3 p-2.5 bg-muted dark:bg-slate-900/50 rounded-lg border border-border dark:border-slate-800 text-[11px] space-y-1">
+                            <p className="font-medium text-muted-foreground dark:text-slate-300">Change Details:</p>
                             <p><span className="text-slate-400">Project:</span> {details.projectName}</p>
                             <p><span className="text-slate-400">Changed by:</span> {details.changedBy}</p>
                             <p><span className="text-slate-400">Time:</span> {new Date(details.timestamp).toLocaleString()}</p>
                             {details.changes?.map((c: any, i: number) => (
-                              <div key={i} className="pl-2 border-l-2 border-slate-200 dark:border-slate-700 mt-1">
+                              <div key={i} className="pl-2 border-l-2 border-border dark:border-slate-700 mt-1">
                                 {c.field && <p><span className="text-slate-400">Field:</span> {c.field}</p>}
                                 {c.newValue && <p><span className="text-slate-400">New value:</span> {c.newValue}</p>}
                                 {c.operation && <p><span className="text-slate-400">Operation:</span> {c.operation}</p>}
@@ -383,7 +383,7 @@ export default function NotificationCenterPage() {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between pt-1" data-testid="notification-pagination">
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-muted-foreground">
             Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
           </span>
           <div className="flex gap-1">

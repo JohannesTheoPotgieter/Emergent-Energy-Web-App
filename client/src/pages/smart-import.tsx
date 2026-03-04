@@ -84,13 +84,13 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
                 className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${
                   isActive ? "bg-blue-600 text-white" :
                   isComplete ? "bg-blue-500 text-white" :
-                  "bg-slate-200 text-slate-500"
+                  "bg-slate-200 text-muted-foreground"
                 }`}
                 data-testid={`step-circle-${stepNum}`}
               >
                 {isComplete ? <Check className="w-3.5 h-3.5" /> : stepNum}
               </div>
-              <span className={`text-xs hidden md:inline ${isActive ? "font-semibold text-blue-700" : "text-slate-500"}`}>
+              <span className={`text-xs hidden md:inline ${isActive ? "font-semibold text-blue-700" : "text-muted-foreground"}`}>
                 {label}
               </span>
             </div>
@@ -217,7 +217,7 @@ function UploadStep({
   const hasSuccessful = files.some(f => f.status === "success");
 
   return (
-    <Card className="bg-white rounded-xl shadow-sm" data-testid="upload-step">
+    <Card className="bg-card rounded-xl shadow-sm" data-testid="upload-step">
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <Upload className="w-5 h-5 text-blue-600" />
@@ -253,7 +253,7 @@ function UploadStep({
           className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
             dragging ? "border-blue-500 bg-blue-50" :
             files.length > 0 ? "border-emerald-300 bg-emerald-50" :
-            "border-slate-300 hover:border-blue-400 hover:bg-blue-50/50"
+            "border-border hover:border-blue-400 hover:bg-blue-50/50"
           }`}
           data-testid="dropzone"
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
@@ -270,7 +270,7 @@ function UploadStep({
               <p className="text-sm font-medium text-emerald-700">
                 {files.length} file{files.length > 1 ? "s" : ""} selected
               </p>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 {(files.reduce((sum, f) => sum + f.file.size, 0) / 1024).toFixed(0)} KB total
               </p>
               <div className="flex gap-2 mt-1">
@@ -296,7 +296,7 @@ function UploadStep({
           ) : (
             <div className="flex flex-col items-center gap-3">
               <Upload className="w-10 h-10 text-slate-400" />
-              <p className="text-sm text-slate-600">Drag & drop Excel trackers here</p>
+              <p className="text-sm text-muted-foreground">Drag & drop Excel trackers here</p>
               <div className="flex gap-2">
                 <Button
                   variant="outline"
@@ -437,7 +437,7 @@ function UploadStep({
 
         {uploading && batchProgress.total > 1 && (
           <div className="space-y-1">
-            <div className="flex justify-between text-xs text-slate-500">
+            <div className="flex justify-between text-xs text-muted-foreground">
               <span>Processing file {batchProgress.current} of {batchProgress.total}</span>
               <span>{Math.round((batchProgress.current / batchProgress.total) * 100)}%</span>
             </div>
@@ -544,7 +544,7 @@ function EditableField({
   if (editing) {
     return (
       <div>
-        <span className="text-slate-500 text-xs">{label}</span>
+        <span className="text-muted-foreground text-xs">{label}</span>
         <div className="flex items-center gap-1 mt-0.5">
           <Input
             className="h-7 text-xs px-2"
@@ -568,7 +568,7 @@ function EditableField({
 
   return (
     <div className="group">
-      <span className="text-slate-500 text-xs">{label}</span>
+      <span className="text-muted-foreground text-xs">{label}</span>
       <div className="flex items-center gap-1">
         <p className="font-medium text-xs" data-testid={testId}>{formatDisplay()}</p>
         <button
@@ -644,7 +644,7 @@ function SectionDetectionStep({
   return (
     <div className="space-y-4" data-testid="section-detection-step">
       {hasProjectInfo && (
-        <Card className="bg-white rounded-xl shadow-sm">
+        <Card className="bg-card rounded-xl shadow-sm">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm">Project Info (from sheet header)</CardTitle>
@@ -688,28 +688,28 @@ function SectionDetectionStep({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {sections.map((section: any, idx: number) => (
-          <Card key={idx} className="bg-white rounded-xl shadow-sm" data-testid={`card-section-${section.section || section.name || idx}`}>
+          <Card key={idx} className="bg-card rounded-xl shadow-sm" data-testid={`card-section-${section.section || section.name || idx}`}>
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="font-semibold text-sm">{section.section || section.name}</span>
                 {section.confidence != null && confidenceBadge(section.confidence)}
               </div>
-              <div className="space-y-1 text-xs text-slate-600">
+              <div className="space-y-1 text-xs text-muted-foreground">
                 {section.sheetName && (
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Sheet</span>
+                    <span className="text-muted-foreground">Sheet</span>
                     <span data-testid={`text-sheet-${idx}`}>{section.sheetName}</span>
                   </div>
                 )}
                 {section.headerRow != null && (
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Header Row</span>
+                    <span className="text-muted-foreground">Header Row</span>
                     <span data-testid={`text-header-row-${idx}`}>{section.headerRow}</span>
                   </div>
                 )}
                 {section.dataRows != null && (
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Data Rows</span>
+                    <span className="text-muted-foreground">Data Rows</span>
                     <span data-testid={`text-data-rows-${idx}`}>{section.dataRows}</span>
                   </div>
                 )}
@@ -720,12 +720,12 @@ function SectionDetectionStep({
       </div>
 
       {unmatchedSheets.length > 0 && (
-        <Card className="bg-white rounded-xl shadow-sm">
+        <Card className="bg-card rounded-xl shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-slate-600">Unmatched Sheets</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Unmatched Sheets</CardTitle>
           </CardHeader>
           <CardContent>
-            <ul className="space-y-1 text-xs text-slate-500">
+            <ul className="space-y-1 text-xs text-muted-foreground">
               {unmatchedSheets.map((sheet: any, idx: number) => (
                 <li key={idx} className="flex items-center gap-2" data-testid={`unmatched-sheet-${idx}`}>
                   <X className="w-3 h-3 text-slate-400" />
@@ -739,7 +739,7 @@ function SectionDetectionStep({
       )}
 
       {sections.length === 0 && (
-        <Card className="bg-white rounded-xl shadow-sm">
+        <Card className="bg-card rounded-xl shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-12 gap-2">
             <AlertCircle className="w-8 h-8 text-amber-500" />
             <p className="text-sm text-muted-foreground">No sections detected in the uploaded file.</p>
@@ -882,22 +882,22 @@ function ColumnMappingStep({
 
             return (
               <TabsContent key={sectionName} value={sectionName}>
-                <Card className="bg-white rounded-xl shadow-sm">
+                <Card className="bg-card rounded-xl shadow-sm">
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         {overallConfidence != null && (
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs text-slate-500">Confidence:</span>
+                            <span className="text-xs text-muted-foreground">Confidence:</span>
                             {confidenceBadge(overallConfidence)}
                           </div>
                         )}
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-slate-500">Sheet:</span>
+                          <span className="text-xs text-muted-foreground">Sheet:</span>
                           <span className="text-xs font-medium">{detection?.sheetName || "—"}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-slate-500">Rows:</span>
+                          <span className="text-xs text-muted-foreground">Rows:</span>
                           <span className="text-xs font-medium">
                             {detection ? (detection.dataEndRowIndex - detection.dataStartRowIndex + 1) : 0}
                           </span>
@@ -921,11 +921,11 @@ function ColumnMappingStep({
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs" data-testid={`mapping-table-${sectionName}`}>
                         <thead>
-                          <tr className="bg-slate-50 border-b">
-                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase">Excel Column</th>
-                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase">Maps To Field</th>
-                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase">Match</th>
-                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-slate-500 uppercase">Confidence</th>
+                          <tr className="bg-muted border-b">
+                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase">Excel Column</th>
+                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase">Maps To Field</th>
+                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase">Match</th>
+                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase">Confidence</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -933,7 +933,7 @@ function ColumnMappingStep({
                             const colIdx = col.colIndex;
                             const isSaving = saving === `${sectionName}-${colIdx}`;
                             return (
-                              <tr key={colIdx} className="border-b border-slate-100 hover:bg-slate-50/50">
+                              <tr key={colIdx} className="border-b border-border hover:bg-muted/50">
                                 <td className="px-3 py-2 font-medium" data-testid={`text-header-${sectionName}-${colIdx}`}>
                                   {col.rawHeader}
                                 </td>
@@ -979,7 +979,7 @@ function ColumnMappingStep({
 
                     {unmappedHeaders.length > 0 && (
                       <div className="mt-3">
-                        <h4 className="text-xs font-semibold text-slate-500 mb-2">
+                        <h4 className="text-xs font-semibold text-muted-foreground mb-2">
                           Unmapped Columns ({unmappedHeaders.length})
                         </h4>
                         <div className="space-y-1.5">
@@ -989,10 +989,10 @@ function ColumnMappingStep({
                             return (
                               <div
                                 key={colIdx}
-                                className="flex items-center gap-3 p-2 bg-slate-50 border border-slate-200 rounded-md"
+                                className="flex items-center gap-3 p-2 bg-muted border border-border rounded-md"
                                 data-testid={`unmapped-col-${sectionName}-${colIdx}`}
                               >
-                                <span className="text-xs font-medium flex-1 text-slate-600">
+                                <span className="text-xs font-medium flex-1 text-muted-foreground">
                                   {col.rawHeader}
                                 </span>
                                 <Select
@@ -1054,7 +1054,7 @@ function ColumnMappingStep({
                                 const isMs = row.isMilestone === true;
                                 const indent = row.indentLevel || 0;
                                 return (
-                                <tr key={idx} className={`border-b border-slate-100 ${isMs ? "bg-amber-50/60 font-semibold" : "hover:bg-slate-50/50"}`}>
+                                <tr key={idx} className={`border-b border-border ${isMs ? "bg-amber-50/60 font-semibold" : "hover:bg-muted/50"}`}>
                                   <td className="px-2 py-1 text-slate-400">{row.sourceRow || idx + 1}</td>
                                   {Object.entries(row).filter(([k]) => !["sourceSheet", "sourceRow", "isMilestone", "parentTaskNo", "indentLevel"].includes(k)).slice(0, 8).map(([key, val]) => (
                                     <td key={key} className="px-2 py-1 max-w-[120px] truncate" title={String(val ?? "")}>
@@ -1073,7 +1073,7 @@ function ColumnMappingStep({
                             </tbody>
                           </table>
                           {previewData.length > 8 && (
-                            <div className="text-center py-1.5 text-[10px] text-slate-400 bg-slate-50">
+                            <div className="text-center py-1.5 text-[10px] text-slate-400 bg-muted">
                               ... and {previewData.length - 8} more rows
                             </div>
                           )}
@@ -1091,7 +1091,7 @@ function ColumnMappingStep({
           })}
         </Tabs>
       ) : (
-        <Card className="bg-white rounded-xl shadow-sm">
+        <Card className="bg-card rounded-xl shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-12 gap-2">
             <Info className="w-8 h-8 text-slate-400" />
             <p className="text-sm text-muted-foreground">No column mappings available.</p>
@@ -1147,7 +1147,7 @@ function IssueRowDetail({ issue, normalization }: { issue: any; normalization: a
 
   if (isDuplicate) {
     const rows = getDuplicateRows();
-    if (rows.length === 0) return <p className="text-[10px] text-slate-500 italic">No matching rows found in preview data.</p>;
+    if (rows.length === 0) return <p className="text-[10px] text-muted-foreground italic">No matching rows found in preview data.</p>;
 
     const fields = section === "REVENUE"
       ? [
@@ -1170,23 +1170,23 @@ function IssueRowDetail({ issue, normalization }: { issue: any; normalization: a
 
     return (
       <div className="mt-2 space-y-1">
-        <p className="text-[10px] font-medium text-slate-600 mb-1">Matching rows with invoice "{payload.invoiceNumber}":</p>
+        <p className="text-[10px] font-medium text-muted-foreground mb-1">Matching rows with invoice "{payload.invoiceNumber}":</p>
         <div className="overflow-x-auto">
           <table className="w-full text-[10px] border-collapse">
             <thead>
-              <tr className="bg-slate-100">
-                <th className="px-2 py-1 text-left border border-slate-200 font-medium text-slate-600">Row</th>
+              <tr className="bg-muted">
+                <th className="px-2 py-1 text-left border border-border font-medium text-muted-foreground">Row</th>
                 {fields.map(f => (
-                  <th key={f.key} className="px-2 py-1 text-left border border-slate-200 font-medium text-slate-600">{f.label}</th>
+                  <th key={f.key} className="px-2 py-1 text-left border border-border font-medium text-muted-foreground">{f.label}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rows.map((r: any, idx: number) => (
-                <tr key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
-                  <td className="px-2 py-1 border border-slate-200 font-mono">{r.sourceRow}</td>
+                <tr key={idx} className={idx % 2 === 0 ? "bg-card" : "bg-muted"}>
+                  <td className="px-2 py-1 border border-border font-mono">{r.sourceRow}</td>
                   {fields.map(f => (
-                    <td key={f.key} className={`px-2 py-1 border border-slate-200 ${f.key === "invoiceNumber" ? "font-semibold text-amber-700 bg-amber-50" : ""}`}>
+                    <td key={f.key} className={`px-2 py-1 border border-border ${f.key === "invoiceNumber" ? "font-semibold text-amber-700 bg-amber-50" : ""}`}>
                       {r[f.key] ?? "—"}
                     </td>
                   ))}
@@ -1201,7 +1201,7 @@ function IssueRowDetail({ issue, normalization }: { issue: any; normalization: a
 
   if (isDateSwap) {
     const rowData = getRowData();
-    if (!rowData) return <p className="text-[10px] text-slate-500 italic">Row {row}: No matching data in preview.</p>;
+    if (!rowData) return <p className="text-[10px] text-muted-foreground italic">Row {row}: No matching data in preview.</p>;
 
     const fields = section === "REVENUE"
       ? [
@@ -1222,12 +1222,12 @@ function IssueRowDetail({ issue, normalization }: { issue: any; normalization: a
 
     return (
       <div className="mt-2">
-        <p className="text-[10px] font-medium text-slate-600 mb-1">Row {row} details:</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 bg-white rounded border border-slate-200 p-2">
+        <p className="text-[10px] font-medium text-muted-foreground mb-1">Row {row} details:</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 bg-card rounded border border-border p-2">
           {fields.map(f => (
             <div key={f.key}>
               <span className="text-[9px] text-slate-400 uppercase">{f.label}</span>
-              <p className={`text-[11px] ${(f as any).highlight ? "font-semibold text-red-600 bg-red-50 px-1 rounded" : "text-slate-700"}`}>
+              <p className={`text-[11px] ${(f as any).highlight ? "font-semibold text-red-600 bg-red-50 px-1 rounded" : "text-foreground"}`}>
                 {rowData[f.key] ?? "—"}
               </p>
             </div>
@@ -1239,19 +1239,19 @@ function IssueRowDetail({ issue, normalization }: { issue: any; normalization: a
 
   const rowData = getRowData();
   if (!rowData) {
-    if (row) return <p className="text-[10px] text-slate-500 italic">Row {row}: No matching data in preview.</p>;
+    if (row) return <p className="text-[10px] text-muted-foreground italic">Row {row}: No matching data in preview.</p>;
     return null;
   }
 
   const allFields = Object.entries(rowData).filter(([k]) => !["sourceSheet", "sourceRow"].includes(k));
   return (
     <div className="mt-2">
-      <p className="text-[10px] font-medium text-slate-600 mb-1">Row {row} details:</p>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 bg-white rounded border border-slate-200 p-2">
+      <p className="text-[10px] font-medium text-muted-foreground mb-1">Row {row} details:</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 bg-card rounded border border-border p-2">
         {allFields.map(([key, val]) => (
           <div key={key}>
             <span className="text-[9px] text-slate-400 uppercase">{key.replace(/([A-Z])/g, " $1").trim()}</span>
-            <p className="text-[11px] text-slate-700">{val != null ? String(val) : "—"}</p>
+            <p className="text-[11px] text-foreground">{val != null ? String(val) : "—"}</p>
           </div>
         ))}
       </div>
@@ -1467,7 +1467,7 @@ function IssuesStep({
                         </span>
                       )}
                       {issue.suggestedAction && !issue.autoResolved && (
-                        <p className="text-[10px] text-slate-500 mt-0.5" data-testid={`text-issue-action-${issue.id}`}>
+                        <p className="text-[10px] text-muted-foreground mt-0.5" data-testid={`text-issue-action-${issue.id}`}>
                           Suggested: {issue.suggestedAction}
                         </p>
                       )}
@@ -1477,7 +1477,7 @@ function IssuesStep({
                     {issue.resolved ? (
                       <div className="flex items-center gap-1">
                         <Badge variant="outline" className={`text-[10px] h-5 ${
-                          issue.resolution === "IGNORED" ? "border-slate-300 text-slate-600 bg-slate-50" :
+                          issue.resolution === "IGNORED" ? "border-border text-muted-foreground bg-muted" :
                           issue.resolution === "OVERRIDE" ? "border-blue-300 text-blue-600 bg-blue-50" :
                           issue.resolution === "ALLOW_ALL" ? "border-blue-300 text-blue-600 bg-blue-50" :
                           "border-emerald-300 text-emerald-600 bg-emerald-50"
@@ -1487,7 +1487,7 @@ function IssuesStep({
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-6 w-6 p-0 text-slate-400 hover:text-slate-600"
+                          className="h-6 w-6 p-0 text-slate-400 hover:text-muted-foreground"
                           disabled={resolving === issue.id}
                           onClick={() => handleResolve(issue.id, false)}
                           data-testid={`btn-reopen-${issue.id}`}
@@ -1542,7 +1542,7 @@ function IssuesStep({
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-6 text-[10px] px-2 border-slate-300 text-slate-600 hover:bg-slate-50"
+                          className="h-6 text-[10px] px-2 border-border text-muted-foreground hover:bg-muted"
                           disabled={resolving === issue.id}
                           onClick={() => handleResolve(issue.id, true, "IGNORED")}
                           data-testid={`btn-ignore-${issue.id}`}
@@ -1555,7 +1555,7 @@ function IssuesStep({
                 </div>
 
                 {isExpanded && (
-                  <div className="mt-2 pt-2 border-t border-slate-200">
+                  <div className="mt-2 pt-2 border-t border-border">
                     <IssueRowDetail issue={issue} normalization={normalization} />
 
                     {editingOverride === issue.id && !issue.resolved && (
@@ -1623,7 +1623,7 @@ function IssuesStep({
                     )}
 
                     {isCounterpartyIssue && !issue.resolved && editingOverride !== issue.id && (
-                      <div className="flex items-end gap-2 pt-2 mt-2 border-t border-slate-200">
+                      <div className="flex items-end gap-2 pt-2 mt-2 border-t border-border">
                         <div className="flex-1">
                           <Label className="text-[10px]">Name</Label>
                           <Input
@@ -1735,7 +1735,7 @@ function IssuesStep({
       )}
 
       {issues.length === 0 ? (
-        <Card className="bg-white rounded-xl shadow-sm">
+        <Card className="bg-card rounded-xl shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-12 gap-2">
             <CheckCircle2 className="w-8 h-8 text-emerald-500" />
             <p className="text-sm text-muted-foreground">No issues detected — looking good!</p>
@@ -1899,13 +1899,13 @@ function InvoiceClassificationPanel({ runId, normalization }: { runId: number; n
   const autoApplied = classifications.filter(c => c.outcome === "AUTO_APPLIED" || c.outcome === "USER_CONFIRMED");
 
   return (
-    <Card className="bg-white rounded-xl shadow-sm mt-4" data-testid="invoice-classification-panel">
+    <Card className="bg-card rounded-xl shadow-sm mt-4" data-testid="invoice-classification-panel">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2">
           <FileSpreadsheet className="w-4 h-4 text-purple-600" />
           Invoice Pattern Classification
           {classified && (
-            <span className="text-[10px] font-normal text-slate-500 ml-2">
+            <span className="text-[10px] font-normal text-muted-foreground ml-2">
               {autoApplied.length} auto-classified, {needsReview.length} need review, {unresolved.length} unresolved
             </span>
           )}
@@ -1914,7 +1914,7 @@ function InvoiceClassificationPanel({ runId, normalization }: { runId: number; n
       <CardContent>
         {!classified ? (
           <div className="text-center py-4">
-            <p className="text-sm text-slate-600 mb-3">
+            <p className="text-sm text-muted-foreground mb-3">
               Classify {costLines.length} expenditure lines by invoice number pattern to determine
               counterparty type (Installer / Supplier / Other).
             </p>
@@ -1935,22 +1935,22 @@ function InvoiceClassificationPanel({ runId, normalization }: { runId: number; n
             )}
 
             {(needsReview.length > 0 || unresolved.length > 0) && (
-              <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <div className="border border-border rounded-lg overflow-hidden">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Row</th>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Invoice #</th>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Suggested Type</th>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Confidence</th>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Pattern</th>
-                      <th className="text-left px-3 py-2 font-medium text-slate-600">Action</th>
+                    <tr className="bg-muted border-b border-border">
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Row</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Invoice #</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Suggested Type</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Confidence</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Pattern</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {[...needsReview, ...unresolved].map((cl) => (
-                      <tr key={cl.sourceRow} className="border-b border-slate-100 hover:bg-slate-50" data-testid={`classify-row-${cl.sourceRow}`}>
-                        <td className="px-3 py-2 font-mono text-slate-500">{cl.sourceRow}</td>
+                      <tr key={cl.sourceRow} className="border-b border-border hover:bg-muted" data-testid={`classify-row-${cl.sourceRow}`}>
+                        <td className="px-3 py-2 font-mono text-muted-foreground">{cl.sourceRow}</td>
                         <td className="px-3 py-2 font-mono">{cl.invoiceNumberRaw || "—"}</td>
                         <td className="px-3 py-2">
                           <Badge variant={cl.inferredType === "INSTALLER" ? "default" : cl.inferredType === "SUPPLIER" ? "secondary" : "outline"}
@@ -1963,7 +1963,7 @@ function InvoiceClassificationPanel({ runId, normalization }: { runId: number; n
                             {cl.confidenceScore}%
                           </span>
                         </td>
-                        <td className="px-3 py-2 text-slate-500 text-[10px]">{cl.patternInfo || "—"}</td>
+                        <td className="px-3 py-2 text-muted-foreground text-[10px]">{cl.patternInfo || "—"}</td>
                         <td className="px-3 py-2">
                           {reviewing === cl.sourceRow ? (
                             <Loader2 className="w-3 h-3 animate-spin" />
@@ -2012,7 +2012,7 @@ function InvoiceClassificationPanel({ runId, normalization }: { runId: number; n
             )}
 
             {(needsReview.length > 0 || unresolved.length > 0) && (
-              <label className="flex items-center gap-2 text-xs text-slate-600">
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <input type="checkbox" checked={applyToSimilar} onChange={e => setApplyToSimilar(e.target.checked)}
                   data-testid="checkbox-apply-similar" />
                 Apply to all similar invoices (same prefix pattern)
@@ -2108,14 +2108,14 @@ function PreviewCommitStep({
   if (committed) {
     const projectName = preview?.detection?.projectInfo?.name || preview?.detection?.projectInfo?.projectName || preview?.projectInfo?.name || "";
     return (
-      <Card className="bg-white rounded-xl shadow-sm" data-testid="commit-success">
+      <Card className="bg-card rounded-xl shadow-sm" data-testid="commit-success">
         <CardContent className="flex flex-col items-center justify-center py-12 gap-4">
           <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
             <CheckCircle2 className="w-8 h-8 text-emerald-600" />
           </div>
           <h3 className="text-lg font-semibold text-emerald-700">Import Successful!</h3>
           {commitResult && (
-            <div className="text-center text-sm text-slate-600 space-y-1">
+            <div className="text-center text-sm text-muted-foreground space-y-1">
               {commitResult.planTasks != null && <p>{commitResult.planTasks} plan tasks imported</p>}
               {commitResult.revenueLines != null && <p>{commitResult.revenueLines} revenue lines imported</p>}
               {commitResult.costLines != null && <p>{commitResult.costLines} cost lines imported</p>}
@@ -2139,48 +2139,48 @@ function PreviewCommitStep({
 
   return (
     <div className="space-y-4" data-testid="preview-commit-step">
-      <Card className="bg-white rounded-xl shadow-sm">
+      <Card className="bg-card rounded-xl shadow-sm">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Import Summary</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <div className="bg-slate-50 rounded-lg p-3 text-center">
+            <div className="bg-muted rounded-lg p-3 text-center">
               <div className="text-lg font-bold" data-testid="text-plan-count">
                 {planRows.length}
               </div>
-              <div className="text-[10px] text-slate-500">Plan Tasks</div>
+              <div className="text-[10px] text-muted-foreground">Plan Tasks</div>
             </div>
-            <div className="bg-slate-50 rounded-lg p-3 text-center">
+            <div className="bg-muted rounded-lg p-3 text-center">
               <div className="text-lg font-bold" data-testid="text-revenue-count">
                 {revenueRows.length}
               </div>
-              <div className="text-[10px] text-slate-500">Revenue Lines</div>
+              <div className="text-[10px] text-muted-foreground">Revenue Lines</div>
             </div>
-            <div className="bg-slate-50 rounded-lg p-3 text-center">
+            <div className="bg-muted rounded-lg p-3 text-center">
               <div className="text-lg font-bold" data-testid="text-cost-count">
                 {costRows.length}
               </div>
-              <div className="text-[10px] text-slate-500">Cost Lines</div>
+              <div className="text-[10px] text-muted-foreground">Cost Lines</div>
             </div>
-            <div className="bg-slate-50 rounded-lg p-3 text-center">
+            <div className="bg-muted rounded-lg p-3 text-center">
               <div className="text-lg font-bold" data-testid="text-phase-count">
                 {executionPhases.length}
               </div>
-              <div className="text-[10px] text-slate-500">Execution Phases</div>
+              <div className="text-[10px] text-muted-foreground">Execution Phases</div>
             </div>
-            <div className="bg-slate-50 rounded-lg p-3 text-center">
+            <div className="bg-muted rounded-lg p-3 text-center">
               <div className="text-lg font-bold" data-testid="text-cp-count">
                 {counterpartyNames.length}
               </div>
-              <div className="text-[10px] text-slate-500">New Counterparties</div>
+              <div className="text-[10px] text-muted-foreground">New Counterparties</div>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {planRows.length > 0 && (
-        <Card className="bg-white rounded-xl shadow-sm">
+        <Card className="bg-card rounded-xl shadow-sm">
           <CardHeader
             className="pb-2 cursor-pointer flex flex-row items-center justify-between"
             onClick={() => toggleTable("plan")}
@@ -2206,13 +2206,13 @@ function PreviewCommitStep({
               <div className="overflow-x-auto">
                 <table className="w-full text-xs" data-testid="table-plan-preview">
                   <thead>
-                    <tr className="bg-slate-50 border-b">
-                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">No.</th>
-                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">Task Name</th>
-                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">Start Date</th>
-                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">End Date</th>
-                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">% Complete</th>
-                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">Status</th>
+                    <tr className="bg-muted border-b">
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase">No.</th>
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase">Task Name</th>
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase">Start Date</th>
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase">End Date</th>
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase">% Complete</th>
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase">Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2220,8 +2220,8 @@ function PreviewCommitStep({
                       const isMs = row.isMilestone === true;
                       const indent = row.indentLevel || 0;
                       return (
-                      <tr key={idx} className={`border-b border-slate-100 ${isMs ? "bg-amber-50/60 font-semibold" : ""}`}>
-                        <td className="px-3 py-1.5 text-slate-500 font-mono text-[10px]">{row.taskNo || "—"}</td>
+                      <tr key={idx} className={`border-b border-border ${isMs ? "bg-amber-50/60 font-semibold" : ""}`}>
+                        <td className="px-3 py-1.5 text-muted-foreground font-mono text-[10px]">{row.taskNo || "—"}</td>
                         <td className="px-3 py-1.5">
                           <span style={{ paddingLeft: `${indent * 16}px` }} className={isMs ? "text-amber-800" : ""}>
                             {isMs ? "◆ " : indent > 0 ? "└ " : ""}{row.taskName || row.task_name || "—"}
@@ -2237,7 +2237,7 @@ function PreviewCommitStep({
                   </tbody>
                 </table>
                 {planRows.length > 15 && (
-                  <div className="text-center py-1.5 text-[10px] text-slate-400 bg-slate-50">
+                  <div className="text-center py-1.5 text-[10px] text-slate-400 bg-muted">
                     ... and {planRows.length - 15} more tasks
                   </div>
                 )}
@@ -2248,7 +2248,7 @@ function PreviewCommitStep({
       )}
 
       {revenueRows.length > 0 && (
-        <Card className="bg-white rounded-xl shadow-sm">
+        <Card className="bg-card rounded-xl shadow-sm">
           <CardHeader
             className="pb-2 cursor-pointer flex flex-row items-center justify-between"
             onClick={() => toggleTable("revenue")}
@@ -2262,15 +2262,15 @@ function PreviewCommitStep({
               <div className="overflow-x-auto">
                 <table className="w-full text-xs" data-testid="table-revenue-preview">
                   <thead>
-                    <tr className="bg-slate-50 border-b">
-                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">Milestone</th>
-                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">Amount</th>
-                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">Status</th>
+                    <tr className="bg-muted border-b">
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase">Milestone</th>
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase">Amount</th>
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase">Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {revenueRows.slice(0, 10).map((row: any, idx: number) => (
-                      <tr key={idx} className="border-b border-slate-100">
+                      <tr key={idx} className="border-b border-border">
                         <td className="px-3 py-1.5">{row.milestoneName || row.description || "—"}</td>
                         <td className="px-3 py-1.5">{row.amountExVat || "—"}</td>
                         <td className="px-3 py-1.5">{row.status || "—"}</td>
@@ -2285,7 +2285,7 @@ function PreviewCommitStep({
       )}
 
       {costRows.length > 0 && (
-        <Card className="bg-white rounded-xl shadow-sm">
+        <Card className="bg-card rounded-xl shadow-sm">
           <CardHeader
             className="pb-2 cursor-pointer flex flex-row items-center justify-between"
             onClick={() => toggleTable("cost")}
@@ -2299,16 +2299,16 @@ function PreviewCommitStep({
               <div className="overflow-x-auto">
                 <table className="w-full text-xs" data-testid="table-cost-preview">
                   <thead>
-                    <tr className="bg-slate-50 border-b">
-                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">Category</th>
-                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">Counterparty</th>
-                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">Amount</th>
-                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-slate-500 uppercase">Status</th>
+                    <tr className="bg-muted border-b">
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase">Category</th>
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase">Counterparty</th>
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase">Amount</th>
+                      <th className="text-left px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase">Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {costRows.slice(0, 10).map((row: any, idx: number) => (
-                      <tr key={idx} className="border-b border-slate-100">
+                      <tr key={idx} className="border-b border-border">
                         <td className="px-3 py-1.5">{row.costCategory || "—"}</td>
                         <td className="px-3 py-1.5">{row.counterpartyName || "—"}</td>
                         <td className="px-3 py-1.5">{row.amountExVat || "—"}</td>
@@ -2581,10 +2581,10 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
 
   if (loading) {
     return (
-      <Card className="bg-white rounded-xl shadow-sm">
+      <Card className="bg-card rounded-xl shadow-sm">
         <CardContent className="flex items-center justify-center py-12">
           <Loader2 className="w-5 h-5 animate-spin text-blue-500 mr-2" />
-          <span className="text-sm text-slate-500">Loading pending imports...</span>
+          <span className="text-sm text-muted-foreground">Loading pending imports...</span>
         </CardContent>
       </Card>
     );
@@ -2596,7 +2596,7 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
     const skipped = commitResults.filter(r => r.status === "skipped");
     return (
       <div className="space-y-4" data-testid="bulk-commit-results">
-        <Card className="bg-white rounded-xl shadow-sm">
+        <Card className="bg-card rounded-xl shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-10 gap-4">
             <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
               <CheckCircle2 className="w-8 h-8 text-emerald-600" />
@@ -2623,7 +2623,7 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
         </Card>
 
         {commitResults.length > 0 && (
-          <Card className="bg-white rounded-xl shadow-sm">
+          <Card className="bg-card rounded-xl shadow-sm">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Results by Project</CardTitle>
             </CardHeader>
@@ -2640,7 +2640,7 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
                     )}
                     <span className="text-sm font-medium flex-1 truncate">{r.projectName}</span>
                     {r.status === "committed" && r.counts && (
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-muted-foreground">
                         {[
                           r.counts.planTasks && `${r.counts.planTasks} tasks`,
                           r.counts.revenueLines && `${r.counts.revenueLines} revenue`,
@@ -2672,10 +2672,10 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
 
   if (pendingRuns.length === 0) {
     return (
-      <Card className="bg-white rounded-xl shadow-sm" data-testid="no-pending-runs">
+      <Card className="bg-card rounded-xl shadow-sm" data-testid="no-pending-runs">
         <CardContent className="flex flex-col items-center justify-center py-12 gap-3">
           <CheckCircle2 className="w-10 h-10 text-slate-300" />
-          <p className="text-sm text-slate-500">No pending imports to commit</p>
+          <p className="text-sm text-muted-foreground">No pending imports to commit</p>
           <Button variant="outline" onClick={onBack} data-testid="btn-back-to-upload">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Upload Files
@@ -2687,7 +2687,7 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
 
   return (
     <div className="space-y-4" data-testid="bulk-commit-panel">
-      <Card className="bg-white rounded-xl shadow-sm">
+      <Card className="bg-card rounded-xl shadow-sm">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
             <Zap className="w-4 h-4 text-blue-600" />
@@ -2710,7 +2710,7 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
             {pendingRuns.map((run) => (
               <div
                 key={run.id}
-                className="flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 transition-colors"
+                className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted transition-colors"
                 data-testid={`pending-run-${run.id}`}
               >
                 {run.blockerCount > 0 ? (
@@ -2760,7 +2760,7 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
 
       {committing && (
         <div className="space-y-1">
-          <div className="flex justify-between text-xs text-slate-500">
+          <div className="flex justify-between text-xs text-muted-foreground">
             <span>Committing {committableRuns.length} files...</span>
             <span>{Math.round(progress)}%</span>
           </div>
@@ -2810,7 +2810,7 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 text-xs border-red-300 text-red-700 hover:bg-red-100 bg-white"
+                    className="h-7 text-xs border-red-300 text-red-700 hover:bg-red-100 bg-card"
                     disabled={ignoringAllBlockers}
                     onClick={handleIgnoreAllBlockers}
                     data-testid="btn-ignore-all-blockers-bulk"
@@ -2843,7 +2843,7 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100 bg-white"
+                  className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-100 bg-card"
                   disabled={resolvingAllWarnings}
                   onClick={handleResolveAllWarnings}
                   data-testid="btn-resolve-all-warnings-bulk"
@@ -2932,7 +2932,7 @@ export default function SmartImportPage() {
       {loadingRun && step > 1 && !bulkMode && (
         <div className="flex items-center justify-center py-4">
           <Loader2 className="w-5 h-5 animate-spin text-blue-500 mr-2" />
-          <span className="text-sm text-slate-500">Loading import data...</span>
+          <span className="text-sm text-muted-foreground">Loading import data...</span>
         </div>
       )}
 

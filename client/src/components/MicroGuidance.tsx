@@ -75,13 +75,13 @@ export function GuidancePrompt({
           )}
 
           {expanded && learnMoreText && (
-            <p className="text-[10px] text-muted-foreground bg-white/50 rounded p-2">{learnMoreText}</p>
+            <p className="text-[10px] text-muted-foreground bg-card/50 rounded p-2">{learnMoreText}</p>
           )}
 
           {requiresReason && (
             <div className="space-y-1.5">
               <Textarea
-                className="text-xs min-h-[50px] bg-white"
+                className="text-xs min-h-[50px] bg-card"
                 placeholder="Please provide a reason for this action..."
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}

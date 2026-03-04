@@ -120,11 +120,11 @@ export default function RoleSettingsPage() {
   return (
     <div className="flex flex-col min-h-0 flex-1 max-w-[1100px] mx-auto w-full" data-testid="app-settings-page">
       <header className="shrink-0 mb-5">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 flex items-center gap-2" data-testid="text-page-title">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground flex items-center gap-2" data-testid="text-page-title">
           <Settings2 className="h-7 w-7 text-blue-600" />
           App Settings
         </h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="text-sm text-muted-foreground mt-1">
           Manage Microsoft 365 connections, user accounts, role passwords, and system tools
         </p>
       </header>
@@ -142,7 +142,7 @@ export default function RoleSettingsPage() {
                 className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-left text-sm transition-all ${
                   isActive
                     ? "bg-blue-50 text-blue-700 font-medium border border-blue-200"
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 border border-transparent"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground border border-transparent"
                 }`}
                 data-testid={`nav-${id}`}
               >
@@ -155,8 +155,8 @@ export default function RoleSettingsPage() {
 
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">{SECTION_META[activeSection].label}</h2>
-            <p className="text-sm text-gray-500">{SECTION_META[activeSection].description}</p>
+            <h2 className="text-lg font-semibold text-foreground">{SECTION_META[activeSection].label}</h2>
+            <p className="text-sm text-muted-foreground">{SECTION_META[activeSection].description}</p>
           </div>
 
           {activeSection === "connections" && <ConnectionsSection />}
@@ -257,12 +257,12 @@ function ConnectionsSection() {
         <Card data-testid="card-outlook-status">
           <CardContent className="py-5">
             <div className="flex items-center gap-3 mb-3">
-              <div className={`p-2.5 rounded-lg ${outlookConnected ? "bg-blue-100" : "bg-gray-100"}`}>
+              <div className={`p-2.5 rounded-lg ${outlookConnected ? "bg-blue-100" : "bg-muted"}`}>
                 <Mail className={`h-5 w-5 ${outlookConnected ? "text-blue-600" : "text-gray-400"}`} />
               </div>
               <div className="flex-1">
                 <p className="text-sm font-semibold">Outlook</p>
-                <Badge variant="outline" className={`text-[10px] mt-0.5 ${outlookConnected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : outlookConfigured === false ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid="badge-outlook-status">
+                <Badge variant="outline" className={`text-[10px] mt-0.5 ${outlookConnected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : outlookConfigured === false ? "bg-muted text-muted-foreground border-border" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid="badge-outlook-status">
                   {outlookConnected ? "Connected" : outlookConfigured === false ? "Not Set Up" : "Disconnected"}
                 </Badge>
               </div>
@@ -295,12 +295,12 @@ function ConnectionsSection() {
         <Card data-testid="card-teams-status">
           <CardContent className="py-5">
             <div className="flex items-center gap-3 mb-3">
-              <div className={`p-2.5 rounded-lg ${teamsEnabled ? "bg-purple-100" : "bg-gray-100"}`}>
+              <div className={`p-2.5 rounded-lg ${teamsEnabled ? "bg-purple-100" : "bg-muted"}`}>
                 <MessageSquare className={`h-5 w-5 ${teamsEnabled ? "text-purple-600" : "text-gray-400"}`} />
               </div>
               <div className="flex-1">
                 <p className="text-sm font-semibold">Teams Chat</p>
-                <Badge variant="outline" className={`text-[10px] mt-0.5 ${teamsEnabled ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-gray-50 text-gray-500 border-gray-200"}`} data-testid="badge-teams-status">
+                <Badge variant="outline" className={`text-[10px] mt-0.5 ${teamsEnabled ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-muted text-muted-foreground border-border"}`} data-testid="badge-teams-status">
                   {teamsEnabled ? "Enabled" : "Not Enabled"}
                 </Badge>
               </div>
@@ -771,20 +771,20 @@ function RolePasswordsSection() {
         return (
           <div
             key={role}
-            className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted transition-colors"
             data-testid={`role-password-row-${role}`}
           >
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-gray-800" data-testid={`text-role-label-${role}`}>
+                <span className="text-sm font-medium text-foreground" data-testid={`text-role-label-${role}`}>
                   {COMPANY_ROLE_LABELS[role]}
                 </span>
                 <span className="text-xs text-gray-400">{role}</span>
               </div>
               {info?.password && (
                 <div className="flex items-center gap-1.5 mt-1">
-                  <span className="text-xs text-gray-500">Current:</span>
-                  <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded font-mono text-gray-700" data-testid={`text-current-password-${role}`}>
+                  <span className="text-xs text-muted-foreground">Current:</span>
+                  <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono text-foreground" data-testid={`text-current-password-${role}`}>
                     {info.password}
                   </code>
                 </div>
@@ -899,7 +899,7 @@ function ProcurementAnalysisSection() {
         <div className="grid grid-cols-3 gap-3">
           <Card>
             <CardContent className="py-4 text-center">
-              <div className="text-2xl font-bold text-slate-900" data-testid="text-source-expenses">{status.sourceExpenses.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-foreground" data-testid="text-source-expenses">{status.sourceExpenses.toLocaleString()}</div>
               <div className="text-xs text-muted-foreground mt-1">Source Expenses</div>
             </CardContent>
           </Card>

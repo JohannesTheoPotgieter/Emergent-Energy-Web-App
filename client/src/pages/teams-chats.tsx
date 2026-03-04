@@ -222,7 +222,7 @@ function ActivitySection() {
       <div className="max-w-4xl mx-auto p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900" data-testid="text-activity-title">Teams Activity</h2>
+            <h2 className="text-lg font-semibold text-foreground" data-testid="text-activity-title">Teams Activity</h2>
             <p className="text-sm text-muted-foreground">Mentions, chats, and activity synced from Microsoft Teams</p>
           </div>
           <div className="flex items-center gap-2">
@@ -284,7 +284,7 @@ function ActivitySection() {
             </Button>
           </div>
         ) : (
-          <div className="divide-y rounded-xl border bg-white shadow-sm">
+          <div className="divide-y rounded-xl border bg-card shadow-sm">
             {items.map((item: any) => (
               <div
                 key={item.id}
@@ -297,8 +297,8 @@ function ActivitySection() {
                       <AlertTriangle className="h-4 w-4 text-purple-600" />
                     </div>
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
-                      <MessageSquare className="h-4 w-4 text-gray-500" />
+                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                      <MessageSquare className="h-4 w-4 text-muted-foreground" />
                     </div>
                   )}
                 </div>
@@ -534,15 +534,15 @@ export default function TeamsChatsPage() {
   }, [messages]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-56px)] bg-white overflow-hidden" data-testid="teams-chats-page">
-      <div className="flex items-center gap-4 px-4 py-2 bg-white border-b shrink-0" data-testid="teams-section-toggle">
-        <h1 className="text-base font-semibold text-gray-900 mr-2">Teams Chat</h1>
-        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+    <div className="flex flex-col h-[calc(100vh-56px)] bg-card overflow-hidden" data-testid="teams-chats-page">
+      <div className="flex items-center gap-4 px-4 py-2 bg-card border-b shrink-0" data-testid="teams-section-toggle">
+        <h1 className="text-base font-semibold text-foreground mr-2">Teams Chat</h1>
+        <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
           <button
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
               viewMode === "activity"
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
             }`}
             onClick={() => setViewMode("activity")}
             data-testid="teams-view-activity"
@@ -553,8 +553,8 @@ export default function TeamsChatsPage() {
           <button
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
               viewMode === "chat"
-                ? "bg-white text-gray-900 shadow-sm"
-                : "text-gray-500 hover:text-gray-700"
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
             }`}
             onClick={() => setViewMode("chat")}
             data-testid="teams-view-chat"
@@ -669,8 +669,8 @@ export default function TeamsChatsPage() {
             <div className="w-24 h-24 rounded-2xl bg-[#6264a7]/10 flex items-center justify-center mb-4">
               <MessageSquare className="h-12 w-12 text-[#6264a7]" />
             </div>
-            <h2 className="text-xl font-semibold text-gray-700 mb-1">Welcome to Teams</h2>
-            <p className="text-sm text-gray-500 mb-4">Select a channel to start chatting</p>
+            <h2 className="text-xl font-semibold text-foreground mb-1">Welcome to Teams</h2>
+            <p className="text-sm text-muted-foreground mb-4">Select a channel to start chatting</p>
             <Button
               variant="outline"
               className="border-[#6264a7] text-[#6264a7] hover:bg-[#6264a7]/5"
@@ -683,7 +683,7 @@ export default function TeamsChatsPage() {
           </div>
         ) : (
           <>
-            <div className="h-12 bg-white border-b flex items-center justify-between px-4 shrink-0">
+            <div className="h-12 bg-card border-b flex items-center justify-between px-4 shrink-0">
               <div className="flex items-center gap-2 min-w-0">
                 <Hash className="h-4 w-4 text-[#6264a7] shrink-0" />
                 <h3 className="font-semibold text-sm truncate" data-testid="text-channel-name">{selectedGroup.name}</h3>
@@ -701,7 +701,7 @@ export default function TeamsChatsPage() {
               </div>
               <div className="flex items-center gap-1">
                 <button
-                  className={`p-1.5 rounded transition-colors ${showMembersPanel ? "bg-[#6264a7]/10 text-[#6264a7]" : "hover:bg-gray-100 text-gray-500"}`}
+                  className={`p-1.5 rounded transition-colors ${showMembersPanel ? "bg-[#6264a7]/10 text-[#6264a7]" : "hover:bg-muted text-muted-foreground"}`}
                   onClick={() => setShowMembersPanel(!showMembersPanel)}
                   title="Members"
                   data-testid="button-toggle-members"
@@ -711,7 +711,7 @@ export default function TeamsChatsPage() {
                 {selectedGroup.canManage && (
                   <>
                     <button
-                      className="p-1.5 rounded hover:bg-gray-100 text-gray-500 transition-colors"
+                      className="p-1.5 rounded hover:bg-muted text-muted-foreground transition-colors"
                       onClick={() => setShowAddMemberDialog(true)}
                       title="Add people"
                       data-testid="button-add-members"
@@ -719,7 +719,7 @@ export default function TeamsChatsPage() {
                       <UserPlus className="h-4 w-4" />
                     </button>
                     <button
-                      className="p-1.5 rounded hover:bg-red-50 text-gray-500 hover:text-red-600 transition-colors"
+                      className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
                       onClick={() => {
                         if (confirm("Delete this channel? All messages will be lost.")) {
                           deleteGroupMutation.mutate(selectedGroup.id);
@@ -747,7 +747,7 @@ export default function TeamsChatsPage() {
                       <div className="w-16 h-16 rounded-full bg-[#6264a7]/10 flex items-center justify-center mb-3">
                         <MessageSquare className="h-8 w-8 text-[#6264a7]" />
                       </div>
-                      <p className="text-sm font-medium text-gray-600">No messages yet</p>
+                      <p className="text-sm font-medium text-muted-foreground">No messages yet</p>
                       <p className="text-xs text-gray-400 mt-1">Start the conversation!</p>
                     </div>
                   ) : (
@@ -755,7 +755,7 @@ export default function TeamsChatsPage() {
                       <div key={gi}>
                         <div className="flex items-center gap-3 my-4">
                           <div className="flex-1 h-px bg-gray-300" />
-                          <span className="text-[11px] font-medium text-gray-500 shrink-0">
+                          <span className="text-[11px] font-medium text-muted-foreground shrink-0">
                             {formatDateHeader(group.date)}
                           </span>
                           <div className="flex-1 h-px bg-gray-300" />
@@ -769,7 +769,7 @@ export default function TeamsChatsPage() {
                           return (
                             <div
                               key={msg.id}
-                              className={`flex gap-3 px-2 py-1 rounded-md hover:bg-white/80 transition-colors group ${showAvatar ? "mt-3" : "mt-0.5"}`}
+                              className={`flex gap-3 px-2 py-1 rounded-md hover:bg-card/80 transition-colors group ${showAvatar ? "mt-3" : "mt-0.5"}`}
                               data-testid={`message-${msg.id}`}
                             >
                               <div className="w-8 shrink-0">
@@ -782,23 +782,23 @@ export default function TeamsChatsPage() {
                               <div className="flex-1 min-w-0">
                                 {showAvatar && (
                                   <div className="flex items-center gap-2 mb-0.5">
-                                    <span className="text-sm font-semibold text-gray-900">{isMe ? "You" : displayName}</span>
+                                    <span className="text-sm font-semibold text-foreground">{isMe ? "You" : displayName}</span>
                                     <span className="text-[11px] text-gray-400">{formatMessageTime(msg.createdAt)}</span>
                                     {msg.isFromTeams && (
                                       <Badge className="text-[9px] h-4 px-1 bg-[#6264a7] text-white">Teams</Badge>
                                     )}
                                   </div>
                                 )}
-                                <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap break-words">
+                                <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
                                   {msg.content}
                                 </p>
                                 {msg.fileName && msg.filePath && (
-                                  <div className="mt-1.5 inline-flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-2.5 max-w-xs shadow-sm hover:shadow transition-shadow">
+                                  <div className="mt-1.5 inline-flex items-center gap-2 bg-card border border-border rounded-lg p-2.5 max-w-xs shadow-sm hover:shadow transition-shadow">
                                     <div className="w-9 h-9 rounded bg-[#6264a7]/10 flex items-center justify-center shrink-0">
                                       <FileIcon className="h-5 w-5 text-[#6264a7]" />
                                     </div>
                                     <div className="min-w-0 flex-1">
-                                      <p className="text-xs font-medium text-gray-800 truncate">{msg.fileName}</p>
+                                      <p className="text-xs font-medium text-foreground truncate">{msg.fileName}</p>
                                       <p className="text-[10px] text-gray-400">{formatFileSize(msg.fileSize)}</p>
                                     </div>
                                     <a
@@ -806,7 +806,7 @@ export default function TeamsChatsPage() {
                                       download={msg.fileName}
                                       target="_blank"
                                       rel="noopener"
-                                      className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-[#6264a7] transition-colors"
+                                      className="p-1.5 rounded hover:bg-muted text-gray-400 hover:text-[#6264a7] transition-colors"
                                       onClick={e => e.stopPropagation()}
                                       data-testid={`download-file-${msg.id}`}
                                     >
@@ -819,7 +819,7 @@ export default function TeamsChatsPage() {
                                     <img
                                       src={msg.filePath}
                                       alt={msg.fileName || "Image"}
-                                      className="max-w-xs max-h-48 rounded-lg border border-gray-200 shadow-sm"
+                                      className="max-w-xs max-h-48 rounded-lg border border-border shadow-sm"
                                     />
                                   </div>
                                 )}
@@ -833,10 +833,10 @@ export default function TeamsChatsPage() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                <div className="p-3 bg-white border-t">
-                  <div className="bg-[#f5f5f5] rounded-lg border border-gray-200 focus-within:border-[#6264a7] focus-within:ring-1 focus-within:ring-[#6264a7]/20 transition-all">
+                <div className="p-3 bg-card border-t">
+                  <div className="bg-[#f5f5f5] rounded-lg border border-border focus-within:border-[#6264a7] focus-within:ring-1 focus-within:ring-[#6264a7]/20 transition-all">
                     <input
-                      className="w-full bg-transparent border-none px-3 py-2.5 text-sm text-gray-800 placeholder-gray-400 focus:outline-none"
+                      className="w-full bg-transparent border-none px-3 py-2.5 text-sm text-foreground placeholder-gray-400 focus:outline-none"
                       placeholder={`Type a message in ${selectedGroup.name}...`}
                       value={messageText}
                       onChange={e => setMessageText(e.target.value)}
@@ -859,7 +859,7 @@ export default function TeamsChatsPage() {
                           data-testid="input-file-upload"
                         />
                         <button
-                          className="p-1.5 rounded hover:bg-gray-200 text-gray-500 transition-colors"
+                          className="p-1.5 rounded hover:bg-gray-200 text-muted-foreground transition-colors"
                           onClick={() => fileInputRef.current?.click()}
                           title="Attach a file"
                           data-testid="button-attach-file"
@@ -886,12 +886,12 @@ export default function TeamsChatsPage() {
               </div>
 
               {showMembersPanel && selectedGroup && (
-                <div className="w-64 bg-white border-l overflow-y-auto shrink-0" data-testid="members-panel">
+                <div className="w-64 bg-card border-l overflow-y-auto shrink-0" data-testid="members-panel">
                   <div className="p-3 border-b">
                     <div className="flex items-center justify-between">
                       <h4 className="text-sm font-semibold">Members ({selectedGroup.memberCount})</h4>
                       <button
-                        className="p-1 rounded hover:bg-gray-100 text-gray-400"
+                        className="p-1 rounded hover:bg-muted text-gray-400"
                         onClick={() => setShowMembersPanel(false)}
                       >
                         <X className="h-3.5 w-3.5" />
@@ -902,7 +902,7 @@ export default function TeamsChatsPage() {
                     {selectedGroup.members.map(m => (
                       <div
                         key={m.id}
-                        className="flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-gray-50 group"
+                        className="flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-muted group"
                         data-testid={`member-${m.userId}`}
                       >
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0 ${getAvatarColor(m.userName)}`}>
@@ -961,7 +961,7 @@ export default function TeamsChatsPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-gray-600">Channel type</Label>
+              <Label className="text-xs font-medium text-muted-foreground">Channel type</Label>
               <Select value={newGroupType} onValueChange={setNewGroupType}>
                 <SelectTrigger data-testid="select-group-type">
                   <SelectValue />
@@ -984,7 +984,7 @@ export default function TeamsChatsPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-gray-600">Channel name</Label>
+              <Label className="text-xs font-medium text-muted-foreground">Channel name</Label>
               <Input
                 value={newGroupName}
                 onChange={e => setNewGroupName(e.target.value)}
@@ -995,7 +995,7 @@ export default function TeamsChatsPage() {
 
             {newGroupType === "department" && (
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-600">Department</Label>
+                <Label className="text-xs font-medium text-muted-foreground">Department</Label>
                 <Select value={newGroupDept} onValueChange={setNewGroupDept}>
                   <SelectTrigger data-testid="select-department">
                     <SelectValue placeholder="Select department" />
@@ -1009,7 +1009,7 @@ export default function TeamsChatsPage() {
 
             {newGroupType === "project" && (
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-gray-600">Project</Label>
+                <Label className="text-xs font-medium text-muted-foreground">Project</Label>
                 <Select value={newGroupProject} onValueChange={setNewGroupProject}>
                   <SelectTrigger data-testid="select-project">
                     <SelectValue placeholder="Select project" />
@@ -1022,7 +1022,7 @@ export default function TeamsChatsPage() {
             )}
 
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-gray-600">Description (optional)</Label>
+              <Label className="text-xs font-medium text-muted-foreground">Description (optional)</Label>
               <Textarea
                 value={newGroupDesc}
                 onChange={e => setNewGroupDesc(e.target.value)}
@@ -1071,7 +1071,7 @@ export default function TeamsChatsPage() {
                 .map(u => (
                   <label
                     key={u.id}
-                    className="flex items-center gap-3 p-2 rounded-md hover:bg-gray-50 cursor-pointer transition-colors"
+                    className="flex items-center gap-3 p-2 rounded-md hover:bg-muted cursor-pointer transition-colors"
                     data-testid={`checkbox-user-${u.id}`}
                   >
                     <input
@@ -1082,7 +1082,7 @@ export default function TeamsChatsPage() {
                           e.target.checked ? [...prev, u.id] : prev.filter(id => id !== u.id)
                         )
                       }
-                      className="rounded border-gray-300 text-[#6264a7] focus:ring-[#6264a7]"
+                      className="rounded border-border text-[#6264a7] focus:ring-[#6264a7]"
                     />
                     <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold ${getAvatarColor(u.name)}`}>
                       {getInitials(u.name)}
@@ -1095,7 +1095,7 @@ export default function TeamsChatsPage() {
                 ))}
             </div>
             {selectedMembers.length > 0 && (
-              <p className="text-xs text-gray-500">{selectedMembers.length} people selected</p>
+              <p className="text-xs text-muted-foreground">{selectedMembers.length} people selected</p>
             )}
           </div>
           <DialogFooter>

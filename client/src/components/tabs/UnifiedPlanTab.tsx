@@ -236,10 +236,10 @@ function InlinePctEditor({ pct, onCommit }: { pct: number; onCommit: (v: number)
       title="Click to edit"
       data-testid="inline-pct-display"
     >
-      <div className="flex-1 h-[5px] rounded-full bg-slate-100 overflow-hidden min-w-[30px]">
+      <div className="flex-1 h-[5px] rounded-full bg-muted overflow-hidden min-w-[30px]">
         <div className={`h-full rounded-full transition-all ${pctColor(pct)}`} style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
-      <span className={`text-[10px] tabular-nums font-semibold min-w-[24px] text-right group-hover:text-primary ${pct >= 100 ? "text-emerald-600" : pct > 0 ? "text-slate-700" : "text-slate-400"}`}>
+      <span className={`text-[10px] tabular-nums font-semibold min-w-[24px] text-right group-hover:text-primary ${pct >= 100 ? "text-emerald-600" : pct > 0 ? "text-foreground" : "text-slate-400"}`}>
         {pct}%
       </span>
     </div>
@@ -923,8 +923,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   return (
     <div className="space-y-3" data-testid="unified-plan-tab">
       <div className="flex items-center gap-3 flex-wrap" data-testid="plan-kpi-bar">
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-slate-50 border">
-          <Clock className="h-3.5 w-3.5 text-slate-500" />
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-muted border">
+          <Clock className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs text-muted-foreground">Total</span>
           <span className="text-sm font-bold tabular-nums" data-testid="kpi-total">{kpis.total}</span>
         </div>
@@ -957,8 +957,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
           )}
         </div>
         {kpis.avgExpectedPct !== null && (
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border ${kpis.avgPct < kpis.avgExpectedPct ? "bg-amber-50 border-amber-200" : "bg-slate-50"}`}>
-            <Calendar className="h-3.5 w-3.5 text-slate-500" />
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border ${kpis.avgPct < kpis.avgExpectedPct ? "bg-amber-50 border-amber-200" : "bg-muted"}`}>
+            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
             <span className="text-xs text-muted-foreground">Expected %</span>
             <span className="text-sm font-bold tabular-nums" data-testid="kpi-expected">{kpis.avgExpectedPct}%</span>
           </div>
@@ -998,12 +998,12 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
           </SelectContent>
         </Select>
 
-        <div className="flex items-center border rounded-md overflow-hidden bg-white shadow-sm" data-testid="toolbar-actions">
+        <div className="flex items-center border rounded-md overflow-hidden bg-card shadow-sm" data-testid="toolbar-actions">
           <TooltipProvider delayDuration={200}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs border-r hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                   disabled={!isAdmin}
                   onClick={() => { if (newTaskTitle.trim()) createMutation.mutate(newTaskTitle.trim()); else { setNewTaskTitle("New Task"); createMutation.mutate("New Task"); } }}
                   data-testid="toolbar-add-task"
@@ -1016,7 +1016,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs border-r hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                   disabled={!isAdmin}
                   onClick={() => setMilestoneDialogOpen(true)}
                   data-testid="button-create-milestone"
@@ -1029,7 +1029,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs border-r hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                   disabled={!isAdmin || selectedIds.size === 0}
                   onClick={() => {
                     const selArr = Array.from(selectedIds);
@@ -1053,7 +1053,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs border-r hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                   disabled={!isAdmin || selectedIds.size === 0}
                   onClick={() => {
                     const selArr = Array.from(selectedIds);
@@ -1071,7 +1071,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs border-r hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                   disabled={!isAdmin || selectedIds.size !== 1}
                   onClick={() => {
                     const selId = Array.from(selectedIds)[0];
@@ -1094,7 +1094,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs border-r hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                   disabled={!isAdmin || selectedIds.size !== 1}
                   onClick={() => {
                     const selId = Array.from(selectedIds)[0];
@@ -1117,7 +1117,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs border-r hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 text-red-600"
+                  className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 text-red-600"
                   disabled={!isAdmin || selectedIds.size === 0}
                   onClick={() => deleteMutation.mutate(Array.from(selectedIds))}
                   data-testid="toolbar-delete"
@@ -1130,7 +1130,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  className="h-7 px-2 text-xs hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                  className="h-7 px-2 text-xs hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                   disabled={!isAdmin || renumberMutation.isPending}
                   onClick={() => renumberMutation.mutate()}
                   data-testid="button-renumber"
@@ -1165,7 +1165,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             <div
               key={kd.id}
               className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs border ${
-                kd.mappingValid ? "bg-white border-emerald-200" : "bg-slate-50 border-slate-200"
+                kd.mappingValid ? "bg-card border-emerald-200" : "bg-muted border-border"
               }`}
               data-testid={`key-date-${kd.keyDateName.replace(/\s+/g, '-').toLowerCase()}`}
             >
@@ -1176,7 +1176,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
               )}
               <span className="font-medium text-[11px]">{kd.keyDateName}</span>
               <ArrowRight className="h-2.5 w-2.5 text-muted-foreground" />
-              <span className={`text-[11px] tabular-nums ${kd.mappingValid ? "text-slate-700" : "text-slate-400"}`}>
+              <span className={`text-[11px] tabular-nums ${kd.mappingValid ? "text-foreground" : "text-slate-400"}`}>
                 {formatKeyDate(kd.effectiveDate)}
               </span>
             </div>
@@ -1219,7 +1219,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
           padding-bottom: 0;
         }
       `}} />
-      <div className="flex border rounded-md overflow-hidden bg-white" style={{ height: "calc(100vh - 320px)", minHeight: "400px" }} data-testid="plan-grid-container">
+      <div className="flex border rounded-md overflow-hidden bg-card" style={{ height: "calc(100vh - 320px)", minHeight: "400px" }} data-testid="plan-grid-container">
         <div
           ref={bodyScrollRef}
           className="flex-shrink-0 overflow-y-auto overflow-x-auto border-r"
@@ -1228,10 +1228,10 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
           data-testid="plan-grid-left"
         >
           <table className="plan-grid-table w-full text-[11px] border-collapse" style={{ tableLayout: "fixed" }}>
-            <thead className="sticky top-0 z-20 bg-slate-100">
+            <thead className="sticky top-0 z-20 bg-muted">
               <tr style={{ height: 28, maxHeight: 28 }}>
                 {isAdmin && <th className="w-5 px-0 py-0 border-b border-r overflow-hidden" style={{ height: 28 }} />}
-                <th className="w-7 px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }}>
+                <th className="w-7 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }}>
                   <Checkbox
                     checked={selectedIds.size === visibleTasks.length && visibleTasks.length > 0}
                     onCheckedChange={(checked) => {
@@ -1242,19 +1242,19 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                     data-testid="checkbox-select-all"
                   />
                 </th>
-                <th className="w-8 px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-row-num">#</th>
-                <th className="w-6 px-0 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-indicator"></th>
-                <th className="w-12 px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-wbs">WBS</th>
-                <th className="min-w-[140px] px-2 py-0 text-left border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-task">Task Name</th>
-                <th className="w-14 px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-duration">Duration</th>
-                <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-start">Start</th>
-                <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-end">Finish</th>
-                <th className="w-[60px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-predecessors">Pred.</th>
-                <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-lead">Resource</th>
-                <th className="w-[90px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-pct-done">% Complete</th>
-                <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-expected-pct">Expected %</th>
-                <th className="w-10 px-1 py-0 text-center border-b border-r font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} data-testid="header-status">Status</th>
-                {isAdmin && <th className="w-7 px-0 py-0 border-b font-semibold text-slate-600 overflow-hidden" style={{ height: 28 }} />}
+                <th className="w-8 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-row-num">#</th>
+                <th className="w-6 px-0 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-indicator"></th>
+                <th className="w-12 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-wbs">WBS</th>
+                <th className="min-w-[140px] px-2 py-0 text-left border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-task">Task Name</th>
+                <th className="w-14 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-duration">Duration</th>
+                <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-start">Start</th>
+                <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-end">Finish</th>
+                <th className="w-[60px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-predecessors">Pred.</th>
+                <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-lead">Resource</th>
+                <th className="w-[90px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-pct-done">% Complete</th>
+                <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-expected-pct">Expected %</th>
+                <th className="w-10 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-status">Status</th>
+                {isAdmin && <th className="w-7 px-0 py-0 border-b font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} />}
               </tr>
             </thead>
             <tbody>
@@ -1321,7 +1321,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                       key={task.id}
                       className={`
                         border-b transition-colors cursor-pointer
-                        ${hasChildren && !isMilestone ? "bg-slate-100 font-semibold" : ""}
+                        ${hasChildren && !isMilestone ? "bg-muted font-semibold" : ""}
                         ${isMilestone ? "bg-amber-50/60 font-semibold" : ""}
                         ${!hasChildren && !isMilestone ? "hover:bg-blue-50/30" : ""}
                         ${selectedIds.has(task.id) ? "!bg-blue-100/50" : ""}
@@ -1371,7 +1371,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           <span className="text-slate-400 text-[10px]" title="Task">▬</span>
                         )}
                       </td>
-                      <td className="px-1 text-center border-r text-[10px] tabular-nums text-slate-500" data-testid={`wbs-${task.id}`}>
+                      <td className="px-1 text-center border-r text-[10px] tabular-nums text-muted-foreground" data-testid={`wbs-${task.id}`}>
                         {isAdmin && task.rowNumber ? (
                           <InlineWbsEditor
                             value={task.taskNumber || ""}
@@ -1392,7 +1392,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                               {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                             </button>
                           )}
-                          <span className={`truncate ${isMilestone ? "text-amber-800" : hasChildren ? "text-slate-800" : ""}`} title={task.title}>
+                          <span className={`truncate ${isMilestone ? "text-amber-800" : hasChildren ? "text-foreground" : ""}`} title={task.title}>
                             {task.title}
                           </span>
                         </div>
@@ -1430,7 +1430,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                       <td className="px-1 text-center border-r text-[10px] text-slate-400 truncate" data-testid={`predecessors-${task.id}`}>
                         {task.dependencies && typeof task.dependencies === 'string' ? task.dependencies : task.predecessorTaskId ? `${task.predecessorTaskId} FS` : "—"}
                       </td>
-                      <td className="px-1 text-center border-r text-[10px] text-slate-500 truncate" data-testid={`lead-${task.id}`}>
+                      <td className="px-1 text-center border-r text-[10px] text-muted-foreground truncate" data-testid={`lead-${task.id}`}>
                         {task.assignees ? (
                           <span className="truncate">{typeof task.assignees === 'string' ? task.assignees.split(',')[0] : '—'}</span>
                         ) : "—"}
@@ -1452,7 +1452,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                       </td>
                       <td className="px-1 text-center border-r text-[10px] tabular-nums" data-testid={`expected-pct-${task.id}`}>
                         {expPct !== null ? (
-                          <span className={isLate ? "text-red-600 font-semibold" : "text-slate-500"}>{expPct}%</span>
+                          <span className={isLate ? "text-red-600 font-semibold" : "text-muted-foreground"}>{expPct}%</span>
                         ) : (
                           <span className="text-slate-300">—</span>
                         )}
@@ -1505,7 +1505,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                                   }}
                                   data-testid={`action-ungroup-${task.id}`}
                                 >
-                                  <Unlink className="h-3 w-3 mr-2 text-slate-500" />
+                                  <Unlink className="h-3 w-3 mr-2 text-muted-foreground" />
                                   Remove from Group
                                 </DropdownMenuItem>
                               )}
@@ -1537,7 +1537,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
           data-testid="plan-gantt-right"
         >
           <div style={{ width: ganttTotalWidth, minHeight: "100%" }} className="relative">
-            <div className="sticky top-0 z-10 bg-slate-100 border-b flex" style={{ height: 28 }}>
+            <div className="sticky top-0 z-10 bg-muted border-b flex" style={{ height: 28 }}>
               {weeks.map((weekStart, i) => {
                 const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
                 const leftPx = differenceInDays(weekStart, ganttRange.start) * dayWidth;
@@ -1547,10 +1547,10 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                 return (
                   <div
                     key={i}
-                    className="absolute border-r border-slate-200 flex items-center justify-center"
+                    className="absolute border-r border-border flex items-center justify-center"
                     style={{ left: leftPx, width: widthPx, height: 28 }}
                   >
-                    <span className="text-[9px] text-slate-500 font-medium">
+                    <span className="text-[9px] text-muted-foreground font-medium">
                       {zoomLevel === "week"
                         ? `${format(weekStart, "dd MMM")} - ${format(weekEnd, "dd MMM")}`
                         : `W${weekNum}`
@@ -1578,7 +1578,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
               return (
                 <div
                   key={`grid-${i}`}
-                  className="absolute top-7 bottom-0 border-r border-slate-100"
+                  className="absolute top-7 bottom-0 border-r border-border"
                   style={{ left: leftPx }}
                 />
               );
@@ -1592,7 +1592,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                 const expPct = task.computedExpectedPct ?? task.expectedPercentComplete ?? null;
                 const isLate = expPct !== null && pct < expPct && pct < 100;
                 const groupColor = getGroupColor(task);
-                const defaultColor = { bg: "bg-slate-200", border: "border-slate-300", fill: "bg-slate-400", light: "" };
+                const defaultColor = { bg: "bg-slate-200", border: "border-border", fill: "bg-slate-400", light: "" };
                 const gc = groupColor || defaultColor;
 
                 return (
@@ -1655,7 +1655,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       </div>
 
       {isAdmin && (
-        <div className="flex items-center gap-2 px-2 py-1.5 border rounded-md bg-slate-50" data-testid="add-task-row">
+        <div className="flex items-center gap-2 px-2 py-1.5 border rounded-md bg-muted" data-testid="add-task-row">
           <Plus className="h-3.5 w-3.5 text-slate-400" />
           <Input
             placeholder="Add a new task..."
@@ -1713,7 +1713,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                   .map(t => {
                     const isSelected = selectedIds.has(t.id);
                     return (
-                      <label key={t.id} className="flex items-center gap-2 px-2 py-1 hover:bg-slate-50 rounded cursor-pointer text-xs">
+                      <label key={t.id} className="flex items-center gap-2 px-2 py-1 hover:bg-muted rounded cursor-pointer text-xs">
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={(checked) => {
@@ -1782,7 +1782,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                     return (
                       <button
                         key={t.id}
-                        className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-slate-100 flex items-center gap-2 ${isMil ? "font-semibold" : ""}`}
+                        className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-muted flex items-center gap-2 ${isMil ? "font-semibold" : ""}`}
                         onClick={() => {
                           if (groupUnderTask.rowNumber && t.rowNumber) {
                             setParentMutation.mutate({

@@ -1,0 +1,366 @@
+APPLICATION-WIDE UX + FLOW OVERHAUL
+
+Context:
+We have a fully working operational platform for a solar EPC company (Emergent Energy). The system contains modules such as:
+
+- Home
+- My Work
+- Exec
+- Project Management
+    - Execution Board
+    - Project Summary
+    - PM Dashboard
+    - Smart Import
+    - Excel Updates
+    - Portfolios
+    - Weekly Reviews
+- Project Finance
+    - Cashflow
+    - COS Tracker
+    - Procurement
+    - Invoice Patterns
+- Project Development
+- Engineering
+- Governance
+- Information
+- Admin
+
+The system works functionally but the UX feels like disconnected dashboards. We need a **complete UX and interaction overhaul across the entire application** so it behaves like a coherent **project operations platform**.
+
+DO NOT break existing functionality, routes, permissions, or APIs.
+
+This is primarily:
+- UX architecture
+- layout consistency
+- design system
+- navigation flow
+- component standardization
+
+Not backend logic changes.
+
+--------------------------------------------------
+
+PRIMARY OBJECTIVE
+
+Transform the system from a collection of dashboards into a **project-centric operational platform**.
+
+The application must revolve around **Projects as the core object**.
+
+Every module should clearly answer:
+
+- What project am I looking at?
+- What phase is it in?
+- What actions are required?
+- What risks exist?
+- What financial state exists?
+
+--------------------------------------------------
+
+PHASE 1 — BUILD A GLOBAL DESIGN SYSTEM
+
+Create a reusable UI component system used across ALL screens.
+
+Components required:
+
+Base Layout
+- AppShell
+- Sidebar
+- TopBar
+- PageHeader
+
+Containers
+- Panel
+- Card
+- Module
+- KPIBlock
+
+Controls
+- PrimaryButton
+- SecondaryButton
+- GhostButton
+- Chip
+- StatusBadge
+- Dropdown
+- Input
+- Toggle
+
+Data Components
+- TablePro
+- Timeline
+- ProgressBar
+- KPIGrid
+- ActivityFeed
+- MetricStrip
+
+Use consistent spacing, typography, and color tokens.
+
+--------------------------------------------------
+
+COLOR SYSTEM (EMERGENT PRO)
+
+Backgrounds
+
+bg-app       #0B1220
+bg-panel     #0F172A
+bg-card      #111C2E
+border-theme #22324A
+
+Text
+
+text-primary   #EAF1FF
+text-secondary #C7D2E6
+text-muted     #7D8CA8
+
+Brand
+
+brand-green #16A34A
+
+Status
+
+green #22C55E
+amber #F59E0B
+red   #EF4444
+blue  #3B82F6
+
+All white backgrounds should be removed from core application screens.
+
+--------------------------------------------------
+
+PHASE 2 — REBUILD APPLICATION NAVIGATION
+
+Current navigation is a list of modules. This makes users think in pages.
+
+Change navigation so the system reflects **how work flows**.
+
+NEW NAV STRUCTURE
+
+HOME
+
+MY WORK
+    Tasks
+    Approvals
+    Alerts
+
+PROJECTS
+    Project List
+    Portfolios
+    Execution Board
+
+PROJECT DELIVERY
+    Project Dashboard
+    Engineering
+    Quality
+    Construction
+    Handover
+
+FINANCE
+    Cashflow
+    COS Tracker
+    Procurement
+
+OPERATIONS
+    Weekly Reviews
+    Reports
+    Performance
+
+SYSTEM
+    Smart Import
+    Data Updates
+    Information
+    Admin
+
+The navigation must reflect **operations flow**.
+
+--------------------------------------------------
+
+PHASE 3 — CREATE A CONSISTENT PAGE STRUCTURE
+
+Every screen must follow this structure:
+
+PageHeader
+    Title
+    Context (project / portfolio / time period)
+    Key Actions
+    Filters
+
+MetricStrip
+    KPIs relevant to page
+
+Main Workspace
+    Modules / tables / visualizations
+
+Activity Section
+    events
+    alerts
+    history
+
+--------------------------------------------------
+
+PHASE 4 — PROJECT-CENTRIC EXPERIENCE
+
+When a user opens a project they should see a **Project Command Center**.
+
+Project Dashboard Layout:
+
+Project Header
+    Project name
+    stage
+    PD
+    PM
+    system size
+    completion %
+
+KPI Strip
+    Contract
+    Revenue Realised
+    COS Realised
+    Margin
+    Next Milestone
+
+Workspace Grid
+
+Left Column
+    Project Plan
+    Milestones
+    Activity
+
+Right Column
+    Engineering
+    Quality
+    Finance
+
+Bottom
+    Document + Deliverables
+
+--------------------------------------------------
+
+PHASE 5 — REDESIGN DATA VISUALIZATION
+
+Current system uses many disconnected cards.
+
+Replace with:
+
+Metric Strips
+Progress Timelines
+Status Chips
+Compact Tables
+Alert Panels
+
+Example:
+
+Execution Board
+
+Top: Milestone timeline
+
+Middle: Portfolio health
+
+Bottom: Alerts
+    overdue invoices
+    delayed projects
+    upcoming milestones
+
+--------------------------------------------------
+
+PHASE 6 — STANDARDIZE TABLES
+
+All tables should use a unified component:
+
+TablePro
+
+Features:
+- sticky header
+- column sorting
+- row hover
+- status chips
+- compact density
+- consistent spacing
+
+--------------------------------------------------
+
+PHASE 7 — IMPROVE USER FLOW
+
+The application should guide behavior.
+
+Examples:
+
+Project Manager Flow
+
+My Work
+→ Project Dashboard
+→ Engineering Tasks
+→ Deliverables
+→ Close Milestones
+
+Finance Flow
+
+Cashflow
+→ COS Tracker
+→ Invoice Reconciliation
+→ Forecast
+
+Engineering Flow
+
+Engineering Overview
+→ Task Board
+→ Stage Gate
+→ Deliverables
+
+--------------------------------------------------
+
+PHASE 8 — REMOVE VISUAL NOISE
+
+Remove:
+
+rainbow borders
+pastel blocks
+thick separators
+inconsistent card spacing
+
+Replace with:
+
+consistent modules
+subtle separators
+clear typography hierarchy
+
+--------------------------------------------------
+
+PHASE 9 — ENSURE CONSISTENCY
+
+All pages must use the same:
+
+cards
+tables
+chips
+buttons
+headers
+spacing
+
+No page-specific styling hacks.
+
+--------------------------------------------------
+
+PHASE 10 — QA
+
+Verify:
+
+Navigation works
+All routes load
+Tables function
+Buttons function
+Filters function
+No console errors
+
+--------------------------------------------------
+
+OUTPUT REQUIRED
+
+1) Updated design system
+2) Updated navigation structure
+3) Refactored key screens:
+   - Home
+   - Execution Board
+   - Project Dashboard
+   - Cashflow
+   - Engineering
+4) Component library used consistently
+5) Screens visually coherent and professional

@@ -88,17 +88,17 @@ const priorityColors: Record<string, string> = {
   Urgent: "bg-orange-100 text-orange-700",
   High: "bg-amber-100 text-amber-700",
   Medium: "bg-blue-100 text-blue-700",
-  Low: "bg-gray-100 text-gray-600",
+  Low: "bg-muted text-muted-foreground",
 };
 
 const statusColors: Record<string, string> = {
-  New: "bg-slate-100 text-slate-700",
+  New: "bg-muted text-foreground",
   "In Progress": "bg-blue-100 text-blue-700",
   "Awaiting CP": "bg-amber-100 text-amber-700",
   "CP Signed": "bg-emerald-100 text-emerald-700",
   "Design Complete": "bg-green-100 text-green-700",
   "On Hold": "bg-red-100 text-red-700",
-  Cancelled: "bg-gray-100 text-gray-500",
+  Cancelled: "bg-muted text-muted-foreground",
   Complete: "bg-green-100 text-green-700",
 };
 
@@ -146,7 +146,7 @@ function StatusGroup({
         data-testid={`toggle-group-${status.toLowerCase().replace(/\s+/g, "-")}`}
       >
         {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        <Badge className={`text-xs ${statusColors[status] || "bg-gray-100 text-gray-700"}`}>{status}</Badge>
+        <Badge className={`text-xs ${statusColors[status] || "bg-muted text-foreground"}`}>{status}</Badge>
         <span className="text-sm text-muted-foreground font-medium">({requests.length})</span>
       </button>
 
@@ -198,7 +198,7 @@ function StatusGroup({
                   </td>
                   <td className="px-3 py-2.5">
                     {r.priority && (
-                      <Badge className={`text-[10px] ${priorityColors[r.priority] || "bg-gray-100"}`} data-testid={`badge-priority-${r.id}`}>
+                      <Badge className={`text-[10px] ${priorityColors[r.priority] || "bg-muted"}`} data-testid={`badge-priority-${r.id}`}>
                         {r.priority}
                       </Badge>
                     )}
@@ -301,7 +301,7 @@ function DetailDrawer({
               <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Priority</Label>
               <div className="mt-0.5">
                 {request.priority ? (
-                  <Badge className={`text-xs ${priorityColors[request.priority] || "bg-gray-100"}`}>{request.priority}</Badge>
+                  <Badge className={`text-xs ${priorityColors[request.priority] || "bg-muted"}`}>{request.priority}</Badge>
                 ) : "—"}
               </div>
             </div>

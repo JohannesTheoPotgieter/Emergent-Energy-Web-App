@@ -127,7 +127,7 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const LEVEL_CONFIG: Record<number, { color: string; bg: string; glow: string; emoji: string }> = {
-  1: { color: "text-slate-600", bg: "bg-slate-100 dark:bg-slate-800", glow: "", emoji: "🌱" },
+  1: { color: "text-muted-foreground", bg: "bg-muted dark:bg-slate-800", glow: "", emoji: "🌱" },
   2: { color: "text-blue-600", bg: "bg-blue-100 dark:bg-blue-900/40", glow: "", emoji: "⚡" },
   3: { color: "text-green-600", bg: "bg-green-100 dark:bg-green-900/40", glow: "", emoji: "🌟" },
   4: { color: "text-purple-600", bg: "bg-purple-100 dark:bg-purple-900/40", glow: "shadow-purple-200/50", emoji: "💜" },
@@ -157,7 +157,7 @@ const PENALTY_STAT_CONFIG = [
   { key: "rejectedDeliverables", label: "Rejected Docs", icon: FileX, color: "text-amber-600" },
   { key: "openQualityWarnings", label: "Open Warnings", icon: ShieldAlert, color: "text-yellow-600" },
   { key: "overdueEngTasks", label: "Overdue Eng Tasks", icon: Cog, color: "text-red-500" },
-  { key: "unreadNotifications", label: "Unread Notifs (3d+)", icon: BellOff, color: "text-gray-500" },
+  { key: "unreadNotifications", label: "Unread Notifs (3d+)", icon: BellOff, color: "text-muted-foreground" },
   { key: "overdueQmTasks", label: "Overdue QM Tasks", icon: ClipboardX, color: "text-red-600" },
 ];
 
@@ -199,7 +199,7 @@ const PENALTY_DETAIL_CONFIG: { key: string; label: string; icon: any; color: str
   { key: "rejectedDeliverables", label: "Rejected Deliverables", icon: FileX, color: "text-amber-600" },
   { key: "openQualityWarnings", label: "Open Warnings", icon: ShieldAlert, color: "text-yellow-600" },
   { key: "overdueEngTasks", label: "Overdue Eng Tasks", icon: Cog, color: "text-red-500" },
-  { key: "unreadNotifications", label: "Unread Notifs (3d+)", icon: BellOff, color: "text-gray-500" },
+  { key: "unreadNotifications", label: "Unread Notifs (3d+)", icon: BellOff, color: "text-muted-foreground" },
   { key: "overdueQmTasks", label: "Overdue QM Tasks", icon: ClipboardX, color: "text-red-600" },
 ];
 
@@ -215,7 +215,7 @@ function DetailLineItems({ cat, expanded, onToggle, config, type }: {
   const isEarned = type === "earned";
 
   return (
-    <div className="border border-gray-100 dark:border-gray-800 rounded-lg overflow-hidden" data-testid={`detail-${config.label.toLowerCase().replace(/\s+/g, '-')}`}>
+    <div className="border border-border rounded-lg overflow-hidden" data-testid={`detail-${config.label.toLowerCase().replace(/\s+/g, '-')}`}>
       <button
         className={`w-full flex items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/50 ${expanded ? 'bg-muted/30' : ''}`}
         onClick={onToggle}
@@ -233,12 +233,12 @@ function DetailLineItems({ cat, expanded, onToggle, config, type }: {
         )}
       </button>
       {expanded && cat.items.length > 0 && (
-        <div className="border-t border-gray-100 dark:border-gray-800 max-h-[200px] overflow-y-auto">
+        <div className="border-t border-border max-h-[200px] overflow-y-auto">
           {cat.items.map((item, idx) => (
             <div key={idx} className="flex items-center gap-2 px-3 py-1.5 text-[11px] border-b border-gray-50 dark:border-gray-900 last:border-b-0 hover:bg-muted/20">
               <span className="text-muted-foreground w-4 text-right shrink-0">{idx + 1}.</span>
               <div className="flex-1 min-w-0">
-                <span className="truncate block text-gray-700 dark:text-gray-300">{item.name || 'Unnamed'}</span>
+                <span className="truncate block text-foreground ">{item.name || 'Unnamed'}</span>
                 {item.project && (
                   <span className="text-[10px] text-muted-foreground truncate block">{item.project}</span>
                 )}
@@ -317,11 +317,11 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
       <DialogContent className="sm:max-w-[540px] max-h-[85vh] overflow-y-auto p-0">
         <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 px-6 pt-6 pb-8 text-white relative overflow-hidden">
           <div className="absolute top-2 right-2 text-4xl opacity-20">{lvlCfg.emoji}</div>
-          <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-white/5 rounded-full" />
-          <div className="absolute -top-6 -right-6 w-32 h-32 bg-white/5 rounded-full" />
+          <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-card/5 rounded-full" />
+          <div className="absolute -top-6 -right-6 w-32 h-32 bg-card/5 rounded-full" />
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2 text-lg">
-              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl font-bold backdrop-blur-sm">
+              <div className="w-10 h-10 rounded-full bg-card/20 flex items-center justify-center text-xl font-bold backdrop-blur-sm">
                 {selectedUser.name.charAt(0)}
               </div>
               {selectedUser.name}
@@ -346,7 +346,7 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
                 </span>
                 <span>Next: {selectedUser.level.nextThreshold.toLocaleString()} XP</span>
               </div>
-              <div className="h-3 rounded-full bg-white/20 overflow-hidden">
+              <div className="h-3 rounded-full bg-card/20 overflow-hidden">
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-yellow-300 to-amber-400 transition-all duration-1000 relative overflow-hidden"
                   style={{
@@ -405,7 +405,7 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
             <div>
               <div className="flex items-center gap-1 mb-3 bg-muted/30 rounded-lg p-1">
                 <button
-                  className={`flex-1 text-xs px-3 py-2 rounded-md font-medium transition-all ${detailTab === 'earned' ? 'bg-white dark:bg-gray-800 shadow-sm text-green-700 dark:text-green-400' : 'text-muted-foreground hover:text-foreground'}`}
+                  className={`flex-1 text-xs px-3 py-2 rounded-md font-medium transition-all ${detailTab === 'earned' ? 'bg-card dark:bg-gray-800 shadow-sm text-green-700 dark:text-green-400' : 'text-muted-foreground hover:text-foreground'}`}
                   onClick={() => setDetailTab("earned")}
                   data-testid="btn-earned-tab"
                 >
@@ -413,7 +413,7 @@ function UserDetailDialog({ selectedUser, onClose }: { selectedUser: Leaderboard
                   Earned (+{earnedTotal.toLocaleString()})
                 </button>
                 <button
-                  className={`flex-1 text-xs px-3 py-2 rounded-md font-medium transition-all ${detailTab === 'penalties' ? 'bg-white dark:bg-gray-800 shadow-sm text-red-700 dark:text-red-400' : 'text-muted-foreground hover:text-foreground'}`}
+                  className={`flex-1 text-xs px-3 py-2 rounded-md font-medium transition-all ${detailTab === 'penalties' ? 'bg-card dark:bg-gray-800 shadow-sm text-red-700 dark:text-red-400' : 'text-muted-foreground hover:text-foreground'}`}
                   onClick={() => setDetailTab("penalties")}
                   data-testid="btn-penalties-tab"
                 >
@@ -520,7 +520,7 @@ function PodiumCard({ entry, rank, onClick }: { entry: LeaderboardEntry; rank: n
       data-testid={`card-rank-${rank}`}
     >
       <div className="relative mb-2">
-        <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center text-2xl sm:text-3xl font-black shadow-lg transition-transform group-hover:scale-110 ${rank === 1 ? 'bg-gradient-to-br from-yellow-300 to-amber-500 text-white ring-4 ring-yellow-300/50' : rank === 2 ? 'bg-gradient-to-br from-gray-200 to-gray-400 text-gray-700 ring-4 ring-gray-300/50' : 'bg-gradient-to-br from-amber-500 to-amber-700 text-white ring-4 ring-amber-400/50'}`}>
+        <div className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center text-2xl sm:text-3xl font-black shadow-lg transition-transform group-hover:scale-110 ${rank === 1 ? 'bg-gradient-to-br from-yellow-300 to-amber-500 text-white ring-4 ring-yellow-300/50' : rank === 2 ? 'bg-gradient-to-br from-gray-200 to-gray-400 text-foreground ring-4 ring-gray-300/50' : 'bg-gradient-to-br from-amber-500 to-amber-700 text-white ring-4 ring-amber-400/50'}`}>
           {entry.name.charAt(0)}
         </div>
         {rank === 1 && (
@@ -541,10 +541,10 @@ function PodiumCard({ entry, rank, onClick }: { entry: LeaderboardEntry; rank: n
       >
         {rank === 1 && <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/10 to-white/20" />}
         <div className="text-center pb-4 relative z-10">
-          <div className={`text-3xl sm:text-4xl font-black ${rank === 1 ? 'text-white' : rank === 2 ? 'text-gray-700 dark:text-gray-200' : 'text-white'}`}>
+          <div className={`text-3xl sm:text-4xl font-black ${rank === 1 ? 'text-white' : rank === 2 ? 'text-foreground dark:text-gray-200' : 'text-white'}`}>
             {entry.points.toLocaleString()}
           </div>
-          <div className={`text-[10px] font-medium ${rank === 1 ? 'text-white/70' : rank === 2 ? 'text-gray-500 dark:text-gray-400' : 'text-white/70'}`}>XP</div>
+          <div className={`text-[10px] font-medium ${rank === 1 ? 'text-white/70' : rank === 2 ? 'text-muted-foreground dark:text-gray-400' : 'text-white/70'}`}>XP</div>
           {entry.pointsPenalty < 0 && (
             <div className="text-[10px] text-red-300 font-medium mt-0.5">{entry.pointsPenalty}</div>
           )}
@@ -553,7 +553,7 @@ function PodiumCard({ entry, rank, onClick }: { entry: LeaderboardEntry; rank: n
               <span key={b.key} className="text-base drop-shadow" title={b.name}>{b.icon}</span>
             ))}
           </div>
-          <div className={`text-[10px] mt-1 font-medium ${rank === 1 ? 'text-yellow-200' : rank === 2 ? 'text-gray-500 dark:text-gray-300' : 'text-amber-200'}`}>
+          <div className={`text-[10px] mt-1 font-medium ${rank === 1 ? 'text-yellow-200' : rank === 2 ? 'text-muted-foreground ' : 'text-amber-200'}`}>
             {lvlCfg.emoji} Lv.{entry.level.level} {entry.level.title}
           </div>
         </div>
@@ -633,17 +633,17 @@ export default function LeaderboardPage() {
 
       {myEntry && (
         <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 p-4 sm:p-5 text-white shadow-xl shadow-purple-200/30 dark:shadow-purple-900/30 animate-float-in" data-testid="card-my-stats">
-          <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/4" />
-          <div className="absolute bottom-0 left-20 w-24 h-24 bg-white/5 rounded-full translate-y-1/2" />
+          <div className="absolute top-0 right-0 w-40 h-40 bg-card/5 rounded-full -translate-y-1/2 translate-x-1/4" />
+          <div className="absolute bottom-0 left-20 w-24 h-24 bg-card/5 rounded-full translate-y-1/2" />
 
           <div className="relative flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-2xl font-black backdrop-blur-sm ring-2 ring-white/30">
+            <div className="w-14 h-14 rounded-full bg-card/20 flex items-center justify-center text-2xl font-black backdrop-blur-sm ring-2 ring-white/30">
               {myRank > 0 ? `#${myRank}` : "-"}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-bold text-lg">{myEntry.name}</span>
-                <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full backdrop-blur-sm">
+                <span className="text-xs bg-card/20 px-2 py-0.5 rounded-full backdrop-blur-sm">
                   {myLvlCfg.emoji} Lv.{myEntry.level.level} {myEntry.level.title}
                 </span>
               </div>
@@ -656,7 +656,7 @@ export default function LeaderboardPage() {
                 )}
               </div>
               <div className="mt-2">
-                <div className="h-2.5 rounded-full bg-white/20 overflow-hidden max-w-xs">
+                <div className="h-2.5 rounded-full bg-card/20 overflow-hidden max-w-xs">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-yellow-300 to-amber-400 transition-all duration-1000 relative overflow-hidden"
                     style={{
@@ -719,12 +719,12 @@ export default function LeaderboardPage() {
                 return (
                   <div
                     key={entry.userId}
-                    className="flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 cursor-pointer hover:shadow-md hover:border-primary/20 transition-all group animate-slide-up-fade"
+                    className="flex items-center gap-3 p-3 rounded-xl bg-card  border border-border cursor-pointer hover:shadow-md hover:border-primary/20 transition-all group animate-slide-up-fade"
                     style={{ animationDelay: `${Math.min(i * 0.04, 0.4)}s`, animationFillMode: 'both' }}
                     onClick={() => setSelectedUser(entry)}
                     data-testid={`card-rank-${rank}`}
                   >
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center text-sm font-black text-gray-500 dark:text-gray-400 shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center text-sm font-black text-muted-foreground dark:text-gray-400 shrink-0">
                       {rank}
                     </div>
 
@@ -734,11 +734,11 @@ export default function LeaderboardPage() {
                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${lvlCfg.bg} ${lvlCfg.color}`}>
                           {lvlCfg.emoji} Lv.{entry.level.level}
                         </span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 hidden sm:inline">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted dark:bg-gray-800 text-muted-foreground hidden sm:inline">
                           {ROLE_LABELS[entry.role] || entry.role}
                         </span>
                       </div>
-                      <div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-800 mt-1.5 max-w-[180px] overflow-hidden">
+                      <div className="h-1.5 rounded-full bg-muted dark:bg-gray-800 mt-1.5 max-w-[180px] overflow-hidden">
                         <div
                           className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-purple-500 transition-all duration-700"
                           style={{ width: `${Math.min(100, (entry.points / (activeEntries[0]?.points || 1)) * 100)}%` }}
@@ -791,7 +791,7 @@ export default function LeaderboardPage() {
                 className={`flex items-center gap-3 p-4 rounded-xl border transition-all animate-scale-in ${
                   earned
                     ? "bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/20 dark:to-yellow-950/20 border-amber-200 dark:border-amber-800/40 shadow-sm"
-                    : "bg-gray-50 dark:bg-gray-900/50 border-gray-100 dark:border-gray-800 opacity-50"
+                    : "bg-muted  border-border opacity-50"
                 }`}
                 style={{ animationDelay: `${Math.min(idx * 0.03, 0.4)}s`, animationFillMode: 'both' }}
                 data-testid={`badge-card-${key}`}
@@ -808,7 +808,7 @@ export default function LeaderboardPage() {
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full inline-block mt-1 capitalize ${
                     badge.category === 'penalties' ? 'bg-red-100 text-red-600 dark:bg-red-950/30 dark:text-red-400' :
                     badge.category === 'excellence' ? 'bg-green-100 text-green-600 dark:bg-green-950/30 dark:text-green-400' :
-                    'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                    'bg-muted text-muted-foreground dark:bg-gray-800 dark:text-gray-400'
                   }`}>{badge.category}</span>
                 </div>
               </div>
@@ -820,8 +820,8 @@ export default function LeaderboardPage() {
       <UserDetailDialog selectedUser={selectedUser} onClose={() => setSelectedUser(null)} />
 
       {!isLoading && tab === "leaderboard" && data?.pointValues && (
-        <div className="rounded-xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
-          <div className="px-5 py-3 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800/50 dark:to-gray-900 border-b border-gray-100 dark:border-gray-800">
+        <div className="rounded-xl border border-border bg-card  overflow-hidden">
+          <div className="px-5 py-3 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800/50 dark:to-gray-900 border-b border-border">
             <h3 className="text-sm font-bold flex items-center gap-2">
               <Zap className="w-4 h-4 text-yellow-500" />
               How XP Works

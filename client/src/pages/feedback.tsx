@@ -42,11 +42,11 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }>
   open: { label: "Open", color: "bg-blue-100 text-blue-800", icon: Clock },
   in_progress: { label: "In Progress", color: "bg-yellow-100 text-yellow-800", icon: Loader2 },
   resolved: { label: "Resolved", color: "bg-green-100 text-green-800", icon: CheckCircle2 },
-  closed: { label: "Closed", color: "bg-gray-100 text-gray-600", icon: AlertCircle },
+  closed: { label: "Closed", color: "bg-muted text-muted-foreground", icon: AlertCircle },
 };
 
 const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
-  low: { label: "Low", color: "bg-slate-100 text-slate-700" },
+  low: { label: "Low", color: "bg-muted text-foreground" },
   medium: { label: "Medium", color: "bg-blue-100 text-blue-700" },
   high: { label: "High", color: "bg-orange-100 text-orange-700" },
   critical: { label: "Critical", color: "bg-red-100 text-red-700" },

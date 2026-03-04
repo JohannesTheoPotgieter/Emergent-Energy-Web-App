@@ -125,7 +125,7 @@ function TrackerView({ data }: { data: TrackerData | undefined }) {
         <select
           value={selectedFY}
           onChange={(e) => setSelectedFY(e.target.value)}
-          className="text-sm border rounded px-2 py-1 bg-white"
+          className="text-sm border rounded px-2 py-1 bg-card"
           data-testid="select-fy-filter"
         >
           {availableFYs.map(fy => (
@@ -138,7 +138,7 @@ function TrackerView({ data }: { data: TrackerData | undefined }) {
         <Card>
           <CardContent className="p-3">
             <p className="text-xs text-muted-foreground">Planned COS {selectedFY !== 'All' ? `(${selectedFY})` : ''}</p>
-            <p className="text-lg font-bold text-slate-700" data-testid="text-total-planned">{formatRand(displayTotals.planned)}</p>
+            <p className="text-lg font-bold text-foreground" data-testid="text-total-planned">{formatRand(displayTotals.planned)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -209,7 +209,7 @@ function TrackerView({ data }: { data: TrackerData | undefined }) {
               </thead>
               <tbody>
                 <tr className="border-b hover:bg-muted/30">
-                  <td className="p-2 font-medium text-slate-700 sticky left-0 bg-white">Planned COS</td>
+                  <td className="p-2 font-medium text-foreground sticky left-0 bg-card">Planned COS</td>
                   {displayData.map(d => (
                     <td key={d.label} className="p-2 text-right font-mono text-xs">{formatRandExact(d.planned)}</td>
                   ))}
@@ -246,7 +246,7 @@ function TrackerView({ data }: { data: TrackerData | undefined }) {
 }
 
 const stateBadgeColors: Record<string, string> = {
-  Planned: "bg-slate-100 text-slate-700 border-slate-200",
+  Planned: "bg-muted text-foreground border-border",
   Committed: "bg-amber-100 text-amber-700 border-amber-200",
   Invoiced: "bg-blue-100 text-blue-700 border-blue-200",
   Paid: "bg-green-100 text-green-700 border-green-200",

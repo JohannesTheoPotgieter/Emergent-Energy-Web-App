@@ -122,7 +122,7 @@ interface StandupData {
 }
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
-  P0_FIRST_ASSESSMENT: { bg: "bg-slate-50", text: "text-slate-700", accent: "bg-slate-500" },
+  P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", accent: "bg-slate-500" },
   P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-50", text: "text-violet-700", accent: "bg-violet-500" },
   P2_PD_PM_HANDOVER: { bg: "bg-indigo-50", text: "text-indigo-700", accent: "bg-indigo-500" },
   P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-50", text: "text-blue-700", accent: "bg-blue-500" },
@@ -133,7 +133,7 @@ const PHASE_COLORS: Record<string, { bg: string; text: string; accent: string }>
 };
 
 const statusBadge: Record<string, string> = {
-  "TO DO": "bg-gray-100 text-gray-700",
+  "TO DO": "bg-muted text-foreground",
   "IN PROGRESS": "bg-blue-100 text-blue-700",
   "HOLD": "bg-red-100 text-red-700",
   "NEEDS APPROVAL": "bg-amber-100 text-amber-700",
@@ -150,7 +150,7 @@ const priorityColors: Record<string, string> = {
   "High": "text-orange-600",
   "Med": "text-yellow-600",
   "Medium": "text-yellow-600",
-  "Low": "text-gray-500",
+  "Low": "text-muted-foreground",
 };
 
 const priorityBorderDash: Record<string, string> = {
@@ -247,7 +247,7 @@ function TaskRow({ task, showProject = true }: { task: StandupTask; showProject?
             {daysFromNow(task.dueDate)}
           </span>
         )}
-        <Badge className={`text-[9px] px-1.5 py-0 ${statusBadge[task.status] || "bg-gray-100"}`}>
+        <Badge className={`text-[9px] px-1.5 py-0 ${statusBadge[task.status] || "bg-muted"}`}>
           {task.status}
         </Badge>
         <ChevronRight className="h-3 w-3 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -902,7 +902,7 @@ function InlineTaskRow({ task, onUpdate, onOpenTask }: { task: FullTask; onUpdat
               {daysFromNow(task.dueDate)}
             </span>
           )}
-          <Badge className={`text-[8px] px-1 py-0 ${statusBadge[task.status] || "bg-gray-100"}`}>
+          <Badge className={`text-[8px] px-1 py-0 ${statusBadge[task.status] || "bg-muted"}`}>
             {task.status}
           </Badge>
           <Button
@@ -1183,7 +1183,7 @@ function StandupModeView() {
         title="Everything Else"
         icon={<ListTodo className="h-4 w-4" />}
         tasks={everythingElse}
-        color="text-gray-600"
+        color="text-muted-foreground"
         defaultOpen={false}
         testId="standup-bucket-everything-else"
         onUpdate={handleUpdate}

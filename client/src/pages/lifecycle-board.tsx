@@ -87,7 +87,7 @@ const PHASE_GROUPS = [
     label: "First Assessment",
     phaseValue: "First Assessment",
     matches: ["First Assessment", "P0_FIRST_ASSESSMENT", "P0"],
-    color: "bg-slate-100 border-slate-300",
+    color: "bg-muted border-border",
     headerBg: "bg-slate-500",
   },
   {
@@ -159,7 +159,7 @@ const PHASE_GROUPS = [
     label: "Hold",
     phaseValue: "Hold",
     matches: ["Hold", "On Hold", "HOLD"],
-    color: "bg-gray-100 border-gray-300",
+    color: "bg-muted border-border",
     headerBg: "bg-gray-500",
   },
   {
@@ -966,7 +966,7 @@ export default function LifecycleBoardPage() {
               >
                 <div className={`${group.headerBg} text-white rounded-t-lg px-3 py-2.5 flex items-center justify-between gap-1`}>
                   <span className="font-semibold text-xs leading-tight truncate">{group.label}</span>
-                  <Badge variant="secondary" className="bg-white/25 text-white text-[10px] px-1.5 py-0 shrink-0 font-bold" data-testid={`badge-count-${group.key}`}>
+                  <Badge variant="secondary" className="bg-card/25 text-white text-[10px] px-1.5 py-0 shrink-0 font-bold" data-testid={`badge-count-${group.key}`}>
                     {items.length}
                   </Badge>
                 </div>
@@ -1760,7 +1760,7 @@ export default function LifecycleBoardPage() {
                             data-testid="switch-gate-execution-enabled"
                           />
                         ) : (
-                          <Badge className={gateForm.executionEnabled ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"} data-testid="badge-gate-execution-status">
+                          <Badge className={gateForm.executionEnabled ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"} data-testid="badge-gate-execution-status">
                             {gateForm.executionEnabled ? "Enabled" : "Disabled"}
                           </Badge>
                         )}

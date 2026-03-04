@@ -91,7 +91,7 @@ function getStatusBadge(status: string) {
       return <Badge data-testid="badge-status-overdue" className="bg-red-100 text-red-800 border-red-200 hover:bg-red-100">Overdue</Badge>;
     case "planned":
     default:
-      return <Badge data-testid="badge-status-planned" className="bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-100" variant="secondary">Planned</Badge>;
+      return <Badge data-testid="badge-status-planned" className="bg-muted text-muted-foreground border-border hover:bg-muted" variant="secondary">Planned</Badge>;
   }
 }
 
@@ -327,14 +327,14 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
     <TooltipProvider>
       <div className="space-y-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="kpi-strip-revenue">
-          <Card className="bg-slate-50 border-slate-200">
+          <Card className="bg-muted border-border">
             <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-sm text-slate-600 mb-1">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                 <DollarSign className="h-4 w-4" />
                 <span>Total Contract Revenue</span>
               </div>
-              <p data-testid="kpi-total-contract" className="text-xl font-bold text-slate-900">{formatCurrency(summary.totalContract)}</p>
-              <p className="text-xs text-slate-500 mt-1">{summary.milestoneCount} milestones</p>
+              <p data-testid="kpi-total-contract" className="text-xl font-bold text-foreground">{formatCurrency(summary.totalContract)}</p>
+              <p className="text-xs text-muted-foreground mt-1">{summary.milestoneCount} milestones</p>
             </CardContent>
           </Card>
           <Card className="bg-amber-50 border-amber-200">

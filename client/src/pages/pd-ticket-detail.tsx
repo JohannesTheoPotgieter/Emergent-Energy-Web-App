@@ -475,8 +475,8 @@ function statusColor(s: string) {
   if (s === "Completed") return "bg-green-100 text-green-700";
   if (s === "In Progress") return "bg-blue-100 text-blue-700";
   if (s === "On Hold") return "bg-orange-100 text-orange-700";
-  if (s === "Cancelled") return "bg-gray-100 text-gray-500";
-  return "bg-gray-100 text-gray-700";
+  if (s === "Cancelled") return "bg-muted text-muted-foreground";
+  return "bg-muted text-foreground";
 }
 
 function priorityColor(p: string) {
@@ -490,6 +490,6 @@ function taskStatusColor(s: string) {
   if (s === "COMPLETE") return "bg-green-100 text-green-700";
   if (s === "IN PROGRESS") return "bg-blue-100 text-blue-700";
   if (s === "HOLD") return "bg-orange-100 text-orange-700";
-  if (s === "TO DO") return "bg-gray-100 text-gray-700";
-  return "bg-gray-100 text-gray-700";
+  if (s === "TO DO") return "bg-muted text-foreground";
+  return "bg-muted text-foreground";
 }

@@ -173,7 +173,7 @@ const getRowStatusBadge = (exp: EnrichedExpense) => {
   if (exp.expensePoNumber && exp.expensePoNumber.trim()) {
     return <Badge data-testid={`badge-status-${exp.id}`} className="text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap bg-blue-50 text-blue-600 border-blue-200" variant="outline">Committed</Badge>;
   }
-  return <Badge data-testid={`badge-status-${exp.id}`} className="text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap bg-slate-100 text-slate-600 border-slate-200" variant="outline">Planned</Badge>;
+  return <Badge data-testid={`badge-status-${exp.id}`} className="text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap bg-muted text-muted-foreground border-border" variant="outline">Planned</Badge>;
 };
 
 const getCosStatusBadge = (status: string) => {
@@ -181,10 +181,10 @@ const getCosStatusBadge = (status: string) => {
     "COS Realised": "bg-emerald-50 text-emerald-700 border-emerald-300",
     "Deferred": "bg-amber-50 text-amber-700 border-amber-300",
     "Flagged": "bg-red-50 text-red-700 border-red-300",
-    "Planned": "bg-slate-100 text-slate-600 border-slate-200",
+    "Planned": "bg-muted text-muted-foreground border-border",
   };
   return (
-    <Badge className={`text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap ${colors[status] || "bg-gray-100"}`} variant="outline">
+    <Badge className={`text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap ${colors[status] || "bg-muted"}`} variant="outline">
       {status}
     </Badge>
   );
@@ -194,10 +194,10 @@ const getPaymentStatusBadge = (status: string) => {
   const colors: Record<string, string> = {
     "Out of Bank": "bg-emerald-50 text-emerald-700 border-emerald-300",
     "Payment Planned": "bg-blue-50 text-blue-600 border-blue-200",
-    "Planned": "bg-slate-100 text-slate-600 border-slate-200",
+    "Planned": "bg-muted text-muted-foreground border-border",
   };
   return (
-    <Badge className={`text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap ${colors[status] || "bg-gray-100"}`} variant="outline">
+    <Badge className={`text-[9px] font-medium px-1.5 py-0 border whitespace-nowrap ${colors[status] || "bg-muted"}`} variant="outline">
       {status}
     </Badge>
   );
@@ -762,7 +762,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             data-testid={`input-supplier-${rowId}`}
           />
           {filtered.length > 0 && (
-            <div className="absolute top-full left-0 z-50 w-full max-h-32 overflow-auto bg-white dark:bg-gray-900 border rounded-md shadow-lg mt-0.5">
+            <div className="absolute top-full left-0 z-50 w-full max-h-32 overflow-auto bg-card  border rounded-md shadow-lg mt-0.5">
               {filtered.slice(0, 8).map(s => (
                 <button key={s} className="w-full text-left px-2 py-1 text-xs hover:bg-blue-50 dark:hover:bg-blue-950"
                   onMouseDown={(e) => {
@@ -906,7 +906,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             exp.linkedTask.isBaseline ? "bg-purple-50 text-purple-700 border-purple-300" :
             exp.linkedTask.status === "Done" || exp.linkedTask.status === "Complete" ? "bg-green-50 text-green-700 border-green-300" :
             exp.linkedTask.status === "In Progress" ? "bg-blue-50 text-blue-700 border-blue-300" :
-            "bg-gray-50 text-gray-600 border-gray-300"
+            "bg-muted text-muted-foreground border-border"
           }`}>
             {exp.linkedTask.isBaseline ? "Base" : (exp.linkedTask.status === "Done" || exp.linkedTask.status === "Complete" ? "Done" : exp.linkedTask.status === "In Progress" ? "WIP" : "ToDo")}
           </Badge>
@@ -930,7 +930,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
               <X className="h-3 w-3" />
             </Button>
           </div>
-          <div className="max-h-[200px] overflow-y-auto border rounded-md bg-white shadow-sm">
+          <div className="max-h-[200px] overflow-y-auto border rounded-md bg-card shadow-sm">
             {filteredTasks.length === 0 ? (
               <p className="text-[10px] text-muted-foreground p-2">No tasks found</p>
             ) : (
@@ -941,7 +941,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                     t.isBaseline ? "bg-purple-50 text-purple-700 border-purple-300" :
                     t.status === "Done" || t.status === "Complete" || t.status === "complete" ? "bg-green-50 text-green-700 border-green-300" :
                     t.status === "In Progress" || t.status === "in_progress" ? "bg-blue-50 text-blue-700 border-blue-300" :
-                    "bg-gray-50 text-gray-600 border-gray-300"
+                    "bg-muted text-muted-foreground border-border"
                   }`}>
                     {t.isBaseline ? "Base" : (t.status === "Done" || t.status === "Complete" || t.status === "complete" ? "Done" : t.status === "In Progress" || t.status === "in_progress" ? "WIP" : "ToDo")}
                   </Badge>
@@ -1078,35 +1078,35 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3" data-testid="kpi-summary-strip">
-        <div className="bg-white dark:bg-gray-950 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 border-l-4 border-l-slate-400 p-3 sm:p-4">
+        <div className="bg-card  rounded-xl shadow-sm border border-border border-l-4 border-l-slate-400 p-3 sm:p-4">
           <div className="flex items-center gap-1.5 mb-1.5">
             <DollarSign className="h-4 w-4 text-slate-400" />
-            <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">Total Budget</span>
+            <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Total Budget</span>
           </div>
-          <div className="text-base sm:text-lg font-bold font-mono text-slate-800 dark:text-slate-100" data-testid="text-kpi-budget">{formatCurrency(kpis.totalBudget)}</div>
+          <div className="text-base sm:text-lg font-bold font-mono text-foreground dark:text-slate-100" data-testid="text-kpi-budget">{formatCurrency(kpis.totalBudget)}</div>
         </div>
-        <div className="bg-white dark:bg-gray-950 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 border-l-4 border-l-blue-500 p-3 sm:p-4">
+        <div className="bg-card  rounded-xl shadow-sm border border-border border-l-4 border-l-blue-500 p-3 sm:p-4">
           <div className="flex items-center gap-1.5 mb-1.5">
             <BarChart3 className="h-4 w-4 text-blue-500" />
-            <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">Total Actual</span>
+            <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Total Actual</span>
           </div>
           <div className={`text-base sm:text-lg font-bold font-mono ${kpis.totalActual > kpis.totalBudget ? "text-red-600" : "text-blue-700 dark:text-blue-400"}`} data-testid="text-kpi-actual">
             {formatCurrency(kpis.totalActual)}
           </div>
           <div className="text-[10px] text-slate-400 mt-0.5">{kpis.totalItems} lines</div>
         </div>
-        <div className="bg-white dark:bg-gray-950 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 border-l-4 border-l-emerald-500 p-3 sm:p-4">
+        <div className="bg-card  rounded-xl shadow-sm border border-border border-l-4 border-l-emerald-500 p-3 sm:p-4">
           <div className="flex items-center gap-1.5 mb-1.5">
             <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-            <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">COS Realised</span>
+            <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">COS Realised</span>
           </div>
           <div className="text-base sm:text-lg font-bold text-emerald-600 font-mono" data-testid="text-kpi-cos">{formatCurrency(kpis.cosRealised)}</div>
           <div className="text-[10px] text-slate-400 mt-0.5">{kpis.countByCos["COS Realised"]} lines</div>
         </div>
-        <div className={`bg-white dark:bg-gray-950 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 border-l-4 ${kpis.variance >= 0 ? "border-l-emerald-500" : "border-l-red-500"} p-3 sm:p-4`}>
+        <div className={`bg-card  rounded-xl shadow-sm border border-border border-l-4 ${kpis.variance >= 0 ? "border-l-emerald-500" : "border-l-red-500"} p-3 sm:p-4`}>
           <div className="flex items-center gap-1.5 mb-1.5">
             {kpis.variance >= 0 ? <TrendingUp className="h-4 w-4 text-emerald-500" /> : <TrendingDown className="h-4 w-4 text-red-500" />}
-            <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">Variance</span>
+            <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">Variance</span>
           </div>
           <div className={`text-base sm:text-lg font-bold font-mono ${kpis.variance >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="text-kpi-variance">
             {formatCurrency(kpis.variance)}
@@ -1115,10 +1115,10 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             {kpis.variance >= 0 ? "Under budget" : "Over budget"}
           </div>
         </div>
-        <div className={`bg-white dark:bg-gray-950 rounded-xl shadow-sm border border-gray-100 dark:border-gray-800 border-l-4 ${kpis.gpPercent >= 20 ? "border-l-emerald-500" : kpis.gpPercent >= 10 ? "border-l-amber-500" : "border-l-red-500"} p-3 sm:p-4`}>
+        <div className={`bg-card  rounded-xl shadow-sm border border-border border-l-4 ${kpis.gpPercent >= 20 ? "border-l-emerald-500" : kpis.gpPercent >= 10 ? "border-l-amber-500" : "border-l-red-500"} p-3 sm:p-4`}>
           <div className="flex items-center gap-1.5 mb-1.5">
             <Percent className="h-4 w-4 text-slate-400" />
-            <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">GP%</span>
+            <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">GP%</span>
           </div>
           <div className={`text-base sm:text-lg font-bold font-mono ${kpis.gpPercent >= 20 ? "text-emerald-600" : kpis.gpPercent >= 10 ? "text-amber-600" : "text-red-600"}`} data-testid="text-kpi-gp">
             {kpis.gpPercent.toFixed(1)}%
@@ -1130,7 +1130,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       </div>
 
       <div className="flex flex-wrap items-center gap-2 px-1">
-        <div className="flex items-center gap-1 border rounded-md p-0.5 bg-white dark:bg-gray-950">
+        <div className="flex items-center gap-1 border rounded-md p-0.5 bg-card ">
           <Button variant="ghost" size="sm" onClick={expandAll} className="h-7 px-1.5" title="Expand All" data-testid="button-expand-all">
             <ChevronsDownUp className="h-3.5 w-3.5" />
           </Button>
@@ -1195,26 +1195,26 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         </div>
       </div>
 
-      <div className="rounded-lg border bg-white dark:bg-gray-950 shadow-sm overflow-hidden">
+      <div className="rounded-lg border bg-card  shadow-sm overflow-hidden">
         {categoryGroups.length === 0 ? (
           <p className="text-center text-muted-foreground py-12" data-testid="text-empty-state">No expenditure data available for this project</p>
         ) : (
           <div ref={tableContainerRef} className="relative overflow-auto" style={{ maxHeight: "calc(100vh - 380px)", minHeight: "400px" }}>
             <Table>
               <TableHeader className="sticky top-0 z-20">
-                <TableRow className="bg-slate-100 dark:bg-gray-900 border-b-2 border-slate-200 dark:border-gray-700 hover:bg-slate-100 dark:hover:bg-gray-900">
-                  <TableHead className="px-2 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-gray-400 whitespace-nowrap w-[40px] text-center sticky left-0 z-30 bg-slate-100 dark:bg-gray-900">
+                <TableRow className="bg-muted  border-b-2 border-border dark:border-gray-700 hover:bg-muted dark:hover:bg-gray-900">
+                  <TableHead className="px-2 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground dark:text-gray-400 whitespace-nowrap w-[40px] text-center sticky left-0 z-30 bg-muted ">
                     #
                   </TableHead>
                   {activeColumns.map((col) => (
                     <TableHead key={col.key}
-                      className={`px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-gray-400 whitespace-nowrap
+                      className={`px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground dark:text-gray-400 whitespace-nowrap
                         ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left"}`}
                       style={{ minWidth: col.minWidth }}>
                       {col.label}
                     </TableHead>
                   ))}
-                  <TableHead className="px-2 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-gray-400 whitespace-nowrap w-[80px] text-center">
+                  <TableHead className="px-2 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground dark:text-gray-400 whitespace-nowrap w-[80px] text-center">
                     Status
                   </TableHead>
                 </TableRow>
@@ -1224,21 +1224,21 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                   const isCollapsed = collapsedCategories.has(group.category);
                   return (
                     <React.Fragment key={group.category}>
-                      <TableRow className="bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-700/50 cursor-pointer border-b border-slate-200 dark:border-slate-700"
+                      <TableRow className="bg-muted dark:bg-slate-800/50 hover:bg-muted dark:hover:bg-slate-700/50 cursor-pointer border-b border-border dark:border-slate-700"
                         onClick={() => toggleCategory(group.category)} data-testid={`row-category-${group.category}`}>
-                        <TableCell className="sticky left-0 z-10 bg-slate-50 dark:bg-slate-800/50 px-2 py-2.5" colSpan={1}>
+                        <TableCell className="sticky left-0 z-10 bg-muted dark:bg-slate-800/50 px-2 py-2.5" colSpan={1}>
                           <div className="flex items-center gap-1">
-                            {isCollapsed ? <ChevronRight className="h-4 w-4 text-slate-500" /> : <ChevronDown className="h-4 w-4 text-slate-500" />}
+                            {isCollapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                           </div>
                         </TableCell>
                         <TableCell colSpan={1} className="px-3 py-2.5">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-700 dark:text-slate-200 text-sm">{group.category}</span>
+                            <span className="font-bold text-foreground dark:text-slate-200 text-sm">{group.category}</span>
                             <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal">{group.items.length}</Badge>
                           </div>
                         </TableCell>
                         {activeColumns.slice(1).map((col) => (
-                          <TableCell key={col.key} className={`px-3 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300
+                          <TableCell key={col.key} className={`px-3 py-2.5 text-xs font-bold text-muted-foreground 
                             ${col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : ""}`}>
                             {col.key === "budgetTotal" && <span className="font-mono">{formatCurrency(group.budgetTotal)}</span>}
                             {col.key === "revenueAmount" && <span className="font-mono">{formatCurrency(group.revenueTotal)}</span>}
@@ -1254,8 +1254,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                         <TableRow key={exp.id}
                           data-row-id={exp.id}
                           data-testid={`row-expense-${exp.id}`}
-                          className={`border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50/30 dark:hover:bg-blue-950/20 transition-colors
-                            ${highlightedRowId === exp.id ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : rowIdx % 2 === 0 ? "bg-white dark:bg-gray-950" : "bg-muted/20 dark:bg-gray-900/30"}`}>
+                          className={`border-b border-border hover:bg-blue-50/30 dark:hover:bg-blue-950/20 transition-colors
+                            ${highlightedRowId === exp.id ? "bg-amber-50 ring-2 ring-amber-400 ring-inset" : rowIdx % 2 === 0 ? "bg-card " : "bg-muted/20 /30"}`}>
                           <TableCell className="px-2 py-1.5 text-center text-[10px] text-muted-foreground font-mono sticky left-0 z-10 bg-inherit">
                             {exp.rowNumber}
                           </TableCell>
@@ -1282,7 +1282,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       </div>
 
       {hasEdits && (
-        <div className="sticky bottom-0 z-30 mx-0 px-4 py-3 bg-white dark:bg-gray-950 border-t-2 border-blue-200 dark:border-blue-800 shadow-[0_-4px_12px_rgba(0,0,0,0.1)] rounded-b-lg" data-testid="save-cancel-bar">
+        <div className="sticky bottom-0 z-30 mx-0 px-4 py-3 bg-card  border-t-2 border-blue-200 dark:border-blue-800 shadow-[0_-4px_12px_rgba(0,0,0,0.1)] rounded-b-lg" data-testid="save-cancel-bar">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300 shrink-0">
               <Save className="h-4 w-4" />
@@ -1414,7 +1414,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                       <span className="text-xs font-mono font-bold">{formatCurrency(item.expenseActualTotal)}</span>
                     </div>
                     <div className="flex flex-wrap gap-1">
-                      <Badge variant="outline" className="text-[8px] bg-slate-50">{item.expenseCategory}</Badge>
+                      <Badge variant="outline" className="text-[8px] bg-muted">{item.expenseCategory}</Badge>
                       <span className="inline-flex items-center gap-0.5">
                         {getCosStatusBadge(item.cosStatus)}
                         {item.cosOverride && (
@@ -1562,7 +1562,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                         t.isBaseline ? "bg-purple-50 text-purple-700 border-purple-300" :
                         t.status === "Done" || t.status === "Complete" ? "bg-green-50 text-green-700 border-green-300" :
                         t.status === "In Progress" ? "bg-blue-50 text-blue-700 border-blue-300" :
-                        "bg-gray-50 text-gray-600 border-gray-300"
+                        "bg-muted text-muted-foreground border-border"
                       }`}>
                         {t.isBaseline ? "Base" : (t.status === "Done" || t.status === "Complete" ? "Done" : t.status === "In Progress" ? "WIP" : "ToDo")}
                       </Badge>

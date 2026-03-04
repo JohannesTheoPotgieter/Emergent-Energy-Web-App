@@ -297,8 +297,8 @@ export default function MyToolMeetingsPage() {
                 <div className="flex items-center gap-4 text-xs">
                   {webhookStatus.totalMeetings > 0 && (
                     <div className="flex gap-3">
-                      <span className="text-gray-500"><strong className="text-gray-700">{webhookStatus.totalMeetings}</strong> meetings</span>
-                      <span className="text-gray-500"><strong className="text-gray-700">{webhookStatus.totalActionItems}</strong> action items</span>
+                      <span className="text-muted-foreground"><strong className="text-foreground">{webhookStatus.totalMeetings}</strong> meetings</span>
+                      <span className="text-muted-foreground"><strong className="text-foreground">{webhookStatus.totalActionItems}</strong> action items</span>
                       {webhookStatus.pendingItems > 0 && (
                         <span className="text-amber-600"><strong>{webhookStatus.pendingItems}</strong> pending</span>
                       )}
@@ -321,7 +321,7 @@ export default function MyToolMeetingsPage() {
           <Card data-testid="card-empty-state">
             <CardContent className="flex flex-col items-center justify-center py-16 text-center">
               <Video className="w-12 h-12 text-gray-300 mb-4" />
-              <h3 className="text-lg font-medium text-gray-600 mb-2">No meetings yet</h3>
+              <h3 className="text-lg font-medium text-muted-foreground mb-2">No meetings yet</h3>
               <p className="text-sm text-gray-400 max-w-md mb-4">
                 Connect Read.ai via the Webhook Setup to automatically capture meeting action items, or add meetings manually.
               </p>
@@ -358,7 +358,7 @@ export default function MyToolMeetingsPage() {
                             <CardTitle className="text-sm font-medium truncate" data-testid={`text-meeting-title-${meeting.id}`}>
                               {meeting.title}
                             </CardTitle>
-                            <Badge variant="outline" className={`text-[10px] shrink-0 ${meeting.source === 'read_ai' ? 'bg-blue-50 text-blue-700 border-blue-200' : meeting.source === 'test' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-gray-50 text-gray-600'}`} data-testid={`badge-source-${meeting.id}`}>
+                            <Badge variant="outline" className={`text-[10px] shrink-0 ${meeting.source === 'read_ai' ? 'bg-blue-50 text-blue-700 border-blue-200' : meeting.source === 'test' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-muted text-muted-foreground'}`} data-testid={`badge-source-${meeting.id}`}>
                               {meeting.source === "read_ai" ? "Read.ai" : meeting.source === "test" ? "Test" : "Manual"}
                             </Badge>
                           </div>
@@ -412,8 +412,8 @@ export default function MyToolMeetingsPage() {
                     <CardContent className="pt-0 px-4 pb-4">
                       {/* Summary */}
                       {meeting.summary && (
-                        <div className="mb-4 p-3 bg-gray-50 rounded-md text-sm text-gray-600" data-testid={`text-summary-${meeting.id}`}>
-                          <p className="font-medium text-gray-700 mb-1 text-xs uppercase tracking-wide flex items-center gap-1">
+                        <div className="mb-4 p-3 bg-muted rounded-md text-sm text-muted-foreground" data-testid={`text-summary-${meeting.id}`}>
+                          <p className="font-medium text-foreground mb-1 text-xs uppercase tracking-wide flex items-center gap-1">
                             <MessageSquare className="w-3 h-3" />
                             Summary
                           </p>
@@ -424,7 +424,7 @@ export default function MyToolMeetingsPage() {
                       {/* Key Topics */}
                       {meeting.keyTopics && meeting.keyTopics.length > 0 && (
                         <div className="mb-4" data-testid={`topics-${meeting.id}`}>
-                          <p className="text-xs font-medium text-gray-500 mb-1.5 uppercase tracking-wide flex items-center gap-1">
+                          <p className="text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wide flex items-center gap-1">
                             <Lightbulb className="w-3 h-3" />
                             Key Topics
                           </p>
@@ -471,7 +471,7 @@ export default function MyToolMeetingsPage() {
 
                       {meeting.participants && meeting.participants.length > 0 && (
                         <div className="mb-4">
-                          <p className="text-xs font-medium text-gray-500 mb-1">Participants</p>
+                          <p className="text-xs font-medium text-muted-foreground mb-1">Participants</p>
                           <div className="flex flex-wrap gap-1">
                             {meeting.participants.map((p, i) => (
                               <Badge key={i} variant="outline" className="text-[10px]">{p}</Badge>
@@ -484,14 +484,14 @@ export default function MyToolMeetingsPage() {
                         <p className="text-sm text-gray-400 italic">No action items recorded</p>
                       ) : (
                         <div className="space-y-2">
-                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Action Items ({meeting.actionItems.length})</p>
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Action Items ({meeting.actionItems.length})</p>
                           {meeting.actionItems.map((item) => (
                             <div
                               key={item.id}
                               className={`flex items-start gap-3 p-3 rounded-lg border ${
                                 item.status === "converted" ? "bg-green-50 border-green-200" :
-                                item.status === "dismissed" ? "bg-gray-50 border-gray-200 opacity-60" :
-                                "bg-white border-gray-200"
+                                item.status === "dismissed" ? "bg-muted border-border opacity-60" :
+                                "bg-card border-border"
                               }`}
                               data-testid={`action-item-${item.id}`}
                             >
@@ -548,7 +548,7 @@ export default function MyToolMeetingsPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-7 w-7 p-0 text-gray-400 hover:text-gray-600"
+                                    className="h-7 w-7 p-0 text-gray-400 hover:text-muted-foreground"
                                     onClick={() => dismissMutation.mutate(item.id)}
                                     data-testid={`button-dismiss-${item.id}`}
                                   >
@@ -578,7 +578,7 @@ export default function MyToolMeetingsPage() {
             </DialogHeader>
             <div className="space-y-3 py-2">
               <div>
-                <label className="text-xs font-medium text-gray-500">Title</label>
+                <label className="text-xs font-medium text-muted-foreground">Title</label>
                 <Input
                   value={convertForm.title || ""}
                   onChange={(e) => setConvertForm((p) => ({ ...p, title: e.target.value }))}
@@ -590,7 +590,7 @@ export default function MyToolMeetingsPage() {
                 <>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs font-medium text-gray-500">Priority</label>
+                      <label className="text-xs font-medium text-muted-foreground">Priority</label>
                       <Select value={convertForm.priority || "normal"} onValueChange={(v) => setConvertForm((p) => ({ ...p, priority: v }))}>
                         <SelectTrigger data-testid="select-priority"><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -602,7 +602,7 @@ export default function MyToolMeetingsPage() {
                       </Select>
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-gray-500">Department</label>
+                      <label className="text-xs font-medium text-muted-foreground">Department</label>
                       <Select value={convertForm.department || ""} onValueChange={(v) => setConvertForm((p) => ({ ...p, department: v }))}>
                         <SelectTrigger data-testid="select-department"><SelectValue placeholder="Select..." /></SelectTrigger>
                         <SelectContent>
@@ -612,7 +612,7 @@ export default function MyToolMeetingsPage() {
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-gray-500">Planned For Date</label>
+                    <label className="text-xs font-medium text-muted-foreground">Planned For Date</label>
                     <Input
                       type="date"
                       value={convertForm.plannedForDate || ""}
@@ -621,7 +621,7 @@ export default function MyToolMeetingsPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-gray-500">Link to Project</label>
+                    <label className="text-xs font-medium text-muted-foreground">Link to Project</label>
                     <Select value={convertForm.projectName || ""} onValueChange={(v) => setConvertForm((p) => ({ ...p, projectName: v }))}>
                       <SelectTrigger data-testid="select-project-link"><SelectValue placeholder="None (optional)" /></SelectTrigger>
                       <SelectContent>
@@ -636,7 +636,7 @@ export default function MyToolMeetingsPage() {
                 <>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs font-medium text-gray-500">Severity</label>
+                      <label className="text-xs font-medium text-muted-foreground">Severity</label>
                       <Select value={convertForm.severity || "normal"} onValueChange={(v) => setConvertForm((p) => ({ ...p, severity: v }))}>
                         <SelectTrigger data-testid="select-severity"><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -647,7 +647,7 @@ export default function MyToolMeetingsPage() {
                       </Select>
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-gray-500">Horizon</label>
+                      <label className="text-xs font-medium text-muted-foreground">Horizon</label>
                       <Select value={convertForm.horizon || "week"} onValueChange={(v) => setConvertForm((p) => ({ ...p, horizon: v }))}>
                         <SelectTrigger data-testid="select-horizon"><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -660,7 +660,7 @@ export default function MyToolMeetingsPage() {
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-gray-500">Department</label>
+                    <label className="text-xs font-medium text-muted-foreground">Department</label>
                     <Select value={convertForm.department || ""} onValueChange={(v) => setConvertForm((p) => ({ ...p, department: v }))}>
                       <SelectTrigger data-testid="select-priority-department"><SelectValue placeholder="Select..." /></SelectTrigger>
                       <SelectContent>
@@ -674,7 +674,7 @@ export default function MyToolMeetingsPage() {
               {convertDialog?.type === "project" && (
                 <>
                   <div>
-                    <label className="text-xs font-medium text-gray-500">Project Name</label>
+                    <label className="text-xs font-medium text-muted-foreground">Project Name</label>
                     <Input
                       value={convertForm.projectName || convertForm.title || ""}
                       onChange={(e) => setConvertForm((p) => ({ ...p, projectName: e.target.value }))}
@@ -683,7 +683,7 @@ export default function MyToolMeetingsPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs font-medium text-gray-500">Size (kWp)</label>
+                      <label className="text-xs font-medium text-muted-foreground">Size (kWp)</label>
                       <Input
                         type="number"
                         value={convertForm.sizeKwp || ""}
@@ -692,7 +692,7 @@ export default function MyToolMeetingsPage() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-gray-500">PM</label>
+                      <label className="text-xs font-medium text-muted-foreground">PM</label>
                       <Select value={convertForm.pm || ""} onValueChange={(v) => setConvertForm((p) => ({ ...p, pm: v }))}>
                         <SelectTrigger data-testid="select-pm"><SelectValue placeholder="Select PM..." /></SelectTrigger>
                         <SelectContent>
@@ -706,7 +706,7 @@ export default function MyToolMeetingsPage() {
                 </>
               )}
 
-              <div className="p-2 bg-gray-50 rounded text-xs text-gray-500">
+              <div className="p-2 bg-muted rounded text-xs text-muted-foreground">
                 From meeting: <strong>{convertDialog?.meeting.title}</strong>
                 {convertDialog?.item.owner && <> | Owner: {convertDialog.item.owner}</>}
               </div>
@@ -728,7 +728,7 @@ export default function MyToolMeetingsPage() {
             </DialogHeader>
             <div className="space-y-3 py-2">
               <div>
-                <label className="text-xs font-medium text-gray-500">Meeting Title</label>
+                <label className="text-xs font-medium text-muted-foreground">Meeting Title</label>
                 <Input
                   value={manualForm.title}
                   onChange={(e) => setManualForm((p) => ({ ...p, title: e.target.value }))}
@@ -737,7 +737,7 @@ export default function MyToolMeetingsPage() {
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-500">Summary (optional)</label>
+                <label className="text-xs font-medium text-muted-foreground">Summary (optional)</label>
                 <Textarea
                   value={manualForm.summary}
                   onChange={(e) => setManualForm((p) => ({ ...p, summary: e.target.value }))}
@@ -748,7 +748,7 @@ export default function MyToolMeetingsPage() {
               </div>
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-medium text-gray-500">Action Items</label>
+                  <label className="text-xs font-medium text-muted-foreground">Action Items</label>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -834,7 +834,7 @@ export default function MyToolMeetingsPage() {
                     Connected
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-[10px] text-gray-500">
+                  <Badge variant="outline" className="text-[10px] text-muted-foreground">
                     <WifiOff className="w-3 h-3 mr-0.5" />
                     Not Connected
                   </Badge>
@@ -866,7 +866,7 @@ export default function MyToolMeetingsPage() {
                   <Input
                     readOnly
                     value={webhookUrl}
-                    className="font-mono text-xs bg-white"
+                    className="font-mono text-xs bg-card"
                     data-testid="input-webhook-url"
                   />
                   <Button
@@ -883,8 +883,8 @@ export default function MyToolMeetingsPage() {
                 </div>
               </div>
 
-              <div className="space-y-3 text-sm text-gray-600">
-                <p className="font-medium text-gray-800">Setup Instructions:</p>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground">Setup Instructions:</p>
                 <ol className="list-decimal list-inside space-y-2">
                   <li>Log in to your <a href="https://app.read.ai/analytics/integrations/webhooks" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Read.ai dashboard</a></li>
                   <li>Go to Integrations &rarr; Webhooks</li>
@@ -899,7 +899,7 @@ export default function MyToolMeetingsPage() {
               </div>
 
               <div className="border-t pt-3">
-                <p className="text-xs text-gray-500 mb-2">Verify your connection by sending a test meeting:</p>
+                <p className="text-xs text-muted-foreground mb-2">Verify your connection by sending a test meeting:</p>
                 <Button
                   variant="outline"
                   size="sm"

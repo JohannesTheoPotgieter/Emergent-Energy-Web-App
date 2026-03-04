@@ -3,6 +3,8 @@ import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { MetricStrip } from "@/components/ui/metric-strip";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { ROLE_QUICK_ACTIONS } from "@shared/schema";
@@ -34,6 +36,9 @@ import {
   Briefcase,
   FileEdit,
   Gauge,
+  Zap,
+  DollarSign,
+  Clock,
 } from "lucide-react";
 
 const ROLE_COMPLIMENTS: Record<string, string[]> = {
@@ -279,7 +284,7 @@ function statusColor(status: string): string {
 function severityBorder(severity: string): string {
   if (severity === "critical") return "border-l-red-500";
   if (severity === "important") return "border-l-amber-500";
-  return "border-l-slate-300 dark:border-l-slate-600";
+  return "border-l-border";
 }
 
 function isOverdue(dueDate: string | null): boolean {
@@ -311,93 +316,89 @@ function CompanyPrioritiesCards({ isAdmin, priorities, isLoading }: { isAdmin: b
   if (activePriorities.length === 0 && !isAdmin) return null;
 
   return (
-    <Card className="shadow-sm" data-testid="company-priorities-section">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-            <Flag className="h-4 w-4 text-red-500" />
-            Company Priorities
-            <span className="text-xs font-normal normal-case tracking-normal text-muted-foreground/70">
-              {activePriorities.length} active
-            </span>
-          </CardTitle>
-          {isAdmin && (
-            <Link href="/company-priorities">
-              <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-manage-priorities">
-                Manage <ArrowRight className="h-3 w-3" />
-              </Button>
-            </Link>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent>
-        {activePriorities.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-2">No active company priorities.</p>
-        ) : (
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {sorted.map((p) => {
-              const overdue = isOverdue(p.dueDate);
-              const linkedCount = (p.links?.length ?? 0) + (p.linkedProjectName ? 1 : 0);
-              return (
-                <div
-                  key={p.id}
-                  className={`border-l-4 ${severityBorder(p.severity)} border rounded-lg bg-card p-3 space-y-2 ${overdue ? "ring-1 ring-red-300 dark:ring-red-800" : ""}`}
-                  data-testid={`priority-card-${p.id}`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="font-semibold text-sm leading-snug" data-testid={`text-priority-title-${p.id}`}>{p.title}</h3>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {p.department && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-300 text-blue-700 bg-blue-50 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-700" data-testid={`badge-dept-${p.id}`}>
-                          {p.department}
-                        </Badge>
-                      )}
-                      <Badge className={`text-[10px] px-1.5 py-0 ${statusColor(p.status)}`}>
-                        {p.status.replace(/_/g, " ")}
+    <div data-testid="company-priorities-section">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+          <Flag className="h-4 w-4 text-red-400" />
+          Company Priorities
+          <span className="text-xs font-normal normal-case tracking-normal text-muted-foreground/70">
+            {activePriorities.length} active
+          </span>
+        </h2>
+        {isAdmin && (
+          <Link href="/company-priorities">
+            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-manage-priorities">
+              Manage <ArrowRight className="h-3 w-3" />
+            </Button>
+          </Link>
+        )}
+      </div>
+      {activePriorities.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-2">No active company priorities.</p>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {sorted.map((p) => {
+            const overdue = isOverdue(p.dueDate);
+            const linkedCount = (p.links?.length ?? 0) + (p.linkedProjectName ? 1 : 0);
+            return (
+              <div
+                key={p.id}
+                className={`border-l-4 ${severityBorder(p.severity)} border rounded-lg bg-card p-3 space-y-2 ${overdue ? "ring-1 ring-red-500/30" : ""}`}
+                data-testid={`priority-card-${p.id}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-semibold text-sm leading-snug" data-testid={`text-priority-title-${p.id}`}>{p.title}</h3>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {p.department && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-500/30 text-blue-400 bg-blue-500/10" data-testid={`badge-dept-${p.id}`}>
+                        {p.department}
                       </Badge>
-                    </div>
-                  </div>
-                  {p.assignedTo && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Users className="h-3 w-3" />
-                      <span>{p.assignedTo}</span>
-                    </div>
-                  )}
-                  {p.nextAction && (
-                    <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                      <Target className="h-3 w-3 mt-0.5 shrink-0" />
-                      <span className="line-clamp-2">{p.nextAction}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between pt-1 border-t border-border/50">
-                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                      {p.dueDate && (
-                        <span className={`flex items-center gap-1 ${overdue ? "text-red-600 font-medium" : ""}`}>
-                          <Calendar className="h-3 w-3" />
-                          {p.dueDate}
-                          {overdue && <AlertTriangle className="h-3 w-3" />}
-                        </span>
-                      )}
-                      {linkedCount > 0 && (
-                        <span className="flex items-center gap-1">
-                          <ExternalLink className="h-3 w-3" />
-                          {linkedCount} linked
-                        </span>
-                      )}
-                    </div>
-                    <Link href="/company-priorities">
-                      <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2 gap-0.5" data-testid={`button-view-priority-${p.id}`}>
-                        Details <ChevronRight className="h-3 w-3" />
-                      </Button>
-                    </Link>
+                    )}
+                    <Badge className={`text-[10px] px-1.5 py-0 ${statusColor(p.status)}`}>
+                      {p.status.replace(/_/g, " ")}
+                    </Badge>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                {p.assignedTo && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Users className="h-3 w-3" />
+                    <span>{p.assignedTo}</span>
+                  </div>
+                )}
+                {p.nextAction && (
+                  <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                    <Target className="h-3 w-3 mt-0.5 shrink-0" />
+                    <span className="line-clamp-2">{p.nextAction}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                    {p.dueDate && (
+                      <span className={`flex items-center gap-1 ${overdue ? "text-red-400 font-medium" : ""}`}>
+                        <Calendar className="h-3 w-3" />
+                        {p.dueDate}
+                        {overdue && <AlertTriangle className="h-3 w-3" />}
+                      </span>
+                    )}
+                    {linkedCount > 0 && (
+                      <span className="flex items-center gap-1">
+                        <ExternalLink className="h-3 w-3" />
+                        {linkedCount} linked
+                      </span>
+                    )}
+                  </div>
+                  <Link href="/company-priorities">
+                    <Button variant="ghost" size="sm" className="h-6 text-[11px] px-2 gap-0.5" data-testid={`button-view-priority-${p.id}`}>
+                      Details <ChevronRight className="h-3 w-3" />
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -413,34 +414,30 @@ function QuickActionsWidget({ role }: { role: string }) {
   if (actions.length === 0) return null;
 
   return (
-    <Card className="shadow-sm" data-testid="quick-actions-card">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-          <ArrowRight className="h-4 w-4 text-primary" />
-          Quick Actions
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2" data-testid="quick-actions">
-          {actions.map((action) => {
-            const Icon = ICON_MAP[action.icon] || ArrowRight;
-            return (
-              <button
-                key={action.path}
-                className="flex flex-col items-center gap-1.5 p-3 rounded-lg border border-border/50 bg-card hover:bg-muted/50 transition-colors cursor-pointer group"
-                onClick={() => navigate(action.path)}
-                data-testid={`quick-action-${action.label.toLowerCase().replace(/\s+/g, "-")}`}
-              >
-                <div className="p-2 rounded-md bg-primary/5 group-hover:bg-primary/10 transition-colors">
-                  <Icon className="h-4 w-4 text-primary" />
-                </div>
-                <span className="text-[11px] font-medium text-center leading-tight">{action.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
+    <div data-testid="quick-actions-card">
+      <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2 mb-3">
+        <Zap className="h-4 w-4 text-primary" />
+        Quick Actions
+      </h2>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2" data-testid="quick-actions">
+        {actions.map((action) => {
+          const Icon = ICON_MAP[action.icon] || ArrowRight;
+          return (
+            <button
+              key={action.path}
+              className="flex flex-col items-center gap-1.5 p-3 rounded-lg border border-border/50 bg-card hover:bg-muted/50 hover:border-primary/20 transition-all cursor-pointer group"
+              onClick={() => navigate(action.path)}
+              data-testid={`quick-action-${action.label.toLowerCase().replace(/\s+/g, "-")}`}
+            >
+              <div className="p-2 rounded-md bg-primary/10 group-hover:bg-primary/15 transition-colors">
+                <Icon className="h-4 w-4 text-primary" />
+              </div>
+              <span className="text-[11px] font-medium text-center leading-tight">{action.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -464,17 +461,63 @@ export default function Home() {
     queryKey: ["/api/mytool/company-priorities"],
   });
 
+  const { data: projectsSummary } = useQuery<any[]>({
+    queryKey: ["projects-summary"],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch("/api/projects-summary", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include",
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const activeProjects = projectsSummary?.filter((p: any) => p.is_active)?.length ?? 0;
+  const totalRevenue = projectsSummary?.reduce((sum: number, p: any) => sum + (p.actual_revenue || 0), 0) ?? 0;
+  const totalExpenses = projectsSummary?.reduce((sum: number, p: any) => sum + (p.actual_expenses || 0), 0) ?? 0;
+  const avgCompletion = projectsSummary?.length
+    ? Math.round((projectsSummary.reduce((sum: number, p: any) => sum + (p.project_pct_complete || 0), 0) / projectsSummary.length) * 100)
+    : 0;
+
+  const formatCurrency = (val: number) => {
+    if (val >= 1_000_000) return `R${(val / 1_000_000).toFixed(1)}M`;
+    if (val >= 1_000) return `R${(val / 1_000).toFixed(0)}K`;
+    return `R${val.toFixed(0)}`;
+  };
+
   return (
-    <div className="space-y-5 max-w-7xl mx-auto" data-testid="home-page">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight" data-testid="text-welcome">Welcome, {firstName}</h1>
-        <p className="text-sm text-muted-foreground italic" data-testid="text-compliment">
-          {isFriday ? `\uD83D\uDE04 ${compliment}` : compliment}
-        </p>
-        <p className="text-xs text-muted-foreground mt-1">
-          {new Date().toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}
-        </p>
-      </div>
+    <div className="space-y-6 max-w-7xl mx-auto" data-testid="home-page">
+      <PageHeader
+        title={`Welcome, ${firstName}`}
+        subtitle={isFriday ? `\uD83D\uDE04 ${compliment}` : compliment}
+      />
+
+      <MetricStrip
+        metrics={[
+          {
+            label: "Active Projects",
+            value: activeProjects,
+            icon: <FolderKanban className="h-4 w-4" />,
+          },
+          {
+            label: "Revenue Realised",
+            value: formatCurrency(totalRevenue),
+            icon: <DollarSign className="h-4 w-4" />,
+          },
+          {
+            label: "Total Expenses",
+            value: formatCurrency(totalExpenses),
+            icon: <Wallet className="h-4 w-4" />,
+          },
+          {
+            label: "Avg Completion",
+            value: `${avgCompletion}%`,
+            icon: <Clock className="h-4 w-4" />,
+          },
+        ]}
+      />
 
       <CompanyPrioritiesCards isAdmin={!!canEdit} priorities={priorities} isLoading={prioritiesLoading} />
 

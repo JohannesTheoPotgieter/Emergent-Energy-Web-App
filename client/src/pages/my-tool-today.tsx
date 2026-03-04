@@ -1237,7 +1237,7 @@ export default function MyToolTodayPage() {
                     <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] cursor-pointer transition-colors ${
                       meetingImportStatus.connected 
                         ? 'bg-green-50 text-green-700 hover:bg-green-100 border border-green-200' 
-                        : 'bg-gray-50 text-gray-500 hover:bg-gray-100 border border-gray-200'
+                        : 'bg-muted text-muted-foreground hover:bg-muted border border-border'
                     }`}>
                       {meetingImportStatus.connected ? (
                         <>

@@ -156,7 +156,7 @@ function StatusBadge({ status }: { status: string }) {
     pass: { bg: "bg-emerald-500/15", text: "text-emerald-600 dark:text-emerald-400", label: "Pass", dot: "bg-emerald-500" },
     fail: { bg: "bg-red-500/15", text: "text-red-600 dark:text-red-400", label: "Fail", dot: "bg-red-500" },
     review: { bg: "bg-amber-500/15", text: "text-amber-600 dark:text-amber-400", label: "Review", dot: "bg-amber-500" },
-    na: { bg: "bg-gray-500/15", text: "text-gray-500", label: "N/A", dot: "bg-gray-400" },
+    na: { bg: "bg-gray-500/15", text: "text-muted-foreground", label: "N/A", dot: "bg-gray-400" },
     pending: { bg: "bg-blue-500/15", text: "text-blue-600 dark:text-blue-400", label: "Pending", dot: "bg-blue-500" },
   };
   const c = config[status] || config.pending;

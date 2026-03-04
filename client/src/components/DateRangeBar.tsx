@@ -64,11 +64,11 @@ export function DateRangeBar({ onDateChange, onProjectChange }: DateRangeBarProp
   }, []);
 
   return (
-    <div className="bg-white border-b border-gray-200 px-6 py-4">
+    <div className="bg-card border-b border-border px-6 py-4">
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-2">
-          <Calendar className="h-5 w-5 text-gray-500" />
-          <span className="text-sm font-medium text-gray-700">Filter by:</span>
+          <Calendar className="h-5 w-5 text-muted-foreground" />
+          <span className="text-sm font-medium text-foreground">Filter by:</span>
         </div>
 
         <Select value={selectedProject} onValueChange={handleProjectChange}>
@@ -94,7 +94,7 @@ export function DateRangeBar({ onDateChange, onProjectChange }: DateRangeBarProp
             className="w-[160px]"
             data-testid="input-start-date"
           />
-          <span className="text-gray-500">to</span>
+          <span className="text-muted-foreground">to</span>
           <Input
             type="date"
             value={endDate}

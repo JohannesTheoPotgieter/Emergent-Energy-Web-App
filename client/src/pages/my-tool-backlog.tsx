@@ -436,7 +436,7 @@ export default function MyToolBacklogPage() {
               <Eye className="h-3 w-3 mr-1" />
               Groom
               {groomMode && (
-                <Badge variant="secondary" className="ml-1 text-[10px] h-4 px-1 bg-white/20 text-white">
+                <Badge variant="secondary" className="ml-1 text-[10px] h-4 px-1 bg-card/20 text-white">
                   {filteredTasks.length}
                 </Badge>
               )}

@@ -158,7 +158,7 @@ export default function RevenueTracker() {
 
   return (
     <div className="space-y-0">
-      <div className="bg-white border-b border-gray-200 px-6 py-6">
+      <div className="bg-card border-b border-border px-6 py-6">
         <h2 className="text-3xl font-heading font-bold text-foreground" data-testid="text-page-title">
           Revenue Tracker FY26
         </h2>
@@ -262,10 +262,10 @@ export default function RevenueTracker() {
                     return (
                       <tr
                         key={row.key}
-                        className={`border-b ${isYtd ? "bg-slate-50" : "bg-white"} hover:bg-muted/30`}
+                        className={`border-b ${isYtd ? "bg-muted" : "bg-card"} hover:bg-muted/30`}
                         data-testid={`row-${row.key}`}
                       >
-                        <td className={`sticky left-0 z-10 px-4 py-2 font-medium ${isYtd ? "bg-slate-50" : "bg-white"}`}>
+                        <td className={`sticky left-0 z-10 px-4 py-2 font-medium ${isYtd ? "bg-muted" : "bg-card"}`}>
                           {row.label}
                         </td>
                         {months.map((m) => {

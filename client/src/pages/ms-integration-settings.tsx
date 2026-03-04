@@ -309,11 +309,11 @@ export default function MsIntegrationSettingsPage() {
     return (
       <div className="space-y-6 max-w-[960px] mx-auto" data-testid="ms-integration-status-page">
         <header>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 flex items-center gap-2" data-testid="text-page-title">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground flex items-center gap-2" data-testid="text-page-title">
             <Settings2 className="h-7 w-7 text-blue-600" />
             Microsoft Integration Status
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             View the status of Outlook, SharePoint, and Teams connections linked to your account
           </p>
         </header>
@@ -336,12 +336,12 @@ export default function MsIntegrationSettingsPage() {
           <Card data-testid="card-outlook-status">
             <CardContent className="py-5">
               <div className="flex items-center gap-3 mb-3">
-                <div className={`p-2.5 rounded-lg ${outlookConnected ? "bg-blue-100" : "bg-gray-100"}`}>
+                <div className={`p-2.5 rounded-lg ${outlookConnected ? "bg-blue-100" : "bg-muted"}`}>
                   <Mail className={`h-5 w-5 ${outlookConnected ? "text-blue-600" : "text-gray-400"}`} />
                 </div>
                 <div>
                   <p className="text-sm font-semibold">Outlook</p>
-                  <Badge variant="outline" className={`text-[10px] mt-0.5 ${outlookConnected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : outlookConfigured === false ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid="badge-outlook-user-status">
+                  <Badge variant="outline" className={`text-[10px] mt-0.5 ${outlookConnected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : outlookConfigured === false ? "bg-muted text-muted-foreground border-border" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid="badge-outlook-user-status">
                     {outlookConnected ? "Connected" : outlookConfigured === false ? "Not Set Up" : "Disconnected"}
                   </Badge>
                 </div>
@@ -374,12 +374,12 @@ export default function MsIntegrationSettingsPage() {
           <Card data-testid="card-sharepoint-status">
             <CardContent className="py-5">
               <div className="flex items-center gap-3 mb-3">
-                <div className={`p-2.5 rounded-lg ${spConnected && spEnabled ? "bg-green-100" : "bg-gray-100"}`}>
+                <div className={`p-2.5 rounded-lg ${spConnected && spEnabled ? "bg-green-100" : "bg-muted"}`}>
                   <FileText className={`h-5 w-5 ${spConnected && spEnabled ? "text-green-600" : "text-gray-400"}`} />
                 </div>
                 <div>
                   <p className="text-sm font-semibold">SharePoint</p>
-                  <Badge variant="outline" className={`text-[10px] mt-0.5 ${spConnected && spEnabled ? "bg-emerald-50 text-emerald-700 border-emerald-200" : !spEnabled ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid="badge-sp-user-status">
+                  <Badge variant="outline" className={`text-[10px] mt-0.5 ${spConnected && spEnabled ? "bg-emerald-50 text-emerald-700 border-emerald-200" : !spEnabled ? "bg-muted text-muted-foreground border-border" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid="badge-sp-user-status">
                     {spConnected && spEnabled ? "Connected" : !spEnabled ? "Not Enabled" : "Not Configured"}
                   </Badge>
                 </div>
@@ -399,12 +399,12 @@ export default function MsIntegrationSettingsPage() {
           <Card data-testid="card-teams-status">
             <CardContent className="py-5">
               <div className="flex items-center gap-3 mb-3">
-                <div className={`p-2.5 rounded-lg ${teamsEnabled ? "bg-purple-100" : "bg-gray-100"}`}>
+                <div className={`p-2.5 rounded-lg ${teamsEnabled ? "bg-purple-100" : "bg-muted"}`}>
                   <MessageSquare className={`h-5 w-5 ${teamsEnabled ? "text-purple-600" : "text-gray-400"}`} />
                 </div>
                 <div>
                   <p className="text-sm font-semibold">Teams</p>
-                  <Badge variant="outline" className={`text-[10px] mt-0.5 ${teamsEnabled ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-gray-50 text-gray-500 border-gray-200"}`} data-testid="badge-teams-user-status">
+                  <Badge variant="outline" className={`text-[10px] mt-0.5 ${teamsEnabled ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-muted text-muted-foreground border-border"}`} data-testid="badge-teams-user-status">
                     {teamsEnabled ? "Enabled" : "Not Enabled"}
                   </Badge>
                 </div>
@@ -441,11 +441,11 @@ export default function MsIntegrationSettingsPage() {
   return (
     <div className="flex flex-col min-h-0 flex-1 max-w-[960px] mx-auto w-full" data-testid="ms-integration-settings-page">
       <header className="shrink-0 mb-4">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 flex items-center gap-2" data-testid="text-page-title">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground flex items-center gap-2" data-testid="text-page-title">
           <Settings2 className="h-7 w-7 text-blue-600" />
           Microsoft Integration Settings
         </h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="text-sm text-muted-foreground mt-1">
           Manage Outlook, SharePoint, and Teams connections for all Microsoft features
         </p>
       </header>
@@ -521,12 +521,12 @@ export default function MsIntegrationSettingsPage() {
             <Card>
               <CardContent className="py-5">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className={`p-2 rounded-lg ${outlookConnected ? "bg-blue-100" : "bg-gray-100"}`}>
+                  <div className={`p-2 rounded-lg ${outlookConnected ? "bg-blue-100" : "bg-muted"}`}>
                     <Mail className={`h-5 w-5 ${outlookConnected ? "text-blue-600" : "text-gray-400"}`} />
                   </div>
                   <div>
                     <p className="text-sm font-semibold">Outlook Connection</p>
-                    <Badge variant="outline" className={`text-[10px] ${outlookConnected ? "bg-blue-50 text-blue-700 border-blue-200" : outlookConfigured === false ? "bg-gray-50 text-gray-500 border-gray-200" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid="badge-outlook-status">
+                    <Badge variant="outline" className={`text-[10px] ${outlookConnected ? "bg-blue-50 text-blue-700 border-blue-200" : outlookConfigured === false ? "bg-muted text-muted-foreground border-border" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid="badge-outlook-status">
                       {outlookConnected ? "Connected" : outlookConfigured === false ? "Not Configured" : "Disconnected"}
                     </Badge>
                   </div>
@@ -542,12 +542,12 @@ export default function MsIntegrationSettingsPage() {
             <Card>
               <CardContent className="py-5">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className={`p-2 rounded-lg ${isConnected ? "bg-green-100" : "bg-gray-100"}`}>
+                  <div className={`p-2 rounded-lg ${isConnected ? "bg-green-100" : "bg-muted"}`}>
                     <FileText className={`h-5 w-5 ${isConnected ? "text-green-600" : "text-gray-400"}`} />
                   </div>
                   <div>
                     <p className="text-sm font-semibold">SharePoint Documents</p>
-                    <Badge variant="outline" className={`text-[10px] ${isConnected ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-50 text-gray-500 border-gray-200"}`} data-testid="badge-sp-status">
+                    <Badge variant="outline" className={`text-[10px] ${isConnected ? "bg-green-50 text-green-700 border-green-200" : "bg-muted text-muted-foreground border-border"}`} data-testid="badge-sp-status">
                       {isConnected ? "Connected" : "Not Configured"}
                     </Badge>
                   </div>
@@ -565,12 +565,12 @@ export default function MsIntegrationSettingsPage() {
             <Card>
               <CardContent className="py-5">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className={`p-2 rounded-lg ${featureFlags.feature_ms_teams ? "bg-purple-100" : "bg-gray-100"}`}>
+                  <div className={`p-2 rounded-lg ${featureFlags.feature_ms_teams ? "bg-purple-100" : "bg-muted"}`}>
                     <MessageSquare className={`h-5 w-5 ${featureFlags.feature_ms_teams ? "text-purple-600" : "text-gray-400"}`} />
                   </div>
                   <div>
                     <p className="text-sm font-semibold">Teams Integration</p>
-                    <Badge variant="outline" className={`text-[10px] ${featureFlags.feature_ms_teams ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-gray-50 text-gray-500 border-gray-200"}`} data-testid="badge-teams-status">
+                    <Badge variant="outline" className={`text-[10px] ${featureFlags.feature_ms_teams ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-muted text-muted-foreground border-border"}`} data-testid="badge-teams-status">
                       {featureFlags.feature_ms_teams ? "Enabled" : "Disabled"}
                     </Badge>
                   </div>
@@ -587,7 +587,7 @@ export default function MsIntegrationSettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
-                <Shield className="h-4 w-4 text-slate-600" />
+                <Shield className="h-4 w-4 text-muted-foreground" />
                 Required Microsoft Graph Permissions
               </CardTitle>
             </CardHeader>
@@ -641,19 +641,19 @@ export default function MsIntegrationSettingsPage() {
                     )}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
-                    <div className="flex items-center gap-2 p-2 rounded border border-emerald-200/50 bg-white/50">
+                    <div className="flex items-center gap-2 p-2 rounded border border-emerald-200/50 bg-card/50">
                       <Calendar className="h-4 w-4 text-blue-500" />
-                      <span className="text-xs text-slate-600">Calendar Sync</span>
+                      <span className="text-xs text-muted-foreground">Calendar Sync</span>
                       <CheckCircle className="h-3 w-3 text-emerald-500 ml-auto" />
                     </div>
-                    <div className="flex items-center gap-2 p-2 rounded border border-emerald-200/50 bg-white/50">
+                    <div className="flex items-center gap-2 p-2 rounded border border-emerald-200/50 bg-card/50">
                       <Mail className="h-4 w-4 text-blue-500" />
-                      <span className="text-xs text-slate-600">Email Access</span>
+                      <span className="text-xs text-muted-foreground">Email Access</span>
                       <CheckCircle className="h-3 w-3 text-emerald-500 ml-auto" />
                     </div>
-                    <div className="flex items-center gap-2 p-2 rounded border border-emerald-200/50 bg-white/50">
+                    <div className="flex items-center gap-2 p-2 rounded border border-emerald-200/50 bg-card/50">
                       <Send className="h-4 w-4 text-blue-500" />
-                      <span className="text-xs text-slate-600">Approval Emails</span>
+                      <span className="text-xs text-muted-foreground">Approval Emails</span>
                       <CheckCircle className="h-3 w-3 text-emerald-500 ml-auto" />
                     </div>
                   </div>
@@ -711,14 +711,14 @@ export default function MsIntegrationSettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
-                <Plug className="h-4 w-4 text-slate-600" />
+                <Plug className="h-4 w-4 text-muted-foreground" />
                 What This Connection Powers
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-xs text-muted-foreground space-y-3">
                 <div className="p-3 border rounded-lg">
-                  <p className="text-sm font-semibold text-slate-700 mb-1">My Tool — Calendar</p>
+                  <p className="text-sm font-semibold text-foreground mb-1">My Tool — Calendar</p>
                   <ul className="list-disc ml-4 space-y-1">
                     <li>Outlook calendar events shown in day planner and weekly view</li>
                     <li>Time blocks sync back to a dedicated "EE — My Tool Blocks" calendar</li>
@@ -726,7 +726,7 @@ export default function MsIntegrationSettingsPage() {
                   </ul>
                 </div>
                 <div className="p-3 border rounded-lg">
-                  <p className="text-sm font-semibold text-slate-700 mb-1">My Tool — Email</p>
+                  <p className="text-sm font-semibold text-foreground mb-1">My Tool — Email</p>
                   <ul className="list-disc ml-4 space-y-1">
                     <li>Browse, read, reply, and forward Outlook emails from within the app</li>
                     <li>Convert emails to tasks with one click (Email-to-Task)</li>
@@ -734,14 +734,14 @@ export default function MsIntegrationSettingsPage() {
                   </ul>
                 </div>
                 <div className="p-3 border rounded-lg">
-                  <p className="text-sm font-semibold text-slate-700 mb-1">Approval Emails</p>
+                  <p className="text-sm font-semibold text-foreground mb-1">Approval Emails</p>
                   <ul className="list-disc ml-4 space-y-1">
                     <li>HTML approval emails with Approve/Reject buttons sent via Outlook</li>
                     <li>Used for procurement, engineering gates, and quality workflows</li>
                   </ul>
                 </div>
                 <div className="p-3 border rounded-lg">
-                  <p className="text-sm font-semibold text-slate-700 mb-1">SharePoint & Teams</p>
+                  <p className="text-sm font-semibold text-foreground mb-1">SharePoint & Teams</p>
                   <ul className="list-disc ml-4 space-y-1">
                     <li>Same Microsoft account provides access to SharePoint document libraries</li>
                     <li>Teams message reading uses the same connection token</li>
@@ -820,7 +820,7 @@ export default function MsIntegrationSettingsPage() {
                                 className={`w-full text-left p-3 rounded-lg border transition-all ${
                                   selectedDriveId === drive.id
                                     ? "border-blue-400 bg-blue-50 ring-1 ring-blue-200"
-                                    : "border-gray-200 hover:border-blue-200 hover:bg-blue-50/50"
+                                    : "border-border hover:border-blue-200 hover:bg-blue-50/50"
                                 }`}
                                 onClick={() => {
                                   setSelectedDriveId(drive.id);
@@ -850,12 +850,12 @@ export default function MsIntegrationSettingsPage() {
               )}
 
               {(selectedDriveId || spConfig?.driveId) && (
-                <div className="p-3 bg-slate-50 border rounded-lg">
-                  <p className="text-xs font-medium text-slate-700 mb-1">Current Configuration</p>
-                  <div className="text-xs text-slate-600 space-y-0.5">
+                <div className="p-3 bg-muted border rounded-lg">
+                  <p className="text-xs font-medium text-foreground mb-1">Current Configuration</p>
+                  <div className="text-xs text-muted-foreground space-y-0.5">
                     <p>Site: {testResult?.siteName || spConfig?.siteName || "—"}</p>
                     <p>Library: {selectedDriveName || spConfig?.driveName || "—"}</p>
-                    <p>Drive ID: <code className="bg-slate-100 px-1 rounded text-[10px]">{selectedDriveId || spConfig?.driveId || "—"}</code></p>
+                    <p>Drive ID: <code className="bg-muted px-1 rounded text-[10px]">{selectedDriveId || spConfig?.driveId || "—"}</code></p>
                   </div>
                 </div>
               )}
@@ -989,7 +989,7 @@ export default function MsIntegrationSettingsPage() {
                   <li>Convert a Teams message into a task using the existing task system</li>
                   <li>View linked Teams messages on the project page</li>
                 </ul>
-                <p className="mt-2 font-medium text-slate-700">COO/Program Manager rollups:</p>
+                <p className="mt-2 font-medium text-foreground">COO/Program Manager rollups:</p>
                 <ul className="list-disc ml-4 space-y-1">
                   <li><strong>Hot Threads:</strong> Tagged messages with no update for {teamsConfig.hotThresholdHours}h</li>
                   <li><strong>Unanswered:</strong> Messages with no response for {teamsConfig.unansweredThresholdHours}h</li>
@@ -1167,7 +1167,7 @@ export default function MsIntegrationSettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
-                <Shield className="h-4 w-4 text-slate-600" />
+                <Shield className="h-4 w-4 text-muted-foreground" />
                 Access Control Rules
               </CardTitle>
             </CardHeader>

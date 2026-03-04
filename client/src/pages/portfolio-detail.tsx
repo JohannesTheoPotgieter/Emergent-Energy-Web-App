@@ -90,25 +90,25 @@ function PortfolioGanttChart({ projects }: { projects: any[] }) {
       <CardContent className="p-0">
         <div className="overflow-x-auto">
           <div className="flex" style={{ minWidth: 900 }}>
-            <div className="flex-shrink-0 border-r bg-slate-50/80" style={{ width: 220 }}>
-              <div className="border-b px-3 flex items-center text-[10px] font-semibold text-gray-500 uppercase tracking-wider" style={{ height: HEADER_HEIGHT }}>
+            <div className="flex-shrink-0 border-r bg-muted/80" style={{ width: 220 }}>
+              <div className="border-b px-3 flex items-center text-[10px] font-semibold text-muted-foreground uppercase tracking-wider" style={{ height: HEADER_HEIGHT }}>
                 Project
               </div>
               {projects.map((proj: any, idx: number) => {
                 const progressColor = proj.actualPct >= 90 ? 'text-green-700 bg-green-100' :
                   proj.actualPct >= 50 ? 'text-blue-700 bg-blue-100' :
-                  proj.actualPct > 0 ? 'text-amber-700 bg-amber-100' : 'text-gray-500 bg-gray-100';
+                  proj.actualPct > 0 ? 'text-amber-700 bg-amber-100' : 'text-muted-foreground bg-muted';
                 return (
                   <div
                     key={proj.projectId}
-                    className={`border-b px-3 flex items-center gap-2 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'} ${hoveredRow === idx ? 'bg-blue-50/60' : ''}`}
+                    className={`border-b px-3 flex items-center gap-2 transition-colors ${idx % 2 === 0 ? 'bg-card' : 'bg-muted/40'} ${hoveredRow === idx ? 'bg-blue-50/60' : ''}`}
                     style={{ height: ROW_HEIGHT }}
                     onMouseEnter={() => setHoveredRow(idx)}
                     onMouseLeave={() => setHoveredRow(null)}
                   >
                     <div className="min-w-0 flex-1">
                       <Link href={`/project/${encodeURIComponent(proj.projectName)}`} className="hover:underline">
-                        <div className="font-medium text-gray-800 text-[11px] truncate">{proj.projectName}</div>
+                        <div className="font-medium text-foreground text-[11px] truncate">{proj.projectName}</div>
                       </Link>
                       <div className="text-[9px] text-gray-400 truncate">{proj.pm || '—'} · {parseFloat(proj.sizeKwp || '0').toFixed(0)} kWp</div>
                     </div>
@@ -136,7 +136,7 @@ function PortfolioGanttChart({ projects }: { projects: any[] }) {
               {months.map((m, i) => (
                 <div
                   key={i}
-                  className="absolute top-0 bottom-0 border-l border-dashed border-gray-100"
+                  className="absolute top-0 bottom-0 border-l border-dashed border-border"
                   style={{ left: `${m.left}%` }}
                 />
               ))}
@@ -179,7 +179,7 @@ function PortfolioGanttChart({ projects }: { projects: any[] }) {
                 return (
                   <div
                     key={proj.projectId}
-                    className={`relative border-b transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'} ${hoveredRow === idx ? 'bg-blue-50/60' : ''}`}
+                    className={`relative border-b transition-colors ${idx % 2 === 0 ? 'bg-card' : 'bg-muted/40'} ${hoveredRow === idx ? 'bg-blue-50/60' : ''}`}
                     style={{ height: ROW_HEIGHT }}
                     onMouseEnter={() => setHoveredRow(idx)}
                     onMouseLeave={() => { setHoveredRow(null); setTooltip(null); }}
@@ -285,9 +285,9 @@ function PortfolioGanttChart({ projects }: { projects: any[] }) {
         )}
       </CardContent>
 
-      <div className="px-4 py-2.5 border-t bg-slate-50/60 flex flex-wrap items-center gap-x-5 gap-y-1.5">
+      <div className="px-4 py-2.5 border-t bg-muted/60 flex flex-wrap items-center gap-x-5 gap-y-1.5">
         {MILESTONE_CONFIG.map((m) => (
-          <div key={m.name} className="flex items-center gap-1.5 text-[10px] text-gray-500">
+          <div key={m.name} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
             {m.name === "Commissioning" ? (
               <svg width="10" height="10" viewBox="0 0 10 10"><rect x="5" y="0" width="5" height="5" rx="1" transform="rotate(45 5 0)" fill={m.color} /></svg>
             ) : (
@@ -296,11 +296,11 @@ function PortfolioGanttChart({ projects }: { projects: any[] }) {
             <span>{m.name}</span>
           </div>
         ))}
-        <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
           <div className="w-4 h-1 bg-amber-500 rounded" />
           <span>Expected %</span>
         </div>
-        <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
           <div className="w-4 h-1 bg-red-400 rounded" />
           <span>Behind &gt;5%</span>
         </div>
@@ -490,8 +490,8 @@ export default function PortfolioDetailPage() {
     if (p.includes("dlp")) return { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200", dot: "bg-amber-500" };
     if (p.includes("commercial")) return { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-200", dot: "bg-teal-500" };
     if (p.includes("financial")) return { bg: "bg-indigo-50", text: "text-indigo-700", border: "border-indigo-200", dot: "bg-indigo-500" };
-    if (p.includes("hold")) return { bg: "bg-slate-50", text: "text-slate-600", border: "border-slate-200", dot: "bg-slate-400" };
-    return { bg: "bg-gray-50", text: "text-gray-700", border: "border-gray-200", dot: "bg-gray-500" };
+    if (p.includes("hold")) return { bg: "bg-muted", text: "text-muted-foreground", border: "border-border", dot: "bg-slate-400" };
+    return { bg: "bg-muted", text: "text-foreground", border: "border-border", dot: "bg-gray-500" };
   };
   const deltaColor = (val: number) => {
     if (val <= -10) return { text: "text-red-700", bg: "bg-red-50" };
@@ -610,22 +610,22 @@ export default function PortfolioDetailPage() {
             <div className="border rounded-lg overflow-x-auto">
               <table className="w-full text-[11px]">
                 <thead>
-                  <tr className="border-b bg-slate-50/80">
-                    <th className="text-left px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap sticky left-0 bg-slate-50/80 z-10 min-w-[140px]">Project</th>
-                    <th className="text-left px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Phase</th>
-                    <th className="text-left px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">PM</th>
-                    <th className="text-left px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">PD</th>
-                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">kWp</th>
-                    <th className="text-left px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">C.Start</th>
-                    <th className="text-left px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Comm.</th>
-                    <th className="text-left px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Client</th>
-                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Days</th>
-                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Act%</th>
-                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Exp%</th>
-                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Delta</th>
-                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Revenue</th>
-                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Expenses</th>
-                    <th className="text-right px-2 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">GP%</th>
+                  <tr className="border-b bg-muted/80">
+                    <th className="text-left px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap sticky left-0 bg-muted/80 z-10 min-w-[140px]">Project</th>
+                    <th className="text-left px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Phase</th>
+                    <th className="text-left px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">PM</th>
+                    <th className="text-left px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">PD</th>
+                    <th className="text-right px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">kWp</th>
+                    <th className="text-left px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">C.Start</th>
+                    <th className="text-left px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Comm.</th>
+                    <th className="text-left px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Client</th>
+                    <th className="text-right px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Days</th>
+                    <th className="text-right px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Act%</th>
+                    <th className="text-right px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Exp%</th>
+                    <th className="text-right px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Delta</th>
+                    <th className="text-right px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Revenue</th>
+                    <th className="text-right px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">Expenses</th>
+                    <th className="text-right px-2 py-2 font-semibold text-muted-foreground uppercase tracking-wider whitespace-nowrap">GP%</th>
                     <th className="px-2 py-2 w-8"></th>
                   </tr>
                 </thead>
@@ -653,12 +653,12 @@ export default function PortfolioDetailPage() {
                     const DeltaIcon = deltaVal >= 0 ? TrendingUp : TrendingDown;
                     const fmtMoney = (v: number | null) => {
                       if (v == null || v === 0) return <span className="text-slate-400">—</span>;
-                      return <span className="font-mono text-slate-700">R{v.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
+                      return <span className="font-mono text-foreground">R{v.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>;
                     };
 
                     return (
-                      <tr key={projectId || name} className="border-b hover:bg-slate-50/50 transition-colors" data-testid={`row-project-${projectId}`}>
-                        <td className="px-2 py-2 sticky left-0 bg-white z-10">
+                      <tr key={projectId || name} className="border-b hover:bg-muted/50 transition-colors" data-testid={`row-project-${projectId}`}>
+                        <td className="px-2 py-2 sticky left-0 bg-card z-10">
                           <Link href={`/project/${encodeURIComponent(name)}`}>
                             <span className="font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-[140px] block" title={cleanName(name)} data-testid={`link-project-${name}`}>
                               {cleanName(name)}
@@ -671,19 +671,19 @@ export default function PortfolioDetailPage() {
                             {phase || "—"}
                           </span>
                         </td>
-                        <td className="px-2 py-2 text-slate-600 whitespace-nowrap" title={pm || ""}>{truncateName(pm, 14)}</td>
-                        <td className="px-2 py-2 text-slate-600 whitespace-nowrap" title={pd || ""}>{truncateName(pd, 12)}</td>
-                        <td className="px-2 py-2 text-right font-mono text-slate-700">{sizeKwp ? sizeKwp.toFixed(0) : "—"}</td>
-                        <td className="px-2 py-2 text-slate-600 whitespace-nowrap">{formatDate(constructionStart)}</td>
-                        <td className="px-2 py-2 text-slate-600 whitespace-nowrap">{formatDate(commDate)}</td>
-                        <td className="px-2 py-2 text-slate-600 whitespace-nowrap">{formatDate(clientDate)}</td>
-                        <td className="px-2 py-2 text-right font-mono text-slate-600">{duration != null ? duration : "—"}</td>
+                        <td className="px-2 py-2 text-muted-foreground whitespace-nowrap" title={pm || ""}>{truncateName(pm, 14)}</td>
+                        <td className="px-2 py-2 text-muted-foreground whitespace-nowrap" title={pd || ""}>{truncateName(pd, 12)}</td>
+                        <td className="px-2 py-2 text-right font-mono text-foreground">{sizeKwp ? sizeKwp.toFixed(0) : "—"}</td>
+                        <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">{formatDate(constructionStart)}</td>
+                        <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">{formatDate(commDate)}</td>
+                        <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">{formatDate(clientDate)}</td>
+                        <td className="px-2 py-2 text-right font-mono text-muted-foreground">{duration != null ? duration : "—"}</td>
                         <td className="px-2 py-2 text-right">
                           <span className={`font-mono font-semibold ${deltaVal < -5 ? "text-red-600" : "text-emerald-600"}`}>
                             {actPct.toFixed(1)}%
                           </span>
                         </td>
-                        <td className="px-2 py-2 text-right font-mono text-slate-600">{expPct.toFixed(1)}%</td>
+                        <td className="px-2 py-2 text-right font-mono text-muted-foreground">{expPct.toFixed(1)}%</td>
                         <td className="px-2 py-2 text-right">
                           {deltaVal !== 0 ? (
                             <span className={`inline-flex items-center gap-0.5 font-mono font-semibold px-1 py-0.5 rounded-md ${dColor.text} ${dColor.bg}`}>
@@ -798,8 +798,8 @@ export default function PortfolioDetailPage() {
                 <div className="border rounded-lg overflow-hidden">
                   <Table>
                     <TableHeader>
-                      <TableRow className="bg-slate-50/80">
-                        <TableHead className="font-semibold text-slate-600">Project</TableHead>
+                      <TableRow className="bg-muted/80">
+                        <TableHead className="font-semibold text-muted-foreground">Project</TableHead>
                         <TableHead className="text-right font-semibold text-emerald-700">Costed Rev</TableHead>
                         <TableHead className="text-right font-semibold text-green-700">Actual Rev</TableHead>
                         <TableHead className="text-right font-semibold text-orange-700">Costed COS</TableHead>
@@ -813,7 +813,7 @@ export default function PortfolioDetailPage() {
                         const pGp = (p.actualRevenue || 0) - (p.actualExpenses || 0);
                         const pGpPct = (p.actualRevenue || 0) > 0 ? (pGp / (p.actualRevenue || 1)) * 100 : 0;
                         return (
-                          <TableRow key={p.id} className="hover:bg-slate-50/60 transition-colors" data-testid={`row-finance-${p.id}`}>
+                          <TableRow key={p.id} className="hover:bg-muted/60 transition-colors" data-testid={`row-finance-${p.id}`}>
                             <TableCell className="py-3">
                               <Link href={`/project/${encodeURIComponent(p.projectName)}`}>
                                 <span className="text-blue-700 hover:text-blue-900 hover:underline font-medium">{cleanName(p.projectName)}</span>
@@ -1009,18 +1009,18 @@ export default function PortfolioDetailPage() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-[11px]" data-testid="table-portfolio-plan">
                       <thead>
-                        <tr className="border-b bg-slate-50/80">
-                          <th className="text-left px-3 py-2.5 font-semibold text-gray-600 sticky left-0 bg-slate-50/80 z-10 min-w-[160px]">Project</th>
-                          <th className="text-center px-2 py-2.5 font-semibold text-gray-600 min-w-[60px]">Phase</th>
-                          <th className="text-center px-2 py-2.5 font-semibold text-gray-600 min-w-[50px]">Act%</th>
-                          <th className="text-center px-2 py-2.5 font-semibold text-gray-500 min-w-[80px]">Start</th>
+                        <tr className="border-b bg-muted/80">
+                          <th className="text-left px-3 py-2.5 font-semibold text-muted-foreground sticky left-0 bg-muted/80 z-10 min-w-[160px]">Project</th>
+                          <th className="text-center px-2 py-2.5 font-semibold text-muted-foreground min-w-[60px]">Phase</th>
+                          <th className="text-center px-2 py-2.5 font-semibold text-muted-foreground min-w-[50px]">Act%</th>
+                          <th className="text-center px-2 py-2.5 font-semibold text-muted-foreground min-w-[80px]">Start</th>
                           <th className="text-center px-2 py-2.5 font-medium text-indigo-600 min-w-[80px]">PD Handover</th>
                           <th className="text-center px-2 py-2.5 font-medium text-blue-600 min-w-[80px]">Construction Start</th>
                           <th className="text-center px-2 py-2.5 font-medium text-amber-600 min-w-[80px]">Commissioning</th>
                           <th className="text-center px-2 py-2.5 font-medium text-green-600 min-w-[80px]">Practical Completion</th>
                           <th className="text-center px-2 py-2.5 font-medium text-purple-600 min-w-[80px]">O&M Handover</th>
                           <th className="text-center px-2 py-2.5 font-medium text-rose-600 min-w-[80px]">Client Handover</th>
-                          <th className="text-center px-2 py-2.5 font-semibold text-gray-500 min-w-[80px]">End</th>
+                          <th className="text-center px-2 py-2.5 font-semibold text-muted-foreground min-w-[80px]">End</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1074,17 +1074,17 @@ export default function PortfolioDetailPage() {
 
                           const progressColor = proj.actualPct >= 90 ? 'text-green-700 bg-green-100' :
                                                 proj.actualPct >= 50 ? 'text-blue-700 bg-blue-100' :
-                                                proj.actualPct > 0 ? 'text-amber-700 bg-amber-100' : 'text-gray-500 bg-gray-100';
+                                                proj.actualPct > 0 ? 'text-amber-700 bg-amber-100' : 'text-muted-foreground bg-muted';
 
                           return (
                             <tr
                               key={proj.projectId}
-                              className={`border-b ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'} hover:bg-blue-50/40 transition-colors`}
+                              className={`border-b ${idx % 2 === 0 ? 'bg-card' : 'bg-muted/40'} hover:bg-blue-50/40 transition-colors`}
                               data-testid={`plan-row-${proj.projectId}`}
                             >
                               <td className="px-3 py-2.5 sticky left-0 bg-inherit z-10">
                                 <Link href={`/project/${encodeURIComponent(proj.projectName)}`} className="hover:underline">
-                                  <div className="font-medium text-gray-800 text-xs">{proj.projectName}</div>
+                                  <div className="font-medium text-foreground text-xs">{proj.projectName}</div>
                                 </Link>
                                 <div className="text-[10px] text-gray-400 mt-0.5">{proj.pm || '—'} · {parseFloat(proj.sizeKwp || '0').toFixed(0)} kWp</div>
                               </td>
@@ -1097,7 +1097,7 @@ export default function PortfolioDetailPage() {
                                 </span>
                               </td>
                               <td className="text-center px-2 py-2.5">
-                                <span className="text-[10px] text-gray-500">{fmtDate(proj.projectStart)}</span>
+                                <span className="text-[10px] text-muted-foreground">{fmtDate(proj.projectStart)}</span>
                               </td>
                               {renderDateCell("PD Handover", "bg-indigo-50 text-indigo-700")}
                               {renderDateCell("Construction Start", "bg-blue-50 text-blue-700")}
@@ -1106,7 +1106,7 @@ export default function PortfolioDetailPage() {
                               {renderDateCell("O&M Handover", "bg-purple-50 text-purple-700")}
                               {renderDateCell("Client Handover", "bg-rose-50 text-rose-700")}
                               <td className="text-center px-2 py-2.5">
-                                <span className="text-[10px] text-gray-500">{fmtDate(proj.projectEnd)}</span>
+                                <span className="text-[10px] text-muted-foreground">{fmtDate(proj.projectEnd)}</span>
                               </td>
                             </tr>
                           );
@@ -1123,7 +1123,7 @@ export default function PortfolioDetailPage() {
                   <span>Within 30 days</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="h-3 w-3 rounded bg-gray-100" />
+                  <span className="h-3 w-3 rounded bg-muted" />
                   <span>Past date</span>
                 </div>
                 <div className="flex items-center gap-1.5">

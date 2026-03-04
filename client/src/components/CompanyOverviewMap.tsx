@@ -54,7 +54,7 @@ const TYPE_COLORS: Record<string, string> = {
   process: "bg-amber-100 text-amber-700",
   gate: "bg-red-100 text-red-700",
   step: "bg-green-100 text-green-700",
-  content: "bg-slate-100 text-slate-700",
+  content: "bg-muted text-foreground",
 };
 
 const STAGE_GRADIENT = [
@@ -134,7 +134,7 @@ function LifecycleFlowPanel({
 
         return (
           <div key={stage.id} className="relative pl-10" data-testid={`lifecycle-stage-${stage.slug}`}>
-            <div className="absolute left-3 top-4 w-4 h-4 rounded-full bg-white border-2 border-slate-300 z-10" />
+            <div className="absolute left-3 top-4 w-4 h-4 rounded-full bg-card border-2 border-border z-10" />
             {idx < stages.length - 1 && (
               <ArrowDown className="absolute left-3.5 -bottom-2 h-3 w-3 text-slate-300 z-10" />
             )}
@@ -145,7 +145,7 @@ function LifecycleFlowPanel({
                     className={`w-full text-left rounded-lg border p-3 transition-all ${
                       isSelected
                         ? "border-blue-400 bg-blue-50/50 shadow-md ring-1 ring-blue-200"
-                        : "border-slate-200 bg-white hover:bg-slate-50 hover:shadow-sm"
+                        : "border-border bg-card hover:bg-muted hover:shadow-sm"
                     }`}
                     onClick={() => onSelectNode(stage.id, stage.title)}
                     data-testid={`select-stage-${stage.slug}`}
@@ -162,7 +162,7 @@ function LifecycleFlowPanel({
                       </div>
                       <div className="flex gap-1 shrink-0">
                         {deptSlugs.slice(0, 3).map(ds => (
-                          <span key={ds} className="p-1 rounded bg-slate-100 text-slate-600">
+                          <span key={ds} className="p-1 rounded bg-muted text-muted-foreground">
                             {DEPT_ICONS[ds] || <Building2 className="h-3 w-3" />}
                           </span>
                         ))}
@@ -298,7 +298,7 @@ function NetworkPanel({
             className={`w-full text-left rounded-lg border p-2.5 transition-all ${
               selectedNodeId === node.id
                 ? "border-blue-400 bg-blue-50/50 shadow-sm"
-                : "border-slate-200 bg-white hover:bg-slate-50"
+                : "border-border bg-card hover:bg-muted"
             }`}
             onClick={() => onSelectNode(node.id, node.title)}
             data-testid={`network-node-${node.slug}`}
@@ -804,7 +804,7 @@ function NodeDetailPanel({
           </h4>
           <div className="space-y-1">
             {relatedNodes.map(rn => (
-              <div key={rn.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-slate-50 text-sm" data-testid={`related-node-${rn.slug}`}>
+              <div key={rn.id} className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-muted text-sm" data-testid={`related-node-${rn.slug}`}>
                 <Badge variant="outline" className={`text-[9px] ${TYPE_COLORS[rn.nodeType || rn.category] || TYPE_COLORS.content}`}>
                   {rn.nodeType || rn.category}
                 </Badge>
@@ -863,7 +863,7 @@ function EditorsPanel({ nodeId, editors }: { nodeId: string; editors: any[] }) {
       {editors.length > 0 ? (
         <div className="space-y-1 mb-2">
           {editors.map((e: any) => (
-            <div key={e.id} className="flex items-center justify-between px-2.5 py-1.5 rounded-md bg-slate-50 text-xs">
+            <div key={e.id} className="flex items-center justify-between px-2.5 py-1.5 rounded-md bg-muted text-xs">
               <span>User #{e.userId} {e.canEdit ? "(edit)" : "(view)"}</span>
               <button
                 onClick={() => removeEditorMutation.mutate(e.id)}
@@ -975,8 +975,8 @@ export default function CompanyOverviewMap({ isCOO, userId }: CompanyOverviewMap
 
   return (
     <div className="flex gap-4 h-full min-h-[600px]" data-testid="company-overview-map">
-      <div className="w-[380px] shrink-0 flex flex-col border rounded-xl bg-white overflow-hidden">
-        <div className="p-3 border-b bg-slate-50/50">
+      <div className="w-[380px] shrink-0 flex flex-col border rounded-xl bg-card overflow-hidden">
+        <div className="p-3 border-b bg-muted/50">
           <div className="flex gap-1">
             <Button
               size="sm"
@@ -1007,7 +1007,7 @@ export default function CompanyOverviewMap({ isCOO, userId }: CompanyOverviewMap
         </div>
       </div>
 
-      <div className="flex-1 border rounded-xl bg-white overflow-y-auto p-4">
+      <div className="flex-1 border rounded-xl bg-card overflow-y-auto p-4">
         {selectedNodeId ? (
           <NodeDetailPanel
             nodeId={selectedNodeId}

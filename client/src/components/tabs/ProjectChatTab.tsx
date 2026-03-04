@@ -198,7 +198,7 @@ export function ProjectChatTab({ projectName }: { projectName: string }) {
   let lastDate = "";
 
   return (
-    <div className="flex flex-col h-[500px] border rounded-lg overflow-hidden bg-white" data-testid="project-chat-tab">
+    <div className="flex flex-col h-[500px] border rounded-lg overflow-hidden bg-card" data-testid="project-chat-tab">
       <div className="flex items-center justify-between px-4 py-2.5 bg-[#292929] text-white">
         <div className="flex items-center gap-2">
           <MessageSquare className="h-4 w-4 text-blue-400" />
@@ -244,7 +244,7 @@ export function ProjectChatTab({ projectName }: { projectName: string }) {
 
       <div className="flex flex-1 min-h-0">
         <div className="flex-1 flex flex-col min-h-0">
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 bg-gray-50/50">
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1 bg-muted/50">
             {msgsLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -283,7 +283,7 @@ export function ProjectChatTab({ projectName }: { projectName: string }) {
                         <p className="text-[10px] text-muted-foreground mb-0.5">
                           {senderName} · {formatTime(msg.sentAt || msg.createdAt)}
                         </p>
-                        <div className={`rounded-lg px-3 py-2 text-sm ${isMe ? "bg-blue-600 text-white" : "bg-white border shadow-sm"}`}>
+                        <div className={`rounded-lg px-3 py-2 text-sm ${isMe ? "bg-blue-600 text-white" : "bg-card border shadow-sm"}`}>
                           {msg.content}
                         </div>
                         {msg.fileName && (
@@ -318,7 +318,7 @@ export function ProjectChatTab({ projectName }: { projectName: string }) {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="border-t p-2 flex items-center gap-2 bg-white">
+          <div className="border-t p-2 flex items-center gap-2 bg-card">
             <input
               type="file"
               ref={fileInputRef}
@@ -365,7 +365,7 @@ export function ProjectChatTab({ projectName }: { projectName: string }) {
         </div>
 
         {showMembers && (
-          <div className="w-48 border-l bg-gray-50 p-3 overflow-y-auto">
+          <div className="w-48 border-l bg-muted p-3 overflow-y-auto">
             <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-2">Members</p>
             {(group?.members || []).map((m: any) => (
               <div key={m.id} className="flex items-center gap-2 py-1.5">

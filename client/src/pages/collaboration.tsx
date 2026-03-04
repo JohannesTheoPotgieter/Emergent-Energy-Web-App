@@ -1516,7 +1516,7 @@ function SharePointTab() {
     if (["jpg", "jpeg", "png", "gif", "svg"].includes(ext)) return <ImageIcon className="h-5 w-5 text-purple-500" />;
     if (["mp4", "mov", "avi"].includes(ext)) return <Film className="h-5 w-5 text-red-500" />;
     if (["pdf", "doc", "docx", "txt"].includes(ext)) return <FileText className="h-5 w-5 text-blue-500" />;
-    return <File className="h-5 w-5 text-gray-500" />;
+    return <File className="h-5 w-5 text-muted-foreground" />;
   }
 
   function formatSize(bytes: number) {
@@ -1633,7 +1633,7 @@ const EVENT_TYPE_LABELS: Record<string, { label: string; icon: typeof Bell; colo
 };
 
 function getEventTypeInfo(eventType: string) {
-  return EVENT_TYPE_LABELS[eventType] || { label: eventType, icon: Bell, color: "text-gray-600 bg-gray-50" };
+  return EVENT_TYPE_LABELS[eventType] || { label: eventType, icon: Bell, color: "text-muted-foreground bg-muted" };
 }
 
 function NotificationsTab() {
@@ -1985,7 +1985,7 @@ function CombinedTeamsTab() {
         <button
           className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
             activeSection === "activity"
-              ? "bg-white text-foreground shadow-sm"
+              ? "bg-card text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground"
           }`}
           onClick={() => setActiveSection("activity")}
@@ -1997,7 +1997,7 @@ function CombinedTeamsTab() {
         <button
           className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
             activeSection === "chat"
-              ? "bg-white text-foreground shadow-sm"
+              ? "bg-card text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground"
           }`}
           onClick={() => setActiveSection("chat")}

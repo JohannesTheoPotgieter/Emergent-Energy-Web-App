@@ -51,7 +51,7 @@ import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, 
 import { usePermission } from "@/hooks/use-permissions";
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  P0_FIRST_ASSESSMENT: { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-300" },
+  P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", border: "border-border" },
   P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-100", text: "text-violet-700", border: "border-violet-300" },
   P2_PD_PM_HANDOVER: { bg: "bg-indigo-100", text: "text-indigo-700", border: "border-indigo-300" },
   P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-300" },
@@ -250,7 +250,7 @@ const STATUS_DOT: Record<string, string> = {
   "OPERATIONAL APPROVAL": "text-indigo-500", "PROJECTS ASSISTANCE": "text-cyan-500",
 };
 const STATUS_BADGE: Record<string, string> = {
-  "TO DO": "bg-gray-100 text-gray-700", "IN PROGRESS": "bg-blue-100 text-blue-700",
+  "TO DO": "bg-muted text-foreground", "IN PROGRESS": "bg-blue-100 text-blue-700",
   "HOLD": "bg-red-100 text-red-700", "NEEDS APPROVAL": "bg-amber-100 text-amber-700",
   "COMPLETE": "bg-green-100 text-green-700", "QC APPROVED": "bg-emerald-100 text-emerald-700",
   "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700",
@@ -505,7 +505,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
                         >
                           <Circle className={`h-2.5 w-2.5 fill-current shrink-0 ${STATUS_DOT[displayStatus] || "text-gray-400"}`} />
                           <span className="flex-1 min-w-0 truncate text-xs sm:text-sm">{task.title}</span>
-                          <Badge className={`text-[9px] px-1.5 py-0 shrink-0 hidden sm:inline-flex ${STATUS_BADGE[displayStatus] || "bg-gray-100"}`}>{displayStatus}</Badge>
+                          <Badge className={`text-[9px] px-1.5 py-0 shrink-0 hidden sm:inline-flex ${STATUS_BADGE[displayStatus] || "bg-muted"}`}>{displayStatus}</Badge>
                           {taskDue && (
                             <span className={`text-[10px] flex items-center gap-0.5 shrink-0 ${isTaskOverdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
                               <Calendar className="h-3 w-3" />
@@ -673,7 +673,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
                         {isExpanded && !canEdit && (
                           <div className="px-3 sm:px-4 pb-3 pt-1 bg-muted/10 border-t border-dashed space-y-2" onClick={(e) => e.stopPropagation()}>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                              <div><span className="text-muted-foreground">Status:</span> <Badge className={`text-[9px] ${STATUS_BADGE[displayStatus] || "bg-gray-100"}`}>{displayStatus}</Badge></div>
+                              <div><span className="text-muted-foreground">Status:</span> <Badge className={`text-[9px] ${STATUS_BADGE[displayStatus] || "bg-muted"}`}>{displayStatus}</Badge></div>
                               <div><span className="text-muted-foreground">Priority:</span> {task.priority || "Med"}</div>
                               <div><span className="text-muted-foreground">Start:</span> {task.startDate || "—"}</div>
                               <div><span className="text-muted-foreground">Due:</span> {taskDue || "—"}</div>
@@ -1198,7 +1198,7 @@ export default function ProjectDetailPage() {
                         .slice(0, 5);
                       if (upcoming.length === 0) return <p className="text-xs text-emerald-600 text-center py-3">All tasks are on track</p>;
                       return upcoming.map((t: any, i: number) => (
-                        <div key={i} className="flex items-center gap-2 text-[11px] py-1.5 px-2 rounded bg-gray-50 hover:bg-gray-100 cursor-pointer" onClick={() => navigateToSection("project-management", "plan")} data-testid={`row-plan-upcoming-${t.id || i}`}>
+                        <div key={i} className="flex items-center gap-2 text-[11px] py-1.5 px-2 rounded bg-muted hover:bg-muted cursor-pointer" onClick={() => navigateToSection("project-management", "plan")} data-testid={`row-plan-upcoming-${t.id || i}`}>
                           <Circle className="h-2.5 w-2.5 text-sky-400 shrink-0" />
                           <span className="truncate flex-1 font-medium">{t.highLevelProgramme || t.taskName || t.task_name || "Unnamed task"}</span>
                           <span className="text-muted-foreground shrink-0">{t.actualEnd || t.endDate || ""}</span>
@@ -1291,7 +1291,7 @@ export default function ProjectDetailPage() {
                             <div className="h-full bg-violet-200 rounded-full overflow-hidden flex-1">
                               <div className="h-full bg-violet-500 rounded-full transition-all" style={{ width: `${Math.min((vals.budget / maxVal) * 100, 100)}%` }} />
                             </div>
-                            <div className="h-full bg-gray-100 rounded-full overflow-hidden flex-1">
+                            <div className="h-full bg-muted rounded-full overflow-hidden flex-1">
                               <div className={`h-full rounded-full transition-all ${overBudget ? "bg-red-500" : "bg-emerald-500"}`} style={{ width: `${Math.min((vals.actual / maxVal) * 100, 100)}%` }} />
                             </div>
                           </div>
@@ -1480,7 +1480,7 @@ export default function ProjectDetailPage() {
                           tickets.slice(0, 5).map((t: any) => {
                             const isOverdue = t.dueDate && t.status !== "Completed" && t.status !== "Cancelled" && t.dueDate < new Date().toISOString().split("T")[0];
                             return (
-                              <div key={t.id} className={`flex items-center gap-2 text-[11px] py-1.5 px-2 rounded ${isOverdue ? "bg-red-50 border border-red-100" : "bg-gray-50"} hover:bg-gray-100 cursor-pointer`} onClick={() => setLocation(`/pd-tickets/${t.id}`)} data-testid={`row-pd-ticket-${t.id}`}>
+                              <div key={t.id} className={`flex items-center gap-2 text-[11px] py-1.5 px-2 rounded ${isOverdue ? "bg-red-50 border border-red-100" : "bg-muted"} hover:bg-muted cursor-pointer`} onClick={() => setLocation(`/pd-tickets/${t.id}`)} data-testid={`row-pd-ticket-${t.id}`}>
                                 {isOverdue ? <AlertCircle className="h-3 w-3 text-red-500 shrink-0" /> : <Circle className="h-2.5 w-2.5 text-indigo-400 shrink-0" />}
                                 <span className="truncate flex-1 font-medium">{t.requestType || t.projectSiteName}</span>
                                 <Badge variant={t.status === "Completed" ? "default" : t.status === "In Progress" ? "secondary" : "outline"} className="text-[9px] px-1.5 py-0 shrink-0">{t.status}</Badge>

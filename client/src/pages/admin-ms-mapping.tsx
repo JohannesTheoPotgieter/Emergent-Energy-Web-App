@@ -58,7 +58,7 @@ const statusConfig: Record<LinkStatus, { label: string; className: string; icon:
   },
   not_configured: {
     label: "No Email",
-    className: "bg-gray-100 text-gray-500",
+    className: "bg-muted text-muted-foreground",
     icon: <XCircle className="h-3 w-3 mr-0.5" />,
   },
 };
@@ -196,7 +196,7 @@ export default function AdminMsMappingPage() {
                     </td>
                     <td className="p-2.5 text-xs">
                       {u.email ? (
-                        <span className="text-slate-700">{u.email}</span>
+                        <span className="text-foreground">{u.email}</span>
                       ) : (
                         <span className="text-gray-300 italic">Not set</span>
                       )}

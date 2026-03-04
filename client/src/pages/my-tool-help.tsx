@@ -134,7 +134,7 @@ export default function MyToolHelpPage() {
     },
     {
       icon: Settings,
-      iconColor: "text-gray-600",
+      iconColor: "text-muted-foreground",
       title: "How Settings Works",
       content: (
         <>
@@ -194,7 +194,7 @@ export default function MyToolHelpPage() {
       <div className="space-y-5" data-testid="mytool-help-page">
 
       <div className="flex items-center justify-between" data-testid="help-header">
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <p className="text-sm text-muted-foreground dark:text-gray-400">
           Everything you need to know about using My Tool effectively.
         </p>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -272,7 +272,7 @@ export default function MyToolHelpPage() {
                 {section.title}
               </CardTitle>
             </CardHeader>
-            <CardContent className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+            <CardContent className="text-sm text-foreground dark:text-gray-300 leading-relaxed">
               {section.content}
             </CardContent>
           </Card>
