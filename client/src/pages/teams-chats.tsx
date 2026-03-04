@@ -1,112 +1,39 @@
-import { useState, useRef, useEffect, useMemo, lazy, Suspense } from "react";
-import { Link } from "wouter";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   MessageSquare,
   Users,
-  Plus,
-  Trash2,
-  UserPlus,
-  UserMinus,
-  Send,
-  Loader2,
   Hash,
-  Paperclip,
-  FileText,
-  Image,
-  File,
-  Download,
   Search,
-  Settings,
-  MoreVertical,
-  X,
-  ChevronDown,
-  Building2,
-  FolderKanban,
-  ExternalLink,
-  Zap,
   RefreshCw,
   AlertTriangle,
-  Link2,
-  Tag,
-  ClipboardCheck,
+  Zap,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Building2,
+  MessagesSquare,
+  User,
+  Clock,
+  Shield,
+  Globe,
+  Lock,
 } from "lucide-react";
-import { format, formatDistanceToNow, isToday, isYesterday, parseISO } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
+import { EnergyLoader } from "@/components/ui/energy-loader";
 import { MsObjectActions, TagToProjectDialog, ConvertToTaskDialog } from "./collaboration";
 
 function authHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
-
-interface ChatMember {
-  id: number;
-  groupId: number;
-  userId: number;
-  role: string;
-  userName: string;
-  userRole: string;
-  userEmail: string;
-  addedAt: string;
-}
-
-interface ChatGroup {
-  id: number;
-  name: string;
-  groupType: string;
-  department: string | null;
-  projectName: string | null;
-  description: string | null;
-  teamsChatId: string | null;
-  members: ChatMember[];
-  memberCount: number;
-  isMember: boolean;
-  isGroupAdmin: boolean;
-  canManage: boolean;
-  createdAt: string;
-}
-
-interface ChatMessage {
-  id: number;
-  groupId: number;
-  content: string;
-  senderName: string | null;
-  senderUserId: number | null;
-  userName: string | null;
-  isFromTeams: boolean;
-  fileName: string | null;
-  filePath: string | null;
-  fileSize: number | null;
-  fileType: string | null;
-  createdAt: string;
-}
-
-const DEPARTMENTS = [
-  "Executive", "Project Management", "Engineering", "Finance",
-  "Quality", "Project Development", "Construction", "Operations",
-];
 
 const AVATAR_COLORS = [
   "bg-indigo-600", "bg-violet-600", "bg-blue-600", "bg-teal-600",
@@ -127,33 +54,330 @@ function getInitials(name: string) {
   return name.slice(0, 2).toUpperCase();
 }
 
-function formatFileSize(bytes: number | null) {
-  if (!bytes) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+function SsoRequiredBanner() {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-blue-200 bg-blue-50 text-blue-800" data-testid="sso-required-banner">
+      <AlertTriangle className="h-5 w-5 shrink-0 text-blue-600" />
+      <div className="flex-1">
+        <p className="text-sm font-medium">Microsoft 365 sign-in required</p>
+        <p className="text-xs text-blue-600 mt-0.5">
+          Sign in with your Microsoft account to view your Teams groups, channels, and chats.
+        </p>
+      </div>
+    </div>
+  );
 }
 
-function getFileIcon(type: string | null) {
-  if (!type) return File;
-  if (type.startsWith("image/")) return Image;
-  if (type.includes("pdf") || type.includes("document") || type.includes("text")) return FileText;
-  return File;
+function TeamsAndChannelsTab() {
+  const [search, setSearch] = useState("");
+  const [expandedTeams, setExpandedTeams] = useState<Record<string, boolean>>({});
+
+  const { data: teamsData, isLoading, refetch, isFetching } = useQuery<any>({
+    queryKey: ["ms-teams-joined"],
+    queryFn: async () => {
+      const res = await fetch("/api/ms-teams/joined", { headers: authHeaders(), credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load teams");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  const teams = Array.isArray(teamsData) ? teamsData : (teamsData?.data || []);
+  const ssoRequired = teamsData?.ssoRequired === true;
+
+  useEffect(() => {
+    if (teams.length > 0 && Object.keys(expandedTeams).length === 0) {
+      const initial: Record<string, boolean> = {};
+      teams.forEach((t: any) => { initial[t.id] = true; });
+      setExpandedTeams(initial);
+    }
+  }, [teams]);
+
+  const filteredTeams = teams.filter((t: any) => {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    if (t.displayName?.toLowerCase().includes(s)) return true;
+    return (t.channels || []).some((ch: any) => ch.displayName?.toLowerCase().includes(s));
+  });
+
+  const totalChannels = teams.reduce((sum: number, t: any) => sum + (t.channels?.length || 0), 0);
+
+  if (isLoading) {
+    return <EnergyLoader size="md" label="Loading your Teams..." className="py-16" />;
+  }
+
+  if (ssoRequired) {
+    return (
+      <div className="space-y-4 p-4">
+        <SsoRequiredBanner />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4" data-testid="teams-channels-tab">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Badge variant="outline" className="text-xs" data-testid="teams-count">
+            {teams.length} Teams
+          </Badge>
+          <Badge variant="outline" className="text-xs" data-testid="channels-count">
+            {totalChannels} Channels
+          </Badge>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} data-testid="refresh-teams-button">
+          <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
+      </div>
+
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search teams and channels..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="pl-9"
+          data-testid="search-teams-input"
+        />
+      </div>
+
+      {filteredTeams.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-green-50 flex items-center justify-center mb-4">
+            <Building2 className="h-7 w-7 text-green-600" />
+          </div>
+          <p className="text-sm font-medium text-foreground">{search ? "No matching teams found" : "No Teams found"}</p>
+          <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+            {search ? "Try a different search term" : "You're not a member of any Microsoft Teams. Join a team in Microsoft Teams to see it here."}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filteredTeams.map((team: any) => {
+            const isExpanded = expandedTeams[team.id] !== false;
+            const channels = team.channels || [];
+            const matchingChannels = search
+              ? channels.filter((ch: any) => ch.displayName?.toLowerCase().includes(search.toLowerCase()))
+              : channels;
+
+            return (
+              <Card key={team.id} className="overflow-hidden energy-card" data-testid={`team-card-${team.id}`}>
+                <button
+                  onClick={() => setExpandedTeams(prev => ({ ...prev, [team.id]: !isExpanded }))}
+                  className="w-full flex items-center gap-3 p-3 hover:bg-muted/30 transition-colors text-left"
+                  data-testid={`team-toggle-${team.id}`}
+                >
+                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-white text-sm font-semibold ${getAvatarColor(team.displayName)}`}>
+                    {getInitials(team.displayName)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-foreground truncate">{team.displayName}</p>
+                    {team.description && <p className="text-xs text-muted-foreground truncate">{team.description}</p>}
+                  </div>
+                  <Badge variant="secondary" className="text-[10px] shrink-0">{channels.length} channels</Badge>
+                  {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
+                </button>
+                {isExpanded && matchingChannels.length > 0 && (
+                  <div className="border-t bg-muted/20">
+                    {matchingChannels.map((ch: any) => (
+                      <div
+                        key={ch.id}
+                        className="flex items-center gap-2.5 px-4 py-2 hover:bg-muted/40 transition-colors group"
+                        data-testid={`channel-item-${ch.id}`}
+                      >
+                        <Hash className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-sm text-foreground truncate flex-1">{ch.displayName}</span>
+                        {ch.membershipType === "private" ? (
+                          <Lock className="h-3 w-3 text-muted-foreground" />
+                        ) : (
+                          <Globe className="h-3 w-3 text-muted-foreground" />
+                        )}
+                        {ch.description && (
+                          <span className="text-[10px] text-muted-foreground truncate max-w-[200px] hidden sm:inline">{ch.description}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
-function formatMessageTime(dateStr: string) {
-  const d = new Date(dateStr);
-  return format(d, "h:mm a");
+function ChatsTab() {
+  const [search, setSearch] = useState("");
+
+  const { data: chatsData, isLoading, refetch, isFetching } = useQuery<any>({
+    queryKey: ["ms-teams-chats"],
+    queryFn: async () => {
+      const res = await fetch("/api/ms-teams/chats", { headers: authHeaders(), credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load chats");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  const chats = Array.isArray(chatsData) ? chatsData : (chatsData?.data || []);
+  const ssoRequired = chatsData?.ssoRequired === true;
+
+  const oneOnOneChats = chats.filter((c: any) => c.chatType === "oneOnOne");
+  const groupChats = chats.filter((c: any) => c.chatType === "group" || c.chatType === "meeting");
+
+  const filteredOneOnOne = oneOnOneChats.filter((c: any) => {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    const memberNames = (c.members || []).map((m: any) => m.displayName || "").join(" ").toLowerCase();
+    return memberNames.includes(s) || (c.topic || "").toLowerCase().includes(s);
+  });
+
+  const filteredGroup = groupChats.filter((c: any) => {
+    if (!search) return true;
+    const s = search.toLowerCase();
+    const memberNames = (c.members || []).map((m: any) => m.displayName || "").join(" ").toLowerCase();
+    return memberNames.includes(s) || (c.topic || "").toLowerCase().includes(s);
+  });
+
+  function getChatDisplayName(chat: any) {
+    if (chat.topic) return chat.topic;
+    const names = (chat.members || []).map((m: any) => m.displayName).filter(Boolean);
+    if (names.length <= 3) return names.join(", ");
+    return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+  }
+
+  if (isLoading) {
+    return <EnergyLoader size="md" label="Loading your chats..." className="py-16" />;
+  }
+
+  if (ssoRequired) {
+    return (
+      <div className="space-y-4 p-4">
+        <SsoRequiredBanner />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4" data-testid="chats-tab">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Badge variant="outline" className="text-xs" data-testid="chat-count">
+            {chats.length} Conversations
+          </Badge>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching} data-testid="refresh-chats-button">
+          <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
+      </div>
+
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Search chats..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="pl-9"
+          data-testid="search-chats-input"
+        />
+      </div>
+
+      {chats.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-green-50 flex items-center justify-center mb-4">
+            <MessagesSquare className="h-7 w-7 text-green-600" />
+          </div>
+          <p className="text-sm font-medium text-foreground">No chats found</p>
+          <p className="text-xs text-muted-foreground mt-1 max-w-sm">Start a conversation in Microsoft Teams to see your chats here.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filteredOneOnOne.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <User className="h-3.5 w-3.5" />
+                Direct Messages ({filteredOneOnOne.length})
+              </h3>
+              <div className="rounded-xl border bg-card shadow-sm divide-y">
+                {filteredOneOnOne.map((chat: any) => {
+                  const displayName = getChatDisplayName(chat);
+                  return (
+                    <div
+                      key={chat.id}
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors"
+                      data-testid={`chat-item-${chat.id}`}
+                    >
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-semibold ${getAvatarColor(displayName)}`}>
+                        {getInitials(displayName)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">{displayName}</p>
+                        {chat.lastUpdatedDateTime && (
+                          <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                            <Clock className="h-2.5 w-2.5" />
+                            {formatDistanceToNow(new Date(chat.lastUpdatedDateTime), { addSuffix: true })}
+                          </p>
+                        )}
+                      </div>
+                      <Badge variant="secondary" className="text-[10px]">1:1</Badge>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {filteredGroup.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                Group Chats ({filteredGroup.length})
+              </h3>
+              <div className="rounded-xl border bg-card shadow-sm divide-y">
+                {filteredGroup.map((chat: any) => {
+                  const displayName = getChatDisplayName(chat);
+                  const memberCount = (chat.members || []).length;
+                  return (
+                    <div
+                      key={chat.id}
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors"
+                      data-testid={`group-chat-item-${chat.id}`}
+                    >
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-white text-xs font-semibold ${getAvatarColor(displayName)}`}>
+                        {getInitials(displayName)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">{displayName}</p>
+                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                          <span className="flex items-center gap-0.5"><Users className="h-2.5 w-2.5" /> {memberCount} members</span>
+                          {chat.lastUpdatedDateTime && (
+                            <span className="flex items-center gap-0.5">
+                              <Clock className="h-2.5 w-2.5" />
+                              {formatDistanceToNow(new Date(chat.lastUpdatedDateTime), { addSuffix: true })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <Badge variant="secondary" className="text-[10px]">
+                        {chat.chatType === "meeting" ? "Meeting" : "Group"}
+                      </Badge>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
-function formatDateHeader(dateStr: string) {
-  const d = new Date(dateStr);
-  if (isToday(d)) return "Today";
-  if (isYesterday(d)) return "Yesterday";
-  return format(d, "EEEE, MMMM d, yyyy");
-}
-
-function ActivitySection() {
+function ActivityTab() {
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const [tagTarget, setTagTarget] = useState<any>(null);
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
@@ -218,904 +442,132 @@ function ActivitySection() {
   }, [isFetched, items.length, autoSyncDone]);
 
   return (
-    <div className="flex-1 overflow-y-auto" data-testid="activity-section">
-      <div className="max-w-4xl mx-auto p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-foreground" data-testid="text-activity-title">Teams Activity</h2>
-            <p className="text-sm text-muted-foreground">Mentions, chats, and activity synced from Microsoft Teams</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending}
-              data-testid="sync-teams-button"
-            >
-              <RefreshCw className={`h-4 w-4 mr-1.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-              {syncMutation.isPending ? "Syncing..." : "Sync Now"}
-            </Button>
-            <Badge variant="outline" className="text-xs" data-testid="synced-teams-count">
-              {items.length} items
-            </Badge>
-          </div>
+    <div className="space-y-4" data-testid="activity-tab">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">Mentions, chats, and activity synced from Microsoft Teams</p>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending} data-testid="sync-teams-button">
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+            {syncMutation.isPending ? "Syncing..." : "Sync Now"}
+          </Button>
+          <Badge variant="outline" className="text-xs" data-testid="synced-count">{items.length} items</Badge>
         </div>
-
-        {ssoUnavailable && (
-          <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-blue-200 bg-blue-50 text-blue-800" data-testid="sso-unavailable-banner">
-            <AlertTriangle className="h-5 w-5 shrink-0 text-blue-600" />
-            <div className="flex-1">
-              <p className="text-sm font-medium">Microsoft 365 integration is not available</p>
-              <p className="text-xs text-blue-600 mt-0.5">Please sign in with your Microsoft account to view and sync your Teams chats. Contact your administrator if you need access.</p>
-            </div>
-          </div>
-        )}
-
-        {isLoading || syncMutation.isPending ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-sm text-muted-foreground">{syncMutation.isPending ? "Syncing Teams from Microsoft 365..." : "Loading..."}</span>
-          </div>
-        ) : ssoUnavailable && items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
-              <AlertTriangle className="h-8 w-8 text-blue-600" />
-            </div>
-            <p className="text-sm font-medium text-foreground">Microsoft 365 integration not available</p>
-            <p className="text-xs text-muted-foreground mt-1 max-w-md">Your Microsoft account is not connected. Sign in with Microsoft SSO to sync your Teams chats and activity.</p>
-          </div>
-        ) : items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-purple-50 flex items-center justify-center mb-4">
-              <Zap className="h-8 w-8 text-purple-600" />
-            </div>
-            <p className="text-muted-foreground text-sm font-medium">No Teams activity synced</p>
-            <p className="text-xs text-muted-foreground mt-1">Click "Sync Now" to pull your Teams chats from Microsoft 365</p>
-            <Button
-              variant="default"
-              size="sm"
-              className="mt-4"
-              onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending}
-              data-testid="sync-teams-empty-button"
-            >
-              <RefreshCw className="h-4 w-4 mr-1.5" /> Sync Teams
-            </Button>
-          </div>
-        ) : (
-          <div className="divide-y rounded-xl border bg-card shadow-sm">
-            {items.map((item: any) => (
-              <div
-                key={item.id}
-                className={`group flex items-start gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors ${item.actionRequired ? "bg-purple-50/40" : ""}`}
-                data-testid={`synced-teams-item-${item.id}`}
-              >
-                <div className="flex-shrink-0 mt-0.5">
-                  {item.actionRequired ? (
-                    <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
-                      <AlertTriangle className="h-4 w-4 text-purple-600" />
-                    </div>
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                      <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium truncate">{item.subjectOrTitle || "Teams Activity"}</span>
-                    {item.actionRequired && (
-                      <Badge className="bg-purple-100 text-purple-700 text-[10px]">Mention</Badge>
-                    )}
-                    {item.linkedProjectId && (
-                      <Badge variant="secondary" className="text-[10px]" data-testid={`teams-project-badge-${item.id}`}>
-                        <Link2 className="h-3 w-3 mr-0.5" /> Tagged
-                      </Badge>
-                    )}
-                  </div>
-                  {item.preview && (
-                    <p className="text-xs text-muted-foreground truncate mt-0.5">{item.preview}</p>
-                  )}
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {item.receivedOrStartDatetime ? format(parseISO(item.receivedOrStartDatetime), "MMM d, h:mm a") : ""}
-                  </p>
-                </div>
-                <MsObjectActions
-                  item={item}
-                  onTagClick={(i) => { setTagTarget(i); setTagDialogOpen(true); }}
-                  onConvertClick={(i) => { setConvertTarget(i); setConvertDialogOpen(true); }}
-                />
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
-      <TagToProjectDialog
-        open={tagDialogOpen}
-        onOpenChange={setTagDialogOpen}
-        msObjectId={tagTarget?.id || null}
-        currentProjectId={tagTarget?.linkedProjectId}
-      />
-      {convertTarget && (
-        <Suspense fallback={null}>
-          <ConvertToTaskDialog
-            open={convertDialogOpen}
-            onOpenChange={setConvertDialogOpen}
-            item={convertTarget}
-          />
-        </Suspense>
+      {ssoUnavailable && <SsoRequiredBanner />}
+
+      {isLoading || syncMutation.isPending ? (
+        <EnergyLoader size="md" label={syncMutation.isPending ? "Syncing from Microsoft 365..." : "Loading..."} className="py-16" />
+      ) : ssoUnavailable && items.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mb-4">
+            <AlertTriangle className="h-7 w-7 text-blue-600" />
+          </div>
+          <p className="text-sm font-medium text-foreground">Microsoft 365 sign-in required</p>
+          <p className="text-xs text-muted-foreground mt-1 max-w-md">Sign in with Microsoft SSO to sync your Teams activity.</p>
+        </div>
+      ) : items.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-green-50 flex items-center justify-center mb-4">
+            <Zap className="h-7 w-7 text-green-600" />
+          </div>
+          <p className="text-muted-foreground text-sm font-medium">No Teams activity synced</p>
+          <p className="text-xs text-muted-foreground mt-1">Click "Sync Now" to pull your Teams chats from Microsoft 365</p>
+          <Button variant="default" size="sm" className="mt-4" onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending} data-testid="sync-empty-button">
+            <RefreshCw className="h-4 w-4 mr-1.5" /> Sync Teams
+          </Button>
+        </div>
+      ) : (
+        <div className="divide-y rounded-xl border bg-card shadow-sm">
+          {items.map((item: any) => (
+            <div
+              key={item.id}
+              className={`group flex items-start gap-3 px-4 py-3.5 hover:bg-muted/50 transition-colors ${item.actionRequired ? "bg-green-50/40" : ""}`}
+              data-testid={`synced-item-${item.id}`}
+            >
+              <div className="flex-shrink-0 mt-0.5">
+                {item.actionRequired ? (
+                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                    <AlertTriangle className="h-4 w-4 text-green-600" />
+                  </div>
+                ) : (
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-semibold ${getAvatarColor(item.senderOrOrganizer || "")}`}>
+                    {getInitials(item.senderOrOrganizer || "Teams")}
+                  </div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{item.subjectOrTitle || "Untitled"}</p>
+                    {item.preview && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{item.preview}</p>}
+                    <div className="flex items-center gap-2 mt-1">
+                      {item.senderOrOrganizer && <span className="text-[10px] text-muted-foreground">{item.senderOrOrganizer}</span>}
+                      {item.receivedOrStartDatetime && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {formatDistanceToNow(new Date(item.receivedOrStartDatetime), { addSuffix: true })}
+                        </span>
+                      )}
+                      {item.linkedProjectName && <Badge variant="secondary" className="text-[9px] h-4">{item.linkedProjectName}</Badge>}
+                    </div>
+                  </div>
+                  <MsObjectActions
+                    item={item}
+                    onTagClick={() => { setTagTarget(item); setTagDialogOpen(true); }}
+                    onConvertClick={() => { setConvertTarget(item); setConvertDialogOpen(true); }}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
+
+      <TagToProjectDialog open={tagDialogOpen} onOpenChange={setTagDialogOpen} msObjectId={tagTarget?.id || null} currentProjectId={tagTarget?.linkedProjectId || null} />
+      <ConvertToTaskDialog open={convertDialogOpen} onOpenChange={setConvertDialogOpen} item={convertTarget} />
     </div>
   );
 }
 
 export default function TeamsChatsPage() {
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const [viewMode, setViewMode] = useState<"activity" | "chat">("activity");
-  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [showMembersPanel, setShowMembersPanel] = useState(false);
-  const [showAddMemberDialog, setShowAddMemberDialog] = useState(false);
-  const [messageText, setMessageText] = useState("");
-  const [sidebarSearch, setSidebarSearch] = useState("");
-  const [sidebarSection, setSidebarSection] = useState<"all" | "department" | "project">("all");
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [newGroupName, setNewGroupName] = useState("");
-  const [newGroupType, setNewGroupType] = useState("department");
-  const [newGroupDept, setNewGroupDept] = useState("");
-  const [newGroupProject, setNewGroupProject] = useState("");
-  const [newGroupDesc, setNewGroupDesc] = useState("");
-  const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
-
-  const { data: groups = [], isLoading } = useQuery<ChatGroup[]>({
-    queryKey: ["/api/teams/groups"],
-  });
-
-  const { data: allUsers = [] } = useQuery<Array<{ id: number; name: string; username: string; role: string }>>({
-    queryKey: ["/api/eng/users"],
-  });
-
-  const { data: allProjects = [] } = useQuery<Array<{ project_name: string }>>({
-    queryKey: ["/api/projects-summary"],
-    select: (data: any[]) =>
-      data
-        .filter((p: any) => p.is_active !== false)
-        .map((p: any) => ({ project_name: p.project_name }))
-        .sort((a, b) => a.project_name.localeCompare(b.project_name)),
-  });
-
-  const selectedGroup = useMemo(
-    () => groups.find(g => g.id === selectedGroupId) || null,
-    [groups, selectedGroupId]
-  );
-
-  const { data: messages = [], isLoading: messagesLoading } = useQuery<ChatMessage[]>({
-    queryKey: ["/api/teams/groups", selectedGroupId, "messages"],
-    queryFn: async () => {
-      if (!selectedGroupId) return [];
-      const res = await fetch(`/api/teams/groups/${selectedGroupId}/messages`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!selectedGroupId,
-    refetchInterval: selectedGroupId ? 8000 : false,
-  });
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  const createGroupMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/teams/groups", data),
-    onSuccess: () => {
-      toast({ title: "Channel created" });
-      setShowCreateDialog(false);
-      resetCreateForm();
-      queryClient.invalidateQueries({ queryKey: ["/api/teams/groups"] });
-    },
-    onError: (err: any) =>
-      toast({ title: "Failed to create channel", description: err.message, variant: "destructive" }),
-  });
-
-  const deleteGroupMutation = useMutation({
-    mutationFn: (id: number) => apiRequest("DELETE", `/api/teams/groups/${id}`),
-    onSuccess: () => {
-      toast({ title: "Channel deleted" });
-      setSelectedGroupId(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/teams/groups"] });
-    },
-    onError: (err: any) =>
-      toast({ title: "Failed", description: err.message, variant: "destructive" }),
-  });
-
-  const addMembersMutation = useMutation({
-    mutationFn: ({ groupId, userIds }: { groupId: number; userIds: number[] }) =>
-      apiRequest("POST", `/api/teams/groups/${groupId}/members`, { userIds }),
-    onSuccess: () => {
-      toast({ title: "Members added" });
-      setShowAddMemberDialog(false);
-      setSelectedMembers([]);
-      queryClient.invalidateQueries({ queryKey: ["/api/teams/groups"] });
-    },
-    onError: (err: any) =>
-      toast({ title: "Failed", description: err.message, variant: "destructive" }),
-  });
-
-  const removeMemberMutation = useMutation({
-    mutationFn: ({ groupId, userId }: { groupId: number; userId: number }) =>
-      apiRequest("DELETE", `/api/teams/groups/${groupId}/members/${userId}`),
-    onSuccess: () => {
-      toast({ title: "Member removed" });
-      queryClient.invalidateQueries({ queryKey: ["/api/teams/groups"] });
-    },
-  });
-
-  const sendMessageMutation = useMutation({
-    mutationFn: ({ groupId, content }: { groupId: number; content: string }) =>
-      apiRequest("POST", `/api/teams/groups/${groupId}/messages`, { content }),
-    onSuccess: () => {
-      setMessageText("");
-      queryClient.invalidateQueries({ queryKey: ["/api/teams/groups", selectedGroupId, "messages"] });
-    },
-  });
-
-  const uploadFileMutation = useMutation({
-    mutationFn: async ({ groupId, file, content }: { groupId: number; file: globalThis.File; content?: string }) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      if (content) formData.append("content", content);
-      const res = await fetch(`/api/teams/groups/${groupId}/files`, {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Upload failed");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/teams/groups", selectedGroupId, "messages"] });
-    },
-    onError: () => toast({ title: "File upload failed", variant: "destructive" }),
-  });
-
-  const resetCreateForm = () => {
-    setNewGroupName("");
-    setNewGroupType("department");
-    setNewGroupDept("");
-    setNewGroupProject("");
-    setNewGroupDesc("");
-  };
-
-  const handleSend = () => {
-    if (!selectedGroupId || !messageText.trim()) return;
-    sendMessageMutation.mutate({ groupId: selectedGroupId, content: messageText });
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedGroupId) return;
-    uploadFileMutation.mutate({ groupId: selectedGroupId, file });
-    e.target.value = "";
-  };
-
-  const filteredGroups = useMemo(() => {
-    let result = groups;
-    if (sidebarSection === "department") result = result.filter(g => g.groupType === "department");
-    else if (sidebarSection === "project") result = result.filter(g => g.groupType === "project");
-    if (sidebarSearch.trim()) {
-      const q = sidebarSearch.toLowerCase();
-      result = result.filter(g =>
-        g.name.toLowerCase().includes(q) ||
-        (g.department || "").toLowerCase().includes(q) ||
-        (g.projectName || "").toLowerCase().includes(q)
-      );
-    }
-    return result;
-  }, [groups, sidebarSection, sidebarSearch]);
-
-  const messagesByDate = useMemo(() => {
-    const groups: { date: string; msgs: ChatMessage[] }[] = [];
-    let currentDate = "";
-    for (const msg of messages) {
-      const d = new Date(msg.createdAt).toDateString();
-      if (d !== currentDate) {
-        currentDate = d;
-        groups.push({ date: msg.createdAt, msgs: [msg] });
-      } else {
-        groups[groups.length - 1].msgs.push(msg);
-      }
-    }
-    return groups;
-  }, [messages]);
-
   return (
-    <div className="flex flex-col h-[calc(100vh-56px)] bg-card overflow-hidden" data-testid="teams-chats-page">
-      <div className="flex items-center gap-4 px-4 py-2 bg-card border-b shrink-0" data-testid="teams-section-toggle">
-        <h1 className="text-base font-semibold text-foreground mr-2">Teams Chat</h1>
-        <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5">
-          <button
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-              viewMode === "activity"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            onClick={() => setViewMode("activity")}
-            data-testid="teams-view-activity"
-          >
-            <Zap className="h-3.5 w-3.5" />
+    <div className="space-y-4 p-4 md:p-6 page-enter" data-testid="teams-chats-page">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center">
+          <MessagesSquare className="h-5 w-5 text-green-600" />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-foreground" data-testid="text-page-title">Teams Chat</h1>
+          <p className="text-sm text-muted-foreground">Your Microsoft Teams groups, channels, and conversations</p>
+        </div>
+      </div>
+
+      <Tabs defaultValue="teams" className="w-full">
+        <TabsList data-testid="teams-tabs">
+          <TabsTrigger value="teams" data-testid="tab-teams">
+            <Building2 className="h-4 w-4 mr-1.5" />
+            Teams & Channels
+          </TabsTrigger>
+          <TabsTrigger value="chats" data-testid="tab-chats">
+            <MessageSquare className="h-4 w-4 mr-1.5" />
+            Chats
+          </TabsTrigger>
+          <TabsTrigger value="activity" data-testid="tab-activity">
+            <Zap className="h-4 w-4 mr-1.5" />
             Activity
-          </button>
-          <button
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-              viewMode === "chat"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-            onClick={() => setViewMode("chat")}
-            data-testid="teams-view-chat"
-          >
-            <MessageSquare className="h-3.5 w-3.5" />
-            Chat
-          </button>
-        </div>
-      </div>
+          </TabsTrigger>
+        </TabsList>
 
-      {viewMode === "activity" ? (
-        <ActivitySection />
-      ) : (
-      <div className="flex flex-1 overflow-hidden">
-      <div className="w-72 bg-[#292929] flex flex-col shrink-0 border-r border-[#3b3b3b]" data-testid="teams-sidebar">
-        <div className="p-3 border-b border-[#3b3b3b]">
-          <div className="flex items-center justify-between mb-2.5">
-            <h2 className="text-white font-semibold text-sm tracking-wide">Teams & Channels</h2>
-            <button
-              className="p-1.5 rounded hover:bg-[#3b3b3b] text-[#c8c8c8] transition-colors"
-              onClick={() => setShowCreateDialog(true)}
-              title="New channel"
-              data-testid="button-create-group"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#808080]" />
-            <input
-              className="w-full bg-[#3b3b3b] border-none rounded text-[#e0e0e0] text-xs pl-8 pr-3 py-1.5 placeholder-[#808080] focus:outline-none focus:ring-1 focus:ring-[#6264a7]"
-              placeholder="Search channels..."
-              value={sidebarSearch}
-              onChange={e => setSidebarSearch(e.target.value)}
-              data-testid="input-sidebar-search"
-            />
-          </div>
-          <div className="flex gap-0.5 mt-2">
-            {(["all", "department", "project"] as const).map(sec => (
-              <button
-                key={sec}
-                className={`px-2 py-1 text-[10px] rounded font-medium transition-colors ${
-                  sidebarSection === sec
-                    ? "bg-[#6264a7] text-white"
-                    : "text-[#a0a0a0] hover:bg-[#3b3b3b] hover:text-white"
-                }`}
-                onClick={() => setSidebarSection(sec)}
-                data-testid={`tab-${sec}`}
-              >
-                {sec === "all" ? "All" : sec === "department" ? "Depts" : "Projects"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto py-1" data-testid="channel-list">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-5 w-5 animate-spin text-[#808080]" />
-            </div>
-          ) : filteredGroups.length === 0 ? (
-            <div className="text-center py-8 px-4">
-              <Hash className="h-8 w-8 text-[#555] mx-auto mb-2" />
-              <p className="text-[#808080] text-xs">No channels found</p>
-              <button
-                className="text-[#6264a7] text-xs mt-2 hover:underline"
-                onClick={() => setShowCreateDialog(true)}
-              >
-                Create a channel
-              </button>
-            </div>
-          ) : (
-            filteredGroups.map(g => (
-              <button
-                key={g.id}
-                className={`w-full text-left px-3 py-2 flex items-center gap-2.5 transition-colors group ${
-                  selectedGroupId === g.id
-                    ? "bg-[#3b3b3b]"
-                    : "hover:bg-[#333333]"
-                }`}
-                onClick={() => { setSelectedGroupId(g.id); setShowMembersPanel(false); }}
-                data-testid={`channel-${g.id}`}
-              >
-                <div className={`w-8 h-8 rounded flex items-center justify-center shrink-0 ${
-                  g.groupType === "department" ? "bg-[#6264a7]" : "bg-[#4a7ea7]"
-                }`}>
-                  {g.groupType === "department"
-                    ? <Building2 className="h-4 w-4 text-white" />
-                    : <FolderKanban className="h-4 w-4 text-white" />
-                  }
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className={`text-sm truncate ${
-                    selectedGroupId === g.id ? "text-white font-semibold" : "text-[#d0d0d0] group-hover:text-white"
-                  }`}>
-                    {g.name}
-                  </p>
-                  <p className="text-[10px] text-[#808080] truncate">
-                    {g.groupType === "department" ? g.department : g.projectName}
-                    {g.memberCount > 0 && ` · ${g.memberCount}`}
-                  </p>
-                </div>
-              </button>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="flex-1 flex flex-col min-w-0">
-        {!selectedGroup ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground bg-[#f5f5f5]">
-            <div className="w-24 h-24 rounded-2xl bg-[#6264a7]/10 flex items-center justify-center mb-4">
-              <MessageSquare className="h-12 w-12 text-[#6264a7]" />
-            </div>
-            <h2 className="text-xl font-semibold text-foreground mb-1">Welcome to Teams</h2>
-            <p className="text-sm text-muted-foreground mb-4">Select a channel to start chatting</p>
-            <Button
-              variant="outline"
-              className="border-[#6264a7] text-[#6264a7] hover:bg-[#6264a7]/5"
-              onClick={() => setShowCreateDialog(true)}
-              data-testid="button-create-cta"
-            >
-              <Plus className="h-4 w-4 mr-1.5" />
-              Create a new channel
-            </Button>
-          </div>
-        ) : (
-          <>
-            <div className="h-12 bg-card border-b flex items-center justify-between px-4 shrink-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <Hash className="h-4 w-4 text-[#6264a7] shrink-0" />
-                <h3 className="font-semibold text-sm truncate" data-testid="text-channel-name">{selectedGroup.name}</h3>
-                <Badge variant="outline" className="text-[10px] shrink-0 hidden sm:inline-flex">
-                  {selectedGroup.groupType === "department" ? selectedGroup.department : selectedGroup.projectName}
-                </Badge>
-                {selectedGroup.groupType === "project" && selectedGroup.projectName && (
-                  <Link href={`/project/${encodeURIComponent(selectedGroup.projectName)}`}>
-                    <Button variant="ghost" size="sm" className="h-6 text-[10px] gap-1 px-2 text-blue-600 hover:text-blue-700" data-testid="button-goto-project-detail">
-                      <ExternalLink className="h-3 w-3" />
-                      View Project
-                    </Button>
-                  </Link>
-                )}
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  className={`p-1.5 rounded transition-colors ${showMembersPanel ? "bg-[#6264a7]/10 text-[#6264a7]" : "hover:bg-muted text-muted-foreground"}`}
-                  onClick={() => setShowMembersPanel(!showMembersPanel)}
-                  title="Members"
-                  data-testid="button-toggle-members"
-                >
-                  <Users className="h-4 w-4" />
-                </button>
-                {selectedGroup.canManage && (
-                  <>
-                    <button
-                      className="p-1.5 rounded hover:bg-muted text-muted-foreground transition-colors"
-                      onClick={() => setShowAddMemberDialog(true)}
-                      title="Add people"
-                      data-testid="button-add-members"
-                    >
-                      <UserPlus className="h-4 w-4" />
-                    </button>
-                    <button
-                      className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors"
-                      onClick={() => {
-                        if (confirm("Delete this channel? All messages will be lost.")) {
-                          deleteGroupMutation.mutate(selectedGroup.id);
-                        }
-                      }}
-                      title="Delete channel"
-                      data-testid="button-delete-group"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-1 overflow-hidden">
-              <div className="flex-1 flex flex-col min-w-0 bg-[#f5f5f5]">
-                <div className="flex-1 overflow-y-auto px-4 py-2" data-testid="messages-container">
-                  {messagesLoading ? (
-                    <div className="flex items-center justify-center py-12">
-                      <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
-                    </div>
-                  ) : messages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-16">
-                      <div className="w-16 h-16 rounded-full bg-[#6264a7]/10 flex items-center justify-center mb-3">
-                        <MessageSquare className="h-8 w-8 text-[#6264a7]" />
-                      </div>
-                      <p className="text-sm font-medium text-muted-foreground">No messages yet</p>
-                      <p className="text-xs text-gray-400 mt-1">Start the conversation!</p>
-                    </div>
-                  ) : (
-                    messagesByDate.map((group, gi) => (
-                      <div key={gi}>
-                        <div className="flex items-center gap-3 my-4">
-                          <div className="flex-1 h-px bg-gray-300" />
-                          <span className="text-[11px] font-medium text-muted-foreground shrink-0">
-                            {formatDateHeader(group.date)}
-                          </span>
-                          <div className="flex-1 h-px bg-gray-300" />
-                        </div>
-                        {group.msgs.map((msg, mi) => {
-                          const isMe = msg.senderUserId === user?.id;
-                          const showAvatar = mi === 0 || group.msgs[mi - 1].senderUserId !== msg.senderUserId;
-                          const displayName = msg.userName || msg.senderName || "Unknown";
-                          const FileIcon = getFileIcon(msg.fileType);
-
-                          return (
-                            <div
-                              key={msg.id}
-                              className={`flex gap-3 px-2 py-1 rounded-md hover:bg-card/80 transition-colors group ${showAvatar ? "mt-3" : "mt-0.5"}`}
-                              data-testid={`message-${msg.id}`}
-                            >
-                              <div className="w-8 shrink-0">
-                                {showAvatar && (
-                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold ${getAvatarColor(displayName)}`}>
-                                    {getInitials(displayName)}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                {showAvatar && (
-                                  <div className="flex items-center gap-2 mb-0.5">
-                                    <span className="text-sm font-semibold text-foreground">{isMe ? "You" : displayName}</span>
-                                    <span className="text-[11px] text-gray-400">{formatMessageTime(msg.createdAt)}</span>
-                                    {msg.isFromTeams && (
-                                      <Badge className="text-[9px] h-4 px-1 bg-[#6264a7] text-white">Teams</Badge>
-                                    )}
-                                  </div>
-                                )}
-                                <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
-                                  {msg.content}
-                                </p>
-                                {msg.fileName && msg.filePath && (
-                                  <div className="mt-1.5 inline-flex items-center gap-2 bg-card border border-border rounded-lg p-2.5 max-w-xs shadow-sm hover:shadow transition-shadow">
-                                    <div className="w-9 h-9 rounded bg-[#6264a7]/10 flex items-center justify-center shrink-0">
-                                      <FileIcon className="h-5 w-5 text-[#6264a7]" />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                      <p className="text-xs font-medium text-foreground truncate">{msg.fileName}</p>
-                                      <p className="text-[10px] text-gray-400">{formatFileSize(msg.fileSize)}</p>
-                                    </div>
-                                    <a
-                                      href={msg.filePath}
-                                      download={msg.fileName}
-                                      target="_blank"
-                                      rel="noopener"
-                                      className="p-1.5 rounded hover:bg-muted text-gray-400 hover:text-[#6264a7] transition-colors"
-                                      onClick={e => e.stopPropagation()}
-                                      data-testid={`download-file-${msg.id}`}
-                                    >
-                                      <Download className="h-3.5 w-3.5" />
-                                    </a>
-                                  </div>
-                                )}
-                                {msg.fileType?.startsWith("image/") && msg.filePath && (
-                                  <div className="mt-1.5">
-                                    <img
-                                      src={msg.filePath}
-                                      alt={msg.fileName || "Image"}
-                                      className="max-w-xs max-h-48 rounded-lg border border-border shadow-sm"
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ))
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
-
-                <div className="p-3 bg-card border-t">
-                  <div className="bg-[#f5f5f5] rounded-lg border border-border focus-within:border-[#6264a7] focus-within:ring-1 focus-within:ring-[#6264a7]/20 transition-all">
-                    <input
-                      className="w-full bg-transparent border-none px-3 py-2.5 text-sm text-foreground placeholder-gray-400 focus:outline-none"
-                      placeholder={`Type a message in ${selectedGroup.name}...`}
-                      value={messageText}
-                      onChange={e => setMessageText(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === "Enter" && !e.shiftKey && messageText.trim()) {
-                          e.preventDefault();
-                          handleSend();
-                        }
-                      }}
-                      disabled={sendMessageMutation.isPending}
-                      data-testid="input-message"
-                    />
-                    <div className="flex items-center justify-between px-2 pb-1.5">
-                      <div className="flex items-center gap-0.5">
-                        <input
-                          type="file"
-                          ref={fileInputRef}
-                          className="hidden"
-                          onChange={handleFileSelect}
-                          data-testid="input-file-upload"
-                        />
-                        <button
-                          className="p-1.5 rounded hover:bg-gray-200 text-muted-foreground transition-colors"
-                          onClick={() => fileInputRef.current?.click()}
-                          title="Attach a file"
-                          data-testid="button-attach-file"
-                        >
-                          <Paperclip className="h-4 w-4" />
-                        </button>
-                      </div>
-                      <Button
-                        size="sm"
-                        className="h-7 px-3 bg-[#6264a7] hover:bg-[#4f5192] text-white"
-                        onClick={handleSend}
-                        disabled={!messageText.trim() || sendMessageMutation.isPending}
-                        data-testid="button-send-message"
-                      >
-                        {sendMessageMutation.isPending || uploadFileMutation.isPending ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Send className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {showMembersPanel && selectedGroup && (
-                <div className="w-64 bg-card border-l overflow-y-auto shrink-0" data-testid="members-panel">
-                  <div className="p-3 border-b">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold">Members ({selectedGroup.memberCount})</h4>
-                      <button
-                        className="p-1 rounded hover:bg-muted text-gray-400"
-                        onClick={() => setShowMembersPanel(false)}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="p-2 space-y-0.5" data-testid="members-list">
-                    {selectedGroup.members.map(m => (
-                      <div
-                        key={m.id}
-                        className="flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-muted group"
-                        data-testid={`member-${m.userId}`}
-                      >
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold shrink-0 ${getAvatarColor(m.userName)}`}>
-                          {getInitials(m.userName)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs font-medium truncate">{m.userName}</span>
-                            {m.role === "admin" && (
-                              <span className="text-[9px] text-[#6264a7] font-semibold">Owner</span>
-                            )}
-                          </div>
-                          <p className="text-[10px] text-gray-400 truncate">{m.userRole}</p>
-                        </div>
-                        {selectedGroup.canManage && m.userId !== user?.id && (
-                          <button
-                            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-all"
-                            onClick={() => removeMemberMutation.mutate({ groupId: selectedGroup.id, userId: m.userId })}
-                            title="Remove member"
-                            data-testid={`button-remove-member-${m.userId}`}
-                          >
-                            <UserMinus className="h-3 w-3" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  {selectedGroup.canManage && (
-                    <div className="p-2 border-t">
-                      <button
-                        className="w-full flex items-center gap-2 px-2 py-2 rounded-md text-[#6264a7] hover:bg-[#6264a7]/5 text-xs font-medium transition-colors"
-                        onClick={() => setShowAddMemberDialog(true)}
-                        data-testid="button-add-member-panel"
-                      >
-                        <UserPlus className="h-3.5 w-3.5" />
-                        Add people
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-
-      <Dialog open={showCreateDialog} onOpenChange={v => { setShowCreateDialog(v); if (!v) resetCreateForm(); }}>
-        <DialogContent className="sm:max-w-md" data-testid="dialog-create-group">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded bg-[#6264a7] flex items-center justify-center">
-                <Hash className="h-4 w-4 text-white" />
-              </div>
-              Create a channel
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground">Channel type</Label>
-              <Select value={newGroupType} onValueChange={setNewGroupType}>
-                <SelectTrigger data-testid="select-group-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="department">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="h-3.5 w-3.5 text-[#6264a7]" />
-                      Department Channel
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="project">
-                    <div className="flex items-center gap-2">
-                      <FolderKanban className="h-3.5 w-3.5 text-[#4a7ea7]" />
-                      Project Channel
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground">Channel name</Label>
-              <Input
-                value={newGroupName}
-                onChange={e => setNewGroupName(e.target.value)}
-                placeholder={newGroupType === "department" ? "e.g. Engineering" : "e.g. Coega Steels"}
-                data-testid="input-group-name"
-              />
-            </div>
-
-            {newGroupType === "department" && (
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-muted-foreground">Department</Label>
-                <Select value={newGroupDept} onValueChange={setNewGroupDept}>
-                  <SelectTrigger data-testid="select-department">
-                    <SelectValue placeholder="Select department" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DEPARTMENTS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {newGroupType === "project" && (
-              <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-muted-foreground">Project</Label>
-                <Select value={newGroupProject} onValueChange={setNewGroupProject}>
-                  <SelectTrigger data-testid="select-project">
-                    <SelectValue placeholder="Select project" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allProjects.map(p => <SelectItem key={p.project_name} value={p.project_name}>{p.project_name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-medium text-muted-foreground">Description (optional)</Label>
-              <Textarea
-                value={newGroupDesc}
-                onChange={e => setNewGroupDesc(e.target.value)}
-                rows={2}
-                placeholder="What's this channel about?"
-                className="resize-none"
-                data-testid="input-group-description"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowCreateDialog(false); resetCreateForm(); }}>Cancel</Button>
-            <Button
-              className="bg-[#6264a7] hover:bg-[#4f5192]"
-              onClick={() => {
-                createGroupMutation.mutate({
-                  name: newGroupName,
-                  groupType: newGroupType,
-                  department: newGroupType === "department" ? newGroupDept : null,
-                  projectName: newGroupType === "project" ? newGroupProject : null,
-                  description: newGroupDesc || null,
-                });
-              }}
-              disabled={!newGroupName.trim() || createGroupMutation.isPending}
-              data-testid="button-confirm-create-group"
-            >
-              {createGroupMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showAddMemberDialog} onOpenChange={v => { setShowAddMemberDialog(v); if (!v) setSelectedMembers([]); }}>
-        <DialogContent className="sm:max-w-md" data-testid="dialog-add-members">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <UserPlus className="h-5 w-5 text-[#6264a7]" />
-              Add people to {selectedGroup?.name}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="max-h-[300px] overflow-y-auto space-y-0.5 border rounded-lg p-2">
-              {allUsers
-                .filter(u => selectedGroup && !selectedGroup.members.some(m => m.userId === u.id))
-                .map(u => (
-                  <label
-                    key={u.id}
-                    className="flex items-center gap-3 p-2 rounded-md hover:bg-muted cursor-pointer transition-colors"
-                    data-testid={`checkbox-user-${u.id}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedMembers.includes(u.id)}
-                      onChange={e =>
-                        setSelectedMembers(prev =>
-                          e.target.checked ? [...prev, u.id] : prev.filter(id => id !== u.id)
-                        )
-                      }
-                      className="rounded border-border text-[#6264a7] focus:ring-[#6264a7]"
-                    />
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold ${getAvatarColor(u.name)}`}>
-                      {getInitials(u.name)}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">{u.name}</p>
-                      <p className="text-[10px] text-gray-400">{u.role}</p>
-                    </div>
-                  </label>
-                ))}
-            </div>
-            {selectedMembers.length > 0 && (
-              <p className="text-xs text-muted-foreground">{selectedMembers.length} people selected</p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowAddMemberDialog(false); setSelectedMembers([]); }}>Cancel</Button>
-            <Button
-              className="bg-[#6264a7] hover:bg-[#4f5192]"
-              onClick={() => {
-                if (selectedGroup) addMembersMutation.mutate({ groupId: selectedGroup.id, userIds: selectedMembers });
-              }}
-              disabled={selectedMembers.length === 0 || addMembersMutation.isPending}
-              data-testid="button-confirm-add-members"
-            >
-              {addMembersMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
-              Add ({selectedMembers.length})
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      </div>
-      )}
+        <TabsContent value="teams" className="mt-4">
+          <TeamsAndChannelsTab />
+        </TabsContent>
+        <TabsContent value="chats" className="mt-4">
+          <ChatsTab />
+        </TabsContent>
+        <TabsContent value="activity" className="mt-4">
+          <ActivityTab />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
