@@ -1150,17 +1150,17 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
           <div className={`text-base sm:text-lg font-bold font-mono ${kpis.variance >= 0 ? "text-emerald-600" : "text-red-600"}`} data-testid="text-kpi-variance">
             {formatCurrency(kpis.variance)}
           </div>
-          <div className={`text-[10px] mt-0.5 font-medium ${kpis.variance >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-            {kpis.variance >= 0 ? "Under budget" : "Over budget"}
+          <div className={`text-[10px] mt-0.5 font-medium ${kpis.totalBudget === 0 ? "text-muted-foreground" : kpis.variance >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+            {kpis.totalBudget === 0 ? "No budget set" : kpis.variance >= 0 ? "Under budget" : "Over budget"}
           </div>
         </div>
-        <div className={`bg-card  rounded-xl shadow-sm border border-border border-l-4 ${kpis.gpPercent >= 20 ? "border-l-emerald-500" : kpis.gpPercent >= 10 ? "border-l-amber-500" : "border-l-red-500"} p-3 sm:p-4`}>
+        <div className={`bg-card  rounded-xl shadow-sm border border-border border-l-4 ${kpis.totalBudget === 0 ? "border-l-slate-300" : kpis.gpPercent >= 20 ? "border-l-emerald-500" : kpis.gpPercent >= 10 ? "border-l-amber-500" : "border-l-red-500"} p-3 sm:p-4`}>
           <div className="flex items-center gap-1.5 mb-1.5">
             <Percent className="h-4 w-4 text-slate-500" />
             <span className="text-[10px] uppercase tracking-wider font-medium text-muted-foreground">GP%</span>
           </div>
-          <div className={`text-base sm:text-lg font-bold font-mono ${kpis.gpPercent >= 20 ? "text-emerald-600" : kpis.gpPercent >= 10 ? "text-amber-600" : "text-red-600"}`} data-testid="text-kpi-gp">
-            {kpis.gpPercent.toFixed(1)}%
+          <div className={`text-base sm:text-lg font-bold font-mono ${kpis.totalBudget === 0 ? "text-muted-foreground" : kpis.gpPercent >= 20 ? "text-emerald-600" : kpis.gpPercent >= 10 ? "text-amber-600" : "text-red-600"}`} data-testid="text-kpi-gp">
+            {kpis.totalBudget === 0 ? "N/A" : `${kpis.gpPercent.toFixed(1)}%`}
           </div>
           <div className="text-[10px] text-slate-500 mt-0.5 cursor-pointer hover:text-blue-600 transition-colors" onClick={() => setDrawerOpen(true)}>
             Drilldown →
