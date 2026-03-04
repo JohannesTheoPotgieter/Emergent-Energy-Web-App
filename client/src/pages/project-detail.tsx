@@ -1038,10 +1038,7 @@ export default function ProjectDetailPage() {
   const isCosRealised = (e: any): boolean => {
     const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
     const hasInvDate = !!(e.expenseInvoicedDate && String(e.expenseInvoicedDate).trim());
-    const hasPO = !!(e.expensePoNumber && String(e.expensePoNumber).trim());
-    if (!hasInvoice || !hasInvDate || !hasPO) return false;
-    const dateConfirmed = e.invoiceDateFontColor === 'red' ? false : (e.invoiceDateFontColor === 'black' ? true : e.invoiceDateConfirmed === true);
-    return dateConfirmed;
+    return hasInvoice && hasInvDate;
   };
 
   const nextMilestone = useMemo(() => {
