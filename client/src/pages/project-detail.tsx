@@ -1083,7 +1083,8 @@ export default function ProjectDetailPage() {
     if (isCosRealised(e)) return s + (Number(e.expenseActualTotal) || 0);
     return s;
   }, 0);
-  const cosRealisedPct = budgetTotal > 0 ? (totalRealisedCos / budgetTotal) * 100 : 0;
+  const cosDenominator = totalExpenses > 0 ? totalExpenses : budgetTotal;
+  const cosRealisedPct = cosDenominator > 0 ? (totalRealisedCos / cosDenominator) * 100 : 0;
   const marginDelta = revenueRealisedPct - cosRealisedPct;
 
   const hasRedRag = scheduleRag === "red" || costRag === "red" || qualityRag === "red";
