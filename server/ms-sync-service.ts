@@ -247,7 +247,9 @@ export function startPeriodicSync() {
 
   globalSyncTimer = setInterval(async () => {
     try {
-      const accounts = await db.select().from(msAccounts).where(eq(msAccounts.status, "active"));
+      const accounts = await db.select().from(msAccounts).where(
+        and(eq(msAccounts.status, "active"), isNotNull(msAccounts.ssoAccessToken))
+      );
       for (const account of accounts) {
         try {
           await syncAllForUser(account.userId);
