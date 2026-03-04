@@ -57,6 +57,7 @@ import {
   UserCog,
   PanelLeft,
   ChevronLeft,
+  FileUp,
 } from "lucide-react";
 import { UX_REDESIGN_ENABLED } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
@@ -263,9 +264,9 @@ function getRedesignedNavGroups(): NavGroup[] {
       items: [
         { label: "Users & Roles", icon: UserCog, path: "/admin/roles" },
         { label: "App Settings", icon: Cog, path: "/admin/settings" },
-        { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
+        { label: "Activity Log", icon: Activity, path: "/admin/activity-log" },
         { label: "Microsoft 365", icon: Plug, path: "/admin/ms-integration" },
-        { label: "Database Migration", icon: Database, path: "/admin/database-migration" },
+        { label: "Data Import", icon: FileUp, path: "/admin" },
       ],
     },
   ];
@@ -719,18 +720,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="border-t border-sidebar-border/60 bg-sidebar/80">
-          {isAdmin && sidebarShowLabels && (
-            <Link href="/admin/roles" className={cn(
-              "flex items-center gap-2.5 mx-2 mt-2 px-3 py-2 rounded-lg text-[12px] font-medium transition-all duration-150",
-              location.startsWith("/admin/roles")
-                ? "bg-amber-500/15 text-amber-300 border border-amber-500/25"
-                : "text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground/80 border border-transparent"
-            )}>
-              <UserCog className="w-4 h-4 shrink-0" />
-              <span>Manage Users & Roles</span>
-              <ChevronRight className="w-3 h-3 ml-auto opacity-40" />
-            </Link>
-          )}
           <div className="p-2.5">
             <div className={cn(
               "flex items-center gap-2.5 p-2 rounded-lg transition-colors",

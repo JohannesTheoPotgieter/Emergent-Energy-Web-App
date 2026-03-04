@@ -176,7 +176,6 @@ function ProtectedPages() {
         <Route path="/my-work/calendar" component={MyWorkCalendarPage} />
         <Route path="/my-work/tasks" component={MyWorkTasksPage} />
         <Route path="/my-work/meetings" component={MyToolMeetingsPage} />
-        <Route path="/admin/eng-templates">{() => <Redirect to="/admin/phase-templates" />}</Route>
         <Route path="/admin/database-migration" component={DatabaseMigrationPage} />
         <Route path="/clients" component={ClientsPage} />
 

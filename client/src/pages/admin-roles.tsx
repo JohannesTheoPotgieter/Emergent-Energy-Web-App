@@ -199,14 +199,10 @@ const PERM_CATEGORIES: PermCat[] = [
     key: "settings", section: "SETTINGS", label: "Admin", icon: Settings, color: "bg-slate-500",
     items: [
       { entity: "admin_roles" as PermissionEntity, label: "Roles & Permissions", actions: ["view", "edit"] },
-      { entity: "activity_log" as PermissionEntity, label: "Change Audit", actions: ["view"] },
-      { entity: "ms_integration" as PermissionEntity, label: "Microsoft 365", actions: ["view", "edit"] },
-      { entity: "database_migration" as PermissionEntity, label: "Database Migration", actions: ["view", "edit"] },
       { entity: "admin" as PermissionEntity, label: "App Settings", actions: ["view", "edit"] },
-      { entity: "ms_sync" as PermissionEntity, label: "Microsoft 365 Sync", actions: ["view", "edit"] },
+      { entity: "activity_log" as PermissionEntity, label: "Activity Log", actions: ["view"] },
+      { entity: "ms_integration" as PermissionEntity, label: "Microsoft 365", actions: ["view", "edit"] },
       { entity: "data_import" as PermissionEntity, label: "Data Import", actions: ["view", "edit"] },
-      { entity: "data_export" as PermissionEntity, label: "Data Export & Reports", actions: ["view"] },
-      { entity: "audit_trail" as PermissionEntity, label: "Audit Trail", actions: ["view"] },
     ],
   },
 ];
