@@ -71,7 +71,7 @@ const STATUS_OPTIONS = ["Not Started", "In Progress", "Blocked", "Done"];
 const PRIORITY_OPTIONS = ["Urgent", "High", "Normal", "Low"];
 
 const statusColor: Record<string, string> = {
-  "Not Started": "bg-gray-100 text-gray-800",
+  "Not Started": "bg-muted text-foreground",
   "In Progress": "bg-blue-100 text-blue-800",
   Blocked: "bg-red-100 text-red-800",
   Done: "bg-green-100 text-green-800",
@@ -80,7 +80,7 @@ const statusColor: Record<string, string> = {
 const priorityColor: Record<string, string> = {
   Urgent: "bg-red-100 text-red-800",
   High: "bg-orange-100 text-orange-800",
-  Normal: "bg-gray-100 text-gray-800",
+  Normal: "bg-muted text-foreground",
   Low: "bg-blue-100 text-blue-800",
 };
 

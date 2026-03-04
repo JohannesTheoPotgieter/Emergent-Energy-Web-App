@@ -194,8 +194,8 @@ function statusColor(s: string) {
   if (s === "Completed") return "bg-green-100 text-green-700";
   if (s === "In Progress") return "bg-blue-100 text-blue-700";
   if (s === "On Hold") return "bg-orange-100 text-orange-700";
-  if (s === "Cancelled") return "bg-gray-100 text-gray-500";
-  return "bg-gray-100 text-gray-700";
+  if (s === "Cancelled") return "bg-muted text-muted-foreground";
+  return "bg-muted text-foreground";
 }
 
 function priorityColor(p: string) {

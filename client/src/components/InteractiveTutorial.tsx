@@ -343,7 +343,7 @@ export function InteractiveTutorial({ active, onComplete, role = "", externalSte
         role="dialog"
         aria-modal="true"
         aria-label={`Tutorial step ${step + 1} of ${steps.length}: ${currentStep.title}`}
-        className={`rounded-xl bg-white shadow-2xl border ${isCentered ? "w-[420px] max-w-[90vw]" : ""}`}
+        className={`rounded-xl bg-card shadow-2xl border ${isCentered ? "w-[420px] max-w-[90vw]" : ""}`}
         style={getTooltipStyle()}
         data-testid="tutorial-tooltip"
       >
@@ -360,7 +360,7 @@ export function InteractiveTutorial({ active, onComplete, role = "", externalSte
             )}
             <button
               onClick={handleComplete}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 hover:text-muted-foreground transition-colors"
               aria-label="Close tutorial"
               data-testid="tutorial-close"
             >

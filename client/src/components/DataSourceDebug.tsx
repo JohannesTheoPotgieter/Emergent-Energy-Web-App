@@ -92,7 +92,7 @@ export default function DataSourceDebug({ pageName, dataSources }: DataSourceDeb
                   <div>
                     <code className="text-emerald-300 break-all">{ds.endpoint}</code>
                     {ds.description && (
-                      <p className="text-gray-500 text-[10px] mt-0.5">{ds.description}</p>
+                      <p className="text-muted-foreground text-[10px] mt-0.5">{ds.description}</p>
                     )}
                   </div>
                 </div>

@@ -51,7 +51,7 @@ const priorityConfig: Record<string, { label: string; color: string; dot: string
   critical: { label: "P1", color: "text-red-600 bg-red-50 border-red-200", dot: "bg-red-500" },
   high: { label: "P2", color: "text-orange-600 bg-orange-50 border-orange-200", dot: "bg-orange-500" },
   normal: { label: "P3", color: "text-blue-600 bg-blue-50 border-blue-200", dot: "bg-blue-500" },
-  low: { label: "P4", color: "text-slate-500 bg-slate-50 border-slate-200", dot: "bg-slate-400" },
+  low: { label: "P4", color: "text-muted-foreground bg-muted border-border", dot: "bg-slate-400" },
 };
 
 const statusConfig: Record<string, { label: string; icon: typeof Circle; color: string }> = {

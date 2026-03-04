@@ -725,7 +725,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                                       ? "bg-green-50 text-green-700 border-green-300"
                                       : m.dependentTask.status === "in_progress" || m.dependentTask.status === "In Progress"
                                       ? "bg-blue-50 text-blue-700 border-blue-300"
-                                      : "bg-gray-50 text-gray-600 border-gray-300"
+                                      : "bg-muted text-muted-foreground border-border"
                                   }`}
                                   data-testid={`badge-task-status-${m.rowNumber}`}
                                 >
@@ -763,7 +763,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                                 <div className="text-[9px] text-muted-foreground px-1">
                                   {filteredTasks.length} task{filteredTasks.length !== 1 ? 's' : ''} found
                                 </div>
-                                <div className="max-h-[240px] overflow-y-auto border rounded-md bg-white shadow-sm">
+                                <div className="max-h-[240px] overflow-y-auto border rounded-md bg-card shadow-sm">
                                   {filteredTasks.length === 0 ? (
                                     <p className="text-[10px] text-muted-foreground p-2">No tasks found</p>
                                   ) : (
@@ -778,7 +778,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                                           t.isBaseline ? "bg-purple-50 text-purple-700 border-purple-300" :
                                           t.status === "Complete" || t.status === "complete" || t.status === "Done" ? "bg-green-50 text-green-700 border-green-300" :
                                           t.status === "In Progress" || t.status === "in_progress" ? "bg-blue-50 text-blue-700 border-blue-300" :
-                                          "bg-gray-50 text-gray-600 border-gray-300"
+                                          "bg-muted text-muted-foreground border-border"
                                         }`}>
                                           {t.isBaseline ? "Baseline" : (t.status === "Complete" || t.status === "complete" || t.status === "Done" ? "Done" : t.status === "In Progress" || t.status === "in_progress" ? "WIP" : "ToDo")}
                                         </Badge>
@@ -786,7 +786,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                                           <Badge variant="outline" className={`text-[8px] px-1 py-0 shrink-0 ${
                                             t.status === "Complete" || t.status === "complete" || t.status === "Done" ? "bg-green-50 text-green-700 border-green-300" :
                                             t.status === "In Progress" || t.status === "in_progress" ? "bg-blue-50 text-blue-700 border-blue-300" :
-                                            "bg-gray-50 text-gray-600 border-gray-300"
+                                            "bg-muted text-muted-foreground border-border"
                                           }`}>
                                             {t.status === "Complete" || t.status === "complete" || t.status === "Done" ? "Done" : t.status === "In Progress" || t.status === "in_progress" ? "WIP" : "ToDo"}
                                           </Badge>
@@ -851,7 +851,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                                 </Button>
                                 <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={cancelEditing}
                                   data-testid={`button-cancel-${m.rowNumber}`}>
-                                  <XCircle className="h-3.5 w-3.5 text-gray-500" />
+                                  <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
                                 </Button>
                               </div>
                             ) : (

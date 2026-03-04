@@ -89,7 +89,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-emerald-50/50 via-white to-green-50/30 p-4" data-testid="page-login">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4" data-testid="page-login">
       <div className="w-full max-w-sm space-y-8 animate-float-in">
         <div className="text-center space-y-4">
           <div className="flex justify-center">
@@ -100,24 +100,24 @@ export default function LoginPage() {
               data-testid="img-logo"
             />
           </div>
-          <p className="text-sm text-gray-500">Sign in to your account</p>
+          <p className="text-sm text-muted-foreground">Sign in to your account</p>
         </div>
 
         {error && (
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200" data-testid="text-login-error">
-            <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-            <p className="text-xs text-red-700">{error}</p>
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/30" data-testid="text-login-error">
+            <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-red-400">{error}</p>
           </div>
         )}
 
-        <Card className="border border-gray-200 energy-glow-border">
+        <Card className="border border-border energy-glow-border">
           <CardContent className="p-6 space-y-4">
             {msEnabled && (
               <>
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full h-11 gap-3 text-sm font-medium border-gray-300 hover:bg-gray-50 transition-all duration-300 hover:border-emerald-300 hover:shadow-sm"
+                  className="w-full h-11 gap-3 text-sm font-medium border-border hover:bg-muted transition-all duration-300 hover:border-emerald-500/50 hover:shadow-sm"
                   onClick={handleMicrosoftLogin}
                   data-testid="button-ms-login"
                 >
@@ -135,7 +135,7 @@ export default function LoginPage() {
                     <button
                       type="button"
                       onClick={() => setShowManualLogin(true)}
-                      className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                       data-testid="button-show-manual-login"
                     >
                       Use username & password instead
@@ -146,10 +146,10 @@ export default function LoginPage() {
                 {showManualLogin && (
                   <div className="relative my-2">
                     <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t border-gray-200" />
+                      <span className="w-full border-t border-border" />
                     </div>
                     <div className="relative flex justify-center text-xs">
-                      <span className="bg-white px-2 text-gray-400">or</span>
+                      <span className="bg-card px-2 text-muted-foreground">or</span>
                     </div>
                   </div>
                 )}
@@ -161,7 +161,7 @@ export default function LoginPage() {
                 <div className="space-y-2">
                   <Label htmlFor="username">Username</Label>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       id="username"
                       type="text"
@@ -179,7 +179,7 @@ export default function LoginPage() {
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
                       id="password"
                       type="password"
@@ -209,7 +209,7 @@ export default function LoginPage() {
         <div className="text-center">
           <button
             onClick={() => setShowVersion(true)}
-            className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-[#16a34a] transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-[#16a34a] transition-colors cursor-pointer"
             data-testid="button-version-info"
           >
             <Info className="w-3.5 h-3.5" />
@@ -221,21 +221,21 @@ export default function LoginPage() {
       {showVersion && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowVersion(false)}>
           <div
-            className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col"
+            className="bg-card rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col border border-border"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <div>
-                <h2 className="text-lg font-bold text-gray-900">
+                <h2 className="text-lg font-bold text-foreground">
                   Version {versionInfo.version} Release Notes
                 </h2>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <p className="text-xs text-muted-foreground mt-0.5">
                   {versionInfo.buildTime || "Latest"}{versionInfo.buildNumber ? ` · Build ${versionInfo.buildNumber}` : ""} — The official release. For real this time.
                 </p>
               </div>
               <button
                 onClick={() => setShowVersion(false)}
-                className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+                className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                 data-testid="button-close-version"
               >
                 <X className="w-4 h-4" />
@@ -249,7 +249,7 @@ export default function LoginPage() {
                   return (
                     <div
                       key={i}
-                      className={`flex gap-3 ${isEasterEgg ? "cursor-pointer hover:bg-amber-50 rounded-lg p-2 -m-2 transition-all" : ""}`}
+                      className={`flex gap-3 ${isEasterEgg ? "cursor-pointer hover:bg-amber-500/10 rounded-lg p-2 -m-2 transition-all" : ""}`}
                       data-testid={`version-item-${i}`}
                       onClick={isEasterEgg ? () => {
                         const next = easterEggClicks + 1;
@@ -257,13 +257,13 @@ export default function LoginPage() {
                         if (next >= 7) setShowEasterEgg(true);
                       } : undefined}
                     >
-                      <div className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center mt-0.5 ${isEasterEgg ? "bg-amber-50" : "bg-emerald-50"}`}>
-                        <Zap className={`w-3.5 h-3.5 ${isEasterEgg ? "text-amber-500" : "text-emerald-600"}`} />
+                      <div className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center mt-0.5 ${isEasterEgg ? "bg-amber-500/10" : "bg-emerald-500/10"}`}>
+                        <Zap className={`w-3.5 h-3.5 ${isEasterEgg ? "text-amber-400" : "text-emerald-400"}`} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h3 className="text-sm font-semibold text-gray-900">{item.title}</h3>
+                        <h3 className="text-sm font-semibold text-foreground">{item.title}</h3>
                         {item.description && (
-                          <p className="text-xs text-gray-500 mt-1 leading-relaxed">{item.description}</p>
+                          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{item.description}</p>
                         )}
                         {isEasterEgg && easterEggClicks > 0 && easterEggClicks < 7 && (
                           <p className="text-[10px] text-amber-400 mt-1">{7 - easterEggClicks} more click{7 - easterEggClicks !== 1 ? "s" : ""}...</p>
@@ -273,21 +273,21 @@ export default function LoginPage() {
                   );
                 })
               ) : (
-                <p className="text-sm text-gray-400 text-center py-4">No release notes available yet.</p>
+                <p className="text-sm text-muted-foreground text-center py-4">No release notes available yet.</p>
               )}
               {showEasterEgg && (
-                <div className="mt-4 p-4 bg-gradient-to-r from-amber-50 via-emerald-50 to-amber-50 rounded-xl border border-amber-200 text-center animate-pulse" data-testid="easter-egg-reveal">
+                <div className="mt-4 p-4 bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-amber-500/10 rounded-xl border border-amber-500/30 text-center animate-pulse" data-testid="easter-egg-reveal">
                   <p className="text-2xl mb-2">⚡🎉⚡</p>
-                  <p className="text-sm font-bold text-emerald-700">You found The First Electron!</p>
-                  <p className="text-xs text-gray-600 mt-1">You are now officially part of the Emergent Energy story.</p>
-                  <p className="text-xs text-gray-500 mt-1">V1.0 — Built by humans, powered by electrons, deployed with courage.</p>
-                  <p className="text-[10px] text-amber-500 mt-2 italic">Achievement Unlocked: Curious Clicker 🏆</p>
+                  <p className="text-sm font-bold text-emerald-400">You found The First Electron!</p>
+                  <p className="text-xs text-muted-foreground mt-1">You are now officially part of the Emergent Energy story.</p>
+                  <p className="text-xs text-muted-foreground mt-1">V1.0 — Built by humans, powered by electrons, deployed with courage.</p>
+                  <p className="text-[10px] text-amber-400 mt-2 italic">Achievement Unlocked: Curious Clicker 🏆</p>
                 </div>
               )}
             </div>
 
-            <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50">
-              <p className="text-[10px] text-gray-400 text-center italic">
+            <div className="px-5 py-3 border-t border-border bg-muted/30">
+              <p className="text-[10px] text-muted-foreground text-center italic">
                 V1.0 — Crafted with caffeine, questionable life choices, and an alarming amount of TypeScript.
                 Built to power the future of renewable energy. Here's to the electrons that got us here. ⚡
               </p>

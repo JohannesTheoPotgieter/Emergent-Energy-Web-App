@@ -1609,11 +1609,11 @@ export const WALKTHROUGHS: Walkthrough[] = [
 ];
 
 export const WALKTHROUGH_CATEGORIES: Record<string, { label: string; color: string }> = {
-  "project-management": { label: "Project Management", color: "bg-blue-100 text-blue-700 border-blue-200" },
-  "finance": { label: "Finance", color: "bg-green-100 text-green-700 border-green-200" },
-  "engineering": { label: "Engineering", color: "bg-purple-100 text-purple-700 border-purple-200" },
-  "governance": { label: "Governance", color: "bg-red-100 text-red-700 border-red-200" },
-  "operations": { label: "Operations", color: "bg-amber-100 text-amber-700 border-amber-200" },
-  "productivity": { label: "Productivity", color: "bg-teal-100 text-teal-700 border-teal-200" },
-  "admin": { label: "Admin", color: "bg-gray-100 text-gray-700 border-gray-200" },
+  "project-management": { label: "Project Management", color: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
+  "finance": { label: "Finance", color: "bg-green-500/15 text-green-400 border-green-500/30" },
+  "engineering": { label: "Engineering", color: "bg-purple-500/15 text-purple-400 border-purple-500/30" },
+  "governance": { label: "Governance", color: "bg-red-500/15 text-red-400 border-red-500/30" },
+  "operations": { label: "Operations", color: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
+  "productivity": { label: "Productivity", color: "bg-teal-500/15 text-teal-400 border-teal-500/30" },
+  "admin": { label: "Admin", color: "bg-gray-500/15 text-gray-400 border-gray-500/30" },
 };

@@ -309,7 +309,7 @@ export default function CashflowForecastPage() {
                   <td className={`p-2 text-right font-mono text-xs font-bold ${filteredTotals.cashflow >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatRandExact(filteredTotals.cashflow)}</td>
                 </tr>
                 <tr className="border-b hover:bg-muted/30">
-                  <td className="p-2 font-medium text-blue-700 sticky left-0 bg-white">Invoiced Payments</td>
+                  <td className="p-2 font-medium text-blue-700 sticky left-0 bg-card">Invoiced Payments</td>
                   {displayData.map(d => (
                     <td key={d.label} className="p-2 text-right font-mono text-xs text-blue-700">{d.invoicedPayments > 0 ? formatRandExact(d.invoicedPayments) : '-'}</td>
                   ))}

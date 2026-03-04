@@ -27,7 +27,7 @@ const SOURCE_COLORS: Record<string, string> = {
   CONFLICT_RESOLUTION: "bg-purple-100 text-purple-700",
   PATTERN_LEARNING: "bg-cyan-100 text-cyan-700",
   COUNTERPARTY_UPDATE: "bg-pink-100 text-pink-700",
-  SYSTEM: "bg-gray-100 text-gray-700",
+  SYSTEM: "bg-muted text-foreground",
 };
 
 function authFetch(url: string) {

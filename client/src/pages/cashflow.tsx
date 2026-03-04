@@ -260,13 +260,13 @@ function DetailRow({ weekStart, project }: { weekStart: string; project: string 
   return (
     <tr>
       <td colSpan={9} className="p-0">
-        <div className="bg-gradient-to-b from-slate-50/80 to-white border-y border-slate-200/60 px-6 py-5">
+        <div className="bg-gradient-to-b from-slate-50/80 to-white border-y border-border/60 px-6 py-5">
           <div className="flex items-center gap-3 mb-4">
             <Input
               placeholder="Search inflows & outflows..."
               value={detailSearch}
               onChange={(e) => setDetailSearch(e.target.value)}
-              className="max-w-xs h-8 text-xs rounded-lg border-slate-300 focus:border-blue-400 focus:ring-blue-400"
+              className="max-w-xs h-8 text-xs rounded-lg border-border focus:border-blue-400 focus:ring-blue-400"
               data-testid={`input-detail-search-${weekStart}`}
             />
             <div className="flex items-center gap-3 text-xs">
@@ -281,7 +281,7 @@ function DetailRow({ weekStart, project }: { weekStart: string; project: string 
             </div>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="rounded-lg border border-emerald-200/60 bg-white overflow-hidden">
+            <div className="rounded-lg border border-emerald-200/60 bg-card overflow-hidden">
               <div className="px-4 py-2.5 bg-emerald-50 border-b border-emerald-200/60">
                 <h4 className="text-sm font-semibold text-emerald-800 flex items-center gap-1.5">
                   <ArrowUpRight className="h-3.5 w-3.5" />
@@ -294,24 +294,24 @@ function DetailRow({ weekStart, project }: { weekStart: string; project: string 
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs border-collapse" data-testid={`table-inflows-${weekStart}`}>
                     <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50/50">
-                        <th className="text-left px-3 py-2 font-medium text-slate-600">Project</th>
-                        <th className="text-left px-3 py-2 font-medium text-slate-600">Milestone</th>
-                        <th className="text-left px-3 py-2 font-medium text-slate-600">Invoice #</th>
-                        <th className="text-left px-3 py-2 font-medium text-slate-600">Date</th>
-                        <th className="text-right px-3 py-2 font-medium text-slate-600">Amount</th>
-                        <th className="text-right px-3 py-2 font-medium text-slate-600">Days</th>
+                      <tr className="border-b border-border bg-muted/50">
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Project</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Milestone</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Invoice #</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
+                        <th className="text-right px-3 py-2 font-medium text-muted-foreground">Amount</th>
+                        <th className="text-right px-3 py-2 font-medium text-muted-foreground">Days</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredInflows.map((inf, i) => (
-                        <tr key={i} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors" data-testid={`row-inflow-${weekStart}-${i}`}>
-                          <td className="px-3 py-2 font-medium text-slate-700">{inf.projectName}</td>
-                          <td className="px-3 py-2 text-slate-600">{inf.milestoneName}</td>
-                          <td className="px-3 py-2 font-mono text-slate-500 text-[11px]">{inf.milestoneInvoiceNumber || "—"}</td>
-                          <td className="px-3 py-2 text-slate-600">{inf.paymentReceivedDate ? format(parseISO(inf.paymentReceivedDate), "dd MMM") : "—"}</td>
+                        <tr key={i} className="border-b border-border hover:bg-muted/50 transition-colors" data-testid={`row-inflow-${weekStart}-${i}`}>
+                          <td className="px-3 py-2 font-medium text-foreground">{inf.projectName}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{inf.milestoneName}</td>
+                          <td className="px-3 py-2 font-mono text-muted-foreground text-[11px]">{inf.milestoneInvoiceNumber || "—"}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{inf.paymentReceivedDate ? format(parseISO(inf.paymentReceivedDate), "dd MMM") : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono font-medium text-emerald-700">{formatRand(inf.milestoneAmount)}</td>
-                          <td className="px-3 py-2 text-right font-mono text-slate-500">{inf.daysToReceipt ?? "—"}</td>
+                          <td className="px-3 py-2 text-right font-mono text-muted-foreground">{inf.daysToReceipt ?? "—"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -319,7 +319,7 @@ function DetailRow({ weekStart, project }: { weekStart: string; project: string 
                 </div>
               )}
             </div>
-            <div className="rounded-lg border border-red-200/60 bg-white overflow-hidden">
+            <div className="rounded-lg border border-red-200/60 bg-card overflow-hidden">
               <div className="px-4 py-2.5 bg-red-50 border-b border-red-200/60">
                 <h4 className="text-sm font-semibold text-red-800 flex items-center gap-1.5">
                   <ArrowDownRight className="h-3.5 w-3.5" />
@@ -332,23 +332,23 @@ function DetailRow({ weekStart, project }: { weekStart: string; project: string 
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs border-collapse" data-testid={`table-outflows-${weekStart}`}>
                     <thead>
-                      <tr className="border-b border-slate-200 bg-slate-50/50">
-                        <th className="text-left px-3 py-2 font-medium text-slate-600">Project</th>
-                        <th className="text-left px-3 py-2 font-medium text-slate-600">Category</th>
-                        <th className="text-left px-3 py-2 font-medium text-slate-600">Line Item</th>
-                        <th className="text-left px-3 py-2 font-medium text-slate-600">Invoice #</th>
-                        <th className="text-left px-3 py-2 font-medium text-slate-600">Date</th>
-                        <th className="text-right px-3 py-2 font-medium text-slate-600">Amount</th>
+                      <tr className="border-b border-border bg-muted/50">
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Project</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Category</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Line Item</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Invoice #</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
+                        <th className="text-right px-3 py-2 font-medium text-muted-foreground">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredOutflows.map((out, i) => (
-                        <tr key={i} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors" data-testid={`row-outflow-${weekStart}-${i}`}>
-                          <td className="px-3 py-2 font-medium text-slate-700">{out.projectName}</td>
-                          <td className="px-3 py-2 text-slate-600">{out.expenseCategory}</td>
-                          <td className="px-3 py-2 text-slate-600">{out.expenseLineItem}</td>
-                          <td className="px-3 py-2 font-mono text-slate-500 text-[11px]">{out.expenseInvoiceNumber || "—"}</td>
-                          <td className="px-3 py-2 text-slate-600">{out.expensePaymentDate ? format(parseISO(out.expensePaymentDate), "dd MMM") : "—"}</td>
+                        <tr key={i} className="border-b border-border hover:bg-muted/50 transition-colors" data-testid={`row-outflow-${weekStart}-${i}`}>
+                          <td className="px-3 py-2 font-medium text-foreground">{out.projectName}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{out.expenseCategory}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{out.expenseLineItem}</td>
+                          <td className="px-3 py-2 font-mono text-muted-foreground text-[11px]">{out.expenseInvoiceNumber || "—"}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{out.expensePaymentDate ? format(parseISO(out.expensePaymentDate), "dd MMM") : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono font-medium text-red-700">{formatRand(out.expenseActualTotal)}</td>
                         </tr>
                       ))}
@@ -444,8 +444,8 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
             {FY26_MONTHS.map((m) => {
               const currentVal = editedValues[m.key] ?? (opexMap[m.key]?.toString() || "0");
               return (
-                <div key={m.key} className="flex items-center gap-3 group hover:bg-slate-50 rounded-lg px-2 py-1.5 transition-colors">
-                  <span className="text-sm font-medium text-slate-600 w-24 flex-shrink-0">{m.label}</span>
+                <div key={m.key} className="flex items-center gap-3 group hover:bg-muted rounded-lg px-2 py-1.5 transition-colors">
+                  <span className="text-sm font-medium text-muted-foreground w-24 flex-shrink-0">{m.label}</span>
                   <div className="relative flex-1">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">R</span>
                     <Input
@@ -454,23 +454,23 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
                       onChange={(e) =>
                         setEditedValues((prev) => ({ ...prev, [m.key]: e.target.value }))
                       }
-                      className="text-right font-mono pl-7 h-9 border-slate-200 focus:border-blue-400 focus:ring-blue-400"
+                      className="text-right font-mono pl-7 h-9 border-border focus:border-blue-400 focus:ring-blue-400"
                       data-testid={`input-opex-${m.key}`}
                     />
                   </div>
                 </div>
               );
             })}
-            <div className="flex items-center gap-3 border-t border-slate-200 pt-3 mt-2 px-2">
-              <span className="text-sm font-bold text-slate-700 w-24 flex-shrink-0">Total</span>
-              <span className="flex-1 text-right font-mono font-bold text-slate-900 pr-3" data-testid="text-opex-total">
+            <div className="flex items-center gap-3 border-t border-border pt-3 mt-2 px-2">
+              <span className="text-sm font-bold text-foreground w-24 flex-shrink-0">Total</span>
+              <span className="flex-1 text-right font-mono font-bold text-foreground pr-3" data-testid="text-opex-total">
                 {formatRand(totalBudget)}
               </span>
             </div>
           </div>
         )}
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={onClose} data-testid="button-opex-cancel" className="border-slate-300">
+          <Button variant="outline" onClick={onClose} data-testid="button-opex-cancel" className="border-border">
             Cancel
           </Button>
           <Button
@@ -737,15 +737,15 @@ export default function CashflowPage() {
   }, [cashflowData]);
 
   return (
-    <div className="min-h-screen bg-slate-50/40" data-testid="page-cashflow">
-      <div className="bg-white border-b border-slate-200 shadow-sm">
+    <div className="min-h-screen bg-background" data-testid="page-cashflow">
+      <div className="bg-card border-b border-border shadow-sm">
         <div className="px-6 py-5">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-slate-900 tracking-tight" data-testid="text-page-title">
+              <h1 className="text-2xl font-bold text-foreground tracking-tight" data-testid="text-page-title">
                 Cashflow FY26
               </h1>
-              <p className="text-sm text-slate-500 mt-0.5">
+              <p className="text-sm text-muted-foreground mt-0.5">
                 Weekly cashflow timeline — Sep 2025 to Aug 2026
               </p>
             </div>
@@ -754,7 +754,7 @@ export default function CashflowPage() {
                 <select
                   value={selectedProject}
                   onChange={(e) => setSelectedProject(e.target.value)}
-                  className="appearance-none border border-slate-300 rounded-lg px-3 py-2 pr-8 text-sm bg-white text-slate-700 cursor-pointer hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
+                  className="appearance-none border border-border rounded-lg px-3 py-2 pr-8 text-sm bg-card text-foreground cursor-pointer hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors"
                   data-testid="select-project-filter"
                 >
                   <option value="all">All Projects</option>
@@ -776,7 +776,7 @@ export default function CashflowPage() {
                 className={`gap-1.5 rounded-lg transition-all ${
                   showDetail
                     ? "bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-                    : "border-slate-300 text-slate-600 hover:bg-slate-50"
+                    : "border-border text-muted-foreground hover:bg-muted"
                 }`}
                 data-testid="button-toggle-detail"
               >
@@ -788,7 +788,7 @@ export default function CashflowPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => setOpexOpen(true)}
-                  className="gap-1.5 rounded-lg border-slate-300 text-slate-600 hover:bg-slate-50"
+                  className="gap-1.5 rounded-lg border-border text-muted-foreground hover:bg-muted"
                   data-testid="button-opex-budget"
                 >
                   <DollarSign className="h-3.5 w-3.5" />
@@ -807,14 +807,14 @@ export default function CashflowPage() {
             <span className="text-sm font-medium">Loading cashflow data...</span>
           </div>
         ) : cashflowData.length === 0 ? (
-          <Card className="border-dashed border-2 border-slate-300">
+          <Card className="border-dashed border-2 border-border">
             <CardContent className="py-16">
               <div className="text-center">
-                <div className="rounded-full bg-slate-100 w-14 h-14 flex items-center justify-center mx-auto mb-4">
+                <div className="rounded-full bg-muted w-14 h-14 flex items-center justify-center mx-auto mb-4">
                   <DollarSign className="h-7 w-7 text-slate-400" />
                 </div>
-                <p className="text-lg font-semibold text-slate-700" data-testid="text-empty-state">No cashflow data available</p>
-                <p className="text-sm text-slate-500 mt-1.5 max-w-sm mx-auto">
+                <p className="text-lg font-semibold text-foreground" data-testid="text-empty-state">No cashflow data available</p>
+                <p className="text-sm text-muted-foreground mt-1.5 max-w-sm mx-auto">
                   Upload tracker files to populate the cashflow timeline
                 </p>
               </div>
@@ -859,9 +859,9 @@ export default function CashflowPage() {
               />
             </div>
 
-            <Card className="border border-slate-200 shadow-sm rounded-xl overflow-hidden" data-testid="card-trend-chart">
+            <Card className="border border-border shadow-sm rounded-xl overflow-hidden" data-testid="card-trend-chart">
               <CardHeader className="pb-2 pt-4 px-5">
-                <CardTitle className="text-sm font-semibold text-slate-700">Cashflow Trend</CardTitle>
+                <CardTitle className="text-sm font-semibold text-foreground">Cashflow Trend</CardTitle>
               </CardHeader>
               <CardContent className="px-2 pb-3">
                 <div className="h-[280px] w-full">
@@ -945,34 +945,34 @@ export default function CashflowPage() {
               </CardContent>
             </Card>
 
-            <Card className="border border-slate-200 shadow-sm rounded-xl overflow-hidden" data-testid="card-weekly-grid">
+            <Card className="border border-border shadow-sm rounded-xl overflow-hidden" data-testid="card-weekly-grid">
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-sm" data-testid="table-cashflow">
                     <thead>
-                      <tr className="bg-slate-100/80 border-b-2 border-slate-200">
-                        <th className="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider sticky left-0 bg-slate-100/80 z-10 min-w-[100px]">
+                      <tr className="bg-muted/80 border-b-2 border-border">
+                        <th className="text-left px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider sticky left-0 bg-muted/80 z-10 min-w-[100px]">
                           Week
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider min-w-[130px]">
+                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px]">
                           Opening Bal
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider min-w-[130px]">
+                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px]">
                           Proj Inflows
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider min-w-[120px]">
+                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[120px]">
                           OPEX
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider min-w-[130px]">
+                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px]">
                           Proj Outflows
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider min-w-[130px]">
+                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px]">
                           Total Out
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider min-w-[130px]">
+                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[130px]">
                           Closing Bal
                         </th>
-                        <th className="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase tracking-wider min-w-[150px]">
+                        <th className="text-right px-4 py-3 font-semibold text-muted-foreground text-xs uppercase tracking-wider min-w-[150px]">
                           Avail Payment
                         </th>
                       </tr>
@@ -987,19 +987,19 @@ export default function CashflowPage() {
                         return (
                           <Fragment key={week.weekStart}>
                             <tr
-                              className={`border-b border-slate-100 transition-colors ${
+                              className={`border-b border-border transition-colors ${
                                 current
                                   ? "bg-blue-50/70 border-l-[3px] border-l-blue-500"
                                   : isEven
-                                  ? "bg-white"
-                                  : "bg-slate-50/30"
-                              } ${showDetail ? "cursor-pointer hover:bg-blue-50/40" : "hover:bg-slate-50/60"}`}
+                                  ? "bg-card"
+                                  : "bg-muted/30"
+                              } ${showDetail ? "cursor-pointer hover:bg-blue-50/40" : "hover:bg-muted/60"}`}
                               onClick={() => handleRowClick(week.weekStart)}
                               data-testid={`row-week-${week.weekStart}`}
                             >
                               <td
-                                className={`px-4 py-3 font-medium text-slate-700 sticky left-0 z-10 ${
-                                  current ? "bg-blue-50/70" : isEven ? "bg-white" : "bg-slate-50/30"
+                                className={`px-4 py-3 font-medium text-foreground sticky left-0 z-10 ${
+                                  current ? "bg-blue-50/70" : isEven ? "bg-card" : "bg-muted/30"
                                 }`}
                               >
                                 <div className="flex items-center gap-1.5">
@@ -1256,7 +1256,7 @@ export default function CashflowPage() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <label className="text-sm font-medium text-slate-700">Override Value (R)</label>
+              <label className="text-sm font-medium text-foreground">Override Value (R)</label>
               <Input
                 type="number"
                 value={availPayValue}
@@ -1268,7 +1268,7 @@ export default function CashflowPage() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-slate-700">Reason for Override *</label>
+              <label className="text-sm font-medium text-foreground">Reason for Override *</label>
               <Input
                 value={availPayReason}
                 onChange={(e) => setAvailPayReason(e.target.value)}
@@ -1320,11 +1320,11 @@ export default function CashflowPage() {
                 return (
                   <div
                     key={entry.id}
-                    className="border border-slate-100 rounded-lg px-4 py-3 bg-slate-50/50"
+                    className="border border-border rounded-lg px-4 py-3 bg-muted/50"
                     data-testid={`avail-history-entry-${entry.id}`}
                   >
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-muted-foreground">
                         {(() => {
                           try {
                             return format(new Date(entry.changedAt), "dd MMM yyyy HH:mm");
@@ -1342,10 +1342,10 @@ export default function CashflowPage() {
                     <div className="flex items-center gap-3 font-mono text-sm">
                       <span className="text-slate-400">{prev != null ? formatRand(prev) : "—"}</span>
                       <ArrowRight className="h-3 w-3 text-slate-300 flex-shrink-0" />
-                      <span className="font-semibold text-slate-800">{formatRand(newVal)}</span>
+                      <span className="font-semibold text-foreground">{formatRand(newVal)}</span>
                     </div>
                     {entry.reason && (
-                      <div className="mt-1.5 text-[11px] text-slate-600 bg-blue-50/50 rounded px-2 py-1">
+                      <div className="mt-1.5 text-[11px] text-muted-foreground bg-blue-50/50 rounded px-2 py-1">
                         <span className="font-medium">Reason:</span> {entry.reason}
                       </div>
                     )}
@@ -1391,11 +1391,11 @@ export default function CashflowPage() {
                 return (
                   <div
                     key={entry.id}
-                    className="border border-slate-100 rounded-lg px-4 py-3 bg-slate-50/50"
+                    className="border border-border rounded-lg px-4 py-3 bg-muted/50"
                     data-testid={`history-entry-${entry.id}`}
                   >
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-muted-foreground">
                         {(() => {
                           try {
                             return format(new Date(entry.changedAt), "dd MMM yyyy HH:mm");
@@ -1413,7 +1413,7 @@ export default function CashflowPage() {
                     <div className="flex items-center gap-3 font-mono text-sm">
                       <span className="text-slate-400">{prev != null ? formatRand(prev) : "—"}</span>
                       <ArrowRight className="h-3 w-3 text-slate-300 flex-shrink-0" />
-                      <span className="font-semibold text-slate-800">{formatRand(newVal)}</span>
+                      <span className="font-semibold text-foreground">{formatRand(newVal)}</span>
                       {delta != null && delta !== 0 && (
                         <span
                           className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${

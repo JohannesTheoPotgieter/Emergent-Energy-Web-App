@@ -48,11 +48,11 @@ function getRiskSeverityColor(severity: string) {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; dot: string; btnClass: string; icon: string }> = {
-  not_started: { label: "Not Started", color: "text-slate-500", bg: "bg-slate-50 border-slate-200", dot: "bg-slate-400", btnClass: "border-slate-300 text-slate-600 hover:bg-slate-100", icon: "○" },
+  not_started: { label: "Not Started", color: "text-muted-foreground", bg: "bg-muted border-border", dot: "bg-slate-400", btnClass: "border-border text-muted-foreground hover:bg-muted", icon: "○" },
   review: { label: "In Review", color: "text-amber-600", bg: "bg-amber-50 border-amber-200", dot: "bg-amber-500", btnClass: "border-amber-300 text-amber-600 hover:bg-amber-100", icon: "◔" },
   pass: { label: "Passed", color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", dot: "bg-emerald-500", btnClass: "border-emerald-300 text-emerald-600 hover:bg-emerald-100", icon: "✓" },
   fail: { label: "Failed", color: "text-red-600", bg: "bg-red-50 border-red-200", dot: "bg-red-500", btnClass: "border-red-300 text-red-600 hover:bg-red-100", icon: "✗" },
-  na: { label: "N/A", color: "text-slate-400", bg: "bg-slate-50 border-slate-200", dot: "bg-slate-300", btnClass: "border-slate-300 text-slate-400 hover:bg-slate-100", icon: "—" },
+  na: { label: "N/A", color: "text-slate-400", bg: "bg-muted border-border", dot: "bg-slate-300", btnClass: "border-border text-slate-400 hover:bg-muted", icon: "—" },
 };
 
 function getStatusConfig(status: string) {
@@ -481,7 +481,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
         </Collapsible>
       )}
 
-      <div className="bg-white rounded-lg border" data-testid="phase-tabs">
+      <div className="bg-card rounded-lg border" data-testid="phase-tabs">
         <div className="flex items-stretch overflow-x-auto">
           {phases.map((phase: any, idx: number) => {
             const progress = getPhaseProgress(phase.id);
@@ -493,7 +493,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                 onClick={() => setSelectedPhaseId(phase.id)}
                 className={`relative flex-1 min-w-[140px] flex flex-col items-center gap-1.5 px-4 py-3 text-sm font-medium transition-all border-b-2 ${
                   isActive
-                    ? `${colors.text} border-current bg-white`
+                    ? `${colors.text} border-current bg-card`
                     : "text-muted-foreground border-transparent hover:text-foreground hover:bg-muted/30"
                 } ${idx > 0 ? "border-l border-l-slate-100" : ""}`}
                 data-testid={`phase-tab-${phase.id}`}
@@ -503,7 +503,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                   <span className="whitespace-nowrap">{phase.phaseName}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
                     <div className={`h-full rounded-full ${colors.progress} transition-all`} style={{ width: `${progress.percent}%` }} />
                   </div>
                   <span className={`text-[10px] font-mono ${isActive ? colors.text : "text-muted-foreground"}`}>
@@ -690,7 +690,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                         <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
                         <h4 className="text-sm font-semibold flex-1">{group.groupName}</h4>
                         <div className="flex items-center gap-2">
-                          <div className="w-12 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
                             <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${groupPercent}%` }} />
                           </div>
                           <Badge variant="outline" className="text-[10px] font-medium tabular-nums">
@@ -720,10 +720,10 @@ export function QualityTab({ projectName }: QualityTabProps) {
                               <div
                                 key={instance.id}
                                 className={`transition-all ${
-                                  isExpanded ? "bg-slate-50/70" :
+                                  isExpanded ? "bg-muted/70" :
                                   hasRedWarning ? "bg-red-50/40" :
                                   isSelected ? "bg-blue-50/40" :
-                                  "hover:bg-slate-50/50"
+                                  "hover:bg-muted/50"
                                 }`}
                                 data-testid={`quality-item-${instance.id}`}
                               >
@@ -778,7 +778,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                     </div>
                                     <div className="flex items-center gap-1 shrink-0">
                                       {canEdit ? (
-                                        <div className="flex items-center gap-0.5 bg-slate-100 rounded-md p-0.5">
+                                        <div className="flex items-center gap-0.5 bg-muted rounded-md p-0.5">
                                           {(["pass", "fail", "review", "na"] as const).map(s => {
                                             const sc = getStatusConfig(s);
                                             const isCurrentStatus = currentStatus === s;
@@ -786,7 +786,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                               <button
                                                 key={s}
                                                 className={`h-7 px-2.5 text-[10px] font-medium rounded transition-all ${
-                                                  isCurrentStatus ? `${sc.bg} ${sc.color} shadow-sm border` : `text-muted-foreground hover:text-foreground hover:bg-white`
+                                                  isCurrentStatus ? `${sc.bg} ${sc.color} shadow-sm border` : `text-muted-foreground hover:text-foreground hover:bg-card`
                                                 }`}
                                                 onClick={() => {
                                                   if (s === "pass" && (currentStatus === "review" || currentStatus === "fail") && !isQmOrAdmin) return;
@@ -816,7 +816,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                 </div>
 
                                 {isExpanded && (
-                                  <div className="border-t bg-white px-4 py-4 ml-6 mr-4 mb-3 rounded-lg border shadow-sm space-y-5">
+                                  <div className="border-t bg-card px-4 py-4 ml-6 mr-4 mb-3 rounded-lg border shadow-sm space-y-5">
                                     {templateItem.description && (
                                       <div>
                                         <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Description</Label>
@@ -932,7 +932,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                       {itemEvidence.length > 0 && (
                                         <div className="space-y-1.5 mb-3">
                                           {itemEvidence.map((ev: any) => (
-                                            <div key={ev.id} className="flex items-center gap-2 text-xs bg-slate-50 rounded-lg border p-2.5" data-testid={`evidence-${ev.id}`}>
+                                            <div key={ev.id} className="flex items-center gap-2 text-xs bg-muted rounded-lg border p-2.5" data-testid={`evidence-${ev.id}`}>
                                               <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                                               <span className="flex-1 truncate">{ev.evidenceNote || ev.evidenceUrl}</span>
                                               {ev.evidenceUrl && (
@@ -956,7 +956,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                       {canEdit && (
                                         <div
                                           className={`border-2 border-dashed rounded-lg p-5 text-center transition-colors cursor-pointer ${
-                                            dragOverItem === instance.id ? "border-blue-400 bg-blue-50" : "border-slate-200 hover:border-blue-300 hover:bg-blue-50/30"
+                                            dragOverItem === instance.id ? "border-blue-400 bg-blue-50" : "border-border hover:border-blue-300 hover:bg-blue-50/30"
                                           }`}
                                           onDragOver={(e) => { e.preventDefault(); setDragOverItem(instance.id); }}
                                           onDragLeave={() => setDragOverItem(null)}
@@ -1092,7 +1092,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                         </div>
 
                         {canEdit && (
-                          <div className="px-4 py-2 border-t bg-slate-50/50">
+                          <div className="px-4 py-2 border-t bg-muted/50">
                             {showAddItem === group.id ? (
                               <div className="flex items-center gap-2">
                                 <Input

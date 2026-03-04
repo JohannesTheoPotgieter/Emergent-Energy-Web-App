@@ -31,7 +31,7 @@ const PRIORITY_DOT: Record<string, string> = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  "Not Started": "text-gray-600",
+  "Not Started": "text-muted-foreground",
   "In Progress": "text-blue-600",
   Blocked: "text-red-600",
   Done: "text-green-600",
@@ -199,12 +199,12 @@ export default function CalendarView({ projectName, onTaskClick }: CalendarViewP
                                     task.priority === "Urgent" ? "bg-red-100 text-red-800" :
                                     task.priority === "High" ? "bg-orange-100 text-orange-800" :
                                     task.priority === "Low" ? "bg-blue-100 text-blue-800" :
-                                    "bg-gray-100 text-gray-800"
+                                    "bg-muted text-foreground"
                                   }`}>
                                     <Flag className="h-2 w-2 mr-0.5" />
                                     {task.priority}
                                   </Badge>
-                                  <span className={`text-[9px] ${STATUS_COLOR[task.status] || "text-gray-600"}`}>
+                                  <span className={`text-[9px] ${STATUS_COLOR[task.status] || "text-muted-foreground"}`}>
                                     {task.status}
                                   </span>
                                 </div>

@@ -124,7 +124,7 @@ const statusIcon = (s: string) => {
 };
 
 const statusColors: Record<string, string> = {
-  "Not Started": "bg-slate-100 text-slate-600",
+  "Not Started": "bg-muted text-muted-foreground",
   "In Progress": "bg-blue-50 text-blue-700",
   "Blocked": "bg-red-50 text-red-700",
   "Done": "bg-emerald-50 text-emerald-700",
@@ -186,10 +186,10 @@ function InlinePctEditor({ pct, onCommit }: { pct: number; onCommit: (v: number)
       title="Click to edit % complete"
       data-testid="inline-pct-display"
     >
-      <div className="flex-1 h-[6px] rounded-full bg-slate-100 overflow-hidden min-w-[40px]">
+      <div className="flex-1 h-[6px] rounded-full bg-muted overflow-hidden min-w-[40px]">
         <div className={`h-full rounded-full transition-all ${pctColor(pct)}`} style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
-      <span className={`text-[11px] tabular-nums font-semibold min-w-[28px] text-right group-hover:text-primary group-hover:underline ${pct >= 100 ? "text-emerald-600" : pct > 0 ? "text-slate-700" : "text-slate-400"}`}>
+      <span className={`text-[11px] tabular-nums font-semibold min-w-[28px] text-right group-hover:text-primary group-hover:underline ${pct >= 100 ? "text-emerald-600" : pct > 0 ? "text-foreground" : "text-slate-400"}`}>
         {pct}%
       </span>
     </div>
@@ -565,7 +565,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
     switch (col.key) {
       case "taskNumber":
         return (
-          <span className={`font-mono text-[11px] tabular-nums ${hasChildren ? "font-bold text-slate-700" : "text-slate-500"}`}>
+          <span className={`font-mono text-[11px] tabular-nums ${hasChildren ? "font-bold text-foreground" : "text-muted-foreground"}`}>
             {task.taskNumber || ""}
           </span>
         );
@@ -583,8 +583,8 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
                 data-testid={`button-collapse-${task.id}`}
               >
                 {isCollapsed
-                  ? <ChevronRight className="h-3.5 w-3.5 text-slate-500" />
-                  : <ChevronDown className="h-3.5 w-3.5 text-slate-500" />}
+                  ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                  : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
               </button>
             ) : depth > 0 ? (
               <span className="w-5 shrink-0" />
@@ -592,7 +592,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
             <button
               data-testid={`link-task-${task.id}`}
               className={`text-left hover:underline cursor-pointer bg-transparent border-none p-0 truncate leading-tight ${
-                hasChildren ? "font-semibold text-slate-800 text-[13px]" : "font-medium text-slate-700 text-[12.5px]"
+                hasChildren ? "font-semibold text-foreground text-[13px]" : "font-medium text-foreground text-[12.5px]"
               }`}
               onClick={() => onTaskClick(task.id)}
               title={task.title}
@@ -600,7 +600,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
               {task.title}
             </button>
             {hasChildren && (
-              <span className="inline-flex items-center justify-center min-w-[18px] h-[16px] rounded-full bg-slate-200 text-slate-600 text-[9px] font-semibold px-1 shrink-0">
+              <span className="inline-flex items-center justify-center min-w-[18px] h-[16px] rounded-full bg-slate-200 text-muted-foreground text-[9px] font-semibold px-1 shrink-0">
                 {task.childCount}
               </span>
             )}
@@ -611,7 +611,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
         return isAdmin ? (
           <Select value={task.status} onValueChange={v => handleInlineUpdate(task.id, "status", v)}>
             <SelectTrigger data-testid={`select-status-${task.id}`} className="h-7 border-0 shadow-none p-0.5 w-full focus:ring-0">
-              <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${statusColors[task.status] || "bg-slate-100 text-slate-600"}`}>
+              <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${statusColors[task.status] || "bg-muted text-muted-foreground"}`}>
                 {statusIcon(task.status)}
                 <span className="truncate">{task.status}</span>
               </div>
@@ -625,7 +625,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
             </SelectContent>
           </Select>
         ) : (
-          <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${statusColors[task.status] || "bg-slate-100 text-slate-600"}`}>
+          <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${statusColors[task.status] || "bg-muted text-muted-foreground"}`}>
             {statusIcon(task.status)}
             <span className="truncate">{task.status}</span>
           </div>
@@ -635,7 +635,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
         return isAdmin ? (
           <Select value={task.priority} onValueChange={v => handleInlineUpdate(task.id, "priority", v)}>
             <SelectTrigger data-testid={`select-priority-${task.id}`} className="h-7 border-0 shadow-none p-0.5 w-full focus:ring-0">
-              <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600">
+              <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
                 <span className={`w-2 h-2 rounded-full shrink-0 ${priorityDot[task.priority] || "bg-slate-400"}`} />
                 {task.priority}
               </div>
@@ -652,7 +652,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
             </SelectContent>
           </Select>
         ) : (
-          <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600">
+          <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
             <span className={`w-2 h-2 rounded-full shrink-0 ${priorityDot[task.priority] || "bg-slate-400"}`} />
             {task.priority}
           </div>
@@ -661,7 +661,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
       case "escalation": {
         const escLevel = task.escalationLevel || "None";
         const escStyles: Record<string, string> = {
-          None: "bg-slate-50 text-slate-400 border-slate-200",
+          None: "bg-muted text-slate-400 border-border",
           Low: "bg-blue-50 text-blue-600 border-blue-200",
           Medium: "bg-amber-50 text-amber-600 border-amber-200",
           High: "bg-orange-50 text-orange-600 border-orange-200",
@@ -706,7 +706,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
 
       case "plannedStart":
         return (task.isBaseline || !isAdmin) ? (
-          <span className="text-[11px] text-slate-600 tabular-nums">{formatDateCompact(task.startDate)}</span>
+          <span className="text-[11px] text-muted-foreground tabular-nums">{formatDateCompact(task.startDate)}</span>
         ) : (
           <Input type="date" data-testid={`input-planned-start-${task.id}`}
             className="h-7 text-[11px] border-0 shadow-none bg-transparent w-full tabular-nums"
@@ -716,7 +716,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
 
       case "plannedEnd":
         return (task.isBaseline || !isAdmin) ? (
-          <span className="text-[11px] text-slate-600 tabular-nums">{formatDateCompact(task.dueDate)}</span>
+          <span className="text-[11px] text-muted-foreground tabular-nums">{formatDateCompact(task.dueDate)}</span>
         ) : (
           <Input type="date" data-testid={`input-planned-end-${task.id}`}
             className="h-7 text-[11px] border-0 shadow-none bg-transparent w-full tabular-nums"
@@ -726,7 +726,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
 
       case "plannedDuration":
         return (
-          <span className={`text-[11px] tabular-nums ${task.plannedDurationDays ? "text-slate-700 font-medium" : "text-slate-300"}`}>
+          <span className={`text-[11px] tabular-nums ${task.plannedDurationDays ? "text-foreground font-medium" : "text-slate-300"}`}>
             {task.plannedDurationDays ?? "—"}
           </span>
         );
@@ -738,7 +738,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
             defaultValue={formatDateForDisplay(task.actualStartDate)}
             onChange={e => handleInlineUpdate(task.id, "actualStartDate", e.target.value)} />
         ) : (
-          <span className="text-[11px] text-slate-600 tabular-nums">{formatDateCompact(task.actualStartDate)}</span>
+          <span className="text-[11px] text-muted-foreground tabular-nums">{formatDateCompact(task.actualStartDate)}</span>
         );
 
       case "actualEnd":
@@ -748,12 +748,12 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
             defaultValue={formatDateForDisplay(task.actualEndDate)}
             onChange={e => handleInlineUpdate(task.id, "actualEndDate", e.target.value)} />
         ) : (
-          <span className="text-[11px] text-slate-600 tabular-nums">{formatDateCompact(task.actualEndDate)}</span>
+          <span className="text-[11px] text-muted-foreground tabular-nums">{formatDateCompact(task.actualEndDate)}</span>
         );
 
       case "actualDuration":
         return (
-          <span className={`text-[11px] tabular-nums ${task.computedActualDurationDays ? "text-slate-700 font-medium" : "text-slate-300"}`}>
+          <span className={`text-[11px] tabular-nums ${task.computedActualDurationDays ? "text-foreground font-medium" : "text-slate-300"}`}>
             {task.computedActualDurationDays ?? "—"}
           </span>
         );
@@ -779,7 +779,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className={`text-[11px] tabular-nums font-medium ${exp >= 100 ? "text-emerald-600" : "text-slate-600"}`}>
+                <span className={`text-[11px] tabular-nums font-medium ${exp >= 100 ? "text-emerald-600" : "text-muted-foreground"}`}>
                   {exp}%
                 </span>
               </TooltipTrigger>
@@ -809,9 +809,9 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
           );
         }
         return (
-          <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-50 border border-slate-200">
+          <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted border border-border">
             <Minus className="h-3 w-3 text-slate-400" />
-            <span className="text-[10px] font-medium text-slate-500">On track</span>
+            <span className="text-[10px] font-medium text-muted-foreground">On track</span>
           </div>
         );
       }
@@ -819,11 +819,11 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
       case "comment":
         return isAdmin ? (
           <Input data-testid={`input-comment-${task.id}`}
-            className="h-7 text-[11px] border-0 shadow-none bg-transparent text-slate-600 placeholder:text-slate-300"
+            className="h-7 text-[11px] border-0 shadow-none bg-transparent text-muted-foreground placeholder:text-slate-300"
             defaultValue={task.comment || ""} placeholder="Add note..."
             onBlur={e => handleInlineUpdate(task.id, "comment", e.target.value)} />
         ) : (
-          <span className="text-[11px] text-slate-600">{task.comment || "—"}</span>
+          <span className="text-[11px] text-muted-foreground">{task.comment || "—"}</span>
         );
 
       case "source":
@@ -854,7 +854,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
               </span>
               {isAdmin && (
                 <button
-                  className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-slate-600"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-muted-foreground"
                   onClick={async (e) => {
                     e.stopPropagation();
                     const childRows = tasks
@@ -902,30 +902,30 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
     <div data-testid="task-grid-view" className="space-y-3">
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-        <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-white card-hover animate-float-in stagger-1">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-100">
-            <Clock className="h-4 w-4 text-slate-600" />
+        <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-card card-hover animate-float-in stagger-1">
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-muted">
+            <Clock className="h-4 w-4 text-muted-foreground" />
           </div>
           <div>
-            <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Total</p>
-            <p className="text-lg font-bold text-slate-800 leading-none animate-number-pop">{kpis.total}</p>
+            <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Total</p>
+            <p className="text-lg font-bold text-foreground leading-none animate-number-pop">{kpis.total}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-white card-hover animate-float-in stagger-2">
+        <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-card card-hover animate-float-in stagger-2">
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-50">
             <CheckCircle2 className="h-4 w-4 text-emerald-600" />
           </div>
           <div>
-            <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Done</p>
+            <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Done</p>
             <p className="text-lg font-bold text-emerald-700 leading-none animate-number-pop">{kpis.done}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-white card-hover animate-float-in stagger-3">
+        <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border bg-card card-hover animate-float-in stagger-3">
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50">
             <Loader2 className="h-4 w-4 text-blue-600" />
           </div>
           <div>
-            <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Actual %</p>
+            <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Actual %</p>
             <div className="flex items-center gap-1.5">
               <p className="text-lg font-bold text-blue-700 leading-none animate-number-pop">{kpis.avgPct}%</p>
               {kpis.overallDelta !== null && kpis.overallDelta !== 0 && (
@@ -938,7 +938,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
         </div>
         {kpis.avgExpectedPct !== null && (
           <div className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border card-hover animate-float-in stagger-4 ${
-            kpis.overallDelta !== null && kpis.overallDelta < 0 ? "border-amber-200 bg-amber-50/30" : "bg-white"
+            kpis.overallDelta !== null && kpis.overallDelta < 0 ? "border-amber-200 bg-amber-50/30" : "bg-card"
           }`}>
             <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${
               kpis.overallDelta !== null && kpis.overallDelta < 0 ? "bg-amber-100" : "bg-violet-50"
@@ -948,7 +948,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
               }`} />
             </div>
             <div>
-              <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Expected %</p>
+              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Expected %</p>
               <p className={`text-lg font-bold leading-none animate-number-pop ${
                 kpis.overallDelta !== null && kpis.overallDelta < 0 ? "text-amber-700" : "text-violet-700"
               }`}>{kpis.avgExpectedPct}%</p>
@@ -983,11 +983,11 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
       <div className="flex flex-wrap items-center gap-2" data-testid="filter-toolbar">
         <div className="relative flex-1 min-w-[180px] max-w-[260px]">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-          <Input data-testid="input-search" placeholder="Search tasks..." className="pl-8 h-8 text-[12px] bg-white"
+          <Input data-testid="input-search" placeholder="Search tasks..." className="pl-8 h-8 text-[12px] bg-card"
             value={searchText} onChange={e => setSearchText(e.target.value)} />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger data-testid="select-status-filter" className="h-8 w-auto min-w-[120px] text-[12px] bg-white">
+          <SelectTrigger data-testid="select-status-filter" className="h-8 w-auto min-w-[120px] text-[12px] bg-card">
             <div className="flex items-center gap-1.5"><ListFilter className="h-3 w-3 text-slate-400" /><SelectValue /></div>
           </SelectTrigger>
           <SelectContent>
@@ -996,7 +996,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
           </SelectContent>
         </Select>
         <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-          <SelectTrigger data-testid="select-priority-filter" className="h-8 w-auto min-w-[110px] text-[12px] bg-white"><SelectValue /></SelectTrigger>
+          <SelectTrigger data-testid="select-priority-filter" className="h-8 w-auto min-w-[110px] text-[12px] bg-card"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="All">All Priorities</SelectItem>
             {PRIORITIES.map(p => <SelectItem key={p} value={p}><div className="flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${priorityDot[p]}`} />{p}</div></SelectItem>)}
@@ -1103,17 +1103,17 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
       )}
 
       {/* Table */}
-      <div className="border rounded-lg overflow-hidden bg-white shadow-sm animate-fade-in stagger-3">
+      <div className="border rounded-lg overflow-hidden bg-card shadow-sm animate-fade-in stagger-3">
         <div className="overflow-auto" style={{ maxHeight: "calc(100vh - 380px)" }}>
           <Table>
             <TableHeader>
-              <TableRow className="bg-slate-50/80 border-b-2 border-slate-200">
-                <TableHead className="w-9 px-2 sticky top-0 bg-slate-50/80 z-10">
+              <TableRow className="bg-muted/80 border-b-2 border-border">
+                <TableHead className="w-9 px-2 sticky top-0 bg-muted/80 z-10">
                   <Checkbox data-testid="checkbox-select-all" checked={allSelected} onCheckedChange={toggleAll} />
                 </TableHead>
                 {activeColumns.map(col => (
                   <TableHead key={col.key}
-                    className={`text-[10px] font-semibold uppercase tracking-wider text-slate-500 px-2 py-2.5 whitespace-nowrap sticky top-0 bg-slate-50/80 z-10 ${col.align === "center" ? "text-center" : col.align === "right" ? "text-right" : "text-left"}`}
+                    className={`text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-2 py-2.5 whitespace-nowrap sticky top-0 bg-muted/80 z-10 ${col.align === "center" ? "text-center" : col.align === "right" ? "text-right" : "text-left"}`}
                     style={{ width: col.key === "title" ? undefined : col.width, minWidth: col.key === "title" ? "200px" : undefined }}>
                     {col.shortLabel}
                   </TableHead>
@@ -1149,7 +1149,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
                         dragId === task.id ? "opacity-40" : "",
                         dropTargetId === task.id ? "ring-2 ring-indigo-400 ring-inset bg-indigo-50/80" : "",
                         isMsRow ? "bg-indigo-50/60 hover:bg-indigo-100/60 border-l-[3px] border-l-indigo-400" :
-                        hasChildren ? "bg-slate-50/60 hover:bg-slate-100/80" : "hover:bg-slate-50/80",
+                        hasChildren ? "bg-muted/60 hover:bg-muted/80" : "hover:bg-muted/80",
                         !isMsRow && isBehind ? "border-l-[3px] border-l-red-400" : !isMsRow && task.planStatus === "ahead" && !hasChildren ? "border-l-[3px] border-l-emerald-400" : !isMsRow && !hasChildren ? "border-l-[3px] border-l-transparent" : "",
                         isAdmin ? "cursor-grab active:cursor-grabbing" : "",
                       ].join(" ")}>
@@ -1168,7 +1168,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
                 })
               )}
               {isAdmin && (
-                <TableRow data-testid="row-add-task" className="bg-slate-25 border-t-2 border-slate-100">
+                <TableRow data-testid="row-add-task" className="bg-slate-25 border-t-2 border-border">
                   <TableCell className="px-2" />
                   <TableCell colSpan={Math.min(activeColumns.length, 3)} className="px-2 py-2">
                     <div className="flex items-center gap-2">
@@ -1205,7 +1205,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
               data-testid="input-milestone-title"
               autoFocus
             />
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Milestones group related tasks together. Dates and progress are rolled up automatically from subtasks.
             </p>
           </div>
@@ -1227,7 +1227,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
             <DialogTitle>Group Under Milestone</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Group the {selectedIds.size} selected task{selectedIds.size !== 1 ? "s" : ""} under an existing or new milestone:
             </p>
             <div className="flex items-center gap-2">
@@ -1256,12 +1256,12 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
                   {milestones.map((ms: any) => (
                     <button
                       key={ms.id}
-                      className="w-full text-left px-3 py-2.5 rounded-lg border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 transition-colors flex items-center gap-2"
+                      className="w-full text-left px-3 py-2.5 rounded-lg border border-border hover:border-indigo-300 hover:bg-indigo-50/50 transition-colors flex items-center gap-2"
                       onClick={() => handleGroupUnderMilestone(ms.rowNumber)}
                       data-testid={`button-group-under-${ms.id}`}
                     >
                       <Milestone className="h-4 w-4 text-indigo-500 shrink-0" />
-                      <span className="font-medium text-sm text-slate-700">{ms.title}</span>
+                      <span className="font-medium text-sm text-foreground">{ms.title}</span>
                       {ms.childCount > 0 && (
                         <span className="ml-auto text-[10px] text-slate-400">{ms.childCount} tasks</span>
                       )}
@@ -1280,7 +1280,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
             <DialogTitle>Convert to Milestone</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Choose which task becomes the <strong>milestone</strong> (parent). The remaining {selectedTasksForConvert.length > 1 ? `${selectedTasksForConvert.length - 1} tasks` : "task"} will become its subtasks.
             </p>
             <div className="space-y-1.5 max-h-[320px] overflow-y-auto">
@@ -1292,7 +1292,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
                     className={`w-full text-left px-3 py-2.5 rounded-lg border transition-colors flex items-center gap-2 ${
                       isChosen
                         ? "border-indigo-400 bg-indigo-50 ring-1 ring-indigo-300"
-                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50/50"
+                        : "border-border hover:border-border hover:bg-muted/50"
                     }`}
                     onClick={() => setChosenMilestoneId(t.id)}
                     data-testid={`button-choose-milestone-${t.id}`}
@@ -1303,7 +1303,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
                       <Circle className="h-4 w-4 text-slate-300 shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
-                      <span className={`text-sm font-medium truncate block ${isChosen ? "text-indigo-700" : "text-slate-700"}`}>
+                      <span className={`text-sm font-medium truncate block ${isChosen ? "text-indigo-700" : "text-foreground"}`}>
                         {t.title || t.taskName || `Task #${t.id}`}
                       </span>
                       {t.taskNumber && <span className="text-[10px] text-slate-400">#{t.taskNumber}</span>}
@@ -1316,7 +1316,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
               })}
             </div>
             {chosenMilestoneId != null && (
-              <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600 border border-slate-100">
+              <div className="bg-muted rounded-lg px-3 py-2 text-xs text-muted-foreground border border-border">
                 <strong>{tasks.find((t: any) => t.id === chosenMilestoneId)?.title || "Selected task"}</strong> will become a milestone.
                 The other {selectedTasksForConvert.length - 1} task{selectedTasksForConvert.length - 1 !== 1 ? "s" : ""} will be grouped as subtasks underneath.
                 Dates and progress will roll up automatically.

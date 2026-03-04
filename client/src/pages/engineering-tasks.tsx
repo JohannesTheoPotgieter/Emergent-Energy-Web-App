@@ -96,7 +96,7 @@ const TASK_STATUSES = [
 const PRIORITIES = ["Critical", "Urgent", "High", "Medium", "Low"];
 
 const statusColors: Record<string, string> = {
-  "TO DO": "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+  "TO DO": "bg-muted text-foreground dark:bg-gray-800 dark:text-gray-300",
   "IN PROGRESS": "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
   "HOLD": "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
   "NEEDS APPROVAL": "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
@@ -124,7 +124,7 @@ const priorityColors: Record<string, string> = {
   Urgent: "bg-orange-100 text-orange-700",
   High: "bg-amber-100 text-amber-700",
   Medium: "bg-blue-100 text-blue-700",
-  Low: "bg-gray-100 text-gray-600",
+  Low: "bg-muted text-muted-foreground",
 };
 
 const priorityBorderColors: Record<string, string> = {
@@ -315,7 +315,7 @@ function QuickStatusSelect({ task, onStatusChange }: { task: Task; onStatusChang
         onClick={(e) => e.stopPropagation()}
         data-testid={`quick-status-${task.id}`}
       >
-        <Badge className={`text-[9px] px-1.5 py-0 ${statusColors[task.status] || "bg-gray-100"}`}>
+        <Badge className={`text-[9px] px-1.5 py-0 ${statusColors[task.status] || "bg-muted"}`}>
           {task.status}
         </Badge>
       </SelectTrigger>
@@ -489,7 +489,7 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
           {onPriorityChange ? (
             <Select value={task.priority} onValueChange={(v) => { if (v !== task.priority) onPriorityChange(task.id, v); }}>
               <SelectTrigger className="h-5 text-[9px] px-0 w-auto min-w-0 border-none shadow-none bg-transparent p-0 gap-0" data-testid={`card-priority-${task.id}`}>
-                <Badge className={`text-[9px] px-1.5 py-0 leading-tight cursor-pointer hover:ring-1 hover:ring-offset-1 ring-current ${priorityColors[task.priority] || "bg-gray-100"}`}>
+                <Badge className={`text-[9px] px-1.5 py-0 leading-tight cursor-pointer hover:ring-1 hover:ring-offset-1 ring-current ${priorityColors[task.priority] || "bg-muted"}`}>
                   {task.priority}
                 </Badge>
               </SelectTrigger>
@@ -498,7 +498,7 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
               </SelectContent>
             </Select>
           ) : (
-            <Badge className={`text-[9px] px-1.5 py-0 leading-tight ${priorityColors[task.priority] || "bg-gray-100"}`}>
+            <Badge className={`text-[9px] px-1.5 py-0 leading-tight ${priorityColors[task.priority] || "bg-muted"}`}>
               {task.priority}
             </Badge>
           )}
@@ -529,7 +529,7 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
                   </div>
                 ))}
                 {task.assignees.length > 2 && (
-                  <div className="w-5 h-5 rounded-full bg-gray-300 flex items-center justify-center text-[8px] font-bold text-gray-600 ring-1 ring-card">
+                  <div className="w-5 h-5 rounded-full bg-gray-300 flex items-center justify-center text-[8px] font-bold text-muted-foreground ring-1 ring-card">
                     +{task.assignees.length - 2}
                   </div>
                 )}
@@ -925,7 +925,7 @@ function TaskDetailDrawer({
       <div className="relative w-full max-w-full sm:max-w-2xl bg-background border-l shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-2 min-w-0">
-            <Badge className={`text-[10px] shrink-0 ${statusColors[task.status] || "bg-gray-100"}`}>{task.status}</Badge>
+            <Badge className={`text-[10px] shrink-0 ${statusColors[task.status] || "bg-muted"}`}>{task.status}</Badge>
             <span className="text-sm text-muted-foreground truncate">{projectDisplay}</span>
             {task.taskTypeTag === "PROJECT" && <Badge variant="outline" className="text-[9px]">Project</Badge>}
           </div>
@@ -1300,7 +1300,7 @@ function TaskDetailDrawer({
               {taskDeliverables.length > 0 && (
                 <div className="space-y-2 max-h-[200px] overflow-y-auto">
                   {taskDeliverables.map((del: any) => (
-                    <div key={del.id} className="p-2 bg-white dark:bg-gray-900 rounded border text-xs space-y-1" data-testid={`deliverable-item-${del.id}`}>
+                    <div key={del.id} className="p-2 bg-card dark:bg-gray-900 rounded border text-xs space-y-1" data-testid={`deliverable-item-${del.id}`}>
                       <div className="flex items-center justify-between gap-2">
                         <a
                           href={`/api/eng/deliverables/${del.id}/download`}
@@ -1671,7 +1671,7 @@ function TaskDetailDrawer({
                         )}
                       </button>
                       <span className={`flex-1 truncate ${st.status === "COMPLETE" ? "line-through text-muted-foreground" : ""}`}>{st.title}</span>
-                      <Badge className={`text-[9px] ${statusColors[st.status] || "bg-gray-100"}`}>{st.status}</Badge>
+                      <Badge className={`text-[9px] ${statusColors[st.status] || "bg-muted"}`}>{st.status}</Badge>
                     </div>
                   ))
                 )}
@@ -1759,7 +1759,7 @@ function TaskDetailDrawer({
 }
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
-  P0_FIRST_ASSESSMENT: { bg: "bg-slate-50 dark:bg-slate-900/30", text: "text-slate-700 dark:text-slate-300", accent: "bg-slate-500" },
+  P0_FIRST_ASSESSMENT: { bg: "bg-muted dark:bg-slate-900/30", text: "text-foreground dark:text-slate-300", accent: "bg-slate-500" },
   P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-50 dark:bg-violet-900/30", text: "text-violet-700 dark:text-violet-300", accent: "bg-violet-500" },
   P2_PD_PM_HANDOVER: { bg: "bg-indigo-50 dark:bg-indigo-900/30", text: "text-indigo-700 dark:text-indigo-300", accent: "bg-indigo-500" },
   P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-50 dark:bg-blue-900/30", text: "text-blue-700 dark:text-blue-300", accent: "bg-blue-500" },
@@ -2009,7 +2009,7 @@ function ProjectKanbanView({
                                       >
                                         <p className="font-medium leading-tight line-clamp-2 mb-1">{task.title}</p>
                                         <div className="flex items-center gap-1 flex-wrap">
-                                          <Badge className={`text-[8px] px-1 py-0 ${priorityColors[task.priority] || "bg-gray-100"}`}>
+                                          <Badge className={`text-[8px] px-1 py-0 ${priorityColors[task.priority] || "bg-muted"}`}>
                                             {task.priority}
                                           </Badge>
                                           {task.dueDate && (
@@ -2137,7 +2137,7 @@ function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }
                   <td className="p-2" onClick={(e) => e.stopPropagation()}>
                     <Select value={task.status} onValueChange={(v) => onStatusChange(task.id, v)}>
                       <SelectTrigger className="h-7 text-[10px] w-[130px] border-none shadow-none p-0" data-testid={`inline-status-${task.id}`}>
-                        <Badge className={`text-[10px] ${statusColors[task.status] || "bg-gray-100"}`}>{task.status}</Badge>
+                        <Badge className={`text-[10px] ${statusColors[task.status] || "bg-muted"}`}>{task.status}</Badge>
                       </SelectTrigger>
                       <SelectContent>
                         {TASK_STATUSES.map(s => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
@@ -2147,7 +2147,7 @@ function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }
                   <td className="p-2" onClick={(e) => e.stopPropagation()}>
                     <Select value={task.priority} onValueChange={(v) => onPriorityChange(task.id, v)}>
                       <SelectTrigger className="h-7 text-[10px] w-[90px] border-none shadow-none p-0" data-testid={`inline-priority-${task.id}`}>
-                        <Badge className={`text-[10px] ${priorityColors[task.priority] || "bg-gray-100"}`}>{task.priority}</Badge>
+                        <Badge className={`text-[10px] ${priorityColors[task.priority] || "bg-muted"}`}>{task.priority}</Badge>
                       </SelectTrigger>
                       <SelectContent>
                         {PRIORITIES.map(p => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}
@@ -2283,7 +2283,7 @@ function MyTasksView({
       { key: "due-soon", label: "Due Today / Due Soon", icon: <Timer className="h-4 w-4 text-amber-500" />, tasks: dueSoon, color: "border-l-amber-500 bg-amber-50/30 dark:bg-amber-950/10" },
       { key: "hold", label: "On Hold", icon: <PauseCircle className="h-4 w-4 text-red-400" />, tasks: hold, color: "border-l-red-400 bg-red-50/20 dark:bg-red-950/10" },
       { key: "in-progress", label: "In Progress", icon: <ArrowRight className="h-4 w-4 text-blue-500" />, tasks: inProgress, color: "border-l-blue-500 bg-blue-50/30 dark:bg-blue-950/10" },
-      { key: "everything-else", label: "Everything Else", icon: <Circle className="h-4 w-4 text-gray-400" />, tasks: rest, color: "border-l-gray-400 bg-gray-50/30 dark:bg-gray-800/10" },
+      { key: "everything-else", label: "Everything Else", icon: <Circle className="h-4 w-4 text-gray-400" />, tasks: rest, color: "border-l-gray-400 bg-muted/30 dark:bg-gray-800/10" },
     ];
   }, [filteredMyTasks]);
 
@@ -2439,7 +2439,7 @@ function MyTasksView({
                             <td className="p-2" onClick={e => e.stopPropagation()}>
                               <Select value={task.status} onValueChange={v => { if (v !== task.status) onStatusChange(task.id, v); }}>
                                 <SelectTrigger className="h-7 text-[10px] w-[130px] border-none shadow-none p-0" data-testid={`my-task-status-${task.id}`}>
-                                  <Badge className={`text-[10px] ${statusColors[task.status] || "bg-gray-100"}`}>{task.status}</Badge>
+                                  <Badge className={`text-[10px] ${statusColors[task.status] || "bg-muted"}`}>{task.status}</Badge>
                                 </SelectTrigger>
                                 <SelectContent>
                                   {TASK_STATUSES.map(s => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
@@ -2449,7 +2449,7 @@ function MyTasksView({
                             <td className="p-2" onClick={e => e.stopPropagation()}>
                               <Select value={task.priority} onValueChange={v => { if (v !== task.priority) onPriorityChange(task.id, v); }}>
                                 <SelectTrigger className="h-7 text-[10px] w-[90px] border-none shadow-none p-0" data-testid={`my-task-priority-${task.id}`}>
-                                  <Badge className={`text-[10px] ${priorityColors[task.priority] || "bg-gray-100"}`}>{task.priority}</Badge>
+                                  <Badge className={`text-[10px] ${priorityColors[task.priority] || "bg-muted"}`}>{task.priority}</Badge>
                                 </SelectTrigger>
                                 <SelectContent>
                                   {PRIORITIES.map(p => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}
@@ -2546,7 +2546,7 @@ function MyTasksView({
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <Select value={task.status} onValueChange={v => { if (v !== task.status) onStatusChange(task.id, v); }}>
                             <SelectTrigger className="h-6 text-[10px] w-auto min-w-0 border-none shadow-none p-0" data-testid={`my-task-status-${task.id}`}>
-                              <Badge className={`text-[10px] ${statusColors[task.status] || "bg-gray-100"}`}>{task.status}</Badge>
+                              <Badge className={`text-[10px] ${statusColors[task.status] || "bg-muted"}`}>{task.status}</Badge>
                             </SelectTrigger>
                             <SelectContent>
                               {TASK_STATUSES.map(s => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
@@ -2554,7 +2554,7 @@ function MyTasksView({
                           </Select>
                           <Select value={task.priority} onValueChange={v => { if (v !== task.priority) onPriorityChange(task.id, v); }}>
                             <SelectTrigger className="h-6 text-[10px] w-auto min-w-0 border-none shadow-none p-0" data-testid={`my-task-priority-${task.id}`}>
-                              <Badge className={`text-[10px] ${priorityColors[task.priority] || "bg-gray-100"}`}>{task.priority}</Badge>
+                              <Badge className={`text-[10px] ${priorityColors[task.priority] || "bg-muted"}`}>{task.priority}</Badge>
                             </SelectTrigger>
                             <SelectContent>
                               {PRIORITIES.map(p => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}

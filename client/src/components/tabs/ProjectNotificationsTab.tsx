@@ -35,7 +35,7 @@ const EVENT_ICONS: Record<string, { icon: typeof Bell; color: string }> = {
 };
 
 function getEventIcon(eventType: string) {
-  return EVENT_ICONS[eventType] || { icon: Bell, color: "text-gray-600 bg-gray-50" };
+  return EVENT_ICONS[eventType] || { icon: Bell, color: "text-muted-foreground bg-muted" };
 }
 
 export function ProjectNotificationsTab({ projectName }: { projectName: string }) {

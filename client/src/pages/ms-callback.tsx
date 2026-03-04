@@ -26,10 +26,10 @@ export default function MsCallbackPage() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white" data-testid="page-ms-callback">
+    <div className="min-h-screen flex items-center justify-center bg-card" data-testid="page-ms-callback">
       <div className="text-center space-y-3">
         <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto" />
-        <p className="text-sm text-gray-500">Completing sign in...</p>
+        <p className="text-sm text-muted-foreground">Completing sign in...</p>
       </div>
     </div>
   );

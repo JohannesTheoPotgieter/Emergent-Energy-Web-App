@@ -67,7 +67,7 @@ const severityColors: Record<string, { bg: string; text: string; border: string 
 const statusColors: Record<string, string> = {
   active: "bg-green-100 text-green-700",
   monitoring: "bg-yellow-100 text-yellow-700",
-  closed: "bg-gray-100 text-gray-600",
+  closed: "bg-muted text-muted-foreground",
 };
 
 const emptyPriorityForm: PriorityFormData = {
@@ -250,10 +250,10 @@ export default function MyToolAdminSettingsPage() {
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto" data-testid="mytool-admin-settings-page">
       <header>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-50" data-testid="text-page-title">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground dark:text-gray-50" data-testid="text-page-title">
           My Tool — Administration
         </h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage global settings and company priorities</p>
+        <p className="text-sm text-muted-foreground dark:text-gray-400 mt-1">Manage global settings and company priorities</p>
       </header>
 
       <Card data-testid="card-feature-settings">
@@ -379,16 +379,16 @@ export default function MyToolAdminSettingsPage() {
                     />
                   ) : (
                     <div
-                      className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                      className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted  transition-colors"
                       data-testid={`priority-row-${p.id}`}
                     >
                       <SeverityBadge severity={p.severity} />
                       <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium text-gray-800 dark:text-gray-200" data-testid={`text-priority-title-${p.id}`}>
+                        <span className="text-sm font-medium text-foreground dark:text-gray-200" data-testid={`text-priority-title-${p.id}`}>
                           {p.title}
                         </span>
                         {p.description && (
-                          <p className="text-xs text-gray-500 truncate mt-0.5" data-testid={`text-priority-desc-${p.id}`}>
+                          <p className="text-xs text-muted-foreground truncate mt-0.5" data-testid={`text-priority-desc-${p.id}`}>
                             {p.description}
                           </p>
                         )}

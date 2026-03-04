@@ -64,13 +64,13 @@ function formatCurrencyFull(value: number): string {
 }
 
 function ragColor(rag: string | null): string {
-  if (!rag) return "bg-slate-100 text-slate-500 border-slate-200";
+  if (!rag) return "bg-muted text-muted-foreground border-border";
   const colors: Record<string, string> = {
     Green: "bg-emerald-50 text-emerald-700 border-emerald-200",
     Amber: "bg-amber-50 text-amber-700 border-amber-200",
     Red: "bg-red-50 text-red-700 border-red-200",
   };
-  return colors[rag] || "bg-slate-50 text-slate-600 border-slate-200";
+  return colors[rag] || "bg-muted text-muted-foreground border-border";
 }
 
 function formatDate(dateStr: string | null): string {
@@ -79,7 +79,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 function ScheduleHealthBadge({ actual, expected }: { actual: number | null; expected: number | null }) {
-  if (actual === null) return <Badge variant="outline" className="text-[10px] text-slate-400 border-slate-200">No plan</Badge>;
+  if (actual === null) return <Badge variant="outline" className="text-[10px] text-slate-400 border-border">No plan</Badge>;
   const diff = expected !== null ? Math.round((actual - expected) * 100) : null;
   if (diff === null) return <Badge variant="outline" className="text-[10px]">{Math.round(actual * 100)}%</Badge>;
   if (diff >= 0) {
@@ -106,7 +106,7 @@ function DualProgressBar({ actual, expected, height = "h-2.5" }: {
   const barColor = isBehind ? "bg-red-500" : isAhead ? "bg-emerald-500" : "bg-blue-500";
 
   return (
-    <div className={`w-full ${height} bg-slate-100 rounded-full overflow-hidden relative`}>
+    <div className={`w-full ${height} bg-muted rounded-full overflow-hidden relative`}>
       {expectedPct !== null && (
         <div
           className="absolute top-0 h-full rounded-full border-r-2 border-dashed border-slate-400/60 bg-slate-200/50"
@@ -126,7 +126,7 @@ function FinanceBar({ value, max, color, height = "h-2" }: {
 }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
   return (
-    <div className={`w-full ${height} bg-slate-100 rounded-full overflow-hidden`}>
+    <div className={`w-full ${height} bg-muted rounded-full overflow-hidden`}>
       <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
     </div>
   );
@@ -371,11 +371,11 @@ export default function ExecutionBoard() {
       {executionProjects.length === 0 ? (
         <Card className="shadow-sm" data-testid="empty-state">
           <CardContent className="flex flex-col items-center justify-center py-20 gap-4">
-            <div className="rounded-full bg-slate-50 p-5">
+            <div className="rounded-full bg-muted p-5">
               <Building2 className="w-10 h-10 text-slate-300" />
             </div>
             <div className="text-center max-w-md">
-              <p className="text-sm font-medium text-slate-600 mb-1">No projects in execution yet</p>
+              <p className="text-sm font-medium text-muted-foreground mb-1">No projects in execution yet</p>
               <p className="text-xs text-muted-foreground">
                 Projects require signed evidence and admin approval to enter execution.
               </p>
@@ -462,7 +462,7 @@ export default function ExecutionBoard() {
                     )}
                   </div>
 
-                  <div className={`flex items-center justify-center w-7 h-7 rounded-full transition-colors ${isExpanded ? "bg-blue-50 text-blue-600" : "text-muted-foreground hover:bg-slate-50"}`}>
+                  <div className={`flex items-center justify-center w-7 h-7 rounded-full transition-colors ${isExpanded ? "bg-blue-50 text-blue-600" : "text-muted-foreground hover:bg-muted"}`}>
                     {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                   </div>
                 </div>
@@ -481,9 +481,9 @@ export default function ExecutionBoard() {
                 </div>
 
                 {isExpanded && (
-                  <div className="border-t bg-slate-50/60 px-3 sm:px-5 py-4 sm:py-5">
+                  <div className="border-t bg-muted/60 px-3 sm:px-5 py-4 sm:py-5">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                      <div className="rounded-xl bg-white border shadow-sm p-4 space-y-3">
+                      <div className="rounded-xl bg-card border shadow-sm p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
@@ -525,7 +525,7 @@ export default function ExecutionBoard() {
                         )}
                       </div>
 
-                      <div className="rounded-xl bg-white border shadow-sm p-4 space-y-3">
+                      <div className="rounded-xl bg-card border shadow-sm p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -560,7 +560,7 @@ export default function ExecutionBoard() {
                         )}
                       </div>
 
-                      <div className="rounded-xl bg-white border shadow-sm p-4 space-y-3">
+                      <div className="rounded-xl bg-card border shadow-sm p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
@@ -595,7 +595,7 @@ export default function ExecutionBoard() {
                         )}
                       </div>
 
-                      <div className="rounded-xl bg-white border shadow-sm p-4 space-y-3">
+                      <div className="rounded-xl bg-card border shadow-sm p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <div className={`w-1.5 h-1.5 rounded-full ${(projectGP ?? 0) >= 20 ? "bg-emerald-500" : (projectGP ?? 0) >= 0 ? "bg-amber-500" : "bg-red-500"}`} />

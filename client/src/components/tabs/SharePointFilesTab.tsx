@@ -43,7 +43,7 @@ function getFileIcon(name: string, mimeType?: string) {
   if (["jpg", "jpeg", "png", "gif", "svg", "webp"].includes(ext || "")) return <ImageIcon className="h-5 w-5 text-purple-600" />;
   if (["mp4", "avi", "mov", "mkv"].includes(ext || "")) return <Film className="h-5 w-5 text-orange-600" />;
   if (mimeType?.startsWith("image/")) return <ImageIcon className="h-5 w-5 text-purple-600" />;
-  return <File className="h-5 w-5 text-gray-500" />;
+  return <File className="h-5 w-5 text-muted-foreground" />;
 }
 
 interface BreadcrumbItem {
@@ -123,7 +123,7 @@ export function SharePointFilesTab({ projectName }: { projectName: string }) {
   }
 
   return (
-    <div className="border rounded-lg overflow-hidden bg-white" data-testid="sharepoint-files-tab">
+    <div className="border rounded-lg overflow-hidden bg-card" data-testid="sharepoint-files-tab">
       <div className="flex items-center justify-between px-4 py-2.5 bg-[#292929] text-white">
         <div className="flex items-center gap-2">
           <HardDrive className="h-4 w-4 text-blue-400" />
@@ -141,7 +141,7 @@ export function SharePointFilesTab({ projectName }: { projectName: string }) {
         </Button>
       </div>
 
-      <div className="flex items-center gap-1 px-4 py-2 border-b bg-gray-50/50 text-xs">
+      <div className="flex items-center gap-1 px-4 py-2 border-b bg-muted/50 text-xs">
         <button
           className="text-blue-600 hover:underline font-medium"
           onClick={() => setFolderStack([])}
@@ -176,7 +176,7 @@ export function SharePointFilesTab({ projectName }: { projectName: string }) {
           <div>
             {folderStack.length > 0 && (
               <div
-                className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b"
+                className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted cursor-pointer border-b"
                 onClick={navigateUp}
                 data-testid="button-folder-up"
               >
@@ -204,7 +204,7 @@ export function SharePointFilesTab({ projectName }: { projectName: string }) {
             {files.map((f: any) => (
               <div
                 key={f.id}
-                className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50/50 border-b transition-colors"
+                className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/50 border-b transition-colors"
                 data-testid={`file-${f.id}`}
               >
                 {getFileIcon(f.name, f.mimeType)}

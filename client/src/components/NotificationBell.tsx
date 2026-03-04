@@ -156,17 +156,17 @@ export function NotificationBell() {
                         {n.body && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-3">{n.body}</p>}
 
                         {isConfirmation && isExpanded && details && (
-                          <div className="mt-2 p-2 bg-slate-50 rounded border border-slate-100 text-[11px] space-y-1">
-                            <p className="font-medium text-slate-600">Change Details:</p>
-                            <p><span className="text-slate-500">Project:</span> {details.projectName}</p>
-                            <p><span className="text-slate-500">Changed by:</span> {details.changedBy}</p>
-                            <p><span className="text-slate-500">Time:</span> {new Date(details.timestamp).toLocaleString()}</p>
+                          <div className="mt-2 p-2 bg-muted rounded border border-border text-[11px] space-y-1">
+                            <p className="font-medium text-muted-foreground">Change Details:</p>
+                            <p><span className="text-muted-foreground">Project:</span> {details.projectName}</p>
+                            <p><span className="text-muted-foreground">Changed by:</span> {details.changedBy}</p>
+                            <p><span className="text-muted-foreground">Time:</span> {new Date(details.timestamp).toLocaleString()}</p>
                             {details.changes?.map((c: any, i: number) => (
-                              <div key={i} className="pl-2 border-l-2 border-slate-200 mt-1">
-                                {c.field && <p><span className="text-slate-500">Field:</span> {c.field}</p>}
-                                {c.newValue && <p><span className="text-slate-500">New value:</span> {c.newValue}</p>}
-                                {c.operation && <p><span className="text-slate-500">Operation:</span> {c.operation}</p>}
-                                {c.tasks?.length > 0 && <p><span className="text-slate-500">Tasks:</span> {c.tasks.join(", ")}</p>}
+                              <div key={i} className="pl-2 border-l-2 border-border mt-1">
+                                {c.field && <p><span className="text-muted-foreground">Field:</span> {c.field}</p>}
+                                {c.newValue && <p><span className="text-muted-foreground">New value:</span> {c.newValue}</p>}
+                                {c.operation && <p><span className="text-muted-foreground">Operation:</span> {c.operation}</p>}
+                                {c.tasks?.length > 0 && <p><span className="text-muted-foreground">Tasks:</span> {c.tasks.join(", ")}</p>}
                               </div>
                             ))}
                           </div>

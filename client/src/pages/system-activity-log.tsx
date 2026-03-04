@@ -23,7 +23,7 @@ const SOURCE_COLORS: Record<string, string> = {
   IMPORT: "bg-blue-100 text-blue-700", MANUAL_EDIT: "bg-green-100 text-green-700",
   OVERRIDE: "bg-amber-100 text-amber-700", CONFLICT_RESOLUTION: "bg-purple-100 text-purple-700",
   PATTERN_LEARNING: "bg-cyan-100 text-cyan-700", COUNTERPARTY_UPDATE: "bg-pink-100 text-pink-700",
-  SYSTEM: "bg-gray-100 text-gray-700", UI: "bg-emerald-100 text-emerald-700",
+  SYSTEM: "bg-muted text-foreground", UI: "bg-emerald-100 text-emerald-700",
   SETTINGS: "bg-orange-100 text-orange-700", DOCS: "bg-indigo-100 text-indigo-700",
 };
 

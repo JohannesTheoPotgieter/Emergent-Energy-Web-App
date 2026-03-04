@@ -821,9 +821,9 @@ function EngStageInlineCard({ template, expanded, onToggleExpand, onToggleActive
               <span className="font-medium text-purple-800">Consulted:</span>
               <span className="ml-1 text-purple-600">{template.raciConsulted}</span>
             </div>
-            <div className="p-2 bg-gray-50 rounded">
-              <span className="font-medium text-gray-800">Informed:</span>
-              <span className="ml-1 text-gray-600">{template.raciInformed}</span>
+            <div className="p-2 bg-muted rounded">
+              <span className="font-medium text-foreground">Informed:</span>
+              <span className="ml-1 text-muted-foreground">{template.raciInformed}</span>
             </div>
           </div>
 

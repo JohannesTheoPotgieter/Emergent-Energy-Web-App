@@ -153,11 +153,11 @@ function CounterpartiesSection() {
       </div>
 
       {showAdd && (
-        <Card className="bg-white" data-testid="counterparty-form">
+        <Card className="bg-card" data-testid="counterparty-form">
           <CardContent className="pt-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className="text-xs font-medium text-slate-600 mb-1 block">Name</label>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Name</label>
                 <Input
                   value={form.nameCanonical}
                   onChange={e => setForm(p => ({ ...p, nameCanonical: e.target.value }))}
@@ -166,7 +166,7 @@ function CounterpartiesSection() {
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-600 mb-1 block">Default Type</label>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Default Type</label>
                 <Select value={form.typeDefault} onValueChange={v => setForm(p => ({ ...p, typeDefault: v }))}>
                   <SelectTrigger data-testid="select-cp-type"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -182,15 +182,15 @@ function CounterpartiesSection() {
                     type="checkbox"
                     checked={form.isCore}
                     onChange={e => setForm(p => ({ ...p, isCore: e.target.checked }))}
-                    className="rounded border-slate-300"
+                    className="rounded border-border"
                     data-testid="checkbox-cp-core"
                   />
-                  <span className="text-xs font-medium text-slate-600">Core Vendor</span>
+                  <span className="text-xs font-medium text-muted-foreground">Core Vendor</span>
                 </label>
               </div>
             </div>
             <div className="mt-3">
-              <label className="text-xs font-medium text-slate-600 mb-1 block">Aliases (alternate names)</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Aliases (alternate names)</label>
               <div className="flex gap-2 items-center">
                 <Input
                   value={form.aliasInput}
@@ -233,28 +233,28 @@ function CounterpartiesSection() {
       {isLoading ? (
         <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
       ) : filtered.length === 0 ? (
-        <Card className="bg-white">
-          <CardContent className="py-8 text-center text-slate-500" data-testid="text-no-counterparties">
+        <Card className="bg-card">
+          <CardContent className="py-8 text-center text-muted-foreground" data-testid="text-no-counterparties">
             No counterparties found. Add one to start tracking vendors and suppliers.
           </CardContent>
         </Card>
       ) : (
-        <div className="border border-slate-200 rounded-lg overflow-hidden">
+        <div className="border border-border rounded-lg overflow-hidden">
           <table className="w-full text-sm" data-testid="counterparties-table">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="text-left px-4 py-2 font-medium text-slate-600">Name</th>
-                <th className="text-left px-4 py-2 font-medium text-slate-600">Type</th>
-                <th className="text-left px-4 py-2 font-medium text-slate-600">Aliases</th>
-                <th className="text-left px-4 py-2 font-medium text-slate-600">Core</th>
-                <th className="text-left px-4 py-2 font-medium text-slate-600">Last Seen</th>
-                <th className="text-left px-4 py-2 font-medium text-slate-600">Actions</th>
+              <tr className="bg-muted border-b border-border">
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Name</th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Type</th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Aliases</th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Core</th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Last Seen</th>
+                <th className="text-left px-4 py-2 font-medium text-muted-foreground">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((cp: any) => (
-                <tr key={cp.id} className="border-b border-slate-100 hover:bg-slate-50" data-testid={`cp-row-${cp.id}`}>
-                  <td className="px-4 py-2 font-medium text-slate-800">{cp.nameCanonical}</td>
+                <tr key={cp.id} className="border-b border-border hover:bg-muted" data-testid={`cp-row-${cp.id}`}>
+                  <td className="px-4 py-2 font-medium text-foreground">{cp.nameCanonical}</td>
                   <td className="px-4 py-2">
                     <Badge
                       variant={cp.typeDefault === "INSTALLER" ? "default" : cp.typeDefault === "SUPPLIER" ? "secondary" : "outline"}
@@ -267,7 +267,7 @@ function CounterpartiesSection() {
                     <div className="flex flex-wrap gap-1">
                       {Array.isArray(cp.nameAliases) && cp.nameAliases.length > 0
                         ? cp.nameAliases.map((a: string, i: number) => (
-                            <Badge key={i} variant="outline" className="text-[10px] text-slate-500">{a}</Badge>
+                            <Badge key={i} variant="outline" className="text-[10px] text-muted-foreground">{a}</Badge>
                           ))
                         : <span className="text-xs text-slate-400">--</span>}
                     </div>
@@ -275,7 +275,7 @@ function CounterpartiesSection() {
                   <td className="px-4 py-2">
                     {cp.isCore ? <Star className="w-4 h-4 text-amber-500 fill-amber-500" /> : <span className="text-xs text-slate-400">--</span>}
                   </td>
-                  <td className="px-4 py-2 text-xs text-slate-500">
+                  <td className="px-4 py-2 text-xs text-muted-foreground">
                     {cp.lastSeenAt ? new Date(cp.lastSeenAt).toLocaleDateString() : "--"}
                   </td>
                   <td className="px-4 py-2 flex gap-1">
@@ -482,37 +482,37 @@ export default function InvoicePatternsPage() {
         <TabsContent value="patterns" className="space-y-4 mt-4">
           {patternStats && (
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3" data-testid="pattern-stats-panel">
-              <Card className="bg-white">
+              <Card className="bg-card">
                 <CardContent className="pt-4 pb-3 px-4">
-                  <div className="text-xs text-slate-500 mb-1">Eligible Lines</div>
+                  <div className="text-xs text-muted-foreground mb-1">Eligible Lines</div>
                   <div className="text-xl font-bold" data-testid="stat-eligible">{patternStats.eligibleLines}</div>
                   <div className="text-[10px] text-slate-400">with invoice & amount</div>
                 </CardContent>
               </Card>
-              <Card className="bg-white">
+              <Card className="bg-card">
                 <CardContent className="pt-4 pb-3 px-4">
-                  <div className="text-xs text-slate-500 mb-1">Tagged</div>
+                  <div className="text-xs text-muted-foreground mb-1">Tagged</div>
                   <div className="text-xl font-bold text-green-600" data-testid="stat-tagged">{patternStats.taggedLines}</div>
                   <div className="text-[10px] text-slate-400">pattern matched</div>
                 </CardContent>
               </Card>
-              <Card className="bg-white">
+              <Card className="bg-card">
                 <CardContent className="pt-4 pb-3 px-4">
-                  <div className="text-xs text-slate-500 mb-1">Untagged</div>
+                  <div className="text-xs text-muted-foreground mb-1">Untagged</div>
                   <div className="text-xl font-bold text-amber-600" data-testid="stat-untagged">{patternStats.untaggedLines}</div>
                   <div className="text-[10px] text-slate-400">awaiting classification</div>
                 </CardContent>
               </Card>
-              <Card className="bg-white">
+              <Card className="bg-card">
                 <CardContent className="pt-4 pb-3 px-4">
-                  <div className="text-xs text-slate-500 mb-1">Classification Rate</div>
+                  <div className="text-xs text-muted-foreground mb-1">Classification Rate</div>
                   <div className="text-xl font-bold" data-testid="stat-rate">{patternStats.classificationRate}%</div>
                   <div className="text-[10px] text-slate-400">tagged / eligible</div>
                 </CardContent>
               </Card>
-              <Card className="bg-white">
+              <Card className="bg-card">
                 <CardContent className="pt-4 pb-3 px-4">
-                  <div className="text-xs text-slate-500 mb-1">Type Breakdown</div>
+                  <div className="text-xs text-muted-foreground mb-1">Type Breakdown</div>
                   <div className="flex flex-wrap gap-1 mt-1" data-testid="stat-types">
                     {Object.entries(patternStats.typeCounts || {}).map(([type, count]) => (
                       <Badge key={type} variant={type === "INSTALLER" ? "default" : type === "SUPPLIER" ? "secondary" : "outline"}
@@ -568,8 +568,8 @@ export default function InvoicePatternsPage() {
                     <div className="font-medium text-emerald-800 text-sm mb-1">Analysis Complete</div>
                     <div className="text-xs text-emerald-700">{lastRunResult.message}</div>
                     <div className="flex flex-wrap gap-3 mt-2 text-xs">
-                      <span className="text-slate-600">Eligible: <strong>{lastRunResult.totalEligible}</strong></span>
-                      <span className="text-slate-600">Already tagged: <strong>{lastRunResult.alreadyTagged}</strong></span>
+                      <span className="text-muted-foreground">Eligible: <strong>{lastRunResult.totalEligible}</strong></span>
+                      <span className="text-muted-foreground">Already tagged: <strong>{lastRunResult.alreadyTagged}</strong></span>
                       <span className="text-green-700">Newly classified: <strong>{lastRunResult.newlyClassified}</strong></span>
                       <span className="text-blue-700">Auto-applied: <strong>{lastRunResult.autoApplied}</strong></span>
                       <span className="text-amber-700">Unresolved: <strong>{lastRunResult.unresolved}</strong></span>
@@ -586,11 +586,11 @@ export default function InvoicePatternsPage() {
           )}
 
           {showAdd && (
-            <Card className="bg-white" data-testid="add-rule-form">
+            <Card className="bg-card" data-testid="add-rule-form">
               <CardContent className="pt-4">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div>
-                    <label className="text-xs font-medium text-slate-600 mb-1 block">Pattern Type</label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Pattern Type</label>
                     <Select value={newRule.patternType} onValueChange={v => setNewRule(p => ({ ...p, patternType: v }))}>
                       <SelectTrigger data-testid="select-pattern-type"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -601,12 +601,12 @@ export default function InvoicePatternsPage() {
                     </Select>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-slate-600 mb-1 block">Pattern Value</label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Pattern Value</label>
                     <Input value={newRule.patternValue} onChange={e => setNewRule(p => ({ ...p, patternValue: e.target.value }))}
                       placeholder="e.g. NRG-" data-testid="input-pattern-value" />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-slate-600 mb-1 block">Inferred Type</label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Inferred Type</label>
                     <Select value={newRule.inferredType} onValueChange={v => setNewRule(p => ({ ...p, inferredType: v }))}>
                       <SelectTrigger data-testid="select-inferred-type"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -617,18 +617,18 @@ export default function InvoicePatternsPage() {
                     </Select>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-slate-600 mb-1 block">Confidence Weight</label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Confidence Weight</label>
                     <Input type="number" value={newRule.confidenceWeight}
                       onChange={e => setNewRule(p => ({ ...p, confidenceWeight: parseInt(e.target.value) || 50 }))}
                       data-testid="input-confidence-weight" />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-slate-600 mb-1 block">Counterparty (optional)</label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Counterparty (optional)</label>
                     <Input value={newRule.counterpartyName} onChange={e => setNewRule(p => ({ ...p, counterpartyName: e.target.value }))}
                       placeholder="Vendor name" data-testid="input-counterparty-name" />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-slate-600 mb-1 block">Example Invoice #</label>
+                    <label className="text-xs font-medium text-muted-foreground mb-1 block">Example Invoice #</label>
                     <Input value={newRule.normalizedExample} onChange={e => setNewRule(p => ({ ...p, normalizedExample: e.target.value }))}
                       placeholder="e.g. NRG-2024-001" data-testid="input-example" />
                   </div>
@@ -649,31 +649,31 @@ export default function InvoicePatternsPage() {
           {isLoading ? (
             <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>
           ) : filtered.length === 0 ? (
-            <Card className="bg-white">
-              <CardContent className="py-8 text-center text-slate-500">
+            <Card className="bg-card">
+              <CardContent className="py-8 text-center text-muted-foreground">
                 No pattern rules found. Create one to start auto-classifying invoices.
               </CardContent>
             </Card>
           ) : (
-            <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="border border-border rounded-lg overflow-hidden">
               <table className="w-full text-sm" data-testid="patterns-table">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200">
-                    <th className="text-left px-4 py-2 font-medium text-slate-600">Pattern</th>
-                    <th className="text-left px-4 py-2 font-medium text-slate-600">Type</th>
-                    <th className="text-left px-4 py-2 font-medium text-slate-600">Inferred</th>
-                    <th className="text-left px-4 py-2 font-medium text-slate-600">Counterparty</th>
-                    <th className="text-left px-4 py-2 font-medium text-slate-600">Weight</th>
-                    <th className="text-left px-4 py-2 font-medium text-slate-600">Matched</th>
-                    <th className="text-left px-4 py-2 font-medium text-slate-600">Confirmed</th>
-                    <th className="text-left px-4 py-2 font-medium text-slate-600">Overridden</th>
-                    <th className="text-left px-4 py-2 font-medium text-slate-600">Active</th>
-                    <th className="text-left px-4 py-2 font-medium text-slate-600">Actions</th>
+                  <tr className="bg-muted border-b border-border">
+                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Pattern</th>
+                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Type</th>
+                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Inferred</th>
+                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Counterparty</th>
+                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Weight</th>
+                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Matched</th>
+                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Confirmed</th>
+                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Overridden</th>
+                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Active</th>
+                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((r: any) => (
-                    <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50" data-testid={`pattern-row-${r.id}`}>
+                    <tr key={r.id} className="border-b border-border hover:bg-muted" data-testid={`pattern-row-${r.id}`}>
                       <td className="px-4 py-2 font-mono text-xs">
                         {r.patternValue}
                         {r.normalizedExample && (
@@ -689,7 +689,7 @@ export default function InvoicePatternsPage() {
                           {r.inferredType}
                         </Badge>
                       </td>
-                      <td className="px-4 py-2 text-xs text-slate-600">{r.counterpartyName || "\u2014"}</td>
+                      <td className="px-4 py-2 text-xs text-muted-foreground">{r.counterpartyName || "\u2014"}</td>
                       <td className="px-4 py-2 text-xs">{r.confidenceWeight}</td>
                       <td className="px-4 py-2 text-xs font-semibold">{r.timesMatched}</td>
                       <td className="px-4 py-2 text-xs text-green-600">{r.timesConfirmed}</td>

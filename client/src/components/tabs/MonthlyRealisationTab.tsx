@@ -62,11 +62,11 @@ const STATUS_CONFIG: Record<string, {
 }> = {
   "COS Realised": {
     label: "COS Realised",
-    color: "text-slate-900",
-    iconBg: "bg-slate-100",
-    iconColor: "text-slate-800",
-    valueColor: "text-slate-900 font-black",
-    borderColor: "border-slate-300",
+    color: "text-foreground",
+    iconBg: "bg-muted",
+    iconColor: "text-foreground",
+    valueColor: "text-foreground font-black",
+    borderColor: "border-border",
     badgeBg: "bg-green-50",
     badgeBorder: "border-green-200",
     badgeText: "text-green-700",
@@ -211,10 +211,10 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
       value: formatRand(summary["COS Realised"].value),
       count: summary["COS Realised"].count,
       icon: TrendingDown,
-      iconBg: "bg-slate-100",
-      iconColor: "text-slate-800",
-      valueColor: "text-slate-900 font-black",
-      borderColor: "border-slate-300",
+      iconBg: "bg-muted",
+      iconColor: "text-foreground",
+      valueColor: "text-foreground font-black",
+      borderColor: "border-border",
     },
     {
       id: "cos-deferred",
@@ -259,9 +259,9 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
       value: formatRand(totalCOS),
       count: totalItems,
       icon: DollarSign,
-      iconBg: "bg-slate-100",
-      iconColor: "text-slate-600",
-      valueColor: "text-slate-900",
+      iconBg: "bg-muted",
+      iconColor: "text-muted-foreground",
+      valueColor: "text-foreground",
       borderColor: "",
     },
     {
@@ -296,7 +296,7 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
                     <kpi.icon className={`h-5 w-5 ${kpi.iconColor}`} />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs font-medium text-slate-500 truncate">{kpi.label}</p>
+                    <p className="text-xs font-medium text-muted-foreground truncate">{kpi.label}</p>
                     <p className={`text-xl font-bold font-mono mt-0.5 ${kpi.valueColor}`} data-testid={`text-${kpi.id}-value`}>
                       {kpi.value}
                     </p>
@@ -318,12 +318,12 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
             placeholder="Search by description, supplier, PO, or invoice..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="pl-9 h-9 text-sm border-slate-200"
+            className="pl-9 h-9 text-sm border-border"
             data-testid="cos-search"
           />
         </div>
         {activeFilter && (
-          <Button size="sm" variant="ghost" className="h-9 text-sm text-slate-500" onClick={() => setActiveFilter(null)} data-testid="cos-clear-filter">
+          <Button size="sm" variant="ghost" className="h-9 text-sm text-muted-foreground" onClick={() => setActiveFilter(null)} data-testid="cos-clear-filter">
             Clear filter
           </Button>
         )}
@@ -340,29 +340,29 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="table-cos-tracker">
               <thead>
-                <tr className="border-b bg-slate-50/80">
-                  <th className="px-5 py-3 text-left font-semibold text-slate-500 uppercase tracking-wider text-[11px] min-w-[220px]">
+                <tr className="border-b bg-muted/80">
+                  <th className="px-5 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-[11px] min-w-[220px]">
                     Description
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-500 uppercase tracking-wider text-[11px]">
+                  <th className="px-4 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">
                     Supplier
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-500 uppercase tracking-wider text-[11px]">
+                  <th className="px-4 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">
                     PO #
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-500 uppercase tracking-wider text-[11px]">
+                  <th className="px-4 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">
                     Invoice #
                   </th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-500 uppercase tracking-wider text-[11px]">
+                  <th className="px-4 py-3 text-left font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">
                     Invoice Date
                   </th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-500 uppercase tracking-wider text-[11px]">
+                  <th className="px-4 py-3 text-right font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">
                     Amount
                   </th>
-                  <th className="px-4 py-3 text-center font-semibold text-slate-500 uppercase tracking-wider text-[11px]">
+                  <th className="px-4 py-3 text-center font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">
                     COS Status
                   </th>
-                  <th className="px-4 py-3 text-center font-semibold text-slate-500 uppercase tracking-wider text-[11px]">
+                  <th className="px-4 py-3 text-center font-semibold text-muted-foreground uppercase tracking-wider text-[11px]">
                     Payment
                   </th>
                 </tr>
@@ -376,7 +376,7 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
                   return (
                     <React.Fragment key={category}>
                       <tr
-                        className="border-b border-slate-100 bg-slate-50/60 cursor-pointer hover:bg-slate-100/60 transition-colors"
+                        className="border-b border-border bg-muted/60 cursor-pointer hover:bg-muted/60 transition-colors"
                         onClick={() => toggleCategory(category)}
                         data-testid={`cos-category-${category.replace(/\s+/g, "-").toLowerCase()}`}
                       >
@@ -385,16 +385,16 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
                             <span className="text-slate-400">
                               {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             </span>
-                            <span className="font-semibold text-slate-800">{category}</span>
+                            <span className="font-semibold text-foreground">{category}</span>
                             <span className="text-xs text-slate-400">
                               {catItems.length} items
                             </span>
-                            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${catRealisedPct >= 80 ? "text-green-600 border-green-200" : catRealisedPct >= 40 ? "text-amber-600 border-amber-200" : "text-slate-500 border-slate-200"}`}>
+                            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${catRealisedPct >= 80 ? "text-green-600 border-green-200" : catRealisedPct >= 40 ? "text-amber-600 border-amber-200" : "text-muted-foreground border-border"}`}>
                               {catRealised}/{catItems.length} realised
                             </Badge>
                           </div>
                         </td>
-                        <td className="px-4 py-2.5 text-right font-mono font-bold text-sm text-slate-900">
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-sm text-foreground">
                           {formatRandFull(catTotal)}
                         </td>
                         <td colSpan={2} className="py-2.5" />
@@ -405,13 +405,13 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
                         return (
                           <tr
                             key={item.id}
-                            className="border-b border-slate-50 bg-white hover:bg-slate-50/40 transition-colors"
+                            className="border-b border-slate-50 bg-card hover:bg-muted/40 transition-colors"
                             data-testid={`cos-item-${item.id}`}
                           >
-                            <td className="px-5 pl-11 py-2.5 text-sm text-slate-700 max-w-[220px] truncate" title={item.expenseLineItem || ""}>
+                            <td className="px-5 pl-11 py-2.5 text-sm text-foreground max-w-[220px] truncate" title={item.expenseLineItem || ""}>
                               {item.expenseLineItem || "-"}
                             </td>
-                            <td className="px-4 py-2.5 text-sm text-slate-600">{item.supplierName || "-"}</td>
+                            <td className="px-4 py-2.5 text-sm text-muted-foreground">{item.supplierName || "-"}</td>
                             <td className="px-4 py-2.5">
                               {item.expensePoNumber ? (
                                 <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200">
@@ -430,10 +430,10 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
                                 <span className="text-slate-300">—</span>
                               )}
                             </td>
-                            <td className="px-4 py-2.5 text-sm text-slate-600 whitespace-nowrap">
+                            <td className="px-4 py-2.5 text-sm text-muted-foreground whitespace-nowrap">
                               {item.expenseInvoicedDate ? new Date(item.expenseInvoicedDate).toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "2-digit" }) : "—"}
                             </td>
-                            <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold text-slate-900">
+                            <td className="px-4 py-2.5 text-right font-mono text-sm font-semibold text-foreground">
                               {formatRandFull(val)}
                             </td>
                             <td className="px-4 py-2.5 text-center">
@@ -448,7 +448,7 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
                                   ? "bg-green-50 text-green-700 border border-green-200"
                                   : item.paymentStatus === "Payment Planned"
                                   ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                  : "bg-slate-50 text-slate-500 border border-slate-200"
+                                  : "bg-muted text-muted-foreground border border-border"
                               }`}>
                                 {item.paymentStatus}
                               </span>
@@ -459,9 +459,9 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
                     </React.Fragment>
                   );
                 })}
-                <tr className="border-t-2 border-slate-200 bg-slate-50/80">
-                  <td className="px-5 py-3 font-bold text-sm text-slate-900" colSpan={5}>Grand Total</td>
-                  <td className="px-4 py-3 text-right font-mono font-bold text-sm text-slate-900">{formatRandFull(totalCOS)}</td>
+                <tr className="border-t-2 border-border bg-muted/80">
+                  <td className="px-5 py-3 font-bold text-sm text-foreground" colSpan={5}>Grand Total</td>
+                  <td className="px-4 py-3 text-right font-mono font-bold text-sm text-foreground">{formatRandFull(totalCOS)}</td>
                   <td colSpan={2} />
                 </tr>
               </tbody>

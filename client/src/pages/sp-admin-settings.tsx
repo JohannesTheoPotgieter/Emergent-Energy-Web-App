@@ -213,17 +213,17 @@ export default function SpAdminSettingsPage() {
   return (
     <div className="space-y-6 max-w-[900px] mx-auto" data-testid="sp-admin-settings-page">
       <header>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-50 flex items-center gap-2" data-testid="text-page-title">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground dark:text-gray-50 flex items-center gap-2" data-testid="text-page-title">
           <CloudCog className="h-7 w-7 text-blue-600" />
           SharePoint Integration
         </h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+        <p className="text-sm text-muted-foreground dark:text-gray-400 mt-1">
           Configure automatic sync of tracker files from SharePoint
         </p>
       </header>
 
       {settings?.lastRunAt && (
-        <div className="flex items-center gap-2 text-sm text-gray-500" data-testid="text-last-run">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="text-last-run">
           <Clock className="h-4 w-4" />
           Last sync: {new Date(settings.lastRunAt).toLocaleString()}
         </div>
@@ -359,7 +359,7 @@ export default function SpAdminSettingsPage() {
                     <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
                   </div>
                 ) : (
-                  <div className="max-h-64 overflow-y-auto border rounded-md bg-white dark:bg-gray-900 divide-y">
+                  <div className="max-h-64 overflow-y-auto border rounded-md bg-card dark:bg-gray-900 divide-y">
                     {folders.length === 0 && files.length === 0 && (
                       <div className="p-4 text-center text-sm text-muted-foreground">
                         This folder is empty
@@ -368,7 +368,7 @@ export default function SpAdminSettingsPage() {
                     {folders.map((item) => (
                       <div
                         key={item.id}
-                        className="flex items-center justify-between px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer group"
+                        className="flex items-center justify-between px-3 py-2 hover:bg-muted dark:hover:bg-gray-800 cursor-pointer group"
                         data-testid={`browse-folder-${item.id}`}
                       >
                         <button

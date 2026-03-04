@@ -15,7 +15,7 @@ interface BoardViewProps {
 }
 
 const COLUMNS = [
-  { status: "Not Started", color: "bg-gray-500", headerBg: "bg-gray-100 border-gray-300", dotColor: "bg-gray-400" },
+  { status: "Not Started", color: "bg-gray-500", headerBg: "bg-muted border-border", dotColor: "bg-gray-400" },
   { status: "In Progress", color: "bg-blue-500", headerBg: "bg-blue-50 border-blue-300", dotColor: "bg-blue-400" },
   { status: "Blocked", color: "bg-red-500", headerBg: "bg-red-50 border-red-300", dotColor: "bg-red-400" },
   { status: "Done", color: "bg-green-500", headerBg: "bg-green-50 border-green-300", dotColor: "bg-green-400" },
@@ -31,7 +31,7 @@ const PRIORITY_BORDER: Record<string, string> = {
 const PRIORITY_VARIANT: Record<string, string> = {
   Urgent: "bg-red-100 text-red-800",
   High: "bg-orange-100 text-orange-800",
-  Normal: "bg-gray-100 text-gray-800",
+  Normal: "bg-muted text-foreground",
   Low: "bg-blue-100 text-blue-800",
 };
 

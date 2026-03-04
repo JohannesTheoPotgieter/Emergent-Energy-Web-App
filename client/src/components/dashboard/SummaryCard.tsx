@@ -30,7 +30,7 @@ export function SummaryCard({ title, value, subValue, trend, trendValue, icon: I
                 "flex items-center text-xs font-medium px-1.5 py-0.5 rounded-full",
                 trend === "up" && "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
                 trend === "down" && "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400",
-                trend === "neutral" && "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                trend === "neutral" && "bg-muted text-foreground dark:bg-slate-800 dark:text-slate-400"
               )}>
                 {trend === "up" && <ArrowUpRight className="w-3 h-3 mr-1" />}
                 {trend === "down" && <ArrowDownRight className="w-3 h-3 mr-1" />}

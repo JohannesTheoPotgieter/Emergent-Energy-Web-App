@@ -61,7 +61,7 @@ export default function PdDashboardPage() {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
-            { label: "Total", value: stats?.total || 0, icon: FileStack, color: "text-gray-700 bg-gray-100" },
+            { label: "Total", value: stats?.total || 0, icon: FileStack, color: "text-foreground bg-muted" },
             { label: "Active", value: stats?.active || 0, icon: FileEdit, color: "text-blue-700 bg-blue-100" },
             { label: "Overdue", value: stats?.overdue || 0, icon: AlertTriangle, color: "text-red-700 bg-red-100" },
             { label: "Due This Week", value: stats?.dueThisWeek || 0, icon: Clock, color: "text-amber-700 bg-amber-100" },
@@ -143,8 +143,8 @@ function statusColor(s: string) {
   if (s === "Completed") return "bg-green-100 text-green-700";
   if (s === "In Progress") return "bg-blue-100 text-blue-700";
   if (s === "On Hold") return "bg-orange-100 text-orange-700";
-  if (s === "Cancelled") return "bg-gray-100 text-gray-500";
-  return "bg-gray-100 text-gray-700";
+  if (s === "Cancelled") return "bg-muted text-muted-foreground";
+  return "bg-muted text-foreground";
 }
 
 function priorityColor(p: string) {

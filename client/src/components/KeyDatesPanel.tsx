@@ -83,7 +83,7 @@ export default function KeyDatesPanel({ projectName }: KeyDatesPanelProps) {
         ) : (
           <div className="space-y-1">
             {keyDates.map((kd) => (
-              <div key={kd.id} className={`flex items-center justify-between p-2.5 rounded-md border ${kd.mappingValid ? "bg-white border-slate-200" : "bg-slate-50 border-slate-200"}`}
+              <div key={kd.id} className={`flex items-center justify-between p-2.5 rounded-md border ${kd.mappingValid ? "bg-card border-border" : "bg-muted border-border"}`}
                 data-testid={`key-date-${kd.keyDateName.replace(/\s+/g, '-').toLowerCase()}`}>
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   {kd.mappingValid ? (
@@ -111,7 +111,7 @@ export default function KeyDatesPanel({ projectName }: KeyDatesPanelProps) {
                         </span>
                       </div>
                     ) : (
-                      <p className="text-[10px] text-slate-500 mt-0.5">
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
                         No matching task found
                         {kd.sourceTaskNameMatch && <span className="italic"> (looking for: {kd.sourceTaskNameMatch})</span>}
                       </p>

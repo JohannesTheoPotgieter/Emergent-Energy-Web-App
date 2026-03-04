@@ -101,9 +101,13 @@ interface NavGroup {
 
 const SECTION_COLORS: Record<string, string> = {
   MY_WORK: "text-sky-400",
+  PROJECTS: "text-blue-400",
+  PROJECT_DELIVERY: "text-orange-400",
+  FINANCE: "text-emerald-400",
+  OPERATIONS: "text-amber-400",
+  SYSTEM: "text-slate-400",
   COCKPIT: "text-amber-400",
   COLLABORATION: "text-pink-400",
-  PROJECTS: "text-blue-400",
   MONEY: "text-emerald-400",
   PROJECT_DEVELOPMENT: "text-teal-400",
   DELIVERY: "text-orange-400",
@@ -176,42 +180,40 @@ function getLegacyNavGroups(): NavGroup[] {
 function getRedesignedNavGroups(): NavGroup[] {
   return [
     {
-      heading: "EXCO",
-      section: "COCKPIT",
-      icon: Layers,
+      heading: "MY WORK",
+      section: "MY_WORK",
+      icon: Home,
       items: [
-        { label: "My Tool", icon: Briefcase, path: "/my-tool" },
-        { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
-        { label: "Company Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
+        { label: "Tasks", icon: ListChecks, path: "/my-work/tasks" },
+        { label: "Approvals / Calendar", icon: CalendarCheck, path: "/my-work/calendar" },
+        { label: "Meetings", icon: MessageSquareText, path: "/my-work/meetings" },
       ],
     },
     {
-      heading: "COLLABORATION",
-      section: "COLLABORATION",
-      icon: Handshake,
-      items: [
-        { label: "Email", icon: Mail, path: "/collaboration/email" },
-        { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
-      ],
-    },
-    {
-      heading: "PROJECT MANAGEMENT",
+      heading: "PROJECTS",
       section: "PROJECTS",
       icon: FolderKanban,
       items: [
-        { label: "Execution Board", icon: Gauge, path: "/dashboard" },
-        { label: "Project Summary", icon: FolderKanban, path: "/projects" },
-        { label: "PM Dashboard", icon: Briefcase, path: "/pm-dashboard" },
-        { label: "On-The-Go", icon: Smartphone, path: "/pm/on-the-go" },
-        { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
-        { label: "Excel Updates", icon: ClipboardCheck, path: "/excel-updates" },
+        { label: "Project List", icon: FolderKanban, path: "/projects" },
         { label: "Portfolios", icon: FolderOpen, path: "/portfolios" },
-        { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
+        { label: "Execution Board", icon: Gauge, path: "/dashboard" },
+        { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
       ],
     },
     {
-      heading: "PROJECT FINANCE",
-      section: "MONEY",
+      heading: "PROJECT DELIVERY",
+      section: "PROJECT_DELIVERY",
+      icon: HardHat,
+      items: [
+        { label: "PM Dashboard", icon: Briefcase, path: "/pm-dashboard" },
+        { label: "Engineering", icon: HardHat, path: "/engineering" },
+        { label: "Quality", icon: ShieldCheck, path: "/quality" },
+        { label: "On-The-Go", icon: Smartphone, path: "/pm/on-the-go" },
+      ],
+    },
+    {
+      heading: "FINANCE",
+      section: "FINANCE",
       icon: Wallet,
       items: [
         { label: "Cashflow", icon: Wallet, path: "/cashflow" },
@@ -221,50 +223,28 @@ function getRedesignedNavGroups(): NavGroup[] {
       ],
     },
     {
-      heading: "PROJECT DEVELOPMENT",
-      section: "PROJECT_DEVELOPMENT",
-      icon: FileEdit,
+      heading: "OPERATIONS",
+      section: "OPERATIONS",
+      icon: RefreshCw,
       items: [
+        { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
+        { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
+        { label: "Excel Updates", icon: ClipboardCheck, path: "/excel-updates" },
         { label: "PD Dashboard", icon: FileEdit, path: "/pd" },
         { label: "PD Tickets", icon: ClipboardList, path: "/pd/tickets" },
-        { label: "Clients", icon: Users, path: "/clients" },
       ],
     },
     {
-      heading: "ENGINEERING",
-      section: "DELIVERY",
-      icon: HardHat,
-      items: [
-        { label: "Engineering", icon: HardHat, path: "/engineering" },
-        { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
-      ],
-    },
-    {
-      heading: "GOVERNANCE",
-      section: "GOVERNANCE",
-      icon: ShieldCheck,
-      items: [
-        { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
-      ],
-    },
-    {
-      heading: "INFORMATION",
-      section: "INFORMATION",
-      icon: BookOpen,
-      items: [
-        { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
-        { label: "Emergent Energy Info", icon: BookOpen, path: "/ee-info" },
-        { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
-      ],
-    },
-    {
-      heading: "ADMIN",
-      section: "SETTINGS",
+      heading: "SYSTEM",
+      section: "SYSTEM",
       icon: Cog,
       items: [
         { label: "Users & Roles", icon: UserCog, path: "/admin/roles" },
         { label: "App Settings", icon: Settings, path: "/admin/settings" },
         { label: "Activity Log", icon: Activity, path: "/admin/activity-log" },
+        { label: "Emergent Energy Info", icon: BookOpen, path: "/ee-info" },
+        { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
+        { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
       ],
     },
   ];
@@ -274,32 +254,13 @@ function getUnifiedWorkNavGroups(): NavGroup[] {
   const base = getRedesignedNavGroups();
   const result: NavGroup[] = [];
 
-  result.push({
-    heading: "MY WORK",
-    section: "MY_WORK",
-    icon: Home,
-    items: [
-      { label: "Home", icon: Home, path: "/my-work" },
-      { label: "Tasks", icon: ListChecks, path: "/my-work/tasks" },
-      { label: "Calendar", icon: CalendarCheck, path: "/my-work/calendar" },
-      { label: "Meetings", icon: MessageSquareText, path: "/my-work/meetings" },
-    ],
-  });
-
   for (const group of base) {
-    if (group.section === "COCKPIT") {
+    if (group.section === "MY_WORK") {
       result.push({
         ...group,
-        items: group.items.filter(i => i.path !== "/my-tool"),
-      });
-    } else if (group.section === "COLLABORATION") {
-      result.push({
-        heading: "COLLABORATION",
-        section: "COLLABORATION",
-        icon: Handshake,
         items: [
-          { label: "Email", icon: Mail, path: "/collaboration/email" },
-          { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
+          { label: "Home", icon: Home, path: "/my-work" },
+          ...group.items,
         ],
       });
     } else {
@@ -515,36 +476,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5 overscroll-contain scrollbar-thin">
-          {!sidebarShowLabels ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Link href="/" className={cn(
-                  "flex items-center justify-center p-2 rounded-lg transition-all duration-150",
-                  location === "/" 
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-md shadow-emerald-900/30" 
-                    : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                )}>
-                  <Home className="w-5 h-5" />
-                </Link>
-              </TooltipTrigger>
-              <TooltipContent side="right" className="font-medium">Home</TooltipContent>
-            </Tooltip>
-          ) : (
-            <Link href="/" className={cn(
-              "flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 group",
-              location === "/" 
-                ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium shadow-md shadow-emerald-900/30" 
-                : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-            )}>
-              <Home className="w-[18px] h-[18px] shrink-0" />
-              <span className="text-[13px]">Home</span>
-            </Link>
-          )}
-
           {navGroups.filter(group => {
-            if (group.section === "FEEDBACK" || group.section === "INFORMATION" || group.section === "MY_WORK") return true;
+            if (["FEEDBACK", "INFORMATION", "MY_WORK", "SYSTEM"].includes(group.section)) return true;
             if (allowedSections.length === 0 && !activeRole) return group.section === "PROJECTS";
-            return allowedSections.includes(group.section);
+            const sectionAliases: Record<string, string[]> = {
+              PROJECTS: ["PROJECTS"],
+              PROJECT_DELIVERY: ["DELIVERY", "GOVERNANCE", "PROJECTS"],
+              FINANCE: ["MONEY"],
+              OPERATIONS: ["PROJECTS", "PROJECT_DEVELOPMENT", "COCKPIT"],
+            };
+            const aliases = sectionAliases[group.section] || [group.section];
+            return aliases.some(a => allowedSections.includes(a)) || allowedSections.includes(group.section);
           }).map((group) => {
             let visibleItems = group.items.filter(item => {
               if (item.path === "/engineering/sync" && companyRole !== "COO_ADMIN") return false;

@@ -145,7 +145,7 @@ export default function UserAssignmentPicker({
       {hasResolvedUsers && resolvedUsers!.map(u => (
         <span
           key={u.id}
-          className={`inline-flex items-center gap-1 ${isXs ? 'px-1 py-0.5 text-[10px]' : 'px-1.5 py-0.5 text-xs'} rounded-full bg-slate-100 text-slate-700 font-medium`}
+          className={`inline-flex items-center gap-1 ${isXs ? 'px-1 py-0.5 text-[10px]' : 'px-1.5 py-0.5 text-xs'} rounded-full bg-muted text-foreground font-medium`}
           title={`${u.name} (${u.role})`}
         >
           <span className={`inline-flex items-center justify-center ${isXs ? 'w-3.5 h-3.5 text-[7px]' : 'w-4 h-4 text-[8px]'} rounded-full text-white font-bold ${getAvatarColor(u.name)}`}>
@@ -211,7 +211,7 @@ export default function UserAssignmentPicker({
               return (
                 <button
                   key={u.id}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${isAssigned ? 'bg-blue-50 text-blue-700' : 'hover:bg-slate-50 text-slate-700'}`}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${isAssigned ? 'bg-blue-50 text-blue-700' : 'hover:bg-muted text-foreground'}`}
                   onClick={() => {
                     if (!isAssigned) reassignMutation.mutate(u.id);
                   }}
@@ -273,7 +273,7 @@ export function UserAvatarGroup({
         </span>
       ))}
       {remaining > 0 && (
-        <span className={`inline-flex items-center justify-center ${isXs ? 'w-5 h-5 text-[8px]' : 'w-6 h-6 text-[9px]'} rounded-full bg-slate-200 text-slate-600 font-bold border-2 border-white`}>
+        <span className={`inline-flex items-center justify-center ${isXs ? 'w-5 h-5 text-[8px]' : 'w-6 h-6 text-[9px]'} rounded-full bg-slate-200 text-muted-foreground font-bold border-2 border-white`}>
           +{remaining}
         </span>
       )}
