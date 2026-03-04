@@ -801,6 +801,7 @@ function TaskDetailDrawer({
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [approvalComment, setApprovalComment] = useState("");
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [showApprovalActions, setShowApprovalActions] = useState(false);
   const [showSendForApproval, setShowSendForApproval] = useState(false);
   const [sendApprovalNote, setSendApprovalNote] = useState("");
@@ -1049,34 +1050,34 @@ function TaskDetailDrawer({
 
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Linked Project</Label>
-              {(() => {
-                const currentRaw = task.projectName || "";
-                const matchesExisting = !currentRaw || drawerProjects.some(p => (p.raw || p.project_name) === currentRaw);
-                return (
-                  <Select
-                    value={currentRaw || "none"}
-                    onValueChange={(v) => {
-                      const newName = v === "none" ? null : v;
-                      updateMutation.mutate({ projectName: newName });
-                    }}
-                  >
-                    <SelectTrigger className="h-8 text-xs" data-testid="select-drawer-project">
-                      <SelectValue placeholder="Select project">
-                        {currentRaw ? projectDisplay : "No project"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No project</SelectItem>
-                      {!matchesExisting && currentRaw && (
-                        <SelectItem value={currentRaw}>{projectDisplay} (current)</SelectItem>
-                      )}
-                      {drawerProjects.map(p => (
-                        <SelectItem key={p.id} value={p.raw || p.project_name}>{p.project_name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                );
-              })()}
+              <Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" aria-expanded={projectPickerOpen} className="w-full h-8 justify-between text-xs font-normal" data-testid="select-drawer-project">
+                    {task.projectName ? projectDisplay : "Select project..."}
+                    <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search projects..." className="h-8 text-xs" />
+                    <CommandList>
+                      <CommandEmpty>No project found.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem value="no-project" onSelect={() => { updateMutation.mutate({ projectName: null }); setProjectPickerOpen(false); }} className="text-xs">
+                          <Check className={`mr-2 h-3 w-3 ${!task.projectName ? "opacity-100" : "opacity-0"}`} />
+                          No project
+                        </CommandItem>
+                        {drawerProjects.map(p => (
+                          <CommandItem key={p.id} value={p.project_name} onSelect={() => { updateMutation.mutate({ projectName: p.raw || p.project_name }); setProjectPickerOpen(false); }} className="text-xs">
+                            <Check className={`mr-2 h-3 w-3 ${(task.projectName === p.raw || task.projectName === p.project_name) ? "opacity-100" : "opacity-0"}`} />
+                            {p.project_name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div className="space-y-3 p-3 bg-muted/20 rounded-lg border">
