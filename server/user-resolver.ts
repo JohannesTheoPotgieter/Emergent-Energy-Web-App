@@ -73,3 +73,32 @@ export async function buildUserMap(): Promise<Map<number, ResolvedUser>> {
   }
   return map;
 }
+
+export function mergeResolvedWithTextNames(
+  resolvedFromIds: ResolvedUser[],
+  textNames: string[] | null | undefined,
+  userMap: Map<number, ResolvedUser>,
+): ResolvedUser[] {
+  if (!textNames || textNames.length === 0) return resolvedFromIds;
+  const resolvedIds = new Set(resolvedFromIds.map(u => u.id));
+  const allUsers = [...userMap.values()];
+  const merged = [...resolvedFromIds];
+  for (const name of textNames) {
+    if (!name || !name.trim()) continue;
+    const alreadyCovered = resolvedFromIds.some(
+      u => u.name.toLowerCase() === name.trim().toLowerCase()
+        || u.name.split(" ")[0].toLowerCase() === name.trim().toLowerCase()
+    );
+    if (alreadyCovered) continue;
+    const n = name.trim().toLowerCase();
+    let found: ResolvedUser | undefined;
+    found = allUsers.find(u => u.name.toLowerCase() === n || u.username.toLowerCase() === n);
+    if (!found) found = allUsers.find(u => u.name.split(" ")[0].toLowerCase() === n);
+    if (!found && n.length >= 4) found = allUsers.find(u => u.name.toLowerCase().startsWith(n) || n.startsWith(u.name.toLowerCase()));
+    if (found && !resolvedIds.has(found.id)) {
+      merged.push(found);
+      resolvedIds.add(found.id);
+    }
+  }
+  return merged;
+}
