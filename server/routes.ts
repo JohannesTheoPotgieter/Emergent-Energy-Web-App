@@ -653,20 +653,23 @@ export async function registerRoutes(
           LIMIT ${lim}
         `),
         db.execute(sql`
-          SELECT id, description, project_name, cost_category as category, counterparty_name as supplier, amount_ex_vat as total_cost, cost_line_status as status
+          SELECT id, description, project_name, cost_category as category, counterparty_name as supplier, amount_ex_vat as total_cost, cost_line_status as status, invoice_number, po_number
           FROM normalized_cost_lines
           WHERE LOWER(description) LIKE ${containsPattern}
              OR LOWER(counterparty_name) LIKE ${containsPattern}
              OR LOWER(cost_category) LIKE ${containsPattern}
-          ORDER BY description
+             OR LOWER(COALESCE(invoice_number, '')) LIKE ${containsPattern}
+             OR LOWER(COALESCE(po_number, '')) LIKE ${containsPattern}
+          ORDER BY CASE WHEN LOWER(COALESCE(invoice_number, '')) LIKE ${startsWithPattern} OR LOWER(COALESCE(po_number, '')) LIKE ${startsWithPattern} THEN 0 ELSE 1 END, description
           LIMIT ${lim}
         `),
         db.execute(sql`
-          SELECT id, description, project_name, milestone_name, amount_ex_vat as amount, status
+          SELECT id, description, project_name, milestone_name, amount_ex_vat as amount, status, invoice_number
           FROM normalized_revenue_lines
           WHERE LOWER(description) LIKE ${containsPattern}
              OR LOWER(milestone_name) LIKE ${containsPattern}
-          ORDER BY description
+             OR LOWER(COALESCE(invoice_number, '')) LIKE ${containsPattern}
+          ORDER BY CASE WHEN LOWER(COALESCE(invoice_number, '')) LIKE ${startsWithPattern} THEN 0 ELSE 1 END, description
           LIMIT ${lim}
         `),
       ]);
@@ -697,7 +700,7 @@ export async function registerRoutes(
           type: "cost",
           id: `cost-${r.id}`,
           title: r.description || r.category || "Cost item",
-          subtitle: [r.project_name, r.supplier, r.category, r.total_cost ? `R${Number(r.total_cost).toLocaleString()}` : null].filter(Boolean).join(" · "),
+          subtitle: [r.project_name, r.supplier, r.invoice_number ? `INV: ${r.invoice_number}` : null, r.po_number ? `PO: ${r.po_number}` : null, r.category, r.total_cost ? `R${Number(r.total_cost).toLocaleString()}` : null].filter(Boolean).join(" · "),
           url: r.project_name ? `/project/${encodeURIComponent(r.project_name)}?tab=expenditure` : null,
         });
       }
@@ -706,7 +709,7 @@ export async function registerRoutes(
           type: "revenue",
           id: `rev-${r.id}`,
           title: r.description || r.milestone_name || "Revenue item",
-          subtitle: [r.project_name, r.milestone_name, r.amount ? `R${Number(r.amount).toLocaleString()}` : null].filter(Boolean).join(" · "),
+          subtitle: [r.project_name, r.milestone_name, r.invoice_number ? `INV: ${r.invoice_number}` : null, r.amount ? `R${Number(r.amount).toLocaleString()}` : null].filter(Boolean).join(" · "),
           url: r.project_name ? `/project/${encodeURIComponent(r.project_name)}?tab=revenue` : null,
         });
       }
