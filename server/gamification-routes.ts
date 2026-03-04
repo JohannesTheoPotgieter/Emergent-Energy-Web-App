@@ -355,7 +355,6 @@ export function registerGamificationRoutes(app: Express) {
       }
 
       const leaderboard = activities
-        .filter(act => act.participation > 0)
         .map(act => {
         const u = userMap[act.userId];
         if (!u) return null;
