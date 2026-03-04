@@ -224,7 +224,6 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "admin_roles" as PermissionEntity, label: "Roles & Permissions", actions: ["view", "edit"] },
       { entity: "activity_log" as PermissionEntity, label: "Change Audit", actions: ["view"] },
       { entity: "ms_integration" as PermissionEntity, label: "Microsoft 365", actions: ["view", "edit"] },
-      { entity: "emergent_gpt" as PermissionEntity, label: "Emergent GPT", actions: ["view"] },
       { entity: "database_migration" as PermissionEntity, label: "Database Migration", actions: ["view", "edit"] },
       { entity: "admin" as PermissionEntity, label: "App Settings", actions: ["view", "edit"] },
       { entity: "data_import" as PermissionEntity, label: "Data Import", actions: ["view", "edit"] },
