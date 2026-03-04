@@ -23,6 +23,7 @@ export interface CPMTask {
   plannedEndDate?: string | null;
   plannedDurationDays?: number | null;
   resource?: string | null;
+  isBaseline?: boolean;
 }
 
 export interface CPMDependency {
@@ -135,6 +136,7 @@ export function calculateCPM(
     plannedEndDate?: string | null;
     plannedDurationDays?: number | null;
     resource?: string | null;
+    isBaseline?: boolean;
   }>,
   dependencies: CPMDependency[]
 ): CPMResult {
@@ -190,6 +192,7 @@ export function calculateCPM(
       plannedEndDate: t.plannedEndDate || null,
       plannedDurationDays: t.plannedDurationDays ?? null,
       resource: t.resource || null,
+      isBaseline: t.isBaseline ?? true,
     };
   });
   
@@ -309,6 +312,7 @@ export function applyOverridesToTasks(
     endDate: string | null;
     type: string | null;
     percentComplete?: number | null;
+    isBaseline?: boolean;
   }>,
   overrides: Array<{
     importedTaskId: number | null;
@@ -356,6 +360,7 @@ export function applyOverridesToTasks(
       endDate: o.overrideEndDate,
       type: 'Task',
       percentComplete: null as number | null,
+      isBaseline: false,
     }));
   
   return [...result, ...newTasks];
