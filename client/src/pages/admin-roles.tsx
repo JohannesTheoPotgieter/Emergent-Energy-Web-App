@@ -135,9 +135,7 @@ const PERM_CATEGORIES: PermCat[] = [
     key: "finance", section: "MONEY", label: "Project Finance", icon: DollarSign, color: "bg-emerald-500",
     items: [
       { entity: "cashflow" as PermissionEntity, label: "Cashflow", actions: ["view", "edit"] },
-      { entity: "cashflow_forecast" as PermissionEntity, label: "Cashflow Forecast", actions: ["view", "edit"] },
       { entity: "cos" as PermissionEntity, label: "COS Tracker", actions: ["view", "edit"] },
-      { entity: "cos_control" as PermissionEntity, label: "COS Control", actions: ["view", "edit", "override"] },
       { entity: "subcontractors" as PermissionEntity, label: "Procurement", actions: ["view", "edit", "delete"] },
       { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Patterns", actions: ["view", "edit"] },
       { entity: "financials" as PermissionEntity, label: "Financials Overview", actions: ["view", "edit"] },
