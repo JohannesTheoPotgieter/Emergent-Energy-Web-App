@@ -178,7 +178,6 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "pd_eng_stages" as PermissionEntity, label: "Engineering Stages", actions: ["view", "edit", "approve"] },
       { entity: "pd_quality" as PermissionEntity, label: "Quality Tab", actions: ["view", "edit", "approve", "delete"] },
       { entity: "financials" as PermissionEntity, label: "Financials Overview", actions: ["view", "edit"] },
-      { entity: "revenue" as PermissionEntity, label: "Revenue Data", actions: ["view", "edit"] },
       { entity: "financial_integration" as PermissionEntity, label: "Financial Integration", actions: ["view", "edit", "approve"] },
       { entity: "financial_linking" as PermissionEntity, label: "Financial Linking", actions: ["view", "edit"] },
     ],
