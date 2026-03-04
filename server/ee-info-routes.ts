@@ -1600,4 +1600,354 @@ export function registerEeInfoRoutes(app: Express) {
       res.status(500).json({ error: "Failed to compute live metrics" });
     }
   });
+
+  app.get("/api/ee-info/story/stages", requireAuth, async (_req, res) => {
+    try {
+      const stages = await db.select().from(eeInfoNodes)
+        .where(and(
+          eq(eeInfoNodes.nodeType, "lifecycle_stage"),
+          sql`${eeInfoNodes.stageCode} IS NOT NULL AND ${eeInfoNodes.stageCode} != 'DEMO'`
+        ))
+        .orderBy(eeInfoNodes.sortOrder);
+
+      const allNodes = await db.select({
+        id: eeInfoNodes.id,
+        parentNodeId: eeInfoNodes.parentNodeId,
+        nodeType: eeInfoNodes.nodeType,
+        status: eeInfoNodes.status,
+      }).from(eeInfoNodes);
+
+      const stagesWithCounts = stages.map(stage => {
+        const children = allNodes.filter(n => n.parentNodeId === stage.id);
+        const total = children.length;
+        const complete = children.filter(c => c.status === "published").length;
+        return {
+          ...stage,
+          childCount: total,
+          completedCount: complete,
+          progressPct: total > 0 ? Math.round((complete / total) * 100) : 0,
+          readyStatus: complete === total && total > 0 ? "Ready" : "In Progress",
+        };
+      });
+
+      res.json(stagesWithCounts);
+    } catch (err) {
+      console.error("[EE-Info] Error fetching story stages:", err);
+      res.status(500).json({ error: "Failed to fetch story stages" });
+    }
+  });
+
+  app.get("/api/ee-info/story/node/:id", requireAuth, async (req, res) => {
+    try {
+      const nodeId = req.params.id;
+      const [node] = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.id, nodeId));
+      if (!node) return res.status(404).json({ error: "Node not found" });
+
+      const details = await db.select().from(eeInfoNodeDetails).where(eq(eeInfoNodeDetails.nodeId, nodeId));
+      const detail = details[0] || null;
+
+      const edges = await db.select().from(eeInfoEdges)
+        .where(or(eq(eeInfoEdges.fromNodeId, nodeId), eq(eeInfoEdges.toNodeId, nodeId)));
+
+      const relatedIds = new Set<string>();
+      edges.forEach(e => {
+        if (e.fromNodeId !== nodeId) relatedIds.add(e.fromNodeId);
+        if (e.toNodeId !== nodeId) relatedIds.add(e.toNodeId);
+      });
+
+      let relatedNodes: any[] = [];
+      if (relatedIds.size > 0) {
+        relatedNodes = await db.select({
+          id: eeInfoNodes.id,
+          slug: eeInfoNodes.slug,
+          title: eeInfoNodes.title,
+          nodeType: eeInfoNodes.nodeType,
+          category: eeInfoNodes.category,
+        }).from(eeInfoNodes).where(inArray(eeInfoNodes.id, Array.from(relatedIds)));
+      }
+
+      let nextNode: any = null;
+      if (node.nextNodeId) {
+        const [n] = await db.select({ id: eeInfoNodes.id, title: eeInfoNodes.title, slug: eeInfoNodes.slug })
+          .from(eeInfoNodes).where(eq(eeInfoNodes.id, node.nextNodeId));
+        nextNode = n || null;
+      }
+
+      let prevNode: any = null;
+      const [prev] = await db.select({ id: eeInfoNodes.id, title: eeInfoNodes.title, slug: eeInfoNodes.slug })
+        .from(eeInfoNodes).where(eq(eeInfoNodes.nextNodeId, nodeId));
+      prevNode = prev || null;
+
+      res.json({
+        node,
+        detail,
+        relatedNodes,
+        nextNode,
+        prevNode,
+        edges,
+      });
+    } catch (err) {
+      console.error("[EE-Info] Error fetching story node:", err);
+      res.status(500).json({ error: "Failed to fetch story node" });
+    }
+  });
+
+  app.get("/api/ee-info/story/children/:parentId", requireAuth, async (req, res) => {
+    try {
+      const parentId = req.params.parentId;
+      const children = await db.select().from(eeInfoNodes)
+        .where(eq(eeInfoNodes.parentNodeId, parentId))
+        .orderBy(eeInfoNodes.sortOrder);
+      res.json(children);
+    } catch (err) {
+      console.error("[EE-Info] Error fetching children:", err);
+      res.status(500).json({ error: "Failed to fetch children" });
+    }
+  });
+
+  app.get("/api/ee-info/story/demo", requireAuth, async (_req, res) => {
+    try {
+      const demoNodes = await db.select().from(eeInfoNodes)
+        .where(eq(eeInfoNodes.stageCode, "DEMO"))
+        .orderBy(eeInfoNodes.sortOrder);
+      res.json(demoNodes);
+    } catch (err) {
+      console.error("[EE-Info] Error fetching demo:", err);
+      res.status(500).json({ error: "Failed to fetch demo walkthrough" });
+    }
+  });
+
+  app.patch("/api/ee-info/story/node/:id", requireCOO, async (req, res) => {
+    try {
+      const nodeId = req.params.id;
+      const updates = req.body;
+      const allowedFields = [
+        "primaryInstruction", "stageCode", "definitionOfDone",
+        "ownerRoleId", "approverRoleId", "requiredLinks",
+        "exampleArtifacts", "exampleNotes", "commonPitfalls",
+        "nextNodeId", "title", "sortOrder", "status", "nodeType", "parentNodeId",
+      ];
+
+      const filtered: any = {};
+      for (const key of allowedFields) {
+        if (key in updates) filtered[key] = updates[key];
+      }
+      filtered.updatedAt = new Date();
+      filtered.updatedBy = (req.user as any)?.email || "system";
+
+      const [updated] = await db.update(eeInfoNodes)
+        .set(filtered)
+        .where(eq(eeInfoNodes.id, nodeId))
+        .returning();
+
+      if (!updated) return res.status(404).json({ error: "Node not found" });
+      res.json(updated);
+    } catch (err) {
+      console.error("[EE-Info] Error updating story node:", err);
+      res.status(500).json({ error: "Failed to update story node" });
+    }
+  });
+
+  app.post("/api/ee-info/story/seed-demo", requireCOO, async (_req, res) => {
+    try {
+      const existing = await db.select({ id: eeInfoNodes.id }).from(eeInfoNodes)
+        .where(eq(eeInfoNodes.stageCode, "DEMO"));
+      if (existing.length > 0) {
+        return res.json({ message: "Demo data already exists", count: existing.length });
+      }
+      const seeded = await seedStoryDemoData();
+      res.json({ message: "Demo data seeded", count: seeded });
+    } catch (err) {
+      console.error("[EE-Info] Error seeding demo:", err);
+      res.status(500).json({ error: "Failed to seed demo data" });
+    }
+  });
+
+  app.get("/api/ee-info/story/check-seed", requireAuth, async (_req, res) => {
+    try {
+      const stageCount = await db.select({ id: eeInfoNodes.id }).from(eeInfoNodes)
+        .where(and(
+          eq(eeInfoNodes.nodeType, "lifecycle_stage"),
+          sql`${eeInfoNodes.stageCode} IS NOT NULL AND ${eeInfoNodes.stageCode} NOT IN ('DEMO')`
+        ));
+      const demoCount = await db.select({ id: eeInfoNodes.id }).from(eeInfoNodes)
+        .where(eq(eeInfoNodes.stageCode, "DEMO"));
+      res.json({ hasStages: stageCount.length > 0, hasDemoData: demoCount.length > 0, stageCount: stageCount.length, demoCount: demoCount.length });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to check seed status" });
+    }
+  });
+
+  app.post("/api/ee-info/story/auto-seed", requireAuth, async (_req, res) => {
+    try {
+      const stageCount = await db.select({ id: eeInfoNodes.id }).from(eeInfoNodes)
+        .where(and(
+          eq(eeInfoNodes.nodeType, "lifecycle_stage"),
+          sql`${eeInfoNodes.stageCode} IS NOT NULL AND ${eeInfoNodes.stageCode} NOT IN ('DEMO')`
+        ));
+      if (stageCount.length > 0) {
+        return res.json({ message: "Story stages already exist", seeded: false });
+      }
+      const count = await seedStoryLifecycleData();
+      res.json({ message: "Story lifecycle seeded", seeded: true, count });
+    } catch (err) {
+      console.error("[EE-Info] Error auto-seeding:", err);
+      res.status(500).json({ error: "Failed to auto-seed" });
+    }
+  });
+}
+
+export async function seedStoryLifecycleData(): Promise<number> {
+  const stages = [
+    { code: "P0", title: "P0 — First Assessment", purpose: "Initial project screening and viability check. Determine if the opportunity is worth pursuing.", dod: "Site visit completed, initial capacity estimate documented, go/no-go decision recorded.", owner: "Project Developer", approver: "Head of BD", instruction: "Review the new lead and complete the First Assessment checklist." },
+    { code: "P1", title: "P1 — Feasibility & Engineering Design", purpose: "Detailed technical and financial feasibility study. Produce engineering design pack and cost proposal.", dod: "Engineering design pack approved, cost proposal signed by client, financial model validated.", owner: "Engineer", approver: "Engineering Manager", instruction: "Complete the engineering design pack and prepare the cost proposal for client review." },
+    { code: "P2", title: "P2 — Financial Close", purpose: "Secure funding, finalise contracts, and achieve financial close to proceed to construction.", dod: "EPC contract signed, funding agreement executed, financial close certificate issued.", owner: "Project Developer", approver: "COO", instruction: "Finalise all contracts and confirm funding is in place before construction starts." },
+    { code: "P3", title: "P3 — Procurement", purpose: "Source and order all materials, equipment, and subcontractors required for construction.", dod: "All POs issued, delivery schedules confirmed, subcontractor agreements signed.", owner: "Project Manager", approver: "Procurement Manager", instruction: "Issue all purchase orders and confirm delivery schedules with suppliers." },
+    { code: "P4", title: "P4 — Construction", purpose: "Execute the physical build of the solar/BESS installation on-site.", dod: "All mechanical and electrical installation complete, ready for commissioning.", owner: "Site Manager", approver: "Project Manager", instruction: "Manage daily site progress, log updates, and track completion against the plan." },
+    { code: "P5", title: "P5 — Commissioning", purpose: "Test and commission the system to verify it meets design specifications and safety standards.", dod: "System energised, performance test passed, commissioning certificate issued.", owner: "Commissioning Engineer", approver: "Engineering Manager", instruction: "Run all commissioning tests and prepare the commissioning report." },
+    { code: "P6", title: "P6 — Handover & Close-Out", purpose: "Hand over the completed system to operations and the client. Complete all project documentation.", dod: "O&M handover complete, client acceptance signed, final account settled, project closed.", owner: "Project Manager", approver: "COO", instruction: "Complete all handover documentation and get client sign-off." },
+    { code: "P7", title: "P7 — Operations & Maintenance", purpose: "Ongoing monitoring, maintenance, and performance optimisation of the installed system.", dod: "DLP period complete, performance guarantee met, system transitioned to long-term O&M.", owner: "O&M Manager", approver: "Operations Director", instruction: "Monitor system performance and address any maintenance issues." },
+  ];
+
+  let count = 0;
+  const stageIds: string[] = [];
+  for (let i = 0; i < stages.length; i++) {
+    const s = stages[i];
+    const id = `story-stage-${s.code.toLowerCase()}`;
+    stageIds.push(id);
+    await db.insert(eeInfoNodes).values({
+      id,
+      slug: `story-${s.code.toLowerCase()}`,
+      title: s.title,
+      contentMarkdown: s.purpose,
+      status: "published",
+      category: "process",
+      nodeType: "lifecycle_stage",
+      stageCode: s.code,
+      sortOrder: i * 10,
+      definitionOfDone: s.dod,
+      ownerRoleId: s.owner,
+      approverRoleId: s.approver,
+      primaryInstruction: s.instruction,
+      sopData: { purpose: s.purpose, inputs: [], outputs: [] },
+      nextNodeId: i < stages.length - 1 ? `story-stage-${stages[i + 1].code.toLowerCase()}` : null,
+    }).onConflictDoNothing();
+    count++;
+
+    const processes = getStageProcesses(s.code, id);
+    for (let j = 0; j < processes.length; j++) {
+      const p = processes[j];
+      await db.insert(eeInfoNodes).values({
+        id: p.id,
+        slug: p.slug,
+        title: p.title,
+        contentMarkdown: p.purpose,
+        status: "published",
+        category: "process",
+        nodeType: "process",
+        parentNodeId: id,
+        stageCode: s.code,
+        sortOrder: j * 10,
+        definitionOfDone: p.dod,
+        ownerRoleId: p.owner,
+        approverRoleId: p.approver,
+        primaryInstruction: p.instruction,
+        sopData: { purpose: p.purpose, inputs: p.inputs || [], outputs: p.outputs || [] },
+        nextNodeId: j < processes.length - 1 ? processes[j + 1].id : null,
+      }).onConflictDoNothing();
+      count++;
+    }
+  }
+  return count;
+}
+
+function getStageProcesses(stageCode: string, parentId: string): any[] {
+  const processData: Record<string, any[]> = {
+    P0: [
+      { title: "Lead Intake & Qualification", purpose: "Receive and qualify new project leads.", dod: "Lead qualified as viable or rejected with reason.", owner: "BD Associate", approver: "Head of BD", instruction: "Review the incoming lead details and determine if it meets minimum criteria.", inputs: ["Client enquiry", "Site address"], outputs: ["Qualified lead record"] },
+      { title: "Site Visit & Assessment", purpose: "Visit the site to assess physical conditions and feasibility.", dod: "Site assessment report completed with photos.", owner: "Project Developer", approver: "Head of BD", instruction: "Schedule and complete the site visit, then upload the assessment report.", inputs: ["Qualified lead", "Site coordinates"], outputs: ["Site assessment report", "Photo documentation"] },
+      { title: "Go / No-Go Decision", purpose: "Make the decision to proceed or abandon the opportunity.", dod: "Decision documented with rationale in the system.", owner: "Head of BD", approver: "COO", instruction: "Present the assessment to the team and record the go/no-go decision.", inputs: ["Site assessment", "Financial screening"], outputs: ["Decision record"] },
+    ],
+    P1: [
+      { title: "Engineering Design Pack", purpose: "Produce the full engineering design for the solar/BESS system.", dod: "Design pack peer-reviewed and approved.", owner: "Design Engineer", approver: "Engineering Manager", instruction: "Create the single-line diagram, layout, and bill of materials.", inputs: ["Site assessment", "Client requirements"], outputs: ["Single-line diagram", "Layout drawing", "BoM"] },
+      { title: "Cost Proposal Preparation", purpose: "Prepare the financial proposal for the client.", dod: "Cost proposal reviewed and sent to client.", owner: "Project Developer", approver: "COO", instruction: "Build the cost model and prepare the proposal document for client presentation.", inputs: ["Engineering design pack", "Supplier quotes"], outputs: ["Cost proposal document", "Financial model"] },
+    ],
+    P2: [
+      { title: "Contract Negotiation", purpose: "Negotiate and finalise the EPC contract with the client.", dod: "EPC contract signed by both parties.", owner: "Project Developer", approver: "COO", instruction: "Finalise contract terms and get signatures from both sides.", inputs: ["Cost proposal", "Legal review"], outputs: ["Signed EPC contract"] },
+      { title: "Funding Arrangement", purpose: "Secure project funding through the appropriate finance mechanism.", dod: "Funding agreement executed, funds available.", owner: "Finance Manager", approver: "CFO", instruction: "Submit funding application and follow through until approval.", inputs: ["Signed contract", "Financial model"], outputs: ["Funding agreement", "Drawdown schedule"] },
+    ],
+    P3: [
+      { title: "Supplier Selection & PO Issue", purpose: "Select suppliers and issue purchase orders for all major equipment.", dod: "All POs issued and acknowledged by suppliers.", owner: "Procurement Officer", approver: "Procurement Manager", instruction: "Get three quotes per item, select the best, and issue the purchase order.", inputs: ["BoM", "Approved budget"], outputs: ["Purchase orders", "Delivery schedules"] },
+      { title: "Subcontractor Appointment", purpose: "Appoint subcontractors for installation works.", dod: "Subcontractor agreements signed, mobilisation dates confirmed.", owner: "Project Manager", approver: "COO", instruction: "Evaluate subcontractor bids and finalise appointments.", inputs: ["Scope of work", "Budget allocation"], outputs: ["Subcontractor agreements"] },
+    ],
+    P4: [
+      { title: "Site Mobilisation", purpose: "Mobilise resources, equipment, and materials to site.", dod: "Site compound set up, safety induction complete, materials on site.", owner: "Site Manager", approver: "Project Manager", instruction: "Set up the site compound, complete safety briefings, and confirm material deliveries.", inputs: ["Subcontractor agreements", "Delivery schedules"], outputs: ["Site readiness report"] },
+      { title: "Installation & Build", purpose: "Execute the physical construction of the solar/BESS system.", dod: "All mechanical and electrical installation complete per design.", owner: "Site Manager", approver: "Project Manager", instruction: "Manage daily construction activities and log progress against the plan.", inputs: ["Engineering design pack", "Materials on site"], outputs: ["Completed installation", "Daily progress logs"] },
+      { title: "Quality Inspections", purpose: "Conduct quality checks at key milestones during construction.", dod: "All quality checklists signed off, NCRs resolved.", owner: "QA Inspector", approver: "Quality Manager", instruction: "Perform inspections at each gate and log any non-conformances.", inputs: ["Quality checklist", "Design specifications"], outputs: ["Inspection reports", "NCR log"] },
+    ],
+    P5: [
+      { title: "System Testing", purpose: "Perform electrical testing and safety checks on the completed system.", dod: "All test results within specification, safety certificates issued.", owner: "Commissioning Engineer", approver: "Engineering Manager", instruction: "Run all electrical tests per the commissioning procedure.", inputs: ["Completed installation", "Test procedures"], outputs: ["Test results", "Safety certificates"] },
+      { title: "Performance Verification", purpose: "Verify system performance meets design specifications.", dod: "Performance ratio verified, generation data logged.", owner: "Commissioning Engineer", approver: "Engineering Manager", instruction: "Monitor system output and compare against design predictions.", inputs: ["Test results", "Design specifications"], outputs: ["Performance report", "Commissioning certificate"] },
+    ],
+    P6: [
+      { title: "O&M Handover", purpose: "Transfer operational responsibility to the O&M team.", dod: "O&M team trained, documentation handed over, monitoring access granted.", owner: "Project Manager", approver: "Operations Director", instruction: "Compile handover pack and train the O&M team on the system.", inputs: ["As-built drawings", "O&M manuals"], outputs: ["Handover pack", "Training sign-off"] },
+      { title: "Client Acceptance & Close-Out", purpose: "Get formal client acceptance and close out the project.", dod: "Client acceptance certificate signed, final invoice issued, project archived.", owner: "Project Manager", approver: "COO", instruction: "Present the completed project to the client and get formal sign-off.", inputs: ["Commissioning certificate", "Handover pack"], outputs: ["Client acceptance certificate", "Final account"] },
+    ],
+    P7: [
+      { title: "Performance Monitoring", purpose: "Continuously monitor system performance and detect issues.", dod: "Monthly performance reports generated, anomalies investigated.", owner: "O&M Technician", approver: "O&M Manager", instruction: "Review daily generation data and flag any underperformance.", inputs: ["Monitoring platform access", "Performance baselines"], outputs: ["Monthly performance report"] },
+      { title: "Preventive Maintenance", purpose: "Execute scheduled maintenance to keep the system in optimal condition.", dod: "Maintenance schedule completed, findings logged.", owner: "O&M Technician", approver: "O&M Manager", instruction: "Follow the maintenance schedule and log all findings.", inputs: ["Maintenance schedule", "Spare parts inventory"], outputs: ["Maintenance log", "Condition report"] },
+    ],
+  };
+
+  const processes = processData[stageCode] || [];
+  return processes.map((p, i) => ({
+    ...p,
+    id: `story-proc-${stageCode.toLowerCase()}-${i}`,
+    slug: `story-proc-${stageCode.toLowerCase()}-${i}-${p.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30)}`,
+  }));
+}
+
+export async function seedStoryDemoData(): Promise<number> {
+  const demoSteps = [
+    { title: "Welcome to the Emergent Energy Lifecycle", instruction: "This demo walks you through a real solar project from first contact to operations. Click Next to begin.", notes: "You're about to follow the journey of 'Sunshine Park' — a 500kWp commercial rooftop solar installation in Johannesburg.", pitfalls: ["Don't skip stages — each builds on the last", "Every gate must be passed before proceeding"] },
+    { title: "Step 1: A New Lead Arrives", instruction: "A client emails asking about solar for their warehouse. Log it as a new lead in the system.", notes: "The client is 'ABC Warehousing'. They have a 3,000m² flat concrete roof and a R2M electricity bill. This looks promising.", pitfalls: ["Always check the roof type — tiled roofs need different mounting", "Confirm the client owns the building (not leasing)"], artifacts: [{ label: "Sample Lead Form", url: "#" }] },
+    { title: "Step 2: Site Visit", instruction: "Schedule a site visit and complete the assessment form with photos.", notes: "During the visit, you measure the roof, check for shading from nearby buildings, and photograph the DB board and meter room.", pitfalls: ["Take photos of EVERYTHING — you won't remember later", "Check the electrical capacity of the existing supply"], artifacts: [{ label: "Site Assessment Template", url: "#" }] },
+    { title: "Step 3: Go / No-Go Decision", instruction: "Present your findings to the team. Is this project viable?", notes: "The team reviews: good roof, no shading, strong financials, willing client. Decision: GO. The project moves to P1.", pitfalls: ["Document the reasoning even for obvious 'go' decisions", "Check municipal regulations for the area"] },
+    { title: "Step 4: Engineering Design", instruction: "Create the engineering design pack: single-line diagram, roof layout, and bill of materials.", notes: "The design team produces a 500kWp system using 1,000 x 500W panels, 2 x 250kW inverters, and 3 string combiner boxes.", pitfalls: ["Always check panel weight vs roof structural capacity", "Verify inverter compatibility with the grid code"], artifacts: [{ label: "Sample Single-Line Diagram", url: "#" }, { label: "Sample Roof Layout", url: "#" }] },
+    { title: "Step 5: Cost Proposal", instruction: "Build the cost model and prepare the proposal for the client.", notes: "Total project cost: R4.2M. Expected payback: 4.5 years. The proposal includes a detailed breakdown and financial projections.", pitfalls: ["Don't forget to include logistics and crane hire", "Factor in permit and grid connection costs"], artifacts: [{ label: "Cost Proposal Template", url: "#" }] },
+    { title: "Step 6: Contract & Financial Close", instruction: "Negotiate the EPC contract and secure funding.", notes: "After two rounds of negotiation, the client signs the EPC contract at R4.1M. Funding is secured through an asset finance agreement.", pitfalls: ["Never start work before the contract is signed", "Confirm the payment milestone schedule matches your cashflow needs"] },
+    { title: "Step 7: Procurement", instruction: "Issue purchase orders for panels, inverters, mounting, and cable.", notes: "POs issued to 4 suppliers. Panels arriving in 3 weeks, inverters in 2 weeks. Cable and mounting available immediately.", pitfalls: ["Order panels early — lead times can be 6-8 weeks", "Always get written delivery confirmations"], artifacts: [{ label: "Sample Purchase Order", url: "#" }] },
+    { title: "Step 8: Site Mobilisation", instruction: "Set up the site compound, complete safety inductions, and receive materials.", notes: "The site compound is established with a container office and secure storage. All workers complete HSE induction. First material delivery received.", pitfalls: ["Secure storage is critical — solar panels are a theft target", "Don't store panels on the roof before mounting is installed"] },
+    { title: "Step 9: Construction Begins", instruction: "Install mounting rails, panels, DC cabling, and inverters.", notes: "Week 1-2: Mounting rails installed. Week 3: Panels mounted. Week 4: DC stringing and inverter installation. Daily progress photos taken.", pitfalls: ["Check panel orientation before tightening clamps", "Never work on the roof during rain or high wind"], artifacts: [{ label: "Daily Progress Report", url: "#" }] },
+    { title: "Step 10: Quality Inspections", instruction: "Conduct quality checks at each construction gate.", notes: "QA inspections completed at 3 gates: structural, DC, and AC. One NCR raised for incorrect cable sizing — resolved within 24 hours.", pitfalls: ["Don't rush inspections to meet deadlines", "Photograph and log every NCR, no matter how minor"] },
+    { title: "Step 11: Commissioning", instruction: "Run all electrical tests and energise the system.", notes: "All insulation resistance, earth continuity, and polarity tests pass. System energised at 14:32 on Thursday. First generation data appears on the monitoring platform within minutes.", pitfalls: ["Have the client's electrician present for grid connection", "Double-check protection settings before energising"], artifacts: [{ label: "Commissioning Checklist", url: "#" }] },
+    { title: "Step 12: Performance Verification", instruction: "Monitor the system for 5 days and verify it meets design specifications.", notes: "The system generates 2,450 kWh on its first full day — 102% of the design prediction. Performance ratio: 82.5%. All good.", pitfalls: ["Weather-normalise your performance data", "Compare against the specific design prediction, not a generic benchmark"] },
+    { title: "Step 13: O&M Handover", instruction: "Hand over the system to the O&M team with full documentation.", notes: "O&M handover pack includes: as-built drawings, O&M manuals, warranty certificates, monitoring platform access, and emergency procedures.", pitfalls: ["Train the O&M team on the specific inverter model", "Ensure monitoring alerts are configured correctly"] },
+    { title: "Step 14: Client Acceptance", instruction: "Present the completed project to the client and get formal sign-off.", notes: "The client walks the site, reviews the handover documentation, and signs the acceptance certificate. Final invoice issued. Project status: COMPLETE.", pitfalls: ["Bring the commissioning certificate to the acceptance meeting", "Resolve any outstanding snag list items before requesting sign-off"], artifacts: [{ label: "Client Acceptance Template", url: "#" }] },
+    { title: "Step 15: Lifecycle Complete!", instruction: "Congratulations! You've completed the full project lifecycle.", notes: "From first lead to completed installation, the Sunshine Park project took 16 weeks and generated its first kWh of clean energy. The system will produce approximately 750 MWh per year, saving the client R1.5M annually.", pitfalls: [] },
+  ];
+
+  let count = 0;
+  for (let i = 0; i < demoSteps.length; i++) {
+    const step = demoSteps[i];
+    const id = `story-demo-${String(i).padStart(3, "0")}`;
+    await db.insert(eeInfoNodes).values({
+      id,
+      slug: `story-demo-step-${i}`,
+      title: step.title,
+      contentMarkdown: step.notes || "",
+      status: "published",
+      category: "process",
+      nodeType: "step",
+      stageCode: "DEMO",
+      sortOrder: i * 10,
+      primaryInstruction: step.instruction,
+      exampleNotes: step.notes || null,
+      commonPitfalls: step.pitfalls && step.pitfalls.length > 0 ? step.pitfalls : null,
+      exampleArtifacts: (step as any).artifacts || null,
+      nextNodeId: i < demoSteps.length - 1 ? `story-demo-${String(i + 1).padStart(3, "0")}` : null,
+    }).onConflictDoNothing();
+    count++;
+  }
+  return count;
 }
