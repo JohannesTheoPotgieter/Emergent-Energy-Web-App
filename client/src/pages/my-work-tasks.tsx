@@ -488,6 +488,20 @@ export default function MyWorkTasksPage() {
     onError: () => { toast({ title: "Failed to update status", variant: "destructive" }); },
   });
 
+  const dismissNotifMutation = useMutation({
+    mutationFn: async (task: UnifiedTask) => {
+      if (task._key.startsWith("ms-")) {
+        const res = await fetch(`/api/ms-objects/${task._rawId}/dismiss`, { method: "PATCH", headers: { ...getAuthHeaders() }, credentials: "include" });
+        if (!res.ok) throw new Error("Failed to dismiss");
+      } else if (task._key.startsWith("notif-")) {
+        const res = await fetch("/api/notifications/mark-read", { method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ notificationIds: [task._rawId] }) });
+        if (!res.ok) throw new Error("Failed to dismiss");
+      }
+    },
+    onSuccess: () => { invalidateAll(); toast({ title: "Notification dismissed" }); },
+    onError: () => { toast({ title: "Failed to dismiss", variant: "destructive" }); },
+  });
+
   const handleCreateTask = useCallback(() => {
     if (!newTask.title.trim()) return;
     if (newTask.type === "action") {
@@ -831,7 +845,7 @@ export default function MyWorkTasksPage() {
           ) : (
             <div className="divide-y divide-border/40">
               {filteredTasks.map(task => (
-                <CompactTaskRow key={task._key} task={task} isExpanded={expandedTasks.has(task.id)} onToggleExpand={() => task._source === "operational" && task.subtaskCount! > 0 && toggleExpand(task.id)} onOpenDrawer={() => handleOpenDrawer(task)} onStatusChange={handleStatusChange} onDelete={task._source === "personal" ? () => deleteTaskMutation.mutate(task.id) : undefined} onAddSubtask={task._source === "operational" ? () => setSubtaskDialog({ parentId: task.id, projectName: task.projectName || "" }) : undefined} allTaskData={allTaskData} onSubtaskAddForChild={(parentId: number, projectName: string) => setSubtaskDialog({ parentId, projectName })} isOverdue={isTaskOverdue(task)} onQuickStatus={(newStatus) => boardStatusMutation.mutate({ task, newStatus })} />
+                <CompactTaskRow key={task._key} task={task} isExpanded={expandedTasks.has(task.id)} onToggleExpand={() => task._source === "operational" && task.subtaskCount! > 0 && toggleExpand(task.id)} onOpenDrawer={() => handleOpenDrawer(task)} onStatusChange={handleStatusChange} onDelete={task._source === "personal" ? () => deleteTaskMutation.mutate(task.id) : undefined} onDismiss={task._source === "notifications" ? () => dismissNotifMutation.mutate(task) : undefined} onAddSubtask={task._source === "operational" ? () => setSubtaskDialog({ parentId: task.id, projectName: task.projectName || "" }) : undefined} allTaskData={allTaskData} onSubtaskAddForChild={(parentId: number, projectName: string) => setSubtaskDialog({ parentId, projectName })} isOverdue={isTaskOverdue(task)} onQuickStatus={(newStatus) => boardStatusMutation.mutate({ task, newStatus })} />
               ))}
             </div>
           )}
@@ -1048,7 +1062,7 @@ export default function MyWorkTasksPage() {
   );
 }
 
-function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStatusChange, onDelete, onAddSubtask, allTaskData, onSubtaskAddForChild, isOverdue, onQuickStatus }: { task: UnifiedTask; isExpanded: boolean; onToggleExpand: () => void; onOpenDrawer: () => void; onStatusChange: (id: number, status: TaskStatus) => void; onDelete?: () => void; onAddSubtask?: () => void; allTaskData: any; onSubtaskAddForChild: (parentId: number, projectName: string) => void; isOverdue: boolean; onQuickStatus: (newStatus: string) => void }) {
+function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStatusChange, onDelete, onDismiss, onAddSubtask, allTaskData, onSubtaskAddForChild, isOverdue, onQuickStatus }: { task: UnifiedTask; isExpanded: boolean; onToggleExpand: () => void; onOpenDrawer: () => void; onStatusChange: (id: number, status: TaskStatus) => void; onDelete?: () => void; onDismiss?: () => void; onAddSubtask?: () => void; allTaskData: any; onSubtaskAddForChild: (parentId: number, projectName: string) => void; isOverdue: boolean; onQuickStatus: (newStatus: string) => void }) {
   const subtasks = useMemo(() => {
     if (!isExpanded || task._source !== "operational" || !allTaskData?.operational) return [];
     return (allTaskData.operational as any[]).filter(t => t.parentTaskId === task.id || t.parent_task_id === task.id);
@@ -1142,6 +1156,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
           )}
           {task._source === "operational" && onAddSubtask && <button onClick={e => { e.stopPropagation(); onAddSubtask(); }} className="p-1 rounded text-muted-foreground/40 hover:text-emerald-500 hover:bg-emerald-50" title="Add subtask" data-testid={`btn-add-subtask-${task._key}`}><Plus className="h-3 w-3" /></button>}
           {task._source === "personal" && onDelete && <button onClick={e => { e.stopPropagation(); onDelete(); }} className="p-1 rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-50" data-testid={`btn-delete-${task._key}`}><Trash2 className="h-3 w-3" /></button>}
+          {task._source === "notifications" && onDismiss && <button onClick={e => { e.stopPropagation(); onDismiss(); }} className="p-1 rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-50" title="Dismiss" data-testid={`btn-dismiss-${task._key}`}><X className="h-3 w-3" /></button>}
         </div>
       </div>
 
@@ -1201,6 +1216,20 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
     },
     onSuccess: () => { onInvalidate(); toast({ title: "Status updated" }); },
     onError: () => { toast({ title: "Failed to update status", variant: "destructive" }); },
+  });
+
+  const dismissMutation = useMutation({
+    mutationFn: async () => {
+      if (task._key.startsWith("ms-")) {
+        const res = await fetch(`/api/ms-objects/${task._rawId}/dismiss`, { method: "PATCH", headers: { ...getAuthHeaders() }, credentials: "include" });
+        if (!res.ok) throw new Error("Failed to dismiss");
+      } else if (task._key.startsWith("notif-")) {
+        const res = await fetch("/api/notifications/mark-read", { method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ notificationIds: [task._rawId] }) });
+        if (!res.ok) throw new Error("Failed to dismiss");
+      }
+    },
+    onSuccess: () => { onInvalidate(); onOpenChange(false); toast({ title: "Notification dismissed" }); },
+    onError: () => { toast({ title: "Failed to dismiss", variant: "destructive" }); },
   });
 
   const updateTrFieldMutation = useMutation({
@@ -1351,9 +1380,17 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
                 </div>
               )}
 
-              {!canChangeStatus && (
+              {!canChangeStatus && task._source !== "notifications" && (
                 <div className="text-center py-6 text-muted-foreground">
                   <p className="text-xs">Status changes for this task type must be done from the source.</p>
+                </div>
+              )}
+
+              {task._source === "notifications" && (
+                <div>
+                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 block">Dismiss</Label>
+                  <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-red-600 hover:bg-red-50 w-full" onClick={() => { dismissMutation.mutate(); }} disabled={dismissMutation.isPending} data-testid="btn-dismiss-notif"><X className="h-3 w-3 mr-1.5" /> Dismiss Notification</Button>
+                  {dismissMutation.isPending && <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Dismissing...</div>}
                 </div>
               )}
             </div>

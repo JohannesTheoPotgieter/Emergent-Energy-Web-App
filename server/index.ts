@@ -410,6 +410,12 @@ async function backfillPmUserIds() {
     log('PM On-The-Go tables error: ' + e.message);
   }
 
+  try {
+    await db.execute(sql`ALTER TABLE ms_objects ADD COLUMN IF NOT EXISTS dismissed BOOLEAN DEFAULT FALSE`);
+  } catch (e: any) {
+    console.error('[Migration] ms_objects dismissed column error:', e.message);
+  }
+
   const { seedQualityTemplate } = await import("./seed-quality-template");
   await seedQualityTemplate().catch(err => console.error('[Seed] Quality template error:', err));
 

@@ -146,6 +146,19 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
+  app.patch("/api/ms-objects/:id/dismiss", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const msObjectId = parseInt(String(req.params.id));
+      if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "auth_required" });
+      await db.update(msObjects).set({ dismissed: true }).where(and(eq(msObjects.id, msObjectId), eq(msObjects.userId, userId)));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/ms-sync/status", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user?.id;

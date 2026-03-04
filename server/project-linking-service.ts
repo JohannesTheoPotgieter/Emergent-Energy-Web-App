@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, ne, desc, sql } from "drizzle-orm";
 import { msObjects, projectLinks, projectInfo, mytoolTasks, operationalTasks, users } from "@shared/schema";
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
@@ -113,7 +113,7 @@ export async function getUserMsObjects(
   type?: string,
   limit?: number
 ): Promise<any[]> {
-  const conditions = [eq(msObjects.userId, userId)];
+  const conditions = [eq(msObjects.userId, userId), ne(msObjects.dismissed, true)];
 
   if (type) {
     conditions.push(eq(msObjects.type, type as any));
