@@ -25,7 +25,11 @@ import {
   Calendar, AlertCircle, ChevronLeft, ZoomIn, ArrowRight,
   GripVertical, MoreHorizontal, ArrowDownToLine, Unlink,
   ArrowUp, ArrowDown, Diamond, FolderOpen, Link2, Link2Off,
+  Columns3, Save, RotateCcw, X, Eye, EyeOff,
 } from "lucide-react";
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import {
   format, addDays, differenceInDays, parseISO, isValid, startOfDay,
@@ -363,6 +367,65 @@ function InlineDurationEditor({ value, onCommit }: { value: number | string; onC
 
 type ZoomLevel = "week" | "month";
 
+interface PlanColumn {
+  id: string;
+  label: string;
+  width: string;
+  alwaysVisible?: boolean;
+}
+
+const ALL_COLUMNS: PlanColumn[] = [
+  { id: "rowNum", label: "#", width: "w-8", alwaysVisible: true },
+  { id: "indicator", label: "Type", width: "w-6" },
+  { id: "wbs", label: "WBS", width: "w-12" },
+  { id: "taskName", label: "Task Name", width: "min-w-[140px]", alwaysVisible: true },
+  { id: "duration", label: "Duration", width: "w-14" },
+  { id: "start", label: "Start", width: "w-[68px]" },
+  { id: "finish", label: "Finish", width: "w-[68px]" },
+  { id: "predecessors", label: "Pred.", width: "w-[60px]" },
+  { id: "resource", label: "Resource", width: "w-[70px]" },
+  { id: "pctComplete", label: "% Complete", width: "w-[90px]" },
+  { id: "expectedPct", label: "Expected %", width: "w-[70px]" },
+  { id: "status", label: "Status", width: "w-10" },
+];
+
+const DEFAULT_VISIBLE_COLUMNS = ALL_COLUMNS.map(c => c.id);
+
+interface SavedView {
+  name: string;
+  columns: string[];
+}
+
+const STORAGE_KEY_COLUMNS = "planTab_visibleColumns";
+const STORAGE_KEY_VIEWS = "planTab_savedViews";
+
+function loadVisibleColumns(): string[] {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_COLUMNS);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return DEFAULT_VISIBLE_COLUMNS;
+}
+
+function saveVisibleColumns(cols: string[]) {
+  localStorage.setItem(STORAGE_KEY_COLUMNS, JSON.stringify(cols));
+}
+
+function loadSavedViews(): SavedView[] {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_VIEWS);
+    if (stored) return JSON.parse(stored);
+  } catch {}
+  return [];
+}
+
+function saveSavedViews(views: SavedView[]) {
+  localStorage.setItem(STORAGE_KEY_VIEWS, JSON.stringify(views));
+}
+
 export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlanTabProps) {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
@@ -382,6 +445,49 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   const [convertMilestoneTask, setConvertMilestoneTask] = useState<any>(null);
   const [groupUnderDialogOpen, setGroupUnderDialogOpen] = useState(false);
   const [groupUnderTask, setGroupUnderTask] = useState<any>(null);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(loadVisibleColumns);
+  const [savedViews, setSavedViews] = useState<SavedView[]>(loadSavedViews);
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
+  const [newViewName, setNewViewName] = useState("");
+
+  const isColumnVisible = useCallback((id: string) => visibleColumns.includes(id), [visibleColumns]);
+  const toggleColumn = useCallback((id: string) => {
+    const col = ALL_COLUMNS.find(c => c.id === id);
+    if (col?.alwaysVisible) return;
+    setVisibleColumns(prev => {
+      const next = prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id];
+      saveVisibleColumns(next);
+      return next;
+    });
+  }, []);
+  const resetColumns = useCallback(() => {
+    setVisibleColumns(DEFAULT_VISIBLE_COLUMNS);
+    saveVisibleColumns(DEFAULT_VISIBLE_COLUMNS);
+  }, []);
+  const saveCurrentView = useCallback((name: string) => {
+    if (!name.trim()) return;
+    const existing = savedViews.filter(v => v.name !== name.trim());
+    const updated = [...existing, { name: name.trim(), columns: visibleColumns }];
+    setSavedViews(updated);
+    saveSavedViews(updated);
+    setNewViewName("");
+    toast({ title: `View "${name.trim()}" saved` });
+  }, [visibleColumns, savedViews, toast]);
+  const loadView = useCallback((view: SavedView) => {
+    setVisibleColumns(view.columns);
+    saveVisibleColumns(view.columns);
+    toast({ title: `View "${view.name}" loaded` });
+  }, [toast]);
+  const deleteView = useCallback((name: string) => {
+    const updated = savedViews.filter(v => v.name !== name);
+    setSavedViews(updated);
+    saveSavedViews(updated);
+  }, [savedViews]);
+  const visibleColCount = useMemo(() => {
+    let count = visibleColumns.length;
+    if (isAdmin) count += 2;
+    return count;
+  }, [visibleColumns, isAdmin]);
 
   const ganttScrollRef = useRef<HTMLDivElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
@@ -1185,6 +1291,99 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
         </div>
 
         <div className="ml-auto flex items-center gap-1.5">
+          <Popover open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+            <PopoverTrigger asChild>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" data-testid="button-column-chooser">
+                <Columns3 className="h-3 w-3" />
+                Columns
+                {visibleColumns.length < ALL_COLUMNS.length && (
+                  <Badge variant="secondary" className="h-4 px-1 text-[9px] ml-0.5">{visibleColumns.length}/{ALL_COLUMNS.length}</Badge>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-[260px] p-0" data-testid="column-chooser-popover">
+              <div className="p-3 border-b">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold">Show/Hide Columns</span>
+                  <Button size="sm" variant="ghost" className="h-5 px-1.5 text-[10px]" onClick={resetColumns} data-testid="button-reset-columns">
+                    <RotateCcw className="h-2.5 w-2.5 mr-1" /> Reset
+                  </Button>
+                </div>
+                <div className="space-y-1">
+                  {ALL_COLUMNS.map(col => (
+                    <label
+                      key={col.id}
+                      className={`flex items-center gap-2 px-2 py-1 rounded text-xs cursor-pointer hover:bg-muted ${col.alwaysVisible ? "opacity-50 cursor-not-allowed" : ""}`}
+                      data-testid={`column-toggle-${col.id}`}
+                    >
+                      <Checkbox
+                        checked={isColumnVisible(col.id)}
+                        onCheckedChange={() => toggleColumn(col.id)}
+                        disabled={col.alwaysVisible}
+                        className="h-3 w-3"
+                      />
+                      <span>{col.label}</span>
+                      {isColumnVisible(col.id) ? (
+                        <Eye className="h-3 w-3 text-emerald-500 ml-auto" />
+                      ) : (
+                        <EyeOff className="h-3 w-3 text-slate-400 ml-auto" />
+                      )}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="p-3 border-b">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Save View</span>
+                <div className="flex items-center gap-1.5 mt-1.5">
+                  <Input
+                    placeholder="View name..."
+                    value={newViewName}
+                    onChange={(e) => setNewViewName(e.target.value)}
+                    className="h-6 text-xs flex-1"
+                    onKeyDown={(e) => { if (e.key === "Enter" && newViewName.trim()) saveCurrentView(newViewName); }}
+                    data-testid="input-view-name"
+                  />
+                  <Button
+                    size="sm"
+                    className="h-6 px-2 text-[10px]"
+                    disabled={!newViewName.trim()}
+                    onClick={() => saveCurrentView(newViewName)}
+                    data-testid="button-save-view"
+                  >
+                    <Save className="h-2.5 w-2.5 mr-1" /> Save
+                  </Button>
+                </div>
+              </div>
+              {savedViews.length > 0 && (
+                <div className="p-3">
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Saved Views</span>
+                  <div className="space-y-1 mt-1.5">
+                    {savedViews.map(view => (
+                      <div key={view.name} className="flex items-center gap-1 group" data-testid={`saved-view-${view.name}`}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 text-xs flex-1 justify-start px-2"
+                          onClick={() => loadView(view)}
+                          data-testid={`button-load-view-${view.name}`}
+                        >
+                          {view.name}
+                          <span className="text-[9px] text-muted-foreground ml-auto">{view.columns.length} cols</span>
+                        </Button>
+                        <button
+                          className="h-5 w-5 rounded hover:bg-red-100 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => deleteView(view.name)}
+                          data-testid={`button-delete-view-${view.name}`}
+                        >
+                          <X className="h-2.5 w-2.5 text-red-500" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </PopoverContent>
+          </Popover>
           <SearchableSelect
             value={zoomLevel}
             onValueChange={(v) => setZoomLevel(v as ZoomLevel)}
@@ -1284,25 +1483,25 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                     data-testid="checkbox-select-all"
                   />
                 </th>
-                <th className="w-8 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-row-num">#</th>
-                <th className="w-6 px-0 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-indicator"></th>
-                <th className="w-12 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-wbs">WBS</th>
-                <th className="min-w-[140px] px-2 py-0 text-left border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-task">Task Name</th>
-                <th className="w-14 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-duration">Duration</th>
-                <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-start">Start</th>
-                <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-end">Finish</th>
-                <th className="w-[60px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-predecessors">Pred.</th>
-                <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-lead">Resource</th>
-                <th className="w-[90px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-pct-done">% Complete</th>
-                <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-expected-pct">Expected %</th>
-                <th className="w-10 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-status">Status</th>
+                {isColumnVisible("rowNum") && <th className="w-8 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-row-num">#</th>}
+                {isColumnVisible("indicator") && <th className="w-6 px-0 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-indicator"></th>}
+                {isColumnVisible("wbs") && <th className="w-12 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-wbs">WBS</th>}
+                {isColumnVisible("taskName") && <th className="min-w-[140px] px-2 py-0 text-left border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-task">Task Name</th>}
+                {isColumnVisible("duration") && <th className="w-14 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-duration">Duration</th>}
+                {isColumnVisible("start") && <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-start">Start</th>}
+                {isColumnVisible("finish") && <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-end">Finish</th>}
+                {isColumnVisible("predecessors") && <th className="w-[60px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-predecessors">Pred.</th>}
+                {isColumnVisible("resource") && <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-lead">Resource</th>}
+                {isColumnVisible("pctComplete") && <th className="w-[90px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-pct-done">% Complete</th>}
+                {isColumnVisible("expectedPct") && <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-expected-pct">Expected %</th>}
+                {isColumnVisible("status") && <th className="w-10 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-status">Status</th>}
                 {isAdmin && <th className="w-7 px-0 py-0 border-b font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} />}
               </tr>
             </thead>
             <tbody>
               {visibleTasks.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 15 : 13} className="text-center text-muted-foreground py-12">
+                  <td colSpan={visibleColCount + 1} className="text-center text-muted-foreground py-12">
                     <div className="flex flex-col items-center gap-2">
                       <Circle className="h-8 w-8 text-slate-600" />
                       <span className="text-emerald-600 font-medium">No tasks found</span>
@@ -1401,9 +1600,12 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           data-testid={`checkbox-task-${task.id}`}
                         />
                       </td>
+                      {isColumnVisible("rowNum") && (
                       <td className="px-1 text-center border-r text-[10px] tabular-nums text-slate-500" data-testid={`row-num-${task.id}`}>
                         {rowIndex + 1}
                       </td>
+                      )}
+                      {isColumnVisible("indicator") && (
                       <td className="px-0 text-center border-r" data-testid={`indicator-${task.id}`}>
                         {isMilestone ? (
                           <span className="text-amber-600 text-[11px]" title="Milestone">◆</span>
@@ -1413,6 +1615,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           <span className="text-slate-500 text-[10px]" title="Task">▬</span>
                         )}
                       </td>
+                      )}
+                      {isColumnVisible("wbs") && (
                       <td className="px-1 text-center border-r text-[10px] tabular-nums text-muted-foreground" data-testid={`wbs-${task.id}`}>
                         {isAdmin && task.rowNumber ? (
                           <InlineWbsEditor
@@ -1423,6 +1627,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           task.taskNumber || ""
                         )}
                       </td>
+                      )}
+                      {isColumnVisible("taskName") && (
                       <td className="px-2 border-r truncate" data-testid={`task-name-${task.id}`}>
                         <div className="flex items-center gap-1" style={{ paddingLeft: depth * 16 }}>
                           {hasChildren && (
@@ -1439,6 +1645,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           </span>
                         </div>
                       </td>
+                      )}
+                      {isColumnVisible("duration") && (
                       <td className="px-1 text-center border-r text-[10px] tabular-nums" onClick={(e) => e.stopPropagation()} data-testid={`duration-${task.id}`}>
                         {hasChildren ? (
                           <span className="text-slate-500">{taskDuration > 0 ? `${taskDuration}d` : "—"}</span>
@@ -1449,6 +1657,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           />
                         )}
                       </td>
+                      )}
+                      {isColumnVisible("start") && (
                       <td className={`px-1 text-center border-r text-[10px] tabular-nums ${hasChildren ? "text-slate-500" : ""}`} onClick={(e) => e.stopPropagation()} data-testid={`start-${task.id}`}>
                         {hasChildren ? (
                           <span>{formatDateCompact(taskStart)}</span>
@@ -1459,6 +1669,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           />
                         )}
                       </td>
+                      )}
+                      {isColumnVisible("finish") && (
                       <td className={`px-1 text-center border-r text-[10px] tabular-nums ${hasChildren ? "text-slate-500" : ""}`} onClick={(e) => e.stopPropagation()} data-testid={`end-${task.id}`}>
                         {hasChildren ? (
                           <span>{formatDateCompact(taskFinish)}</span>
@@ -1469,14 +1681,20 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           />
                         )}
                       </td>
+                      )}
+                      {isColumnVisible("predecessors") && (
                       <td className="px-1 text-center border-r text-[10px] text-slate-500 truncate" data-testid={`predecessors-${task.id}`}>
                         {task.dependencies && typeof task.dependencies === 'string' ? task.dependencies : task.predecessorTaskId ? `${task.predecessorTaskId} FS` : "—"}
                       </td>
+                      )}
+                      {isColumnVisible("resource") && (
                       <td className="px-1 text-center border-r text-[10px] text-muted-foreground truncate" data-testid={`lead-${task.id}`}>
                         {task.assignees ? (
                           <span className="truncate">{typeof task.assignees === 'string' ? task.assignees.split(',')[0] : '—'}</span>
                         ) : "—"}
                       </td>
+                      )}
+                      {isColumnVisible("pctComplete") && (
                       <td className="px-1 border-r" onClick={(e) => e.stopPropagation()} data-testid={`pct-done-${task.id}`}>
                         {hasChildren ? (
                           <div className="flex items-center gap-1.5">
@@ -1492,6 +1710,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           />
                         )}
                       </td>
+                      )}
+                      {isColumnVisible("expectedPct") && (
                       <td className="px-1 text-center border-r text-[10px] tabular-nums" data-testid={`expected-pct-${task.id}`}>
                         {expPct !== null ? (
                           <span className={isLate ? "text-red-600 font-semibold" : "text-muted-foreground"}>{expPct}%</span>
@@ -1499,6 +1719,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           <span className="text-slate-600">—</span>
                         )}
                       </td>
+                      )}
+                      {isColumnVisible("status") && (
                       <td className="px-1 text-center border-r" data-testid={`status-${task.id}`}>
                         <TooltipProvider delayDuration={200}>
                           <Tooltip>
@@ -1509,6 +1731,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           </Tooltip>
                         </TooltipProvider>
                       </td>
+                      )}
                       {isAdmin && (
                         <td className="px-0 text-center" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenu>
