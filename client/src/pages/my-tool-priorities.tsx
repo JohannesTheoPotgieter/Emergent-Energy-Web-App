@@ -10,13 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Dialog,
   DialogContent,
@@ -441,19 +435,20 @@ export default function MyToolPrioritiesPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-8 w-32 text-xs" data-testid="select-status-filter">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all_active">Active</SelectItem>
-                <SelectItem value="in_progress">In progress</SelectItem>
-                <SelectItem value="not_started">Not started</SelectItem>
-                <SelectItem value="complete">Complete</SelectItem>
-                <SelectItem value="closed">Closed</SelectItem>
-                <SelectItem value="all">All</SelectItem>
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={statusFilter}
+              onValueChange={setStatusFilter}
+              triggerClassName="h-8 w-32 text-xs"
+              options={[
+                { value: "all_active", label: "Active" },
+                { value: "in_progress", label: "In progress" },
+                { value: "not_started", label: "Not started" },
+                { value: "complete", label: "Complete" },
+                { value: "closed", label: "Closed" },
+                { value: "all", label: "All" },
+              ]}
+              data-testid="select-status-filter"
+            />
             {canEdit && (
               <Button size="sm" onClick={() => openCreate()} data-testid="button-create-priority">
                 <Plus className="h-4 w-4 mr-1" />
@@ -582,27 +577,23 @@ export default function MyToolPrioritiesPage() {
                         </div>
                         <div className="pr-2">
                           {inlineEdit?.id === p.id && inlineEdit.field === "status" ? (
-                            <Select
+                            <SearchableSelect
                               value={inlineEdit.value}
                               onValueChange={(val) => {
                                 inlineUpdateMutation.mutate({ id: p.id, field: "status", value: val });
                                 setInlineEdit(null);
                               }}
-                              open={true}
-                              onOpenChange={(open) => { if (!open) setInlineEdit(null); }}
-                            >
-                              <SelectTrigger className="h-7 text-[10px] px-1.5 w-24" data-testid={`inline-edit-status-${p.id}`}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="not_started">Not started</SelectItem>
-                                <SelectItem value="in_progress">In progress</SelectItem>
-                                <SelectItem value="active">Active</SelectItem>
-                                <SelectItem value="monitoring">Monitoring</SelectItem>
-                                <SelectItem value="complete">Complete</SelectItem>
-                                <SelectItem value="closed">Closed</SelectItem>
-                              </SelectContent>
-                            </Select>
+                              triggerClassName="h-7 text-[10px] px-1.5 w-24"
+                              options={[
+                                { value: "not_started", label: "Not started" },
+                                { value: "in_progress", label: "In progress" },
+                                { value: "active", label: "Active" },
+                                { value: "monitoring", label: "Monitoring" },
+                                { value: "complete", label: "Complete" },
+                                { value: "closed", label: "Closed" },
+                              ]}
+                              data-testid={`inline-edit-status-${p.id}`}
+                            />
                           ) : (
                             <Badge
                               variant="secondary"
@@ -763,19 +754,20 @@ export default function MyToolPrioritiesPage() {
                 </div>
                 <div>
                   <Label className="text-xs font-medium">Status</Label>
-                  <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-                    <SelectTrigger className="mt-1" data-testid="select-dialog-status">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="not_started">Not started</SelectItem>
-                      <SelectItem value="in_progress">In progress</SelectItem>
-                      <SelectItem value="complete">Complete</SelectItem>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="monitoring">Monitoring</SelectItem>
-                      <SelectItem value="closed">Closed</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={form.status}
+                    onValueChange={(v) => setForm({ ...form, status: v })}
+                    triggerClassName="mt-1"
+                    options={[
+                      { value: "not_started", label: "Not started" },
+                      { value: "in_progress", label: "In progress" },
+                      { value: "complete", label: "Complete" },
+                      { value: "active", label: "Active" },
+                      { value: "monitoring", label: "Monitoring" },
+                      { value: "closed", label: "Closed" },
+                    ]}
+                    data-testid="select-dialog-status"
+                  />
                 </div>
               </div>
 
@@ -890,22 +882,20 @@ export default function MyToolPrioritiesPage() {
                   <div className="flex items-end gap-2">
                     <div className="flex-1">
                       <Label className="text-[10px] text-muted-foreground">Add Project Link</Label>
-                      <Select
+                      <SearchableSelect
                         value={linkProjectPicker || "_none"}
                         onValueChange={(v) => setLinkProjectPicker(v === "_none" ? "" : v)}
-                      >
-                        <SelectTrigger className="mt-1 text-xs" data-testid="select-link-project">
-                          <SelectValue placeholder="Select project..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="_none">Select project...</SelectItem>
-                          {projectNames.map((name: string) => (
-                            <SelectItem key={name} value={name}>
-                              {name.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Select project..."
+                        triggerClassName="mt-1 text-xs"
+                        options={[
+                          { value: "_none", label: "Select project..." },
+                          ...projectNames.map((name: string) => ({
+                            value: name,
+                            label: name.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
+                          })),
+                        ]}
+                        data-testid="select-link-project"
+                      />
                     </div>
                     <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addPendingProjectLink} disabled={!linkProjectPicker} data-testid="btn-add-project-link">
                       <Plus className="h-3 w-3 mr-1" /> Project
@@ -916,22 +906,20 @@ export default function MyToolPrioritiesPage() {
                     <div className="flex items-end gap-2">
                       <div className="flex-1">
                         <Label className="text-[10px] text-muted-foreground">Add Task Link (from selected project)</Label>
-                        <Select
+                        <SearchableSelect
                           value={linkTaskPicker || "_none"}
                           onValueChange={(v) => setLinkTaskPicker(v === "_none" ? "" : v)}
-                        >
-                          <SelectTrigger className="mt-1 text-xs" data-testid="select-link-task">
-                            <SelectValue placeholder="Select task..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="_none">Select task...</SelectItem>
-                            {tasksForProject.map((t: any) => (
-                              <SelectItem key={t.id} value={String(t.id)}>
-                                {t.title?.slice(0, 50)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          placeholder="Select task..."
+                          triggerClassName="mt-1 text-xs"
+                          options={[
+                            { value: "_none", label: "Select task..." },
+                            ...tasksForProject.map((t: any) => ({
+                              value: String(t.id),
+                              label: t.title?.slice(0, 50) || `Task #${t.id}`,
+                            })),
+                          ]}
+                          data-testid="select-link-task"
+                        />
                       </div>
                       <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={addPendingTaskLink} disabled={!linkTaskPicker} data-testid="btn-add-task-link">
                         <Plus className="h-3 w-3 mr-1" /> Task

@@ -9,9 +9,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { useLocation } from "wouter";
@@ -1399,22 +1397,14 @@ export default function LifecycleBoardPage() {
                   </div>
                   <div>
                     <Label className="text-xs">Phase</Label>
-                    <Select
+                    <SearchableSelect
                       value={editForm.phase}
                       onValueChange={(val) => setEditForm(f => ({ ...f, phase: val }))}
                       disabled={!selectedProject.id || selectedProject.id <= 0}
-                    >
-                      <SelectTrigger data-testid="select-edit-phase">
-                        <SelectValue placeholder="Select phase..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {PHASE_GROUPS.map(g => (
-                          <SelectItem key={g.key} value={g.phaseValue} data-testid={`edit-phase-option-${g.key}`}>
-                            {g.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      placeholder="Select phase..."
+                      options={PHASE_GROUPS.map(g => ({ value: g.phaseValue, label: g.label }))}
+                      data-testid="select-edit-phase"
+                    />
                   </div>
                   <div className="grid gap-3 grid-cols-2">
                     <div>
@@ -1441,7 +1431,7 @@ export default function LifecycleBoardPage() {
                   <div className="grid gap-3 grid-cols-2">
                     <div>
                       <Label className="text-xs">Project Developer (PD)</Label>
-                      <Select
+                      <SearchableSelect
                         value={editForm.pd || "__unassigned"}
                         onValueChange={(val) => {
                           if (val === "__unassigned") {
@@ -1451,21 +1441,17 @@ export default function LifecycleBoardPage() {
                           }
                         }}
                         disabled={!selectedProject.id || selectedProject.id <= 0}
-                      >
-                        <SelectTrigger data-testid="select-edit-pd">
-                          <SelectValue placeholder="Unassigned" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__unassigned" data-testid="select-pd-unassigned">Unassigned</SelectItem>
-                          {pdUsers.map((u) => (
-                            <SelectItem key={u.id} value={u.name} data-testid={`select-pd-${u.id}`}>{u.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Unassigned"
+                        options={[
+                          { value: "__unassigned", label: "Unassigned" },
+                          ...pdUsers.map((u) => ({ value: u.name, label: u.name })),
+                        ]}
+                        data-testid="select-edit-pd"
+                      />
                     </div>
                     <div>
                       <Label className="text-xs">Project Manager (PM)</Label>
-                      <Select
+                      <SearchableSelect
                         value={editForm.pm || "__unassigned"}
                         onValueChange={(val) => {
                           if (val === "__unassigned") {
@@ -1476,57 +1462,43 @@ export default function LifecycleBoardPage() {
                           }
                         }}
                         disabled={!selectedProject.id || selectedProject.id <= 0}
-                      >
-                        <SelectTrigger data-testid="select-edit-pm">
-                          <SelectValue placeholder="Unassigned" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__unassigned" data-testid="select-pm-unassigned">Unassigned</SelectItem>
-                          {pmUsers.map((u) => (
-                            <SelectItem key={u.id} value={u.name} data-testid={`select-pm-${u.id}`}>{u.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Unassigned"
+                        options={[
+                          { value: "__unassigned", label: "Unassigned" },
+                          ...pmUsers.map((u) => ({ value: u.name, label: u.name })),
+                        ]}
+                        data-testid="select-edit-pm"
+                      />
                     </div>
                   </div>
                   <div className="grid gap-3 grid-cols-2">
                     <div>
                       <Label className="text-xs">Escalation Level</Label>
-                      <Select
+                      <SearchableSelect
                         value={editForm.escalationLevel}
                         onValueChange={(val) => setEditForm(f => ({ ...f, escalationLevel: val }))}
                         disabled={!selectedProject.id || selectedProject.id <= 0}
-                      >
-                        <SelectTrigger data-testid="select-edit-escalation">
-                          <SelectValue placeholder="None" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ESCALATION_LEVELS.map(level => (
-                            <SelectItem key={level || "none"} value={level || "none"} data-testid={`edit-esc-${level || "none"}`}>
-                              {level || "None"}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="None"
+                        options={ESCALATION_LEVELS.map(level => ({
+                          value: level || "none",
+                          label: level || "None",
+                        }))}
+                        data-testid="select-edit-escalation"
+                      />
                     </div>
                     <div>
                       <Label className="text-xs">RAG Status</Label>
-                      <Select
+                      <SearchableSelect
                         value={editForm.ragStatus}
                         onValueChange={(val) => setEditForm(f => ({ ...f, ragStatus: val }))}
                         disabled={!selectedProject.id || selectedProject.id <= 0}
-                      >
-                        <SelectTrigger data-testid="select-edit-rag">
-                          <SelectValue placeholder="None" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {RAG_STATUSES.map(rag => (
-                            <SelectItem key={rag || "none"} value={rag || "none"} data-testid={`edit-rag-${rag || "none"}`}>
-                              {rag || "None"}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="None"
+                        options={RAG_STATUSES.map(rag => ({
+                          value: rag || "none",
+                          label: rag || "None",
+                        }))}
+                        data-testid="select-edit-rag"
+                      />
                     </div>
                   </div>
                   <DialogFooter className="flex justify-between sm:justify-between">
@@ -1572,22 +1544,19 @@ export default function LifecycleBoardPage() {
                   )}
                   <div>
                     <Label className="text-xs">Link to project</Label>
-                    <Select value={linkTarget} onValueChange={setLinkTarget}>
-                      <SelectTrigger data-testid="select-link-target">
-                        <SelectValue placeholder="Select a tracker project..." />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-60">
-                        {trackerProjects
-                          .filter(p => p.id !== selectedProject?.id)
-                          .sort((a, b) => cleanProjectName(a.projectName).localeCompare(cleanProjectName(b.projectName)))
-                          .map(p => (
-                            <SelectItem key={p.id} value={String(p.id)} data-testid={`link-option-${p.id}`}>
-                              {cleanProjectName(p.projectName)}
-                              {p.phase && <span className="text-muted-foreground ml-1">({p.phase})</span>}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={linkTarget}
+                      onValueChange={setLinkTarget}
+                      placeholder="Select a tracker project..."
+                      options={trackerProjects
+                        .filter(p => p.id !== selectedProject?.id)
+                        .sort((a, b) => cleanProjectName(a.projectName).localeCompare(cleanProjectName(b.projectName)))
+                        .map(p => ({
+                          value: String(p.id),
+                          label: `${cleanProjectName(p.projectName)}${p.phase ? ` (${p.phase})` : ""}`,
+                        }))}
+                      data-testid="select-link-target"
+                    />
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setProjectDialogOpen(false)}>Cancel</Button>
@@ -1616,22 +1585,20 @@ export default function LifecycleBoardPage() {
                   )}
                   <div>
                     <Label className="text-xs">Merge into</Label>
-                    <Select value={mergeTarget} onValueChange={setMergeTarget} disabled={!selectedProject.id || selectedProject.id <= 0}>
-                      <SelectTrigger data-testid="select-merge-target">
-                        <SelectValue placeholder="Select target project..." />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-60">
-                        {trackerProjects
-                          .filter(p => p.id !== selectedProject?.id)
-                          .sort((a, b) => cleanProjectName(a.projectName).localeCompare(cleanProjectName(b.projectName)))
-                          .map(p => (
-                            <SelectItem key={p.id} value={String(p.id)} data-testid={`merge-option-${p.id}`}>
-                              {cleanProjectName(p.projectName)}
-                              {p.phase && <span className="text-muted-foreground ml-1">({p.phase})</span>}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={mergeTarget}
+                      onValueChange={setMergeTarget}
+                      disabled={!selectedProject.id || selectedProject.id <= 0}
+                      placeholder="Select target project..."
+                      options={trackerProjects
+                        .filter(p => p.id !== selectedProject?.id)
+                        .sort((a, b) => cleanProjectName(a.projectName).localeCompare(cleanProjectName(b.projectName)))
+                        .map(p => ({
+                          value: String(p.id),
+                          label: `${cleanProjectName(p.projectName)}${p.phase ? ` (${p.phase})` : ""}`,
+                        }))}
+                      data-testid="select-merge-target"
+                    />
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setProjectDialogOpen(false)}>Cancel</Button>
@@ -1679,20 +1646,18 @@ export default function LifecycleBoardPage() {
                       <div>
                         <Label className="text-xs">Signed Status</Label>
                         {isExec ? (
-                          <Select
+                          <SearchableSelect
                             value={gateForm.signedStatus}
                             onValueChange={(val) => setGateForm(f => ({ ...f, signedStatus: val }))}
-                          >
-                            <SelectTrigger data-testid="select-gate-signed-status">
-                              <SelectValue placeholder="Select status..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="NONE" data-testid="gate-signed-none">None</SelectItem>
-                              <SelectItem value="COST_PROPOSAL_SIGNED" data-testid="gate-signed-cost">Cost Proposal Signed</SelectItem>
-                              <SelectItem value="EPC_SIGNED" data-testid="gate-signed-epc">EPC Signed</SelectItem>
-                              <SelectItem value="DEAL_SIGNED" data-testid="gate-signed-deal">Deal Signed</SelectItem>
-                            </SelectContent>
-                          </Select>
+                            placeholder="Select status..."
+                            options={[
+                              { value: "NONE", label: "None" },
+                              { value: "COST_PROPOSAL_SIGNED", label: "Cost Proposal Signed" },
+                              { value: "EPC_SIGNED", label: "EPC Signed" },
+                              { value: "DEAL_SIGNED", label: "Deal Signed" },
+                            ]}
+                            data-testid="select-gate-signed-status"
+                          />
                         ) : (
                           <div className="text-sm mt-1 font-medium" data-testid="text-gate-signed-status">
                             {gateData.signedStatus === "NONE" ? "None" :
@@ -1932,14 +1897,15 @@ export default function LifecycleBoardPage() {
               </div>
               <div>
                 <Label className="text-sm font-medium">Initial Phase</Label>
-                <Select value={addProjectForm.initialPhase} onValueChange={(v) => setAddProjectForm(f => ({ ...f, initialPhase: v }))}>
-                  <SelectTrigger data-testid="select-add-initial-phase"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {(phaseConstants?.projectPhases || ["P0_FIRST_ASSESSMENT"]).map((p) => (
-                      <SelectItem key={p} value={p}>{phaseConstants?.projectPhaseLabels?.[p] || p}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={addProjectForm.initialPhase}
+                  onValueChange={(v) => setAddProjectForm(f => ({ ...f, initialPhase: v }))}
+                  options={(phaseConstants?.projectPhases || ["P0_FIRST_ASSESSMENT"]).map((p) => ({
+                    value: p,
+                    label: phaseConstants?.projectPhaseLabels?.[p] || p,
+                  }))}
+                  data-testid="select-add-initial-phase"
+                />
               </div>
               <DialogFooter className="gap-2 pt-2">
                 <Button variant="outline" onClick={resetAddProjectDialog} data-testid="button-cancel-add">
@@ -1982,20 +1948,17 @@ export default function LifecycleBoardPage() {
             <div className="space-y-3" data-testid="rag-edit-form">
               <div>
                 <Label className="text-sm font-medium">RAG Status</Label>
-                <Select value={ragForm.rag} onValueChange={(v) => setRagForm(f => ({ ...f, rag: v }))}>
-                  <SelectTrigger data-testid="select-rag-status"><SelectValue placeholder="Select RAG" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="GREEN">
-                      <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-green-500" /> Green</span>
-                    </SelectItem>
-                    <SelectItem value="AMBER">
-                      <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-amber-500" /> Amber</span>
-                    </SelectItem>
-                    <SelectItem value="RED">
-                      <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-500" /> Red</span>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={ragForm.rag}
+                  onValueChange={(v) => setRagForm(f => ({ ...f, rag: v }))}
+                  placeholder="Select RAG"
+                  options={[
+                    { value: "GREEN", label: "Green" },
+                    { value: "AMBER", label: "Amber" },
+                    { value: "RED", label: "Red" },
+                  ]}
+                  data-testid="select-rag-status"
+                />
               </div>
               <div>
                 <Label className="text-sm font-medium">Comment (min 5 chars)</Label>

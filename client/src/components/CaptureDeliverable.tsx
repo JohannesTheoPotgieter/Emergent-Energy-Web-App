@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
@@ -570,18 +570,16 @@ export default function CaptureDeliverable({
               </div>
               <div>
                 <Label className="text-xs">Assign To</Label>
-                <Select value={ownerUserId} onValueChange={setOwnerUserId}>
-                  <SelectTrigger data-testid="select-owner-user">
-                    <SelectValue placeholder="Select user..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {assignableUsers.map((u) => (
-                      <SelectItem key={u.id} value={String(u.id)} data-testid={`user-option-${u.id}`}>
-                        {u.name || u.email}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={ownerUserId}
+                  onValueChange={setOwnerUserId}
+                  placeholder="Select user..."
+                  data-testid="select-owner-user"
+                  options={assignableUsers.map((u) => ({
+                    value: String(u.id),
+                    label: u.name || u.email,
+                  }))}
+                />
               </div>
             </div>
 

@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   History, FileUp, Edit, Shield, GitMerge, Cpu, Users, Settings,
@@ -91,19 +91,21 @@ export function ProjectHistoryTab({ projectName }: { projectName: string }) {
           <h3 className="font-semibold text-lg">Project History</h3>
           <Badge variant="secondary" data-testid="text-history-count">{pagination.total} events</Badge>
         </div>
-        <Select value={sourceFilter} onValueChange={(v) => { setSourceFilter(v); setPage(1); }}>
-          <SelectTrigger className="w-[180px]" data-testid="select-history-source-filter">
-            <SelectValue placeholder="All Sources" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Sources</SelectItem>
-            <SelectItem value="IMPORT">Imports</SelectItem>
-            <SelectItem value="MANUAL_EDIT">Manual Edits</SelectItem>
-            <SelectItem value="OVERRIDE">Overrides</SelectItem>
-            <SelectItem value="CONFLICT_RESOLUTION">Conflict Resolution</SelectItem>
-            <SelectItem value="SYSTEM">System</SelectItem>
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={sourceFilter}
+          onValueChange={(v) => { setSourceFilter(v); setPage(1); }}
+          placeholder="All Sources"
+          triggerClassName="w-[180px]"
+          data-testid="select-history-source-filter"
+          options={[
+            { value: "all", label: "All Sources" },
+            { value: "IMPORT", label: "Imports" },
+            { value: "MANUAL_EDIT", label: "Manual Edits" },
+            { value: "OVERRIDE", label: "Overrides" },
+            { value: "CONFLICT_RESOLUTION", label: "Conflict Resolution" },
+            { value: "SYSTEM", label: "System" },
+          ]}
+        />
       </div>
 
       {items.length === 0 ? (

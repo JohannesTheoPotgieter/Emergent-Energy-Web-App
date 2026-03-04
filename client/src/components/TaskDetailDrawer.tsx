@@ -22,13 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -387,45 +381,26 @@ function TaskDetailContent({
           <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
             <AlertCircle className="h-3 w-3" /> Status
           </label>
-          <Select
+          <SearchableSelect
             value={task.status}
             onValueChange={(v) => updateTask({ status: v })}
-          >
-            <SelectTrigger data-testid="select-status" className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {STATUS_OPTIONS.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            data-testid="select-status"
+            triggerClassName="h-8 text-xs"
+            options={STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
+          />
         </div>
 
         <div>
           <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
             <Flag className="h-3 w-3" /> Priority
           </label>
-          <Select
+          <SearchableSelect
             value={task.priority}
             onValueChange={(v) => updateTask({ priority: v })}
-          >
-            <SelectTrigger
-              data-testid="select-priority"
-              className="h-8 text-xs"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PRIORITY_OPTIONS.map((p) => (
-                <SelectItem key={p} value={p}>
-                  {p}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            data-testid="select-priority"
+            triggerClassName="h-8 text-xs"
+            options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))}
+          />
         </div>
 
         <div className="col-span-2">

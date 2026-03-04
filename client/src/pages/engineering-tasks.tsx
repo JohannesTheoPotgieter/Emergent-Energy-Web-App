@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Dialog,
   DialogContent,
@@ -304,27 +304,18 @@ function daysLabel(d: string | null) {
 
 function QuickStatusSelect({ task, onStatusChange }: { task: Task; onStatusChange: (id: number, status: string) => void }) {
   return (
-    <Select
-      value={task.status}
-      onValueChange={(v) => {
-        if (v !== task.status) onStatusChange(task.id, v);
-      }}
-    >
-      <SelectTrigger
-        className="h-6 text-[9px] px-1.5 w-auto min-w-0 border-none shadow-none bg-transparent hover:bg-muted/40"
-        onClick={(e) => e.stopPropagation()}
+    <div onClick={(e) => e.stopPropagation()}>
+      <SearchableSelect
+        value={task.status}
+        onValueChange={(v) => {
+          if (v !== task.status) onStatusChange(task.id, v);
+        }}
+        placeholder="Status"
+        triggerClassName="h-6 text-[9px] px-1.5 w-auto min-w-0 border-none shadow-none bg-transparent hover:bg-muted/40"
+        options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
         data-testid={`quick-status-${task.id}`}
-      >
-        <Badge className={`text-[9px] px-1.5 py-0 ${statusColors[task.status] || "bg-muted"}`}>
-          {task.status}
-        </Badge>
-      </SelectTrigger>
-      <SelectContent>
-        {TASK_STATUSES.map(s => (
-          <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+      />
+    </div>
   );
 }
 
@@ -487,16 +478,14 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
       <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
         <div onClick={(e) => e.stopPropagation()}>
           {onPriorityChange ? (
-            <Select value={task.priority} onValueChange={(v) => { if (v !== task.priority) onPriorityChange(task.id, v); }}>
-              <SelectTrigger className="h-5 text-[9px] px-0 w-auto min-w-0 border-none shadow-none bg-transparent p-0 gap-0" data-testid={`card-priority-${task.id}`}>
-                <Badge className={`text-[9px] px-1.5 py-0 leading-tight cursor-pointer hover:ring-1 hover:ring-offset-1 ring-current ${priorityColors[task.priority] || "bg-muted"}`}>
-                  {task.priority}
-                </Badge>
-              </SelectTrigger>
-              <SelectContent>
-                {PRIORITIES.map(p => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={task.priority}
+              onValueChange={(v) => { if (v !== task.priority) onPriorityChange(task.id, v); }}
+              placeholder="Priority"
+              triggerClassName="h-5 text-[9px] px-0 w-auto min-w-0 border-none shadow-none bg-transparent p-0 gap-0"
+              options={PRIORITIES.map(p => ({ value: p, label: p }))}
+              data-testid={`card-priority-${task.id}`}
+            />
           ) : (
             <Badge className={`text-[9px] px-1.5 py-0 leading-tight ${priorityColors[task.priority] || "bg-muted"}`}>
               {task.priority}
@@ -732,16 +721,14 @@ function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { taskId:
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-muted-foreground">Move to:</span>
-          <Select value={newStatus} onValueChange={(v) => { setNewStatus(v); if (v !== "HOLD") { setHoldReason(""); setBlockedType(""); } }}>
-            <SelectTrigger className="h-7 text-[10px] w-[140px]" data-testid="select-post-update-status">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TASK_STATUSES.map(s => (
-                <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={newStatus}
+            onValueChange={(v) => { setNewStatus(v); if (v !== "HOLD") { setHoldReason(""); setBlockedType(""); } }}
+            placeholder="Status"
+            triggerClassName="h-7 text-[10px] w-[140px]"
+            options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+            data-testid="select-post-update-status"
+          />
         </div>
         <Button
           size="sm"
@@ -758,15 +745,17 @@ function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { taskId:
         <div className="pt-1 space-y-2">
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-muted-foreground whitespace-nowrap">Blocked:</span>
-            <Select value={blockedType} onValueChange={setBlockedType}>
-              <SelectTrigger className="h-7 text-[10px] w-[120px] border-amber-300" data-testid="select-post-update-blocked-type">
-                <SelectValue placeholder="Select type..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Internal" className="text-xs">Internal</SelectItem>
-                <SelectItem value="External" className="text-xs">External</SelectItem>
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={blockedType}
+              onValueChange={setBlockedType}
+              placeholder="Select type..."
+              triggerClassName="h-7 text-[10px] w-[120px] border-amber-300"
+              options={[
+                { value: "Internal", label: "Internal" },
+                { value: "External", label: "External" },
+              ]}
+              data-testid="select-post-update-blocked-type"
+            />
           </div>
           <Input
             value={holdReason}
@@ -979,30 +968,26 @@ function TaskDetailDrawer({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Status</Label>
-                <Select value={task.status} onValueChange={handleStatusChange}>
-                  <SelectTrigger className="h-8 text-xs" data-testid="select-drawer-status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TASK_STATUSES.map(s => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={task.status}
+                  onValueChange={handleStatusChange}
+                  placeholder="Status"
+                  triggerClassName="h-8 text-xs"
+                  options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+                  data-testid="select-drawer-status"
+                />
               </div>
 
               <div className="space-y-1">
                 <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Priority</Label>
-                <Select value={task.priority} onValueChange={(v) => updateMutation.mutate({ priority: v })}>
-                  <SelectTrigger className="h-8 text-xs" data-testid="select-drawer-priority">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRIORITIES.map(p => (
-                      <SelectItem key={p} value={p}>{p}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={task.priority}
+                  onValueChange={(v) => updateMutation.mutate({ priority: v })}
+                  placeholder="Priority"
+                  triggerClassName="h-8 text-xs"
+                  options={PRIORITIES.map(p => ({ value: p, label: p }))}
+                  data-testid="select-drawer-priority"
+                />
               </div>
 
               <div className="space-y-1">
@@ -1374,16 +1359,17 @@ function TaskDetailDrawer({
                   <div className="space-y-4 pt-2">
                     <div className="space-y-1.5">
                       <Label className="text-xs font-medium">Recipient <span className="text-red-500">*</span></Label>
-                      <Select value={deliverableRecipient} onValueChange={setDeliverableRecipient}>
-                        <SelectTrigger className="h-9 text-sm" data-testid="select-deliverable-recipient">
-                          <SelectValue placeholder="Select recipient..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {teamMembers.filter(m => m.id !== user?.id).map(m => (
-                            <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <SearchableSelect
+                        value={deliverableRecipient}
+                        onValueChange={setDeliverableRecipient}
+                        placeholder="Select recipient..."
+                        triggerClassName="h-9 text-sm"
+                        options={teamMembers.filter(m => m.id !== user?.id).map(m => ({
+                          value: String(m.id),
+                          label: m.name,
+                        }))}
+                        data-testid="select-deliverable-recipient"
+                      />
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs font-medium">File <span className="text-red-500">*</span></Label>
@@ -1718,15 +1704,17 @@ function TaskDetailDrawer({
             <p className="text-sm text-muted-foreground">Please provide a reason for putting this task on hold.</p>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Blocked Type *</label>
-              <Select value={drawerBlockedType} onValueChange={setDrawerBlockedType}>
-                <SelectTrigger className="h-9" data-testid="select-drawer-blocked-type">
-                  <SelectValue placeholder="Internal or External..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Internal">Internal</SelectItem>
-                  <SelectItem value="External">External</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={drawerBlockedType}
+                onValueChange={setDrawerBlockedType}
+                placeholder="Internal or External..."
+                triggerClassName="h-9"
+                options={[
+                  { value: "Internal", label: "Internal" },
+                  { value: "External", label: "External" },
+                ]}
+                data-testid="select-drawer-blocked-type"
+              />
             </div>
             <Textarea
               value={drawerHoldReason}
@@ -2136,24 +2124,24 @@ function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }
                     {task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
                   </td>
                   <td className="p-2" onClick={(e) => e.stopPropagation()}>
-                    <Select value={task.status} onValueChange={(v) => onStatusChange(task.id, v)}>
-                      <SelectTrigger className="h-7 text-[10px] w-[130px] border-none shadow-none p-0" data-testid={`inline-status-${task.id}`}>
-                        <Badge className={`text-[10px] ${statusColors[task.status] || "bg-muted"}`}>{task.status}</Badge>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TASK_STATUSES.map(s => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={task.status}
+                      onValueChange={(v) => onStatusChange(task.id, v)}
+                      placeholder="Status"
+                      triggerClassName="h-7 text-[10px] w-[130px] border-none shadow-none p-0"
+                      options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+                      data-testid={`inline-status-${task.id}`}
+                    />
                   </td>
                   <td className="p-2" onClick={(e) => e.stopPropagation()}>
-                    <Select value={task.priority} onValueChange={(v) => onPriorityChange(task.id, v)}>
-                      <SelectTrigger className="h-7 text-[10px] w-[90px] border-none shadow-none p-0" data-testid={`inline-priority-${task.id}`}>
-                        <Badge className={`text-[10px] ${priorityColors[task.priority] || "bg-muted"}`}>{task.priority}</Badge>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {PRIORITIES.map(p => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={task.priority}
+                      onValueChange={(v) => onPriorityChange(task.id, v)}
+                      placeholder="Priority"
+                      triggerClassName="h-7 text-[10px] w-[90px] border-none shadow-none p-0"
+                      options={PRIORITIES.map(p => ({ value: p, label: p }))}
+                      data-testid={`inline-priority-${task.id}`}
+                    />
                   </td>
                   <td className="p-2 text-xs text-muted-foreground truncate max-w-[120px]">
                     {task.assignees?.[0] || "—"}
@@ -2340,48 +2328,54 @@ function MyTasksView({
             onChange={e => setMySearch(e.target.value)}
           />
         </div>
-        <Select value={myStatusFilter} onValueChange={setMyStatusFilter}>
-          <SelectTrigger className="w-[130px] h-8 text-xs" data-testid="my-tasks-filter-status">
-            <Filter className="h-3 w-3 mr-1" /><SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            {TASK_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={myPriorityFilter} onValueChange={setMyPriorityFilter}>
-          <SelectTrigger className="w-[110px] h-8 text-xs" data-testid="my-tasks-filter-priority">
-            <SelectValue placeholder="Priority" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Priorities</SelectItem>
-            {PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={myStatusFilter}
+          onValueChange={setMyStatusFilter}
+          placeholder="Status"
+          triggerClassName="w-[130px] h-8 text-xs"
+          options={[
+            { value: "all", label: "All Statuses" },
+            ...TASK_STATUSES.map(s => ({ value: s, label: s })),
+          ]}
+          data-testid="my-tasks-filter-status"
+        />
+        <SearchableSelect
+          value={myPriorityFilter}
+          onValueChange={setMyPriorityFilter}
+          placeholder="Priority"
+          triggerClassName="w-[110px] h-8 text-xs"
+          options={[
+            { value: "all", label: "All Priorities" },
+            ...PRIORITIES.map(p => ({ value: p, label: p })),
+          ]}
+          data-testid="my-tasks-filter-priority"
+        />
         {uniqueProjects.length > 0 && (
-          <Select value={myProjectFilter} onValueChange={setMyProjectFilter}>
-            <SelectTrigger className="w-[140px] h-8 text-xs" data-testid="my-tasks-filter-project">
-              <FolderKanban className="h-3 w-3 mr-1" /><SelectValue placeholder="Project" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Projects</SelectItem>
-              {uniqueProjects.map(p => (
-                <SelectItem key={p} value={p}>{p.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={myProjectFilter}
+            onValueChange={setMyProjectFilter}
+            placeholder="Project"
+            triggerClassName="w-[140px] h-8 text-xs"
+            options={[
+              { value: "all", label: "All Projects" },
+              ...uniqueProjects.map(p => ({ value: p, label: p.replace(/_Tracker.*$/i, "").replace(/_/g, " ") })),
+            ]}
+            data-testid="my-tasks-filter-project"
+          />
         )}
-        <Select value={myDueFilter} onValueChange={setMyDueFilter}>
-          <SelectTrigger className="w-[120px] h-8 text-xs" data-testid="my-tasks-filter-due">
-            <Calendar className="h-3 w-3 mr-1" /><SelectValue placeholder="Due" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Due Dates</SelectItem>
-            <SelectItem value="overdue">Overdue</SelectItem>
-            <SelectItem value="today">Due Today</SelectItem>
-            <SelectItem value="week">Due This Week</SelectItem>
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={myDueFilter}
+          onValueChange={setMyDueFilter}
+          placeholder="Due"
+          triggerClassName="w-[120px] h-8 text-xs"
+          options={[
+            { value: "all", label: "All Due Dates" },
+            { value: "overdue", label: "Overdue" },
+            { value: "today", label: "Due Today" },
+            { value: "week", label: "Due This Week" },
+          ]}
+          data-testid="my-tasks-filter-due"
+        />
       </div>
 
       {buckets.map(bucket => {
@@ -2438,24 +2432,24 @@ function MyTasksView({
                             </td>
                             <td className="p-2 text-xs text-muted-foreground truncate max-w-[120px]">{projectDisplay}</td>
                             <td className="p-2" onClick={e => e.stopPropagation()}>
-                              <Select value={task.status} onValueChange={v => { if (v !== task.status) onStatusChange(task.id, v); }}>
-                                <SelectTrigger className="h-7 text-[10px] w-[130px] border-none shadow-none p-0" data-testid={`my-task-status-${task.id}`}>
-                                  <Badge className={`text-[10px] ${statusColors[task.status] || "bg-muted"}`}>{task.status}</Badge>
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {TASK_STATUSES.map(s => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
-                                </SelectContent>
-                              </Select>
+                              <SearchableSelect
+                                value={task.status}
+                                onValueChange={v => { if (v !== task.status) onStatusChange(task.id, v); }}
+                                placeholder="Status"
+                                triggerClassName="h-7 text-[10px] w-[130px] border-none shadow-none p-0"
+                                options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+                                data-testid={`my-task-status-${task.id}`}
+                              />
                             </td>
                             <td className="p-2" onClick={e => e.stopPropagation()}>
-                              <Select value={task.priority} onValueChange={v => { if (v !== task.priority) onPriorityChange(task.id, v); }}>
-                                <SelectTrigger className="h-7 text-[10px] w-[90px] border-none shadow-none p-0" data-testid={`my-task-priority-${task.id}`}>
-                                  <Badge className={`text-[10px] ${priorityColors[task.priority] || "bg-muted"}`}>{task.priority}</Badge>
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {PRIORITIES.map(p => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}
-                                </SelectContent>
-                              </Select>
+                              <SearchableSelect
+                                value={task.priority}
+                                onValueChange={v => { if (v !== task.priority) onPriorityChange(task.id, v); }}
+                                placeholder="Priority"
+                                triggerClassName="h-7 text-[10px] w-[90px] border-none shadow-none p-0"
+                                options={PRIORITIES.map(p => ({ value: p, label: p }))}
+                                data-testid={`my-task-priority-${task.id}`}
+                              />
                             </td>
                             <td className="p-2" onClick={e => e.stopPropagation()}>
                               <Input
@@ -2545,22 +2539,22 @@ function MyTasksView({
                           </div>
                         )}
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <Select value={task.status} onValueChange={v => { if (v !== task.status) onStatusChange(task.id, v); }}>
-                            <SelectTrigger className="h-6 text-[10px] w-auto min-w-0 border-none shadow-none p-0" data-testid={`my-task-status-${task.id}`}>
-                              <Badge className={`text-[10px] ${statusColors[task.status] || "bg-muted"}`}>{task.status}</Badge>
-                            </SelectTrigger>
-                            <SelectContent>
-                              {TASK_STATUSES.map(s => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                          <Select value={task.priority} onValueChange={v => { if (v !== task.priority) onPriorityChange(task.id, v); }}>
-                            <SelectTrigger className="h-6 text-[10px] w-auto min-w-0 border-none shadow-none p-0" data-testid={`my-task-priority-${task.id}`}>
-                              <Badge className={`text-[10px] ${priorityColors[task.priority] || "bg-muted"}`}>{task.priority}</Badge>
-                            </SelectTrigger>
-                            <SelectContent>
-                              {PRIORITIES.map(p => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
+                          <SearchableSelect
+                            value={task.status}
+                            onValueChange={v => { if (v !== task.status) onStatusChange(task.id, v); }}
+                            placeholder="Status"
+                            triggerClassName="h-6 text-[10px] w-auto min-w-0 border-none shadow-none p-0"
+                            options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+                            data-testid={`my-task-status-${task.id}`}
+                          />
+                          <SearchableSelect
+                            value={task.priority}
+                            onValueChange={v => { if (v !== task.priority) onPriorityChange(task.id, v); }}
+                            placeholder="Priority"
+                            triggerClassName="h-6 text-[10px] w-auto min-w-0 border-none shadow-none p-0"
+                            options={PRIORITIES.map(p => ({ value: p, label: p }))}
+                            data-testid={`my-task-priority-${task.id}`}
+                          />
                           {task.dueDate && (
                             <span className={`text-[10px] px-1.5 py-0.5 rounded ${overdue ? "text-red-700 bg-red-100 font-bold" : "text-muted-foreground"}`}>
                               {daysLabel(task.dueDate) || formatDateShort(task.dueDate)}
@@ -3004,10 +2998,13 @@ export default function EngineeringTasksPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Priority</Label>
-                    <Select value={newTask.priority} onValueChange={v => setNewTask(p => ({ ...p, priority: v }))}>
-                      <SelectTrigger data-testid="select-task-priority"><SelectValue /></SelectTrigger>
-                      <SelectContent>{PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={newTask.priority}
+                      onValueChange={v => setNewTask(p => ({ ...p, priority: v }))}
+                      placeholder="Priority"
+                      options={PRIORITIES.map(p => ({ value: p, label: p }))}
+                      data-testid="select-task-priority"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Due Date</Label>
@@ -3017,18 +3014,16 @@ export default function EngineeringTasksPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Assign To</Label>
-                    <Select
+                    <SearchableSelect
                       value={newTask.assignees[0] || "none"}
                       onValueChange={v => setNewTask(p => ({ ...p, assignees: v === "none" ? [] : [v] }))}
-                    >
-                      <SelectTrigger data-testid="select-task-assignee"><SelectValue placeholder="Select assignee" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Unassigned</SelectItem>
-                        {pageTeamMembers.map(m => (
-                          <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      placeholder="Select assignee"
+                      options={[
+                        { value: "none", label: "Unassigned" },
+                        ...pageTeamMembers.map(m => ({ value: m.name, label: m.name })),
+                      ]}
+                      data-testid="select-task-assignee"
+                    />
                   </div>
                 </div>
                 <Button
@@ -3061,43 +3056,49 @@ export default function EngineeringTasksPage() {
             onChange={e => setSearchTerm(e.target.value)}
           />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[130px] sm:w-[150px] h-8 text-xs" data-testid="filter-task-status">
-            <Filter className="h-3 w-3 mr-1" /><SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            {TASK_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-          <SelectTrigger className="w-[110px] sm:w-[130px] h-8 text-xs" data-testid="filter-task-priority">
-            <SelectValue placeholder="Priority" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Priorities</SelectItem>
-            {PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={statusFilter}
+          onValueChange={setStatusFilter}
+          placeholder="Status"
+          triggerClassName="w-[130px] sm:w-[150px] h-8 text-xs"
+          options={[
+            { value: "all", label: "All Statuses" },
+            ...TASK_STATUSES.map(s => ({ value: s, label: s })),
+          ]}
+          data-testid="filter-task-status"
+        />
+        <SearchableSelect
+          value={priorityFilter}
+          onValueChange={setPriorityFilter}
+          placeholder="Priority"
+          triggerClassName="w-[110px] sm:w-[130px] h-8 text-xs"
+          options={[
+            { value: "all", label: "All Priorities" },
+            ...PRIORITIES.map(p => ({ value: p, label: p })),
+          ]}
+          data-testid="filter-task-priority"
+        />
         {uniqueAssignees.length > 0 && (
-          <Select value={assigneeFilter} onValueChange={(val) => {
-            setAssigneeFilter(val);
-            if (val === "all") {
-              setMyTasksOnly(false);
-            } else if (myName && val.toLowerCase() === myName.toLowerCase()) {
-              setMyTasksOnly(true);
-            } else {
-              setMyTasksOnly(false);
-            }
-          }}>
-            <SelectTrigger className="w-[120px] sm:w-[140px] h-8 text-xs" data-testid="filter-task-assignee">
-              <User className="h-3 w-3 mr-1" /><SelectValue placeholder="Assignee" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Assignees</SelectItem>
-              {uniqueAssignees.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={assigneeFilter}
+            onValueChange={(val) => {
+              setAssigneeFilter(val);
+              if (val === "all") {
+                setMyTasksOnly(false);
+              } else if (myName && val.toLowerCase() === myName.toLowerCase()) {
+                setMyTasksOnly(true);
+              } else {
+                setMyTasksOnly(false);
+              }
+            }}
+            placeholder="Assignee"
+            triggerClassName="w-[120px] sm:w-[140px] h-8 text-xs"
+            options={[
+              { value: "all", label: "All Assignees" },
+              ...uniqueAssignees.map(a => ({ value: a, label: a })),
+            ]}
+            data-testid="filter-task-assignee"
+          />
         )}
       </div>
 
@@ -3269,15 +3270,17 @@ export default function EngineeringTasksPage() {
             <p className="text-sm text-muted-foreground">Please provide a reason for putting this task on hold.</p>
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Blocked Type *</label>
-              <Select value={holdDialog?.blockedType || ""} onValueChange={(v) => setHoldDialog(prev => prev ? { ...prev, blockedType: v } : null)}>
-                <SelectTrigger className="h-9" data-testid="select-hold-blocked-type">
-                  <SelectValue placeholder="Internal or External..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Internal">Internal</SelectItem>
-                  <SelectItem value="External">External</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={holdDialog?.blockedType || ""}
+                onValueChange={(v) => setHoldDialog(prev => prev ? { ...prev, blockedType: v } : null)}
+                placeholder="Internal or External..."
+                triggerClassName="h-9"
+                options={[
+                  { value: "Internal", label: "Internal" },
+                  { value: "External", label: "External" },
+                ]}
+                data-testid="select-hold-blocked-type"
+              />
             </div>
             <Textarea
               value={holdDialog?.reason || ""}

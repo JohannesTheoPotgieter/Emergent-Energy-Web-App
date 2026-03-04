@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -368,21 +368,22 @@ export default function PdTicketCreatePage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Request Type *</Label>
-                <Select value={form.requestType} onValueChange={v => { setForm(p => ({ ...p, requestType: v })); const templates = PD_REQUEST_TYPE_TASK_TEMPLATES[v] || []; setSelectedTasks(new Set(templates.map(t => t.title))); }}>
-                  <SelectTrigger data-testid="select-request-type"><SelectValue placeholder="Select..." /></SelectTrigger>
-                  <SelectContent>
-                    {REQUEST_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={form.requestType}
+                  onValueChange={v => { setForm(p => ({ ...p, requestType: v })); const templates = PD_REQUEST_TYPE_TASK_TEMPLATES[v] || []; setSelectedTasks(new Set(templates.map(t => t.title))); }}
+                  placeholder="Select..."
+                  options={REQUEST_TYPES.map(t => ({ value: t, label: t }))}
+                  data-testid="select-request-type"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Priority</Label>
-                <Select value={form.priority} onValueChange={v => setForm(p => ({ ...p, priority: v }))}>
-                  <SelectTrigger data-testid="select-priority"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={form.priority}
+                  onValueChange={v => setForm(p => ({ ...p, priority: v }))}
+                  options={PRIORITIES.map(p => ({ value: p, label: p }))}
+                  data-testid="select-priority"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Due Date</Label>
@@ -390,12 +391,13 @@ export default function PdTicketCreatePage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Funding Type</Label>
-                <Select value={form.fundingType} onValueChange={v => setForm(p => ({ ...p, fundingType: v }))}>
-                  <SelectTrigger data-testid="select-funding-type"><SelectValue placeholder="Select..." /></SelectTrigger>
-                  <SelectContent>
-                    {FUNDING_TYPES.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={form.fundingType}
+                  onValueChange={v => setForm(p => ({ ...p, fundingType: v }))}
+                  placeholder="Select..."
+                  options={FUNDING_TYPES.map(f => ({ value: f, label: f }))}
+                  data-testid="select-funding-type"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Size (kWp)</Label>
@@ -403,12 +405,13 @@ export default function PdTicketCreatePage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Province</Label>
-                <Select value={form.province} onValueChange={v => setForm(p => ({ ...p, province: v }))}>
-                  <SelectTrigger data-testid="select-province"><SelectValue placeholder="Select..." /></SelectTrigger>
-                  <SelectContent>
-                    {PROVINCES.map(pr => <SelectItem key={pr} value={pr}>{pr}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={form.province}
+                  onValueChange={v => setForm(p => ({ ...p, province: v }))}
+                  placeholder="Select..."
+                  options={PROVINCES.map(pr => ({ value: pr, label: pr }))}
+                  data-testid="select-province"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">GPS Coordinates</Label>
@@ -416,12 +419,13 @@ export default function PdTicketCreatePage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Designer</Label>
-                <Select value={form.designerUserId} onValueChange={v => setForm(p => ({ ...p, designerUserId: v }))}>
-                  <SelectTrigger data-testid="select-designer"><SelectValue placeholder="Select designer..." /></SelectTrigger>
-                  <SelectContent>
-                    {designers.map((u: any) => <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={form.designerUserId}
+                  onValueChange={v => setForm(p => ({ ...p, designerUserId: v }))}
+                  placeholder="Select designer..."
+                  options={designers.map((u: any) => ({ value: String(u.id), label: u.name }))}
+                  data-testid="select-designer"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Working Schedule</Label>

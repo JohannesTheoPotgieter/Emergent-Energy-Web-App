@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Calendar, Clock, DollarSign, AlertTriangle, ShieldCheck,
   ListTodo, FileText, ChevronRight, ChevronLeft, Check,
@@ -264,16 +264,17 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
             <>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium">Is the project on schedule?</label>
-                <Select value={schedule.onTrack} onValueChange={(v) => setSchedule({ ...schedule, onTrack: v })}>
-                  <SelectTrigger className="h-8 text-xs" data-testid="select-schedule-track">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="yes">On Track</SelectItem>
-                    <SelectItem value="at_risk">At Risk</SelectItem>
-                    <SelectItem value="delayed">Delayed</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={schedule.onTrack}
+                  onValueChange={(v) => setSchedule({ ...schedule, onTrack: v })}
+                  triggerClassName="h-8 text-xs"
+                  data-testid="select-schedule-track"
+                  options={[
+                    { value: "yes", label: "On Track" },
+                    { value: "at_risk", label: "At Risk" },
+                    { value: "delayed", label: "Delayed" },
+                  ]}
+                />
               </div>
               {schedule.onTrack !== "yes" && (
                 <div className="space-y-1.5">
@@ -316,16 +317,17 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
             <>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium">Is the project within costed amounts?</label>
-                <Select value={budget.withinBudget} onValueChange={(v) => setBudget({ ...budget, withinBudget: v })}>
-                  <SelectTrigger className="h-8 text-xs" data-testid="select-budget-track">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="yes">Within Costed</SelectItem>
-                    <SelectItem value="at_risk">At Risk</SelectItem>
-                    <SelectItem value="over_budget">Over Costed</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={budget.withinBudget}
+                  onValueChange={(v) => setBudget({ ...budget, withinBudget: v })}
+                  triggerClassName="h-8 text-xs"
+                  data-testid="select-budget-track"
+                  options={[
+                    { value: "yes", label: "Within Costed" },
+                    { value: "at_risk", label: "At Risk" },
+                    { value: "over_budget", label: "Over Costed" },
+                  ]}
+                />
               </div>
               {snapshotMetrics && (
                 <div className="grid grid-cols-3 gap-2">
@@ -380,22 +382,28 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
                     data-testid={`textarea-risk-${idx}`}
                   />
                   <div className="grid grid-cols-2 gap-2">
-                    <Select value={risk.impact} onValueChange={(v) => { const n = [...risks]; n[idx] = { ...n[idx], impact: v }; setRisks(n); }}>
-                      <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Impact" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="low">Low Impact</SelectItem>
-                        <SelectItem value="medium">Medium Impact</SelectItem>
-                        <SelectItem value="high">High Impact</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select value={risk.likelihood} onValueChange={(v) => { const n = [...risks]; n[idx] = { ...n[idx], likelihood: v }; setRisks(n); }}>
-                      <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Likelihood" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="low">Low Likelihood</SelectItem>
-                        <SelectItem value="medium">Medium Likelihood</SelectItem>
-                        <SelectItem value="high">High Likelihood</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={risk.impact}
+                      onValueChange={(v) => { const n = [...risks]; n[idx] = { ...n[idx], impact: v }; setRisks(n); }}
+                      placeholder="Impact"
+                      triggerClassName="h-7 text-xs"
+                      options={[
+                        { value: "low", label: "Low Impact" },
+                        { value: "medium", label: "Medium Impact" },
+                        { value: "high", label: "High Impact" },
+                      ]}
+                    />
+                    <SearchableSelect
+                      value={risk.likelihood}
+                      onValueChange={(v) => { const n = [...risks]; n[idx] = { ...n[idx], likelihood: v }; setRisks(n); }}
+                      placeholder="Likelihood"
+                      triggerClassName="h-7 text-xs"
+                      options={[
+                        { value: "low", label: "Low Likelihood" },
+                        { value: "medium", label: "Medium Likelihood" },
+                        { value: "high", label: "High Likelihood" },
+                      ]}
+                    />
                   </div>
                   <Textarea
                     className="text-xs min-h-[40px]"
@@ -415,16 +423,17 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
             <>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium">Are quality gates on track?</label>
-                <Select value={quality.gatesOnTrack} onValueChange={(v) => setQuality({ ...quality, gatesOnTrack: v })}>
-                  <SelectTrigger className="h-8 text-xs" data-testid="select-quality-track">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="yes">All Gates On Track</SelectItem>
-                    <SelectItem value="at_risk">Some Gates At Risk</SelectItem>
-                    <SelectItem value="blocked">Gates Blocked</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={quality.gatesOnTrack}
+                  onValueChange={(v) => setQuality({ ...quality, gatesOnTrack: v })}
+                  triggerClassName="h-8 text-xs"
+                  data-testid="select-quality-track"
+                  options={[
+                    { value: "yes", label: "All Gates On Track" },
+                    { value: "at_risk", label: "Some Gates At Risk" },
+                    { value: "blocked", label: "Gates Blocked" },
+                  ]}
+                />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium">Inspections due</label>
@@ -480,14 +489,16 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
                       onChange={(e) => { const n = [...actions]; n[idx] = { ...n[idx], owner: e.target.value }; setActions(n); }}
                       placeholder="Owner"
                     />
-                    <Select value={action.priority} onValueChange={(v: any) => { const n = [...actions]; n[idx] = { ...n[idx], priority: v }; setActions(n); }}>
-                      <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="high">High</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="low">Low</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <SearchableSelect
+                      value={action.priority}
+                      onValueChange={(v) => { const n = [...actions]; n[idx] = { ...n[idx], priority: v }; setActions(n); }}
+                      triggerClassName="h-7 text-xs"
+                      options={[
+                        { value: "high", label: "High" },
+                        { value: "medium", label: "Medium" },
+                        { value: "low", label: "Low" },
+                      ]}
+                    />
                     <input
                       type="date"
                       className="h-7 px-2 text-xs border rounded-md"
@@ -507,16 +518,17 @@ export function WeeklyReviewWizard({ projectName, snapshotMetrics }: WeeklyRevie
             <>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium">Overall project status</label>
-                <Select value={summary.overallStatus} onValueChange={(v) => setSummary({ ...summary, overallStatus: v })}>
-                  <SelectTrigger className="h-8 text-xs" data-testid="select-overall-status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="green">Green - On Track</SelectItem>
-                    <SelectItem value="amber">Amber - At Risk</SelectItem>
-                    <SelectItem value="red">Red - Off Track</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={summary.overallStatus}
+                  onValueChange={(v) => setSummary({ ...summary, overallStatus: v })}
+                  triggerClassName="h-8 text-xs"
+                  data-testid="select-overall-status"
+                  options={[
+                    { value: "green", label: "Green - On Track" },
+                    { value: "amber", label: "Amber - At Risk" },
+                    { value: "red", label: "Red - Off Track" },
+                  ]}
+                />
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-medium">Key message for stakeholders</label>

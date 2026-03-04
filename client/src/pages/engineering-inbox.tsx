@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -636,65 +636,77 @@ export default function EngineeringInbox() {
             )}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-            <Select value={filters.status || ""} onValueChange={(v) => setFilters((f) => ({ ...f, status: v === "all" ? "" : v }))}>
-              <SelectTrigger className="h-8 text-xs" data-testid="filter-status">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                {filterOptions.statuses.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={filters.status || ""}
+              onValueChange={(v) => setFilters((f) => ({ ...f, status: v === "all" ? "" : v }))}
+              placeholder="Status"
+              triggerClassName="h-8 text-xs"
+              data-testid="filter-status"
+              options={[
+                { value: "all", label: "All Statuses" },
+                ...filterOptions.statuses.map((s) => ({ value: s, label: s })),
+              ]}
+            />
 
-            <Select value={filters.priority || ""} onValueChange={(v) => setFilters((f) => ({ ...f, priority: v === "all" ? "" : v }))}>
-              <SelectTrigger className="h-8 text-xs" data-testid="filter-priority">
-                <SelectValue placeholder="Priority" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Priorities</SelectItem>
-                {filterOptions.priorities.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={filters.priority || ""}
+              onValueChange={(v) => setFilters((f) => ({ ...f, priority: v === "all" ? "" : v }))}
+              placeholder="Priority"
+              triggerClassName="h-8 text-xs"
+              data-testid="filter-priority"
+              options={[
+                { value: "all", label: "All Priorities" },
+                ...filterOptions.priorities.map((p) => ({ value: p, label: p })),
+              ]}
+            />
 
-            <Select value={filters.requestType || ""} onValueChange={(v) => setFilters((f) => ({ ...f, requestType: v === "all" ? "" : v }))}>
-              <SelectTrigger className="h-8 text-xs" data-testid="filter-request-type">
-                <SelectValue placeholder="Request Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                {filterOptions.requestTypes.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={filters.requestType || ""}
+              onValueChange={(v) => setFilters((f) => ({ ...f, requestType: v === "all" ? "" : v }))}
+              placeholder="Request Type"
+              triggerClassName="h-8 text-xs"
+              data-testid="filter-request-type"
+              options={[
+                { value: "all", label: "All Types" },
+                ...filterOptions.requestTypes.map((t) => ({ value: t, label: t })),
+              ]}
+            />
 
-            <Select value={filters.designer || ""} onValueChange={(v) => setFilters((f) => ({ ...f, designer: v === "all" ? "" : v }))}>
-              <SelectTrigger className="h-8 text-xs" data-testid="filter-designer">
-                <SelectValue placeholder="Designer" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Designers</SelectItem>
-                {filterOptions.designers.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={filters.designer || ""}
+              onValueChange={(v) => setFilters((f) => ({ ...f, designer: v === "all" ? "" : v }))}
+              placeholder="Designer"
+              triggerClassName="h-8 text-xs"
+              data-testid="filter-designer"
+              options={[
+                { value: "all", label: "All Designers" },
+                ...filterOptions.designers.map((d) => ({ value: d, label: d })),
+              ]}
+            />
 
-            <Select value={filters.projectDeveloper || ""} onValueChange={(v) => setFilters((f) => ({ ...f, projectDeveloper: v === "all" ? "" : v }))}>
-              <SelectTrigger className="h-8 text-xs" data-testid="filter-project-developer">
-                <SelectValue placeholder="Project Dev" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Project Devs</SelectItem>
-                {filterOptions.projectDevelopers.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={filters.projectDeveloper || ""}
+              onValueChange={(v) => setFilters((f) => ({ ...f, projectDeveloper: v === "all" ? "" : v }))}
+              placeholder="Project Dev"
+              triggerClassName="h-8 text-xs"
+              data-testid="filter-project-developer"
+              options={[
+                { value: "all", label: "All Project Devs" },
+                ...filterOptions.projectDevelopers.map((d) => ({ value: d, label: d })),
+              ]}
+            />
 
-            <Select value={filters.province || ""} onValueChange={(v) => setFilters((f) => ({ ...f, province: v === "all" ? "" : v }))}>
-              <SelectTrigger className="h-8 text-xs" data-testid="filter-province">
-                <SelectValue placeholder="Province" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Provinces</SelectItem>
-                {filterOptions.provinces.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={filters.province || ""}
+              onValueChange={(v) => setFilters((f) => ({ ...f, province: v === "all" ? "" : v }))}
+              placeholder="Province"
+              triggerClassName="h-8 text-xs"
+              data-testid="filter-province"
+              options={[
+                { value: "all", label: "All Provinces" },
+                ...filterOptions.provinces.map((p) => ({ value: p, label: p })),
+              ]}
+            />
           </div>
         </CardContent>
       </Card>

@@ -14,9 +14,7 @@ import {
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -470,28 +468,32 @@ export default function TrRegisterPage() {
           <Card data-testid="filters-card">
             <CardContent className="py-3 px-4">
               <div className="flex flex-wrap items-center gap-2">
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="h-8 w-32 text-xs" data-testid="select-status-filter">
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={statusFilter}
+                  onValueChange={setStatusFilter}
+                  placeholder="Status"
+                  triggerClassName="h-8 w-32 text-xs"
+                  options={[
+                    { value: "all", label: "All Status" },
+                    { value: "active", label: "Active" },
+                    { value: "completed", label: "Completed" },
+                  ]}
+                  data-testid="select-status-filter"
+                />
 
-                <Select value={ragFilter} onValueChange={setRagFilter}>
-                  <SelectTrigger className="h-8 w-28 text-xs" data-testid="select-rag-filter">
-                    <SelectValue placeholder="RAG" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All RAG</SelectItem>
-                    <SelectItem value="Red">Red</SelectItem>
-                    <SelectItem value="Amber">Amber</SelectItem>
-                    <SelectItem value="Green">Green</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={ragFilter}
+                  onValueChange={setRagFilter}
+                  placeholder="RAG"
+                  triggerClassName="h-8 w-28 text-xs"
+                  options={[
+                    { value: "all", label: "All RAG" },
+                    { value: "Red", label: "Red" },
+                    { value: "Amber", label: "Amber" },
+                    { value: "Green", label: "Green" },
+                  ]}
+                  data-testid="select-rag-filter"
+                />
 
                 <Input
                   placeholder="Department"
@@ -519,16 +521,18 @@ export default function TrRegisterPage() {
                   Overdue
                 </Button>
 
-                <Select value={linkedFilter} onValueChange={setLinkedFilter}>
-                  <SelectTrigger className="h-8 w-28 text-xs" data-testid="select-linked-filter">
-                    <SelectValue placeholder="Link" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="linked">Linked</SelectItem>
-                    <SelectItem value="unlinked">Unlinked</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={linkedFilter}
+                  onValueChange={setLinkedFilter}
+                  placeholder="Link"
+                  triggerClassName="h-8 w-28 text-xs"
+                  options={[
+                    { value: "all", label: "All" },
+                    { value: "linked", label: "Linked" },
+                    { value: "unlinked", label: "Unlinked" },
+                  ]}
+                  data-testid="select-linked-filter"
+                />
               </div>
             </CardContent>
           </Card>
@@ -798,16 +802,17 @@ export default function TrRegisterPage() {
                   <span className="text-xs text-muted-foreground">RAG Status</span>
                   {editField === "ragStatus" ? (
                     <div className="flex items-center gap-1 mt-0.5">
-                      <Select value={editValue} onValueChange={v => { setEditValue(v); }}>
-                        <SelectTrigger className="h-7 text-xs w-28" data-testid="select-edit-rag">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Red">Red</SelectItem>
-                          <SelectItem value="Amber">Amber</SelectItem>
-                          <SelectItem value="Green">Green</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <SearchableSelect
+                        value={editValue}
+                        onValueChange={v => { setEditValue(v); }}
+                        triggerClassName="h-7 text-xs w-28"
+                        options={[
+                          { value: "Red", label: "Red" },
+                          { value: "Amber", label: "Amber" },
+                          { value: "Green", label: "Green" },
+                        ]}
+                        data-testid="select-edit-rag"
+                      />
                       <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={commitEdit} data-testid="button-save-rag">
                         <Check className="w-3.5 h-3.5 text-emerald-600" />
                       </Button>
@@ -1125,16 +1130,17 @@ export default function TrRegisterPage() {
             </div>
             <div>
               <label className="text-xs font-medium">RAG Status</label>
-              <Select value={createForm.ragStatus} onValueChange={v => setCreateForm(f => ({ ...f, ragStatus: v }))}>
-                <SelectTrigger className="h-8 text-sm" data-testid="select-create-rag">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Red">Red</SelectItem>
-                  <SelectItem value="Amber">Amber</SelectItem>
-                  <SelectItem value="Green">Green</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={createForm.ragStatus}
+                onValueChange={v => setCreateForm(f => ({ ...f, ragStatus: v }))}
+                triggerClassName="h-8 text-sm"
+                options={[
+                  { value: "Red", label: "Red" },
+                  { value: "Amber", label: "Amber" },
+                  { value: "Green", label: "Green" },
+                ]}
+                data-testid="select-create-rag"
+              />
             </div>
             <div>
               <label className="text-xs font-medium">Owners (comma-separated)</label>

@@ -7,9 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -825,28 +823,30 @@ export default function SubcontractorDashboardPage() {
           <Input placeholder="Search counterparties..." value={search} onChange={e => setSearch(e.target.value)}
             className="pl-9" data-testid="input-search" />
         </div>
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-36" data-testid="select-type-filter">
-            <Filter className="w-3 h-3 mr-1" /><SelectValue placeholder="Type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            <SelectItem value="INSTALLER">Installer</SelectItem>
-            <SelectItem value="SUPPLIER">Supplier</SelectItem>
-            <SelectItem value="OTHER">Other</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={projectFilter} onValueChange={setProjectFilter}>
-          <SelectTrigger className="w-44" data-testid="select-project-filter">
-            <SelectValue placeholder="Project" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Projects</SelectItem>
-            {availableProjects.map((p: string) => (
-              <SelectItem key={p} value={p}>{p}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={typeFilter}
+          onValueChange={setTypeFilter}
+          placeholder="Type"
+          triggerClassName="w-36"
+          options={[
+            { value: "all", label: "All Types" },
+            { value: "INSTALLER", label: "Installer" },
+            { value: "SUPPLIER", label: "Supplier" },
+            { value: "OTHER", label: "Other" },
+          ]}
+          data-testid="select-type-filter"
+        />
+        <SearchableSelect
+          value={projectFilter}
+          onValueChange={setProjectFilter}
+          placeholder="Project"
+          triggerClassName="w-44"
+          options={[
+            { value: "all", label: "All Projects" },
+            ...availableProjects.map((p: string) => ({ value: p, label: p })),
+          ]}
+          data-testid="select-project-filter"
+        />
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
           <input type="checkbox" checked={coreOnly} onChange={e => setCoreOnly(e.target.checked)}
             data-testid="checkbox-core-only" />
@@ -914,16 +914,14 @@ export default function SubcontractorDashboardPage() {
           </div>
           <div className="flex items-center gap-2">
             <label className="text-xs text-indigo-800 whitespace-nowrap">Merge into:</label>
-            <Select value={mergeTarget} onValueChange={setMergeTarget}>
-              <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-merge-target">
-                <SelectValue placeholder="Choose target name" />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from(selectedForMerge).map(name => (
-                  <SelectItem key={name} value={name}>{name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={mergeTarget}
+              onValueChange={setMergeTarget}
+              placeholder="Choose target name"
+              triggerClassName="h-8 text-xs flex-1"
+              options={Array.from(selectedForMerge).map(name => ({ value: name, label: name }))}
+              data-testid="select-merge-target"
+            />
           </div>
           <div className="flex items-center gap-2">
             <Button size="sm" className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700"
@@ -1075,23 +1073,21 @@ export default function SubcontractorDashboardPage() {
                       </PermissionGate>
                       <div className="flex items-center gap-1.5 ml-2">
                         <Tag className="w-3 h-3 text-slate-500" />
-                        <Select
+                        <SearchableSelect
                           value={(() => {
                             const cpData = (data?.counterparties || []).find((c: any) => c.counterpartyName === selectedCp);
                             return cpData?.counterpartyType || "OTHER";
                           })()}
                           onValueChange={handleChangeType}
                           disabled={typeChangeLoading}
-                        >
-                          <SelectTrigger className="h-7 w-32 text-xs" data-testid="select-cp-type">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="INSTALLER">Installer</SelectItem>
-                            <SelectItem value="SUPPLIER">Supplier</SelectItem>
-                            <SelectItem value="OTHER">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
+                          triggerClassName="h-7 w-32 text-xs"
+                          options={[
+                            { value: "INSTALLER", label: "Installer" },
+                            { value: "SUPPLIER", label: "Supplier" },
+                            { value: "OTHER", label: "Other" },
+                          ]}
+                          data-testid="select-cp-type"
+                        />
                         {typeChangeLoading && <Loader2 className="w-3 h-3 animate-spin text-slate-500" />}
                       </div>
                     </div>
@@ -1333,20 +1329,19 @@ export default function SubcontractorDashboardPage() {
                         </button>
                       </div>
                       {!linkIsNew ? (
-                        <Select value={linkTarget} onValueChange={setLinkTarget}>
-                          <SelectTrigger className="h-7 w-48 text-xs" data-testid="select-link-target">
-                            <SelectValue placeholder="Link to counterparty..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {(data?.counterparties || [])
-                              .filter((c: any) => c.counterpartyName !== selectedCp)
-                              .map((c: any) => (
-                                <SelectItem key={c.counterpartyName} value={c.counterpartyName}>
-                                  {c.counterpartyName} ({c.counterpartyType || "Other"})
-                                </SelectItem>
-                              ))}
-                          </SelectContent>
-                        </Select>
+                        <SearchableSelect
+                          value={linkTarget}
+                          onValueChange={setLinkTarget}
+                          placeholder="Link to counterparty..."
+                          triggerClassName="h-7 w-48 text-xs"
+                          options={(data?.counterparties || [])
+                            .filter((c: any) => c.counterpartyName !== selectedCp)
+                            .map((c: any) => ({
+                              value: c.counterpartyName,
+                              label: `${c.counterpartyName} (${c.counterpartyType || "Other"})`,
+                            }))}
+                          data-testid="select-link-target"
+                        />
                       ) : (
                         <div className="flex items-center gap-1.5">
                           <Input
@@ -1356,16 +1351,17 @@ export default function SubcontractorDashboardPage() {
                             className="h-7 w-48 text-xs"
                             data-testid="input-new-counterparty"
                           />
-                          <Select value={linkNewType} onValueChange={setLinkNewType}>
-                            <SelectTrigger className="h-7 w-28 text-xs" data-testid="select-new-cp-type">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="INSTALLER">Installer</SelectItem>
-                              <SelectItem value="SUPPLIER">Supplier</SelectItem>
-                              <SelectItem value="OTHER">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <SearchableSelect
+                            value={linkNewType}
+                            onValueChange={setLinkNewType}
+                            triggerClassName="h-7 w-28 text-xs"
+                            options={[
+                              { value: "INSTALLER", label: "Installer" },
+                              { value: "SUPPLIER", label: "Supplier" },
+                              { value: "OTHER", label: "Other" },
+                            ]}
+                            data-testid="select-new-cp-type"
+                          />
                         </div>
                       )}
                       <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground cursor-pointer shrink-0">

@@ -9,13 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Dialog,
   DialogContent,
@@ -448,16 +442,18 @@ function SiteVisitForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitt
       </div>
       <div>
         <Label>Weather</Label>
-        <Select value={weather} onValueChange={setWeather}>
-          <SelectTrigger data-testid="select-sv-weather"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="clear">Clear</SelectItem>
-            <SelectItem value="cloudy">Cloudy</SelectItem>
-            <SelectItem value="rain">Rain</SelectItem>
-            <SelectItem value="windy">Windy</SelectItem>
-            <SelectItem value="storm">Storm</SelectItem>
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={weather}
+          onValueChange={setWeather}
+          data-testid="select-sv-weather"
+          options={[
+            { value: "clear", label: "Clear" },
+            { value: "cloudy", label: "Cloudy" },
+            { value: "rain", label: "Rain" },
+            { value: "windy", label: "Windy" },
+            { value: "storm", label: "Storm" },
+          ]}
+        />
       </div>
       <div>
         <Label>Safety Status</Label>
@@ -587,14 +583,16 @@ function LogDelayForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitti
       </div>
       <div>
         <Label>Impact</Label>
-        <Select value={impact} onValueChange={setImpact}>
-          <SelectTrigger data-testid="select-delay-impact"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Low">Low</SelectItem>
-            <SelectItem value="Medium">Medium</SelectItem>
-            <SelectItem value="High">High</SelectItem>
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={impact}
+          onValueChange={setImpact}
+          data-testid="select-delay-impact"
+          options={[
+            { value: "Low", label: "Low" },
+            { value: "Medium", label: "Medium" },
+            { value: "High", label: "High" },
+          ]}
+        />
       </div>
       <Button onClick={() => onSubmit("log-delay", { description, daysDelayed, impact })} disabled={submitting || !description} className="w-full" data-testid="btn-submit-log-delay">
         {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
@@ -617,15 +615,17 @@ function LogRiskForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submittin
       </div>
       <div>
         <Label>Severity *</Label>
-        <Select value={severity} onValueChange={setSeverity}>
-          <SelectTrigger data-testid="select-risk-severity"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Low">Low</SelectItem>
-            <SelectItem value="Medium">Medium</SelectItem>
-            <SelectItem value="High">High</SelectItem>
-            <SelectItem value="Critical">Critical</SelectItem>
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={severity}
+          onValueChange={setSeverity}
+          data-testid="select-risk-severity"
+          options={[
+            { value: "Low", label: "Low" },
+            { value: "Medium", label: "Medium" },
+            { value: "High", label: "High" },
+            { value: "Critical", label: "Critical" },
+          ]}
+        />
       </div>
       <div>
         <Label htmlFor="risk-mitigation">Mitigation Notes</Label>
@@ -718,25 +718,29 @@ function EscalateForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitti
       </div>
       <div>
         <Label>Escalation Level</Label>
-        <Select value={escalationLevel} onValueChange={setEscalationLevel}>
-          <SelectTrigger data-testid="select-esc-level"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Medium">Medium</SelectItem>
-            <SelectItem value="High">High</SelectItem>
-            <SelectItem value="Critical">Critical</SelectItem>
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={escalationLevel}
+          onValueChange={setEscalationLevel}
+          data-testid="select-esc-level"
+          options={[
+            { value: "Medium", label: "Medium" },
+            { value: "High", label: "High" },
+            { value: "Critical", label: "Critical" },
+          ]}
+        />
       </div>
       <div>
         <Label>Urgency</Label>
-        <Select value={urgency} onValueChange={setUrgency}>
-          <SelectTrigger data-testid="select-esc-urgency"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Medium">Medium</SelectItem>
-            <SelectItem value="High">High</SelectItem>
-            <SelectItem value="Critical">Critical</SelectItem>
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={urgency}
+          onValueChange={setUrgency}
+          data-testid="select-esc-urgency"
+          options={[
+            { value: "Medium", label: "Medium" },
+            { value: "High", label: "High" },
+            { value: "Critical", label: "Critical" },
+          ]}
+        />
       </div>
       <Button onClick={() => onSubmit("escalate", { description, escalationLevel, urgency })} disabled={submitting || !description} className="w-full" data-testid="btn-submit-escalate">
         {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}

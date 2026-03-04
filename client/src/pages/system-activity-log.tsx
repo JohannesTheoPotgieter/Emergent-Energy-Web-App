@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Activity, FileUp, Edit, Shield, GitMerge, Cpu, Users, Settings, LogIn, Trash2, PenLine,
@@ -129,39 +129,39 @@ export default function SystemActivityLogPage() {
                 data-testid="input-activity-search"
               />
             </div>
-            <Select value={sourceFilter} onValueChange={(v) => { setSourceFilter(v); setPage(1); }}>
-              <SelectTrigger className="w-[calc(50%-0.5rem)] sm:w-[160px]" data-testid="select-activity-source">
-                <SelectValue placeholder="Source" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Sources</SelectItem>
-                {filters.sources.map((s: string) => (
-                  <SelectItem key={s} value={s}>{s}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={entityTypeFilter} onValueChange={(v) => { setEntityTypeFilter(v); setPage(1); }}>
-              <SelectTrigger className="w-[calc(50%-0.5rem)] sm:w-[180px]" data-testid="select-activity-entity">
-                <SelectValue placeholder="Entity Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Entities</SelectItem>
-                {filters.entityTypes.map((e: string) => (
-                  <SelectItem key={e} value={e}>{e}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={projectNameFilter} onValueChange={(v) => { setProjectNameFilter(v); setPage(1); }}>
-              <SelectTrigger className="w-full sm:w-[200px]" data-testid="select-activity-project">
-                <SelectValue placeholder="Project" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Projects</SelectItem>
-                {filters.projectNames.map((p: string) => (
-                  <SelectItem key={p} value={p}>{p}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={sourceFilter}
+              onValueChange={(v) => { setSourceFilter(v); setPage(1); }}
+              placeholder="Source"
+              triggerClassName="w-[calc(50%-0.5rem)] sm:w-[160px]"
+              data-testid="select-activity-source"
+              options={[
+                { value: "all", label: "All Sources" },
+                ...filters.sources.map((s: string) => ({ value: s, label: s })),
+              ]}
+            />
+            <SearchableSelect
+              value={entityTypeFilter}
+              onValueChange={(v) => { setEntityTypeFilter(v); setPage(1); }}
+              placeholder="Entity Type"
+              triggerClassName="w-[calc(50%-0.5rem)] sm:w-[180px]"
+              data-testid="select-activity-entity"
+              options={[
+                { value: "all", label: "All Entities" },
+                ...filters.entityTypes.map((e: string) => ({ value: e, label: e })),
+              ]}
+            />
+            <SearchableSelect
+              value={projectNameFilter}
+              onValueChange={(v) => { setProjectNameFilter(v); setPage(1); }}
+              placeholder="Project"
+              triggerClassName="w-full sm:w-[200px]"
+              data-testid="select-activity-project"
+              options={[
+                { value: "all", label: "All Projects" },
+                ...filters.projectNames.map((p: string) => ({ value: p, label: p })),
+              ]}
+            />
           </div>
         </CardContent>
       </Card>

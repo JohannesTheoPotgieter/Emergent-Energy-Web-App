@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -578,29 +578,23 @@ function StandupTaskDrawer({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Status</label>
-              <Select value={task.status} onValueChange={(val) => handleFieldUpdate({ status: val })}>
-                <SelectTrigger className="h-8 text-xs mt-1" data-testid="drawer-status-select">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TASK_STATUSES.map(s => (
-                    <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={task.status}
+                onValueChange={(val) => handleFieldUpdate({ status: val })}
+                triggerClassName="h-8 text-xs mt-1"
+                options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+                data-testid="drawer-status-select"
+              />
             </div>
             <div>
               <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Priority</label>
-              <Select value={task.priority} onValueChange={(val) => handleFieldUpdate({ priority: val })}>
-                <SelectTrigger className="h-8 text-xs mt-1" data-testid="drawer-priority-select">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TASK_PRIORITIES.map(p => (
-                    <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={task.priority}
+                onValueChange={(val) => handleFieldUpdate({ priority: val })}
+                triggerClassName="h-8 text-xs mt-1"
+                options={TASK_PRIORITIES.map(p => ({ value: p, label: p }))}
+                data-testid="drawer-priority-select"
+              />
             </div>
           </div>
 
@@ -617,20 +611,17 @@ function StandupTaskDrawer({
             </div>
             <div>
               <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Assignee</label>
-              <Select
+              <SearchableSelect
                 value={task.assignees?.[0] || "__unassigned"}
                 onValueChange={(val) => handleFieldUpdate({ assignees: val === "__unassigned" ? [] : [val] })}
-              >
-                <SelectTrigger className="h-8 text-xs mt-1" data-testid="drawer-assignee-select">
-                  <SelectValue placeholder="Unassigned" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__unassigned" className="text-xs">Unassigned</SelectItem>
-                  {teamMembers.map((m: any) => (
-                    <SelectItem key={m.id || m.name} value={m.name} className="text-xs">{m.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                triggerClassName="h-8 text-xs mt-1"
+                placeholder="Unassigned"
+                options={[
+                  { value: "__unassigned", label: "Unassigned" },
+                  ...teamMembers.map((m: any) => ({ value: m.name, label: m.name })),
+                ]}
+                data-testid="drawer-assignee-select"
+              />
             </div>
           </div>
 
@@ -825,33 +816,21 @@ function InlineTaskRow({ task, onUpdate, onOpenTask }: { task: FullTask; onUpdat
         </div>
 
         <div className="hidden sm:flex items-center gap-1 shrink-0">
-          <Select
+          <SearchableSelect
             value={task.priority}
             onValueChange={(val) => onUpdate(task.id, { priority: val })}
-          >
-            <SelectTrigger className="h-6 w-[60px] text-[10px] px-1.5 border-dashed" data-testid={`priority-select-${task.id}`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TASK_PRIORITIES.map(p => (
-                <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            triggerClassName="h-6 w-[60px] text-[10px] px-1.5 border-dashed"
+            options={TASK_PRIORITIES.map(p => ({ value: p, label: p }))}
+            data-testid={`priority-select-${task.id}`}
+          />
 
-          <Select
+          <SearchableSelect
             value={task.status}
             onValueChange={(val) => onUpdate(task.id, { status: val })}
-          >
-            <SelectTrigger className="h-6 w-[100px] text-[10px] px-1.5 border-dashed" data-testid={`status-select-${task.id}`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TASK_STATUSES.map(s => (
-                <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            triggerClassName="h-6 w-[100px] text-[10px] px-1.5 border-dashed"
+            options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+            data-testid={`status-select-${task.id}`}
+          />
 
           <Input
             type="date"

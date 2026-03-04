@@ -4,9 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
@@ -938,23 +936,17 @@ function ColumnMappingStep({
                                   {col.rawHeader}
                                 </td>
                                 <td className="px-3 py-2">
-                                  <Select
+                                  <SearchableSelect
                                     value={col.canonicalField || ""}
                                     onValueChange={(val) => handleMappingChange(sectionName, colIdx, val)}
-                                  >
-                                    <SelectTrigger className="h-7 text-xs w-[180px]" data-testid={`select-mapping-${sectionName}-${colIdx}`}>
-                                      <SelectValue placeholder="Select field...">
-                                        {col.canonicalField ? (FIELD_LABELS[col.canonicalField] || col.canonicalField) : "Select field..."}
-                                      </SelectValue>
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {fields.map((f) => (
-                                        <SelectItem key={f} value={f}>
-                                          {FIELD_LABELS[f] || f}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                    placeholder="Select field..."
+                                    triggerClassName="h-7 text-xs w-[180px]"
+                                    data-testid={`select-mapping-${sectionName}-${colIdx}`}
+                                    options={fields.map((f) => ({
+                                      value: f,
+                                      label: FIELD_LABELS[f] || f,
+                                    }))}
+                                  />
                                   {isSaving && <Loader2 className="w-3 h-3 animate-spin text-blue-500 inline ml-1" />}
                                 </td>
                                 <td className="px-3 py-2">
@@ -995,27 +987,23 @@ function ColumnMappingStep({
                                 <span className="text-xs font-medium flex-1 text-muted-foreground">
                                   {col.rawHeader}
                                 </span>
-                                <Select
+                                <SearchableSelect
                                   value=""
                                   onValueChange={(val) => {
                                     if (val === "__ignore__") return;
                                     handleMappingChange(sectionName, colIdx, val);
                                   }}
-                                >
-                                  <SelectTrigger className="h-7 text-xs w-[180px]" data-testid={`select-unmapped-${sectionName}-${colIdx}`}>
-                                    <SelectValue placeholder="Map to..." />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="__ignore__">
-                                      — Ignore —
-                                    </SelectItem>
-                                    {fields.map((f) => (
-                                      <SelectItem key={f} value={f}>
-                                        {FIELD_LABELS[f] || f}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
+                                  placeholder="Map to..."
+                                  triggerClassName="h-7 text-xs w-[180px]"
+                                  data-testid={`select-unmapped-${sectionName}-${colIdx}`}
+                                  options={[
+                                    { value: "__ignore__", label: "— Ignore —" },
+                                    ...fields.map((f) => ({
+                                      value: f,
+                                      label: FIELD_LABELS[f] || f,
+                                    })),
+                                  ]}
+                                />
                                 {isSaving && <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />}
                               </div>
                             );
@@ -1636,18 +1624,19 @@ function IssuesStep({
                         </div>
                         <div className="w-[140px]">
                           <Label className="text-[10px]">Type</Label>
-                          <Select value={cpType} onValueChange={setCpType}>
-                            <SelectTrigger className="h-7 text-xs" data-testid={`select-trigger-cp-type-${issue.id}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="subcontractor">Subcontractor</SelectItem>
-                              <SelectItem value="supplier">Supplier</SelectItem>
-                              <SelectItem value="consultant">Consultant</SelectItem>
-                              <SelectItem value="client">Client</SelectItem>
-                              <SelectItem value="other">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <SearchableSelect
+                            value={cpType}
+                            onValueChange={setCpType}
+                            triggerClassName="h-7 text-xs"
+                            data-testid={`select-trigger-cp-type-${issue.id}`}
+                            options={[
+                              { value: "subcontractor", label: "Subcontractor" },
+                              { value: "supplier", label: "Supplier" },
+                              { value: "consultant", label: "Consultant" },
+                              { value: "client", label: "Client" },
+                              { value: "other", label: "Other" },
+                            ]}
+                          />
                         </div>
                         <Button
                           size="sm"
@@ -1976,16 +1965,17 @@ function InvoiceClassificationPanel({ runId, normalization }: { runId: number; n
                                   Confirm
                                 </Button>
                               )}
-                              <Select value={getRowOverride(cl.sourceRow).type} onValueChange={(v) => setRowOverride(cl.sourceRow, "type", v)}>
-                                <SelectTrigger className="h-6 text-[10px] w-24" data-testid={`select-type-${cl.sourceRow}`}>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="INSTALLER">Installer</SelectItem>
-                                  <SelectItem value="SUPPLIER">Supplier</SelectItem>
-                                  <SelectItem value="OTHER">Other</SelectItem>
-                                </SelectContent>
-                              </Select>
+                              <SearchableSelect
+                                value={getRowOverride(cl.sourceRow).type}
+                                onValueChange={(v) => setRowOverride(cl.sourceRow, "type", v)}
+                                triggerClassName="h-6 text-[10px] w-24"
+                                data-testid={`select-type-${cl.sourceRow}`}
+                                options={[
+                                  { value: "INSTALLER", label: "Installer" },
+                                  { value: "SUPPLIER", label: "Supplier" },
+                                  { value: "OTHER", label: "Other" },
+                                ]}
+                              />
                               <Input
                                 placeholder="Reason..."
                                 className="h-6 text-[10px] w-28"

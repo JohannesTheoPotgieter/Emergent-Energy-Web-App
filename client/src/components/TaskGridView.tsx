@@ -9,9 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -609,21 +607,13 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
 
       case "status":
         return isAdmin ? (
-          <Select value={task.status} onValueChange={v => handleInlineUpdate(task.id, "status", v)}>
-            <SelectTrigger data-testid={`select-status-${task.id}`} className="h-7 border-0 shadow-none p-0.5 w-full focus:ring-0">
-              <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${statusColors[task.status] || "bg-muted text-muted-foreground"}`}>
-                {statusIcon(task.status)}
-                <span className="truncate">{task.status}</span>
-              </div>
-            </SelectTrigger>
-            <SelectContent>
-              {STATUSES.map(s => (
-                <SelectItem key={s} value={s}>
-                  <div className="flex items-center gap-2">{statusIcon(s)} <span>{s}</span></div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={task.status}
+            onValueChange={v => handleInlineUpdate(task.id, "status", v)}
+            data-testid={`select-status-${task.id}`}
+            triggerClassName="h-7 border-0 shadow-none p-0.5 w-full focus:ring-0"
+            options={STATUSES.map(s => ({ value: s, label: s }))}
+          />
         ) : (
           <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium ${statusColors[task.status] || "bg-muted text-muted-foreground"}`}>
             {statusIcon(task.status)}
@@ -633,24 +623,13 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
 
       case "priority":
         return isAdmin ? (
-          <Select value={task.priority} onValueChange={v => handleInlineUpdate(task.id, "priority", v)}>
-            <SelectTrigger data-testid={`select-priority-${task.id}`} className="h-7 border-0 shadow-none p-0.5 w-full focus:ring-0">
-              <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-                <span className={`w-2 h-2 rounded-full shrink-0 ${priorityDot[task.priority] || "bg-slate-400"}`} />
-                {task.priority}
-              </div>
-            </SelectTrigger>
-            <SelectContent>
-              {PRIORITIES.map(p => (
-                <SelectItem key={p} value={p}>
-                  <div className="flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${priorityDot[p]}`} />
-                    {p}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={task.priority}
+            onValueChange={v => handleInlineUpdate(task.id, "priority", v)}
+            data-testid={`select-priority-${task.id}`}
+            triggerClassName="h-7 border-0 shadow-none p-0.5 w-full focus:ring-0"
+            options={PRIORITIES.map(p => ({ value: p, label: p }))}
+          />
         ) : (
           <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
             <span className={`w-2 h-2 rounded-full shrink-0 ${priorityDot[task.priority] || "bg-slate-400"}`} />
@@ -986,22 +965,26 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
           <Input data-testid="input-search" placeholder="Search tasks..." className="pl-8 h-8 text-[12px] bg-card"
             value={searchText} onChange={e => setSearchText(e.target.value)} />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger data-testid="select-status-filter" className="h-8 w-auto min-w-[120px] text-[12px] bg-card">
-            <div className="flex items-center gap-1.5"><ListFilter className="h-3 w-3 text-slate-500" /><SelectValue /></div>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="All">All Statuses</SelectItem>
-            {STATUSES.map(s => <SelectItem key={s} value={s}><div className="flex items-center gap-2">{statusIcon(s)} {s}</div></SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-          <SelectTrigger data-testid="select-priority-filter" className="h-8 w-auto min-w-[110px] text-[12px] bg-card"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="All">All Priorities</SelectItem>
-            {PRIORITIES.map(p => <SelectItem key={p} value={p}><div className="flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${priorityDot[p]}`} />{p}</div></SelectItem>)}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={statusFilter}
+          onValueChange={setStatusFilter}
+          data-testid="select-status-filter"
+          triggerClassName="h-8 w-auto min-w-[120px] text-[12px] bg-card"
+          options={[
+            { value: "All", label: "All Statuses" },
+            ...STATUSES.map(s => ({ value: s, label: s })),
+          ]}
+        />
+        <SearchableSelect
+          value={priorityFilter}
+          onValueChange={setPriorityFilter}
+          data-testid="select-priority-filter"
+          triggerClassName="h-8 w-auto min-w-[110px] text-[12px] bg-card"
+          options={[
+            { value: "All", label: "All Priorities" },
+            ...PRIORITIES.map(p => ({ value: p, label: p })),
+          ]}
+        />
 
         <div className="flex-1" />
 

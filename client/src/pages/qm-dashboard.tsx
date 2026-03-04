@@ -27,13 +27,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Collapsible,
   CollapsibleContent,
@@ -587,16 +581,18 @@ export default function QmDashboardPage() {
                       data-testid="input-qm-search"
                     />
                   </div>
-                  <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
-                    <SelectTrigger className="w-[120px] h-9" data-testid="select-status-filter">
-                      <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={statusFilter}
+                    onValueChange={(v) => setStatusFilter(v as any)}
+                    placeholder="Status"
+                    triggerClassName="w-[120px] h-9"
+                    data-testid="select-status-filter"
+                    options={[
+                      { value: "all", label: "All Status" },
+                      { value: "active", label: "Active" },
+                      { value: "completed", label: "Completed" },
+                    ]}
+                  />
                 </div>
               </div>
             </CardHeader>
@@ -776,41 +772,43 @@ export default function QmDashboardPage() {
                       data-testid="input-items-search"
                     />
                   </div>
-                  <Select value={itemsStatusFilter} onValueChange={setItemsStatusFilter}>
-                    <SelectTrigger className="w-[120px] h-9" data-testid="select-items-status">
-                      <SelectValue placeholder="Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="pass">Pass</SelectItem>
-                      <SelectItem value="fail">Fail</SelectItem>
-                      <SelectItem value="review">Review</SelectItem>
-                      <SelectItem value="na">N/A</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select value={itemsProjectFilter} onValueChange={setItemsProjectFilter}>
-                    <SelectTrigger className="w-[150px] h-9" data-testid="select-items-project">
-                      <SelectValue placeholder="Project" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Projects</SelectItem>
-                      {itemProjects.map(p => (
-                        <SelectItem key={p} value={p}>{p}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={itemsPhaseFilter} onValueChange={setItemsPhaseFilter}>
-                    <SelectTrigger className="w-[140px] h-9" data-testid="select-items-phase">
-                      <SelectValue placeholder="Phase" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Phases</SelectItem>
-                      {itemPhases.map(p => (
-                        <SelectItem key={p} value={p}>{p}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchableSelect
+                    value={itemsStatusFilter}
+                    onValueChange={setItemsStatusFilter}
+                    placeholder="Status"
+                    triggerClassName="w-[120px] h-9"
+                    data-testid="select-items-status"
+                    options={[
+                      { value: "all", label: "All Status" },
+                      { value: "pending", label: "Pending" },
+                      { value: "pass", label: "Pass" },
+                      { value: "fail", label: "Fail" },
+                      { value: "review", label: "Review" },
+                      { value: "na", label: "N/A" },
+                    ]}
+                  />
+                  <SearchableSelect
+                    value={itemsProjectFilter}
+                    onValueChange={setItemsProjectFilter}
+                    placeholder="Project"
+                    triggerClassName="w-[150px] h-9"
+                    data-testid="select-items-project"
+                    options={[
+                      { value: "all", label: "All Projects" },
+                      ...itemProjects.map(p => ({ value: p, label: p })),
+                    ]}
+                  />
+                  <SearchableSelect
+                    value={itemsPhaseFilter}
+                    onValueChange={setItemsPhaseFilter}
+                    placeholder="Phase"
+                    triggerClassName="w-[140px] h-9"
+                    data-testid="select-items-phase"
+                    options={[
+                      { value: "all", label: "All Phases" },
+                      ...itemPhases.map(p => ({ value: p, label: p })),
+                    ]}
+                  />
                 </div>
               </div>
             </CardHeader>

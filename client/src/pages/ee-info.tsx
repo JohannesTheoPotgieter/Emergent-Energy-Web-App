@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -233,27 +233,29 @@ function LifecycleOverview({
           </div>
         </div>
         <div className="flex items-center gap-2 ml-auto">
-          <Select value={deptFilter} onValueChange={setDeptFilter}>
-            <SelectTrigger className="h-8 text-xs w-[160px]" data-testid="filter-dept">
-              <SelectValue placeholder="All Departments" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Departments</SelectItem>
-              {departments.map(d => (
-                <SelectItem key={d.slug} value={d.slug}>{d.title}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="h-8 text-xs w-[120px]" data-testid="filter-status">
-              <SelectValue placeholder="All Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={deptFilter}
+            onValueChange={setDeptFilter}
+            placeholder="All Departments"
+            triggerClassName="h-8 text-xs w-[160px]"
+            data-testid="filter-dept"
+            options={[
+              { value: "all", label: "All Departments" },
+              ...departments.map(d => ({ value: d.slug, label: d.title })),
+            ]}
+          />
+          <SearchableSelect
+            value={statusFilter}
+            onValueChange={setStatusFilter}
+            placeholder="All Status"
+            triggerClassName="h-8 text-xs w-[120px]"
+            data-testid="filter-status"
+            options={[
+              { value: "all", label: "All Status" },
+              { value: "active", label: "Active" },
+              { value: "draft", label: "Draft" },
+            ]}
+          />
           {isCOO && (
             <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => seedMutation.mutate()} disabled={seedMutation.isPending} data-testid="btn-reseed">
               <RefreshCw className="h-3.5 w-3.5" /> Re-seed
@@ -603,27 +605,29 @@ function DepartmentDrilldown({
             data-testid="dept-search"
           />
         </div>
-        <Select value={stageFilter} onValueChange={setStageFilter}>
-          <SelectTrigger className="h-8 text-xs w-[180px]" data-testid="dept-stage-filter">
-            <SelectValue placeholder="All Stages" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Stages</SelectItem>
-            {data.stageGroups.map(sg => (
-              <SelectItem key={sg.stage.slug} value={sg.stage.slug}>{sg.stage.title}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="h-8 text-xs w-[120px]" data-testid="dept-status-filter">
-            <SelectValue placeholder="All Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="draft">Draft</SelectItem>
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={stageFilter}
+          onValueChange={setStageFilter}
+          placeholder="All Stages"
+          triggerClassName="h-8 text-xs w-[180px]"
+          data-testid="dept-stage-filter"
+          options={[
+            { value: "all", label: "All Stages" },
+            ...data.stageGroups.map(sg => ({ value: sg.stage.slug, label: sg.stage.title })),
+          ]}
+        />
+        <SearchableSelect
+          value={statusFilter}
+          onValueChange={setStatusFilter}
+          placeholder="All Status"
+          triggerClassName="h-8 text-xs w-[120px]"
+          data-testid="dept-status-filter"
+          options={[
+            { value: "all", label: "All" },
+            { value: "active", label: "Active" },
+            { value: "draft", label: "Draft" },
+          ]}
+        />
         {isCOO && (
           <Button size="sm" className="h-8 text-xs gap-1" onClick={() => setShowCreateDialog(true)} data-testid="btn-create-process">
             <Plus className="h-3.5 w-3.5" /> New Process
@@ -1712,16 +1716,14 @@ function RoleBasedSimulation() {
               </h3>
               <p className="text-xs text-muted-foreground">Select your role to see your daily rhythm, responsibilities, and key dashboards.</p>
             </div>
-            <Select value={selectedRole} onValueChange={setSelectedRole}>
-              <SelectTrigger className="w-[220px] h-9" data-testid="select-simulation-role">
-                <SelectValue placeholder="Select your role..." />
-              </SelectTrigger>
-              <SelectContent>
-                {ROLE_SIMULATIONS.map(r => (
-                  <SelectItem key={r.roleKey} value={r.roleKey}>{r.roleLabel}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={selectedRole}
+              onValueChange={setSelectedRole}
+              placeholder="Select your role..."
+              triggerClassName="w-[220px] h-9"
+              data-testid="select-simulation-role"
+              options={ROLE_SIMULATIONS.map(r => ({ value: r.roleKey, label: r.roleLabel }))}
+            />
           </div>
         </CardContent>
       </Card>

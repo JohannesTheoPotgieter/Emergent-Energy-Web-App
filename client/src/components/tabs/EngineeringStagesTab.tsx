@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import {
   CheckCircle2,
@@ -730,24 +730,18 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
                 <HardDrive className="h-3.5 w-3.5 text-blue-600" />
                 Local SharePoint Sync Folder
               </Label>
-              <Select value={spPath} onValueChange={setSpPath}>
-                <SelectTrigger className="h-9 text-xs" data-testid="select-task-sp-folder">
-                  <SelectValue placeholder="Select a folder path..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {savedPaths.map((p, i) => (
-                    <SelectItem key={i} value={p}>
-                      <span className="truncate text-xs">{p}</span>
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="__custom__">
-                    <span className="text-xs text-blue-600 font-medium">Enter custom path...</span>
-                  </SelectItem>
-                  <SelectItem value="">
-                    <span className="text-xs text-muted-foreground">Skip (no SharePoint path)</span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={spPath}
+                onValueChange={setSpPath}
+                placeholder="Select a folder path..."
+                triggerClassName="h-9 text-xs"
+                data-testid="select-task-sp-folder"
+                options={[
+                  ...savedPaths.map((p, i) => ({ value: p, label: p })),
+                  { value: "__custom__", label: "Enter custom path..." },
+                  { value: "", label: "Skip (no SharePoint path)" },
+                ]}
+              />
               {spPath === "__custom__" && (
                 <Input className="h-8 text-xs font-mono" placeholder="e.g. S:\Emergent Energy\Projects\..." value={customPath}
                   onChange={e => setCustomPath(e.target.value)} data-testid="input-task-custom-sp" autoFocus />
@@ -978,30 +972,18 @@ function DeliverablesSection({ stageId, projectId, templates, uploaded }: {
                 This is the folder on your machine that syncs with SharePoint.
               </p>
 
-              <Select value={spFolderPath} onValueChange={setSpFolderPath}>
-                <SelectTrigger className="h-9 text-xs" data-testid="select-sp-folder">
-                  <SelectValue placeholder="Select a folder path..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {savedPaths.map((p, i) => (
-                    <SelectItem key={i} value={p}>
-                      <div className="flex items-center gap-2">
-                        <FolderOpen className="h-3 w-3 text-blue-500 shrink-0" />
-                        <span className="truncate text-xs">{p}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="__custom__">
-                    <div className="flex items-center gap-2 text-blue-600">
-                      <FolderOpen className="h-3 w-3 shrink-0" />
-                      <span className="text-xs font-medium">Enter custom path...</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="">
-                    <span className="text-xs text-muted-foreground">Skip (no SharePoint path)</span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={spFolderPath}
+                onValueChange={setSpFolderPath}
+                placeholder="Select a folder path..."
+                triggerClassName="h-9 text-xs"
+                data-testid="select-sp-folder"
+                options={[
+                  ...savedPaths.map((p, i) => ({ value: p, label: p })),
+                  { value: "__custom__", label: "Enter custom path..." },
+                  { value: "", label: "Skip (no SharePoint path)" },
+                ]}
+              />
 
               {spFolderPath === "__custom__" && (
                 <div className="space-y-1.5">

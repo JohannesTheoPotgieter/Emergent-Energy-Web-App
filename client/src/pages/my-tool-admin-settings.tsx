@@ -9,13 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Loader2,
   Save,
@@ -291,20 +285,18 @@ export default function MyToolAdminSettingsPage() {
 
           <div className="space-y-2 max-w-xs">
             <Label htmlFor="default-horizon" data-testid="label-default-horizon">Default Priority Horizon (Today page)</Label>
-            <Select
+            <SearchableSelect
               value={settingsForm.defaultPriorityHorizon}
               onValueChange={(val) => setSettingsForm({ ...settingsForm, defaultPriorityHorizon: val as Horizon })}
-            >
-              <SelectTrigger id="default-horizon" data-testid="select-default-horizon">
-                <SelectValue placeholder="Select horizon" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="week">Week</SelectItem>
-                <SelectItem value="month">Month</SelectItem>
-                <SelectItem value="quarter">Quarter</SelectItem>
-              </SelectContent>
-            </Select>
+              placeholder="Select horizon"
+              options={[
+                { value: "today", label: "Today" },
+                { value: "week", label: "Week" },
+                { value: "month", label: "Month" },
+                { value: "quarter", label: "Quarter" },
+              ]}
+              data-testid="select-default-horizon"
+            />
           </div>
 
           <div className="pt-2">
@@ -486,30 +478,30 @@ function PriorityForm({
         </div>
         <div className="space-y-1">
           <Label data-testid={`label-${testIdPrefix}-severity`}>Severity</Label>
-          <Select value={form.severity} onValueChange={(val) => setForm({ ...form, severity: val as Severity })}>
-            <SelectTrigger data-testid={`select-${testIdPrefix}-severity`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="critical">Critical</SelectItem>
-              <SelectItem value="important">Important</SelectItem>
-              <SelectItem value="normal">Normal</SelectItem>
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={form.severity}
+            onValueChange={(val) => setForm({ ...form, severity: val as Severity })}
+            options={[
+              { value: "critical", label: "Critical" },
+              { value: "important", label: "Important" },
+              { value: "normal", label: "Normal" },
+            ]}
+            data-testid={`select-${testIdPrefix}-severity`}
+          />
         </div>
         <div className="space-y-1">
           <Label data-testid={`label-${testIdPrefix}-horizon`}>Horizon</Label>
-          <Select value={form.horizon} onValueChange={(val) => setForm({ ...form, horizon: val as Horizon })}>
-            <SelectTrigger data-testid={`select-${testIdPrefix}-horizon`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="week">Week</SelectItem>
-              <SelectItem value="month">Month</SelectItem>
-              <SelectItem value="quarter">Quarter</SelectItem>
-            </SelectContent>
-          </Select>
+          <SearchableSelect
+            value={form.horizon}
+            onValueChange={(val) => setForm({ ...form, horizon: val as Horizon })}
+            options={[
+              { value: "today", label: "Today" },
+              { value: "week", label: "Week" },
+              { value: "month", label: "Month" },
+              { value: "quarter", label: "Quarter" },
+            ]}
+            data-testid={`select-${testIdPrefix}-horizon`}
+          />
         </div>
         <div className="space-y-1">
           <Label data-testid={`label-${testIdPrefix}-project`}>Linked Project Name</Label>

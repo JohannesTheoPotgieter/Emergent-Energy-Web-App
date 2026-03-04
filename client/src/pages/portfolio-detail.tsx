@@ -9,9 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -1163,27 +1161,30 @@ export default function PortfolioDetailPage() {
             </div>
             <div>
               <label className="text-sm font-medium">Owner</label>
-              <Select value={editData.ownerUserId || ""} onValueChange={v => setEditData((d: any) => ({ ...d, ownerUserId: v }))}>
-                <SelectTrigger data-testid="select-edit-owner"><SelectValue placeholder="Select owner..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No owner</SelectItem>
-                  {allUsers.map((u: any) => (
-                    <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={editData.ownerUserId || ""}
+                onValueChange={v => setEditData((d: any) => ({ ...d, ownerUserId: v }))}
+                placeholder="Select owner..."
+                data-testid="select-edit-owner"
+                options={[
+                  { value: "none", label: "No owner" },
+                  ...allUsers.map((u: any) => ({ value: String(u.id), label: u.name })),
+                ]}
+              />
             </div>
             <div>
               <label className="text-sm font-medium">Status</label>
-              <Select value={editData.status || "Active"} onValueChange={v => setEditData((d: any) => ({ ...d, status: v }))}>
-                <SelectTrigger data-testid="select-edit-status"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="On Hold">On Hold</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                  <SelectItem value="Archived">Archived</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={editData.status || "Active"}
+                onValueChange={v => setEditData((d: any) => ({ ...d, status: v }))}
+                data-testid="select-edit-status"
+                options={[
+                  { value: "Active", label: "Active" },
+                  { value: "On Hold", label: "On Hold" },
+                  { value: "Completed", label: "Completed" },
+                  { value: "Archived", label: "Archived" },
+                ]}
+              />
             </div>
             <div>
               <label className="text-sm font-medium">Description</label>

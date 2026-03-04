@@ -13,13 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Mail, MessageSquare, Link2 } from "lucide-react";
 
@@ -182,65 +176,47 @@ export default function CreateTaskFromSourceDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="task-project">Project *</Label>
-            <Select value={projectName} onValueChange={setProjectName}>
-              <SelectTrigger data-testid="select-project">
-                <SelectValue placeholder="Select a project" />
-              </SelectTrigger>
-              <SelectContent>
-                <div className="p-2">
-                  <Input
-                    placeholder="Search projects..."
-                    value={projectSearch}
-                    onChange={(e) => setProjectSearch(e.target.value)}
-                    className="h-8 text-xs"
-                    data-testid="input-project-search"
-                  />
-                </div>
-                {filteredProjects.map((p) => (
-                  <SelectItem key={p.project_name} value={p.project_name}>
-                    {p.project_name}
-                  </SelectItem>
-                ))}
-                {filteredProjects.length === 0 && (
-                  <div className="px-2 py-3 text-xs text-muted-foreground text-center">
-                    No projects found
-                  </div>
-                )}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={projectName}
+              onValueChange={setProjectName}
+              placeholder="Select a project"
+              data-testid="select-project"
+              options={filteredProjects.map((p) => ({
+                value: p.project_name,
+                label: p.project_name,
+              }))}
+            />
           </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="task-assignee">Assign To</Label>
-            <Select value={assigneeUserId} onValueChange={setAssigneeUserId}>
-              <SelectTrigger data-testid="select-assignee">
-                <SelectValue placeholder="Select a team member" />
-              </SelectTrigger>
-              <SelectContent>
-                {allUsers.map((u) => (
-                  <SelectItem key={u.id} value={String(u.id)}>
-                    {u.name} ({u.role})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={assigneeUserId}
+              onValueChange={setAssigneeUserId}
+              placeholder="Select a team member"
+              data-testid="select-assignee"
+              options={allUsers.map((u) => ({
+                value: String(u.id),
+                label: `${u.name} (${u.role})`,
+              }))}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="task-priority">Priority</Label>
-              <Select value={priority} onValueChange={setPriority}>
-                <SelectTrigger data-testid="select-priority">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Critical">Critical</SelectItem>
-                  <SelectItem value="Urgent">Urgent</SelectItem>
-                  <SelectItem value="High">High</SelectItem>
-                  <SelectItem value="Med">Medium</SelectItem>
-                  <SelectItem value="Low">Low</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={priority}
+                onValueChange={setPriority}
+                data-testid="select-priority"
+                options={[
+                  { value: "Critical", label: "Critical" },
+                  { value: "Urgent", label: "Urgent" },
+                  { value: "High", label: "High" },
+                  { value: "Med", label: "Medium" },
+                  { value: "Low", label: "Low" },
+                ]}
+              />
             </div>
 
             <div className="space-y-1.5">

@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
@@ -524,14 +524,16 @@ export default function PhaseTemplatesPage() {
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium">Phase</label>
-              <Select value={newTemplate.phase} onValueChange={(v) => setNewTemplate(p => ({ ...p, phase: v }))}>
-                <SelectTrigger data-testid="select-template-phase"><SelectValue placeholder="Select phase" /></SelectTrigger>
-                <SelectContent>
-                  {(constants?.projectPhases || []).map((p) => (
-                    <SelectItem key={p} value={p}>{phaseLabels[p] || p}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={newTemplate.phase}
+                onValueChange={(v) => setNewTemplate(p => ({ ...p, phase: v }))}
+                placeholder="Select phase"
+                options={(constants?.projectPhases || []).map((p) => ({
+                  value: p,
+                  label: phaseLabels[p] || p,
+                }))}
+                data-testid="select-template-phase"
+              />
             </div>
             <div>
               <label className="text-sm font-medium">Template Name</label>
@@ -559,12 +561,12 @@ export default function PhaseTemplatesPage() {
             </div>
             <div>
               <label className="text-sm font-medium">Type</label>
-              <Select value={itemForm.itemType} onValueChange={(v) => setItemForm(f => ({ ...f, itemType: v }))}>
-                <SelectTrigger data-testid="select-item-type"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {(constants?.itemTypes || []).map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={itemForm.itemType}
+                onValueChange={(v) => setItemForm(f => ({ ...f, itemType: v }))}
+                options={(constants?.itemTypes || []).map((t) => ({ value: t, label: t }))}
+                data-testid="select-item-type"
+              />
             </div>
             <div className="col-span-2">
               <label className="text-sm font-medium">Title</label>
@@ -576,25 +578,28 @@ export default function PhaseTemplatesPage() {
             </div>
             <div>
               <label className="text-sm font-medium">Workstream</label>
-              <Select value={itemForm.primaryWorkstream} onValueChange={(v) => setItemForm(f => ({ ...f, primaryWorkstream: v }))}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">None</SelectItem>
-                  {(constants?.workstreams || []).map((w) => <SelectItem key={w} value={w}>{w}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={itemForm.primaryWorkstream}
+                onValueChange={(v) => setItemForm(f => ({ ...f, primaryWorkstream: v }))}
+                placeholder="Select"
+                options={[
+                  { value: "", label: "None" },
+                  ...(constants?.workstreams || []).map((w) => ({ value: w, label: w })),
+                ]}
+              />
             </div>
             <div>
               <label className="text-sm font-medium">Default Priority</label>
-              <Select value={itemForm.defaultPriority} onValueChange={(v) => setItemForm(f => ({ ...f, defaultPriority: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Low">Low</SelectItem>
-                  <SelectItem value="Med">Med</SelectItem>
-                  <SelectItem value="High">High</SelectItem>
-                  <SelectItem value="Critical">Critical</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={itemForm.defaultPriority}
+                onValueChange={(v) => setItemForm(f => ({ ...f, defaultPriority: v }))}
+                options={[
+                  { value: "Low", label: "Low" },
+                  { value: "Med", label: "Med" },
+                  { value: "High", label: "High" },
+                  { value: "Critical", label: "Critical" },
+                ]}
+              />
             </div>
             <div>
               <label className="text-sm font-medium">Offset Days</label>
@@ -642,15 +647,18 @@ export default function PhaseTemplatesPage() {
           </DialogHeader>
           <div>
             <label className="text-sm font-medium">Target Phase (leave blank to clone to same phase)</label>
-            <Select value={cloneTarget} onValueChange={setCloneTarget}>
-              <SelectTrigger><SelectValue placeholder="Same phase" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Same phase</SelectItem>
-                {(constants?.projectPhases || []).map((p) => (
-                  <SelectItem key={p} value={p}>{phaseLabels[p] || p}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SearchableSelect
+              value={cloneTarget}
+              onValueChange={setCloneTarget}
+              placeholder="Same phase"
+              options={[
+                { value: "", label: "Same phase" },
+                ...(constants?.projectPhases || []).map((p) => ({
+                  value: p,
+                  label: phaseLabels[p] || p,
+                })),
+              ]}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCloneDialog(false)}>Cancel</Button>

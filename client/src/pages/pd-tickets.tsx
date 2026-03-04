@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Loader2, Plus, Search, FileEdit, Filter, AlertTriangle } from "lucide-react";
 import { useLocation } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
@@ -83,33 +83,39 @@ export default function PdTicketsPage() {
           <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search tickets..." className="pl-9 h-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} data-testid="pd-tickets-search" />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[130px] h-8 text-xs" data-testid="pd-filter-status">
-            <Filter className="h-3 w-3 mr-1" /><SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            {STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-          <SelectTrigger className="w-[110px] h-8 text-xs" data-testid="pd-filter-priority">
-            <SelectValue placeholder="Priority" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Priorities</SelectItem>
-            {PRIORITIES.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
-          <SelectTrigger className="w-[140px] h-8 text-xs" data-testid="pd-filter-type">
-            <SelectValue placeholder="Type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            {REQUEST_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <SearchableSelect
+          value={statusFilter}
+          onValueChange={setStatusFilter}
+          placeholder="Status"
+          triggerClassName="w-[130px] h-8 text-xs"
+          options={[
+            { value: "all", label: "All Statuses" },
+            ...STATUSES.map(s => ({ value: s, label: s })),
+          ]}
+          data-testid="pd-filter-status"
+        />
+        <SearchableSelect
+          value={priorityFilter}
+          onValueChange={setPriorityFilter}
+          placeholder="Priority"
+          triggerClassName="w-[110px] h-8 text-xs"
+          options={[
+            { value: "all", label: "All Priorities" },
+            ...PRIORITIES.map(p => ({ value: p, label: p })),
+          ]}
+          data-testid="pd-filter-priority"
+        />
+        <SearchableSelect
+          value={typeFilter}
+          onValueChange={setTypeFilter}
+          placeholder="Type"
+          triggerClassName="w-[140px] h-8 text-xs"
+          options={[
+            { value: "all", label: "All Types" },
+            ...REQUEST_TYPES.map(t => ({ value: t, label: t })),
+          ]}
+          data-testid="pd-filter-type"
+        />
       </div>
 
       {isLoading ? (
