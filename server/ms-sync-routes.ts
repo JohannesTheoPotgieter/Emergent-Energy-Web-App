@@ -342,9 +342,11 @@ export function registerMsSyncRoutes(app: Express) {
           sql`(${operationalTasks.ownerUserId} = ${userId} OR ${userName} = ANY(${operationalTasks.assignees}) OR ${operationalTasks.createdBy} = ${userId})`
         ).orderBy(asc(operationalTasks.sortOrder)),
 
-        db.select().from(trItems).where(
-          sql`(${userName} = ANY(${trItems.owners}) OR ${trItems.createdBy} = ${userEmail} OR ${trItems.createdBy} = ${userName})`
-        ).orderBy(desc(trItems.createdAt)),
+        isAdmin
+          ? db.select().from(trItems).orderBy(desc(trItems.createdAt))
+          : db.select().from(trItems).where(
+              sql`(${userName} = ANY(${trItems.owners}) OR ${trItems.createdBy} = ${userEmail} OR ${trItems.createdBy} = ${userName})`
+            ).orderBy(desc(trItems.createdAt)),
 
         (async () => {
           const engApprovals = await db.select({
