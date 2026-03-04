@@ -3,7 +3,6 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
-import MyToolLayout from "@/components/mytool/MyToolLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -232,7 +231,7 @@ export default function MyToolMeetingsPage() {
   }
 
   return (
-    <MyToolLayout>
+    <div className="p-6 max-w-5xl mx-auto">
       <div className="space-y-6 pb-12" data-testid="meetings-page">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -919,6 +918,6 @@ export default function MyToolMeetingsPage() {
           </DialogContent>
         </Dialog>
       </div>
-    </MyToolLayout>
+    </div>
   );
 }
