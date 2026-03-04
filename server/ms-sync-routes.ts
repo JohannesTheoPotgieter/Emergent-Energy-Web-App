@@ -18,7 +18,7 @@ import {
   convertToTask,
 } from "./project-linking-service";
 import { syncAllForUser, syncUserCalendar, syncUserEmail, syncUserTeams, getSyncStatus } from "./ms-sync-service";
-import { getAllUsers, resolveNameToUserId, buildUserMap, mergeResolvedWithTextNames, type ResolvedUser } from "./user-resolver";
+import { getAllUsers, getAssignableUsers, resolveNameToUserId, buildUserMap, mergeResolvedWithTextNames, type ResolvedUser } from "./user-resolver";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -196,8 +196,8 @@ export function registerMsSyncRoutes(app: Express) {
 
   app.get("/api/users/assignable", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
     try {
-      const allUsers = await getAllUsers();
-      res.json(allUsers);
+      const assignable = await getAssignableUsers();
+      res.json(assignable);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
