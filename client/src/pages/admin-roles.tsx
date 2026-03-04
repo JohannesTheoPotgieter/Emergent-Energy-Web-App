@@ -99,7 +99,6 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "my_work" as PermissionEntity, label: "Calendar", actions: ["view", "edit"] },
       { entity: "my_tool" as PermissionEntity, label: "Tasks", actions: ["view", "edit"] },
       { entity: "meetings" as PermissionEntity, label: "Meetings", actions: ["view", "edit"] },
-      { entity: "ms_sync" as PermissionEntity, label: "Microsoft 365 Sync", actions: ["view", "edit"] },
     ],
   },
   {
@@ -107,10 +106,6 @@ const PERM_CATEGORIES: PermCat[] = [
     items: [
       { entity: "company_priorities" as PermissionEntity, label: "Company Priorities", actions: ["view", "edit", "delete"] },
       { entity: "lifecycle" as PermissionEntity, label: "Company Lifecycle Board", actions: ["view", "edit", "override"] },
-      { entity: "dashboard_widgets" as PermissionEntity, label: "Dashboard Widgets", actions: ["view", "edit"] },
-      { entity: "triage_inbox" as PermissionEntity, label: "Triage Inbox", actions: ["view", "edit"] },
-      { entity: "unclassified_tasks" as PermissionEntity, label: "Unclassified Tasks", actions: ["view", "edit", "delete"] },
-      { entity: "operational_tasks" as PermissionEntity, label: "Operational Tasks", actions: ["view", "edit", "delete"] },
     ],
   },
   {
@@ -118,11 +113,6 @@ const PERM_CATEGORIES: PermCat[] = [
     items: [
       { entity: "collaboration_hub" as PermissionEntity, label: "Email", actions: ["view", "edit"] },
       { entity: "teams_chat" as PermissionEntity, label: "Teams Chat", actions: ["view", "edit", "delete"] },
-      { entity: "sharepoint_files" as PermissionEntity, label: "SharePoint", actions: ["view", "edit", "delete"] },
-      { entity: "notifications" as PermissionEntity, label: "Notifications", actions: ["view"] },
-      { entity: "project_chat" as PermissionEntity, label: "Project Chat", actions: ["view", "edit"] },
-      { entity: "deliverables" as PermissionEntity, label: "Deliverables & Approvals", actions: ["view", "edit", "approve"] },
-      { entity: "excel_sync_ack" as PermissionEntity, label: "Excel Sync Acknowledgments", actions: ["view", "approve"] },
     ],
   },
   {
@@ -228,6 +218,7 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "ms_integration" as PermissionEntity, label: "Microsoft 365", actions: ["view", "edit"] },
       { entity: "database_migration" as PermissionEntity, label: "Database Migration", actions: ["view", "edit"] },
       { entity: "admin" as PermissionEntity, label: "App Settings", actions: ["view", "edit"] },
+      { entity: "ms_sync" as PermissionEntity, label: "Microsoft 365 Sync", actions: ["view", "edit"] },
       { entity: "data_import" as PermissionEntity, label: "Data Import", actions: ["view", "edit"] },
       { entity: "data_export" as PermissionEntity, label: "Data Export & Reports", actions: ["view"] },
       { entity: "audit_trail" as PermissionEntity, label: "Audit Trail", actions: ["view"] },
