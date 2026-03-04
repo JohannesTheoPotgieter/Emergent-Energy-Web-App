@@ -1527,7 +1527,28 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
     ]);
 
     const revBudgetMap = new Map(revManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
-    const cosBudgetMap = new Map(cosManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
+    const cosManualBudgetMap = new Map(cosManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
+
+    const staticCosBudgetGP: Record<string, number> = {
+      '2025-09': 8083466.99,
+      '2025-10': 16346971.77,
+      '2025-11': 20803804.86,
+      '2025-12': 12381055.48,
+      '2026-01': 12395435.22,
+      '2026-02': 20724666.08,
+      '2026-03': 30199956.69,
+      '2026-04': 21137178.14,
+      '2026-05': 31405517.81,
+      '2026-06': 41720854.07,
+      '2026-07': 30116780.50,
+      '2026-08': 73983803.91,
+    };
+
+    function getCosBudget(monthKey: string): number {
+      const manual = cosManualBudgetMap.get(monthKey);
+      if (manual && manual !== 0) return manual;
+      return staticCosBudgetGP[monthKey] ?? 0;
+    }
 
     const revByProject = new Map<string, number>();
     for (const rev of allInflowsRaw) {
@@ -1611,7 +1632,7 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
       const gpPct = totalRevenue !== 0 ? (totalGP / totalRevenue) * 100 : 0;
 
       const revBudget = revBudgetMap.get(monthKey) || 0;
-      const cosBudget = cosBudgetMap.get(monthKey) || 0;
+      const cosBudget = getCosBudget(monthKey);
       const budget = revBudget - cosBudget;
       const variance = totalGP - budget;
       const variancePct = budget !== 0 ? (totalGP - budget) / budget * 100 : 0;
