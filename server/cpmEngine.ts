@@ -16,6 +16,13 @@ export interface CPMTask {
   isMilestone: boolean;
   type: string;
   percentComplete: number | null;
+  actualStartDate?: string | null;
+  actualEndDate?: string | null;
+  actualDurationDays?: number | null;
+  plannedStartDate?: string | null;
+  plannedEndDate?: string | null;
+  plannedDurationDays?: number | null;
+  resource?: string | null;
 }
 
 export interface CPMDependency {
@@ -121,6 +128,13 @@ export function calculateCPM(
     endDate: string | null;
     type: string | null;
     percentComplete?: number | null;
+    actualStartDate?: string | null;
+    actualEndDate?: string | null;
+    actualDurationDays?: number | null;
+    plannedStartDate?: string | null;
+    plannedEndDate?: string | null;
+    plannedDurationDays?: number | null;
+    resource?: string | null;
   }>,
   dependencies: CPMDependency[]
 ): CPMResult {
@@ -169,6 +183,13 @@ export function calculateCPM(
       isMilestone,
       type: t.type || '',
       percentComplete: t.percentComplete ?? null,
+      actualStartDate: t.actualStartDate || null,
+      actualEndDate: t.actualEndDate || null,
+      actualDurationDays: t.actualDurationDays ?? null,
+      plannedStartDate: t.plannedStartDate || null,
+      plannedEndDate: t.plannedEndDate || null,
+      plannedDurationDays: t.plannedDurationDays ?? null,
+      resource: t.resource || null,
     };
   });
   
