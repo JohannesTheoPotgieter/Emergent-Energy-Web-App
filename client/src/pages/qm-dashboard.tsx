@@ -325,13 +325,24 @@ export default function QmDashboardPage() {
       return sum + c.phases.reduce((t, p) => t + p.completed, 0);
     }, 0);
   }, [checklists]);
+  const totalItemsFailed = useMemo(() => {
+    return checklists.reduce((sum, c) => {
+      if (!c.phases) return sum;
+      return sum + c.phases.reduce((t, p) => t + (p.failed ?? 0), 0);
+    }, 0);
+  }, [checklists]);
   const totalItemsAll = useMemo(() => {
     return checklists.reduce((sum, c) => {
       if (!c.phases) return sum;
       return sum + c.phases.reduce((t, p) => t + p.total, 0);
     }, 0);
   }, [checklists]);
+  const totalItemsReviewed = totalItemsPassed + totalItemsFailed;
   const activeWarnings = warnings.length;
+
+  const overallProgress = totalItemsAll > 0 ? Math.round((totalItemsReviewed / totalItemsAll) * 100) : 0;
+  const overallScore = totalItemsReviewed > 0 ? Math.round((totalItemsPassed / totalItemsReviewed) * 100) : 0;
+
   const avgQmScore = checklists.length > 0
     ? Math.round(
         checklists.reduce((sum, c) => {
@@ -348,6 +359,21 @@ export default function QmDashboardPage() {
     const total = c.phases.reduce((t, p) => t + p.total, 0);
     const passed = c.phases.reduce((t, p) => t + p.completed, 0);
     return total > 0 ? Math.round((passed / total) * 100) : 0;
+  };
+
+  const getProjectProgress = (c: Checklist) => {
+    if (!c.phases || c.phases.length === 0) return 0;
+    const total = c.phases.reduce((t, p) => t + p.total, 0);
+    const reviewed = c.phases.reduce((t, p) => t + p.completed + (p.failed ?? 0), 0);
+    return total > 0 ? Math.round((reviewed / total) * 100) : 0;
+  };
+
+  const getProjectScore = (c: Checklist) => {
+    if (!c.phases || c.phases.length === 0) return 0;
+    const passed = c.phases.reduce((t, p) => t + p.completed, 0);
+    const failed = c.phases.reduce((t, p) => t + (p.failed ?? 0), 0);
+    const reviewed = passed + failed;
+    return reviewed > 0 ? Math.round((passed / reviewed) * 100) : 0;
   };
 
   const getProjectWarnings = (c: Checklist) => {
@@ -486,80 +512,110 @@ export default function QmDashboardPage() {
       <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} />
       <ActionBar nextAction={qmNextAction} blockers={qmBlockers} />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="relative overflow-hidden border-blue-200/50/40" data-testid="kpi-total-projects">
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-blue-100/30/10" />
-          <CardContent className="relative p-4 sm:p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Projects</p>
-                <p className="text-3xl font-bold tabular-nums" data-testid="stat-total-projects">{totalProjects}</p>
-                <p className="text-xs text-muted-foreground mt-1">With quality checklists</p>
-              </div>
-              <div className="p-2 rounded-lg bg-blue-50">
-                <ClipboardCheck className="h-5 w-5 text-blue-600" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2">
+        <Card className="relative overflow-hidden border-sky-200" data-testid="kpi-quality-progress">
+          <div className="absolute inset-0 bg-gradient-to-br from-sky-50/80 to-blue-50/40" />
+          <CardContent className="relative p-5">
+            <div className="flex items-center gap-5">
+              <CircularProgress value={overallProgress} size={72} strokeWidth={6} />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-sky-600 uppercase tracking-wider mb-1">Quality Progress</p>
+                <p className="text-sm font-semibold text-foreground" data-testid="stat-progress-label">
+                  {overallProgress >= 100 ? "All Reviewed" : overallProgress >= 75 ? "Nearly Complete" : overallProgress >= 50 ? "In Progress" : overallProgress > 0 ? "Early Stage" : "Not Started"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {totalItemsReviewed} of {totalItemsAll} items reviewed across {totalProjects} projects
+                </p>
+                {totalItemsAll > 0 && (
+                  <div className="w-full h-1.5 bg-sky-100 rounded-full overflow-hidden mt-2">
+                    <div className="h-full bg-sky-500 rounded-full transition-all duration-700" style={{ width: `${overallProgress}%` }} />
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-emerald-200/50/40" data-testid="kpi-items-passed">
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 to-emerald-100/30/10" />
-          <CardContent className="relative p-4 sm:p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Items Passed</p>
-                <p className="text-3xl font-bold tabular-nums" data-testid="stat-items-passed">{totalItemsPassed}</p>
-                <p className="text-xs text-muted-foreground mt-1">of {totalItemsAll} total items</p>
-              </div>
-              <div className="p-2 rounded-lg bg-emerald-50">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+        <Card className="relative overflow-hidden border-emerald-200" data-testid="kpi-quality-score">
+          <div className="absolute inset-0 bg-gradient-to-br from-emerald-50/80 to-green-50/40" />
+          <CardContent className="relative p-5">
+            <div className="flex items-center gap-5">
+              <CircularProgress value={overallScore} size={72} strokeWidth={6} />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-1">Quality Score</p>
+                <p className="text-sm font-semibold text-foreground" data-testid="stat-score-label">
+                  {overallScore >= 90 ? "Excellent" : overallScore >= 75 ? "Good" : overallScore >= 50 ? "Needs Improvement" : totalItemsReviewed > 0 ? "At Risk" : "No Data"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {totalItemsPassed} passed, {totalItemsFailed} failed of {totalItemsReviewed} reviewed
+                </p>
+                {totalItemsReviewed > 0 && (
+                  <div className="w-full h-1.5 bg-emerald-100 rounded-full overflow-hidden mt-2">
+                    <div className="h-full bg-emerald-500 rounded-full transition-all duration-700" style={{ width: `${overallScore}%` }} />
+                  </div>
+                )}
               </div>
             </div>
-            {totalItemsAll > 0 && (
-              <Progress value={(totalItemsPassed / totalItemsAll) * 100} className="h-1 mt-3" />
-            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Card className="border-blue-100" data-testid="kpi-total-projects">
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-blue-50">
+                <ClipboardCheck className="h-4 w-4 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-xl font-bold tabular-nums" data-testid="stat-total-projects">{totalProjects}</p>
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Projects</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-emerald-100" data-testid="kpi-items-passed">
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-50">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-xl font-bold tabular-nums" data-testid="stat-items-passed">{totalItemsPassed}<span className="text-sm font-normal text-muted-foreground">/{totalItemsAll}</span></p>
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Items Passed</p>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
         <Card
-          className="relative overflow-hidden border-amber-200/50/40 cursor-pointer hover:shadow-md transition-shadow"
+          className={`border-amber-100 cursor-pointer hover:shadow-md transition-shadow ${warningFilter ? "ring-2 ring-amber-300" : ""}`}
           onClick={() => setWarningFilter(!warningFilter)}
           data-testid="kpi-active-warnings"
         >
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-50 to-amber-100/30/10" />
-          <CardContent className="relative p-4 sm:p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Warnings</p>
-                <p className="text-3xl font-bold tabular-nums" data-testid="stat-warnings">{activeWarnings}</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {activeWarnings === 0 ? "All clear" : `${highSeverityWarnings.length} high severity`}
-                </p>
-              </div>
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-amber-50">
-                <AlertTriangle className="h-5 w-5 text-amber-600" />
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-xl font-bold tabular-nums" data-testid="stat-warnings">{activeWarnings}</p>
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Warnings</p>
               </div>
             </div>
-            {warningFilter && (
-              <Badge variant="outline" className="absolute top-2 right-2 text-[10px] bg-amber-50 border-amber-200 text-amber-600">
-                Filtering
-              </Badge>
-            )}
           </CardContent>
         </Card>
 
-        <Card className="relative overflow-hidden border-indigo-200/50/40" data-testid="kpi-avg-score">
-          <div className="absolute inset-0 bg-gradient-to-br from-indigo-50 to-indigo-100/30/10" />
-          <CardContent className="relative p-4 sm:p-5">
-            <div className="flex items-center gap-4">
-              <CircularProgress value={avgQmScore} size={56} strokeWidth={5} />
+        <Card className="border-indigo-100" data-testid="kpi-avg-score">
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-indigo-50">
+                <TrendingUp className="h-4 w-4 text-indigo-600" />
+              </div>
               <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Avg QM Score</p>
-                <p className="text-sm font-semibold" data-testid="stat-avg-completion">
-                  {avgQmScore >= 80 ? "On Track" : avgQmScore >= 50 ? "Needs Attention" : avgQmScore > 0 ? "At Risk" : "No Data"}
-                </p>
-                <p className="text-xs text-muted-foreground">Across all projects</p>
+                <p className="text-xl font-bold tabular-nums" data-testid="stat-avg-completion">{avgQmScore}%</p>
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Avg Completion</p>
               </div>
             </div>
           </CardContent>
@@ -672,9 +728,13 @@ export default function QmDashboardPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                     {filteredProjects.map((checklist) => {
                       const completion = getProjectCompletion(checklist);
+                      const progress = getProjectProgress(checklist);
+                      const score = getProjectScore(checklist);
                       const warnCount = getProjectWarnings(checklist);
                       const totalItems = checklist.phases?.reduce((t, p) => t + p.total, 0) ?? 0;
                       const passedItems = checklist.phases?.reduce((t, p) => t + p.completed, 0) ?? 0;
+                      const failedItems = checklist.phases?.reduce((t, p) => t + (p.failed ?? 0), 0) ?? 0;
+                      const reviewedItems = passedItems + failedItems;
                       return (
                         <Card
                           key={checklist.id}
@@ -704,7 +764,16 @@ export default function QmDashboardPage() {
                                   </span>
                                 </div>
                               </div>
-                              <CircularProgress value={completion} size={48} strokeWidth={4} />
+                              <div className="flex items-center gap-2 shrink-0">
+                                <div className="text-center" title={`Progress: ${reviewedItems}/${totalItems} reviewed`}>
+                                  <CircularProgress value={progress} size={44} strokeWidth={4} />
+                                  <p className="text-[9px] font-medium text-sky-600 mt-0.5">Progress</p>
+                                </div>
+                                <div className="text-center" title={`Score: ${passedItems} passed / ${reviewedItems} reviewed`}>
+                                  <CircularProgress value={score} size={44} strokeWidth={4} />
+                                  <p className="text-[9px] font-medium text-emerald-600 mt-0.5">Score</p>
+                                </div>
+                              </div>
                             </div>
 
                             {checklist.phases && checklist.phases.length > 0 && (
