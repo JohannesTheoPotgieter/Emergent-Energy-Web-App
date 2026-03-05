@@ -10756,6 +10756,8 @@ export async function registerRoutes(
           unlinkedOperationalCount = nonClickupOps.length - operationalTasks.length;
 
           const filteredCanonical = canonicalTasks.filter((ct: any) => {
+            const ws = ct.workstream || "PM";
+            if (ws === "ENG" || ws === "QUALITY") return true;
             const hasWbs = ct.taskNo && String(ct.taskNo).trim().length > 0;
             const hasStart = ct.startDate && String(ct.startDate).trim().length > 0;
             const hasEnd = ct.endDate && String(ct.endDate).trim().length > 0;

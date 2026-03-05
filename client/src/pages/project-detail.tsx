@@ -907,9 +907,10 @@ export default function ProjectDetailPage() {
   const { data: projectPlanData = [] } = useQuery({
     queryKey: ["project-plan", projectName],
     queryFn: async () => {
-      const res = await engFetch(`/api/project-plan/${encodeURIComponent(projectName)}`);
+      const res = await engFetch(`/api/planning-tasks/${encodeURIComponent(projectName)}`);
       if (!res.ok) return [];
-      return res.json();
+      const raw = await res.json();
+      return Array.isArray(raw) ? raw : (raw.tasks || []);
     },
     enabled: !!projectName,
   });
@@ -994,13 +995,15 @@ export default function ProjectDetailPage() {
   const planTasks = projectPlanData as any[];
   const today = new Date().toISOString().split("T")[0];
   const overduePlanTasks = planTasks.filter((t: any) => {
-    const endDate = t.actualEnd || t.endDate;
-    const pct = Number(t.actualPctComplete) || 0;
-    return endDate && endDate < today && pct < 1;
+    const endDate = t.actualEndDate || t.dueDate || t.actualEnd || t.endDate;
+    const pct = t.percentComplete != null ? Number(t.percentComplete) : (Number(t.actualPctComplete) || 0);
+    const pctNorm = pct > 1 ? pct : pct * 100;
+    return endDate && endDate.substring(0, 10) < today && pctNorm < 100;
   });
   const completedPlanTasks = planTasks.filter((t: any) => {
-    const pct = Number(t.actualPctComplete) || 0;
-    return pct >= 1;
+    const pct = t.percentComplete != null ? Number(t.percentComplete) : (Number(t.actualPctComplete) || 0);
+    const pctNorm = pct > 1 ? pct : pct * 100;
+    return pctNorm >= 100;
   });
   const planCompletionPct = planTasks.length > 0 ? (completedPlanTasks.length / planTasks.length) * 100 : 0;
   const scheduleRag: "green" | "amber" | "red" = overduePlanTasks.length === 0 ? "green" : overduePlanTasks.length <= 3 ? "amber" : "red";
