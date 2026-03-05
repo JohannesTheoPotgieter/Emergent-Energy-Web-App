@@ -27,6 +27,30 @@ export async function getWorkItemsAsNormalizedPlanTasks(projectName: string): Pr
     )
     .orderBy(asc(workItems.id));
 
+  return mapWorkItemsToNormalizedFormat(items, projectName, "PM");
+}
+
+export async function getAllWorkItemsForPlanTab(projectName: string): Promise<any[]> {
+  const items = await db
+    .select()
+    .from(workItems)
+    .where(
+      and(
+        sql`${workItems.workstream} IN ('PM', 'ENG', 'QUALITY')`,
+        isNull(workItems.deletedAt),
+        sql`EXISTS (
+          SELECT 1 FROM project_info pi
+          WHERE pi.id = ${workItems.projectId}
+          AND pi.project_name = ${projectName}
+        )`
+      )
+    )
+    .orderBy(asc(workItems.id));
+
+  return mapWorkItemsToNormalizedFormat(items, projectName);
+}
+
+function mapWorkItemsToNormalizedFormat(items: WorkItem[], projectName: string, forceWorkstream?: string): any[] {
   const parentIdToWbs = new Map<number, string>();
   for (const wi of items) {
     if (wi.wbsCode) parentIdToWbs.set(wi.id, wi.wbsCode);
@@ -68,6 +92,7 @@ export async function getWorkItemsAsNormalizedPlanTasks(projectName: string): Pr
       baselineEnd: wi.baselineEnd || null,
       baselineDuration: wi.baselineDuration || null,
       taskMode: wi.taskMode || "auto",
+      workstream: forceWorkstream || wi.workstream,
     };
   });
 }

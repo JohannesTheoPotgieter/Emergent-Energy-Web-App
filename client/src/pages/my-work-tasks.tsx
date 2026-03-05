@@ -30,7 +30,7 @@ import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 type SortField = "priority" | "dueDate" | "createdAt" | "status";
 type SortDirection = "asc" | "desc";
 type SourceFilter = "all" | "personal" | "operational" | "plan" | "engineering_task" | "quality_task" | "approvals" | "tr_register" | "deliverables" | "notifications" | "tracking";
-type TrackingRole = "assignee" | "creator" | "both";
+type TrackingRole = "assignee" | "creator" | "both" | "viewer";
 type ViewMode = "list" | "board";
 
 const priorityOrder: Record<string, number> = { critical: 0, high: 1, urgent: 0, High: 1, Med: 2, Low: 3, normal: 2, low: 3 };
@@ -361,6 +361,7 @@ export default function MyWorkTasksPage() {
         notes: t.phase ? `Phase: ${t.phase}` : null,
         percentComplete: t.pctComplete ? Math.round(t.pctComplete * 100) : 0,
         assignees: t.owner ? [t.owner] : null, resolvedAssignees: t.resolvedAssignee ? [t.resolvedAssignee] : null,
+        _trackingRole: t.trackingRole || "assignee",
       });
     }
 
@@ -1137,6 +1138,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
 
         <span className={`shrink-0 hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium border ${task._sourceColor}`} data-testid={`badge-source-${task._key}`}>{task._sourceLabel}</span>
         {(task._trackingRole === "creator" || task._trackingRole === "both") && <span className="shrink-0 hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border bg-teal-50 border-teal-200 text-teal-700" data-testid={`badge-tracking-${task._key}`}><Eye className="h-2.5 w-2.5" />Tracking</span>}
+        {task._trackingRole === "viewer" && <span className="shrink-0 hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border bg-sky-50 border-sky-200 text-sky-700" data-testid={`badge-viewing-${task._key}`}><Eye className="h-2.5 w-2.5" />Viewing</span>}
 
         <div className="hidden sm:block shrink-0" onClick={e => e.stopPropagation()}>
           <UserAssignmentPicker taskId={task._rawId} taskSource={task._source === "approvals" ? "operational" : task._source} resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null} textNames={task.assignees || task.owners || null} mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"} size="xs" invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks", "/api/tr-register"]} />
@@ -1258,6 +1260,7 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
           <div className="flex items-center gap-1.5 mb-2 flex-wrap">
             <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${task._sourceColor}`}>{task._sourceLabel}</span>
             {(task._trackingRole === "creator" || task._trackingRole === "both") && <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-medium border bg-teal-50 border-teal-200 text-teal-700"><Eye className="h-3 w-3" />Tracking</span>}
+            {task._trackingRole === "viewer" && <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-medium border bg-sky-50 border-sky-200 text-sky-700"><Eye className="h-3 w-3" />Viewing</span>}
             <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold border ${statusColor}`}>{statusLabel}</span>
             <span className={`text-[10px] font-semibold ${priorityColor}`}>{priorityLabel}</span>
             {task.ragStatus && (

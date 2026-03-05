@@ -25,7 +25,7 @@ import {
   Calendar, AlertCircle, ChevronLeft, ZoomIn, ArrowRight,
   GripVertical, MoreHorizontal, ArrowDownToLine, Unlink,
   ArrowUp, ArrowDown, Diamond, FolderOpen, Link2, Link2Off,
-  Columns3, Save, RotateCcw, X, Eye, EyeOff, Info,
+  Columns3, Save, RotateCcw, X, Eye, EyeOff, Info, Filter,
 } from "lucide-react";
 import {
   Popover, PopoverContent, PopoverTrigger,
@@ -384,6 +384,7 @@ const ALL_COLUMNS: PlanColumn[] = [
   { id: "finish", label: "Finish", width: "w-[68px]" },
   { id: "predecessors", label: "Pred.", width: "w-[60px]" },
   { id: "resource", label: "Resource", width: "w-[70px]" },
+  { id: "workstream", label: "Workstream", width: "w-[80px]" },
   { id: "pctComplete", label: "% Complete", width: "w-[90px]" },
   { id: "expectedPct", label: "Expected %", width: "w-[70px]" },
   { id: "status", label: "Status", width: "w-10" },
@@ -431,6 +432,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   const qc = useQueryClient();
   const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState("All");
+  const [workstreamFilter, setWorkstreamFilter] = useState("All");
   const [searchText, setSearchText] = useState("");
   const [collapsedParents, setCollapsedParents] = useState<Set<number>>(new Set());
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -627,12 +629,23 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   const filtered = useMemo(() => {
     let result = [...tasks];
     if (statusFilter !== "All") result = result.filter(t => t.status === statusFilter);
+    if (workstreamFilter !== "All") {
+      const wsMap: Record<string, string> = { "Project": "PM", "Engineering": "ENG", "Quality": "QUALITY" };
+      const targetWs = wsMap[workstreamFilter];
+      if (targetWs) {
+        result = result.filter(t => {
+          const ws = t.workstream || "PM";
+          if (targetWs === "PM") return ws === "PM" || ws === "SMART_IMPORT" || !ws;
+          return ws === targetWs;
+        });
+      }
+    }
     if (searchText) {
       const lower = searchText.toLowerCase();
       result = result.filter(t => t.title?.toLowerCase().includes(lower) || (t.taskNumber || "").toLowerCase().includes(lower));
     }
     return result;
-  }, [tasks, statusFilter, searchText]);
+  }, [tasks, statusFilter, workstreamFilter, searchText]);
 
   const visibleTasks = useMemo(() => {
     return filtered.filter(t => {
@@ -1149,6 +1162,19 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             ...STATUSES.map(s => ({ value: s, label: s })),
           ]}
         />
+        <SearchableSelect
+          value={workstreamFilter}
+          onValueChange={setWorkstreamFilter}
+          placeholder="All Workstreams"
+          triggerClassName="w-[140px] h-7 text-xs"
+          data-testid="select-workstream-filter"
+          options={[
+            { value: "All", label: "All Workstreams" },
+            { value: "Project", label: "Project" },
+            { value: "Engineering", label: "Engineering" },
+            { value: "Quality", label: "Quality" },
+          ]}
+        />
 
         <div className="flex items-center border rounded-md overflow-hidden bg-card shadow-sm" data-testid="toolbar-actions">
           <TooltipProvider delayDuration={200}>
@@ -1512,6 +1538,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                 {isColumnVisible("finish") && <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-end">Finish</th>}
                 {isColumnVisible("predecessors") && <th className="w-[60px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-predecessors">Pred.</th>}
                 {isColumnVisible("resource") && <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-lead">Resource</th>}
+                {isColumnVisible("workstream") && <th className="w-[80px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-workstream">Workstream</th>}
                 {isColumnVisible("pctComplete") && <th className="w-[90px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-pct-done">% Complete</th>}
                 {isColumnVisible("expectedPct") && <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-expected-pct">Expected %</th>}
                 {isColumnVisible("status") && <th className="w-10 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-status">Status</th>}
@@ -1712,6 +1739,16 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                         {task.assignees ? (
                           <span className="truncate">{typeof task.assignees === 'string' ? task.assignees.split(',')[0] : '—'}</span>
                         ) : "—"}
+                      </td>
+                      )}
+                      {isColumnVisible("workstream") && (
+                      <td className="px-1 text-center border-r" data-testid={`workstream-${task.id}`}>
+                        {(() => {
+                          const ws = task.workstream || "PM";
+                          if (ws === "ENG") return <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-blue-50 text-blue-700 border-blue-200">Engineering</Badge>;
+                          if (ws === "QUALITY") return <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-purple-50 text-purple-700 border-purple-200">Quality</Badge>;
+                          return <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200">Project</Badge>;
+                        })()}
                       </td>
                       )}
                       {isColumnVisible("pctComplete") && (

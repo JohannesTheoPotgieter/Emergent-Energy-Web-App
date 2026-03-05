@@ -27,7 +27,7 @@ import { requirePermission } from "./permission-middleware";
 import { createNameResolver, mapCostToExpenseInput } from "./lib/data-merge";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
-import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getWorkItemsAsOperationalTasks, getWorkItemsAsMytoolTasks } from "./work-items-adapter";
+import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getAllWorkItemsForPlanTab, getWorkItemsAsOperationalTasks, getWorkItemsAsMytoolTasks } from "./work-items-adapter";
 
 function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
   if (fontColor === 'red') return false;
@@ -10686,7 +10686,7 @@ export async function registerRoutes(
       let unlinkedOperationalCount = 0;
 
       if (useCanonical) {
-        const canonicalTasks = await getWorkItemsAsNormalizedPlanTasks(projectName);
+        const canonicalTasks = await getAllWorkItemsForPlanTab(projectName);
         if (canonicalTasks.length > 0) {
           const allOps = await storage.getOperationalTasksByProject(projectName);
           const nonClickupOps = allOps.filter((t: any) => t.externalSource !== "clickup");
@@ -10766,6 +10766,7 @@ export async function registerRoutes(
               baselineEnd: ct.baselineEnd || null,
               baselineDuration: ct.baselineDuration || null,
               taskMode: ct.taskMode || "auto",
+              workstream: ct.workstream || "PM",
               createdBy: null,
               createdAt: null,
               updatedAt: null,
