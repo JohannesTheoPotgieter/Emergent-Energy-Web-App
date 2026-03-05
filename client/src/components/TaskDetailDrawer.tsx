@@ -49,6 +49,7 @@ import {
   ArrowRight,
   Link2,
   Target,
+  Eye,
 } from "lucide-react";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 
@@ -57,6 +58,7 @@ interface TaskDetailDrawerProps {
   open: boolean;
   onClose: () => void;
   projectName: string;
+  trackingRole?: "assignee" | "creator" | "both" | "viewer" | null;
 }
 
 interface TaskDetailResponse {
@@ -89,6 +91,7 @@ export default function TaskDetailDrawer({
   open,
   onClose,
   projectName,
+  trackingRole,
 }: TaskDetailDrawerProps) {
   const queryClient = useQueryClient();
 
@@ -513,7 +516,7 @@ function TaskDetailContent({
               {task.title}
             </h2>
           )}
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
             <Badge
               data-testid="badge-status"
               className={statusColor[task.status] ?? ""}
@@ -529,6 +532,16 @@ function TaskDetailContent({
               <Flag className="h-3 w-3 mr-1" />
               {task.priority}
             </Badge>
+            {(trackingRole === "creator" || trackingRole === "both") && (
+              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-medium border bg-teal-50 border-teal-200 text-teal-700" data-testid="badge-tracking">
+                <Eye className="h-3 w-3" />Tracking
+              </span>
+            )}
+            {trackingRole === "viewer" && (
+              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-medium border bg-sky-50 border-sky-200 text-sky-700" data-testid="badge-viewing">
+                <Eye className="h-3 w-3" />Viewing
+              </span>
+            )}
           </div>
         </div>
         <Button

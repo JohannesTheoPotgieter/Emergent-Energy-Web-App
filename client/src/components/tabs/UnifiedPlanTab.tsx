@@ -104,7 +104,7 @@ const countWorkingDays = (startDate: Date, endDate: Date): number => {
 
 interface UnifiedPlanTabProps {
   projectName: string;
-  onTaskClick?: (taskId: number) => void;
+  onTaskClick?: (taskId: number, assignmentRole?: string | null) => void;
 }
 
 interface ResolvedKeyDate {
@@ -1628,7 +1628,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                         ${dropClass}
                       `}
                       style={{ height: ROW_HEIGHT, maxHeight: ROW_HEIGHT, overflow: "hidden" }}
-                      onClick={() => onTaskClick?.(task.id)}
+                      onClick={() => onTaskClick?.(task.id, task.assignmentRole)}
                       draggable={isAdmin}
                       onDragStart={(e) => handleDragStart(e, task)}
                       onDragOver={(e) => handleDragOver(e, task)}
@@ -1700,6 +1700,11 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                           <span className={`truncate ${isMilestone ? "text-amber-800" : hasChildren ? "text-foreground" : ""}`} title={task.title}>
                             {task.title}
                           </span>
+                          {task.assignmentRole === "VIEWER" && (
+                            <span className="shrink-0 inline-flex items-center gap-0.5 px-1 py-0 rounded text-[8px] font-medium border bg-sky-50 border-sky-200 text-sky-700 ml-1" data-testid={`badge-viewing-${task.id}`}>
+                              <Eye className="h-2 w-2" />Viewing
+                            </span>
+                          )}
                         </div>
                       </td>
                       )}

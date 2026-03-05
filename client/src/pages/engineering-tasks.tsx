@@ -394,9 +394,11 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
   compact?: boolean;
 }) {
   const [quickEditOpen, setQuickEditOpen] = useState(false);
+  const { user } = useAuth();
   const overdue = isOverdue(task.dueDate, task.status);
   const dueSoon = isDueThisWeek(task.dueDate, task.status);
   const projectDisplay = task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
+  const isViewingOnly = user && task.assigneeUserId && task.assigneeUserId !== user.id;
   const label = daysLabel(task.dueDate);
   const isCritical = task.priority === "Critical" || task.priority === "Urgent";
 
@@ -414,6 +416,7 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
       >
         <div className="flex items-center gap-1.5">
           <h4 className="text-[11px] font-medium leading-tight truncate flex-1 min-w-0" data-testid={`text-card-title-${task.id}`}>{task.title}</h4>
+          {isViewingOnly && <span className="shrink-0 inline-flex items-center gap-0.5 px-1 py-0 rounded text-[8px] font-medium border bg-sky-50 border-sky-200 text-sky-700"><Eye className="h-2 w-2" />Viewing</span>}
           {overdue && <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />}
           {!overdue && dueSoon && <Clock className="h-3 w-3 text-amber-500 shrink-0" />}
           {task.assignees && task.assignees.length > 0 && (
@@ -449,6 +452,7 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
         <h4 className="text-[13px] font-medium leading-snug line-clamp-2 flex-1 min-w-0" data-testid={`text-card-title-${task.id}`}>
           {task.title}
         </h4>
+        {isViewingOnly && <span className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border bg-sky-50 border-sky-200 text-sky-700 mt-0.5"><Eye className="h-2.5 w-2.5" />Viewing</span>}
         <div className="flex items-center gap-0.5 shrink-0">
           {task.trackingRag && task.trackingRag !== "Green" && (
             <div className={`w-2 h-2 rounded-full mt-1.5 ${task.trackingRag === "Amber" ? "bg-amber-500" : task.trackingRag === "Red" ? "bg-red-500 animate-pulse" : "bg-gray-400"}`} title={`RAG: ${task.trackingRag}`} />
@@ -952,6 +956,13 @@ function TaskDetailDrawer({
               <h2 className="text-xl font-bold leading-tight" data-testid="text-drawer-title">{task.title}</h2>
               {task.externalTaskId && (
                 <p className="text-[10px] text-muted-foreground mt-1">Ref: {task.externalTaskId}</p>
+              )}
+              {user && task.assigneeUserId && task.assigneeUserId !== user.id && (
+                <div className="flex items-center gap-1.5 mt-1.5">
+                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-medium border bg-sky-50 border-sky-200 text-sky-700" data-testid="badge-viewing">
+                    <Eye className="h-3 w-3" />Viewing
+                  </span>
+                </div>
               )}
             </div>
 

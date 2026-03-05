@@ -797,6 +797,7 @@ export default function ProjectDetailPage() {
     collaboration: canViewPerm("pd_collaboration"),
   };
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [selectedTaskRole, setSelectedTaskRole] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [phaseModalOpen, setPhaseModalOpen] = useState(false);
 
@@ -868,8 +869,9 @@ export default function ProjectDetailPage() {
     },
   });
 
-  const handleTaskClick = (taskId: number) => {
+  const handleTaskClick = (taskId: number, role?: string | null) => {
     setSelectedTaskId(taskId);
+    setSelectedTaskRole(role || null);
     setDrawerOpen(true);
   };
 
@@ -1720,8 +1722,9 @@ export default function ProjectDetailPage() {
       <TaskDetailDrawer
         taskId={selectedTaskId}
         open={drawerOpen}
-        onClose={() => { setDrawerOpen(false); setSelectedTaskId(null); }}
+        onClose={() => { setDrawerOpen(false); setSelectedTaskId(null); setSelectedTaskRole(null); }}
         projectName={projectName}
+        trackingRole={selectedTaskRole === "VIEWER" ? "viewer" : selectedTaskRole === "OWNER" ? "assignee" : selectedTaskRole === "REVIEWER" ? "assignee" : null}
       />
 
       {projectInfoId && (

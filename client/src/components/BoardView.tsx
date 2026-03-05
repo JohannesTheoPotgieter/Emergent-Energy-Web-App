@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, User, Flag, GripVertical, Clock, AlertCircle } from "lucide-react";
+import { Plus, User, Flag, GripVertical, Clock, AlertCircle, Eye } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 interface BoardViewProps {
   projectName: string;
@@ -37,6 +38,7 @@ const PRIORITY_VARIANT: Record<string, string> = {
 
 export default function BoardView({ projectName, onTaskClick }: BoardViewProps) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [addingToColumn, setAddingToColumn] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
@@ -174,6 +176,11 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-purple-300 text-purple-700">
                             BASELINE
                           </Badge>
+                        )}
+                        {user && task.creatorId && task.creatorId === user.id && task.ownerUserId !== user.id && !(task.assigneeUserIds || []).includes(user.id) && (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0 rounded text-[9px] font-medium border bg-teal-50 border-teal-200 text-teal-700" data-testid={`badge-tracking-${task.id}`}>
+                            <Eye className="h-2.5 w-2.5" />Tracking
+                          </span>
                         )}
                       </div>
 

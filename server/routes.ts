@@ -11171,6 +11171,25 @@ export async function registerRoutes(
       };
 
       const result = Array.from(taskMap.values()).sort(sortByTaskCode);
+
+      const userId = (req as any).user?.id;
+      if (userId) {
+        try {
+          const assignmentRows = await db.execute(sql`
+            SELECT work_item_id, role FROM work_item_assignments
+            WHERE user_id = ${userId}
+          `);
+          const roleMap = new Map<number, string>();
+          const rows = Array.isArray(assignmentRows) ? assignmentRows : (assignmentRows as any).rows || [];
+          for (const r of rows) roleMap.set(r.work_item_id, r.role);
+          for (const t of result) {
+            const wiId = t.importedTaskId || Math.abs(t.id);
+            const role = roleMap.get(wiId);
+            t.assignmentRole = role || null;
+          }
+        } catch {}
+      }
+
       res.json({ tasks: result, unlinkedOperationalCount });
     } catch (err: any) {
       console.error("Planning tasks error:", err);
