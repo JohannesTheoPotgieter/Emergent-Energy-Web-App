@@ -11305,6 +11305,16 @@ export async function registerRoutes(
           )
         ).limit(1);
       }
+
+      if (!isProjectPlanTask && workItemResult.length === 0) {
+        workItemResult = await db.select().from(workItems).where(
+          and(
+            eq(workItems.legacyId, actualTaskId),
+            isNull(workItems.deletedAt),
+            sql`${workItems.projectId} IN (SELECT id FROM project_info WHERE project_name = ${projectName})`
+          )
+        ).limit(1);
+      }
       const isWorkItemTask = workItemResult.length > 0;
 
       if (isProjectPlanTask) {
@@ -11355,6 +11365,19 @@ export async function registerRoutes(
             deletedFlag: 0,
             isNewTask: 0,
           });
+        }
+
+        if (updates.workstream != null) {
+          const validWorkstreams = ["PM", "ENG", "QUALITY"];
+          if (validWorkstreams.includes(updates.workstream)) {
+            try {
+              await db.update(workItems).set({ workstream: updates.workstream }).where(
+                and(eq(workItems.legacyTable, "project_plan"), eq(workItems.legacyId, actualTaskId))
+              );
+            } catch (e) {
+              console.warn(`[planning-tasks] Failed to update workstream for legacy task ${actualTaskId}:`, e);
+            }
+          }
         }
 
         if (updates.status != null || updates.percentComplete != null) {
@@ -11481,6 +11504,13 @@ export async function registerRoutes(
         }
         if (updates.wbsCode != null) {
           wiUpdateFields.wbsCode = updates.wbsCode;
+        }
+        if (updates.workstream != null) {
+          const validWorkstreams = ["PM", "ENG", "QUALITY"];
+          if (validWorkstreams.includes(updates.workstream)) {
+            wiUpdateFields.workstream = updates.workstream;
+            notifFields.push({ field: "workstream", old: wi.workstream || "PM", new_: updates.workstream });
+          }
         }
         if (updates.baselineStart != null) {
           wiUpdateFields.baselineStart = updates.baselineStart;

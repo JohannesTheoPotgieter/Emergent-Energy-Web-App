@@ -50,6 +50,7 @@ import {
   Link2,
   Target,
   Eye,
+  Layers,
 } from "lucide-react";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 
@@ -71,6 +72,11 @@ interface TaskDetailResponse {
 
 const STATUS_OPTIONS = ["Not Started", "In Progress", "Blocked", "Done"];
 const PRIORITY_OPTIONS = ["Urgent", "High", "Normal", "Low"];
+const WORKSTREAM_OPTIONS = [
+  { value: "PM", label: "Project", color: "bg-emerald-100 text-emerald-800" },
+  { value: "ENG", label: "Engineering", color: "bg-blue-100 text-blue-800" },
+  { value: "QUALITY", label: "Quality", color: "bg-purple-100 text-purple-800" },
+];
 
 const statusColor: Record<string, string> = {
   "Not Started": "bg-muted text-foreground",
@@ -162,6 +168,7 @@ export default function TaskDetailDrawer({
           parentTaskId: match.parentTaskId || null,
           baselineStartDate: match.baselineStart || match.startDate || null,
           baselineEndDate: match.baselineEnd || match.dueDate || null,
+          workstream: match.workstream || "PM",
         };
         return { task, comments: [], checklists: [], attachments: [], activity: [] } as TaskDetailResponse;
       }
@@ -569,6 +576,15 @@ function TaskDetailContent({
                 Milestone
               </Badge>
             )}
+            {(() => {
+              const wsOpt = WORKSTREAM_OPTIONS.find(w => w.value === (taskAny.workstream || "PM"));
+              return wsOpt ? (
+                <Badge className={`text-xs gap-1 ${wsOpt.color}`} variant="secondary" data-testid="badge-workstream">
+                  <Layers className="h-3 w-3" />
+                  {wsOpt.label}
+                </Badge>
+              ) : null;
+            })()}
             <Badge
               className={`text-xs gap-1 ${
                 ragStatus === "green" ? "bg-emerald-100 text-emerald-800" :
@@ -757,6 +773,21 @@ function TaskDetailContent({
             options={PRIORITY_OPTIONS.map((p) => ({ value: p, label: p }))}
           />
         </div>
+
+        {isPlanTask && (
+          <div className="col-span-2">
+            <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+              <Layers className="h-3 w-3" /> Workstream
+            </label>
+            <SearchableSelect
+              value={taskAny.workstream || "PM"}
+              onValueChange={(v) => updateTask({ workstream: v })}
+              data-testid="select-workstream"
+              triggerClassName="h-8 text-xs"
+              options={WORKSTREAM_OPTIONS.map((w) => ({ value: w.value, label: w.label }))}
+            />
+          </div>
+        )}
 
         <div className="col-span-2">
           <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
