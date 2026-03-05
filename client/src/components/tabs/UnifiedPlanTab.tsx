@@ -401,11 +401,15 @@ const STORAGE_KEY_COLUMNS = "planTab_visibleColumns";
 const STORAGE_KEY_VIEWS = "planTab_savedViews";
 
 function loadVisibleColumns(): string[] {
+  const alwaysOn = ALL_COLUMNS.filter(c => c.alwaysVisible).map(c => c.id);
   try {
     const stored = localStorage.getItem(STORAGE_KEY_COLUMNS);
     if (stored) {
       const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const merged = [...new Set([...alwaysOn, ...parsed])];
+        return merged;
+      }
     }
   } catch {}
   return DEFAULT_VISIBLE_COLUMNS;
