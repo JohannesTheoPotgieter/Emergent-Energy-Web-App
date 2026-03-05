@@ -10776,8 +10776,12 @@ export async function registerRoutes(
             else if (pctComplete > 0) status = "In Progress";
 
             let computedExpPct = 0;
-            const tStart = (ct.startDate || ct.actualStartDate || "").substring(0, 10);
-            const tEnd = (ct.endDate || ct.actualEndDate || "").substring(0, 10);
+            const tPlannedStart = (ct.startDate || "").substring(0, 10);
+            const tPlannedEnd = (ct.endDate || "").substring(0, 10);
+            const tActualStart = (ct.actualStartDate || "").substring(0, 10);
+            const tActualEnd = (ct.actualEndDate || "").substring(0, 10);
+            const tStart = tActualStart || tPlannedStart;
+            const tEnd = tActualEnd || tPlannedEnd;
             if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
               const todayStr = new Date().toISOString().split("T")[0];
               if (todayStr >= tEnd) computedExpPct = 100;
@@ -10802,8 +10806,8 @@ export async function registerRoutes(
               description: ct.comment || null,
               status,
               priority: "Normal",
-              startDate: tStart || null,
-              dueDate: tEnd || null,
+              startDate: tPlannedStart || null,
+              dueDate: tPlannedEnd || null,
               durationDays: ct.durationDays || ct.actualDurationDays || null,
               percentComplete: pctComplete,
               expectedPercentComplete: computedExpPct,
@@ -10813,9 +10817,9 @@ export async function registerRoutes(
               blockerReason: null,
               plannedHours: null,
               actualHours: null,
-              actualStartDate: tStart || null,
-              actualEndDate: tEnd || null,
-              actualDurationDays: ct.durationDays || ct.actualDurationDays || null,
+              actualStartDate: tActualStart || tPlannedStart || null,
+              actualEndDate: tActualEnd || tPlannedEnd || null,
+              actualDurationDays: ct.actualDurationDays || ct.durationDays || null,
               comment: ct.comment || null,
               sortOrder: idx,
               isBaseline: true,
