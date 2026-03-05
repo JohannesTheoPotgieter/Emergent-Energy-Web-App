@@ -4753,6 +4753,9 @@ export async function registerRoutes(
                 startDate: t.startDate,
                 endDate: t.endDate,
                 duration: t.durationDays,
+                actualStart: t.actualStartDate || null,
+                actualEnd: t.actualEndDate || null,
+                actualDuration: t.actualDurationDays || null,
                 ownerName: t.owner,
                 status: t.status || 'Not Started',
                 percentComplete: t.pctComplete,
@@ -7622,6 +7625,65 @@ export async function registerRoutes(
             fileName,
             filePath: destPath,
           });
+
+          try {
+            const preview = await runSmartImportPreview(fileBuffer, fileName);
+            const norm = preview.normalization;
+            const resolvedProjectName = parseResult.projectName;
+            const [existingProject] = await db.select({ id: projectInfo.id }).from(projectInfo)
+              .where(eq(projectInfo.projectName, resolvedProjectName));
+            const pId = existingProject?.id || null;
+
+            if (pId) {
+              await db.delete(workItems).where(
+                and(
+                  eq(workItems.projectId, pId),
+                  eq(workItems.workstream, 'PM' as any),
+                  eq(workItems.source, 'SMART_IMPORT' as any)
+                )
+              );
+            }
+
+            const dummyRun = await db.insert(smartImportRuns).values({
+              fileName,
+              projectName: resolvedProjectName,
+              projectId: pId,
+              uploadedBy: req.user?.id || null,
+              status: "COMMITTED",
+              committedAt: new Date(),
+              committedBy: req.user?.id || null,
+              summaryJson: {} as any,
+            }).returning();
+            const importRunId = dummyRun[0].id;
+
+            if (norm.planTasks.length > 0) {
+              await db.insert(workItems).values(norm.planTasks.map((t: any, idx: number) => ({
+                projectId: pId,
+                workstream: 'PM' as any,
+                source: 'SMART_IMPORT' as any,
+                title: t.taskName,
+                wbsCode: t.taskNo || null,
+                type: t.phase,
+                startDate: t.startDate,
+                endDate: t.endDate,
+                duration: t.durationDays,
+                actualStart: t.actualStartDate || null,
+                actualEnd: t.actualEndDate || null,
+                actualDuration: t.actualDurationDays || null,
+                ownerName: t.owner,
+                status: t.status || 'Not Started',
+                percentComplete: t.pctComplete,
+                description: t.comment,
+                sourceSheet: t.sourceSheet,
+                sourceRow: t.sourceRow,
+                importRunId,
+                externalRef: `${resolvedProjectName}::PLAN::${t.taskNo || idx}::${importRunId}`,
+              })));
+            }
+            console.log(`[FolderScan] Populated work_items with actual dates for "${resolvedProjectName}"`);
+          } catch (normErr: any) {
+            console.error("[FolderScan] Non-blocking work_items population failed:", normErr.message);
+          }
           
           const recordsProcessed = parseResult.expensesParsed + parseResult.inflowsParsed + 
             parseResult.planParsed + parseResult.cashflowParsed + 
