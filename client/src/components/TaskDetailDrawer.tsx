@@ -103,7 +103,8 @@ export default function TaskDetailDrawer({
     queryFn: async () => {
       if (isBaselineTask) {
         const res = await apiRequest("GET", `/api/planning-tasks/${encodeURIComponent(projectName)}`);
-        const allTasks: any[] = await res.json();
+        const raw = await res.json();
+        const allTasks: any[] = Array.isArray(raw) ? raw : (raw.tasks || []);
         const match = allTasks.find((t: any) => t.id === taskId);
         if (!match) return null;
         const startD = match.startDate || match.actualStart || match.actualStartDate || null;
