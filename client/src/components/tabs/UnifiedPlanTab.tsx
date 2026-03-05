@@ -382,8 +382,6 @@ const ALL_COLUMNS: PlanColumn[] = [
   { id: "duration", label: "Duration", width: "w-14" },
   { id: "start", label: "Start", width: "w-[68px]" },
   { id: "finish", label: "Finish", width: "w-[68px]" },
-  { id: "actualStart", label: "Actual Start", width: "w-[68px]", alwaysVisible: true },
-  { id: "actualFinish", label: "Actual Finish", width: "w-[68px]", alwaysVisible: true },
   { id: "predecessors", label: "Pred.", width: "w-[60px]" },
   { id: "resource", label: "Resource", width: "w-[70px]" },
   { id: "workstream", label: "Workstream", width: "w-[80px]" },
@@ -1548,8 +1546,6 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                 {isColumnVisible("duration") && <th className="w-14 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-duration">Duration</th>}
                 {isColumnVisible("start") && <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-start">Start</th>}
                 {isColumnVisible("finish") && <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-end">Finish</th>}
-                {isColumnVisible("actualStart") && <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-blue-600 overflow-hidden" style={{ height: 28 }} data-testid="header-actual-start">Act. Start</th>}
-                {isColumnVisible("actualFinish") && <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-blue-600 overflow-hidden" style={{ height: 28 }} data-testid="header-actual-end">Act. Finish</th>}
                 {isColumnVisible("predecessors") && <th className="w-[60px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-predecessors">Pred.</th>}
                 {isColumnVisible("resource") && <th className="w-[70px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-lead">Resource</th>}
                 {isColumnVisible("workstream") && <th className="w-[80px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-workstream">Workstream</th>}
@@ -1741,16 +1737,6 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                             onCommit={(v) => updateMutation.mutate({ id: task.id, updates: { dueDate: v } })}
                           />
                         )}
-                      </td>
-                      )}
-                      {isColumnVisible("actualStart") && (
-                      <td className="px-1 text-center border-r text-[10px] tabular-nums text-blue-600" data-testid={`actual-start-${task.id}`}>
-                        {formatDateCompact(task.actualStartDate) || "—"}
-                      </td>
-                      )}
-                      {isColumnVisible("actualFinish") && (
-                      <td className="px-1 text-center border-r text-[10px] tabular-nums text-blue-600" data-testid={`actual-end-${task.id}`}>
-                        {formatDateCompact(task.actualEndDate) || "—"}
                       </td>
                       )}
                       {isColumnVisible("predecessors") && (
