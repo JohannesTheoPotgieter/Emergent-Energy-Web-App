@@ -888,6 +888,35 @@ async function backfillPmUserIds() {
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS baseline_end TEXT;
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS baseline_duration INTEGER;
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_mode TEXT DEFAULT 'auto';
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS actual_start TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS actual_end TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS actual_duration INTEGER;
+    `));
+
+    await db.execute(sql.raw(`
+      UPDATE work_items wi
+      SET actual_start = COALESCE(wi.actual_start, npt.actual_start_date),
+          actual_end = COALESCE(wi.actual_end, npt.actual_end_date),
+          actual_duration = COALESCE(wi.actual_duration, npt.actual_duration_days)
+      FROM normalized_plan_tasks npt
+      WHERE wi.legacy_table = 'normalized_plan_tasks'
+        AND wi.legacy_id = npt.id
+        AND (wi.actual_start IS NULL OR wi.actual_end IS NULL)
+        AND (npt.actual_start_date IS NOT NULL OR npt.actual_end_date IS NOT NULL)
+    `));
+
+    await db.execute(sql.raw(`
+      UPDATE work_items wi
+      SET actual_start = COALESCE(wi.actual_start, npt.actual_start_date),
+          actual_end = COALESCE(wi.actual_end, npt.actual_end_date),
+          actual_duration = COALESCE(wi.actual_duration, npt.actual_duration_days)
+      FROM normalized_plan_tasks npt
+      WHERE wi.source = 'SMART_IMPORT'
+        AND (wi.actual_start IS NULL OR wi.actual_end IS NULL)
+        AND wi.project_id = npt.project_id
+        AND wi.title = npt.task_name
+        AND wi.deleted_at IS NULL
+        AND (npt.actual_start_date IS NOT NULL OR npt.actual_end_date IS NOT NULL)
     `));
   } catch (err: any) {
     console.error('[Migration] work_items canonical columns error:', err.message);
