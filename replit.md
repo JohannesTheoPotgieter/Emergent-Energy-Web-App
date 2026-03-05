@@ -14,10 +14,10 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **UI/UX**: `shadcn/ui` and Tailwind CSS v4 for mobile-first responsive design; Recharts for data visualization.
 -   **Forms**: React Hook Form with Zod validation.
 -   **Key Features**: Financial tracking, project and quality management, Smart Excel Import, Subcontractor Dashboard, UX Guidance System, Project Awareness Bar, Weekly Review Wizard, Execution Dashboard, Permission Gate System, PM Dashboard, Gamification System, and a Universal Search.
--   **Project Planning**: MS Project-style grid with WBS, duration/date editing, predecessors, resource assignment, inline % complete, RAG status, and baseline tracking.
+-   **Project Planning**: MS Project-style grid with WBS, duration/date editing, predecessors, resource assignment, inline % complete, RAG status, and baseline tracking. Shows all workstreams (PM, Engineering, Quality) with color-coded badges and workstream filter.
 -   **Financial Tracking**: Dedicated tabs for Inflows (formerly Revenue), Revenue Tracker (COS-linked revenue: `revenue = (item_cost / total_COS) * total_milestone_revenue`), GP Tracker (Revenue - COS = GP), Expenditure Breakdown, and Cashflow (weekly cashflow with multi-select project filter).
 -   **Project Management**: Card-based Execution Dashboard, Kanban-style Lifecycle Board, and a "Command Center" project detail page with financial KPIs, RAG status, and section-based navigation.
--   **Unified Work ("My Work")**: Consolidates tasks from all sources (personal, operational, plan, engineering, quality, approvals, deliverables, TR register, MS 365, notifications) into a unified board/list with filtering and task management.
+-   **Unified Work ("My Work")**: Consolidates tasks from all sources (personal, operational, plan, engineering, quality, approvals, deliverables, TR register, MS 365, notifications) into a unified board/list with filtering and task management. Shows tasks where user is assigned or a viewer (VIEWER role in work_item_assignments), with distinct "Viewing" badges.
 -   **Approvals & Procurement**: Consolidated Approvals screen and a PO Generator creating PDFs with supplier auto-fill.
 -   **Quality Management**: Quality Dashboard with KPIs and items view, and a Quality Tab with phase-tabbed navigation, progress indicators, evidence upload, and approval workflows.
 -   **Collaboration**: Local Project Folder Tab using browser File System Access API, MS Teams-styled chat groups, and a Knowledge Base.

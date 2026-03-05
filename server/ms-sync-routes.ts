@@ -419,19 +419,22 @@ export function registerMsSyncRoutes(app: Express) {
         db.execute(sql`
           SELECT wi.id, wi.title as task_name, wi.wbs_code as task_no, wi.status,
                  wi.percent_complete as pct_complete, wi.start_date, wi.end_date,
-                 wi.duration as duration_days, wi.start_date as actual_start_date,
-                 wi.end_date as actual_end_date, wi.duration as actual_duration_days,
+                 wi.duration as duration_days, wi.actual_start as actual_start_date,
+                 wi.actual_end as actual_end_date, wi.actual_duration as actual_duration_days,
                  wi.owner_user_id as assignee_user_id, wi.description as comment,
                  CASE WHEN wi.type = 'milestone' THEN true ELSE false END as is_milestone,
                  wi.project_id as project_id,
                  pi.project_name as project_name,
                  wi.legacy_id as import_run_id,
                  wi.external_ref,
-                 wi.wbs_code as parent_task_no
+                 wi.wbs_code as parent_task_no,
+                 wi.workstream,
+                 (SELECT wia.role FROM work_item_assignments wia
+                  WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}
+                  LIMIT 1) as assignment_role
           FROM work_items wi
           LEFT JOIN project_info pi ON wi.project_id = pi.id
-          WHERE wi.workstream = 'PM'
-            AND wi.deleted_at IS NULL
+          WHERE wi.deleted_at IS NULL
             AND (wi.owner_user_id = ${userId}
                  OR EXISTS (SELECT 1 FROM work_item_assignments wia
                             WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}))
@@ -532,23 +535,31 @@ export function registerMsSyncRoutes(app: Express) {
           })),
         },
         deliverables: deliverableItems,
-        planTasks: (planTasks as any[]).map((t: any) => ({
-          id: t.id,
-          title: t.task_name,
-          status: t.status || "active",
-          projectName: t.project_name,
-          owner: t.owner,
-          phase: t.phase,
-          startDate: t.start_date,
-          endDate: t.end_date,
-          pctComplete: t.pct_complete,
-          assigneeUserId: t.assignee_user_id,
-          resolvedAssignee: resolveUserId(t.assignee_user_id) || resolveTextNameToUser(t.owner),
-          scheduledDate: t.scheduled_date || null,
-          scheduledStartTime: t.scheduled_start_time || null,
-          scheduledEndTime: t.scheduled_end_time || null,
-          _source: "plan",
-        })),
+        planTasks: (planTasks as any[]).map((t: any) => {
+          const isOwner = t.assignee_user_id === userId;
+          const role = t.assignment_role;
+          const isViewer = role === 'VIEWER';
+          const trackingRole = isViewer ? "viewer" : isOwner ? "assignee" : role ? "assignee" : "assignee";
+          return {
+            id: t.id,
+            title: t.task_name,
+            status: t.status || "active",
+            projectName: t.project_name,
+            owner: t.owner,
+            phase: t.phase,
+            startDate: t.start_date,
+            endDate: t.end_date,
+            pctComplete: t.pct_complete,
+            assigneeUserId: t.assignee_user_id,
+            resolvedAssignee: resolveUserId(t.assignee_user_id) || resolveTextNameToUser(t.owner),
+            scheduledDate: t.scheduled_date || null,
+            scheduledStartTime: t.scheduled_start_time || null,
+            scheduledEndTime: t.scheduled_end_time || null,
+            workstream: t.workstream || "PM",
+            trackingRole,
+            _source: "plan",
+          };
+        }),
         engineeringTasks: engTasks.map(t => ({
           id: t.id,
           title: t.title,

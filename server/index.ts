@@ -703,11 +703,18 @@ async function backfillPmUserIds() {
           CREATE TYPE work_item_source AS ENUM ('SMART_IMPORT', 'UI', 'INTEGRATION', 'SYSTEM');
         END IF;
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'work_item_assignment_role') THEN
-          CREATE TYPE work_item_assignment_role AS ENUM ('OWNER', 'ASSIGNEE', 'REVIEWER');
+          CREATE TYPE work_item_assignment_role AS ENUM ('OWNER', 'ASSIGNEE', 'REVIEWER', 'VIEWER');
         END IF;
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'work_item_dep_type') THEN
           CREATE TYPE work_item_dep_type AS ENUM ('FS', 'SS', 'FF', 'SF');
         END IF;
+      END $$;
+    `));
+
+    await db.execute(sql.raw(`
+      DO $$ BEGIN
+        ALTER TYPE work_item_assignment_role ADD VALUE IF NOT EXISTS 'VIEWER';
+      EXCEPTION WHEN duplicate_object THEN NULL;
       END $$;
     `));
 
