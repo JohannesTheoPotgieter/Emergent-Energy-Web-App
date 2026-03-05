@@ -683,8 +683,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     let earliestStart: Date | null = null;
     let latestEnd: Date | null = null;
     for (const t of tasks) {
-      const s = t.startDate || t.actualStartDate;
-      const e = t.dueDate || t.actualEndDate;
+      const s = t.actualStartDate || t.startDate;
+      const e = t.actualEndDate || t.dueDate;
       if (s) {
         const sd = new Date(s);
         if (!isNaN(sd.getTime()) && (!earliestStart || sd < earliestStart)) earliestStart = sd;
@@ -708,8 +708,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     let minDate: Date | null = null;
     let maxDate: Date | null = null;
     for (const t of tasks) {
-      const s = t.startDate || t.actualStartDate;
-      const e = t.dueDate || t.actualEndDate;
+      const s = t.actualStartDate || t.startDate;
+      const e = t.actualEndDate || t.dueDate;
       if (s) {
         const d = new Date(s);
         if (isValid(d) && (!minDate || d < minDate)) minDate = d;
@@ -772,8 +772,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       let totalDuration = 0;
 
       for (const c of children) {
-        const cs = c.startDate || c.actualStartDate;
-        const ce = c.dueDate || c.actualEndDate;
+        const cs = c.actualStartDate || c.startDate;
+        const ce = c.actualEndDate || c.dueDate;
         if (cs && (!minStart || cs < minStart)) minStart = cs;
         if (ce && (!maxFinish || ce > maxFinish)) maxFinish = ce;
         const cDur = (() => {
@@ -813,8 +813,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   const todayOffset = differenceInDays(today, ganttRange.start) * dayWidth;
 
   const getBarStyle = useCallback((task: any) => {
-    const s = task.startDate || task.actualStartDate;
-    const e = task.dueDate || task.actualEndDate;
+    const s = task.actualStartDate || task.startDate;
+    const e = task.actualEndDate || task.dueDate;
     if (!s || !e) return null;
     const startD = new Date(s);
     const endD = new Date(e);
@@ -1579,12 +1579,12 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                   const isDragging = dragTaskId === task.id;
                   const dropClass = getDropIndicatorClass(task.id);
 
-                  const taskStart = rollup?.start || task.startDate || task.actualStartDate || null;
-                  const taskFinish = rollup?.finish || task.dueDate || task.actualEndDate || null;
+                  const taskStart = rollup?.start || task.actualStartDate || task.startDate || null;
+                  const taskFinish = rollup?.finish || task.actualEndDate || task.dueDate || null;
                   const taskDuration = (() => {
                     if (rollup) return rollup.duration;
-                    const s = task.startDate || task.actualStartDate;
-                    const e = task.dueDate || task.actualEndDate;
+                    const s = task.actualStartDate || task.startDate;
+                    const e = task.actualEndDate || task.dueDate;
                     if (s && e) {
                       const sd = new Date(s);
                       const ed = new Date(e);
