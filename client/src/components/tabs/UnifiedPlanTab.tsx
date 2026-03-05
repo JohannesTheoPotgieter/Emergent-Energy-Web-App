@@ -1512,17 +1512,19 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             padding-left: 2px;
             padding-right: 2px;
           }
+          .plan-grid-left-panel { width: 100% !important; }
+          .plan-grid-gantt-panel { display: none !important; }
         }
       `}} />
       <div className="flex border rounded-md overflow-hidden bg-card" style={{ height: "calc(100vh - 320px)", minHeight: "400px" }} data-testid="plan-grid-container">
         <div
           ref={bodyScrollRef}
-          className="flex-shrink-0 overflow-y-auto overflow-x-auto border-r"
+          className="plan-grid-left-panel flex-shrink-0 overflow-y-auto overflow-x-auto border-r"
           style={{ width: "clamp(280px, 60%, 850px)" }}
           onScroll={handleBodyScroll}
           data-testid="plan-grid-left"
         >
-          <table className="plan-grid-table w-full text-[11px] border-collapse" style={{ tableLayout: "fixed" }}>
+          <table className="plan-grid-table text-[11px] border-collapse" style={{ tableLayout: "auto", minWidth: "100%" }}>
             <thead className="sticky top-0 z-20 bg-muted">
               <tr style={{ height: 28, maxHeight: 28 }}>
                 {isAdmin && <th className="w-5 px-0 py-0 border-b border-r overflow-hidden" style={{ height: 28 }} />}
@@ -1540,7 +1542,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                 {isColumnVisible("rowNum") && <th className="w-8 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-row-num">#</th>}
                 {isColumnVisible("indicator") && <th className="w-6 px-0 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-indicator"></th>}
                 {isColumnVisible("wbs") && <th className="w-12 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-wbs">WBS</th>}
-                {isColumnVisible("taskName") && <th className="min-w-[140px] px-2 py-0 text-left border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-task">Task Name</th>}
+                {isColumnVisible("taskName") && <th className="px-2 py-0 text-left border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28, minWidth: 140 }} data-testid="header-task">Task Name</th>}
                 {isColumnVisible("duration") && <th className="w-14 px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-duration">Duration</th>}
                 {isColumnVisible("start") && <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-start">Start</th>}
                 {isColumnVisible("finish") && <th className="w-[68px] px-1 py-0 text-center border-b border-r font-semibold text-muted-foreground overflow-hidden" style={{ height: 28 }} data-testid="header-end">Finish</th>}
@@ -1684,7 +1686,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                       </td>
                       )}
                       {isColumnVisible("taskName") && (
-                      <td className="px-2 border-r truncate" data-testid={`task-name-${task.id}`}>
+                      <td className="px-2 border-r" style={{ minWidth: 140 }} data-testid={`task-name-${task.id}`}>
                         <div className="flex items-center gap-1" style={{ paddingLeft: depth * 16 }}>
                           {hasChildren && (
                             <button
@@ -1862,7 +1864,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
 
         <div
           ref={ganttScrollRef}
-          className="flex-1 overflow-auto"
+          className="plan-grid-gantt-panel flex-1 overflow-auto"
           onScroll={handleGanttScroll}
           data-testid="plan-gantt-right"
         >
