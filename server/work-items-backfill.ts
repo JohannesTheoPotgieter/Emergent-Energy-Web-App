@@ -65,7 +65,8 @@ export async function backfillWorkItems(): Promise<void> {
         INSERT INTO work_items (
           project_id, workstream, type, source, title, description, status, priority,
           start_date, end_date, duration, percent_complete, wbs_code, outline_number,
-          owner_user_id, is_shared, external_ref, legacy_table, legacy_id, created_by
+          owner_user_id, is_shared, external_ref, legacy_table, legacy_id, created_by,
+          actual_start, actual_end, actual_duration
         )
         SELECT
           npt.project_id, 'PM',
@@ -77,7 +78,8 @@ export async function backfillWorkItems(): Promise<void> {
           COALESCE(npt.duration_days, npt.actual_duration_days),
           COALESCE(npt.pct_complete, 0),
           npt.task_no, npt.task_no, npt.assignee_user_id, false,
-          CONCAT('NPT::', npt.id::text), 'normalized_plan_tasks', npt.id, npt.assignee_user_id
+          CONCAT('NPT::', npt.id::text), 'normalized_plan_tasks', npt.id, npt.assignee_user_id,
+          npt.actual_start_date, npt.actual_end_date, npt.actual_duration_days
         FROM "${nptTable}" npt
         WHERE NOT EXISTS (
           SELECT 1 FROM work_items wi WHERE wi.external_ref = CONCAT('NPT::', npt.id::text)
@@ -345,7 +347,8 @@ export async function backfillWorkItems(): Promise<void> {
           INSERT INTO work_items (
             project_id, workstream, type, source, title, description, status, priority,
             start_date, end_date, duration, percent_complete, wbs_code, outline_number,
-            owner_user_id, is_shared, external_ref, legacy_table, legacy_id, created_by
+            owner_user_id, is_shared, external_ref, legacy_table, legacy_id, created_by,
+            actual_start, actual_end, actual_duration
           )
           SELECT
             pi.id, 'PM', 'task', 'SMART_IMPORT',
@@ -361,7 +364,8 @@ export async function backfillWorkItems(): Promise<void> {
             COALESCE(pp.actual_pct_complete, 0),
             pp.task_no, pp.task_no,
             NULL, false,
-            CONCAT('PP::', pp.id::text), 'project_plan', pp.id, NULL
+            CONCAT('PP::', pp.id::text), 'project_plan', pp.id, NULL,
+            pp.actual_start, pp.actual_end, pp.duration_days
           FROM "${ppTable}" pp
           JOIN project_info pi ON pi.project_name = pp.project_name
           WHERE NOT EXISTS (
