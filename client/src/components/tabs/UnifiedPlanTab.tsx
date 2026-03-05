@@ -456,7 +456,11 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   const [columnPickerOpen, setColumnPickerOpen] = useState(false);
   const [newViewName, setNewViewName] = useState("");
 
-  const isColumnVisible = useCallback((id: string) => visibleColumns.includes(id), [visibleColumns]);
+  const isColumnVisible = useCallback((id: string) => {
+    const col = ALL_COLUMNS.find(c => c.id === id);
+    if (col?.alwaysVisible) return true;
+    return visibleColumns.includes(id);
+  }, [visibleColumns]);
   const toggleColumn = useCallback((id: string) => {
     const col = ALL_COLUMNS.find(c => c.id === id);
     if (col?.alwaysVisible) return;
