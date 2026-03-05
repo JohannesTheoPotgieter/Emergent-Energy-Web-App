@@ -10957,8 +10957,11 @@ export async function registerRoutes(
 
       const calcExpected = (t: any): number | null => {
         if (t.expectedPercentComplete != null) return t.expectedPercentComplete;
-        const plannedStart = t.startDate ? new Date(t.startDate) : null;
-        const plannedEnd = t.dueDate ? new Date(t.dueDate) : null;
+        const useActual = t.actualStartDate && t.actualEndDate;
+        const startStr = useActual ? t.actualStartDate : t.startDate;
+        const endStr = useActual ? t.actualEndDate : t.dueDate;
+        const plannedStart = startStr ? new Date(startStr) : null;
+        const plannedEnd = endStr ? new Date(endStr) : null;
         if (!plannedStart || !plannedEnd || isNaN(plannedStart.getTime()) || isNaN(plannedEnd.getTime())) return null;
         const startMs = plannedStart.getTime();
         const endMs = plannedEnd.getTime();
@@ -11043,12 +11046,33 @@ export async function registerRoutes(
         parent.childCount = children.length;
       };
 
+      for (const [, t] of taskMap) {
+        if (childrenMap.has(t.id)) continue;
+        const pct = t.percentComplete || 0;
+        if (pct < 100 && t.actualEndDate) {
+          const actualEnd = new Date(t.actualEndDate);
+          if (!isNaN(actualEnd.getTime()) && actualEnd.getTime() <= todayMs) {
+            t.percentComplete = 100;
+            t.storedActualPct = 100;
+            if (t.status === "Not Started" || t.status === "active") t.status = "Done";
+          }
+        }
+      }
+
       const rootIds = allTasks.filter(t => !t.parentTaskId).map(t => t.id);
       for (const rootId of rootIds) computeRollups(rootId);
 
       for (const [, t] of taskMap) {
         if (!childrenMap.has(t.id)) {
           t.computedExpectedPct = calcExpected(t);
+        }
+        if (t.percentComplete < 100 && t.actualEndDate) {
+          const actualEnd = new Date(t.actualEndDate);
+          if (!isNaN(actualEnd.getTime()) && actualEnd.getTime() <= todayMs) {
+            t.percentComplete = 100;
+            t.storedActualPct = 100;
+            if (t.status === "Not Started" || t.status === "active" || t.status === "In Progress") t.status = "Done";
+          }
         }
         if (t.isVirtualMilestone && (t.isParent || t.childCount > 0)) {
           const pct = t.percentComplete || 0;
