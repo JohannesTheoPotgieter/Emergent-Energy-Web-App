@@ -108,6 +108,8 @@ function TaskRecoveryTab() {
             <SelectItem value="personal">Personal</SelectItem>
             <SelectItem value="engineering">Engineering</SelectItem>
             <SelectItem value="work_item">Work Items</SelectItem>
+            <SelectItem value="pd_ticket">Project Development</SelectItem>
+            <SelectItem value="quality">Quality</SelectItem>
           </SelectContent>
         </Select>
       </div>
