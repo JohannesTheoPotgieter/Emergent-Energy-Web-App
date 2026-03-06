@@ -48,6 +48,17 @@ import {
   FileEdit,
   Info,
   Lock,
+  Search,
+  ShieldAlert,
+  Layers,
+  Network,
+  CheckCircle2,
+  XCircle,
+  ArrowLeftRight,
+  Globe,
+  Monitor,
+  Server,
+  Workflow,
 } from "lucide-react";
 import {
   COMPANY_ROLE_LABELS,
@@ -62,18 +73,18 @@ const ALL_SECTIONS = [
   "MY_WORK", "COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "PROJECT_DETAIL", "INFORMATION", "SETTINGS",
 ] as const;
 
-const SECTION_META: Record<string, { label: string; icon: any; color: string; bg: string; description: string }> = {
-  MY_WORK: { label: "My Work", icon: Briefcase, color: "text-green-600", bg: "bg-green-50 border-green-200", description: "Tasks, approvals/calendar, meetings, email, teams" },
-  PROJECT_DEVELOPMENT: { label: "Project Development", icon: FileEdit, color: "text-teal-600", bg: "bg-teal-50 border-teal-200", description: "PD dashboard, tickets, lifecycle board" },
-  DELIVERY: { label: "Engineering", icon: Wrench, color: "text-orange-600", bg: "bg-orange-50 border-orange-200", description: "Eng dashboard, task board" },
-  GOVERNANCE: { label: "Quality", icon: ShieldCheck, color: "text-purple-600", bg: "bg-purple-50 border-purple-200", description: "Quality dashboard, compliance" },
-  PROJECTS: { label: "Project Management", icon: FolderKanban, color: "text-blue-600", bg: "bg-blue-50 border-blue-200", description: "Projects, portfolios, execution, reviews" },
-  MONEY: { label: "Finance", icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", description: "Cashflow, COS, procurement" },
-  COCKPIT: { label: "EXCO", icon: LayoutDashboard, color: "text-indigo-600", bg: "bg-indigo-50 border-indigo-200", description: "Executive cockpit, lifecycle board" },
-  COLLABORATION: { label: "Collaboration", icon: MessageSquare, color: "text-pink-600", bg: "bg-pink-50 border-pink-200", description: "Email, Teams, SharePoint" },
-  PROJECT_DETAIL: { label: "Project Detail Tabs", icon: FileText, color: "text-cyan-600", bg: "bg-cyan-50 border-cyan-200", description: "Per-project tab access control" },
-  INFORMATION: { label: "System & Info", icon: BookOpen, color: "text-slate-500", bg: "bg-muted border-border", description: "Feedback, knowledge base, leaderboard" },
-  SETTINGS: { label: "Admin", icon: Settings, color: "text-muted-foreground", bg: "bg-muted border-border", description: "Roles, audit, settings" },
+const SECTION_META: Record<string, { label: string; icon: any; color: string; bg: string; description: string; pages: string[] }> = {
+  MY_WORK: { label: "My Work", icon: Briefcase, color: "text-green-600", bg: "bg-green-50 border-green-200", description: "Personal workspace and daily tools", pages: ["Command Center", "Tasks", "Approvals", "Calendar", "Meetings", "Email", "Teams Chat"] },
+  PROJECT_DEVELOPMENT: { label: "Project Development", icon: FileEdit, color: "text-teal-600", bg: "bg-teal-50 border-teal-200", description: "Pipeline and lifecycle management", pages: ["PD Dashboard", "PD Tickets", "Clients", "Lifecycle Board"] },
+  DELIVERY: { label: "Engineering", icon: Wrench, color: "text-orange-600", bg: "bg-orange-50 border-orange-200", description: "Engineering operations and task tracking", pages: ["Eng Dashboard", "Task Board"] },
+  GOVERNANCE: { label: "Quality", icon: ShieldCheck, color: "text-purple-600", bg: "bg-purple-50 border-purple-200", description: "Quality management and compliance", pages: ["Quality Dashboard"] },
+  PROJECTS: { label: "Project Management", icon: FolderKanban, color: "text-blue-600", bg: "bg-blue-50 border-blue-200", description: "Project tracking, portfolios, and reviews", pages: ["Project List", "Portfolios", "Execution Board", "PM Dashboard", "On-The-Go", "Weekly Reviews"] },
+  MONEY: { label: "Finance", icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", description: "Financial tracking and procurement", pages: ["Cashflow", "COS Tracker", "Revenue Tracker", "GP Tracker", "Procurement", "Invoice Patterns"] },
+  COCKPIT: { label: "EXCO", icon: LayoutDashboard, color: "text-indigo-600", bg: "bg-indigo-50 border-indigo-200", description: "Executive cockpit and lifecycle board", pages: ["EXCO Dashboard"] },
+  COLLABORATION: { label: "Collaboration", icon: MessageSquare, color: "text-pink-600", bg: "bg-pink-50 border-pink-200", description: "Communication tools", pages: ["Email", "Teams", "SharePoint"] },
+  PROJECT_DETAIL: { label: "Project Detail Tabs", icon: FileText, color: "text-cyan-600", bg: "bg-cyan-50 border-cyan-200", description: "Per-project tab access control", pages: ["Overview", "Plan", "Key Dates", "Financials", "Revenue", "Expenditure", "COS", "Cashflow", "Subcontractors", "Engineering", "Quality"] },
+  INFORMATION: { label: "Information", icon: BookOpen, color: "text-slate-500", bg: "bg-muted border-border", description: "Knowledge base, leaderboard, and feedback", pages: ["Feedback", "Knowledge Base", "Leaderboard"] },
+  SETTINGS: { label: "System / Admin", icon: Settings, color: "text-muted-foreground", bg: "bg-muted border-border", description: "Administration and system configuration", pages: ["Control Center", "Users & Roles", "App Settings", "Activity Log", "Smart Import", "Recovery Center"] },
 };
 
 interface PermCat {
@@ -82,14 +93,14 @@ interface PermCat {
   label: string;
   icon: any;
   color: string;
-  items: { entity: PermissionEntity; label: string; actions: PermissionAction[] }[];
+  items: { entity: PermissionEntity; label: string; actions: PermissionAction[]; enforcement?: string }[];
 }
 
 const PERM_CATEGORIES: PermCat[] = [
   {
     key: "my_work", section: "MY_WORK", label: "My Work", icon: Briefcase, color: "bg-green-500",
     items: [
-      { entity: "home" as PermissionEntity, label: "Home", actions: ["view"] },
+      { entity: "home" as PermissionEntity, label: "Home / Command Center", actions: ["view"] },
       { entity: "my_tool" as PermissionEntity, label: "Tasks", actions: ["view", "edit"] },
       { entity: "my_work" as PermissionEntity, label: "Approvals / Calendar", actions: ["view", "edit"] },
       { entity: "meetings" as PermissionEntity, label: "Meetings", actions: ["view", "edit"] },
@@ -101,9 +112,9 @@ const PERM_CATEGORIES: PermCat[] = [
     key: "project_dev", section: "PROJECT_DEVELOPMENT", label: "Project Development", icon: FileEdit, color: "bg-teal-500",
     items: [
       { entity: "pd_dashboard" as PermissionEntity, label: "PD Dashboard", actions: ["view"] },
-      { entity: "pd_tickets" as PermissionEntity, label: "PD Tickets", actions: ["view", "edit", "delete"] },
-      { entity: "pd_clients" as PermissionEntity, label: "Clients", actions: ["view", "edit", "delete"] },
-      { entity: "lifecycle" as PermissionEntity, label: "Lifecycle Board", actions: ["view", "edit", "override"] },
+      { entity: "pd_tickets" as PermissionEntity, label: "PD Tickets", actions: ["view", "edit", "delete"], enforcement: "backend" },
+      { entity: "pd_clients" as PermissionEntity, label: "Clients", actions: ["view", "edit", "delete"], enforcement: "backend" },
+      { entity: "lifecycle" as PermissionEntity, label: "Lifecycle Board", actions: ["view", "edit", "override"], enforcement: "backend" },
       { entity: "company_priorities" as PermissionEntity, label: "Company Priorities", actions: ["view", "edit", "delete"] },
     ],
   },
@@ -117,20 +128,20 @@ const PERM_CATEGORIES: PermCat[] = [
   {
     key: "quality", section: "GOVERNANCE", label: "Quality", icon: ShieldCheck, color: "bg-purple-500",
     items: [
-      { entity: "quality" as PermissionEntity, label: "Quality Dashboard", actions: ["view", "edit", "approve", "override"] },
+      { entity: "quality" as PermissionEntity, label: "Quality Dashboard", actions: ["view", "edit", "approve", "override"], enforcement: "backend" },
     ],
   },
   {
     key: "pm", section: "PROJECTS", label: "Project Management", icon: FolderKanban, color: "bg-blue-500",
     items: [
-      { entity: "projects" as PermissionEntity, label: "Project List", actions: ["view", "edit", "delete"] },
+      { entity: "projects" as PermissionEntity, label: "Project List", actions: ["view", "edit", "delete"], enforcement: "backend" },
       { entity: "portfolios" as PermissionEntity, label: "Portfolios", actions: ["view", "edit", "delete"] },
       { entity: "portfolio_detail" as PermissionEntity, label: "Portfolio Detail", actions: ["view", "edit", "delete"] },
       { entity: "execution_board" as PermissionEntity, label: "Execution Board", actions: ["view", "edit"] },
       { entity: "pm_dashboard" as PermissionEntity, label: "PM Dashboard", actions: ["view"] },
       { entity: "pm_on_the_go" as PermissionEntity, label: "On-The-Go", actions: ["view", "edit"] },
-      { entity: "weekly_review_wizard" as PermissionEntity, label: "Weekly Reviews", actions: ["view", "edit"] },
-      { entity: "weekly_reviews" as PermissionEntity, label: "Weekly Review Data", actions: ["view", "edit"] },
+      { entity: "weekly_review_wizard" as PermissionEntity, label: "Weekly Reviews", actions: ["view", "edit"], enforcement: "backend" },
+      { entity: "weekly_reviews" as PermissionEntity, label: "Weekly Review Data", actions: ["view", "edit"], enforcement: "backend" },
       { entity: "create_project" as PermissionEntity, label: "Create Project", actions: ["edit"] },
     ],
   },
@@ -139,8 +150,8 @@ const PERM_CATEGORIES: PermCat[] = [
     items: [
       { entity: "cashflow" as PermissionEntity, label: "Cashflow", actions: ["view", "edit"] },
       { entity: "cos" as PermissionEntity, label: "COS Tracker", actions: ["view", "edit"] },
-      { entity: "subcontractors" as PermissionEntity, label: "Procurement", actions: ["view", "edit", "delete"] },
-      { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Patterns", actions: ["view", "edit"] },
+      { entity: "subcontractors" as PermissionEntity, label: "Procurement", actions: ["view", "edit", "delete"], enforcement: "backend" },
+      { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Patterns", actions: ["view", "edit"], enforcement: "backend" },
       { entity: "revenue_tracker" as PermissionEntity, label: "Revenue Tracker", actions: ["view", "edit"] },
     ],
   },
@@ -160,18 +171,18 @@ const PERM_CATEGORIES: PermCat[] = [
       { entity: "pd_eng_tasks" as PermissionEntity, label: "Engineering Tasks", actions: ["view", "edit", "delete"] },
       { entity: "pd_eng_stages" as PermissionEntity, label: "Engineering Stages", actions: ["view", "edit", "approve"] },
       { entity: "pd_quality" as PermissionEntity, label: "Quality Tab", actions: ["view", "edit", "approve", "delete"] },
-      { entity: "financials" as PermissionEntity, label: "Financials Overview", actions: ["view", "edit"] },
+      { entity: "financials" as PermissionEntity, label: "Financials Overview", actions: ["view", "edit"], enforcement: "backend" },
       { entity: "financial_integration" as PermissionEntity, label: "Financial Integration", actions: ["view", "edit", "approve"] },
       { entity: "financial_linking" as PermissionEntity, label: "Financial Linking", actions: ["view", "edit"] },
     ],
   },
   {
-    key: "system", section: "SETTINGS", label: "System", icon: Settings, color: "bg-slate-500",
+    key: "system", section: "SETTINGS", label: "System / Admin", icon: Settings, color: "bg-slate-500",
     items: [
-      { entity: "admin_roles" as PermissionEntity, label: "Users & Roles", actions: ["view", "edit"] },
-      { entity: "admin" as PermissionEntity, label: "App Settings", actions: ["view", "edit"] },
+      { entity: "admin_roles" as PermissionEntity, label: "Users & Roles", actions: ["view", "edit"], enforcement: "backend" },
+      { entity: "admin" as PermissionEntity, label: "App Settings", actions: ["view", "edit"], enforcement: "backend" },
       { entity: "activity_log" as PermissionEntity, label: "Activity Log", actions: ["view"] },
-      { entity: "smart_import" as PermissionEntity, label: "Smart Import", actions: ["view", "edit"] },
+      { entity: "smart_import" as PermissionEntity, label: "Smart Import", actions: ["view", "edit"], enforcement: "backend" },
       { entity: "excel_updates" as PermissionEntity, label: "Excel Updates", actions: ["view", "approve"] },
       { entity: "feedback" as PermissionEntity, label: "Feedback & Support", actions: ["view", "edit"] },
       { entity: "ee_info" as PermissionEntity, label: "Emergent Energy Info", actions: ["view", "edit"] },
@@ -186,13 +197,36 @@ const PERM_CATEGORIES: PermCat[] = [
   },
 ];
 
-const ACTION_META: Record<PermissionAction, { label: string; short: string; icon: any; activeColor: string; activeBg: string }> = {
-  view: { label: "View", short: "V", icon: Eye, activeColor: "text-blue-700", activeBg: "bg-blue-100 border-blue-300 text-blue-700" },
-  edit: { label: "Edit", short: "E", icon: Edit3, activeColor: "text-amber-700", activeBg: "bg-amber-100 border-amber-300 text-amber-700" },
-  approve: { label: "Approve", short: "A", icon: ThumbsUp, activeColor: "text-green-700", activeBg: "bg-green-100 border-green-300 text-green-700" },
-  override: { label: "Override", short: "O", icon: Zap, activeColor: "text-purple-700", activeBg: "bg-purple-100 border-purple-300 text-purple-700" },
-  delete: { label: "Delete", short: "D", icon: Trash2, activeColor: "text-red-700", activeBg: "bg-red-100 border-red-300 text-red-700" },
+const ACTION_META: Record<PermissionAction, { label: string; short: string; icon: any; activeColor: string; activeBg: string; risk: "low" | "medium" | "high" }> = {
+  view: { label: "View", short: "V", icon: Eye, activeColor: "text-blue-700", activeBg: "bg-blue-100 border-blue-300 text-blue-700", risk: "low" },
+  edit: { label: "Edit", short: "E", icon: Edit3, activeColor: "text-amber-700", activeBg: "bg-amber-100 border-amber-300 text-amber-700", risk: "medium" },
+  approve: { label: "Approve", short: "A", icon: ThumbsUp, activeColor: "text-green-700", activeBg: "bg-green-100 border-green-300 text-green-700", risk: "medium" },
+  override: { label: "Override", short: "O", icon: Zap, activeColor: "text-purple-700", activeBg: "bg-purple-100 border-purple-300 text-purple-700", risk: "high" },
+  delete: { label: "Delete", short: "D", icon: Trash2, activeColor: "text-red-700", activeBg: "bg-red-100 border-red-300 text-red-700", risk: "high" },
 };
+
+const SECTION_GROUPS: Record<string, string[]> = {
+  MY_WORK: ["MY_WORK", "COLLABORATION"],
+  PROJECT_DEVELOPMENT: ["PROJECT_DEVELOPMENT", "COCKPIT"],
+};
+
+const NAV_DISPLAY_SECTIONS = ["MY_WORK", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "PROJECTS", "MONEY", "SETTINGS"] as const;
+
+const SCOPE_RULES = [
+  { endpoint: "Project List", scope: "Full oversight for management roles. Site PMs see owned + assigned projects. Engineers see assigned projects only.", roles_affected: "PROJECT_MANAGER_SITE, ENGINEER", enforced: "backend" },
+  { endpoint: "Task List", scope: "Non-management users scoped to assigned or owned tasks only.", roles_affected: "ENGINEER, PROJECT_MANAGER_SITE, PROJECT_DEVELOPER", enforced: "backend" },
+  { endpoint: "My Work", scope: "Strictly scoped to the current user. No cross-user visibility.", roles_affected: "All roles", enforced: "backend" },
+  { endpoint: "PD Tickets", scope: "Project Developers see only their own tickets. Admin/management see all.", roles_affected: "PROJECT_DEVELOPER", enforced: "backend" },
+  { endpoint: "Smart Import", scope: "All write operations require admin-level access.", roles_affected: "Non-admin roles blocked", enforced: "backend" },
+  { endpoint: "Weekly Reviews", scope: "Requires project edit permission. Scoped to assigned projects for site PMs.", roles_affected: "PROJECT_MANAGER_SITE", enforced: "backend" },
+];
+
+const SCOPE_TIERS = [
+  { tier: "Full Oversight", description: "Can see all projects, tasks, and data across the organization.", roles: "CEO Admin, COO Admin, CCO, CFO, Program Manager, Finance PM, Accountant" },
+  { tier: "Owned Projects", description: "Can see projects they own (PM) plus any assigned tasks.", roles: "Project Manager (Site)" },
+  { tier: "Assigned Only", description: "Can only see tasks and projects they are directly assigned to.", roles: "Engineer" },
+  { tier: "Own Records", description: "Can only see records they created (e.g., PD tickets).", roles: "Project Developer" },
+];
 
 function getAuthHeaders(): HeadersInit {
   const token = localStorage.getItem("auth_token");
@@ -229,7 +263,7 @@ export default function AdminRolesPage() {
           </div>
           Roles & Permissions
         </h1>
-        <p className="text-sm text-muted-foreground mt-1 ml-[52px]">Configure sidebar access and feature permissions per role</p>
+        <p className="text-sm text-muted-foreground mt-1 ml-[52px]">Configure navigation access, feature permissions, and review enforcement truth per role</p>
       </header>
 
       <Tabs defaultValue="permissions" className="w-full">
@@ -305,9 +339,13 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
   const [editingLabel, setEditingLabel] = useState(false);
   const [editLabelValue, setEditLabelValue] = useState("");
   const [deletingRole, setDeletingRole] = useState(false);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [showSaveAllConfirm, setShowSaveAllConfirm] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
+  const [roleSearch, setRoleSearch] = useState("");
+  const [activeSubTab, setActiveSubTab] = useState("navigation");
+  const [showCompare, setShowCompare] = useState(false);
+  const [compareRole, setCompareRole] = useState("");
+  const [permSearch, setPermSearch] = useState("");
 
   useEffect(() => { if (roles.length > 0 && !selectedRole) setSelectedRole(roles[0].role); }, [roles, selectedRole]);
 
@@ -321,11 +359,6 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
     const raw = (pendingChanges[selectedRole]?.sections as string[] | undefined) || (currentRole.sections as string[]) || [];
     return raw.filter(s => (ALL_SECTIONS as readonly string[]).includes(s));
   }, [currentRole, pendingChanges, selectedRole]);
-
-  const SECTION_GROUPS: Record<string, string[]> = {
-    MY_WORK: ["MY_WORK", "COLLABORATION"],
-    PROJECT_DEVELOPMENT: ["PROJECT_DEVELOPMENT", "COCKPIT"],
-  };
 
   const toggleSection = (section: string) => {
     if (!currentRole) return;
@@ -420,22 +453,58 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
     setPendingChanges(prev => ({ ...prev, [selectedRole]: { ...prev[selectedRole], entityPermissions: updated as any } }));
   };
 
+  const roleStats = useMemo(() => {
+    if (!selectedRole) return { sections: 0, editableEntities: 0, highRisk: 0, totalEntities: 0 };
+    const activeCats = PERM_CATEGORIES.filter(c => c.section === "PROJECT_DETAIL" || c.section === "SETTINGS" || (SECTION_GROUPS[c.section] || [c.section]).some(s => effectiveSections.includes(s)));
+    let editableEntities = 0;
+    let highRisk = 0;
+    let totalEntities = 0;
+    for (const cat of activeCats) {
+      for (const item of cat.items) {
+        totalEntities++;
+        if (item.actions.some(a => a !== "view" && getEntityPerm(selectedRole, item.entity, a))) editableEntities++;
+        if (["delete", "override"].some(a => item.actions.includes(a as PermissionAction) && getEntityPerm(selectedRole, item.entity, a as PermissionAction))) highRisk++;
+      }
+    }
+    return { sections: effectiveSections.length, editableEntities, highRisk, totalEntities };
+  }, [selectedRole, effectiveSections, getEntityPerm]);
+
+  const filteredRoles = useMemo(() => {
+    if (!roleSearch) return roles;
+    const t = roleSearch.toLowerCase();
+    return roles.filter(r => r.label.toLowerCase().includes(t) || r.role.toLowerCase().includes(t));
+  }, [roles, roleSearch]);
+
+  const getRoleRiskLevel = useCallback((roleKey: string): "low" | "medium" | "high" => {
+    let highCount = 0;
+    for (const cat of PERM_CATEGORIES) {
+      for (const item of cat.items) {
+        if (["delete", "override"].some(a => item.actions.includes(a as PermissionAction) && getEntityPerm(roleKey, item.entity, a as PermissionAction))) highCount++;
+      }
+    }
+    if (highCount >= 3) return "high";
+    if (highCount >= 1) return "medium";
+    return "low";
+  }, [getEntityPerm]);
+
   if (loading) {
     return <Card><CardContent className="py-12 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /><span className="ml-2 text-muted-foreground">Loading...</span></CardContent></Card>;
   }
 
   const activeCats = PERM_CATEGORIES.filter(c => c.section === "PROJECT_DETAIL" || c.section === "SETTINGS" || (SECTION_GROUPS[c.section] || [c.section]).some(s => effectiveSections.includes(s)));
-  const activePermCount = activeCats.flatMap(c => c.items).filter(i => i.actions.some(a => getEntityPerm(selectedRole, i.entity, a))).length;
-  const totalItems = activeCats.flatMap(c => c.items).length;
 
   return (
     <>
       <div className="flex flex-col lg:flex-row gap-4">
-        <div className="lg:w-56 shrink-0">
+        {/* Role List Panel */}
+        <div className="lg:w-60 shrink-0">
           <Card data-testid="card-role-selector">
             <CardHeader className="py-3 px-3 flex flex-row items-center justify-between">
               <CardTitle className="text-xs font-semibold text-muted-foreground uppercase">Roles</CardTitle>
               <div className="flex items-center gap-0.5">
+                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setShowCompare(true)} title="Compare roles" data-testid="btn-compare-roles">
+                  <ArrowLeftRight className="h-3.5 w-3.5 text-blue-500" />
+                </Button>
                 <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setShowCreateRole(true)} title="Create role" data-testid="btn-create-role">
                   <Plus className="h-3.5 w-3.5 text-green-600" />
                 </Button>
@@ -444,201 +513,399 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="p-1.5 pt-0 space-y-0.5 max-h-[500px] overflow-y-auto">
-              {roles.map(role => {
-                const sel = selectedRole === role.role;
-                return (
-                  <button
-                    key={role.role}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${sel ? "bg-green-50 border border-green-200" : "hover:bg-muted border border-transparent"}`}
-                    onClick={() => setSelectedRole(role.role)}
-                    data-testid={`btn-select-role-${role.role}`}
-                  >
-                    <span className={`font-medium ${sel ? "text-green-800" : "text-foreground"}`}>{role.label}</span>
-                    {!!pendingChanges[role.role] && <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-amber-400 inline-block" />}
-                  </button>
-                );
-              })}
+            <CardContent className="p-1.5 pt-0 space-y-0.5">
+              <div className="px-1.5 pb-1.5">
+                <div className="relative">
+                  <Search className="h-3 w-3 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    placeholder="Filter roles..."
+                    value={roleSearch}
+                    onChange={e => setRoleSearch(e.target.value)}
+                    className="h-7 pl-7 text-xs"
+                    data-testid="input-search-roles"
+                  />
+                </div>
+              </div>
+              <div className="max-h-[460px] overflow-y-auto space-y-0.5">
+                {filteredRoles.map(role => {
+                  const sel = selectedRole === role.role;
+                  const riskLevel = getRoleRiskLevel(role.role);
+                  return (
+                    <button
+                      key={role.role}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${sel ? "bg-green-50 border border-green-200" : "hover:bg-muted border border-transparent"}`}
+                      onClick={() => setSelectedRole(role.role)}
+                      data-testid={`btn-select-role-${role.role}`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span className={`font-medium flex-1 min-w-0 truncate ${sel ? "text-green-800" : "text-foreground"}`}>{role.label}</span>
+                        {!!pendingChanges[role.role] && <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />}
+                        {riskLevel === "high" && <ShieldAlert className="h-3 w-3 text-red-400 shrink-0" />}
+                      </div>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        {role.isSystem ? (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-blue-200 text-blue-600 bg-blue-50">System</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-gray-200 text-gray-500">Custom</Badge>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </CardContent>
           </Card>
         </div>
 
+        {/* Main Panel */}
         <div className="flex-1 min-w-0 space-y-4">
           {currentRole && (
             <>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {editingLabel ? (
-                      <div className="flex items-center gap-1.5">
-                        <Input value={editLabelValue} onChange={e => setEditLabelValue(e.target.value)} className="h-7 w-36 sm:w-48 text-sm" autoFocus onKeyDown={e => { if (e.key === "Enter") handleRename(); if (e.key === "Escape") setEditingLabel(false); }} data-testid="input-rename-role" />
-                        <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={handleRename}><Check className="h-3 w-3 text-green-600" /></Button>
-                        <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingLabel(false)}><X className="h-3 w-3 text-gray-400" /></Button>
-                      </div>
-                    ) : (
-                      <>
-                        <h2 className="text-lg font-bold text-foreground" data-testid="text-selected-role-name">{currentRole.label}</h2>
-                        <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => { setEditingLabel(true); setEditLabelValue(currentRole.label); }} data-testid="btn-rename-role">
-                          <Pencil className="h-3 w-3 text-gray-400" />
-                        </Button>
-                      </>
-                    )}
-                    {currentRole.isSystem && <Badge variant="outline" className="text-[10px]">System</Badge>}
-                  </div>
-                  <span className="text-xs text-gray-400">{effectiveSections.length} sections active, {activePermCount}/{totalItems} features enabled</span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {!currentRole.isSystem && (
-                    <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50 h-7" onClick={handleDeleteRole} disabled={deletingRole} data-testid="btn-delete-role">
-                      {deletingRole ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                    </Button>
-                  )}
-                  {hasChanges && (
-                    <>
-                      <Button size="sm" variant="ghost" onClick={() => setPendingChanges(prev => { const n = { ...prev }; delete n[selectedRole]; return n; })} data-testid="btn-discard-changes">
-                        <X className="h-3.5 w-3.5 mr-1" /> Discard
-                      </Button>
-                      <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={handleSave} disabled={saving} data-testid="btn-save-role">
-                        {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
-                        Save
-                      </Button>
-                    </>
-                  )}
-                  {hasAnyChanges && changedRoleCount > 1 && (
-                    <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => setShowSaveAllConfirm(true)} disabled={savingAll} data-testid="btn-save-all-changes">
-                      {savingAll ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
-                      Save All ({changedRoleCount})
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-4 py-3 flex items-start gap-3" data-testid="info-how-it-works">
-                <Info className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
-                <div className="text-xs text-blue-700 space-y-1">
-                  <p className="font-semibold">How this works</p>
-                  <p>Each section below controls a sidebar area. The toggle on/off switch controls whether this role can see that section at all. When a section is <strong>off</strong>, all permissions within it are inactive — the user simply cannot reach those features.</p>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-amber-200 bg-amber-50/50 px-4 py-3 flex items-start gap-3" data-testid="info-permission-scope">
-                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
-                <div className="text-xs text-amber-800 space-y-1">
-                  <p className="font-semibold">Permission Scope</p>
-                  <p><strong>Navigation access</strong> (section toggles) is fully enforced — hiding a section removes the sidebar link and blocks the route.</p>
-                  <p><strong>Entity permissions</strong> (View, Edit, Approve, Override, Delete) are enforced at both UI and backend levels. Over 40 critical write routes now have backend <code>requirePermission</code> middleware. Smart Import routes require admin access. Financial approvals require finance-specific roles.</p>
-                  <p><strong>Ownership scoping</strong>: Project lists include ownership metadata. Non-management users see scoped task lists. My Work data is strictly user-scoped. Project Developers see only their own tickets.</p>
-                  <p>Full row-level security across all endpoints is not yet implemented — some read endpoints still rely on application-level filtering. See the Admin Control Center for detailed enforcement coverage.</p>
-                </div>
-              </div>
-
-              <div className="space-y-3" data-testid="permission-categories">
-                {PERM_CATEGORIES.map(cat => {
-                  const meta = SECTION_META[cat.section];
-                  const Icon = cat.icon;
-                  const sectionRelated = SECTION_GROUPS[cat.section] || [cat.section];
-                  const sectionActive = sectionRelated.some(s => effectiveSections.includes(s));
-                  const alwaysOn = cat.section === "PROJECT_DETAIL" || cat.section === "SETTINGS";
-                  const isActive = alwaysOn || sectionActive;
-                  const activeCount = cat.items.filter(i => i.actions.some(a => getEntityPerm(selectedRole, i.entity, a))).length;
-                  const isCollapsed = collapsed.has(cat.key);
-
-                  return (
-                    <Card
-                      key={cat.key}
-                      className={`overflow-hidden transition-all ${!isActive ? "opacity-60 border-dashed" : ""}`}
-                      data-testid={`category-${cat.key}`}
-                    >
-                      <div className={`flex items-center gap-2 px-4 py-2.5 border-b ${isActive ? "bg-muted/80" : "bg-muted/60"}`}>
-                        <button
-                          className="flex items-center gap-2 flex-1 text-left min-w-0"
-                          onClick={() => setCollapsed(prev => { const n = new Set(prev); n.has(cat.key) ? n.delete(cat.key) : n.add(cat.key); return n; })}
-                          data-testid={`btn-expand-category-${cat.key}`}
-                        >
-                          {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-gray-400 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-gray-400 shrink-0" />}
-                          <div className={`h-5 w-5 rounded ${isActive ? cat.color : "bg-gray-300"} flex items-center justify-center shrink-0`}>
-                            <Icon className="h-3 w-3 text-white" />
+              {/* Role Summary Header */}
+              <Card data-testid="card-role-summary">
+                <CardContent className="py-3 px-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {editingLabel ? (
+                          <div className="flex items-center gap-1.5">
+                            <Input value={editLabelValue} onChange={e => setEditLabelValue(e.target.value)} className="h-7 w-36 sm:w-48 text-sm" autoFocus onKeyDown={e => { if (e.key === "Enter") handleRename(); if (e.key === "Escape") setEditingLabel(false); }} data-testid="input-rename-role" />
+                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={handleRename}><Check className="h-3 w-3 text-green-600" /></Button>
+                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingLabel(false)}><X className="h-3 w-3 text-gray-400" /></Button>
                           </div>
-                          <span className={`text-xs font-semibold ${isActive ? "text-foreground" : "text-gray-400"}`}>{cat.label}</span>
-                          {isActive ? (
-                            <Badge variant="secondary" className="text-[10px] font-normal ml-1">{activeCount}/{cat.items.length}</Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-[10px] font-normal ml-1 border-dashed text-gray-400 bg-transparent flex items-center gap-1">
-                              <Lock className="h-2.5 w-2.5" /> Section Off
-                            </Badge>
-                          )}
-                        </button>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          {isActive && (
-                            <div className="flex items-center gap-1">
-                              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] font-semibold text-green-600 hover:bg-green-50" onClick={() => setCategoryPreset(cat, "all")} data-testid={`preset-full-${cat.key}`}>All</Button>
-                              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] font-semibold text-blue-600 hover:bg-blue-50" onClick={() => setCategoryPreset(cat, "view")} data-testid={`preset-view-${cat.key}`}>View</Button>
-                              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] font-semibold text-red-500 hover:bg-red-50" onClick={() => setCategoryPreset(cat, "none")} data-testid={`preset-none-${cat.key}`}>Off</Button>
-                            </div>
-                          )}
-                          {!alwaysOn && (
-                            <Switch
-                              checked={sectionActive}
-                              onCheckedChange={() => toggleSection(cat.section)}
-                              className="shrink-0"
-                              data-testid={`switch-section-${selectedRole}-${cat.section}`}
-                            />
-                          )}
-                          {alwaysOn && (
-                            <Badge variant="outline" className="text-[10px] text-gray-400 bg-transparent border-dashed">Always On</Badge>
-                          )}
-                        </div>
+                        ) : (
+                          <>
+                            <h2 className="text-lg font-bold text-foreground" data-testid="text-selected-role-name">{currentRole.label}</h2>
+                            <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => { setEditingLabel(true); setEditLabelValue(currentRole.label); }} data-testid="btn-rename-role">
+                              <Pencil className="h-3 w-3 text-gray-400" />
+                            </Button>
+                          </>
+                        )}
+                        {currentRole.isSystem ? (
+                          <Badge variant="outline" className="text-[10px] border-blue-200 text-blue-600 bg-blue-50">System Role</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px]">Custom Role</Badge>
+                        )}
                       </div>
+                      <div className="flex flex-wrap items-center gap-3 mt-1.5 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Layers className="h-3 w-3" />
+                          {roleStats.sections} sections
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Edit3 className="h-3 w-3" />
+                          {roleStats.editableEntities} editable
+                        </span>
+                        {roleStats.highRisk > 0 && (
+                          <span className="flex items-center gap-1 text-red-500 font-medium">
+                            <ShieldAlert className="h-3 w-3" />
+                            {roleStats.highRisk} high-risk
+                          </span>
+                        )}
+                        <span className="text-gray-300">|</span>
+                        <span>{roleStats.totalEntities} total features</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {!currentRole.isSystem && (
+                        <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50 h-7" onClick={handleDeleteRole} disabled={deletingRole} data-testid="btn-delete-role">
+                          {deletingRole ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                        </Button>
+                      )}
+                      {hasChanges && (
+                        <>
+                          <Button size="sm" variant="ghost" onClick={() => setPendingChanges(prev => { const n = { ...prev }; delete n[selectedRole]; return n; })} data-testid="btn-discard-changes">
+                            <X className="h-3.5 w-3.5 mr-1" /> Discard
+                          </Button>
+                          <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={handleSave} disabled={saving} data-testid="btn-save-role">
+                            {saving ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                            Save
+                          </Button>
+                        </>
+                      )}
+                      {hasAnyChanges && changedRoleCount > 1 && (
+                        <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => setShowSaveAllConfirm(true)} disabled={savingAll} data-testid="btn-save-all-changes">
+                          {savingAll ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                          Save All ({changedRoleCount})
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
-                      {!isCollapsed && (
-                        <div className={`divide-y divide-gray-50 ${!isActive ? "pointer-events-none" : ""}`}>
-                          {!isActive && (
-                            <div className="px-4 py-2 bg-muted/50 flex items-center gap-2">
-                              <Lock className="h-3 w-3 text-gray-300" />
-                              <span className="text-[11px] text-gray-400">This section is turned off for this role. Toggle it on above to configure permissions.</span>
+              {/* Sub-tabs */}
+              <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-4 h-10">
+                  <TabsTrigger value="navigation" className="flex items-center gap-1.5 text-xs" data-testid="subtab-navigation">
+                    <Globe className="h-3.5 w-3.5" /> Navigation
+                  </TabsTrigger>
+                  <TabsTrigger value="capabilities" className="flex items-center gap-1.5 text-xs" data-testid="subtab-capabilities">
+                    <Shield className="h-3.5 w-3.5" /> Capabilities
+                  </TabsTrigger>
+                  <TabsTrigger value="scope" className="flex items-center gap-1.5 text-xs" data-testid="subtab-scope">
+                    <Network className="h-3.5 w-3.5" /> Scope & Limits
+                  </TabsTrigger>
+                  <TabsTrigger value="enforcement" className="flex items-center gap-1.5 text-xs" data-testid="subtab-enforcement">
+                    <ShieldCheck className="h-3.5 w-3.5" /> Enforcement
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* Navigation Tab */}
+                <TabsContent value="navigation" className="mt-3 space-y-3">
+                  <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-4 py-2.5 flex items-start gap-3" data-testid="info-navigation">
+                    <Info className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+                    <p className="text-xs text-blue-700">
+                      Controls which sidebar sections this role can see. Turning a section <strong>off</strong> hides it from the sidebar and blocks the routes. This is fully enforced.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-2">
+                    {NAV_DISPLAY_SECTIONS.map(sectionKey => {
+                      const meta = SECTION_META[sectionKey];
+                      if (!meta) return null;
+                      const Icon = meta.icon;
+                      const sectionRelated = SECTION_GROUPS[sectionKey] || [sectionKey];
+                      const sectionActive = sectionRelated.some(s => effectiveSections.includes(s));
+                      const alwaysOn = sectionKey === "SETTINGS";
+
+                      return (
+                        <div
+                          key={sectionKey}
+                          className={`rounded-lg border p-3 transition-all ${sectionActive || alwaysOn ? meta.bg : "bg-gray-50 border-gray-200 opacity-60"}`}
+                          data-testid={`nav-section-${sectionKey}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${sectionActive || alwaysOn ? "bg-white/80" : "bg-gray-100"}`}>
+                              <Icon className={`h-4 w-4 ${sectionActive || alwaysOn ? meta.color : "text-gray-400"}`} />
                             </div>
-                          )}
-                          {cat.items.map((item) => (
-                            <div
-                              key={item.entity}
-                              className={`flex items-center gap-3 px-4 py-2 transition-colors ${isActive ? "hover:bg-blue-50/30" : "bg-muted/30"}`}
-                              data-testid={`entity-row-${selectedRole}-${item.entity}`}
-                            >
-                              <span className={`text-xs flex-1 min-w-0 truncate ${isActive ? "text-foreground" : "text-gray-300"}`} title={item.label}>{item.label}</span>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                {item.actions.map(action => {
-                                  const active = isActive && getEntityPerm(selectedRole, item.entity, action);
-                                  const actionMeta = ACTION_META[action];
-                                  return (
-                                    <button
-                                      key={action}
-                                      className={`h-6 px-2 rounded-md text-[10px] font-semibold border transition-all flex items-center gap-1 ${
-                                        !isActive
-                                          ? "bg-muted border-border text-gray-200 cursor-not-allowed"
-                                          : active
-                                            ? actionMeta.activeBg
-                                            : "bg-muted border-border text-gray-300 hover:bg-muted hover:text-muted-foreground"
-                                      }`}
-                                      onClick={() => { if (isActive) toggleEntityPerm(selectedRole, item.entity, action); }}
-                                      title={isActive ? `${actionMeta.label}: ${item.label}` : "Enable section first"}
-                                      disabled={!isActive}
-                                      data-testid={`perm-${selectedRole}-${item.entity}-${action}`}
-                                    >
-                                      {actionMeta.short}
-                                    </button>
-                                  );
-                                })}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-sm font-semibold ${sectionActive || alwaysOn ? "text-foreground" : "text-gray-400"}`}>{meta.label}</span>
+                                {alwaysOn && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-gray-300 text-gray-500">Always On</Badge>}
+                                {sectionActive && !alwaysOn && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-green-300 text-green-600 bg-green-50">Active</Badge>}
+                              </div>
+                              <p className="text-[11px] text-muted-foreground mt-0.5">{meta.description}</p>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {meta.pages.map(page => (
+                                  <span key={page} className={`text-[10px] px-1.5 py-0.5 rounded ${sectionActive || alwaysOn ? "bg-white/60 text-foreground" : "bg-gray-100 text-gray-400"}`}>
+                                    {page}
+                                  </span>
+                                ))}
                               </div>
                             </div>
-                          ))}
+                            {!alwaysOn && (
+                              <Switch
+                                checked={sectionActive}
+                                onCheckedChange={() => toggleSection(sectionKey)}
+                                className="shrink-0"
+                                data-testid={`switch-section-${selectedRole}-${sectionKey}`}
+                              />
+                            )}
+                          </div>
                         </div>
-                      )}
-                    </Card>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
+                </TabsContent>
 
+                {/* Capabilities Tab */}
+                <TabsContent value="capabilities" className="mt-3 space-y-3">
+                  <div className="flex items-center gap-2 justify-between">
+                    <div className="relative flex-1 max-w-xs">
+                      <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <Input
+                        placeholder="Filter features..."
+                        value={permSearch}
+                        onChange={e => setPermSearch(e.target.value)}
+                        className="h-8 pl-8 text-xs"
+                        data-testid="input-search-permissions"
+                      />
+                    </div>
+                    <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                      <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-blue-200" /> View</span>
+                      <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-amber-200" /> Edit</span>
+                      <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-green-200" /> Approve</span>
+                      <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-purple-200" /> Override</span>
+                      <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded bg-red-200" /> Delete</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3" data-testid="permission-categories">
+                    {PERM_CATEGORIES.map(cat => {
+                      const Icon = cat.icon;
+                      const sectionRelated = SECTION_GROUPS[cat.section] || [cat.section];
+                      const sectionActive = sectionRelated.some(s => effectiveSections.includes(s));
+                      const alwaysOn = cat.section === "PROJECT_DETAIL" || cat.section === "SETTINGS";
+                      const isActive = alwaysOn || sectionActive;
+                      const activeCount = cat.items.filter(i => i.actions.some(a => getEntityPerm(selectedRole, i.entity, a))).length;
+
+                      const filteredItems = permSearch
+                        ? cat.items.filter(i => i.label.toLowerCase().includes(permSearch.toLowerCase()) || i.entity.toLowerCase().includes(permSearch.toLowerCase()))
+                        : cat.items;
+
+                      if (permSearch && filteredItems.length === 0) return null;
+
+                      return (
+                        <Card
+                          key={cat.key}
+                          className={`overflow-hidden transition-all ${!isActive ? "opacity-50 border-dashed" : ""}`}
+                          data-testid={`category-${cat.key}`}
+                        >
+                          <div className={`flex items-center gap-2 px-4 py-2 border-b ${isActive ? "bg-muted/80" : "bg-muted/60"}`}>
+                            <div className={`h-5 w-5 rounded ${isActive ? cat.color : "bg-gray-300"} flex items-center justify-center shrink-0`}>
+                              <Icon className="h-3 w-3 text-white" />
+                            </div>
+                            <span className={`text-xs font-semibold flex-1 ${isActive ? "text-foreground" : "text-gray-400"}`}>{cat.label}</span>
+                            {isActive ? (
+                              <Badge variant="secondary" className="text-[10px] font-normal">{activeCount}/{cat.items.length}</Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px] font-normal border-dashed text-gray-400 bg-transparent flex items-center gap-1">
+                                <Lock className="h-2.5 w-2.5" /> Section Off
+                              </Badge>
+                            )}
+                            {isActive && (
+                              <div className="flex items-center gap-1 ml-2">
+                                <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] font-semibold text-green-600 hover:bg-green-50" onClick={() => setCategoryPreset(cat, "all")} data-testid={`preset-full-${cat.key}`}>All</Button>
+                                <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] font-semibold text-blue-600 hover:bg-blue-50" onClick={() => setCategoryPreset(cat, "view")} data-testid={`preset-view-${cat.key}`}>View</Button>
+                                <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] font-semibold text-red-500 hover:bg-red-50" onClick={() => setCategoryPreset(cat, "none")} data-testid={`preset-none-${cat.key}`}>Off</Button>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className={`divide-y divide-gray-50 ${!isActive ? "pointer-events-none" : ""}`}>
+                            {!isActive && (
+                              <div className="px-4 py-2 bg-muted/50 flex items-center gap-2">
+                                <Lock className="h-3 w-3 text-gray-300" />
+                                <span className="text-[11px] text-gray-400">Enable this section in the Navigation tab to configure permissions.</span>
+                              </div>
+                            )}
+                            {filteredItems.map((item) => (
+                              <div
+                                key={item.entity}
+                                className={`flex items-center gap-3 px-4 py-2 transition-colors ${isActive ? "hover:bg-blue-50/30" : "bg-muted/30"}`}
+                                data-testid={`entity-row-${selectedRole}-${item.entity}`}
+                              >
+                                <span className={`text-xs flex-1 min-w-0 truncate ${isActive ? "text-foreground" : "text-gray-300"}`} title={item.label}>
+                                  {item.label}
+                                </span>
+                                {item.enforcement === "backend" && (
+                                  <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-green-200 text-green-600 bg-green-50 shrink-0">
+                                    <Server className="h-2 w-2 mr-0.5" />BE
+                                  </Badge>
+                                )}
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {item.actions.map(action => {
+                                    const active = isActive && getEntityPerm(selectedRole, item.entity, action);
+                                    const actionMeta = ACTION_META[action];
+                                    const isHighRisk = actionMeta.risk === "high" && active;
+                                    return (
+                                      <button
+                                        key={action}
+                                        className={`h-6 min-w-[44px] px-1.5 rounded-md text-[10px] font-semibold border transition-all flex items-center justify-center gap-0.5 ${
+                                          !isActive
+                                            ? "bg-muted border-border text-gray-200 cursor-not-allowed"
+                                            : active
+                                              ? `${actionMeta.activeBg} ${isHighRisk ? "ring-1 ring-red-300" : ""}`
+                                              : "bg-muted border-border text-gray-300 hover:bg-muted hover:text-muted-foreground"
+                                        }`}
+                                        onClick={() => { if (isActive) toggleEntityPerm(selectedRole, item.entity, action); }}
+                                        title={isActive ? `${actionMeta.label}: ${item.label}${isHighRisk ? " (high-risk)" : ""}` : "Enable section first"}
+                                        disabled={!isActive}
+                                        data-testid={`perm-${selectedRole}-${item.entity}-${action}`}
+                                      >
+                                        {actionMeta.short}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </TabsContent>
+
+                {/* Scope & Limits Tab */}
+                <TabsContent value="scope" className="mt-3 space-y-4">
+                  <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-4 py-2.5 flex items-start gap-3" data-testid="info-scope">
+                    <Info className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+                    <p className="text-xs text-blue-700">
+                      Scope rules determine <strong>which records</strong> a role can see, beyond just having permission to access a feature. These are enforced at the backend level.
+                    </p>
+                  </div>
+
+                  <Card>
+                    <CardHeader className="py-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Layers className="h-4 w-4 text-blue-600" />
+                        Access Scope Tiers
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-4">
+                      <div className="space-y-2">
+                        {SCOPE_TIERS.map((tier, idx) => {
+                          const isCurrentTier = tier.roles.toLowerCase().includes(selectedRole.toLowerCase().replace(/_/g, " ")) ||
+                            (tier.tier === "Full Oversight" && ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "ACCOUNTANT"].includes(selectedRole)) ||
+                            (tier.tier === "Owned Projects" && selectedRole === "PROJECT_MANAGER_SITE") ||
+                            (tier.tier === "Assigned Only" && selectedRole === "ENGINEER") ||
+                            (tier.tier === "Own Records" && selectedRole === "PROJECT_DEVELOPER");
+                          return (
+                            <div
+                              key={idx}
+                              className={`rounded-lg border p-3 transition-all ${isCurrentTier ? "border-green-300 bg-green-50" : "border-border"}`}
+                              data-testid={`scope-tier-${idx}`}
+                            >
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`text-xs font-semibold ${isCurrentTier ? "text-green-700" : "text-foreground"}`}>{tier.tier}</span>
+                                {isCurrentTier && (
+                                  <Badge className="text-[9px] px-1.5 py-0 h-4 bg-green-600 text-white">Current Role</Badge>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-muted-foreground">{tier.description}</p>
+                              <p className="text-[10px] text-gray-400 mt-1">Roles: {tier.roles}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="py-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Server className="h-4 w-4 text-purple-600" />
+                        Backend-Enforced Scope Rules
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-4">
+                      <div className="space-y-1.5">
+                        {SCOPE_RULES.map((rule, idx) => (
+                          <div key={idx} className="rounded-lg border border-border p-2.5" data-testid={`scope-rule-${idx}`}>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs font-semibold text-foreground">{rule.endpoint}</span>
+                              <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-green-300 text-green-600 bg-green-50">
+                                <Server className="h-2 w-2 mr-0.5" />{rule.enforced}
+                              </Badge>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground">{rule.scope}</p>
+                            <p className="text-[10px] text-gray-400 mt-0.5">Affects: {rule.roles_affected}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* Enforcement & Risks Tab */}
+                <TabsContent value="enforcement" className="mt-3 space-y-4">
+                  <EnforcementPanel selectedRole={selectedRole} getEntityPerm={getEntityPerm} effectiveSections={effectiveSections} />
+                </TabsContent>
+              </Tabs>
+
+              {/* Sticky save bar */}
               {hasAnyChanges && (
                 <div className="sticky bottom-4 z-10">
                   <div className="bg-amber-50 border-2 border-amber-200 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 shadow-lg">
@@ -673,6 +940,7 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
         </div>
       </div>
 
+      {/* Save All Confirm Dialog */}
       <Dialog open={showSaveAllConfirm} onOpenChange={setShowSaveAllConfirm}>
         <DialogContent data-testid="dialog-save-all-confirm">
           <DialogHeader><DialogTitle>Save All Changes</DialogTitle></DialogHeader>
@@ -701,6 +969,7 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
         </DialogContent>
       </Dialog>
 
+      {/* Create Role Dialog */}
       <Dialog open={showCreateRole} onOpenChange={setShowCreateRole}>
         <DialogContent data-testid="dialog-create-role">
           <DialogHeader><DialogTitle>Create New Role</DialogTitle></DialogHeader>
@@ -723,7 +992,309 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Compare Roles Dialog */}
+      <Dialog open={showCompare} onOpenChange={setShowCompare}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto" data-testid="dialog-compare-roles">
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><ArrowLeftRight className="h-4 w-4" /> Compare Roles</DialogTitle></DialogHeader>
+          <CompareRolesPanel roles={roles} selectedRole={selectedRole} compareRole={compareRole} setCompareRole={setCompareRole} getEntityPerm={getEntityPerm} />
+        </DialogContent>
+      </Dialog>
     </>
+  );
+}
+
+function CompareRolesPanel({ roles, selectedRole, compareRole, setCompareRole, getEntityPerm }: {
+  roles: RolePermission[];
+  selectedRole: string;
+  compareRole: string;
+  setCompareRole: (r: string) => void;
+  getEntityPerm: (role: string, entity: PermissionEntity, action: PermissionAction) => boolean;
+}) {
+  const currentRoleObj = roles.find(r => r.role === selectedRole);
+  const otherRoles = roles.filter(r => r.role !== selectedRole);
+
+  const differences = useMemo(() => {
+    if (!compareRole) return [];
+    const diffs: { category: string; entity: string; label: string; action: string; roleA: boolean; roleB: boolean }[] = [];
+    for (const cat of PERM_CATEGORIES) {
+      for (const item of cat.items) {
+        for (const action of item.actions) {
+          const a = getEntityPerm(selectedRole, item.entity, action);
+          const b = getEntityPerm(compareRole, item.entity, action);
+          if (a !== b) {
+            diffs.push({ category: cat.label, entity: item.entity, label: item.label, action, roleA: a, roleB: b });
+          }
+        }
+      }
+    }
+    return diffs;
+  }, [compareRole, selectedRole, getEntityPerm]);
+
+  const compareRoleObj = roles.find(r => r.role === compareRole);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <Label className="text-xs text-muted-foreground">Role A</Label>
+          <div className="text-sm font-semibold mt-0.5">{currentRoleObj?.label || selectedRole}</div>
+        </div>
+        <ArrowLeftRight className="h-4 w-4 text-gray-400 shrink-0" />
+        <div className="flex-1">
+          <Label className="text-xs text-muted-foreground">Role B</Label>
+          <SearchableSelect
+            value={compareRole}
+            onValueChange={setCompareRole}
+            triggerClassName="h-8 text-xs mt-0.5"
+            placeholder="Select role to compare..."
+            data-testid="select-compare-role"
+            options={otherRoles.map(r => ({ value: r.role, label: r.label }))}
+          />
+        </div>
+      </div>
+
+      {compareRole && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            {differences.length === 0
+              ? "These roles have identical permissions."
+              : `${differences.length} difference${differences.length !== 1 ? "s" : ""} found:`}
+          </p>
+
+          {differences.length > 0 && (
+            <div className="border rounded-lg overflow-hidden">
+              <div className="grid grid-cols-[1fr_1fr_80px_60px_60px] gap-0 text-[10px] font-semibold text-muted-foreground bg-muted/80 px-3 py-1.5 border-b">
+                <span>Category</span>
+                <span>Feature</span>
+                <span>Action</span>
+                <span className="text-center">{currentRoleObj?.label?.split(" ")[0] || "A"}</span>
+                <span className="text-center">{compareRoleObj?.label?.split(" ")[0] || "B"}</span>
+              </div>
+              <div className="max-h-[400px] overflow-y-auto divide-y divide-gray-50">
+                {differences.map((d, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_1fr_80px_60px_60px] gap-0 text-xs px-3 py-1.5 hover:bg-muted/30" data-testid={`compare-diff-${i}`}>
+                    <span className="text-gray-500 truncate">{d.category}</span>
+                    <span className="font-medium truncate">{d.label}</span>
+                    <span className="text-muted-foreground capitalize">{d.action}</span>
+                    <span className="text-center">{d.roleA ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500 inline" /> : <XCircle className="h-3.5 w-3.5 text-gray-300 inline" />}</span>
+                    <span className="text-center">{d.roleB ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500 inline" /> : <XCircle className="h-3.5 w-3.5 text-gray-300 inline" />}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EnforcementPanel({ selectedRole, getEntityPerm, effectiveSections }: {
+  selectedRole: string;
+  getEntityPerm: (role: string, entity: PermissionEntity, action: PermissionAction) => boolean;
+  effectiveSections: string[];
+}) {
+  const [enforcement, setEnforcement] = useState<any>(null);
+  const [loadingEnf, setLoadingEnf] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoadingEnf(true);
+      try {
+        const res = await fetch("/api/admin/control-center/permission-enforcement", { headers: getAuthHeaders(), credentials: "include" });
+        if (res.ok && !cancelled) {
+          setEnforcement(await res.json());
+        }
+      } catch {}
+      if (!cancelled) setLoadingEnf(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const highRiskPerms = useMemo(() => {
+    const risks: { entity: string; label: string; action: string; category: string }[] = [];
+    for (const cat of PERM_CATEGORIES) {
+      for (const item of cat.items) {
+        for (const action of item.actions) {
+          if ((action === "delete" || action === "override") && getEntityPerm(selectedRole, item.entity, action as PermissionAction)) {
+            risks.push({ entity: item.entity, label: item.label, action, category: cat.label });
+          }
+        }
+      }
+    }
+    return risks;
+  }, [selectedRole, getEntityPerm]);
+
+  const uiOnlyEntities = useMemo(() => {
+    const uiOnly: { entity: string; label: string; category: string }[] = [];
+    for (const cat of PERM_CATEGORIES) {
+      for (const item of cat.items) {
+        if (!item.enforcement && item.actions.some(a => getEntityPerm(selectedRole, item.entity, a))) {
+          uiOnly.push({ entity: item.entity, label: item.label, category: cat.label });
+        }
+      }
+    }
+    return uiOnly;
+  }, [selectedRole, getEntityPerm]);
+
+  const backendEnforcedEntities = useMemo(() => {
+    const be: { entity: string; label: string; category: string }[] = [];
+    for (const cat of PERM_CATEGORIES) {
+      for (const item of cat.items) {
+        if (item.enforcement === "backend" && item.actions.some(a => getEntityPerm(selectedRole, item.entity, a))) {
+          be.push({ entity: item.entity, label: item.label, category: cat.label });
+        }
+      }
+    }
+    return be;
+  }, [selectedRole, getEntityPerm]);
+
+  if (loadingEnf) {
+    return <Card><CardContent className="py-8 flex items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /><span className="ml-2 text-sm text-muted-foreground">Loading enforcement data...</span></CardContent></Card>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-amber-200 bg-amber-50/50 px-4 py-2.5 flex items-start gap-3" data-testid="info-enforcement">
+        <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+        <div className="text-xs text-amber-800 space-y-1">
+          <p className="font-semibold">Enforcement Truth</p>
+          <p>This panel shows what is actually enforced by the server vs. what is only visible in the UI. Use this to understand the real security posture of each role.</p>
+        </div>
+      </div>
+
+      {/* Summary Stats */}
+      {enforcement && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" data-testid="enforcement-stats">
+          <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-center">
+            <div className="text-lg font-bold text-green-700">{enforcement.summary.totalBackendEnforcedRoutes}</div>
+            <div className="text-[10px] text-green-600 font-medium">Backend-Enforced Routes</div>
+          </div>
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-center">
+            <div className="text-lg font-bold text-blue-700">{enforcement.summary.totalOwnershipScopedEndpoints}</div>
+            <div className="text-[10px] text-blue-600 font-medium">Ownership-Scoped</div>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-center">
+            <div className="text-lg font-bold text-gray-700">{enforcement.summary.totalApplicationLogicOnly}</div>
+            <div className="text-[10px] text-gray-600 font-medium">App Logic Only</div>
+          </div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-center">
+            <div className="text-lg font-bold text-amber-700">{enforcement.summary.recentAccessDenials7d}</div>
+            <div className="text-[10px] text-amber-600 font-medium">Denials (7 days)</div>
+          </div>
+        </div>
+      )}
+
+      {/* High-risk permissions for this role */}
+      <Card>
+        <CardHeader className="py-3 px-4">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-red-500" />
+            High-Risk Permissions
+            {highRiskPerms.length > 0 && <Badge className="text-[10px] bg-red-100 text-red-700 border-red-200" variant="outline">{highRiskPerms.length}</Badge>}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          {highRiskPerms.length === 0 ? (
+            <div className="text-xs text-muted-foreground flex items-center gap-2 py-2">
+              <CheckCircle2 className="h-4 w-4 text-green-500" />
+              This role has no high-risk permissions (delete, override) enabled.
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {highRiskPerms.map((p, i) => (
+                <div key={i} className="flex items-center gap-2 px-2 py-1.5 rounded bg-red-50/50 border border-red-100" data-testid={`high-risk-${i}`}>
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${p.action === "delete" ? "bg-red-100 text-red-700" : "bg-purple-100 text-purple-700"}`}>
+                    {p.action.toUpperCase()}
+                  </span>
+                  <span className="text-xs font-medium">{p.label}</span>
+                  <span className="text-[10px] text-gray-400 ml-auto">{p.category}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Backend-enforced features */}
+      <Card>
+        <CardHeader className="py-3 px-4">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Server className="h-4 w-4 text-green-600" />
+            Backend-Enforced Features
+            <Badge className="text-[10px] bg-green-100 text-green-700 border-green-200" variant="outline">{backendEnforcedEntities.length}</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          {backendEnforcedEntities.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2">No backend-enforced features are enabled for this role.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {backendEnforcedEntities.map((e, i) => (
+                <Badge key={i} variant="outline" className="text-[10px] border-green-200 text-green-700 bg-green-50">{e.label}</Badge>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* UI-only features */}
+      <Card>
+        <CardHeader className="py-3 px-4">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Monitor className="h-4 w-4 text-amber-600" />
+            UI-Visibility Only Features
+            <Badge className="text-[10px] bg-amber-100 text-amber-700 border-amber-200" variant="outline">{uiOnlyEntities.length}</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <p className="text-[11px] text-muted-foreground mb-2">
+            These features are gated by the UI (hidden/shown) but do not have dedicated backend middleware on their write routes. Access may still be limited by authentication and application logic.
+          </p>
+          {uiOnlyEntities.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2">No UI-only features enabled.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {uiOnlyEntities.map((e, i) => (
+                <Badge key={i} variant="outline" className="text-[10px] border-amber-200 text-amber-700 bg-amber-50">{e.label}</Badge>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Known gaps */}
+      <Card>
+        <CardHeader className="py-3 px-4">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Info className="h-4 w-4 text-gray-500" />
+            Known Limitations
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <div className="space-y-2 text-xs text-muted-foreground">
+            <div className="flex items-start gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
+              <p>Row-level security (RLS) is not fully implemented. Some read endpoints rely on application-level filtering rather than database-enforced row filtering.</p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
+              <p>Project-specific read endpoints (work items, engineering tasks within a project) are scoped by the frontend providing a project context rather than by backend ownership checks.</p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
+              <p>Rate limiting and brute-force protection are not yet implemented on API endpoints.</p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
+              <p>Audit logging for permission changes is limited. Changes are saved but detailed change-level audit trails are not yet available.</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
