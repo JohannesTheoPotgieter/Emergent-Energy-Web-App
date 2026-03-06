@@ -162,6 +162,7 @@ const PATH_TO_ENTITY: Record<string, PermissionEntity> = {
   "/admin/kpi-traceability": "admin",
   "/admin/import-control-tower": "admin",
   "/admin/recovery": "admin",
+  "/admin/control-center": "admin",
   "/command-center": "home",
   "/my-work": "home",
   "/my-work/tasks": "my_tool",
@@ -328,6 +329,7 @@ function getRedesignedNavGroups(): NavGroup[] {
       section: "SYSTEM",
       icon: CircuitBoard,
       items: [
+        { label: "Control Center", icon: Gauge, path: "/admin/control-center" },
         { label: "Users & Roles", icon: UserCog, path: "/admin/roles" },
         { label: "App Settings", icon: Settings, path: "/admin/settings" },
         { label: "Activity Log", icon: Activity, path: "/admin/activity-log" },

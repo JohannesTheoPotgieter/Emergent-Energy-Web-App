@@ -5,6 +5,7 @@ import { rolePermissions, users, DEFAULT_ROLE_PERMISSIONS } from "@shared/schema
 import { verifyToken } from "./jwt";
 import { invalidateEntityPermCache } from "./permission-middleware";
 import bcrypt from "bcryptjs";
+import { logAuditFromReq } from "./audit-logger";
 
 const LEGACY_ROLE_MAP: Record<string, string> = {
   admin: "COO_ADMIN",
@@ -140,6 +141,7 @@ export function registerRoleManagementRoutes(app: Express) {
         .where(eq(rolePermissions.role, roleKey))
         .returning();
       invalidateEntityPermCache();
+      logAuditFromReq(req, { entityType: "role_permissions", action: "update", entityId: roleKey, changesJson: { description: "Role permissions updated", role: roleKey, sections, canManageUsers, canManageRoles, canEditData, hasEntityPermChanges: ep !== undefined } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -164,6 +166,7 @@ export function registerRoleManagementRoutes(app: Express) {
         canEditData: canEditData ?? true,
         isSystem: false,
       }).returning();
+      logAuditFromReq(req, { entityType: "role_permissions", action: "create", entityId: role, changesJson: { description: "New role created", role, label, sections } });
       res.json(created);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -186,6 +189,7 @@ export function registerRoleManagementRoutes(app: Express) {
       }
 
       await db.delete(rolePermissions).where(eq(rolePermissions.role, roleKey));
+      logAuditFromReq(req, { entityType: "role_permissions", action: "delete", entityId: roleKey, changesJson: { description: "Role deleted", role: roleKey, label: existing.label } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -216,12 +220,14 @@ export function registerRoleManagementRoutes(app: Express) {
       const [roleExists] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, role));
       if (!roleExists) return res.status(400).json({ error: "Invalid role. Role must exist in role_permissions." });
 
+      const [userBefore] = await db.select({ id: users.id, name: users.name, role: users.role }).from(users).where(eq(users.id, userId));
       const [updated] = await db.update(users)
         .set({ role })
         .where(eq(users.id, userId))
         .returning();
       if (!updated) return res.status(404).json({ error: "User not found" });
 
+      logAuditFromReq(req, { entityType: "user", action: "role_change", entityId: String(userId), changesJson: { description: "User role changed", userName: updated.name, previousRole: userBefore?.role, newRole: role } });
       res.json({ id: updated.id, email: updated.email, name: updated.name, role: updated.role });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -253,6 +259,7 @@ export function registerRoleManagementRoutes(app: Express) {
         role: assignedRole,
       }).returning();
 
+      logAuditFromReq(req, { entityType: "user", action: "create", entityId: String(created.id), changesJson: { description: "New user created", username, name, email, role: assignedRole } });
       res.json({ id: created.id, username: created.username, name: created.name, email: created.email, role: created.role });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -275,6 +282,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       if (!updated) return res.status(404).json({ error: "User not found" });
 
+      logAuditFromReq(req, { entityType: "user", action: "password_reset", entityId: String(userId), changesJson: { description: "User password reset by admin", userName: updated.name } });
       res.json({ success: true, message: `Password updated for ${updated.name}` });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -292,6 +300,7 @@ export function registerRoleManagementRoutes(app: Express) {
       const [deleted] = await db.delete(users).where(eq(users.id, userId)).returning();
       if (!deleted) return res.status(404).json({ error: "User not found" });
 
+      logAuditFromReq(req, { entityType: "user", action: "delete", entityId: String(userId), changesJson: { description: "User deleted", userName: deleted.name, email: deleted.email } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

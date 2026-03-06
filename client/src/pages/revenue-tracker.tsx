@@ -26,6 +26,8 @@ import {
   Search,
   Loader2,
 } from "lucide-react";
+import { EnergyLoader } from "@/components/ui/energy-loader";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 interface ProjectBreakdown {
   projectName: string;
@@ -241,17 +243,18 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
             <option value="realised">Realised Only</option>
             <option value="unrealised">Unrealised Only</option>
           </select>
-          <select
+          <SearchableSelect
             value={projectFilter}
-            onChange={(e) => setProjectFilter(e.target.value)}
-            className="h-9 px-3 text-sm border border-border rounded-lg bg-muted/50 hover:bg-white transition-colors cursor-pointer max-w-[220px] focus:outline-none focus:ring-2 focus:ring-emerald-300"
+            onValueChange={(v) => setProjectFilter(v || "all")}
+            options={[
+              { value: "all", label: "All Projects" },
+              ...allProjects.map(p => ({ value: p, label: p })),
+            ]}
+            placeholder="All Projects"
+            searchPlaceholder="Search projects..."
+            triggerClassName="h-9 max-w-[220px]"
             data-testid="select-project-filter"
-          >
-            <option value="all">All Projects</option>
-            {allProjects.map(p => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
+          />
         </div>
 
         <div className="px-6 py-2.5 border-b bg-muted/80 flex items-center justify-between text-sm">
@@ -454,8 +457,7 @@ export default function RevenueTrackerPage() {
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3" data-testid="loading-indicator">
-        <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
-        <span className="text-sm font-medium">Loading Revenue data…</span>
+        <EnergyLoader size="lg" label="Loading Revenue data…" />
       </div>
     );
   }

@@ -8,6 +8,7 @@ import {
   operationalTasks, mytoolTasks, engineeringTasks, workItems,
   smartImportRuns, importIssues, projectInfo, users,
 } from "@shared/schema";
+import { normalizeStatus } from "./lib/canonical-task-engine";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -180,6 +181,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
       if (!parsed.success) return res.status(400).json({ error: "Invalid update data", details: parsed.error.issues });
 
       const fields = parsed.data;
+      if (fields.status) fields.status = normalizeStatus(fields.status);
       const changesJson: Record<string, any> = { taskId, taskSource, updates: fields };
 
       switch (taskSource) {

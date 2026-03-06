@@ -69,6 +69,7 @@ import ImportControlTowerPage from "@/pages/import-control-tower";
 import KpiTraceabilityPage from "@/pages/kpi-traceability";
 import AdminRecoveryPage from "@/pages/admin-recovery";
 import CommandCenterPage from "@/pages/command-center";
+import AdminControlCenterPage from "@/pages/admin-control-center";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { checkPermission, type PermissionEntity } from "@shared/schema";
@@ -122,6 +123,7 @@ const ROUTE_TO_ENTITY: Record<string, PermissionEntity> = {
   "/admin/kpi-traceability": "admin",
   "/admin/import-control-tower": "admin",
   "/admin/recovery": "admin",
+  "/admin/control-center": "admin",
   "/command-center": "home",
 };
 
@@ -294,6 +296,7 @@ function ProtectedPages() {
         <Route path="/admin/kpi-traceability" component={KpiTraceabilityPage} />
         <Route path="/admin/import-control-tower" component={ImportControlTowerPage} />
         <Route path="/admin/recovery" component={AdminRecoveryPage} />
+        <Route path="/admin/control-center" component={AdminControlCenterPage} />
         <Route path="/command-center" component={CommandCenterPage} />
         <Route path="/clients" component={ClientsPage} />
 

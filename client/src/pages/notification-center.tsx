@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
+import { EnergyLoader } from "@/components/ui/energy-loader";
 
 function authHeaders() {
   const token = localStorage.getItem("auth_token");
@@ -267,7 +268,7 @@ export default function NotificationCenterPage() {
         <CardContent className="p-0">
           {isLoading ? (
             <div className="flex items-center justify-center py-16">
-              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+              <EnergyLoader size="md" label="Loading notifications..." />
             </div>
           ) : filteredNotifs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400" data-testid="text-no-notifications-center">
