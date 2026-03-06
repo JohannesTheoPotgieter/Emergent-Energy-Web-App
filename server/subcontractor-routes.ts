@@ -1030,8 +1030,141 @@ router.get("/api/subcontractor-dashboard/supplier-list", requireAuth, async (_re
   }
 });
 
+async function ensureSubcontractorAssignmentTables() {
+  try {
+    await db.execute(sql.raw(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subcontractor_assignment_status') THEN CREATE TYPE subcontractor_assignment_status AS ENUM ('active','completed','suspended','terminated'); END IF; END $$`));
+    await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS project_subcontractor_assignments (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id),
+      counterparty_id INTEGER NOT NULL REFERENCES counterparties(id),
+      work_package TEXT,
+      scope_description TEXT,
+      owner_user_id INTEGER REFERENCES users(id),
+      status subcontractor_assignment_status NOT NULL DEFAULT 'active',
+      key_dates JSONB,
+      performance_notes TEXT,
+      linked_approval_id INTEGER,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )`));
+    console.log("[SubcontractorAssignments] Tables ensured");
+  } catch (err: any) {
+    console.error("[SubcontractorAssignments] Table error:", err.message);
+  }
+}
+
+router.get("/api/subcontractor-assignments/project/:projectId", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+    if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
+    const rows = await db.execute(sql`
+      SELECT sa.*, c.name_canonical as supplier_name, u.name as owner_name, p.project_name
+      FROM project_subcontractor_assignments sa
+      LEFT JOIN counterparties c ON sa.counterparty_id = c.id
+      LEFT JOIN users u ON sa.owner_user_id = u.id
+      LEFT JOIN project_info p ON sa.project_id = p.id
+      WHERE sa.project_id = ${projectId}
+      ORDER BY sa.created_at DESC
+    `);
+    const items = Array.isArray(rows) ? rows : (rows as any).rows || [];
+    res.json(items);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch assignments" });
+  }
+});
+
+router.post("/api/subcontractor-assignments", requireAuth, requirePermission("procurement", "create"), async (req: Request, res: Response) => {
+  try {
+    const { projectId, counterpartyId, workPackage, scopeDescription, ownerUserId, keyDates } = req.body;
+    if (!projectId || !counterpartyId) return res.status(400).json({ error: "projectId and counterpartyId required" });
+
+    const pId = parseInt(projectId);
+    const cId = parseInt(counterpartyId);
+    const oId = ownerUserId ? parseInt(ownerUserId) : null;
+    if (isNaN(pId) || isNaN(cId)) return res.status(400).json({ error: "Invalid projectId or counterpartyId" });
+
+    const result = await db.execute(sql`
+      INSERT INTO project_subcontractor_assignments (project_id, counterparty_id, work_package, scope_description, owner_user_id, key_dates, status)
+      VALUES (${pId}, ${cId}, ${workPackage || null}, ${scopeDescription || null}, ${oId}, ${keyDates ? JSON.stringify(keyDates) : '[]'}::jsonb, 'active')
+      RETURNING *
+    `);
+    const items = Array.isArray(result) ? result : (result as any).rows || [];
+
+    logAuditFromReq(req, {
+      entityType: "subcontractor_assignment",
+      entityId: String(items[0]?.id),
+      action: "create",
+      changesJson: { projectId: pId, counterpartyId: cId, workPackage },
+    });
+
+    res.status(201).json(items[0] || {});
+  } catch (err: any) {
+    console.error("[SubcontractorAssignments] Create error:", err.message);
+    res.status(500).json({ error: "Failed to create assignment" });
+  }
+});
+
+router.patch("/api/subcontractor-assignments/:id", requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+    const { workPackage, scopeDescription, ownerUserId, status, keyDates, performanceNotes } = req.body;
+    const validStatuses = ["active", "completed", "suspended", "terminated"];
+    if (status !== undefined && !validStatuses.includes(status)) {
+      return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
+    }
+
+    const result = await db.execute(sql`
+      UPDATE project_subcontractor_assignments SET
+        work_package = COALESCE(${workPackage !== undefined ? workPackage : null}, work_package),
+        scope_description = COALESCE(${scopeDescription !== undefined ? scopeDescription : null}, scope_description),
+        owner_user_id = CASE WHEN ${ownerUserId !== undefined} THEN ${ownerUserId ? parseInt(ownerUserId) : null}::integer ELSE owner_user_id END,
+        status = COALESCE(${status || null}::text, status::text)::subcontractor_assignment_status,
+        key_dates = CASE WHEN ${keyDates !== undefined} THEN ${keyDates ? JSON.stringify(keyDates) : '[]'}::jsonb ELSE key_dates END,
+        performance_notes = COALESCE(${performanceNotes !== undefined ? performanceNotes : null}, performance_notes),
+        updated_at = NOW()
+      WHERE id = ${id}
+      RETURNING *
+    `);
+    const items = Array.isArray(result) ? result : (result as any).rows || [];
+    if (items.length === 0) return res.status(404).json({ error: "Not found" });
+
+    logAuditFromReq(req, {
+      entityType: "subcontractor_assignment",
+      entityId: String(id),
+      action: "update",
+      changesJson: req.body,
+    });
+
+    res.json(items[0]);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to update assignment" });
+  }
+});
+
+router.delete("/api/subcontractor-assignments/:id", requireAuth, requirePermission("procurement", "delete"), async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+    await db.execute(sql`DELETE FROM project_subcontractor_assignments WHERE id = ${id}`);
+
+    logAuditFromReq(req, {
+      entityType: "subcontractor_assignment",
+      entityId: String(id),
+      action: "delete",
+    });
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to delete assignment" });
+  }
+});
+
 export function registerSubcontractorRoutes(app: any) {
   ensureSupplierColumns().catch(err => console.error("[Procurement] Column migration error:", err.message));
+  ensureSubcontractorAssignmentTables().catch(err => console.error("[SubcontractorAssignments] Error:", err.message));
   app.use(router);
 }
 

@@ -1599,6 +1599,12 @@ export const approvals = pgTable("approvals", {
   decisionNote: text("decision_note"),
   token: text("token"),
   expiresAt: timestamp("expires_at"),
+  relatedEntityType: text("related_entity_type"),
+  relatedEntityId: integer("related_entity_id"),
+  assignedApprover: integer("assigned_approver").references(() => users.id),
+  dueDate: timestamp("due_date"),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  approvalCategory: text("approval_category"),
 });
 
 export const insertApprovalSchema = createInsertSchema(approvals).omit({ id: true, requestedAt: true, decidedAt: true });
@@ -4995,3 +5001,148 @@ export const userProjectFolders = pgTable("user_project_folders", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 export type UserProjectFolder = typeof userProjectFolders.$inferSelect;
+
+export const changeRequestTypeEnum = pgEnum('change_request_type', ['scope', 'cost', 'schedule', 'technical', 'commercial']);
+export const changeRequestStatusEnum = pgEnum('change_request_status', ['draft', 'submitted', 'under_review', 'approved', 'rejected', 'implemented', 'closed']);
+
+export const changeRequests = pgTable("change_requests", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  changeType: changeRequestTypeEnum("change_type").notNull(),
+  requestedByUserId: integer("requested_by_user_id").references(() => users.id),
+  ownerUserId: integer("owner_user_id").references(() => users.id),
+  impactSummary: text("impact_summary"),
+  costImpact: real("cost_impact"),
+  scheduleImpact: integer("schedule_impact_days"),
+  status: changeRequestStatusEnum("status").notNull().default('draft'),
+  approvalId: integer("approval_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertChangeRequestSchema = createInsertSchema(changeRequests).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertChangeRequest = z.infer<typeof insertChangeRequestSchema>;
+export type ChangeRequest = typeof changeRequests.$inferSelect;
+
+export const raidTypeEnum = pgEnum('raid_type', ['risk', 'assumption', 'issue', 'decision']);
+export const raidStatusEnum = pgEnum('raid_status', ['open', 'mitigating', 'resolved', 'closed', 'accepted']);
+export const raidPriorityEnum = pgEnum('raid_priority', ['low', 'medium', 'high', 'critical']);
+
+export const raidItems = pgTable("raid_items", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  type: raidTypeEnum("type").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  ownerUserId: integer("owner_user_id").references(() => users.id),
+  status: raidStatusEnum("status").notNull().default('open'),
+  priority: raidPriorityEnum("priority").notNull().default('medium'),
+  dueDate: text("due_date"),
+  mitigationResponse: text("mitigation_response"),
+  linkedTaskId: integer("linked_task_id"),
+  createdByUserId: integer("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  closedAt: timestamp("closed_at"),
+});
+export const insertRaidItemSchema = createInsertSchema(raidItems).omit({ id: true, createdAt: true, updatedAt: true, closedAt: true });
+export type InsertRaidItem = z.infer<typeof insertRaidItemSchema>;
+export type RaidItem = typeof raidItems.$inferSelect;
+
+export const procurementCategoryEnum = pgEnum('procurement_category', ['material', 'equipment', 'service', 'subcontract', 'other']);
+export const procurementStatusEnum = pgEnum('procurement_status', ['requested', 'quoted', 'approved', 'ordered', 'partially_received', 'received', 'invoiced', 'closed']);
+
+export const procurementItems = pgTable("procurement_items", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: procurementCategoryEnum("category").notNull().default('other'),
+  quantity: real("quantity"),
+  unit: text("unit"),
+  expectedCost: real("expected_cost"),
+  actualCost: real("actual_cost"),
+  supplierId: integer("supplier_id").references(() => counterparties.id),
+  requestedByUserId: integer("requested_by_user_id").references(() => users.id),
+  ownerUserId: integer("owner_user_id").references(() => users.id),
+  status: procurementStatusEnum("status").notNull().default('requested'),
+  requiredDate: text("required_date"),
+  poId: integer("po_id"),
+  invoiceRef: text("invoice_ref"),
+  linkedTaskId: integer("linked_task_id"),
+  approvalId: integer("approval_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertProcurementItemSchema = createInsertSchema(procurementItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProcurementItem = z.infer<typeof insertProcurementItemSchema>;
+export type ProcurementItem = typeof procurementItems.$inferSelect;
+
+export const subcontractorAssignmentStatusEnum = pgEnum('subcontractor_assignment_status', ['active', 'completed', 'suspended', 'terminated']);
+
+export const projectSubcontractorAssignments = pgTable("project_subcontractor_assignments", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  counterpartyId: integer("counterparty_id").notNull().references(() => counterparties.id),
+  workPackage: text("work_package"),
+  scopeDescription: text("scope_description"),
+  ownerUserId: integer("owner_user_id").references(() => users.id),
+  status: subcontractorAssignmentStatusEnum("status").notNull().default('active'),
+  keyDates: jsonb("key_dates"),
+  performanceNotes: text("performance_notes"),
+  linkedApprovalId: integer("linked_approval_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertSubcontractorAssignmentSchema = createInsertSchema(projectSubcontractorAssignments).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSubcontractorAssignment = z.infer<typeof insertSubcontractorAssignmentSchema>;
+export type SubcontractorAssignment = typeof projectSubcontractorAssignments.$inferSelect;
+
+export const commissioningStatusEnum = pgEnum('commissioning_status', ['not_started', 'in_progress', 'ready_for_review', 'approved', 'closed']);
+
+export const commissioningItems = pgTable("commissioning_items", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  itemType: text("item_type").notNull().default('commissioning'),
+  title: text("title").notNull(),
+  description: text("description"),
+  ownerUserId: integer("owner_user_id").references(() => users.id),
+  dueDate: text("due_date"),
+  status: commissioningStatusEnum("status").notNull().default('not_started'),
+  evidenceNotes: text("evidence_notes"),
+  approvalId: integer("approval_id"),
+  gateId: text("gate_id"),
+  category: text("category"),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+export const insertCommissioningItemSchema = createInsertSchema(commissioningItems).omit({ id: true, createdAt: true, updatedAt: true, completedAt: true });
+export type InsertCommissioningItem = z.infer<typeof insertCommissioningItemSchema>;
+export type CommissioningItem = typeof commissioningItems.$inferSelect;
+
+export const invoiceCaptureStatusEnum = pgEnum('invoice_capture_status', ['captured', 'submitted', 'verified', 'approved', 'rejected']);
+
+export const invoiceCaptures = pgTable("invoice_captures", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  supplierId: integer("supplier_id").references(() => counterparties.id),
+  invoiceNumber: text("invoice_number"),
+  invoiceDate: text("invoice_date"),
+  amount: real("amount"),
+  vatAmount: real("vat_amount"),
+  linkedPoId: integer("linked_po_id"),
+  linkedProcurementItemId: integer("linked_procurement_item_id"),
+  status: invoiceCaptureStatusEnum("status").notNull().default('captured'),
+  capturedByUserId: integer("captured_by_user_id").references(() => users.id),
+  documentPath: text("document_path"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertInvoiceCaptureSchema = createInsertSchema(invoiceCaptures).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertInvoiceCapture = z.infer<typeof insertInvoiceCaptureSchema>;
+export type InvoiceCapture = typeof invoiceCaptures.$inferSelect;

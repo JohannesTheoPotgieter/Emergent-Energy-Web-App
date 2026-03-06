@@ -33,11 +33,11 @@ import {
   Loader2,
 } from "lucide-react";
 
-type ApprovalType = "all" | "engineering" | "quality" | "deliverable";
+type ApprovalType = "all" | "engineering" | "quality" | "deliverable" | "general";
 
 interface ApprovalItem {
   id: string;
-  type: "engineering" | "quality" | "deliverable";
+  type: "engineering" | "quality" | "deliverable" | "general";
   title: string;
   projectName: string;
   projectId: number | null;
@@ -80,6 +80,13 @@ const typeConfig = {
     color: "text-blue-600",
     bg: "bg-blue-50",
     badgeClass: "border-blue-300 text-blue-700 bg-blue-50",
+  },
+  general: {
+    label: "General",
+    icon: Clock,
+    color: "text-violet-600",
+    bg: "bg-violet-50",
+    badgeClass: "border-violet-300 text-violet-700 bg-violet-50",
   },
 };
 

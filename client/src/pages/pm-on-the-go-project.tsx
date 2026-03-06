@@ -35,6 +35,11 @@ import {
   Shield,
   ShieldAlert,
   Loader2,
+  CreditCard,
+  ClipboardCheck,
+  ThumbsUp,
+  Check,
+  X,
 } from "lucide-react";
 
 function getAuthHeaders(): Record<string, string> {
@@ -89,7 +94,10 @@ type ActionType =
   | "log_risk"
   | "upload_photo"
   | "update_progress"
-  | "escalate";
+  | "escalate"
+  | "add_procurement"
+  | "update_commissioning"
+  | "review_approvals";
 
 const ACTION_CONFIG: {
   type: ActionType;
@@ -106,6 +114,9 @@ const ACTION_CONFIG: {
   { type: "upload_photo", label: "Upload Photo", icon: Camera, color: "bg-teal-600 hover:bg-teal-700" },
   { type: "update_progress", label: "Update Progress", icon: TrendingUp, color: "bg-emerald-600 hover:bg-emerald-700" },
   { type: "escalate", label: "Escalate", icon: Megaphone, color: "bg-rose-600 hover:bg-rose-700" },
+  { type: "add_procurement", label: "Add Procurement", icon: CreditCard, color: "bg-violet-600 hover:bg-violet-700" },
+  { type: "update_commissioning", label: "Commissioning", icon: ClipboardCheck, color: "bg-cyan-600 hover:bg-cyan-700" },
+  { type: "review_approvals", label: "Approvals", icon: ThumbsUp, color: "bg-lime-600 hover:bg-lime-700" },
 ];
 
 function formatZAR(value: number): string {
@@ -403,6 +414,15 @@ function ActionDialog({
         )}
         {actionType === "escalate" && (
           <EscalateForm onSubmit={handleSubmit} submitting={submitting} />
+        )}
+        {actionType === "add_procurement" && (
+          <AddProcurementForm projectId={projectId} onClose={onClose} onSuccess={onSuccess} />
+        )}
+        {actionType === "update_commissioning" && (
+          <UpdateCommissioningForm projectId={projectId} />
+        )}
+        {actionType === "review_approvals" && (
+          <ReviewApprovalsForm projectId={projectId} />
         )}
       </DialogContent>
     </Dialog>
@@ -746,6 +766,293 @@ function EscalateForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitti
         {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
         Escalate
       </Button>
+    </div>
+  );
+}
+
+function AddProcurementForm({ projectId, onClose, onSuccess }: { projectId: number; onClose: () => void; onSuccess: () => void }) {
+  const { toast } = useToast();
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("other");
+  const [expectedCost, setExpectedCost] = useState("");
+  const [requiredDate, setRequiredDate] = useState("");
+
+  const mutation = useMutation({
+    mutationFn: async (data: Record<string, any>) => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/procurement`, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify({ ...data, projectId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed" }));
+        throw new Error(err.error || "Request failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Procurement item added" });
+      onSuccess();
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <div className="space-y-3 bg-white">
+      <div>
+        <Label htmlFor="proc-title">Title *</Label>
+        <Input id="proc-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Procurement item title" data-testid="input-proc-title" />
+      </div>
+      <div>
+        <Label htmlFor="proc-desc">Description</Label>
+        <Textarea id="proc-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Details..." data-testid="input-proc-description" />
+      </div>
+      <div>
+        <Label>Category</Label>
+        <SearchableSelect
+          value={category}
+          onValueChange={setCategory}
+          data-testid="select-proc-category"
+          options={[
+            { value: "material", label: "Material" },
+            { value: "equipment", label: "Equipment" },
+            { value: "service", label: "Service" },
+            { value: "subcontract", label: "Subcontract" },
+            { value: "other", label: "Other" },
+          ]}
+        />
+      </div>
+      <div>
+        <Label htmlFor="proc-cost">Expected Cost (ZAR)</Label>
+        <Input id="proc-cost" type="number" value={expectedCost} onChange={(e) => setExpectedCost(e.target.value)} placeholder="0.00" data-testid="input-proc-cost" />
+      </div>
+      <div>
+        <Label htmlFor="proc-date">Required Date</Label>
+        <Input id="proc-date" type="date" value={requiredDate} onChange={(e) => setRequiredDate(e.target.value)} data-testid="input-proc-date" />
+      </div>
+      <Button
+        onClick={() => mutation.mutate({ title, description, category, expectedCost: expectedCost ? parseFloat(expectedCost) : undefined, requiredDate: requiredDate || undefined })}
+        disabled={mutation.isPending || !title}
+        className="w-full bg-[#16A34A] hover:bg-[#15803d] text-white"
+        data-testid="btn-submit-procurement"
+      >
+        {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+        Add Procurement Item
+      </Button>
+    </div>
+  );
+}
+
+function UpdateCommissioningForm({ projectId }: { projectId: number }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: items, isLoading } = useQuery<any[]>({
+    queryKey: ["commissioning-items", projectId],
+    queryFn: () => apiFetch(`/api/commissioning/project/${projectId}`),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: async ({ itemId, status }: { itemId: number; status: string }) => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/commissioning/${itemId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers,
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed" }));
+        throw new Error(err.error || "Request failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Status updated" });
+      queryClient.invalidateQueries({ queryKey: ["commissioning-items", projectId] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const [pendingStatus, setPendingStatus] = useState<Record<number, string>>({});
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!items || items.length === 0) {
+    return <p className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-commissioning">No commissioning items found.</p>;
+  }
+
+  const statusOptions = [
+    { value: "not_started", label: "Not Started" },
+    { value: "in_progress", label: "In Progress" },
+    { value: "ready_for_review", label: "Ready for Review" },
+    { value: "approved", label: "Approved" },
+    { value: "closed", label: "Closed" },
+  ];
+
+  const statusColors: Record<string, string> = {
+    not_started: "bg-gray-100 text-gray-700",
+    in_progress: "bg-blue-100 text-blue-700",
+    ready_for_review: "bg-amber-100 text-amber-700",
+    approved: "bg-green-100 text-green-700",
+    closed: "bg-slate-100 text-slate-700",
+  };
+
+  return (
+    <div className="space-y-3 bg-white max-h-[60vh] overflow-y-auto">
+      {items.map((item: any) => (
+        <Card key={item.id} className="p-3 space-y-2" data-testid={`card-commissioning-${item.id}`}>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium truncate" data-testid={`text-commissioning-title-${item.id}`}>{item.title}</span>
+            <Badge className={statusColors[item.status] || "bg-gray-100"} data-testid={`badge-commissioning-status-${item.id}`}>
+              {item.status?.replace(/_/g, " ")}
+            </Badge>
+          </div>
+          {item.category && <span className="text-xs text-muted-foreground">{item.category}</span>}
+          <div className="flex items-center gap-2">
+            <SearchableSelect
+              value={pendingStatus[item.id] || item.status}
+              onValueChange={(val) => setPendingStatus((prev) => ({ ...prev, [item.id]: val }))}
+              options={statusOptions}
+              data-testid={`select-commissioning-status-${item.id}`}
+              triggerClassName="flex-1 h-8 text-xs"
+            />
+            <Button
+              size="sm"
+              className="h-8 bg-[#16A34A] hover:bg-[#15803d] text-white"
+              disabled={statusMutation.isPending || !pendingStatus[item.id] || pendingStatus[item.id] === item.status}
+              onClick={() => statusMutation.mutate({ itemId: item.id, status: pendingStatus[item.id] })}
+              data-testid={`btn-save-commissioning-${item.id}`}
+            >
+              {statusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
+            </Button>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function ReviewApprovalsForm({ projectId }: { projectId: number }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery<{ items: any[]; counts: any }>({
+    queryKey: ["pending-approvals"],
+    queryFn: () => apiFetch(`/api/approvals/pending`),
+  });
+
+  const actionMutation = useMutation({
+    mutationFn: async ({ id, action }: { id: string; action: "approve" | "reject" }) => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      let url: string;
+      let method: string;
+      let body: string | undefined;
+
+      if (id.startsWith("eng-")) {
+        const actualId = id.replace("eng-", "");
+        url = `/api/eng-stages/approvals/${actualId}`;
+        method = "PATCH";
+        body = JSON.stringify({ status: action === "approve" ? "approved" : "rejected" });
+      } else {
+        const numericId = id.replace(/^(qc-|del-)/, "");
+        url = `/api/approvals/general/${numericId}`;
+        method = "PATCH";
+        body = JSON.stringify({ status: action === "approve" ? "approved" : "rejected" });
+      }
+
+      const res = await fetch(url, { method, credentials: "include", headers, body });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed" }));
+        throw new Error(err.error || "Request failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Approval action completed" });
+      queryClient.invalidateQueries({ queryKey: ["pending-approvals"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const filteredItems = (data?.items || []).filter((item: any) => item.projectId === projectId);
+
+  if (filteredItems.length === 0) {
+    return <p className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-approvals">No pending approvals for this project.</p>;
+  }
+
+  const typeColors: Record<string, string> = {
+    engineering: "bg-indigo-100 text-indigo-700",
+    quality: "bg-purple-100 text-purple-700",
+    deliverable: "bg-blue-100 text-blue-700",
+  };
+
+  return (
+    <div className="space-y-3 bg-white max-h-[60vh] overflow-y-auto">
+      {filteredItems.map((item: any) => (
+        <Card key={item.id} className="p-3 space-y-2" data-testid={`card-approval-${item.id}`}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-medium truncate" data-testid={`text-approval-title-${item.id}`}>{item.title}</span>
+            <Badge className={typeColors[item.type] || "bg-gray-100"} data-testid={`badge-approval-type-${item.id}`}>
+              {item.type}
+            </Badge>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            {item.assignee && <span>Assignee: {item.assignee}</span>}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              className="flex-1 h-8 bg-[#16A34A] hover:bg-[#15803d] text-white"
+              disabled={actionMutation.isPending}
+              onClick={() => actionMutation.mutate({ id: item.id, action: "approve" })}
+              data-testid={`btn-approve-${item.id}`}
+            >
+              <Check className="w-3 h-3 mr-1" /> Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              className="flex-1 h-8"
+              disabled={actionMutation.isPending}
+              onClick={() => actionMutation.mutate({ id: item.id, action: "reject" })}
+              data-testid={`btn-reject-${item.id}`}
+            >
+              <X className="w-3 h-3 mr-1" /> Reject
+            </Button>
+          </div>
+        </Card>
+      ))}
     </div>
   );
 }

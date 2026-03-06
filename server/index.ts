@@ -1045,6 +1045,40 @@ async function backfillPmUserIds() {
   await ensureHandoverTables();
   registerHandoverRoutes(app);
 
+  const { registerDependencyRoutes, ensureDependencyTables } = await import("./dependency-routes");
+  await ensureDependencyTables();
+  registerDependencyRoutes(app);
+
+  const { registerRaidRoutes, ensureRaidTables } = await import("./raid-routes");
+  await ensureRaidTables();
+  registerRaidRoutes(app);
+
+  const { registerChangeControlRoutes, ensureChangeControlTables } = await import("./change-control-routes");
+  await ensureChangeControlTables();
+  registerChangeControlRoutes(app);
+
+  const { registerProcurementRoutes, ensureProcurementTables } = await import("./procurement-routes");
+  await ensureProcurementTables();
+  registerProcurementRoutes(app);
+
+  const { registerCommissioningRoutes, ensureCommissioningTables } = await import("./commissioning-routes");
+  await ensureCommissioningTables();
+  registerCommissioningRoutes(app);
+
+  await db.execute(sql.raw(`
+    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS related_entity_type TEXT;
+    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS related_entity_id INTEGER;
+    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS assigned_approver INTEGER REFERENCES users(id);
+    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS due_date TIMESTAMP;
+    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES project_info(id);
+    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS approval_category TEXT;
+  `));
+  console.log("[Approvals] Enhanced columns ensured");
+
+  const { registerInvoiceCaptureRoutes, ensureInvoiceCaptureTables } = await import("./invoice-capture-routes");
+  await ensureInvoiceCaptureTables();
+  registerInvoiceCaptureRoutes(app);
+
   registerAdminRoutes(app);
   registerExcoRoutes(app);
   const { financialIntegrationRouter } = await import("./departments/financial-integration-routes");
