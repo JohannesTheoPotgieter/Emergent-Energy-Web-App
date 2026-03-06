@@ -19,6 +19,7 @@ import {
 } from "./project-linking-service";
 import { syncAllForUser, syncUserCalendar, syncUserEmail, syncUserTeams, getSyncStatus } from "./ms-sync-service";
 import { getAllUsers, getAssignableUsers, resolveNameToUserId, buildUserMap, mergeResolvedWithTextNames, type ResolvedUser } from "./user-resolver";
+import { logAuditFromReq } from "./audit-logger";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -236,6 +237,16 @@ export function registerMsSyncRoutes(app: Express) {
       const userMap = await buildUserMap();
       const targetUser = assignUserId ? userMap.get(assignUserId) : null;
 
+      const isViewerOnly = async (workItemId: number, uId: number): Promise<boolean> => {
+        if (isPrivileged) return false;
+        const rows = await db.execute(sql`
+          SELECT role FROM work_item_assignments
+          WHERE work_item_id = ${workItemId} AND user_id = ${uId}
+        `).then((r: any) => Array.isArray(r) ? r : (r.rows || []));
+        if (rows.length === 0) return false;
+        return rows.every((r: any) => r.role === 'VIEWER');
+      };
+
       const resolveIdsFromNames = (names: string[]): number[] => {
         const ids: number[] = [];
         for (const name of names) {
@@ -284,6 +295,9 @@ export function registerMsSyncRoutes(app: Express) {
           if (!isPrivileged) {
             return res.status(403).json({ error: "Only managers can reassign plan tasks" });
           }
+          if (currentUserId && await isViewerOnly(taskId, currentUserId)) {
+            return res.status(403).json({ error: "Viewers have read-only access and cannot modify tasks" });
+          }
           await db.execute(sql`
             UPDATE work_items SET owner_user_id = ${assignUserId || null}
             WHERE (legacy_table = 'normalized_plan_tasks' AND legacy_id = ${taskId})
@@ -331,6 +345,12 @@ export function registerMsSyncRoutes(app: Express) {
         case "plan_viewer": {
           if (!assignUserId) {
             await db.execute(sql`DELETE FROM work_item_assignments WHERE work_item_id = ${taskId} AND role = 'VIEWER'`);
+            logAuditFromReq(req, {
+              entityType: "work_item_assignment",
+              entityId: String(taskId),
+              action: "remove_all_viewers",
+              changesJson: { workItemId: taskId, description: "All viewers removed from work item" },
+            });
           } else {
             const existing = await db.execute(sql`
               SELECT id FROM work_item_assignments WHERE work_item_id = ${taskId} AND user_id = ${assignUserId}
@@ -340,6 +360,12 @@ export function registerMsSyncRoutes(app: Express) {
                 INSERT INTO work_item_assignments (work_item_id, user_id, role, assigned_at)
                 VALUES (${taskId}, ${assignUserId}, 'VIEWER', NOW())
               `);
+              logAuditFromReq(req, {
+                entityType: "work_item_assignment",
+                entityId: String(taskId),
+                action: "add_viewer",
+                changesJson: { workItemId: taskId, viewerUserId: assignUserId, viewerName: targetUser?.name || null },
+              });
             }
           }
           break;
@@ -347,6 +373,12 @@ export function registerMsSyncRoutes(app: Express) {
         case "remove_viewer": {
           if (!assignUserId) return res.status(400).json({ error: "userId required for remove_viewer" });
           await db.execute(sql`DELETE FROM work_item_assignments WHERE work_item_id = ${taskId} AND user_id = ${assignUserId} AND role = 'VIEWER'`);
+          logAuditFromReq(req, {
+            entityType: "work_item_assignment",
+            entityId: String(taskId),
+            action: "remove_viewer",
+            changesJson: { workItemId: taskId, viewerUserId: assignUserId, viewerName: targetUser?.name || null },
+          });
           break;
         }
         default:

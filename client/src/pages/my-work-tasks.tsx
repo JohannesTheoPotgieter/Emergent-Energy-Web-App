@@ -571,7 +571,7 @@ export default function MyWorkTasksPage() {
   const filteredTasks = useMemo(() => {
     let result = [...unifiedTasks];
     if (sourceFilter === "tracking") {
-      result = result.filter(t => t._trackingRole === "creator" || t._trackingRole === "both");
+      result = result.filter(t => t._trackingRole === "creator" || t._trackingRole === "both" || t._trackingRole === "viewer");
     } else if (sourceFilter !== "all") {
       result = result.filter(t => t._source === sourceFilter);
     }
@@ -610,7 +610,7 @@ export default function MyWorkTasksPage() {
     const counts: Record<SourceFilter, number> = { all: 0, personal: 0, operational: 0, plan: 0, engineering_task: 0, quality_task: 0, approvals: 0, tr_register: 0, tracking: 0, deliverables: 0, notifications: 0 };
     for (const t of unifiedTasks) {
       if (counts[t._source] !== undefined) counts[t._source]++;
-      if (t._trackingRole === "creator" || t._trackingRole === "both") counts.tracking++;
+      if (t._trackingRole === "creator" || t._trackingRole === "both" || t._trackingRole === "viewer") counts.tracking++;
     }
     counts.all = unifiedTasks.length;
     return counts;
