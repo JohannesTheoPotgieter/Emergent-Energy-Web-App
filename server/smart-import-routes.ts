@@ -103,8 +103,33 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 router.use(jwtAuth);
 
+router.get("/api/smart-import/runs", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const rows = await db.execute(sql`
+      SELECT id, project_name, status, source_file_name as file_name,
+             uploaded_at, committed_at, uploaded_by, committed_by
+      FROM smart_import_runs
+      ORDER BY uploaded_at DESC
+      LIMIT 100
+    `);
+    const results = Array.isArray(rows) ? rows : (rows.rows || []);
+    res.json(results);
+  } catch (err: any) {
+    console.error("[SmartImport] List runs error:", err);
+    res.status(500).json({ error: "Failed to list import runs" });
+  }
+});
+
 // POST /api/smart-import/upload
-router.post("/api/smart-import/upload", requireAuth, upload.single("file"), async (req: Request, res: Response) => {
+router.post("/api/smart-import/upload", requireAuth, (req: Request, res: Response, next: NextFunction) => {
+  upload.single("file")(req, res, (err: any) => {
+    if (err) {
+      const message = err.message || "File upload failed";
+      return res.status(400).json({ error: message });
+    }
+    next();
+  });
+}, async (req: Request, res: Response) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -114,7 +139,12 @@ router.post("/api/smart-import/upload", requireAuth, upload.single("file"), asyn
     const fileName = req.file.originalname;
     const projectId = req.query.projectId ? parseInt(req.query.projectId as string) : null;
 
-    const buffer = fs.readFileSync(filePath);
+    let buffer: Buffer;
+    try {
+      buffer = fs.readFileSync(filePath);
+    } catch (readErr: any) {
+      return res.status(400).json({ error: "Failed to read uploaded file" });
+    }
 
     console.log(`[SmartImport] Processing file: ${fileName} (${buffer.length} bytes)`);
 
@@ -206,18 +236,26 @@ router.post("/api/smart-import/upload", requireAuth, upload.single("file"), asyn
 
     res.json({ runId: run.id, preview });
   } catch (err: any) {
-    console.error("[smart-import] POST upload error:", err);
+    console.error("[smart-import] POST upload error:", err.message);
     let userMessage = err.message || "Unknown error";
-    if (userMessage.includes("End of data reached") || userMessage.includes("Unexpected EOF") || userMessage.includes("Invalid signature")) {
+    let statusCode = 500;
+    if (userMessage.startsWith("PARSE_ERROR:")) {
+      userMessage = userMessage.replace("PARSE_ERROR: ", "");
+      statusCode = 400;
+    } else if (userMessage.includes("End of data reached") || userMessage.includes("Unexpected EOF") || userMessage.includes("Invalid signature")) {
       userMessage = "The file appears to be corrupted or is not a valid Excel file. Please open it in Excel, save as a new .xlsx file, and try again.";
+      statusCode = 400;
     } else if (userMessage.includes("encrypted") || userMessage.includes("password")) {
       userMessage = "The file is password-protected. Please remove the password in Excel and re-upload.";
+      statusCode = 400;
     } else if (userMessage.includes("ENOMEM") || userMessage.includes("heap")) {
       userMessage = "The file is too large to process. Try splitting it into smaller files or removing unused sheets.";
+      statusCode = 400;
     } else if (userMessage.includes("ENOENT")) {
       userMessage = "The uploaded file could not be found on the server. Please try uploading again.";
+      statusCode = 400;
     }
-    res.status(500).json({ error: userMessage });
+    res.status(statusCode).json({ error: userMessage });
   }
 });
 

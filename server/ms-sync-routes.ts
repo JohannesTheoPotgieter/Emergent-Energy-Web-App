@@ -57,6 +57,20 @@ async function requireUnifiedWorkFlag(_req: Request, res: Response, next: NextFu
   }
 }
 
+function normalizeTaskStatus(status: string | null | undefined): string {
+  const s = (status || "").toLowerCase().trim();
+  if (s === "done" || s === "complete" || s === "completed") return "done";
+  if (s === "in progress" || s === "in_progress" || s === "active") return "in_progress";
+  if (s === "to do" || s === "todo" || s === "not started" || s === "not_started") return "inbox";
+  if (s === "blocked") return "blocked";
+  if (s === "on hold" || s === "on_hold" || s === "waiting") return "waiting";
+  if (s === "planned") return "planned";
+  if (s === "cancelled" || s === "canceled") return "cancelled";
+  if (s === "pending" || s === "review") return "in_progress";
+  if (!s) return "inbox";
+  return s;
+}
+
 export function registerMsSyncRoutes(app: Express) {
   app.post("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, async (req: Request, res: Response) => {
     try {
@@ -322,6 +336,27 @@ export function registerMsSyncRoutes(app: Express) {
           }
           break;
         }
+        case "plan_viewer": {
+          if (!assignUserId) {
+            await db.execute(sql`DELETE FROM work_item_assignments WHERE work_item_id = ${taskId} AND role = 'VIEWER'`);
+          } else {
+            const existing = await db.execute(sql`
+              SELECT id FROM work_item_assignments WHERE work_item_id = ${taskId} AND user_id = ${assignUserId}
+            `).then((r: any) => Array.isArray(r) ? r : (r.rows || []));
+            if (existing.length === 0) {
+              await db.execute(sql`
+                INSERT INTO work_item_assignments (work_item_id, user_id, role, assigned_at)
+                VALUES (${taskId}, ${assignUserId}, 'VIEWER', NOW())
+              `);
+            }
+          }
+          break;
+        }
+        case "remove_viewer": {
+          if (!assignUserId) return res.status(400).json({ error: "userId required for remove_viewer" });
+          await db.execute(sql`DELETE FROM work_item_assignments WHERE work_item_id = ${taskId} AND user_id = ${assignUserId} AND role = 'VIEWER'`);
+          break;
+        }
         default:
           return res.status(400).json({ error: `Unknown task source: ${taskSource}` });
       }
@@ -416,29 +451,54 @@ export function registerMsSyncRoutes(app: Express) {
           sql`(${deliverables.ownerUserId} = ${userId} OR ${deliverables.reviewerUserId} = ${userId})`
         ).orderBy(desc(deliverables.updatedAt)),
 
-        db.execute(sql`
-          SELECT wi.id, wi.title as task_name, wi.wbs_code as task_no, wi.status,
-                 wi.percent_complete as pct_complete, wi.start_date, wi.end_date,
-                 wi.duration as duration_days, wi.actual_start as actual_start_date,
-                 wi.actual_end as actual_end_date, wi.actual_duration as actual_duration_days,
-                 wi.owner_user_id as assignee_user_id, wi.description as comment,
-                 CASE WHEN wi.type = 'milestone' THEN true ELSE false END as is_milestone,
-                 wi.project_id as project_id,
-                 pi.project_name as project_name,
-                 wi.legacy_id as import_run_id,
-                 wi.external_ref,
-                 wi.wbs_code as parent_task_no,
-                 wi.workstream,
-                 (SELECT wia.role FROM work_item_assignments wia
-                  WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}
-                  LIMIT 1) as assignment_role
-          FROM work_items wi
-          LEFT JOIN project_info pi ON wi.project_id = pi.id
-          WHERE wi.deleted_at IS NULL
-            AND (wi.owner_user_id = ${userId}
-                 OR EXISTS (SELECT 1 FROM work_item_assignments wia
-                            WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}))
-        `).then((r: any) => Array.isArray(r) ? r : (r.rows || [])),
+        db.execute(
+          isAdmin
+            ? sql`
+              SELECT wi.id, wi.title as task_name, wi.wbs_code as task_no, wi.status,
+                     wi.percent_complete as pct_complete, wi.start_date, wi.end_date,
+                     wi.duration as duration_days, wi.actual_start as actual_start_date,
+                     wi.actual_end as actual_end_date, wi.actual_duration as actual_duration_days,
+                     wi.owner_user_id as assignee_user_id, wi.description as comment,
+                     CASE WHEN wi.type = 'milestone' THEN true ELSE false END as is_milestone,
+                     wi.project_id as project_id,
+                     pi.project_name as project_name,
+                     wi.legacy_id as import_run_id,
+                     wi.external_ref,
+                     wi.wbs_code as parent_task_no,
+                     wi.workstream,
+                     (SELECT wia.role::text FROM work_item_assignments wia
+                      WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}
+                      LIMIT 1) as assignment_role
+              FROM work_items wi
+              LEFT JOIN project_info pi ON wi.project_id = pi.id
+              WHERE wi.deleted_at IS NULL
+              ORDER BY wi.updated_at DESC NULLS LAST
+              LIMIT 500
+            `
+            : sql`
+              SELECT wi.id, wi.title as task_name, wi.wbs_code as task_no, wi.status,
+                     wi.percent_complete as pct_complete, wi.start_date, wi.end_date,
+                     wi.duration as duration_days, wi.actual_start as actual_start_date,
+                     wi.actual_end as actual_end_date, wi.actual_duration as actual_duration_days,
+                     wi.owner_user_id as assignee_user_id, wi.description as comment,
+                     CASE WHEN wi.type = 'milestone' THEN true ELSE false END as is_milestone,
+                     wi.project_id as project_id,
+                     pi.project_name as project_name,
+                     wi.legacy_id as import_run_id,
+                     wi.external_ref,
+                     wi.wbs_code as parent_task_no,
+                     wi.workstream,
+                     (SELECT wia.role FROM work_item_assignments wia
+                      WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}
+                      LIMIT 1) as assignment_role
+              FROM work_items wi
+              LEFT JOIN project_info pi ON wi.project_id = pi.id
+              WHERE wi.deleted_at IS NULL
+                AND (wi.owner_user_id = ${userId}
+                     OR EXISTS (SELECT 1 FROM work_item_assignments wia
+                                WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}))
+            `
+        ).then((r: any) => Array.isArray(r) ? r : (r.rows || [])),
 
         db.select().from(engineeringTasks).where(
           and(
@@ -539,11 +599,12 @@ export function registerMsSyncRoutes(app: Express) {
           const isOwner = t.assignee_user_id === userId;
           const role = t.assignment_role;
           const isViewer = role === 'VIEWER';
-          const trackingRole = isViewer ? "viewer" : isOwner ? "assignee" : role ? "assignee" : "assignee";
+          const isAdminOverview = !role && !isOwner && isAdmin;
+          const trackingRole = isViewer ? "viewer" : isAdminOverview ? "admin_overview" : isOwner ? "assignee" : role ? "assignee" : "assignee";
           return {
             id: t.id,
             title: t.task_name,
-            status: t.status || "active",
+            status: normalizeTaskStatus(t.status),
             projectName: t.project_name,
             owner: t.owner,
             phase: t.phase,
@@ -563,7 +624,7 @@ export function registerMsSyncRoutes(app: Express) {
         engineeringTasks: engTasks.map(t => ({
           id: t.id,
           title: t.title,
-          status: t.status,
+          status: normalizeTaskStatus(t.status),
           projectName: t.projectName,
           lifecyclePhase: t.lifecyclePhaseTag,
           assigneeUserId: t.assigneeUserId,
@@ -577,7 +638,7 @@ export function registerMsSyncRoutes(app: Express) {
         qualityTasks: (qualityTasks as any[]).map((t: any) => ({
           id: t.id,
           title: t.item_name,
-          status: t.qm_status || "not_started",
+          status: normalizeTaskStatus(t.qm_status || "not_started"),
           projectName: t.project_name,
           startDate: t.start_date,
           endDate: t.end_date,

@@ -21,16 +21,17 @@ import {
   Plus, Loader2, Search, Trash2, ChevronDown, ChevronRight, ArrowUpDown, X,
   Inbox, Filter, Eye, Calendar, Building2, FolderOpen, AlertTriangle, ListTodo,
   ClipboardList, ShieldCheck, FileCheck, BookOpen, CheckCircle2, Circle, Clock,
-  AlertCircle, Wrench, Users, User, LayoutList, Columns3, Link2, GripVertical,
+  AlertCircle, Wrench, Users, User, UserPlus, LayoutList, Columns3, Link2, GripVertical,
   Save, RotateCw, MoreHorizontal, ArrowRight, Hash, Tag, TrendingUp, Zap,
   Target, Activity,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 
 type SortField = "priority" | "dueDate" | "createdAt" | "status";
 type SortDirection = "asc" | "desc";
 type SourceFilter = "all" | "personal" | "operational" | "plan" | "engineering_task" | "quality_task" | "approvals" | "tr_register" | "deliverables" | "notifications" | "tracking";
-type TrackingRole = "assignee" | "creator" | "both" | "viewer";
+type TrackingRole = "assignee" | "creator" | "both" | "viewer" | "admin_overview";
 type ViewMode = "list" | "board";
 
 const priorityOrder: Record<string, number> = { critical: 0, high: 1, urgent: 0, High: 1, Med: 2, Low: 3, normal: 2, low: 3 };
@@ -1185,6 +1186,121 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
   );
 }
 
+function ViewerManagement({ taskId, onInvalidate }: { taskId: number; onInvalidate: () => void }) {
+  const { toast } = useToast();
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerSearch, setViewerSearch] = useState("");
+  const viewerInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: allUsers = [] } = useQuery<{ id: number; name: string; username: string; role: string }[]>({
+    queryKey: ["/api/users/assignable"],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const h: Record<string, string> = {};
+      if (token) h["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/users/assignable", { credentials: "include", headers: h });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60000,
+  });
+
+  const { data: viewers = [], refetch: refetchViewers } = useQuery<{ id: number; user_id: number; role: string }[]>({
+    queryKey: [`/api/work-items/${taskId}/viewers`],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const h: Record<string, string> = {};
+      if (token) h["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/work-items/${taskId}/viewers`, { credentials: "include", headers: h });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 30000,
+  });
+
+  const addViewerMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      const token = localStorage.getItem("auth_token");
+      const h: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) h["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/tasks/reassign", { method: "PATCH", credentials: "include", headers: h, body: JSON.stringify({ taskId, taskSource: "plan_viewer", userId }) });
+      if (!res.ok) throw new Error("Failed to add viewer");
+    },
+    onSuccess: () => { refetchViewers(); onInvalidate(); toast({ title: "Viewer added" }); setViewerOpen(false); },
+    onError: () => { toast({ title: "Failed to add viewer", variant: "destructive" }); },
+  });
+
+  const removeViewerMutation = useMutation({
+    mutationFn: async (userId: number) => {
+      const token = localStorage.getItem("auth_token");
+      const h: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) h["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/tasks/reassign", { method: "PATCH", credentials: "include", headers: h, body: JSON.stringify({ taskId, taskSource: "remove_viewer", userId }) });
+      if (!res.ok) throw new Error("Failed to remove viewer");
+    },
+    onSuccess: () => { refetchViewers(); onInvalidate(); toast({ title: "Viewer removed" }); },
+    onError: () => { toast({ title: "Failed to remove viewer", variant: "destructive" }); },
+  });
+
+  useEffect(() => {
+    if (viewerOpen && viewerInputRef.current) setTimeout(() => viewerInputRef.current?.focus(), 100);
+  }, [viewerOpen]);
+
+  const viewerUserIds = new Set(viewers.map(v => v.user_id));
+  const filteredUsers = allUsers.filter(u => {
+    if (viewerUserIds.has(u.id)) return false;
+    if (viewerSearch) {
+      const s = viewerSearch.toLowerCase();
+      return u.name.toLowerCase().includes(s) || u.username.toLowerCase().includes(s);
+    }
+    return true;
+  });
+
+  const getInitials = (name: string) => name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+
+  return (
+    <div>
+      <Label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5 block">Viewers</Label>
+      <div className="flex items-center gap-1 flex-wrap">
+        {viewers.map(v => {
+          const user = allUsers.find(u => u.id === v.user_id);
+          if (!user) return null;
+          return (
+            <span key={v.user_id} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded-full bg-sky-50 text-sky-700 border border-sky-200 font-medium" data-testid={`viewer-chip-${v.user_id}`}>
+              <Eye className="h-3 w-3" />
+              {user.name}
+              <button onClick={() => removeViewerMutation.mutate(v.user_id)} className="ml-0.5 hover:text-red-600" data-testid={`btn-remove-viewer-${v.user_id}`}><X className="h-3 w-3" /></button>
+            </span>
+          );
+        })}
+        {viewers.length === 0 && <span className="text-[10px] text-muted-foreground italic">No viewers</span>}
+        <Popover open={viewerOpen} onOpenChange={setViewerOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full hover:bg-sky-50 text-muted-foreground hover:text-sky-600" data-testid="btn-add-viewer" title="Add viewer">
+              <UserPlus className="h-3.5 w-3.5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-2" align="start" side="bottom">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Search className="h-3.5 w-3.5 text-muted-foreground" />
+              <Input ref={viewerInputRef} className="h-7 text-xs border-0 shadow-none focus-visible:ring-0" placeholder="Search users..." value={viewerSearch} onChange={e => setViewerSearch(e.target.value)} data-testid="input-viewer-search" />
+            </div>
+            <div className="max-h-48 overflow-y-auto space-y-0.5">
+              {filteredUsers.map(u => (
+                <button key={u.id} className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-muted text-foreground transition-colors" onClick={() => addViewerMutation.mutate(u.id)} data-testid={`btn-add-viewer-${u.id}`}>
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-sky-500 text-white text-[9px] font-bold">{getInitials(u.name)}</span>
+                  <span className="flex-1 text-left truncate">{u.name}</span>
+                </button>
+              ))}
+              {filteredUsers.length === 0 && <p className="text-xs text-muted-foreground text-center py-3">No users found</p>}
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+    </div>
+  );
+}
+
 function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }: { task: UnifiedTask; open: boolean; onOpenChange: (open: boolean) => void; onInvalidate: () => void; allProjects: string[] }) {
   const { toast } = useToast();
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -1313,6 +1429,10 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
                   <UserAssignmentPicker taskId={task._rawId} taskSource={task._source === "approvals" ? "operational" : task._source} resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null} textNames={task.assignees || task.owners || null} mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"} size="sm" invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks", "/api/tr-register"]} />
                 </div>
               </div>
+
+              {task._source === "plan" && (
+                <ViewerManagement taskId={task._rawId} onInvalidate={onInvalidate} />
+              )}
 
               {canEditInline && task._source === "tr_register" && (
                 <div>

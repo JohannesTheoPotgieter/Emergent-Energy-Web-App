@@ -2499,7 +2499,8 @@ export async function registerRoutes(
           project_pct_complete: projectPctComplete,
           expected_pct_complete: expectedPctComplete,
           delta_vs_expected: deltaVsExpected,
-          total_contract_revenue: totalContractRevenue,
+          contract_value: info?.contractValue ? parseFloat(String(info.contractValue)) || null : null,
+          total_contract_revenue: totalContractRevenue || (info?.contractValue ? parseFloat(String(info.contractValue)) || 0 : 0),
           actual_revenue: actualRevenue,
           total_expenses: totalExpenses,
           actual_expenses: actualExpenses,
@@ -5889,14 +5890,70 @@ export async function registerRoutes(
         return res.status(400).json({ error: "ids[] required" });
       }
       const userId = (req as any).user?.id || (req as any).jwtPayload?.userId || null;
+      const now = new Date().toISOString();
       for (const id of ids) {
-        await db.execute(sql`DELETE FROM work_items WHERE id = ${id}`);
+        await db.execute(sql`UPDATE work_items SET deleted_at = ${now} WHERE id = ${id} AND deleted_at IS NULL`);
       }
-      logAuditFromReq(req, { entityType: "work_item", action: "delete", changesJson: { description: `${ids.length} work item(s) deleted directly`, ids } });
-      res.json({ message: `Deleted ${ids.length} work item(s)` });
+      logAuditFromReq(req, { entityType: "work_item", action: "soft_delete", changesJson: { description: `${ids.length} work item(s) soft-deleted`, ids, deletedBy: userId } });
+      res.json({ message: `Deleted ${ids.length} work item(s)`, undoAvailable: true, ids });
     } catch (error: any) {
       console.error("[WorkItemsDelete] Error:", error);
       res.status(500).json({ error: "Failed to delete work items" });
+    }
+
+  });
+
+  app.post("/api/work-items/restore", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "ids[] required" });
+      }
+      for (const id of ids) {
+        await db.execute(sql`UPDATE work_items SET deleted_at = NULL WHERE id = ${id}`);
+      }
+      logAuditFromReq(req, { entityType: "work_item", action: "restore", changesJson: { description: `${ids.length} work item(s) restored`, ids } });
+      res.json({ message: `Restored ${ids.length} work item(s)` });
+    } catch (error: any) {
+      console.error("[WorkItemsRestore] Error:", error);
+      res.status(500).json({ error: "Failed to restore work items" });
+    }
+
+  });
+
+  app.get("/api/work-items/deleted", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const rows = await db.execute(sql`
+        SELECT wi.id, wi.title, wi.status, wi.deleted_at, wi.project_id,
+               pi.project_name
+        FROM work_items wi
+        LEFT JOIN project_info pi ON wi.project_id = pi.id
+        WHERE wi.deleted_at IS NOT NULL
+        ORDER BY wi.deleted_at DESC
+        LIMIT 200
+      `);
+      const results = Array.isArray(rows) ? rows : (rows.rows || []);
+      res.json(results);
+    } catch (error: any) {
+      console.error("[WorkItemsDeleted] Error:", error);
+      res.status(500).json({ error: "Failed to list deleted work items" });
+    }
+  });
+
+  app.get("/api/work-items/:id/viewers", requireAuth, async (req, res) => {
+    try {
+      const workItemId = parseInt(req.params.id);
+      if (isNaN(workItemId)) return res.status(400).json({ error: "Invalid work item id" });
+      const rows = await db.execute(sql`
+        SELECT id, work_item_id, user_id, role, assigned_at
+        FROM work_item_assignments
+        WHERE work_item_id = ${workItemId} AND role = 'VIEWER'
+      `);
+      const results = Array.isArray(rows) ? rows : (rows.rows || []);
+      res.json(results);
+    } catch (error: any) {
+      console.error("[WorkItemViewers] Error:", error);
+      res.status(500).json({ error: "Failed to list viewers" });
     }
   });
 

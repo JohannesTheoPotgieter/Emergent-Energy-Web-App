@@ -13,7 +13,20 @@ export interface SmartImportPreview {
 
 export async function runSmartImportPreview(buffer: Buffer, fileName: string): Promise<SmartImportPreview> {
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
+  try {
+    await workbook.xlsx.load(buffer);
+  } catch (parseErr: any) {
+    const isXlsm = fileName.toLowerCase().endsWith(".xlsm");
+    if (isXlsm) {
+      try {
+        await (workbook as any).xlsx.load(buffer, { ignoreNodes: ['dataValidations'] });
+      } catch {
+        throw new Error(`PARSE_ERROR: The file "${fileName}" appears to be corrupt or is not a valid Excel file. Please re-export it from Excel and try again.`);
+      }
+    } else {
+      throw new Error(`PARSE_ERROR: The file "${fileName}" appears to be corrupt or is not a valid Excel file. Please re-export it from Excel and try again.`);
+    }
+  }
 
   const detection = detectSections(workbook);
 
