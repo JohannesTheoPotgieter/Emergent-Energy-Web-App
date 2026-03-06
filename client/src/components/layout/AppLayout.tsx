@@ -899,25 +899,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {screenTourSteps && location !== "/" && (
-          <button
-            onClick={() => setScreenTourActive(true)}
-            className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-green-600 text-white px-4 py-2.5 shadow-lg hover:shadow-xl hover:bg-green-700 transition-all duration-200 text-sm font-medium"
-            style={{ bottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
-            data-testid="button-screen-tour"
-          >
-            <Compass className="h-4 w-4" />
-            <span className="hidden sm:inline">Take a Tour</span>
-          </button>
-        )}
-
-        {screenTourActive && screenTourSteps && (
-          <InteractiveTutorial
-            active={screenTourActive}
-            onComplete={() => setScreenTourActive(false)}
-            externalSteps={screenTourSteps}
-          />
-        )}
 
       </main>
     </div>
