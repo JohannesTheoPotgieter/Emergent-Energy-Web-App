@@ -24,7 +24,7 @@ function engFetch(url: string, options?: RequestInit) {
 
 interface ApprovalItem {
   id: string;
-  type: "engineering" | "quality" | "deliverable";
+  type: "engineering" | "quality" | "deliverable" | "general";
   title: string;
   projectName: string;
   projectId: number | null;
@@ -35,12 +35,13 @@ interface ApprovalItem {
   meta: Record<string, any>;
 }
 
-type FilterType = "all" | "engineering" | "quality" | "deliverable";
+type FilterType = "all" | "engineering" | "quality" | "deliverable" | "general";
 
-const TYPE_CONFIG = {
+const TYPE_CONFIG: Record<string, { icon: any; color: string; label: string }> = {
   engineering: { icon: Wrench, color: "text-amber-600 bg-amber-50 border-amber-200", label: "Engineering Gate" },
   quality: { icon: ShieldCheck, color: "text-emerald-600 bg-emerald-50 border-emerald-200", label: "Quality Review" },
   deliverable: { icon: FileCheck, color: "text-blue-600 bg-blue-50 border-blue-200", label: "Deliverable" },
+  general: { icon: Clock, color: "text-violet-600 bg-violet-50 border-violet-200", label: "General Approval" },
 };
 
 export function ProjectApprovalsTab({ projectName, projectInfoId }: { projectName: string; projectInfoId: number | null }) {
@@ -52,19 +53,52 @@ export function ProjectApprovalsTab({ projectName, projectInfoId }: { projectNam
   const [comment, setComment] = useState("");
 
   const { data: approvals = [], isLoading } = useQuery<ApprovalItem[]>({
-    queryKey: ["project-approvals", projectName],
+    queryKey: ["project-approvals", projectName, projectInfoId],
     queryFn: async () => {
-      const res = await engFetch(`/api/approvals/pending?showAll=true`);
-      if (!res.ok) return [];
-      const data = await res.json();
-      const items: ApprovalItem[] = data.items || [];
-      return items.filter(a => a.projectName === projectName);
+      const [pendingRes, generalRes] = await Promise.all([
+        engFetch(`/api/approvals/pending?showAll=true`),
+        projectInfoId ? engFetch(`/api/approvals/general?projectId=${projectInfoId}`) : Promise.resolve(null),
+      ]);
+
+      const pendingItems: ApprovalItem[] = [];
+      if (pendingRes.ok) {
+        const data = await pendingRes.json();
+        pendingItems.push(...(data.items || []).filter((a: any) => a.projectName === projectName));
+      }
+
+      if (generalRes && generalRes.ok) {
+        const gData = await generalRes.json();
+        const generalItems: ApprovalItem[] = (gData.approvals || []).map((g: any) => ({
+          id: `gen-${g.id}`,
+          type: "general" as const,
+          title: g.title,
+          projectName: projectName,
+          projectId: g.projectId,
+          status: g.status,
+          assignee: g.assignedApproverName || g.requestedByName || "Unassigned",
+          createdAt: g.requestedAt,
+          updatedAt: g.decidedAt || g.requestedAt,
+          meta: { generalApprovalId: g.id, category: g.approvalCategory, dueDate: g.dueDate },
+        }));
+        pendingItems.push(...generalItems);
+      }
+
+      return pendingItems;
     },
     enabled: !!projectName,
   });
 
   const approveMutation = useMutation({
     mutationFn: async ({ id, type }: { id: string; type: string }) => {
+      if (type === "general" && id.startsWith("gen-")) {
+        const realId = id.replace("gen-", "");
+        const res = await engFetch(`/api/approvals/general/${realId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "approved", decisionNote: comment }),
+        });
+        if (!res.ok) throw new Error("Failed to approve");
+        return res.json();
+      }
       const res = await engFetch(`/api/approvals/${id}/approve`, {
         method: "POST",
         body: JSON.stringify({ type, comment }),
@@ -85,6 +119,15 @@ export function ProjectApprovalsTab({ projectName, projectInfoId }: { projectNam
 
   const rejectMutation = useMutation({
     mutationFn: async ({ id, type }: { id: string; type: string }) => {
+      if (type === "general" && id.startsWith("gen-")) {
+        const realId = id.replace("gen-", "");
+        const res = await engFetch(`/api/approvals/general/${realId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "rejected", decisionNote: comment }),
+        });
+        if (!res.ok) throw new Error("Failed to reject");
+        return res.json();
+      }
       const res = await engFetch(`/api/approvals/${id}/reject`, {
         method: "POST",
         body: JSON.stringify({ type, comment }),
@@ -119,7 +162,7 @@ export function ProjectApprovalsTab({ projectName, projectInfoId }: { projectNam
     <div className="space-y-4" data-testid="project-approvals-tab">
       <div className="flex items-center gap-2 flex-wrap">
         <Filter className="h-4 w-4 text-muted-foreground" />
-        {(["all", "engineering", "quality", "deliverable"] as FilterType[]).map(f => (
+        {(["all", "engineering", "quality", "deliverable", "general"] as FilterType[]).map(f => (
           <Button
             key={f}
             size="sm"
@@ -152,12 +195,12 @@ export function ProjectApprovalsTab({ projectName, projectInfoId }: { projectNam
             Pending Approval ({pending.length})
           </h3>
           {pending.map(item => {
-            const config = TYPE_CONFIG[item.type];
+            const config = TYPE_CONFIG[item.type] || TYPE_CONFIG.general;
             const Icon = config.icon;
             return (
               <Card
                 key={item.id}
-                className={`border-l-4 cursor-pointer hover:shadow-md transition-shadow ${config.color.split(" ").map(c => c.startsWith("border") ? c : "").join(" ").trim() || "border-l-amber-400"}`}
+                className={`border-l-4 cursor-pointer hover:shadow-md transition-shadow ${config.color.split(" ").map((c: string) => c.startsWith("border") ? c : "").join(" ").trim() || "border-l-amber-400"}`}
                 onClick={() => { setSelectedApproval(item); setComment(""); }}
                 data-testid={`approval-item-${item.id}`}
               >
@@ -184,7 +227,7 @@ export function ProjectApprovalsTab({ projectName, projectInfoId }: { projectNam
             Resolved ({resolved.length})
           </h3>
           {resolved.slice(0, 10).map(item => {
-            const config = TYPE_CONFIG[item.type];
+            const config = TYPE_CONFIG[item.type] || TYPE_CONFIG.general;
             const Icon = config.icon;
             const isApproved = item.status === "approved" || item.status === "COMPLETE" || item.status === "QC APPROVED";
             return (
@@ -211,7 +254,7 @@ export function ProjectApprovalsTab({ projectName, projectInfoId }: { projectNam
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {selectedApproval && (() => { const Icon = TYPE_CONFIG[selectedApproval.type].icon; return <Icon className="h-5 w-5" />; })()}
+              {selectedApproval && (() => { const config = TYPE_CONFIG[selectedApproval.type] || TYPE_CONFIG.general; const Icon = config.icon; return <Icon className="h-5 w-5" />; })()}
               Review Approval
             </DialogTitle>
           </DialogHeader>

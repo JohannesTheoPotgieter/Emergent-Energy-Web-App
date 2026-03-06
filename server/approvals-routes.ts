@@ -1,6 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import {
   projectEngApprovals,
@@ -12,7 +12,10 @@ import {
   qcTemplateItem,
   deliverables,
   users,
+  approvals,
 } from "@shared/schema";
+import { requirePermission } from "./permission-middleware";
+import { logAuditFromReq } from "./audit-logger";
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
@@ -217,6 +220,123 @@ export function registerApprovalsRoutes(app: Express) {
     } catch (err: any) {
       console.error("Error fetching pending approvals:", err);
       res.status(500).json({ error: "Failed to fetch approvals" });
+    }
+  });
+
+  app.get("/api/approvals/general", jwtAuth, requireAuth, requirePermission("approvals", "view"), async (req: Request, res: Response) => {
+    try {
+      const projectIdFilter = req.query.projectId ? parseInt(req.query.projectId as string) : null;
+      const categoryFilter = req.query.category as string || null;
+      const statusFilter = req.query.status as string || null;
+
+      let conditions: any[] = [];
+      if (projectIdFilter) conditions.push(eq(approvals.projectId, projectIdFilter));
+      if (statusFilter) conditions.push(eq(approvals.status, statusFilter as any));
+      if (categoryFilter) conditions.push(sql`${approvals.approvalCategory} = ${categoryFilter}`);
+
+      const rows = await db.select().from(approvals)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(approvals.requestedAt));
+
+      const userIds = [...new Set([
+        ...rows.map(r => r.requestedBy),
+        ...rows.map(r => r.decidedBy).filter(Boolean),
+        ...rows.map(r => r.assignedApprover).filter(Boolean),
+      ])] as number[];
+      let userMap: Record<number, string> = {};
+      if (userIds.length > 0) {
+        const uRows = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, userIds));
+        userMap = Object.fromEntries(uRows.map(u => [u.id, u.name]));
+      }
+
+      res.json({
+        approvals: rows.map(r => ({
+          ...r,
+          requestedByName: userMap[r.requestedBy] || "Unknown",
+          decidedByName: r.decidedBy ? (userMap[r.decidedBy] || "Unknown") : null,
+          assignedApproverName: r.assignedApprover ? (userMap[r.assignedApprover] || "Unknown") : null,
+        })),
+      });
+    } catch (err: any) {
+      console.error("Error fetching general approvals:", err);
+      res.status(500).json({ error: "Failed to fetch approvals" });
+    }
+  });
+
+  app.post("/api/approvals/general", jwtAuth, requireAuth, requirePermission("approvals", "edit"), async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+      const { type, title, description, assignedApprover, dueDate, projectId, approvalCategory, relatedEntityType, relatedEntityId } = req.body;
+      if (!type || !title) return res.status(400).json({ error: "type and title are required" });
+
+      const result = await db.insert(approvals).values({
+        type,
+        title,
+        description: description || null,
+        status: "pending",
+        requestedBy: userId,
+        assignedApprover: assignedApprover ? parseInt(assignedApprover) : null,
+        dueDate: dueDate ? new Date(dueDate) : null,
+        projectId: projectId ? parseInt(projectId) : null,
+        approvalCategory: approvalCategory || null,
+        relatedEntityType: relatedEntityType || null,
+        relatedEntityId: relatedEntityId ? parseInt(relatedEntityId) : null,
+      }).returning();
+
+      const created = (Array.isArray(result) ? result : (result as any).rows || [])[0];
+      logAuditFromReq(req, "approval_created", "approvals", created?.id, { type, title, projectId, approvalCategory });
+      res.status(201).json(created);
+    } catch (err: any) {
+      console.error("Error creating approval:", err);
+      res.status(500).json({ error: "Failed to create approval" });
+    }
+  });
+
+  app.patch("/api/approvals/general/:id", jwtAuth, requireAuth, requirePermission("approvals", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const userId = (req as any).user?.id;
+
+      const { status, decisionNote } = req.body;
+      const validStatuses = ["pending", "approved", "rejected", "cancelled"];
+      if (status && !validStatuses.includes(status)) {
+        return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
+      }
+
+      const updates: Record<string, any> = {};
+      if (status) updates.status = status;
+      if (decisionNote !== undefined) updates.decisionNote = decisionNote;
+      if (status === "approved" || status === "rejected") {
+        updates.decidedBy = userId;
+        updates.decidedAt = new Date();
+      }
+
+      const result = await db.update(approvals).set(updates).where(eq(approvals.id, id)).returning();
+      const updated = (Array.isArray(result) ? result : (result as any).rows || [])[0];
+      if (!updated) return res.status(404).json({ error: "Approval not found" });
+
+      logAuditFromReq(req, `approval_${status || "updated"}`, "approvals", id, { status, decisionNote });
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error updating approval:", err);
+      res.status(500).json({ error: "Failed to update approval" });
+    }
+  });
+
+  app.delete("/api/approvals/general/:id", jwtAuth, requireAuth, requirePermission("approvals", "delete"), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+
+      await db.delete(approvals).where(eq(approvals.id, id));
+      logAuditFromReq(req, "approval_deleted", "approvals", id, {});
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error deleting approval:", err);
+      res.status(500).json({ error: "Failed to delete approval" });
     }
   });
 }

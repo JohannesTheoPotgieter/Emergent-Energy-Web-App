@@ -53,6 +53,7 @@ import {
   Layers,
 } from "lucide-react";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
+import DependencyManager from "@/components/DependencyManager";
 
 interface TaskDetailDrawerProps {
   taskId: number | null;
@@ -1312,6 +1313,21 @@ function TaskDetailContent({
           </Button>
         )}
       </CollapsibleSection>
+
+      <Separator />
+
+      {/* Dependencies Section */}
+      {task.projectId && (
+        <CollapsibleSection
+          title="Dependencies"
+          icon={<Link2 className="h-4 w-4" />}
+          count={0}
+          open={true}
+          onToggle={() => {}}
+        >
+          <DependencyManager taskId={task.id} projectId={task.projectId} />
+        </CollapsibleSection>
+      )}
 
       <Separator />
 

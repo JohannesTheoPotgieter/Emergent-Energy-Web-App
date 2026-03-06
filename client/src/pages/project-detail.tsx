@@ -48,6 +48,10 @@ import { ProjectNotificationsTab } from "@/components/tabs/ProjectNotificationsT
 import { POGenerator } from "@/components/POGenerator";
 import CaptureDeliverable from "@/components/CaptureDeliverable";
 import HandoverGatePanel from "@/components/HandoverGatePanel";
+import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
+import { ProjectChangeControlTab } from "@/components/tabs/ProjectChangeControlTab";
+import { ProjectProcurementTab } from "@/components/tabs/ProjectProcurementTab";
+import { ProjectCommissioningTab } from "@/components/tabs/ProjectCommissioningTab";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
@@ -702,6 +706,10 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "gp-tracker": { section: "project-management", subTab: "gp-tracker" },
   "cashflow": { section: "project-management", subTab: "cashflow" },
   "subcontractors": { section: "project-management", subTab: "subcontractors" },
+  "raid": { section: "project-management", subTab: "raid" },
+  "change-control": { section: "project-management", subTab: "change-control" },
+  "procurement": { section: "project-management", subTab: "procurement" },
+  "commissioning": { section: "project-management", subTab: "commissioning" },
   "quality": { section: "quality", subTab: "quality" },
   "history": { section: "project-management", subTab: "history" },
   "overview": { section: "overview", subTab: "" },
@@ -1633,6 +1641,19 @@ export default function ProjectDetailPage() {
             </Button>
             )}
             <div className="w-px h-5 bg-border self-center mx-1 shrink-0" />
+            <Button size="sm" variant={activeSubTab === "procurement" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("procurement")} data-testid="subtab-procurement">
+              <CreditCard className="h-3 w-3 mr-1" /> Procurement
+            </Button>
+            <Button size="sm" variant={activeSubTab === "raid" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("raid")} data-testid="subtab-raid">
+              <AlertTriangle className="h-3 w-3 mr-1" /> RAID
+            </Button>
+            <Button size="sm" variant={activeSubTab === "change-control" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("change-control")} data-testid="subtab-change-control">
+              <FileCheck className="h-3 w-3 mr-1" /> Changes
+            </Button>
+            <Button size="sm" variant={activeSubTab === "commissioning" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("commissioning")} data-testid="subtab-commissioning">
+              <CheckCircle className="h-3 w-3 mr-1" /> Commissioning
+            </Button>
+            <div className="w-px h-5 bg-border self-center mx-1 shrink-0" />
             {canViewTab.history && (
             <Button size="sm" variant={activeSubTab === "history" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("history")} data-testid="subtab-history">
               <History className="h-3 w-3 mr-1" /> History
@@ -1650,6 +1671,10 @@ export default function ProjectDetailPage() {
           {activeSubTab === "gp-tracker" && canViewTab.finance && canViewSubTab.cosTracker && <GpTrackerTab projectName={projectName} />}
           {activeSubTab === "cashflow" && canViewTab.finance && canViewSubTab.cashflow && <CashflowTab projectName={projectName} />}
           {activeSubTab === "subcontractors" && canViewTab.finance && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
+          {activeSubTab === "raid" && projectInfoId && <ProjectRaidTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "change-control" && projectInfoId && <ProjectChangeControlTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "procurement" && projectInfoId && <ProjectProcurementTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "commissioning" && projectInfoId && <ProjectCommissioningTab projectId={projectInfoId} projectName={projectName} />}
           {activeSubTab === "history" && canViewTab.history && (
             <>
               <WeeklyReviewWizard
