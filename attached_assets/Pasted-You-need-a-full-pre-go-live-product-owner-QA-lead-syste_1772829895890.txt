@@ -1,0 +1,837 @@
+You need a full pre-go-live product-owner + QA-lead + systems-architect prompt that makes Replit review the whole application with the same scrutiny you are applying now:
+
+ownership logic
+
+UX logic
+
+exception routing
+
+permissions truth
+
+role-based usefulness
+
+admin control
+
+productivity
+
+consistency
+
+reporting trust
+
+no hidden nonsense
+
+So below is a much stronger prompt. It includes the fixes you already spotted, but it also forces Replit to inspect the entire app as an operational system, not as a collection of pages.
+
+Copy-paste Replit prompt
+
+You are working on the existing Emergent Energy operational web application.
+
+This is a PRE-GO-LIVE FULL APPLICATION REVIEW, HARDENING, AND IMPROVEMENT PASS.
+
+Do NOT treat this as a small UI cleanup.
+Do NOT only fix the few examples mentioned.
+Do NOT build random new modules.
+Do NOT break existing working functionality.
+Do NOT make assumptions silently.
+Do NOT create disconnected logic or duplicate systems.
+
+Your job is to review the ENTIRE APPLICATION with the mindset of:
+
+product owner
+
+COO
+
+operations systems architect
+
+UX lead
+
+QA lead
+
+permissions/governance reviewer
+
+The goal is to get the application to a state where it behaves like a real internal operating system:
+
+role-based
+
+ownership-driven
+
+productivity-focused
+
+exception-aware
+
+trustworthy
+
+consistent
+
+admin-manageable
+
+auditable
+
+scalable toward a full project management platform
+
+This pass must go beyond obvious bugs.
+You must inspect the application for:
+
+poor defaults
+
+weak role logic
+
+ownership confusion
+
+misleading UX
+
+clutter
+
+broken prioritisation
+
+bad task routing
+
+false permission simplicity
+
+hidden workflow contradictions
+
+archive/closed-state pollution
+
+weak exception surfacing
+
+admin control gaps
+
+inconsistent behavior across modules
+
+pages that are technically working but operationally wrong
+
+The standard is not “the page loads.”
+The standard is “the page helps the correct user do the correct thing in the correct way.”
+
+==================================================
+PRIMARY OBJECTIVE
+
+Perform a full-system pre-go-live review and improvement pass across the application so that:
+
+the app is operationally correct, not just technically functional
+
+every major screen supports the correct role behavior
+
+ownership and assignment logic are clear
+
+closed / completed / archived items do not pollute live work surfaces by default
+
+unassigned items surface as management exceptions, not generic clutter
+
+permissions UI and actual permissions behavior align more honestly
+
+admin can understand and govern what is happening
+
+productivity and prioritisation improve across working screens
+
+UX consistency improves without breaking architecture
+
+the whole app is regression-tested end to end before go-live
+
+==================================================
+OPERATING PRINCIPLES YOU MUST APPLY
+
+The app is a role-based operating system, not a generic dashboard
+Each role should see what helps them act, not everything the database knows.
+
+Live work views must focus on action, not history
+Closed, completed, cancelled, archived, and irrelevant noise must be hidden by default from execution surfaces.
+
+Exceptions belong to management views
+Unassigned tasks, unassigned projects, ownership gaps, blocked work, and orphan records should surface in COO / Program Manager / admin exception views, not clutter normal worker views.
+
+Permissions must reflect reality
+The permissions UI must not pretend the system is simpler than it is.
+
+Admin control must be practical
+Admins should be able to monitor, understand, and correct the platform from the front end where reasonable.
+
+Consistency matters
+The same concepts should behave the same way across screens:
+
+status
+
+assignee
+
+viewer
+
+due dates
+
+closed state
+
+filters
+
+badges
+
+actions
+
+archive handling
+
+approval behavior
+
+Every default should be intentional
+The default filter, sort order, and landing state should support productivity and accountability.
+
+==================================================
+SCOPE OF THIS PASS
+
+Review and improve the application across the following dimensions:
+
+My Work / My Tasks / Calendar / personal execution UX
+
+task routing and ownership logic
+
+project routing and ownership logic
+
+role-based default views
+
+dashboard exception logic
+
+roles and permissions UI truthfulness
+
+productivity and prioritisation UX
+
+archive / closed / completed handling
+
+admin control and governance visibility
+
+cross-module consistency
+
+end-to-end workflow coherence
+
+full QA and regression
+
+==================================================
+
+MY WORK / MY TASKS / EXECUTION SURFACES
+==================================================
+
+Review all work-execution surfaces including:
+
+My Work
+
+My Tasks
+
+task panels
+
+calendar side panel
+
+action lists
+
+approval lists
+
+tracking/task boards
+
+Do not just make them look nicer.
+Fix them so they help the correct user act.
+
+Required reviews and improvements:
+
+A. Default filtering
+
+completed tasks must be hidden by default
+
+cancelled / closed / archived tasks must be hidden by default
+
+only active/actionable items should appear in default live views
+
+B. Default prioritisation
+Default ordering should emphasize:
+
+overdue
+
+blocked
+
+due today / due soon
+
+approvals waiting on the user
+
+high priority active work
+
+other active work
+
+C. KPI logic
+KPI cards and summary chips must emphasize action, not vanity.
+Prefer:
+
+Overdue
+
+Due This Week
+
+Waiting On Me
+
+Blocked
+
+Approvals Pending
+Avoid using Completed as a hero KPI in default execution view unless clearly justified.
+
+D. Filter architecture
+Separate:
+
+urgency / ownership filters
+from
+
+task type filters
+
+E. Screen density and clutter
+Reduce noise.
+Do not overload execution pages with too many chips, categories, or old items by default.
+
+F. Calendar side panel
+Make calendar context useful:
+
+due window
+
+urgent approvals
+
+near-term tasks
+
+not giant scroll dumps of all work
+
+==================================================
+2. TASK ROUTING, ASSIGNMENT, AND OWNERSHIP LOGIC
+
+Review how tasks are assigned, surfaced, and routed through the app.
+
+Do not assume current behavior is correct just because it renders.
+
+Implement and/or correct these rules:
+
+A. Project-linked task routing
+
+if a task is linked to a project and that project has an assigned Project Manager, it should surface under that PM’s operational responsibility
+
+if linked to a project with no PM assigned, it should surface as a management exception under Program Manager and COO views
+
+if linked to a project but assigned to another role, visibility should still respect the correct owner / assignee / role logic
+
+B. Non-project task routing
+
+if a task has no project link, it should not clutter normal project execution views
+
+it should surface in relevant personal, admin, or management triage views depending on type
+
+C. Unassigned tasks
+
+unassigned tasks are management exceptions
+
+do not show them as if they are owned
+
+surface them in COO / Program Manager / triage views where appropriate
+
+D. Viewer logic
+Review whether viewer behavior is operationally correct in current surfaces.
+If viewers exist in the data model, ensure their visibility is coherent and not misleading.
+Do not invent fake viewer capability if the UI does not support it yet; instead expose the limitation honestly.
+
+E. Closed task behavior
+Closed/completed tasks should not remain in active boards by default.
+
+==================================================
+3. PROJECT ROUTING, OWNERSHIP, AND PROJECT STATE LOGIC
+
+Review how projects are surfaced in:
+
+project lists
+
+dashboards
+
+program views
+
+PM views
+
+management views
+
+Correct behavior should include:
+
+A. Assigned projects
+
+PM sees their owned projects first
+
+Program Manager sees program-level oversight
+
+COO sees all relevant oversight and exceptions
+
+B. Unassigned projects
+
+projects with no owner/PM should surface as management exceptions
+
+they should not appear as if already operationally owned
+
+C. Closed projects
+
+closed projects should be hidden from live work surfaces by default
+
+they should be accessible through archive/history/reporting filters or views
+
+D. State truth
+Review whether project statuses/phases/execution states are being used consistently across pages.
+Flag and fix contradictory uses where possible.
+
+==================================================
+4. ROLE-BASED DEFAULT VIEWS
+
+Review each key role’s default landing and working experience.
+
+The app must not behave like one generic experience with light permission paint.
+
+At minimum review and improve defaults for:
+
+COO / Super Admin
+
+CEO
+
+CFO / Program Finance
+
+Program Manager
+
+Project Manager
+
+Engineer / Engineering Manager
+
+Quality Manager
+
+Project Developer
+
+Construction Manager
+
+Accountant
+
+Key Accounts Manager where applicable
+
+For each role:
+
+identify what they most need to see first
+
+reduce noise
+
+improve filters/sorting/defaults
+
+make sure the first screen is useful, not impressive-looking nonsense
+
+Examples:
+
+COO: exceptions, unassigned work, blocked work, overdue, system issues, approval bottlenecks
+
+Program Manager: project/program gaps, unassigned project-linked work, overdue by owner, at-risk work
+
+PM: owned active tasks, due soon, blocked items, approvals, current project actions
+
+Engineer: assigned engineering actions, due soon, approval and design blockers
+
+Quality: inspections due, approvals, NCR/issue flow, closeout items
+
+Finance: PO/invoice/approval/reconciliation exceptions where applicable
+
+==================================================
+5. DASHBOARD AND EXCEPTION MANAGEMENT LOGIC
+
+Review all major dashboard surfaces and ensure they distinguish between:
+
+normal owned work
+
+exception work
+
+archived/history
+
+missing assignment
+
+blocked work
+
+overdue work
+
+approval bottlenecks
+
+COO and Program Manager dashboards should especially surface:
+
+unassigned tasks
+
+unassigned projects
+
+overdue by owner
+
+blocked items
+
+approval backlog
+
+ownership gaps
+
+project state inconsistencies where detectable
+
+Do not dump these into everyone’s task views.
+
+==================================================
+6. ROLES & PERMISSIONS UI TRUTHFULNESS
+
+The current Roles & Permissions UI appears too simplified relative to actual application behavior.
+
+Review and improve it so it more honestly reflects the real permission model.
+
+Requirements:
+
+A. Keep the existing permission architecture where possible
+Do not rewrite the permission backend unless necessary.
+
+B. Improve the UI to better distinguish:
+
+section / navigation access
+
+feature / entity access
+
+action permissions:
+
+view
+
+create
+
+edit
+
+assign
+
+approve
+
+delete
+
+recover / admin fix
+
+scope where supported or partially supported:
+
+all
+
+own
+
+assigned
+
+owned project
+
+program level
+
+admin only
+
+C. If scope-level enforcement does not fully exist in backend logic, do not fake it.
+Show this honestly in the UI and docs.
+
+D. Ensure the permissions UI does not imply that simple section toggles equal full operational control.
+
+E. Review whether the current permission model actually matches the working app.
+Where there are mismatches between real functionality and permissions UI, fix either the UI or the enforcement.
+
+==================================================
+7. PRODUCTIVITY, PRIORITISATION, AND UX CONSISTENCY
+
+Review the app for productivity and prioritisation quality.
+
+This includes:
+
+too many clicks
+
+too much clutter
+
+poor defaults
+
+weak hierarchy
+
+too much archived data in live views
+
+inconsistent button placement
+
+inconsistent filters
+
+inconsistent badges
+
+inconsistent task labels
+
+unclear ownership
+
+unclear “what should I do next?”
+
+Improve:
+
+density
+
+readability
+
+action hierarchy
+
+urgency surfacing
+
+role focus
+
+filter consistency
+
+terminology consistency
+
+The goal is not only clean visuals.
+The goal is faster, clearer execution.
+
+==================================================
+8. ADMIN CONTROL AND GOVERNANCE VISIBILITY
+
+Review whether the admin experience is truly sufficient pre-go-live.
+
+Check:
+
+can admin understand system health
+
+can admin understand assignment gaps
+
+can admin understand import issues
+
+can admin understand permission structure
+
+can admin understand activity history
+
+can admin correct normal issues from UI
+
+can admin distinguish live exceptions from archive/history
+
+Improve the admin operator experience where needed, but do not create new giant modules unless required.
+
+==================================================
+9. CROSS-MODULE CONSISTENCY REVIEW
+
+Review the application for consistency across:
+
+engineering
+
+quality
+
+project management
+
+finance / reporting
+
+My Work
+
+calendar
+
+admin
+
+permissions
+
+dashboards
+
+Specifically check consistency of:
+
+status labels
+
+due date handling
+
+active vs closed logic
+
+archive visibility
+
+assignment logic
+
+route behavior
+
+badge colors / meaning
+
+approval handling
+
+recovery actions
+
+task grouping
+
+program vs project logic
+
+Fix contradictions where possible.
+Document the ones intentionally left for later.
+
+==================================================
+10. FULL END-TO-END APPLICATION QA
+
+After improvements, run a deep pre-go-live QA pass.
+
+Do not skim.
+Do not rely on “page loads”.
+Do not only test happy paths.
+
+At minimum test:
+
+A. Execution surfaces
+
+My Work default behavior
+
+My Tasks filters
+
+calendar side panel relevance
+
+closed/completed hidden by default
+
+B. Routing logic
+
+project-linked assigned task
+
+project-linked unassigned task
+
+non-project task
+
+unassigned project
+
+closed project
+
+project with PM vs without PM
+
+C. Role-based default views
+
+COO
+
+Program Manager
+
+Project Manager
+
+Engineer
+
+Quality Manager
+
+Finance / Program Finance
+
+D. Permissions truth
+
+Roles & Permissions UI alignment
+
+admin-only access still enforced
+
+feature/entity/action visibility not misleading
+
+E. Cross-module consistency
+
+active vs closed handling
+
+same task behaves same way across contexts
+
+filters and badges remain coherent
+
+F. Regression
+
+engineering
+
+quality
+
+finance
+
+imports
+
+reporting
+
+dashboards
+
+admin tools
+
+audit logging
+
+route protection
+
+current project detail views
+
+==================================================
+REQUIRED DELIVERABLES
+
+Create or update the following files:
+
+FULL_PRE_GO_LIVE_REVIEW.md
+
+full review findings across the application
+
+what was wrong operationally
+
+what was improved
+
+what still remains intentionally deferred
+
+ROLE_BASED_UX_AND_ROUTING_RULES.md
+
+exact logic for role defaults
+
+task routing
+
+project routing
+
+exception routing
+
+active vs closed visibility rules
+
+PERMISSIONS_TRUTH_ALIGNMENT.md
+
+where the old UI was misleading
+
+how the UI now aligns better with real permissions
+
+any remaining backend limitations
+
+PRODUCTIVITY_AND_PRIORITISATION_FIXES.md
+
+what changed in work surfaces
+
+why it improves productivity
+
+before vs after logic
+
+PRE_GO_LIVE_FULL_QA_MATRIX.md
+
+all tests executed
+
+expected result
+
+actual result
+
+pass/fail
+
+defects and retests
+
+PRE_GO_LIVE_DEFECT_REGISTER.md
+
+remaining defects
+
+severity
+
+operational impact
+
+workaround if any
+
+recommendation before launch
+
+PRE_GO_LIVE_RELEASE_RECOMMENDATION.md
+Include:
+
+ready for controlled internal go-live / not ready
+
+proven areas
+
+partially proven areas
+
+not yet proven areas
+
+open operational risks
+
+recommended next actions before launch
+
+==================================================
+SUCCESS CRITERIA
+
+This pass is complete only when:
+
+the app is reviewed as a full operational system, not just as isolated screens
+
+live work surfaces are more focused and less noisy
+
+completed/closed work is hidden by default where appropriate
+
+unassigned tasks and projects surface as management exceptions
+
+role-based defaults are more useful
+
+permissions UI is more honest and aligned
+
+productivity and prioritisation are improved
+
+cross-module inconsistencies are reduced
+
+the full app is regression-tested end to end
+
+release readiness is stated honestly, not optimistically
+
+Do not optimize for pretty screenshots.
+Optimize for operational clarity, accountability, productivity, and trust.
+
+Work like true engineers.

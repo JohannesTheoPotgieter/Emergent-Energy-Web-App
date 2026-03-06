@@ -357,6 +357,51 @@ router.get("/api/admin/control-center/integration-health", requireAuth, requireA
   }
 });
 
+router.get("/api/admin/control-center/operational-exceptions", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const [unassignedTasksResult, unassignedProjectsResult, overdueByOwnerResult, blockedItemsResult] = await Promise.all([
+      db.execute(sql`
+        SELECT COUNT(*) as count FROM work_items
+        WHERE deleted_at IS NULL
+        AND (status IS NULL OR LOWER(status) NOT IN ('complete','done','completed','cancelled','canceled'))
+        AND (assigned_to IS NULL OR assigned_to = '')
+      `).then((r: any) => ((r.rows || r)[0]) || { count: 0 }),
+      db.execute(sql`
+        SELECT COUNT(*) as count FROM project_info
+        WHERE is_active = true
+        AND (pm IS NULL OR pm = '')
+      `).then((r: any) => ((r.rows || r)[0]) || { count: 0 }),
+      db.execute(sql`
+        SELECT COALESCE(wi.assigned_to, 'Unassigned') as owner, COUNT(*) as count
+        FROM work_items wi
+        WHERE wi.deleted_at IS NULL
+        AND LOWER(wi.status) NOT IN ('complete','done','completed','cancelled','canceled')
+        AND wi.due_date IS NOT NULL AND wi.due_date < NOW()
+        GROUP BY COALESCE(wi.assigned_to, 'Unassigned')
+        ORDER BY count DESC
+        LIMIT 10
+      `).then((r: any) => (r.rows || r) || []),
+      db.execute(sql`
+        SELECT COUNT(*) as count FROM work_items
+        WHERE deleted_at IS NULL
+        AND LOWER(status) = 'blocked'
+      `).then((r: any) => ((r.rows || r)[0]) || { count: 0 }),
+    ]);
+
+    res.json({
+      unassignedTasks: parseInt(unassignedTasksResult?.count || "0"),
+      unassignedProjects: parseInt(unassignedProjectsResult?.count || "0"),
+      blockedItems: parseInt(blockedItemsResult?.count || "0"),
+      overdueByOwner: (overdueByOwnerResult as any[]).map((r: any) => ({
+        owner: r.owner,
+        count: parseInt(r.count || "0"),
+      })),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch operational exceptions", message: err.message });
+  }
+});
+
 export function registerAdminControlRoutes(app: Express) {
   app.use(router);
 }

@@ -521,6 +521,16 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
                 </div>
               </div>
 
+              <div className="rounded-lg border border-amber-200 bg-amber-50/50 px-4 py-3 flex items-start gap-3" data-testid="info-permission-scope">
+                <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                <div className="text-xs text-amber-800 space-y-1">
+                  <p className="font-semibold">Permission Scope</p>
+                  <p><strong>Navigation access</strong> (section toggles) is fully enforced — hiding a section removes the sidebar link and blocks the route.</p>
+                  <p><strong>Entity permissions</strong> (View, Edit, Approve, Override, Delete) control UI visibility of features within pages. Most are enforced at the UI level. Backend admin-only endpoints are separately protected via role checks.</p>
+                  <p>Row-level or project-level ownership scoping (e.g. "PM can only edit their own projects") is not configurable here — it is handled by assignment logic in the application.</p>
+                </div>
+              </div>
+
               <div className="space-y-3" data-testid="permission-categories">
                 {PERM_CATEGORIES.map(cat => {
                   const meta = SECTION_META[cat.section];

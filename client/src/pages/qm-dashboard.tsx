@@ -170,7 +170,7 @@ export default function QmDashboardPage() {
   const [viewMode, setViewMode] = useState<"projects" | "items">("projects");
   const [projectSort, setProjectSort] = useState<ProjectSortKey>("name");
   const [projectSortDir, setProjectSortDir] = useState<ProjectSortDir>("asc");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "completed">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "completed">("active");
   const [warningFilter, setWarningFilter] = useState(false);
   const [warningsExpanded, setWarningsExpanded] = useState(true);
   const [selectedWarning, setSelectedWarning] = useState<Warning | null>(null);

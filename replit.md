@@ -1,7 +1,7 @@
 # Emergent Energy Dashboard
 
 ## Overview
-The Emergent Energy Dashboard is a full-stack web application for comprehensive management of renewable energy projects. It tracks project lifecycles, provides robust financial oversight (Cost of Sales, cashflow, revenue, expenditure), and streamlines engineering operations with a 5-stage checklist and task management. The platform integrates quality management, communication features, and Microsoft 365 services via Azure AD SSO. Its primary goal is to boost efficiency, reduce operational costs, and enhance project delivery for renewable energy initiatives, aiming for end-to-end project visibility and control.
+The Emergent Energy Dashboard is a full-stack web application designed for comprehensive management of renewable energy projects. It offers end-to-end visibility and control by tracking project lifecycles, providing robust financial oversight (Cost of Sales, cashflow, revenue, expenditure), and streamlining engineering operations through a 5-stage checklist and task management system. The platform integrates quality management, communication features, and Microsoft 365 services via Azure AD SSO. Its core purpose is to enhance efficiency, reduce operational costs, and improve project delivery within the renewable energy sector.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -11,34 +11,37 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 
 ### Frontend
 -   **Frameworks & Libraries**: React 18 with TypeScript, TanStack React Query, React Context.
--   **UI/UX**: `shadcn/ui` and Tailwind CSS v4 for mobile-first responsive design; Recharts for data visualization.
+-   **UI/UX**: `shadcn/ui` and Tailwind CSS v4 for mobile-first responsive design; Recharts for data visualization. All dropdowns are searchable using Popover + Command combobox.
 -   **Forms**: React Hook Form with Zod validation.
 -   **Key Features**: Financial tracking, project and quality management, Smart Excel Import, Subcontractor Dashboard, UX Guidance System, Project Awareness Bar, Weekly Review Wizard, Execution Dashboard, Permission Gate System, PM Dashboard, Gamification System, and a Universal Search.
--   **Project Planning**: MS Project-style grid with WBS, duration/date editing, predecessors, resource assignment, inline % complete, RAG status, and baseline tracking. Shows all workstreams (PM, Engineering, Quality) with color-coded badges and workstream filter.
--   **Financial Tracking**: Dedicated tabs for Inflows (formerly Revenue), Revenue Tracker (COS-linked revenue: `revenue = (item_cost / total_COS) * total_milestone_revenue`), GP Tracker (Revenue - COS = GP), Expenditure Breakdown, and Cashflow (weekly cashflow with multi-select project filter).
--   **Project Management**: Card-based Execution Dashboard, Kanban-style Lifecycle Board, and a "Command Center" project detail page with financial KPIs, RAG status, and section-based navigation.
--   **Unified Work ("My Work")**: Consolidates tasks from all sources (personal, operational, plan, engineering, quality, approvals, deliverables, TR register, MS 365, notifications) into a unified board/list with filtering and task management. Shows tasks where user is assigned or a viewer (VIEWER role in work_item_assignments), with distinct "Viewing" badges.
--   **Approvals & Procurement**: Consolidated Approvals screen and a PO Generator creating PDFs with supplier auto-fill.
--   **Quality Management**: Quality Dashboard with KPIs and items view, and a Quality Tab with phase-tabbed navigation, progress indicators, evidence upload, and approval workflows.
--   **Collaboration**: Local Project Folder Tab using browser File System Access API, MS Teams-styled chat groups, and a Knowledge Base.
+-   **Project Planning**: MS Project-style grid with WBS, duration/date editing, predecessors, resource assignment, inline % complete, RAG status, and baseline tracking.
+-   **Financial Tracking**: Dedicated tabs for Inflows, Revenue Tracker (COS-linked), GP Tracker, Expenditure Breakdown, and Cashflow.
+-   **Project Management**: Card-based Execution Dashboard, Kanban-style Lifecycle Board, and a "Command Center" project detail page.
+-   **Unified Work ("My Work")**: Consolidates tasks from various sources into a unified board/list with filtering and task management, supporting canonical statuses (todo, in_progress, blocked, review, complete, cancelled).
+-   **Approvals & Procurement**: Consolidated Approvals screen and a PO Generator.
+-   **Quality Management**: Quality Dashboard with KPIs and a Quality Tab with phase-tabbed navigation and approval workflows.
+-   **Collaboration**: Local Project Folder Tab, MS Teams-styled chat groups, and a Knowledge Base.
 -   **Portfolio Management**: Enhanced Gantt Chart and aggregated Cashflow view across projects.
--   **Company Lifecycle Map**: Interactive lifecycle management with Story Mode and Explore Mode for onboarding and process understanding.
+-   **Company Lifecycle Map**: Interactive lifecycle management with Story Mode and Explore Mode.
 -   **Mobile Experience**: PM On-The-Go Mode for mobile-first site management.
 -   **Permission Gating**: Both sidebar items and routes are permission-gated based on entity-level view permissions.
+-   **Admin Tools**: Recovery Center, KPI Traceability Panel, Smart Import Control Tower, Control Center for system health, and Operational Exceptions.
+-   **Workflow Management**: 4-gate handover system with checklists and progress tracking.
 
 ### Backend
 -   **Frameworks & Libraries**: Express.js with TypeScript.
--   **Authentication & Authorization**: Passport.js with local strategy and Microsoft 365 SSO via `@azure/msal-node`. PostgreSQL for sessions, RBAC, and granular entity-level permissions. Password login restricted to admin roles via an access code. Only users with a linked Microsoft ID (`microsoft_id` on `users` table) are returned by assignable-user endpoints; startup backfill clears assignments for non-MS-linked users once MS accounts start getting linked.
+-   **Authentication & Authorization**: Passport.js with local strategy and Microsoft 365 SSO via `@azure/msal-node`. PostgreSQL for sessions, RBAC, and granular entity-level permissions.
 -   **Data Handling**: Multer for uploads, `exceljs` for parsing, `pdfkit` for PDF generation.
 -   **Data Storage**: PostgreSQL with Drizzle ORM.
--   **Canonical Data Model**: All data reads/writes exclusively use `work_items` for tasks, `normalized_cost_lines` for costs, and `normalized_revenue_lines` for revenue, serving as the single source of truth. `work_items` includes `actual_start`, `actual_end`, `actual_duration` columns for actual dates from Smart Import.
--   **Core Logic**: Pure-function modules, automated backfill for computed columns, and audit trails.
--   **Task Management**: Dual-write operations for engineering tasks to `operational_tasks` and `work_items`; direct sync for plan task edits to `work_items`. Supports bulk operations and summary rollups.
--   **Engineering & Quality**: 5-stage checklist system with templating and SharePoint integration for engineering; API for all QC item instances.
--   **Financial Logic**: Consistent rules for "in bank" revenue, "Paid" expenses, "COS Realised," and GP% calculations, aligned with the September to August financial year. Revenue is calculated from COS realisation.
+-   **Canonical Data Model**: All data reads/writes exclusively use `work_items` for tasks, `normalized_cost_lines` for costs, and `normalized_revenue_lines` for revenue as the single source of truth.
+-   **Core Logic**: Pure-function modules, automated backfill for computed columns, audit trails, and transactional logging.
+-   **Task Management**: Dual-write operations for engineering tasks to `operational_tasks` and `work_items`; direct sync for plan task edits to `work_items`. Supports bulk operations and summary rollups, with a unified status model.
+-   **Engineering & Quality**: 5-stage checklist system with templating and SharePoint integration; API for all QC item instances.
+-   **Financial Logic**: Consistent rules for revenue, expenses, COS Realised, and GP% calculations, aligned with the September to August financial year.
 -   **Integrations**: MS Object Sync periodically syncs user-scoped calendar, email, and Teams data from Microsoft Graph API. Email/Message to Task functionality.
--   **Security**: Parameterized SQL queries, generic error messages, permission checks, and NaN guards.
+-   **Security**: Parameterized SQL queries, generic error messages, permission checks, NaN guards, and soft-delete implementation for various entities.
 -   **Error Handling**: Centralized `ApiError` class with typed error codes.
+-   **Admin Functionality**: Server-side support for admin recovery, KPI traceability, import control, and detailed audit logging.
 
 ### Database Architecture
 -   **Central Entities**: `project_info` and `clients`.
@@ -54,6 +57,7 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 ### Authentication & Security
 -   **Passport.js**
 -   **bcryptjs**
+-   **@azure/msal-node**
 
 ### File Processing
 -   **exceljs**
@@ -71,42 +75,3 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 ### Third-Party Integrations
 -   **Microsoft Graph API**: For Outlook calendar, SharePoint, and Teams integration.
 -   **Read.ai**: For meeting data ingestion via webhooks.
-
-## Platform Upgrades (2026-03-06)
--   **Canonical Task Engine**: Shared `server/lib/canonical-task-engine.ts` with unified status model (todo, in_progress, blocked, review, complete, cancelled). All task APIs normalize statuses. Frontend My Work page uses canonical statuses with review column and 5-column board.
--   **Admin Recovery Center**: `/admin/recovery` — admin-only page with Task Recovery (search/edit all task types), Import Recovery (view import runs/errors), Project Recovery (edit project fields), Deleted Items (restore soft-deleted items). Server: `server/admin-recovery-routes.ts`.
--   **KPI Traceability Panel**: `/admin/kpi-traceability` — admin-only page showing all KPIs with source tables, fields, formulas, API endpoints, and consuming components. Server: `server/kpi-traceability-routes.ts`.
--   **Smart Import Control Tower**: `/admin/import-control-tower` — admin-only page showing import history, record counts, row-level errors, retry capability. Enhanced `server/smart-import-routes.ts` with record tracking columns and admin-only endpoints.
--   **Role-Based Command Centers**: `/command-center` — role-aware landing page with attention items, task breakdown, project RAG status, and role-specific KPIs. 8 role categories with tailored views.
--   **Workflow Gates & Handover Control**: 4-gate handover system (PD→Eng, Eng→PM, PM→QM, Execution→Closeout) with checklists, progress tracking, gate history. Server: `server/handover-routes.ts`. DB tables: `project_handover_gates`, `project_handover_history`.
--   **Audit & Data Governance**: Enhanced `server/audit-logger.ts` with typed helpers (logStatusChange, logReassignment, logTypeChange, logImportAction, logAdminRecovery). Task validation module `server/lib/task-validation.ts`. Admin-only enforcement on all control tower and recovery endpoints.
--   **Navigation**: All new pages registered in `App.tsx` and sidebar (`AppLayout.tsx`) with proper permission gating.
-
-## Platform Stabilization (2026-03-06)
--   **Admin Control Center**: `/admin/control-center` — unified admin dashboard with system health, import stats, integration status, feature flags, system enums, quick links, and dangerous actions with AlertDialog confirmations. Server: `server/admin-control-routes.ts`.
--   **Transactional Logging Hardening**: 292 audit logging calls across all route files. Role management (8 calls), smart-import (12 calls), sync-routes (11 calls), routes.ts (145 calls). All admin recovery edits and dangerous actions audit-logged. Only 5 pre-auth/read-only endpoints intentionally excluded.
--   **Canonical Task Normalization**: All task write paths now normalize status via `normalizeStatus()` — operational tasks, mytool tasks, planning tasks, baseline promotion, admin recovery PATCH. Recurring task creation uses canonical "todo". Fixed legacy "done"/"planned"/"Not Started" values on write paths.
--   **Admin Recovery Hardening**: AlertDialog confirmation dialogs on task edits and deleted item restores. Status normalization on recovery PATCH handler. 11 correction scenarios covered.
--   **Shared Platform Cleanup**: ApiError class standardized across routes. Task validation on creation endpoints. EnergyLoader on 6+ pages. SearchableSelect on revenue-tracker dropdown. Global error handler middleware.
--   **Stabilization Defects**: 15 total (STAB-001 through STAB-015). 14 fixed, 1 closed as invalid (STAB-013: departments directory doesn't exist), 0 open. See `FINAL_DEFECT_REGISTER.md`.
--   **Total (All Sessions)**: 171 test cases. 28 total defects — 27 fixed, 1 invalid, 0 open.
--   **Deliverables**: `PLATFORM_STABILIZATION_PLAN.md`, `ROLE_PERMISSION_MATRIX.md`, `ADMIN_CONTROL_CENTRE.md`, `TRANSACTION_LOGGING_SPEC.md`, `FINAL_QA_MATRIX.md`, `FINAL_DEFECT_REGISTER.md`, `FINAL_RELEASE_READINESS.md`, `FUTURE_PM_FOUNDATION_MAP.md`.
-
-## System Audit (2026-03-06)
--   **Pass 1**: Full system audit. 73 tests, 5 defects found and fixed (DEF-001–DEF-005). See `SYSTEM_AUDIT.md`.
--   **Pass 2**: Trust-hardening gap closure. 30 additional tests, 8 new defects identified and fixed (DEF-006–DEF-013, all MEDIUM/LOW). See `GAP_CLOSE_REPORT.md`.
--   **Total**: 103 test cases across 13 categories. 13 total defects — all 13 fixed, 0 open.
--   **Assessment**: READY — all identified defects resolved. Viewer management UI added, soft-delete with restore, Smart Import error handling hardened, status normalization at API level, admin My Work visibility, contract values in projects-summary.
--   **Deliverables**: `SYSTEM_AUDIT.md`, `QA_TEST_MATRIX.md`, `DEFECT_REGISTER.md`, `RELEASE_READINESS.md`, `GAP_CLOSE_REPORT.md`, `ROLE_WORKFLOW_UAT.md`, `KPI_TRACEABILITY_MATRIX.md`, `ADMIN_RECOVERY_MATRIX.md`, `FRONTEND_CONSISTENCY_AUDIT.md`, `SMART_IMPORT_SCENARIO_TESTS.md`.
-
-## Close-Out Session (2026-03-06)
--   **Viewer Management**: Hardened viewer API endpoints (GET/POST/DELETE), added audit logging for add/remove, enforced read-only access via `isViewerOnly()` guard, included viewer tasks in Tracking filter. Fixed `assigned_at` → `created_at` column bug.
--   **Soft Delete Expansion**: Added `deleted_at` columns to `operational_tasks` and `mytool_tasks`. Converted all delete operations to soft delete. Updated admin Deleted Items tab with type filter, search, and age column. Expanded restore handler for all 4 entity types.
--   **Activity Log Upgrade**: Added user, action, and date range filters. Added CSV export endpoint. Expanded search across user_name and project_name. Added clear filters button with count.
--   **Admin Control Centre Expansion**: Added active sessions listing, force logout by user, integration health detail, recent import failures, and recent system events sections.
--   **Task Consistency**: Verified viewer logic, badges, filters, and status normalization across all task types and views. Fixed tracking filter to include viewer tasks.
--   **Role-Based UAT**: Tested 6 roles across 32 test cases. All permission boundaries correctly enforced. 2 defects found and fixed (CO-001, CO-002).
--   **Close-Out Defects**: 2 total (CO-001, CO-002). Both fixed, 0 open.
--   **All-Time Totals**: 272 test cases across all sessions. 30 total defects — 29 fixed, 1 invalid, 0 open.
--   **Assessment**: READY FOR CONTROLLED INTERNAL USE.
--   **Deliverables**: `CLOSE_OUT_ACTIONS.md`, `VIEWER_MANAGEMENT_SPEC.md`, `SOFT_DELETE_AND_RESTORE_SPEC.md`, `ACTIVITY_LOG_UPGRADE.md`, `FINAL_ROLE_JOURNEY_UAT.md`, `FINAL_CLOSE_OUT_QA.md`, `FINAL_GO_LIVE_RECOMMENDATION.md`.

@@ -1304,10 +1304,16 @@ export default function ProjectsSummary() {
     return result;
   }, [currentProjects, searchTerm, pmFilter, phaseFilter]);
 
+  const currentUserName = (() => { try { const u = localStorage.getItem("user"); if (u) { const p = JSON.parse(u); return p.name || ""; } } catch {} return ""; })();
+
   const sorted = useMemo(() => {
     const arr = [...filtered];
     const phaseNorm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
     arr.sort((a, b) => {
+      const aOwned = a.pm === currentUserName ? 1 : 0;
+      const bOwned = b.pm === currentUserName ? 1 : 0;
+      if (aOwned !== bOwned) return bOwned - aOwned;
+
       const aVal = (a as any)[sortKey];
       const bVal = (b as any)[sortKey];
       if (aVal == null && bVal == null) return 0;
@@ -1553,6 +1559,7 @@ export default function ProjectsSummary() {
       render: (p) => p.project_info_id ? (
         <SearchableSelect
           value={p.pm || "__unassigned"}
+          placeholder={!p.pm ? "No PM" : undefined}
           onValueChange={(val) => {
             if (val === "__unassigned" || !p.project_info_id) return;
             const matchedUser = pmUsers.find(u => u.name === val);
@@ -1562,7 +1569,7 @@ export default function ProjectsSummary() {
               pmUserId: matchedUser?.id ?? null,
             });
           }}
-          triggerClassName="h-7 w-[120px] text-xs border-0 bg-transparent hover:bg-muted px-1 shadow-none focus:ring-0"
+          triggerClassName={`h-7 w-[120px] text-xs border-0 bg-transparent hover:bg-muted px-1 shadow-none focus:ring-0 ${!p.pm ? "text-red-500 font-medium" : ""}`}
           data-testid={`select-pm-${p.project_name}`}
           options={[
             { value: "__unassigned", label: "Unassigned", disabled: true },

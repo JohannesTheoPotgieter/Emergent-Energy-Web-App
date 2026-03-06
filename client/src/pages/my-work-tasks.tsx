@@ -206,12 +206,15 @@ export default function MyWorkTasksPage() {
   const [statusFilter, setStatusFilter] = useState<TaskStatus[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority[]>([]);
   const [projectFilter, setProjectFilter] = useState("");
-  const [sortField, setSortField] = useState<SortField>(mwDefaults?.sortField || "priority");
+  const [sortField, setSortField] = useState<SortField>(mwDefaults?.sortField || "dueDate");
   const [sortDirection, setSortDirection] = useState<SortDirection>(mwDefaults?.sortDirection || "asc");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>(mwDefaults?.sourceFilter || "all");
   const [showFilters, setShowFilters] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
+  const [dueThisWeekOnly, setDueThisWeekOnly] = useState(false);
+  const [blockedOnly, setBlockedOnly] = useState(false);
   const [groomMode, setGroomMode] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(false);
   const [drawerTask, setDrawerTask] = useState<TaskItem | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [unifiedDetailTask, setUnifiedDetailTask] = useState<UnifiedTask | null>(null);
@@ -586,10 +589,23 @@ export default function MyWorkTasksPage() {
     if (priorityFilter.length > 0) result = result.filter(t => priorityFilter.includes(t.priority));
     if (projectFilter) result = result.filter(t => t.projectName === projectFilter);
     if (overdueOnly) result = result.filter(t => isTaskOverdue(t));
+    if (dueThisWeekOnly) result = result.filter(t => { try { if (!t.dueAt) return false; const diff = differenceInCalendarDays(parseISO(t.dueAt), startOfDay(new Date())); return diff >= 0 && diff <= 7; } catch { return false; } });
+    if (blockedOnly) result = result.filter(t => t.status === "blocked");
     if (groomMode) result = result.filter(t => t.status !== "complete" && t.status !== "done" && t.status !== "cancelled" && (!t.nextStep || !t.nextStep.trim() || !t.definitionOfDone || !t.definitionOfDone.trim()));
+    if (!showCompleted && statusFilter.length === 0) {
+      result = result.filter(t => t.status !== "complete" && t.status !== "done" && t.status !== "cancelled");
+    }
 
     result.sort((a, b) => {
       let cmp = 0;
+      const aOverdue = isTaskOverdue(a) ? 1 : 0;
+      const bOverdue = isTaskOverdue(b) ? 1 : 0;
+      if (aOverdue !== bOverdue) return bOverdue - aOverdue;
+
+      const aBlocked = a.status === "blocked" ? 1 : 0;
+      const bBlocked = b.status === "blocked" ? 1 : 0;
+      if (aBlocked !== bBlocked) return bBlocked - aBlocked;
+
       switch (sortField) {
         case "priority": cmp = (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2); if (cmp === 0) cmp = (a.dueAt || "9999").localeCompare(b.dueAt || "9999"); break;
         case "status": cmp = (statusOrder[a.status] ?? 2) - (statusOrder[b.status] ?? 2); break;
@@ -599,7 +615,7 @@ export default function MyWorkTasksPage() {
       return sortDirection === "desc" ? -cmp : cmp;
     });
     return result;
-  }, [unifiedTasks, sourceFilter, debouncedSearch, statusFilter, priorityFilter, projectFilter, overdueOnly, groomMode, sortField, sortDirection, isTaskOverdue]);
+  }, [unifiedTasks, sourceFilter, debouncedSearch, statusFilter, priorityFilter, projectFilter, overdueOnly, dueThisWeekOnly, blockedOnly, groomMode, showCompleted, sortField, sortDirection, isTaskOverdue]);
 
   const toggleStatus = (s: TaskStatus) => setStatusFilter(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
   const togglePriority = (p: TaskPriority) => setPriorityFilter(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
@@ -641,11 +657,13 @@ export default function MyWorkTasksPage() {
     const inProgress = active.filter(t => t.status === "in_progress");
     const dueToday = active.filter(t => { try { return t.dueAt && differenceInCalendarDays(parseISO(t.dueAt), startOfDay(new Date())) === 0; } catch { return false; } });
     const dueSoon = active.filter(t => { try { if (!t.dueAt) return false; const diff = differenceInCalendarDays(parseISO(t.dueAt), startOfDay(new Date())); return diff >= 0 && diff <= 3; } catch { return false; } });
+    const dueThisWeek = active.filter(t => { try { if (!t.dueAt) return false; const diff = differenceInCalendarDays(parseISO(t.dueAt), startOfDay(new Date())); return diff >= 0 && diff <= 7; } catch { return false; } });
+    const approvalsPending = active.filter(t => t._source === "approvals" || t.status === "review");
     const completionRate = unifiedTasks.length > 0 ? Math.round((done.length / unifiedTasks.length) * 100) : 0;
-    return { total: unifiedTasks.length, active: active.length, overdue: overdue.length, critical: critical.length, done: done.length, blocked: blocked.length, inProgress: inProgress.length, dueToday: dueToday.length, dueSoon: dueSoon.length, completionRate };
+    return { total: unifiedTasks.length, active: active.length, overdue: overdue.length, critical: critical.length, done: done.length, blocked: blocked.length, inProgress: inProgress.length, dueToday: dueToday.length, dueSoon: dueSoon.length, dueThisWeek: dueThisWeek.length, approvalsPending: approvalsPending.length, completionRate };
   }, [unifiedTasks, isTaskOverdue]);
 
-  const activeFilters = statusFilter.length + priorityFilter.length + (projectFilter ? 1 : 0) + (overdueOnly ? 1 : 0);
+  const activeFilters = statusFilter.length + priorityFilter.length + (projectFilter ? 1 : 0) + (overdueOnly ? 1 : 0) + (dueThisWeekOnly ? 1 : 0) + (blockedOnly ? 1 : 0);
 
   const handleBoardDragStart = useCallback((e: React.DragEvent, task: UnifiedTask) => {
     const canDrag = ["personal", "operational", "engineering_task", "tr_register"].includes(task._source);
@@ -694,6 +712,7 @@ export default function MyWorkTasksPage() {
             </div>
             <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 hidden sm:inline-flex" onClick={handleSaveDefaultView} data-testid="btn-save-default-view" title="Save default"><Save className="h-3 w-3" /></Button>
             {hasCustomDefault && <Button variant="ghost" size="sm" className="h-7 px-1.5 text-xs text-muted-foreground hidden sm:inline-flex" onClick={handleResetDefaultView} data-testid="btn-reset-default-view" title="Reset default"><RotateCw className="h-3 w-3" /></Button>}
+            <Button variant={showCompleted ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 gap-1 hidden sm:inline-flex ${showCompleted ? "bg-emerald-500 hover:bg-emerald-600 text-white" : ""}`} onClick={() => setShowCompleted(!showCompleted)} data-testid="button-show-completed"><CheckCircle2 className="h-3 w-3" /><span>{showCompleted ? `Done (${kpiStats.done})` : "Show Done"}</span></Button>
             <Button variant={groomMode ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 gap-1 hidden sm:inline-flex ${groomMode ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}`} onClick={() => setGroomMode(!groomMode)} data-testid="button-groom-mode"><Eye className="h-3 w-3" /><span>{groomMode ? "Grooming" : "Groom"}</span></Button>
             <Button size="sm" className="h-7 gap-1 text-xs shadow-sm" onClick={() => setCreateDialogOpen(true)} data-testid="button-new-task"><Plus className="h-3.5 w-3.5" /> <span className="hidden xs:inline">New</span></Button>
           </div>
@@ -735,21 +754,21 @@ export default function MyWorkTasksPage() {
             </div>
           </div>
 
-          <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-emerald-500 to-emerald-600 p-3 text-white shadow-sm" data-testid="kpi-done">
+          <div className={`relative overflow-hidden rounded-xl border p-3 shadow-sm ${kpiStats.dueThisWeek > 0 ? "bg-gradient-to-br from-violet-500 to-purple-600 text-white" : "bg-gradient-to-br from-slate-100 to-slate-50 text-muted-foreground border-border"}`} data-testid="kpi-due-this-week">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-medium text-emerald-100 uppercase tracking-wider">Completed</p>
-                <p className="text-2xl font-bold mt-0.5">{kpiStats.done}</p>
-                <p className="text-[10px] text-emerald-200 mt-0.5">{kpiStats.completionRate}% rate</p>
+                <p className={`text-[10px] font-medium uppercase tracking-wider ${kpiStats.dueThisWeek > 0 ? "text-violet-100" : "text-slate-500"}`}>Due This Week</p>
+                <p className="text-2xl font-bold mt-0.5">{kpiStats.dueThisWeek}</p>
+                <p className={`text-[10px] mt-0.5 ${kpiStats.dueThisWeek > 0 ? "text-violet-200" : "text-slate-500"}`}>{kpiStats.approvalsPending} awaiting review</p>
               </div>
-              <div className="rounded-full bg-card/20 p-2"><CheckCircle2 className="h-5 w-5" /></div>
+              <div className={`rounded-full p-2 ${kpiStats.dueThisWeek > 0 ? "bg-card/20" : "bg-slate-200"}`}><Target className="h-5 w-5" /></div>
             </div>
-            <div className="mt-1.5 h-1.5 bg-card/20 rounded-full overflow-hidden"><div className="h-full bg-card/60 rounded-full transition-all" style={{ width: `${kpiStats.completionRate}%` }} /></div>
+            {kpiStats.dueToday > 0 && <div className="mt-1.5 text-[10px] font-semibold bg-card/20 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Zap className="h-2.5 w-2.5" /> {kpiStats.dueToday} due today</div>}
           </div>
         </div>
       </div>
 
-      {(activeFilters > 0 || sourceFilter !== "all" || overdueOnly || groomMode) && (
+      {(activeFilters > 0 || sourceFilter !== "all" || overdueOnly || dueThisWeekOnly || blockedOnly || groomMode || showCompleted) && (
         <div className="shrink-0 flex items-center gap-1.5 mb-1.5 px-2 py-1 rounded-md bg-emerald-50/60 border border-emerald-200/50 text-[10px] text-emerald-800" data-testid="active-filter-summary">
           <Filter className="h-3 w-3 shrink-0" />
           <span className="font-medium">Showing:</span>
@@ -758,6 +777,9 @@ export default function MyWorkTasksPage() {
           {priorityFilter.length > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-white/70">{priorityFilter.length} priority</Badge>}
           {projectFilter && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-white/70 truncate max-w-[100px]">{projectFilter.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</Badge>}
           {overdueOnly && <Badge variant="destructive" className="text-[9px] px-1 py-0 h-4">Overdue</Badge>}
+          {dueThisWeekOnly && <Badge className="text-[9px] px-1 py-0 h-4 bg-violet-500 text-white">Due 7d</Badge>}
+          {blockedOnly && <Badge className="text-[9px] px-1 py-0 h-4 bg-orange-500 text-white">Blocked</Badge>}
+          {showCompleted && <Badge className="text-[9px] px-1 py-0 h-4 bg-emerald-500 text-white">+Done</Badge>}
           {groomMode && <Badge className="text-[9px] px-1 py-0 h-4 bg-amber-500">Groom</Badge>}
           <span className="text-muted-foreground ml-auto">{filteredTasks.length} task{filteredTasks.length !== 1 ? "s" : ""}</span>
         </div>
@@ -783,25 +805,41 @@ export default function MyWorkTasksPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-0.5 overflow-x-auto pb-1 -mb-1 scrollbar-thin" data-testid="source-filter-tabs">
+        <div className="flex items-center gap-1 overflow-x-auto pb-1 -mb-1 scrollbar-thin" data-testid="source-filter-tabs">
           {(Object.keys(SOURCE_CONFIG) as SourceFilter[]).map(src => {
             const config = SOURCE_CONFIG[src]; const count = sourceCounts[src]; const active = sourceFilter === src;
             if (count === 0 && src !== "all") return null;
             return (
-              <button key={src} onClick={() => setSourceFilter(src)} className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-all whitespace-nowrap border ${active ? "bg-emerald-600 text-white border-emerald-600 shadow-sm" : "text-muted-foreground hover:bg-muted border-transparent"}`} data-testid={`tab-source-${src}`}>
+              <button key={src} onClick={() => setSourceFilter(src)} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium transition-all whitespace-nowrap border ${active ? "bg-emerald-600 text-white border-emerald-600 shadow-sm" : "text-muted-foreground hover:bg-muted border-transparent"}`} data-testid={`tab-source-${src}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-white/70" : config.dot}`} />
                 {config.shortLabel} {count > 0 && <span className={`text-[10px] ${active ? "opacity-80" : "opacity-50"}`}>{count}</span>}
               </button>
             );
           })}
+          <div className="w-px h-4 bg-border mx-1 shrink-0" />
+          <button onClick={() => { setOverdueOnly(!overdueOnly); if (!overdueOnly) { setDueThisWeekOnly(false); setBlockedOnly(false); } }} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap border transition-all ${overdueOnly ? "bg-red-500 text-white border-red-500" : kpiStats.overdue > 0 ? "text-red-600 border-red-200 hover:bg-red-50" : "text-muted-foreground border-transparent hover:bg-muted"}`} data-testid="quick-filter-overdue">
+            <AlertCircle className="h-3 w-3" /> Overdue {kpiStats.overdue > 0 && <span className="opacity-80">{kpiStats.overdue}</span>}
+          </button>
+          <button onClick={() => { setDueThisWeekOnly(!dueThisWeekOnly); if (!dueThisWeekOnly) { setOverdueOnly(false); setBlockedOnly(false); } }} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap border transition-all ${dueThisWeekOnly ? "bg-violet-500 text-white border-violet-500" : kpiStats.dueThisWeek > 0 ? "text-violet-600 border-violet-200 hover:bg-violet-50" : "text-muted-foreground border-transparent hover:bg-muted"}`} data-testid="quick-filter-due-week">
+            <Target className="h-3 w-3" /> Due 7d {kpiStats.dueThisWeek > 0 && <span className="opacity-80">{kpiStats.dueThisWeek}</span>}
+          </button>
+          <button onClick={() => { setBlockedOnly(!blockedOnly); if (!blockedOnly) { setOverdueOnly(false); setDueThisWeekOnly(false); } }} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap border transition-all ${blockedOnly ? "bg-orange-500 text-white border-orange-500" : kpiStats.blocked > 0 ? "text-orange-600 border-orange-200 hover:bg-orange-50" : "text-muted-foreground border-transparent hover:bg-muted"}`} data-testid="quick-filter-blocked">
+            <AlertTriangle className="h-3 w-3" /> Blocked {kpiStats.blocked > 0 && <span className="opacity-80">{kpiStats.blocked}</span>}
+          </button>
         </div>
       </div>
 
-      {overdueOnly && (
-        <div className="shrink-0 mb-1.5">
-          <Badge variant="destructive" className="cursor-pointer gap-1 text-[10px]" onClick={() => setOverdueOnly(false)} data-testid="badge-overdue-filter">
-            <AlertCircle className="h-3 w-3" /> Showing overdue only <X className="h-3 w-3 ml-1" />
-          </Badge>
+      {(overdueOnly || dueThisWeekOnly || blockedOnly) && (
+        <div className="shrink-0 mb-1.5 flex gap-1">
+          {overdueOnly && <Badge variant="destructive" className="cursor-pointer gap-1 text-[10px]" onClick={() => setOverdueOnly(false)} data-testid="badge-overdue-filter">
+            <AlertCircle className="h-3 w-3" /> Overdue only <X className="h-3 w-3 ml-1" />
+          </Badge>}
+          {dueThisWeekOnly && <Badge className="cursor-pointer gap-1 text-[10px] bg-violet-500 hover:bg-violet-600" onClick={() => setDueThisWeekOnly(false)} data-testid="badge-due-week-filter">
+            <Target className="h-3 w-3" /> Due this week <X className="h-3 w-3 ml-1" />
+          </Badge>}
+          {blockedOnly && <Badge className="cursor-pointer gap-1 text-[10px] bg-orange-500 hover:bg-orange-600" onClick={() => setBlockedOnly(false)} data-testid="badge-blocked-filter">
+            <AlertTriangle className="h-3 w-3" /> Blocked only <X className="h-3 w-3 ml-1" />
+          </Badge>}
         </div>
       )}
 
@@ -832,7 +870,7 @@ export default function MyWorkTasksPage() {
               />
             </>
           )}
-          {activeFilters > 0 && (<button onClick={() => { setStatusFilter([]); setPriorityFilter([]); setProjectFilter(""); setOverdueOnly(false); }} className="text-[10px] text-red-500 hover:underline ml-1" data-testid="button-clear-all-filters">Clear all</button>)}
+          {activeFilters > 0 && (<button onClick={() => { setStatusFilter([]); setPriorityFilter([]); setProjectFilter(""); setOverdueOnly(false); setDueThisWeekOnly(false); setBlockedOnly(false); }} className="text-[10px] text-red-500 hover:underline ml-1" data-testid="button-clear-all-filters">Clear all</button>)}
         </div>
       )}
 
