@@ -10458,6 +10458,9 @@ export async function registerRoutes(
 
   app.post("/api/operational-tasks", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
+      if (!req.body.title || typeof req.body.title !== "string" || !req.body.title.trim()) {
+        return res.status(400).json({ error: "validation_error", message: "Title is required" });
+      }
       const task = await storage.createOperationalTask(req.body);
       await storage.createTaskActivityLog({
         taskId: task.id,

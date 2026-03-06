@@ -3476,6 +3476,10 @@ export const smartImportRuns = pgTable("smart_import_runs", {
   summaryJson: jsonb("summary_json"),
   committedAt: timestamp("committed_at"),
   committedBy: integer("committed_by").references(() => users.id),
+  recordsAttempted: integer("records_attempted"),
+  recordsSucceeded: integer("records_succeeded"),
+  recordsFailed: integer("records_failed"),
+  importType: text("import_type"),
 });
 export const insertSmartImportRunSchema = createInsertSchema(smartImportRuns).omit({ id: true, uploadedAt: true });
 export type InsertSmartImportRun = z.infer<typeof insertSmartImportRunSchema>;

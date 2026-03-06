@@ -18,7 +18,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 
-export type TaskStatus = "inbox" | "planned" | "in_progress" | "blocked" | "waiting" | "done" | "cancelled";
+export type TaskStatus = "todo" | "in_progress" | "blocked" | "review" | "complete" | "cancelled" | "inbox" | "planned" | "waiting" | "done";
 export type TaskPriority = "critical" | "high" | "normal" | "low";
 
 export interface TaskItem {

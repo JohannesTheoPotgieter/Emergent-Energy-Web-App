@@ -47,6 +47,7 @@ import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
 import { ProjectNotificationsTab } from "@/components/tabs/ProjectNotificationsTab";
 import { POGenerator } from "@/components/POGenerator";
 import CaptureDeliverable from "@/components/CaptureDeliverable";
+import HandoverGatePanel from "@/components/HandoverGatePanel";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
@@ -1570,6 +1571,7 @@ export default function ProjectDetailPage() {
           </Card>
 
           {projectInfoId && <PhaseHistoryTimeline projectId={projectInfoId} />}
+          {projectInfoId && <HandoverGatePanel projectId={projectInfoId} />}
         </div>
       )}
 

@@ -35,27 +35,26 @@ type TrackingRole = "assignee" | "creator" | "both" | "viewer" | "admin_overview
 type ViewMode = "list" | "board";
 
 const priorityOrder: Record<string, number> = { critical: 0, high: 1, urgent: 0, High: 1, Med: 2, Low: 3, normal: 2, low: 3 };
-const statusOrder: Record<string, number> = { in_progress: 0, "IN PROGRESS": 0, planned: 1, inbox: 2, "TO DO": 2, blocked: 3, BLOCKED: 3, waiting: 4, "ON HOLD": 4, done: 5, DONE: 5, COMPLETE: 5, cancelled: 6 };
-const allStatuses: TaskStatus[] = ["inbox", "planned", "in_progress", "blocked", "waiting", "done", "cancelled"];
+const statusOrder: Record<string, number> = { in_progress: 0, review: 1, todo: 2, inbox: 2, blocked: 3, complete: 4, done: 4, cancelled: 5 };
+const allStatuses: TaskStatus[] = ["todo", "in_progress", "review", "blocked", "complete", "cancelled"];
 const allPriorities: TaskPriority[] = ["critical", "high", "normal", "low"];
 const BOARD_COLUMNS: { key: TaskStatus; label: string; color: string; dotColor: string; headerBg: string }[] = [
-  { key: "inbox", label: "To Do", color: "border-t-slate-400", dotColor: "bg-slate-400", headerBg: "bg-muted" },
+  { key: "todo", label: "To Do", color: "border-t-slate-400", dotColor: "bg-slate-400", headerBg: "bg-muted" },
   { key: "in_progress", label: "In Progress", color: "border-t-blue-500", dotColor: "bg-blue-500", headerBg: "bg-blue-50" },
+  { key: "review", label: "Review", color: "border-t-amber-500", dotColor: "bg-amber-500", headerBg: "bg-amber-50" },
   { key: "blocked", label: "Blocked", color: "border-t-red-500", dotColor: "bg-red-500", headerBg: "bg-red-50" },
-  { key: "done", label: "Done", color: "border-t-emerald-500", dotColor: "bg-emerald-500", headerBg: "bg-emerald-50" },
+  { key: "complete", label: "Complete", color: "border-t-emerald-500", dotColor: "bg-emerald-500", headerBg: "bg-emerald-50" },
 ];
 
 function normalizeStatus(status: string): TaskStatus {
-  const s = status?.toLowerCase().trim() || "inbox";
-  if (s === "done" || s === "complete" || s === "completed") return "done";
-  if (s === "in progress" || s === "in_progress") return "in_progress";
-  if (s === "to do" || s === "todo" || s === "not started") return "inbox";
-  if (s === "blocked") return "blocked";
-  if (s === "on hold" || s === "waiting") return "waiting";
-  if (s === "planned") return "planned";
-  if (s === "cancelled" || s === "canceled") return "cancelled";
-  if (s === "pending" || s === "review" || s === "active") return "in_progress";
-  return "inbox";
+  const s = status?.toLowerCase().trim() || "todo";
+  if (s === "todo" || s === "to do" || s === "to_do" || s === "not started" || s === "not_started" || s === "inbox" || s === "planned" || s === "new" || s === "open") return "todo";
+  if (s === "in progress" || s === "in_progress" || s === "active" || s === "pending" || s === "started" || s === "wip") return "in_progress";
+  if (s === "blocked" || s === "on hold" || s === "on_hold" || s === "waiting") return "blocked";
+  if (s === "review" || s === "in review" || s === "in_review" || s === "qa_review" || s === "needs review") return "review";
+  if (s === "done" || s === "complete" || s === "completed" || s === "closed" || s === "finished" || s === "resolved" || s === "pass") return "complete";
+  if (s === "cancelled" || s === "canceled" || s === "archived" || s === "removed") return "cancelled";
+  return "todo";
 }
 
 function normalizePriority(priority: string): TaskPriority {
@@ -228,7 +227,7 @@ export default function MyWorkTasksPage() {
   const [dropTargetCol, setDropTargetCol] = useState<TaskStatus | null>(null);
   const [newTask, setNewTask] = useState({
     title: "", description: "", priority: "normal" as TaskPriority,
-    status: "inbox" as TaskStatus, dueDate: "", projectName: "",
+    status: "todo" as TaskStatus, dueDate: "", projectName: "",
     department: "", ragStatus: "", type: "personal" as "personal" | "action",
     assignees: [] as string[],
   });
@@ -280,7 +279,7 @@ export default function MyWorkTasksPage() {
       result.push({
         _key: `personal-${t.id}`, _source: "personal", _sourceLabel: "Personal",
         _sourceColor: "bg-blue-50 border-blue-200 text-blue-700", _rawId: t.id, id: t.id,
-        title: t.title || "", status: t.status || "inbox", priority: t.priority || "normal",
+        title: t.title || "", status: t.status || "todo", priority: t.priority || "normal",
         projectName: t.projectName || t.project_name || null, dueAt: t.dueAt || t.due_at || null,
         createdAt: t.createdAt || t.created_at || null, notes: t.notes || null,
         nextStep: t.nextStep || t.next_step || null, definitionOfDone: t.definitionOfDone || t.definition_of_done || null,
@@ -391,7 +390,7 @@ export default function MyWorkTasksPage() {
       result.push({
         _key: `notif-${n.id}`, _source: "notifications", _sourceLabel: "Notification",
         _sourceColor: "bg-orange-50 border-orange-200 text-orange-700", _rawId: n.id, id: n.id,
-        title: n.title || "", status: "inbox" as TaskStatus,
+        title: n.title || "", status: "todo" as TaskStatus,
         priority: n.eventType === "excel_sync_confirmation" ? "normal" : "high",
         projectName: n.projectName || n.project_name || null, dueAt: null,
         createdAt: n.createdAt || n.created_at || null, notes: n.body || null,
@@ -402,7 +401,7 @@ export default function MyWorkTasksPage() {
       result.push({
         _key: `ms-${item.id}`, _source: "notifications", _sourceLabel: "MS 365",
         _sourceColor: "bg-indigo-50 border-indigo-200 text-indigo-700", _rawId: item.id, id: item.id,
-        title: item.subjectOrTitle || item.subject_or_title || "", status: "inbox" as TaskStatus, priority: "normal",
+        title: item.subjectOrTitle || item.subject_or_title || "", status: "todo" as TaskStatus, priority: "normal",
         projectName: null, dueAt: null,
         createdAt: item.receivedOrStartDatetime || item.received_or_start_datetime || null, notes: item.preview || null,
       });
@@ -473,15 +472,15 @@ export default function MyWorkTasksPage() {
       if (task._source === "personal") {
         await apiRequest("PATCH", `/api/mytool/tasks/${task._rawId}`, { status: newStatus });
       } else if (task._source === "tr_register") {
-        const trStatus = newStatus === "done" ? "Completed" : "Active";
-        const endpoint = newStatus === "done" ? `/api/tr-register/${task._rawId}/complete` : `/api/tr-register/${task._rawId}`;
-        const res = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify(newStatus === "done" ? {} : { status: trStatus }) });
+        const trStatus = newStatus === "complete" ? "Completed" : "Active";
+        const endpoint = newStatus === "complete" ? `/api/tr-register/${task._rawId}/complete` : `/api/tr-register/${task._rawId}`;
+        const res = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify(newStatus === "complete" ? {} : { status: trStatus }) });
         if (!res.ok) throw new Error("Failed to update");
       } else if (task._source === "operational") {
         const res = await fetch(`/api/operational-tasks/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ status: newStatus }) });
         if (!res.ok) throw new Error("Failed to update");
       } else if (task._source === "engineering_task") {
-        const engStatus = newStatus === "done" ? "DONE" : newStatus === "in_progress" ? "IN PROGRESS" : newStatus === "blocked" ? "BLOCKED" : "TO DO";
+        const engStatus = newStatus === "complete" ? "DONE" : newStatus === "in_progress" ? "IN PROGRESS" : newStatus === "blocked" ? "BLOCKED" : "TO DO";
         const res = await fetch(`/api/task-checklist-items/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ status: engStatus }) });
         if (!res.ok) throw new Error("Failed to update");
       }
@@ -527,7 +526,7 @@ export default function MyWorkTasksPage() {
         notes: newTask.description || null,
       });
     }
-    setNewTask({ title: "", description: "", priority: "normal", status: "inbox", dueDate: "", projectName: "", department: "", ragStatus: "", type: "personal", assignees: [] });
+    setNewTask({ title: "", description: "", priority: "normal", status: "todo", dueDate: "", projectName: "", department: "", ragStatus: "", type: "personal", assignees: [] });
     setCreateDialogOpen(false);
   }, [newTask, createTaskMutation, createTrItemMutation, user]);
 
@@ -565,7 +564,7 @@ export default function MyWorkTasksPage() {
   }, [unifiedTasks, projectNames]);
 
   const isTaskOverdue = useCallback((task: UnifiedTask) => {
-    if (!task.dueAt || task.status === "done" || task.status === "cancelled") return false;
+    if (!task.dueAt || task.status === "complete" || task.status === "done" || task.status === "cancelled") return false;
     try { return isPast(parseISO(task.dueAt)); } catch { return false; }
   }, []);
 
@@ -587,7 +586,7 @@ export default function MyWorkTasksPage() {
     if (priorityFilter.length > 0) result = result.filter(t => priorityFilter.includes(t.priority));
     if (projectFilter) result = result.filter(t => t.projectName === projectFilter);
     if (overdueOnly) result = result.filter(t => isTaskOverdue(t));
-    if (groomMode) result = result.filter(t => t.status !== "done" && t.status !== "cancelled" && (!t.nextStep || !t.nextStep.trim() || !t.definitionOfDone || !t.definitionOfDone.trim()));
+    if (groomMode) result = result.filter(t => t.status !== "complete" && t.status !== "done" && t.status !== "cancelled" && (!t.nextStep || !t.nextStep.trim() || !t.definitionOfDone || !t.definitionOfDone.trim()));
 
     result.sort((a, b) => {
       let cmp = 0;
@@ -634,10 +633,10 @@ export default function MyWorkTasksPage() {
   }, [toast, user?.id]);
 
   const kpiStats = useMemo(() => {
-    const active = unifiedTasks.filter(t => t.status !== "done" && t.status !== "cancelled");
+    const active = unifiedTasks.filter(t => t.status !== "complete" && t.status !== "done" && t.status !== "cancelled");
     const overdue = active.filter(t => isTaskOverdue(t));
     const critical = active.filter(t => t.priority === "critical" || t.priority === "high");
-    const done = unifiedTasks.filter(t => t.status === "done");
+    const done = unifiedTasks.filter(t => t.status === "complete" || t.status === "done");
     const blocked = active.filter(t => t.status === "blocked");
     const inProgress = active.filter(t => t.status === "in_progress");
     const dueToday = active.filter(t => { try { return t.dueAt && differenceInCalendarDays(parseISO(t.dueAt), startOfDay(new Date())) === 0; } catch { return false; } });
@@ -667,7 +666,7 @@ export default function MyWorkTasksPage() {
     setDropTargetCol(null);
     if (!draggedTask) return;
     if (normalizeStatus(draggedTask.status) === colKey) { setDraggedTask(null); return; }
-    const newStatus = colKey === "inbox" ? "inbox" : colKey;
+    const newStatus = colKey;
     boardStatusMutation.mutate({ task: draggedTask, newStatus });
     setDraggedTask(null);
   }, [draggedTask, boardStatusMutation]);
@@ -855,11 +854,11 @@ export default function MyWorkTasksPage() {
         </div>
       ) : (
         <div className="flex-1 min-h-0 overflow-x-auto -mx-2 px-2">
-          <div className="grid grid-cols-4 gap-2 h-full min-w-[700px] sm:min-w-[800px]">
+          <div className="grid grid-cols-5 gap-2 h-full min-w-[900px] sm:min-w-[1000px]">
             {BOARD_COLUMNS.map(col => {
               const colTasks = filteredTasks.filter(t => {
-                if (col.key === "inbox") return t.status === "inbox" || t.status === "planned";
-                if (col.key === "done") return t.status === "done" || t.status === "cancelled";
+                if (col.key === "todo") return t.status === "todo" || t.status === "inbox" || t.status === "planned";
+                if (col.key === "complete") return t.status === "complete" || t.status === "done" || t.status === "cancelled";
                 return t.status === col.key;
               });
               const isDropTarget = dropTargetCol === col.key;
@@ -979,10 +978,11 @@ export default function MyWorkTasksPage() {
                     triggerClassName="mt-1 h-7 text-xs"
                     data-testid="select-new-status"
                     options={[
-                      { value: "inbox", label: "Not Started" },
+                      { value: "todo", label: "To Do" },
                       { value: "in_progress", label: "In Progress" },
+                      { value: "review", label: "Review" },
                       { value: "blocked", label: "Blocked" },
-                      { value: "done", label: "Done" },
+                      { value: "complete", label: "Complete" },
                     ]}
                   />
                 </div>
@@ -1084,9 +1084,9 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
 
   const displaySubtasks = fetchedSubtasks || subtasks;
   const pb = PRIORITY_BADGE[task.priority] || PRIORITY_BADGE.normal;
-  const isDone = task.status === "done" || task.status === "cancelled";
+  const isDone = task.status === "complete" || task.status === "done" || task.status === "cancelled";
 
-  const statusDot = task.status === "done" ? "bg-emerald-500" : task.status === "in_progress" ? "bg-blue-500" : task.status === "blocked" ? "bg-red-500" : task.status === "waiting" ? "bg-amber-500" : task.status === "cancelled" ? "bg-slate-300" : "bg-slate-300";
+  const statusDot = task.status === "complete" || task.status === "done" ? "bg-emerald-500" : task.status === "in_progress" ? "bg-blue-500" : task.status === "blocked" ? "bg-red-500" : task.status === "review" ? "bg-amber-500" : task.status === "cancelled" ? "bg-slate-300" : "bg-slate-300";
 
   const canQuickStatus = ["personal", "operational", "engineering_task", "tr_register"].includes(task._source);
 
@@ -1106,7 +1106,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
         )}
 
         <button
-          onClick={e => { e.stopPropagation(); if (canQuickStatus) onQuickStatus(isDone ? "inbox" : "done"); }}
+          onClick={e => { e.stopPropagation(); if (canQuickStatus) onQuickStatus(isDone ? "todo" : "complete"); }}
           className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
             isDone ? "border-emerald-500 bg-emerald-500" : task.status === "in_progress" ? "border-blue-400 bg-blue-50" : task.status === "blocked" ? "border-red-400 bg-red-50" : "border-border hover:border-emerald-400 hover:bg-emerald-50"
           }`}
@@ -1168,7 +1168,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
         <div className="ml-8 border-l-2 border-emerald-200 pl-2" data-testid={`subtasks-${task._key}`}>
           {displaySubtasks.map((st: any) => {
             const stStatus = normalizeStatus(st.status);
-            const stDone = stStatus === "done";
+            const stDone = stStatus === "complete" || stStatus === "done";
             return (
               <div key={st.id} className="flex items-center gap-1.5 px-1.5 py-1 hover:bg-muted/30 text-[12px]" data-testid={`subtask-${st.id}`}>
                 <span className={`w-3 h-3 rounded-full border-2 flex items-center justify-center ${stDone ? "border-emerald-500 bg-emerald-500" : "border-border"}`}>
@@ -1307,28 +1307,30 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
   const [editNotes, setEditNotes] = useState(task.notes || "");
   const [detailTab, setDetailTab] = useState("details");
 
-  const statusLabel = task.status === "done" ? "Done" : task.status === "in_progress" ? "In Progress" : task.status === "blocked" ? "Blocked" : task.status === "waiting" ? "Waiting" : task.status === "cancelled" ? "Cancelled" : task.status === "inbox" ? "To Do" : task.status === "planned" ? "Planned" : task.status;
+  const STATUS_LABEL_MAP: Record<string, string> = { todo: "To Do", in_progress: "In Progress", blocked: "Blocked", review: "Review", complete: "Complete", cancelled: "Cancelled", inbox: "To Do", done: "Complete", planned: "To Do", waiting: "Blocked" };
+  const STATUS_COLOR_MAP: Record<string, string> = { todo: "bg-muted text-muted-foreground border-border", in_progress: "bg-blue-100 text-blue-700 border-blue-200", blocked: "bg-red-100 text-red-700 border-red-200", review: "bg-amber-100 text-amber-700 border-amber-200", complete: "bg-emerald-100 text-emerald-700 border-emerald-200", cancelled: "bg-muted text-muted-foreground border-border", inbox: "bg-muted text-muted-foreground border-border", done: "bg-emerald-100 text-emerald-700 border-emerald-200", waiting: "bg-amber-100 text-amber-700 border-amber-200" };
+  const statusLabel = STATUS_LABEL_MAP[task.status] || task.status;
   const priorityLabel = task.priority === "critical" ? "P1 — Critical" : task.priority === "high" ? "P2 — High" : task.priority === "low" ? "P4 — Low" : "P3 — Normal";
   const priorityColor = task.priority === "critical" ? "text-red-600" : task.priority === "high" ? "text-orange-600" : task.priority === "low" ? "text-slate-500" : "text-blue-600";
-  const statusColor = task.status === "done" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : task.status === "in_progress" ? "bg-blue-100 text-blue-700 border-blue-200" : task.status === "blocked" ? "bg-red-100 text-red-700 border-red-200" : task.status === "waiting" ? "bg-amber-100 text-amber-700 border-amber-200" : task.status === "cancelled" ? "bg-muted text-muted-foreground border-border" : "bg-muted text-muted-foreground border-border";
-  const isOverdue = (() => { if (!task.dueAt || task.status === "done" || task.status === "cancelled") return false; try { return isPast(parseISO(task.dueAt)); } catch { return false; } })();
+  const statusColor = STATUS_COLOR_MAP[task.status] || "bg-muted text-muted-foreground border-border";
+  const isOverdue = (() => { if (!task.dueAt || task.status === "complete" || task.status === "done" || task.status === "cancelled") return false; try { return isPast(parseISO(task.dueAt)); } catch { return false; } })();
 
   const updateStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
       if (task._source === "tr_register") {
-        const trStatus = newStatus === "done" ? "Completed" : "Active";
-        const endpoint = newStatus === "done" ? `/api/tr-register/${task._rawId}/complete` : `/api/tr-register/${task._rawId}`;
-        const res = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify(newStatus === "done" ? {} : { status: trStatus }) });
+        const trStatus = newStatus === "complete" ? "Completed" : "Active";
+        const endpoint = newStatus === "complete" ? `/api/tr-register/${task._rawId}/complete` : `/api/tr-register/${task._rawId}`;
+        const res = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify(newStatus === "complete" ? {} : { status: trStatus }) });
         if (!res.ok) throw new Error("Failed to update");
       } else if (task._source === "operational") {
         const res = await fetch(`/api/operational-tasks/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ status: newStatus }) });
         if (!res.ok) throw new Error("Failed to update");
       } else if (task._source === "approvals" && task._key.startsWith("approval-qc-")) {
-        const qmStatus = newStatus === "done" ? "pass" : newStatus === "blocked" ? "fail" : newStatus === "in_progress" ? "in_progress" : "review";
+        const qmStatus = newStatus === "complete" ? "pass" : newStatus === "blocked" ? "fail" : newStatus === "in_progress" ? "in_progress" : "review";
         const res = await fetch(`/api/quality/project/${encodeURIComponent(task.projectName || "unknown")}/item/${task._rawId}`, { method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ qmStatus }) });
         if (!res.ok) throw new Error("Failed to update QC status");
       } else if (task._source === "engineering_task") {
-        const engStatus = newStatus === "done" ? "DONE" : newStatus === "in_progress" ? "IN PROGRESS" : newStatus === "blocked" ? "BLOCKED" : "TO DO";
+        const engStatus = newStatus === "complete" ? "DONE" : newStatus === "in_progress" ? "IN PROGRESS" : newStatus === "blocked" ? "BLOCKED" : "TO DO";
         const res = await fetch(`/api/task-checklist-items/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ status: engStatus }) });
         if (!res.ok) throw new Error("Failed to update");
       }
@@ -1488,15 +1490,15 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
                     {task._source === "approvals" && task._key.startsWith("approval-qc-") ? (
                       <>
                         <Button size="sm" variant={task.status === "in_progress" ? "default" : "outline"} className="h-8 text-xs justify-start" onClick={() => updateStatusMutation.mutate("in_progress")} disabled={updateStatusMutation.isPending} data-testid="btn-status-in-progress"><Clock className="h-3 w-3 mr-1.5" /> In Progress</Button>
-                        <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-green-600 hover:bg-green-50" onClick={() => updateStatusMutation.mutate("done")} disabled={updateStatusMutation.isPending} data-testid="btn-status-pass"><CheckCircle2 className="h-3 w-3 mr-1.5" /> Pass</Button>
+                        <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-green-600 hover:bg-green-50" onClick={() => updateStatusMutation.mutate("complete")} disabled={updateStatusMutation.isPending} data-testid="btn-status-pass"><CheckCircle2 className="h-3 w-3 mr-1.5" /> Pass</Button>
                         <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-red-600 hover:bg-red-50" onClick={() => updateStatusMutation.mutate("blocked")} disabled={updateStatusMutation.isPending} data-testid="btn-status-fail"><AlertCircle className="h-3 w-3 mr-1.5" /> Fail</Button>
                       </>
                     ) : (
                       <>
-                        <Button size="sm" variant={task.status === "inbox" ? "default" : "outline"} className="h-8 text-xs justify-start" onClick={() => updateStatusMutation.mutate(task._source === "engineering_task" ? "inbox" : "inbox")} disabled={updateStatusMutation.isPending} data-testid="btn-status-todo"><Circle className="h-3 w-3 mr-1.5" /> To Do</Button>
-                        <Button size="sm" variant={task.status === "in_progress" ? "default" : "outline"} className="h-8 text-xs justify-start" onClick={() => updateStatusMutation.mutate(task._source === "tr_register" ? "in_progress" : "In Progress")} disabled={updateStatusMutation.isPending} data-testid="btn-status-in-progress"><Clock className="h-3 w-3 mr-1.5" /> In Progress</Button>
-                        <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-emerald-600 hover:bg-emerald-50" onClick={() => updateStatusMutation.mutate("done")} disabled={updateStatusMutation.isPending} data-testid="btn-status-done"><CheckCircle2 className="h-3 w-3 mr-1.5" /> Done</Button>
-                        <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-red-600 hover:bg-red-50" onClick={() => updateStatusMutation.mutate(task._source === "tr_register" ? "blocked" : "Blocked")} disabled={updateStatusMutation.isPending} data-testid="btn-status-blocked"><AlertCircle className="h-3 w-3 mr-1.5" /> Blocked</Button>
+                        <Button size="sm" variant={task.status === "todo" || task.status === "inbox" ? "default" : "outline"} className="h-8 text-xs justify-start" onClick={() => updateStatusMutation.mutate("todo")} disabled={updateStatusMutation.isPending} data-testid="btn-status-todo"><Circle className="h-3 w-3 mr-1.5" /> To Do</Button>
+                        <Button size="sm" variant={task.status === "in_progress" ? "default" : "outline"} className="h-8 text-xs justify-start" onClick={() => updateStatusMutation.mutate("in_progress")} disabled={updateStatusMutation.isPending} data-testid="btn-status-in-progress"><Clock className="h-3 w-3 mr-1.5" /> In Progress</Button>
+                        <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-emerald-600 hover:bg-emerald-50" onClick={() => updateStatusMutation.mutate("complete")} disabled={updateStatusMutation.isPending} data-testid="btn-status-done"><CheckCircle2 className="h-3 w-3 mr-1.5" /> Complete</Button>
+                        <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-red-600 hover:bg-red-50" onClick={() => updateStatusMutation.mutate("blocked")} disabled={updateStatusMutation.isPending} data-testid="btn-status-blocked"><AlertCircle className="h-3 w-3 mr-1.5" /> Blocked</Button>
                       </>
                     )}
                   </div>

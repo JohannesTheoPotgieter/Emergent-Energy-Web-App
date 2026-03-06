@@ -31,6 +31,7 @@ import {
   workItemAssignments,
   workItemDependencies,
   projectPlanOverrides,
+  users,
 } from "@shared/schema";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
@@ -99,6 +100,12 @@ function jwtAuth(req: Request, _res: Response, next: NextFunction) {
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated?.() || (req as any).user) return next();
   res.status(401).json({ error: "auth_required", message: "Authentication required" });
+}
+
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const role = (req as any).user?.role;
+  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
+  res.status(403).json({ error: "Admin access required" });
 }
 
 router.use(jwtAuth);
@@ -1551,12 +1558,24 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         }
       }
 
+      const totalAttempted = (norm.planTasks?.length || 0) + (norm.revenueLines?.length || 0) + (norm.costLines?.length || 0) + (norm.executionPhases?.length || 0);
+      const totalSucceeded = (counts.planTasks || 0) + (counts.revenueLines || 0) + (counts.costLines || 0) + (counts.executionPhases || 0);
+      const totalFailed = totalAttempted - totalSucceeded;
+      const detectedSections: string[] = [];
+      if (norm.planTasks?.length > 0) detectedSections.push("PLAN");
+      if (norm.revenueLines?.length > 0) detectedSections.push("REVENUE");
+      if (norm.costLines?.length > 0) detectedSections.push("EXPENDITURE");
+
       await tx
         .update(smartImportRuns)
         .set({
           status: "COMMITTED",
           committedAt: new Date(),
           committedBy: userId,
+          recordsAttempted: totalAttempted,
+          recordsSucceeded: totalSucceeded,
+          recordsFailed: totalFailed,
+          importType: detectedSections.join(","),
         })
         .where(eq(smartImportRuns.id, runId));
     });
@@ -1995,6 +2014,152 @@ router.post("/api/smart-import/bulk-commit", requireAuth, async (req: Request, r
     });
   } catch (err: any) {
     console.error("[smart-import] POST bulk-commit error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/import-control-tower/history", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const importType = req.query.importType as string | undefined;
+    const status = req.query.status as string | undefined;
+    const limit = parseInt(req.query.limit as string) || 100;
+
+    const runs = await db
+      .select()
+      .from(smartImportRuns)
+      .orderBy(desc(smartImportRuns.uploadedAt))
+      .limit(Math.min(limit, 500));
+
+    let filtered = runs;
+    if (importType && importType !== "all") {
+      filtered = filtered.filter(r => {
+        const summary = r.summaryJson as any;
+        if (!summary?.normalization) return false;
+        const norm = summary.normalization;
+        switch (importType) {
+          case "plan": return norm.planTasks?.length > 0;
+          case "cost": return norm.costLines?.length > 0;
+          case "revenue": return norm.revenueLines?.length > 0;
+          case "project": return summary.detection?.projectInfo != null;
+          default: return true;
+        }
+      });
+    }
+    if (status && status !== "all") {
+      filtered = filtered.filter(r => r.status === status);
+    }
+
+    const enriched = await Promise.all(filtered.map(async (run) => {
+      const issues = await db.select().from(importIssues)
+        .where(eq(importIssues.importRunId, run.id));
+
+      const summary = run.summaryJson as any;
+      const norm = summary?.normalization || {};
+      const sections: string[] = [];
+      if (norm.planTasks?.length > 0) sections.push("PLAN");
+      if (norm.revenueLines?.length > 0) sections.push("REVENUE");
+      if (norm.costLines?.length > 0) sections.push("EXPENDITURE");
+
+      const attempted = (norm.planTasks?.length || 0) + (norm.revenueLines?.length || 0) + (norm.costLines?.length || 0);
+      const failedIssues = issues.filter(i => i.severity === "BLOCKER" && !i.resolved);
+
+      let uploaderName: string | null = null;
+      if (run.uploadedBy) {
+        const [u] = await db.select({ name: users.name }).from(users).where(eq(users.id, run.uploadedBy));
+        uploaderName = u?.name || null;
+      }
+
+      return {
+        id: run.id,
+        projectName: run.projectName,
+        projectId: run.projectId,
+        sourceFileName: run.sourceFileName,
+        status: run.status,
+        uploadedAt: run.uploadedAt,
+        committedAt: run.committedAt,
+        uploadedBy: run.uploadedBy,
+        uploaderName,
+        recordsAttempted: run.recordsAttempted ?? attempted,
+        recordsSucceeded: run.recordsSucceeded ?? (run.status === "COMMITTED" ? attempted - failedIssues.length : 0),
+        recordsFailed: run.recordsFailed ?? failedIssues.length,
+        importType: run.importType ?? sections.join(","),
+        sections,
+        totalIssues: issues.length,
+        unresolvedBlockers: failedIssues.length,
+        unresolvedWarnings: issues.filter(i => i.severity !== "BLOCKER" && !i.resolved).length,
+        resolvedIssues: issues.filter(i => i.resolved).length,
+      };
+    }));
+
+    res.json(enriched);
+  } catch (err: any) {
+    console.error("[import-control-tower] GET history error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/import-control-tower/run/:runId/errors", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    const issues = await db.select().from(importIssues)
+      .where(eq(importIssues.importRunId, runId));
+
+    const enrichedIssues = issues.map(issue => ({
+      id: issue.id,
+      severity: issue.severity,
+      section: issue.section,
+      message: issue.message,
+      suggestedAction: issue.suggestedAction,
+      issueType: issue.issueType,
+      resolved: issue.resolved,
+      resolution: issue.resolution,
+      resolutionNote: issue.resolutionNote,
+      autoResolved: issue.autoResolved,
+      resolvedAt: issue.resolvedAt,
+      payloadJson: issue.payloadJson,
+    }));
+
+    res.json({
+      runId,
+      projectName: run.projectName,
+      sourceFileName: run.sourceFileName,
+      status: run.status,
+      issues: enrichedIssues,
+    });
+  } catch (err: any) {
+    console.error("[import-control-tower] GET run errors:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/api/import-control-tower/retry/:runId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    if (run.status !== "FAILED" && run.status !== "ROLLED_BACK" && run.status !== "PREVIEW") {
+      return res.status(400).json({ error: `Cannot retry import with status "${run.status}". Only FAILED, ROLLED_BACK, or PREVIEW runs can be retried.` });
+    }
+
+    await db.update(smartImportRuns)
+      .set({ status: "PREVIEW" })
+      .where(eq(smartImportRuns.id, runId));
+
+    await db.update(importIssues)
+      .set({ resolved: false, resolution: null, resolutionNote: null, resolvedBy: null, resolvedAt: null })
+      .where(eq(importIssues.importRunId, runId));
+
+    res.json({ success: true, runId, newStatus: "PREVIEW" });
+  } catch (err: any) {
+    console.error("[import-control-tower] POST retry error:", err);
     res.status(500).json({ error: err.message });
   }
 });
