@@ -71,3 +71,9 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 ### Third-Party Integrations
 -   **Microsoft Graph API**: For Outlook calendar, SharePoint, and Teams integration.
 -   **Read.ai**: For meeting data ingestion via webhooks.
+
+## System Audit (2026-03-06)
+-   Full system audit completed. See `SYSTEM_AUDIT.md`, `QA_TEST_MATRIX.md`, `DEFECT_REGISTER.md`, `RELEASE_READINESS.md`.
+-   5 defects identified and fixed (DEF-001 through DEF-005).
+-   73 test cases executed, all passing.
+-   Key fixes: MS sync status endpoint, QC migration, project edit validation, task detail drawer crash, task deletion routing.
