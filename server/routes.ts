@@ -10799,6 +10799,7 @@ export async function registerRoutes(
 
             return {
               id: -taskId,
+              workItemId: ct.workItemId || null,
               projectName,
               planProjectName: projectName,
               importedTaskId: ct.id,
@@ -10827,7 +10828,7 @@ export async function registerRoutes(
               isBaseline: true,
               isVirtualMilestone: false,
               isMilestone: ct.isMilestone === true,
-              rowNumber: idx + 1,
+              rowNumber: null,
               parentRowNumber: null,
               indentLevel: ct.indentLevel ?? null,
               baselineStart: ct.baselineStart || null,
