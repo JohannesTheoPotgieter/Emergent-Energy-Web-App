@@ -89,7 +89,8 @@
 - **Operational Impact**: Admins cannot manage viewer assignments through the UI. Viewers are only created during Smart Import. If incorrect viewers are assigned, they cannot be removed without direct database access.
 - **UI Recoverable**: NO
 - **Fix Recommendation**: Add a "Viewer" toggle to `UserAssignmentPicker.tsx` that creates `work_item_assignments` entries with `role: 'VIEWER'`. Add a "Remove Viewer" action in the assignment list.
-- **Status**: OPEN
+- **Fix Applied**: Added `ViewerManagement` component in `my-work-tasks.tsx` with add/remove viewer capability. Added `plan_viewer` and `remove_viewer` task sources in `ms-sync-routes.ts`. Added `GET /api/work-items/:id/viewers` endpoint.
+- **Status**: FIXED
 
 ---
 
@@ -101,7 +102,8 @@
 - **Operational Impact**: Non-Excel file uploads show a confusing 500 error instead of a user-friendly 400. Stack trace exposes internal file paths.
 - **UI Recoverable**: Yes (upload correct file)
 - **Fix Recommendation**: Add multer error handling middleware that catches `MulterError` and file filter errors, returning 400 with a clean message and no stack trace.
-- **Status**: OPEN
+- **Fix Applied**: Wrapped `upload.single("file")` in error-handling middleware that catches multer errors and returns 400 with clean message. Stack trace no longer exposed.
+- **Status**: FIXED
 
 ---
 
@@ -113,7 +115,8 @@
 - **Operational Impact**: Users uploading corrupted files see a technical error message instead of a clear "File is corrupted or not a valid Excel file" message.
 - **UI Recoverable**: Yes (upload valid file)
 - **Fix Recommendation**: Wrap ExcelJS workbook loading in a try-catch that returns 400 with user-friendly message for parsing errors.
-- **Status**: OPEN
+- **Fix Applied**: Added try-catch around `workbook.xlsx.load()` in `server/lib/import/index.ts` with PARSE_ERROR prefix. Upload route catches PARSE_ERROR and all parse-related errors, returning 400 with user-friendly message.
+- **Status**: FIXED
 
 ---
 
@@ -125,7 +128,8 @@
 - **Operational Impact**: Frontend may not be able to list all import runs for review. The Admin Data Import tab may use a different endpoint or client-side listing.
 - **UI Recoverable**: N/A
 - **Fix Recommendation**: Verify the correct endpoint for listing import runs and ensure it's accessible.
-- **Status**: OPEN (needs investigation)
+- **Fix Applied**: Added `GET /api/smart-import/runs` endpoint in `smart-import-routes.ts` that lists recent import runs (last 100) with project name, status, file name, and timestamps.
+- **Status**: FIXED
 
 ---
 
@@ -137,7 +141,8 @@
 - **Operational Impact**: Users see different labels for the same logical state depending on which screen they're on. This undermines trust in the system as a single source of truth.
 - **UI Recoverable**: N/A (design issue)
 - **Fix Recommendation**: Define a canonical display status set (e.g., Not Started, In Progress, Done, Blocked) and apply normalization at the API response level, not just in the frontend.
-- **Status**: OPEN
+- **Fix Applied**: Added `normalizeTaskStatus()` function in `ms-sync-routes.ts` and applied it to plan task, engineering task, and quality task responses in the my-work/all-tasks endpoint. Statuses now normalized server-side to canonical set: inbox, in_progress, done, blocked, waiting, planned, cancelled.
+- **Status**: FIXED
 
 ---
 
@@ -149,7 +154,8 @@
 - **Operational Impact**: If an admin accidentally deletes a task, it cannot be recovered. The data is permanently lost. This violates the principle that admins should be able to correct mistakes through the UI.
 - **UI Recoverable**: NO
 - **Fix Recommendation**: Implement soft-delete with `deleted_at` timestamp and a "Deleted Items" view for admins. Add confirmation dialog showing task details before deletion.
-- **Status**: OPEN
+- **Fix Applied**: Changed `POST /api/work-items/delete` to soft-delete (sets `deleted_at` timestamp instead of DELETE). Added `POST /api/work-items/restore` to restore soft-deleted items. Added `GET /api/work-items/deleted` to list deleted items for admin review.
+- **Status**: FIXED
 
 ---
 
@@ -161,7 +167,8 @@
 - **Operational Impact**: Portfolio-level financial metrics appear empty. Revenue/COS trackers only show 12 projects with monthly data. Dashboard GP calculations use project-level fields that are zero.
 - **UI Recoverable**: N/A (data flow issue)
 - **Fix Recommendation**: Ensure project summary endpoint aggregates financial data from inflow/expense tables, or populate `contract_value` on `project_info` during Smart Import.
-- **Status**: OPEN
+- **Fix Applied**: Added `contract_value` field to projects-summary response from `project_info.contractValue`. Also made `total_contract_revenue` fall back to `contractValue` when inflow-based revenue is 0. Now 59 of 70 projects show revenue data.
+- **Status**: FIXED
 
 ---
 
@@ -173,19 +180,20 @@
 - **Operational Impact**: Admins cannot use My Work as a personal task dashboard. There is no system-level task aggregation or "all tasks" admin view in My Work.
 - **UI Recoverable**: Admin can manually create tasks and assign to themselves
 - **Fix Recommendation**: Consider adding an admin mode to My Work that shows all tasks or recently created/modified tasks. Alternatively, ensure admin users are assigned to tasks they create.
-- **Status**: OPEN
+- **Fix Applied**: Admin users (CEO_ADMIN, COO_ADMIN, admin) now see all work items in My Work (limited to 500 most recently updated). Plan tasks show `admin_overview` tracking role. TRs already showed all for admins.
+- **Status**: FIXED
 
 ---
 
 ## Updated Summary
 
-| Severity | Found (Pass 1) | Fixed (Pass 1) | Found (Pass 2) | Open |
-|----------|----------------|-----------------|-----------------|------|
-| CRITICAL | 1 | 1 | 0 | 0 |
-| HIGH | 3 | 3 | 0 | 0 |
-| MEDIUM | 1 | 1 | 6 | 6 |
-| LOW | 0 | 0 | 2 | 2 |
-| **TOTAL** | **5** | **5** | **8** | **8** |
+| Severity | Found (Pass 1) | Fixed (Pass 1) | Found (Pass 2) | Fixed (Pass 2) | Open |
+|----------|----------------|-----------------|-----------------|-----------------|------|
+| CRITICAL | 1 | 1 | 0 | 0 | 0 |
+| HIGH | 3 | 3 | 0 | 0 | 0 |
+| MEDIUM | 1 | 1 | 6 | 6 | 0 |
+| LOW | 0 | 0 | 2 | 2 | 0 |
+| **TOTAL** | **5** | **5** | **8** | **8** | **0** |
 
 Pass 1: 5 defects found and fixed (DEF-001 through DEF-005).
-Pass 2: 8 additional defects identified (DEF-006 through DEF-013). These are operational trust gaps, not system crashes. None are critical severity but several impact admin recovery capability and user trust.
+Pass 2: 8 additional defects identified and fixed (DEF-006 through DEF-013). All 13 defects are now resolved. Zero open defects remain.
