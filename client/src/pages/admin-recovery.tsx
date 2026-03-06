@@ -462,6 +462,9 @@ function ProjectRecoveryTab() {
       ragStatus: project.ragStatus || "",
       ragComment: project.ragComment || "",
       isActive: project.isActive,
+      sizeKwp: project.sizeKwp ?? "",
+      contractValue: project.contractValue ?? "",
+      clientId: project.clientId ?? "",
     });
   };
 
@@ -620,6 +623,35 @@ function ProjectRecoveryTab() {
                   <Label>Active</Label>
                 </div>
               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Size (kWp)</Label>
+                <Input
+                  type="number"
+                  value={editFields.sizeKwp ?? ""}
+                  onChange={(e) => setEditFields(f => ({ ...f, sizeKwp: e.target.value ? parseFloat(e.target.value) : null }))}
+                  data-testid="input-edit-project-size-kwp"
+                />
+              </div>
+              <div>
+                <Label>Contract Value</Label>
+                <Input
+                  type="number"
+                  value={editFields.contractValue ?? ""}
+                  onChange={(e) => setEditFields(f => ({ ...f, contractValue: e.target.value ? parseFloat(e.target.value) : null }))}
+                  data-testid="input-edit-project-contract-value"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Client ID</Label>
+              <Input
+                type="number"
+                value={editFields.clientId ?? ""}
+                onChange={(e) => setEditFields(f => ({ ...f, clientId: e.target.value ? parseInt(e.target.value) : null }))}
+                data-testid="input-edit-project-client-id"
+              />
             </div>
             <div>
               <Label>RAG Comment</Label>

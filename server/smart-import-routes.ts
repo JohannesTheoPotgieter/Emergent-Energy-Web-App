@@ -6,6 +6,7 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { logAuditFromReq } from "./audit-logger";
 import { db } from "./db";
 import { verifyToken } from "./jwt";
 import { runSmartImportPreview } from "./lib/import/index";
@@ -241,6 +242,15 @@ router.post("/api/smart-import/upload", requireAuth, (req: Request, res: Respons
       }
     }
 
+    logAuditFromReq(req, {
+      entityType: "smart_import",
+      entityId: String(run.id),
+      action: "upload",
+      projectName: projectName,
+      source: "IMPORT",
+      changesJson: { fileName, fileHash, sections: preview.detection.sections.length, issues: preview.normalization.issues.length },
+    });
+
     res.json({ runId: run.id, preview });
   } catch (err: any) {
     console.error("[smart-import] POST upload error:", err.message);
@@ -407,6 +417,14 @@ router.patch("/api/smart-import/:runId/project-info", requireAuth, async (req: R
     }
     await db.update(smartImportRuns).set(updateFields).where(eq(smartImportRuns.id, runId));
 
+    logAuditFromReq(req, {
+      entityType: "smart_import",
+      entityId: String(runId),
+      action: "update_project_info",
+      source: "IMPORT",
+      changesJson: { updates },
+    });
+
     res.json({ success: true, projectInfo: summary.detection.projectInfo });
   } catch (err: any) {
     console.error("[smart-import] PATCH project-info error:", err);
@@ -540,6 +558,14 @@ router.patch("/api/smart-import/:runId/mapping", requireAuth, async (req: Reques
       }
     }
 
+    logAuditFromReq(req, {
+      entityType: "smart_import",
+      entityId: String(runId),
+      action: "update_mapping",
+      source: "IMPORT",
+      changesJson: { section, colIndex, canonicalField },
+    });
+
     res.json({ success: true, updatedMapping: { section, colIndex, canonicalField } });
   } catch (err: any) {
     console.error("[smart-import] PATCH mapping error:", err);
@@ -615,6 +641,14 @@ router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, asy
       }
     }
 
+    logAuditFromReq(req, {
+      entityType: "smart_import_issue",
+      entityId: String(issueId),
+      action: resolved ? "resolve_issue" : "unresolve_issue",
+      source: "IMPORT",
+      changesJson: { runId, resolution: resType, rememberDecision: !!rememberDecision },
+    });
+
     res.json(updated);
   } catch (err: any) {
     console.error("[smart-import] PATCH resolve error:", err);
@@ -663,6 +697,14 @@ router.post("/api/smart-import/:runId/ignore-all-blockers", requireAuth, async (
     const updatedIssues = await db.select().from(importIssues)
       .where(eq(importIssues.importRunId, runId));
 
+    logAuditFromReq(req, {
+      entityType: "smart_import",
+      entityId: String(runId),
+      action: "ignore_all_blockers",
+      source: "IMPORT",
+      changesJson: { ignored },
+    });
+
     res.json({ ignored, issues: updatedIssues });
   } catch (err: any) {
     console.error("[smart-import] POST ignore-all-blockers error:", err);
@@ -701,6 +743,14 @@ router.post("/api/smart-import/:runId/allow-all", requireAuth, async (req: Reque
 
     const updatedIssues = await db.select().from(importIssues)
       .where(eq(importIssues.importRunId, runId));
+
+    logAuditFromReq(req, {
+      entityType: "smart_import",
+      entityId: String(runId),
+      action: "allow_all",
+      source: "IMPORT",
+      changesJson: { allowed },
+    });
 
     res.json({ allowed, issues: updatedIssues });
   } catch (err: any) {
@@ -765,6 +815,14 @@ router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, asy
 
     const updatedIssues = await db.select().from(importIssues)
       .where(eq(importIssues.importRunId, runId));
+
+    logAuditFromReq(req, {
+      entityType: "smart_import",
+      entityId: String(runId),
+      action: "apply_prior_resolutions",
+      source: "IMPORT",
+      changesJson: { applied },
+    });
 
     res.json({ applied, issues: updatedIssues });
   } catch (err: any) {
@@ -1651,6 +1709,15 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
       console.warn("[SmartImport] Auto-archive check failed (non-blocking):", archiveErr.message);
     }
 
+    logAuditFromReq(req, {
+      entityType: "smart_import",
+      entityId: String(runId),
+      action: "commit",
+      projectName: run.projectName,
+      source: "IMPORT",
+      changesJson: { counts, preservedOverrides: skippedOverrideFields.length, preservedManualEdits: preservedManualEditsCount },
+    });
+
     res.json({
       success: true,
       runId,
@@ -1706,6 +1773,15 @@ router.post("/api/smart-import/:runId/rollback", requireAuth, async (req: Reques
         .update(smartImportRuns)
         .set({ status: "ROLLED_BACK" })
         .where(eq(smartImportRuns.id, runId));
+    });
+
+    logAuditFromReq(req, {
+      entityType: "smart_import",
+      entityId: String(runId),
+      action: "rollback",
+      projectName: run.projectName,
+      source: "IMPORT",
+      changesJson: { previousStatus: run.status },
     });
 
     res.json({ success: true, runId, status: "ROLLED_BACK" });
@@ -2004,6 +2080,13 @@ router.post("/api/smart-import/bulk-commit", requireAuth, async (req: Request, r
     const failed = results.filter(r => r.status === "failed").length;
     const skipped = results.filter(r => r.status === "skipped").length;
 
+    logAuditFromReq(req, {
+      entityType: "smart_import",
+      action: "bulk_commit",
+      source: "IMPORT",
+      changesJson: { committed, failed, skipped, total: runs.length },
+    });
+
     res.json({
       success: true,
       committed,
@@ -2156,6 +2239,14 @@ router.post("/api/import-control-tower/retry/:runId", requireAuth, requireAdmin,
     await db.update(importIssues)
       .set({ resolved: false, resolution: null, resolutionNote: null, resolvedBy: null, resolvedAt: null })
       .where(eq(importIssues.importRunId, runId));
+
+    logAuditFromReq(req, {
+      entityType: "smart_import",
+      entityId: String(runId),
+      action: "retry",
+      source: "IMPORT",
+      changesJson: { previousStatus: run.status },
+    });
 
     res.json({ success: true, runId, newStatus: "PREVIEW" });
   } catch (err: any) {
