@@ -2712,7 +2712,7 @@ export async function registerRoutes(
         epcContractNaReason: z.string().nullable().optional(),
         currentVoTotal: z.union([z.string(), z.number()]).nullable().optional(),
         comments: z.string().nullable().optional(),
-      }).strict();
+      });
       const parsed = editSchema.parse(req.body);
       const data: Record<string, any> = { projectName };
       for (const [key, value] of Object.entries(parsed)) {
@@ -2734,8 +2734,11 @@ export async function registerRoutes(
 
       logAuditFromReq(req, { entityType: "project_info", action: "update", entityId: projectName, projectName, changesJson: { description: "Project summary fields edited", ...parsed } });
       res.json(result);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Project edit error:", error);
+      if (error?.name === "ZodError") {
+        return res.status(400).json({ error: "Invalid fields", message: error.issues?.map((i: any) => i.message).join("; ") || "Validation failed" });
+      }
       res.status(500).json({ error: "Failed to save project fields", message: "Failed to save project fields" });
     }
   });

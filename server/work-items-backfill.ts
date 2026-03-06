@@ -302,10 +302,10 @@ export async function backfillWorkItems(): Promise<void> {
         SELECT
           qc.project_id, 'QUALITY', 'task', 'SYSTEM',
           COALESCE(qti.item_name, 'QC Item #' || qi.id::text),
-          qi.notes,
-          COALESCE(qi.status, 'not_checked'), NULL,
+          NULL,
+          COALESCE(qi.qm_status, 'not_checked'), NULL,
           NULL, NULL, NULL,
-          CASE WHEN qi.status = 'pass' THEN 1 ELSE 0 END,
+          CASE WHEN qi.qm_status = 'pass' THEN 1 ELSE 0 END,
           qi.assignee_user_id, false,
           CONCAT('QCI::', qi.id::text), 'qc_item_instance', qi.id, NULL
         FROM "${qciTable}" qi

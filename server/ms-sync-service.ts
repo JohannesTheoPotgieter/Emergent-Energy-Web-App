@@ -212,17 +212,19 @@ export async function getSyncStatus(userId: number): Promise<{
   lastSync: string | null;
   counts: { events: number; emails: number; teams: number };
 }> {
-  const [lastSyncRow] = await db.execute(sql`
+  const lastSyncResult = await db.execute(sql`
     SELECT MAX(last_synced_at) as last_sync FROM ms_objects WHERE user_id = ${userId}
-  `) as any[];
+  `);
+  const lastSyncRow = (lastSyncResult as any).rows?.[0] ?? (lastSyncResult as any[])?.[0];
 
-  const [countRow] = await db.execute(sql`
+  const countResult = await db.execute(sql`
     SELECT
       COUNT(CASE WHEN type = 'event' THEN 1 END) as events,
       COUNT(CASE WHEN type = 'email' THEN 1 END) as emails,
       COUNT(CASE WHEN type = 'teams' THEN 1 END) as teams
     FROM ms_objects WHERE user_id = ${userId}
-  `) as any[];
+  `);
+  const countRow = (countResult as any).rows?.[0] ?? (countResult as any[])?.[0];
 
   return {
     lastSync: lastSyncRow?.last_sync?.toISOString?.() || null,
