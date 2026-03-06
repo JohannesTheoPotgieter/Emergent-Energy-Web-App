@@ -177,6 +177,186 @@ router.post("/api/admin/control-center/dangerous/clear-audit-log", requireAuth, 
   }
 });
 
+router.get("/api/admin/control-center/active-sessions", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const rows: any[] = await db.execute(sql`SELECT sid, sess, expire FROM "session" WHERE expire > NOW() ORDER BY expire DESC`).then((r: any) => r.rows || r);
+    const sessions = rows.map((row: any) => {
+      const sess = typeof row.sess === "string" ? JSON.parse(row.sess) : row.sess;
+      const passport = sess?.passport || {};
+      const userId = passport?.user;
+      return {
+        sid: row.sid,
+        userId: userId || null,
+        expire: row.expire,
+        cookie: sess?.cookie || {},
+      };
+    });
+
+    const userIds = sessions.map((s: any) => s.userId).filter(Boolean);
+    let userMap: Record<number, { name: string; username: string; role: string }> = {};
+    if (userIds.length > 0) {
+      const userRows: any[] = await db.execute(
+        sql`SELECT id, name, username, role FROM users WHERE id = ANY(${userIds}::int[])`
+      ).then((r: any) => r.rows || r);
+      for (const u of userRows) {
+        userMap[u.id] = { name: u.name, username: u.username, role: u.role };
+      }
+    }
+
+    const enriched = sessions.map((s: any) => ({
+      sid: s.sid,
+      userId: s.userId,
+      userName: userMap[s.userId]?.name || null,
+      username: userMap[s.userId]?.username || null,
+      userRole: userMap[s.userId]?.role || null,
+      expiresAt: s.expire,
+    }));
+
+    res.json({ count: enriched.length, sessions: enriched });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch sessions", message: err.message });
+  }
+});
+
+router.delete("/api/admin/control-center/sessions/:sid", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const { sid } = req.params;
+    await db.execute(sql`DELETE FROM "session" WHERE sid = ${sid}`);
+    logAuditFromReq(req, {
+      entityType: "system",
+      action: "force_logout",
+      source: "SETTINGS",
+      changesJson: { sessionId: sid },
+    });
+    res.json({ success: true, message: "Session terminated" });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to delete session", message: err.message });
+  }
+});
+
+router.get("/api/admin/control-center/recent-import-failures", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const rows: any[] = await db.execute(sql`
+      SELECT sir.id, sir.project_name, sir.source_file_name, sir.uploaded_at, sir.status,
+             sir.records_attempted, sir.records_failed, sir.summary_json,
+             u.name as uploaded_by_name
+      FROM smart_import_runs sir
+      LEFT JOIN users u ON sir.uploaded_by = u.id
+      WHERE sir.status = 'FAILED'
+      ORDER BY sir.uploaded_at DESC
+      LIMIT 10
+    `).then((r: any) => r.rows || r);
+
+    const enriched = [];
+    for (const row of rows) {
+      let issueCount = 0;
+      let topIssue = null;
+      try {
+        const [issueResult] = await db.execute(
+          sql`SELECT COUNT(*) as count FROM import_issues WHERE import_run_id = ${row.id} AND severity = 'BLOCKER'`
+        ).then((r: any) => r.rows || r);
+        issueCount = parseInt(issueResult?.count || "0");
+        const issueRows: any[] = await db.execute(
+          sql`SELECT message FROM import_issues WHERE import_run_id = ${row.id} AND severity = 'BLOCKER' ORDER BY id LIMIT 1`
+        ).then((r: any) => r.rows || r);
+        topIssue = issueRows[0]?.message || null;
+      } catch {}
+      enriched.push({
+        id: row.id,
+        projectName: row.project_name,
+        fileName: row.source_file_name,
+        uploadedAt: row.uploaded_at,
+        uploadedBy: row.uploaded_by_name,
+        recordsAttempted: row.records_attempted,
+        recordsFailed: row.records_failed,
+        blockerCount: issueCount,
+        topError: topIssue,
+      });
+    }
+
+    res.json(enriched);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch import failures", message: err.message });
+  }
+});
+
+router.get("/api/admin/control-center/recent-issues", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const rows: any[] = await db.execute(sql`
+      SELECT id, entity_type, entity_id, action, user_name, project_name, created_at, changes_json, request_path
+      FROM audit_events
+      WHERE action IN ('error', 'system_error', 'clear_sessions', 'clear_audit_log', 'admin_recovery_restore', 'admin_recovery_delete', 'force_logout')
+         OR action LIKE '%error%'
+         OR action LIKE '%fail%'
+      ORDER BY created_at DESC
+      LIMIT 20
+    `).then((r: any) => r.rows || r);
+
+    res.json(rows.map((r: any) => ({
+      id: r.id,
+      entityType: r.entity_type,
+      entityId: r.entity_id,
+      action: r.action,
+      userName: r.user_name,
+      projectName: r.project_name,
+      createdAt: r.created_at,
+      details: r.changes_json,
+      requestPath: r.request_path,
+    })));
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch recent issues", message: err.message });
+  }
+});
+
+router.get("/api/admin/control-center/integration-health", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const integrations: any[] = [];
+
+    const types = ["email", "file", "folder", "chat", "channel"];
+    const typeLabels: Record<string, string> = {
+      email: "Outlook",
+      file: "SharePoint Files",
+      folder: "SharePoint Folders",
+      chat: "Teams Chat",
+      channel: "Teams Channels",
+    };
+
+    for (const t of types) {
+      try {
+        const [countRow] = await db.execute(
+          sql`SELECT COUNT(*) as count FROM ms_objects WHERE type = ${t}::ms_object_type`
+        ).then((r: any) => r.rows || r);
+        const [lastSync] = await db.execute(
+          sql`SELECT MAX(last_synced_at) as last_sync FROM ms_objects WHERE type = ${t}::ms_object_type`
+        ).then((r: any) => r.rows || r);
+
+        const count = parseInt(countRow?.count || "0");
+        if (count > 0) {
+          integrations.push({
+            name: typeLabels[t] || t,
+            type: t,
+            objectCount: count,
+            lastSyncTime: lastSync?.last_sync || null,
+            status: "connected",
+          });
+        }
+      } catch {}
+    }
+
+    if (integrations.length === 0) {
+      integrations.push(
+        { name: "Outlook", type: "email", objectCount: 0, lastSyncTime: null, status: "not_connected" },
+        { name: "SharePoint", type: "file", objectCount: 0, lastSyncTime: null, status: "not_connected" },
+        { name: "Teams", type: "chat", objectCount: 0, lastSyncTime: null, status: "not_connected" },
+      );
+    }
+
+    res.json(integrations);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch integration health", message: err.message });
+  }
+});
+
 export function registerAdminControlRoutes(app: Express) {
   app.use(router);
 }

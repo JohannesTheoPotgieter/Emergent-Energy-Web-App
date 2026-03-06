@@ -1150,11 +1150,12 @@ export const operationalTasks = pgTable("operational_tasks", {
   scheduledDate: text("scheduled_date"),
   scheduledStartTime: text("scheduled_start_time"),
   scheduledEndTime: text("scheduled_end_time"),
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const insertOperationalTaskSchema = createInsertSchema(operationalTasks).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertOperationalTaskSchema = createInsertSchema(operationalTasks).omit({ id: true, deletedAt: true, createdAt: true, updatedAt: true });
 export type InsertOperationalTask = z.infer<typeof insertOperationalTaskSchema>;
 export type OperationalTask = typeof operationalTasks.$inferSelect;
 
@@ -1375,12 +1376,13 @@ export const mytoolTasks = pgTable("mytool_tasks", {
   scheduledDate: text("scheduled_date"),
   scheduledStartTime: text("scheduled_start_time"),
   scheduledEndTime: text("scheduled_end_time"),
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   completedAt: timestamp("completed_at"),
 });
 
-export const insertMytoolTaskSchema = createInsertSchema(mytoolTasks).omit({ id: true, createdAt: true, updatedAt: true, completedAt: true });
+export const insertMytoolTaskSchema = createInsertSchema(mytoolTasks).omit({ id: true, deletedAt: true, createdAt: true, updatedAt: true, completedAt: true });
 export type InsertMytoolTask = z.infer<typeof insertMytoolTaskSchema>;
 export type MytoolTask = typeof mytoolTasks.$inferSelect;
 

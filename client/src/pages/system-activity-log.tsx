@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { usePermission } from "@/hooks/use-permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import {
   Activity, FileUp, Edit, Shield, GitMerge, Cpu, Users, Settings, LogIn, Trash2, PenLine,
   ChevronLeft, ChevronRight, Loader2, Search, ArrowRight, Filter, AlertTriangle,
+  Download, Calendar, X, User,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 
@@ -47,23 +48,48 @@ function formatDate(dateStr: string) {
   });
 }
 
+function buildQueryParams(filters: {
+  sourceFilter: string;
+  entityTypeFilter: string;
+  projectNameFilter: string;
+  actionFilter: string;
+  userNameFilter: string;
+  searchQuery: string;
+  fromDate: string;
+  toDate: string;
+}) {
+  const params = new URLSearchParams();
+  if (filters.sourceFilter !== "all") params.set("source", filters.sourceFilter);
+  if (filters.entityTypeFilter !== "all") params.set("entityType", filters.entityTypeFilter);
+  if (filters.projectNameFilter !== "all") params.set("projectName", filters.projectNameFilter);
+  if (filters.actionFilter !== "all") params.set("action", filters.actionFilter);
+  if (filters.userNameFilter !== "all") params.set("userName", filters.userNameFilter);
+  if (filters.searchQuery) params.set("q", filters.searchQuery);
+  if (filters.fromDate) params.set("from", filters.fromDate);
+  if (filters.toDate) params.set("to", filters.toDate);
+  return params;
+}
+
 export default function SystemActivityLogPage() {
   const { allowed: canView } = usePermission('activity_log', 'view');
   const [page, setPage] = useState(1);
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [entityTypeFilter, setEntityTypeFilter] = useState<string>("all");
   const [projectNameFilter, setProjectNameFilter] = useState<string>("all");
+  const [actionFilter, setActionFilter] = useState<string>("all");
+  const [userNameFilter, setUserNameFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [selectedChangeSetId, setSelectedChangeSetId] = useState<number | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["activity-log", page, sourceFilter, entityTypeFilter, projectNameFilter, searchQuery],
+    queryKey: ["activity-log", page, sourceFilter, entityTypeFilter, projectNameFilter, actionFilter, userNameFilter, searchQuery, fromDate, toDate],
     queryFn: async () => {
-      const params = new URLSearchParams({ page: String(page), limit: "50" });
-      if (sourceFilter !== "all") params.set("source", sourceFilter);
-      if (entityTypeFilter !== "all") params.set("entityType", entityTypeFilter);
-      if (projectNameFilter !== "all") params.set("projectName", projectNameFilter);
-      if (searchQuery) params.set("q", searchQuery);
+      const params = buildQueryParams({ sourceFilter, entityTypeFilter, projectNameFilter, actionFilter, userNameFilter, searchQuery, fromDate, toDate });
+      params.set("page", String(page));
+      params.set("limit", "50");
       const res = await authFetch(`/api/audit/activity-log?${params}`);
       if (!res.ok) throw new Error("Failed to load activity log");
       return res.json();
@@ -85,7 +111,44 @@ export default function SystemActivityLogPage() {
 
   const items = data?.items || [];
   const pagination = data?.pagination || { page: 1, totalPages: 1, total: 0 };
-  const filters = data?.filters || { sources: [], entityTypes: [], actions: [], projectNames: [] };
+  const filters = data?.filters || { sources: [], entityTypes: [], actions: [], projectNames: [], userNames: [] };
+
+  const activeFilterCount = [sourceFilter, entityTypeFilter, projectNameFilter, actionFilter, userNameFilter].filter(v => v !== "all").length
+    + (fromDate ? 1 : 0) + (toDate ? 1 : 0) + (searchQuery ? 1 : 0);
+
+  const handleClearFilters = useCallback(() => {
+    setSourceFilter("all");
+    setEntityTypeFilter("all");
+    setProjectNameFilter("all");
+    setActionFilter("all");
+    setUserNameFilter("all");
+    setSearchQuery("");
+    setFromDate("");
+    setToDate("");
+    setPage(1);
+  }, []);
+
+  const handleExportCsv = useCallback(async () => {
+    setIsExporting(true);
+    try {
+      const params = buildQueryParams({ sourceFilter, entityTypeFilter, projectNameFilter, actionFilter, userNameFilter, searchQuery, fromDate, toDate });
+      const res = await authFetch(`/api/audit/activity-log/export?${params}`);
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `activity-log-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("CSV export failed:", err);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [sourceFilter, entityTypeFilter, projectNameFilter, actionFilter, userNameFilter, searchQuery, fromDate, toDate]);
 
   if (!canView) {
     return (
@@ -102,7 +165,7 @@ export default function SystemActivityLogPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-7xl space-y-6">
+    <div className="container mx-auto p-6 max-w-7xl space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Activity className="h-6 w-6 text-primary" />
@@ -111,20 +174,32 @@ export default function SystemActivityLogPage() {
             <p className="text-sm text-muted-foreground">All logins, edits, imports, overrides, deletes, and system events</p>
           </div>
         </div>
-        <Badge variant="secondary" className="text-sm" data-testid="text-activity-total">
-          {pagination.total} events
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary" className="text-sm" data-testid="text-activity-total">
+            {pagination.total} events
+          </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportCsv}
+            disabled={isExporting}
+            data-testid="button-export-csv"
+          >
+            {isExporting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Download className="h-4 w-4 mr-1" />}
+            Export CSV
+          </Button>
+        </div>
       </div>
 
       <Card>
-        <CardContent className="py-4">
+        <CardContent className="py-4 space-y-3">
           <div className="flex flex-wrap gap-3 items-center">
-            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search events..."
-                className="pl-8 w-full sm:w-[200px]"
+                placeholder="Search all fields..."
+                className="pl-8 w-full sm:w-[220px]"
                 value={searchQuery}
                 onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
                 data-testid="input-activity-search"
@@ -134,7 +209,7 @@ export default function SystemActivityLogPage() {
               value={sourceFilter}
               onValueChange={(v) => { setSourceFilter(v); setPage(1); }}
               placeholder="Source"
-              triggerClassName="w-[calc(50%-0.5rem)] sm:w-[160px]"
+              triggerClassName="w-[calc(50%-0.5rem)] sm:w-[150px]"
               data-testid="select-activity-source"
               options={[
                 { value: "all", label: "All Sources" },
@@ -145,7 +220,7 @@ export default function SystemActivityLogPage() {
               value={entityTypeFilter}
               onValueChange={(v) => { setEntityTypeFilter(v); setPage(1); }}
               placeholder="Entity Type"
-              triggerClassName="w-[calc(50%-0.5rem)] sm:w-[180px]"
+              triggerClassName="w-[calc(50%-0.5rem)] sm:w-[160px]"
               data-testid="select-activity-entity"
               options={[
                 { value: "all", label: "All Entities" },
@@ -153,16 +228,73 @@ export default function SystemActivityLogPage() {
               ]}
             />
             <SearchableSelect
+              value={actionFilter}
+              onValueChange={(v) => { setActionFilter(v); setPage(1); }}
+              placeholder="Action"
+              triggerClassName="w-[calc(50%-0.5rem)] sm:w-[160px]"
+              data-testid="select-activity-action"
+              options={[
+                { value: "all", label: "All Actions" },
+                ...filters.actions.map((a: string) => ({ value: a, label: a })),
+              ]}
+            />
+            <SearchableSelect
+              value={userNameFilter}
+              onValueChange={(v) => { setUserNameFilter(v); setPage(1); }}
+              placeholder="User"
+              triggerClassName="w-[calc(50%-0.5rem)] sm:w-[160px]"
+              data-testid="select-activity-user"
+              options={[
+                { value: "all", label: "All Users" },
+                ...filters.userNames.map((u: string) => ({ value: u, label: u })),
+              ]}
+            />
+            <SearchableSelect
               value={projectNameFilter}
               onValueChange={(v) => { setProjectNameFilter(v); setPage(1); }}
               placeholder="Project"
-              triggerClassName="w-full sm:w-[200px]"
+              triggerClassName="w-full sm:w-[180px]"
               data-testid="select-activity-project"
               options={[
                 { value: "all", label: "All Projects" },
                 ...filters.projectNames.map((p: string) => ({ value: p, label: p })),
               ]}
             />
+          </div>
+          <div className="flex flex-wrap gap-3 items-center">
+            <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-muted-foreground whitespace-nowrap">From:</label>
+              <Input
+                type="date"
+                className="w-[160px] h-9 text-sm"
+                value={fromDate}
+                onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
+                data-testid="input-activity-from-date"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-muted-foreground whitespace-nowrap">To:</label>
+              <Input
+                type="date"
+                className="w-[160px] h-9 text-sm"
+                value={toDate}
+                onChange={(e) => { setToDate(e.target.value); setPage(1); }}
+                data-testid="input-activity-to-date"
+              />
+            </div>
+            {activeFilterCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleClearFilters}
+                className="text-xs text-muted-foreground hover:text-foreground"
+                data-testid="button-clear-filters"
+              >
+                <X className="h-3 w-3 mr-1" />
+                Clear {activeFilterCount} filter{activeFilterCount > 1 ? "s" : ""}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -179,10 +311,11 @@ export default function SystemActivityLogPage() {
         </Card>
       ) : (
         <div className="border rounded-lg overflow-x-auto">
-          <table className="w-full text-sm min-w-[700px]" data-testid="activity-log-table">
+          <table className="w-full text-sm min-w-[800px]" data-testid="activity-log-table">
             <thead className="bg-muted">
               <tr>
                 <th className="text-left p-3 font-medium">Time</th>
+                <th className="text-left p-3 font-medium">User</th>
                 <th className="text-left p-3 font-medium">Source</th>
                 <th className="text-left p-3 font-medium">Action</th>
                 <th className="text-left p-3 font-medium">Entity</th>
@@ -206,17 +339,19 @@ export default function SystemActivityLogPage() {
                 return (
                   <tr key={uniqueKey} className="border-t hover:bg-muted/30" data-testid={`activity-row-${uniqueKey}`}>
                     <td className="p-3 whitespace-nowrap text-xs text-muted-foreground">
-                      {createdAt ? formatDate(createdAt) : "—"}
+                      {createdAt ? formatDate(createdAt) : "\u2014"}
+                    </td>
+                    <td className="p-3 text-xs font-medium whitespace-nowrap">
+                      {userName || "\u2014"}
                     </td>
                     <td className="p-3">
                       <Badge variant="outline" className={`text-xs ${colorClass}`}>{source}</Badge>
                     </td>
                     <td className="p-3 font-mono text-xs">{action}</td>
                     <td className="p-3 text-xs">{entityType}</td>
-                    <td className="p-3 text-xs truncate max-w-[150px]">{projectName || "—"}</td>
+                    <td className="p-3 text-xs truncate max-w-[150px]">{projectName || "\u2014"}</td>
                     <td className="p-3 text-xs truncate max-w-[250px]">
-                      {userName && !summary.includes(userName) ? <span className="font-medium">{userName}: </span> : null}
-                      {summary || "—"}
+                      {summary || "\u2014"}
                     </td>
                     <td className="p-3">
                       <Button
@@ -319,10 +454,10 @@ export default function SystemActivityLogPage() {
                         {detail.fieldChanges.map((fc: any) => (
                           <tr key={fc.id} className="border-t">
                             <td className="p-2 font-mono text-xs">{fc.fieldName}</td>
-                            <td className="p-2 text-red-600">{fc.oldValue ?? "—"}</td>
+                            <td className="p-2 text-red-600">{fc.oldValue ?? "\u2014"}</td>
                             <td className="p-2 text-green-600 flex items-center gap-1">
                               <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                              {fc.newValue ?? "—"}
+                              {fc.newValue ?? "\u2014"}
                             </td>
                           </tr>
                         ))}

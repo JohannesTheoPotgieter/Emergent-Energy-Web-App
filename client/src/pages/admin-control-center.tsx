@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Database,
   Users,
@@ -28,6 +29,10 @@ import {
   AlertTriangle,
   ExternalLink,
   RefreshCw,
+  LogOut,
+  Clock,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 function useAdminFetch<T>(endpoint: string, queryKey: string[]) {
@@ -75,6 +80,50 @@ interface IntegrationData {
   objectCount: number;
 }
 
+interface SessionData {
+  count: number;
+  sessions: Array<{
+    sid: string;
+    userId: number | null;
+    userName: string | null;
+    username: string | null;
+    userRole: string | null;
+    expiresAt: string;
+  }>;
+}
+
+interface ImportFailure {
+  id: number;
+  projectName: string;
+  fileName: string;
+  uploadedAt: string;
+  uploadedBy: string | null;
+  recordsAttempted: number | null;
+  recordsFailed: number | null;
+  blockerCount: number;
+  topError: string | null;
+}
+
+interface SystemIssue {
+  id: number;
+  entityType: string;
+  entityId: string | null;
+  action: string;
+  userName: string | null;
+  projectName: string | null;
+  createdAt: string;
+  details: Record<string, any> | null;
+  requestPath: string | null;
+}
+
+interface IntegrationHealthItem {
+  name: string;
+  type: string;
+  objectCount: number;
+  lastSyncTime: string | null;
+  status: string;
+}
+
 export default function AdminControlCenterPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -99,6 +148,45 @@ export default function AdminControlCenterPage() {
     "/api/admin/control-center/integrations",
     ["admin-control-integrations"]
   );
+
+  const { data: activeSessions, isLoading: sessionsLoading } = useAdminFetch<SessionData>(
+    "/api/admin/control-center/active-sessions",
+    ["admin-control-sessions"]
+  );
+
+  const { data: importFailures, isLoading: importFailuresLoading } = useAdminFetch<ImportFailure[]>(
+    "/api/admin/control-center/recent-import-failures",
+    ["admin-control-import-failures"]
+  );
+
+  const { data: systemIssues, isLoading: systemIssuesLoading } = useAdminFetch<SystemIssue[]>(
+    "/api/admin/control-center/recent-issues",
+    ["admin-control-system-issues"]
+  );
+
+  const { data: integrationHealth, isLoading: integrationHealthLoading } = useAdminFetch<IntegrationHealthItem[]>(
+    "/api/admin/control-center/integration-health",
+    ["admin-control-integration-health"]
+  );
+
+  const forceLogout = useMutation({
+    mutationFn: async (sid: string) => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/admin/control-center/sessions/${encodeURIComponent(sid)}`, {
+        method: "DELETE",
+        headers,
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to terminate session");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-control-sessions"] });
+      toast({ title: "Session terminated", description: "User has been logged out." });
+    },
+  });
 
   const toggleFlag = useMutation({
     mutationFn: async ({ key, value }: { key: string; value: boolean }) => {
@@ -444,6 +532,236 @@ export default function AdminControlCenterPage() {
           )}
         </CardContent>
       </Card>
+
+      <Card data-testid="card-active-sessions">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Users className="h-4 w-4 text-indigo-600" />
+            Active Sessions
+            {activeSessions && (
+              <Badge variant="outline" className="ml-2">{activeSessions.count}</Badge>
+            )}
+          </CardTitle>
+          <CardDescription>Currently logged-in users</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {sessionsLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+            </div>
+          ) : activeSessions && activeSessions.sessions.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>User</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Expires</TableHead>
+                  <TableHead className="w-[80px]">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {activeSessions.sessions.map((session) => (
+                  <TableRow key={session.sid} data-testid={`row-session-${session.sid}`}>
+                    <TableCell>
+                      <div>
+                        <p className="text-sm font-medium" data-testid={`text-session-user-${session.sid}`}>
+                          {session.userName || "Unknown"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{session.username || `ID: ${session.userId}`}</p>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">{session.userRole || "—"}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {new Date(session.expiresAt).toLocaleString()}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="sm" className="h-7 text-red-600 hover:text-red-700 hover:bg-red-50" data-testid={`button-force-logout-${session.sid}`}>
+                            <LogOut className="h-3.5 w-3.5" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Force Logout?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will terminate {session.userName || "this user"}'s session immediately.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => forceLogout.mutate(session.sid)}
+                              className="bg-red-600 hover:bg-red-700"
+                              data-testid={`button-confirm-force-logout-${session.sid}`}
+                            >
+                              Force Logout
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">No active sessions found</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-integration-health">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Link2 className="h-4 w-4 text-violet-600" />
+            Integration Health
+          </CardTitle>
+          <CardDescription>Detailed sync status per integration type</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {integrationHealthLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+            </div>
+          ) : integrationHealth && integrationHealth.length > 0 ? (
+            <div className="space-y-3">
+              {integrationHealth.map((item) => (
+                <div key={item.type} className="flex items-center justify-between p-3 rounded-lg border border-border" data-testid={`row-integration-${item.type}`}>
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      {item.status === "connected" ? (
+                        <Wifi className="h-3.5 w-3.5 text-green-600" />
+                      ) : (
+                        <WifiOff className="h-3.5 w-3.5 text-slate-400" />
+                      )}
+                      <p className="text-sm font-medium">{item.name}</p>
+                    </div>
+                    {item.lastSyncTime && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1 ml-5">
+                        <Clock className="h-3 w-3" />
+                        Last sync: {new Date(item.lastSyncTime).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground">{item.objectCount} objects</span>
+                    <Badge
+                      variant="outline"
+                      className={item.status === "connected" ? "bg-green-50 text-green-700 border-green-200" : "bg-slate-50 text-slate-500 border-slate-200"}
+                      data-testid={`status-integration-${item.type}`}
+                    >
+                      {item.status === "connected" ? "Connected" : "Not Connected"}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No integration data available</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card data-testid="card-import-failures">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileUp className="h-4 w-4 text-red-600" />
+              Recent Import Failures
+            </CardTitle>
+            <CardDescription>Last 10 failed import runs</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {importFailuresLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+              </div>
+            ) : importFailures && importFailures.length > 0 ? (
+              <div className="space-y-3">
+                {importFailures.map((failure) => (
+                  <div key={failure.id} className="p-3 rounded-lg border border-red-100 bg-red-50/30 space-y-1" data-testid={`row-import-failure-${failure.id}`}>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium truncate max-w-[200px]">{failure.projectName}</p>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(failure.uploadedAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">{failure.fileName}</p>
+                    {failure.uploadedBy && (
+                      <p className="text-xs text-muted-foreground">By: {failure.uploadedBy}</p>
+                    )}
+                    <div className="flex items-center gap-2">
+                      {failure.blockerCount > 0 && (
+                        <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 text-xs">
+                          {failure.blockerCount} blockers
+                        </Badge>
+                      )}
+                      {failure.recordsFailed != null && failure.recordsFailed > 0 && (
+                        <Badge variant="outline" className="text-xs">
+                          {failure.recordsFailed} records failed
+                        </Badge>
+                      )}
+                    </div>
+                    {failure.topError && (
+                      <p className="text-xs text-red-600 truncate" data-testid={`text-error-${failure.id}`}>
+                        {failure.topError}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No recent import failures</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-system-issues">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              Recent System Events
+            </CardTitle>
+            <CardDescription>Administrative and error events</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {systemIssuesLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+              </div>
+            ) : systemIssues && systemIssues.length > 0 ? (
+              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                {systemIssues.map((issue) => (
+                  <div key={issue.id} className="p-2.5 rounded-lg border border-border space-y-0.5" data-testid={`row-system-issue-${issue.id}`}>
+                    <div className="flex items-center justify-between">
+                      <Badge variant="outline" className="text-xs">{issue.action}</Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(issue.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {issue.entityType}{issue.entityId ? ` #${issue.entityId}` : ""}
+                      {issue.userName && ` · ${issue.userName}`}
+                      {issue.projectName && ` · ${issue.projectName}`}
+                    </p>
+                    {issue.requestPath && (
+                      <p className="text-xs text-muted-foreground font-mono truncate">{issue.requestPath}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No recent system events</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Card className="border-red-200" data-testid="card-dangerous-actions">
         <CardHeader className="pb-3">

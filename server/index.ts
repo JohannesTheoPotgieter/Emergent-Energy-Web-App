@@ -323,6 +323,12 @@ async function backfillPmUserIds() {
   } catch (e) {}
 
   try {
+    await db.execute(sql.raw(`ALTER TABLE operational_tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`));
+    await db.execute(sql.raw(`ALTER TABLE mytool_tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`));
+    console.log("[Soft Delete] deleted_at columns ensured on operational_tasks, mytool_tasks");
+  } catch (e) {}
+
+  try {
     await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS primary_instruction TEXT`));
     await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS stage_code TEXT`));
     await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS definition_of_done TEXT`));

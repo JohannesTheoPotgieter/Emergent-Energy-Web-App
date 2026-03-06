@@ -5952,15 +5952,76 @@ export async function registerRoutes(
       const workItemId = parseInt(req.params.id);
       if (isNaN(workItemId)) return res.status(400).json({ error: "Invalid work item id" });
       const rows = await db.execute(sql`
-        SELECT id, work_item_id, user_id, role, assigned_at
-        FROM work_item_assignments
-        WHERE work_item_id = ${workItemId} AND role = 'VIEWER'
+        SELECT wia.id, wia.work_item_id, wia.user_id, wia.role, wia.created_at,
+               u.name as user_name, u.username, u.role as user_role
+        FROM work_item_assignments wia
+        LEFT JOIN users u ON wia.user_id = u.id
+        WHERE wia.work_item_id = ${workItemId} AND wia.role = 'VIEWER'
       `);
       const results = Array.isArray(rows) ? rows : (rows.rows || []);
       res.json(results);
     } catch (error: any) {
       console.error("[WorkItemViewers] Error:", error);
       res.status(500).json({ error: "Failed to list viewers" });
+    }
+  });
+
+  app.post("/api/work-items/:id/viewers", requireAuth, async (req, res) => {
+    try {
+      const workItemId = parseInt(req.params.id);
+      const { userId: viewerUserId } = req.body;
+      if (isNaN(workItemId)) return res.status(400).json({ error: "Invalid work item id" });
+      if (!viewerUserId || typeof viewerUserId !== "number") return res.status(400).json({ error: "userId is required" });
+
+      const existing = await db.execute(sql`
+        SELECT id FROM work_item_assignments WHERE work_item_id = ${workItemId} AND user_id = ${viewerUserId} AND role = 'VIEWER'
+      `).then((r: any) => Array.isArray(r) ? r : (r.rows || []));
+
+      if (existing.length > 0) {
+        return res.json({ message: "User is already a viewer", alreadyExists: true });
+      }
+
+      await db.execute(sql`
+        INSERT INTO work_item_assignments (work_item_id, user_id, role, created_at)
+        VALUES (${workItemId}, ${viewerUserId}, 'VIEWER', NOW())
+      `);
+
+      logAuditFromReq(req, {
+        entityType: "work_item_assignment",
+        entityId: String(workItemId),
+        action: "add_viewer",
+        changesJson: { workItemId, viewerUserId },
+      });
+
+      res.json({ success: true, workItemId, viewerUserId });
+    } catch (error: any) {
+      console.error("[WorkItemViewers] Add error:", error);
+      res.status(500).json({ error: "Failed to add viewer" });
+    }
+  });
+
+  app.delete("/api/work-items/:id/viewers/:userId", requireAuth, async (req, res) => {
+    try {
+      const workItemId = parseInt(req.params.id);
+      const viewerUserId = parseInt(req.params.userId);
+      if (isNaN(workItemId) || isNaN(viewerUserId)) return res.status(400).json({ error: "Invalid parameters" });
+
+      await db.execute(sql`
+        DELETE FROM work_item_assignments
+        WHERE work_item_id = ${workItemId} AND user_id = ${viewerUserId} AND role = 'VIEWER'
+      `);
+
+      logAuditFromReq(req, {
+        entityType: "work_item_assignment",
+        entityId: String(workItemId),
+        action: "remove_viewer",
+        changesJson: { workItemId, viewerUserId },
+      });
+
+      res.json({ success: true, workItemId, viewerUserId });
+    } catch (error: any) {
+      console.error("[WorkItemViewers] Remove error:", error);
+      res.status(500).json({ error: "Failed to remove viewer" });
     }
   });
 
@@ -11934,7 +11995,7 @@ export async function registerRoutes(
           });
         }
       } else {
-        await db.delete(operationalTasks).where(eq(operationalTasks.id, taskId));
+        await db.update(operationalTasks).set({ deletedAt: new Date() }).where(eq(operationalTasks.id, taskId));
       }
 
       sendExcelSyncNotification({

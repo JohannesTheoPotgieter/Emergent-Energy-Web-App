@@ -702,10 +702,19 @@ function ProjectRecoveryTab() {
   );
 }
 
+const DELETED_TYPE_LABELS: Record<string, string> = {
+  work_item: "Work Item",
+  engineering_task: "Engineering Task",
+  operational_task: "Operational Task",
+  mytool_task: "My Tool Task",
+};
+
 function DeletedItemsTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [typeFilter, setTypeFilter] = useState<string>("");
+  const [search, setSearch] = useState("");
 
   const { data, isLoading } = useQuery({
     queryKey: ["recovery-deleted"],
@@ -738,7 +747,17 @@ function DeletedItemsTab() {
     },
   });
 
-  const items = data?.items || [];
+  const allItems = data?.items || [];
+  const items = allItems.filter((item: any) => {
+    if (typeFilter && item.type !== typeFilter) return false;
+    if (search && !item.title?.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  const typeCounts = allItems.reduce((acc: Record<string, number>, item: any) => {
+    acc[item.type] = (acc[item.type] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
 
   const toggleItem = (key: string) => {
     const next = new Set(selectedItems);
@@ -755,8 +774,48 @@ function DeletedItemsTab() {
     restoreMutation.mutate(toRestore);
   };
 
+  const getDaysSinceDeleted = (deletedDate: string | null) => {
+    if (!deletedDate) return null;
+    const diff = Date.now() - new Date(deletedDate).getTime();
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
+  };
+
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search deleted items..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+            data-testid="input-deleted-search"
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant={typeFilter === "" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setTypeFilter("")}
+            data-testid="button-filter-all-types"
+          >
+            All ({allItems.length})
+          </Button>
+          {Object.entries(typeCounts).map(([type, count]) => (
+            <Button
+              key={type}
+              variant={typeFilter === type ? "default" : "outline"}
+              size="sm"
+              onClick={() => setTypeFilter(type)}
+              data-testid={`button-filter-${type}`}
+            >
+              {DELETED_TYPE_LABELS[type] || type} ({count})
+            </Button>
+          ))}
+        </div>
+      </div>
+
       {selectedItems.size > 0 && (
         <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <span className="text-sm font-medium">{selectedItems.size} item(s) selected</span>
@@ -811,6 +870,7 @@ function DeletedItemsTab() {
                 <th className="text-left p-3 font-medium">Type</th>
                 <th className="text-left p-3 font-medium">Status</th>
                 <th className="text-left p-3 font-medium">Deleted</th>
+                <th className="text-left p-3 font-medium">Age</th>
               </tr>
             </thead>
             <tbody>
@@ -828,13 +888,20 @@ function DeletedItemsTab() {
                     <td className="p-3 font-mono text-xs">{item.id}</td>
                     <td className="p-3 truncate max-w-[250px]">{item.title}</td>
                     <td className="p-3">
-                      <Badge variant="outline" className="text-xs">{item.type}</Badge>
+                      <Badge variant="outline" className="text-xs">{DELETED_TYPE_LABELS[item.type] || item.type}</Badge>
                     </td>
                     <td className="p-3">
                       <Badge variant="secondary" className="text-xs">{item.status}</Badge>
                     </td>
                     <td className="p-3 text-xs whitespace-nowrap text-muted-foreground">
                       {item.deletedDate ? new Date(item.deletedDate).toLocaleString() : "—"}
+                    </td>
+                    <td className="p-3 text-xs whitespace-nowrap">
+                      {(() => {
+                        const days = getDaysSinceDeleted(item.deletedDate);
+                        if (days === null) return "—";
+                        return <span className={days > 60 ? "text-red-500 font-medium" : days > 30 ? "text-amber-500" : "text-muted-foreground"}>{days}d ago</span>;
+                      })()}
                     </td>
                   </tr>
                 );

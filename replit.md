@@ -98,3 +98,15 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Total**: 103 test cases across 13 categories. 13 total defects — all 13 fixed, 0 open.
 -   **Assessment**: READY — all identified defects resolved. Viewer management UI added, soft-delete with restore, Smart Import error handling hardened, status normalization at API level, admin My Work visibility, contract values in projects-summary.
 -   **Deliverables**: `SYSTEM_AUDIT.md`, `QA_TEST_MATRIX.md`, `DEFECT_REGISTER.md`, `RELEASE_READINESS.md`, `GAP_CLOSE_REPORT.md`, `ROLE_WORKFLOW_UAT.md`, `KPI_TRACEABILITY_MATRIX.md`, `ADMIN_RECOVERY_MATRIX.md`, `FRONTEND_CONSISTENCY_AUDIT.md`, `SMART_IMPORT_SCENARIO_TESTS.md`.
+
+## Close-Out Session (2026-03-06)
+-   **Viewer Management**: Hardened viewer API endpoints (GET/POST/DELETE), added audit logging for add/remove, enforced read-only access via `isViewerOnly()` guard, included viewer tasks in Tracking filter. Fixed `assigned_at` → `created_at` column bug.
+-   **Soft Delete Expansion**: Added `deleted_at` columns to `operational_tasks` and `mytool_tasks`. Converted all delete operations to soft delete. Updated admin Deleted Items tab with type filter, search, and age column. Expanded restore handler for all 4 entity types.
+-   **Activity Log Upgrade**: Added user, action, and date range filters. Added CSV export endpoint. Expanded search across user_name and project_name. Added clear filters button with count.
+-   **Admin Control Centre Expansion**: Added active sessions listing, force logout by user, integration health detail, recent import failures, and recent system events sections.
+-   **Task Consistency**: Verified viewer logic, badges, filters, and status normalization across all task types and views. Fixed tracking filter to include viewer tasks.
+-   **Role-Based UAT**: Tested 6 roles across 32 test cases. All permission boundaries correctly enforced. 2 defects found and fixed (CO-001, CO-002).
+-   **Close-Out Defects**: 2 total (CO-001, CO-002). Both fixed, 0 open.
+-   **All-Time Totals**: 272 test cases across all sessions. 30 total defects — 29 fixed, 1 invalid, 0 open.
+-   **Assessment**: READY FOR CONTROLLED INTERNAL USE.
+-   **Deliverables**: `CLOSE_OUT_ACTIONS.md`, `VIEWER_MANAGEMENT_SPEC.md`, `SOFT_DELETE_AND_RESTORE_SPEC.md`, `ACTIVITY_LOG_UPGRADE.md`, `FINAL_ROLE_JOURNEY_UAT.md`, `FINAL_CLOSE_OUT_QA.md`, `FINAL_GO_LIVE_RECOMMENDATION.md`.

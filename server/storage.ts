@@ -1959,11 +1959,11 @@ export class DatabaseStorage implements IStorage {
 
   // Operational Tasks
   async getAllOperationalTasks(): Promise<OperationalTask[]> {
-    return safeLegacyQuery(() => this.dbInstance.select().from(operationalTasks), []);
+    return safeLegacyQuery(() => this.dbInstance.select().from(operationalTasks).where(isNull(operationalTasks.deletedAt)), []);
   }
 
   async getOperationalTasksByProject(projectName: string): Promise<OperationalTask[]> {
-    return safeLegacyQuery(() => this.dbInstance.select().from(operationalTasks).where(eq(operationalTasks.projectName, projectName)).orderBy(operationalTasks.sortOrder), []);
+    return safeLegacyQuery(() => this.dbInstance.select().from(operationalTasks).where(and(eq(operationalTasks.projectName, projectName), isNull(operationalTasks.deletedAt))).orderBy(operationalTasks.sortOrder), []);
   }
 
   async getOperationalTask(id: number): Promise<OperationalTask | undefined> {
@@ -1983,7 +1983,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteOperationalTask(id: number): Promise<void> {
-    await safeLegacyWrite(() => this.dbInstance.delete(operationalTasks).where(eq(operationalTasks.id, id)));
+    await safeLegacyWrite(() => this.dbInstance.update(operationalTasks).set({ deletedAt: new Date() }).where(eq(operationalTasks.id, id)));
   }
 
   // Task Comments
@@ -2126,7 +2126,7 @@ export class DatabaseStorage implements IStorage {
   // My Tool - Tasks
   async getMytoolTasks(ownerUserId: number): Promise<MytoolTask[]> {
     return this.dbInstance.select().from(mytoolTasks)
-      .where(eq(mytoolTasks.ownerUserId, ownerUserId))
+      .where(and(eq(mytoolTasks.ownerUserId, ownerUserId), isNull(mytoolTasks.deletedAt)))
       .orderBy(mytoolTasks.sortOrder);
   }
 
@@ -2134,6 +2134,7 @@ export class DatabaseStorage implements IStorage {
     return this.dbInstance.select().from(mytoolTasks)
       .where(and(
         eq(mytoolTasks.ownerUserId, ownerUserId),
+        isNull(mytoolTasks.deletedAt),
         or(
           eq(mytoolTasks.plannedForDate, date),
           and(
@@ -2170,7 +2171,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteMytoolTask(id: number): Promise<void> {
-    await this.dbInstance.delete(mytoolTasks).where(eq(mytoolTasks.id, id));
+    await this.dbInstance.update(mytoolTasks).set({ deletedAt: new Date() }).where(eq(mytoolTasks.id, id));
   }
 
   // My Tool - Timeblocks

@@ -61,7 +61,7 @@ const taskPatchSchema = z.object({
 const restoreSchema = z.object({
   items: z.array(z.object({
     id: z.number(),
-    type: z.enum(["work_item", "engineering_task"]),
+    type: z.enum(["work_item", "engineering_task", "operational_task", "mytool_task"]),
   })),
 });
 
@@ -324,6 +324,29 @@ export function registerAdminRecoveryRoutes(app: Express) {
         .orderBy(desc(engineeringTasks.softDeletedAt))
         .limit(100);
 
+      const deletedOpTasks = await db.select({
+        id: operationalTasks.id,
+        title: operationalTasks.title,
+        status: operationalTasks.status,
+        projectName: operationalTasks.projectName,
+        deletedAt: operationalTasks.deletedAt,
+        ownerUserId: operationalTasks.ownerUserId,
+      }).from(operationalTasks)
+        .where(isNotNull(operationalTasks.deletedAt))
+        .orderBy(desc(operationalTasks.deletedAt))
+        .limit(100);
+
+      const deletedMytoolTasks = await db.select({
+        id: mytoolTasks.id,
+        title: mytoolTasks.title,
+        status: mytoolTasks.status,
+        deletedAt: mytoolTasks.deletedAt,
+        ownerUserId: mytoolTasks.ownerUserId,
+      }).from(mytoolTasks)
+        .where(isNotNull(mytoolTasks.deletedAt))
+        .orderBy(desc(mytoolTasks.deletedAt))
+        .limit(100);
+
       const items = [
         ...deletedWorkItems.map(wi => ({
           ...wi,
@@ -334,6 +357,16 @@ export function registerAdminRecoveryRoutes(app: Express) {
           ...et,
           type: "engineering_task" as const,
           deletedDate: et.softDeletedAt,
+        })),
+        ...deletedOpTasks.map(ot => ({
+          ...ot,
+          type: "operational_task" as const,
+          deletedDate: ot.deletedAt,
+        })),
+        ...deletedMytoolTasks.map(mt => ({
+          ...mt,
+          type: "mytool_task" as const,
+          deletedDate: mt.deletedAt,
         })),
       ].sort((a, b) => {
         const da = a.deletedDate ? new Date(a.deletedDate).getTime() : 0;
@@ -360,6 +393,12 @@ export function registerAdminRecoveryRoutes(app: Express) {
           restored++;
         } else if (item.type === "engineering_task") {
           await db.update(engineeringTasks).set({ softDeletedAt: null }).where(eq(engineeringTasks.id, item.id));
+          restored++;
+        } else if (item.type === "operational_task") {
+          await db.update(operationalTasks).set({ deletedAt: null }).where(eq(operationalTasks.id, item.id));
+          restored++;
+        } else if (item.type === "mytool_task") {
+          await db.update(mytoolTasks).set({ deletedAt: null }).where(eq(mytoolTasks.id, item.id));
           restored++;
         }
       }
