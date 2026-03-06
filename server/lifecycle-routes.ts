@@ -6,6 +6,7 @@ import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, 
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
+import { requirePermission } from "./permission-middleware";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -148,7 +149,7 @@ export function registerLifecycleRoutes(app: Express) {
 
   const RAG_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO"];
 
-  app.post("/api/lifecycle-board/projects/:id/rag", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/lifecycle-board/projects/:id/rag", requireAuth, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
     try {
       const role = ((req as any).user as any)?.role || "";
       if (!RAG_ROLES.includes(role)) {
@@ -612,7 +613,7 @@ export function registerLifecycleRoutes(app: Express) {
     }
   });
 
-  app.post("/api/lifecycle-board/projects/link-engineering", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+  app.post("/api/lifecycle-board/projects/link-engineering", requireAuth, requireExecRole, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
     try {
       const { engineeringProjectName, targetProjectId } = req.body;
       if (!engineeringProjectName || !targetProjectId) {
@@ -635,7 +636,7 @@ export function registerLifecycleRoutes(app: Express) {
     }
   });
 
-  app.post("/api/lifecycle-board/projects/merge", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+  app.post("/api/lifecycle-board/projects/merge", requireAuth, requireExecRole, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
     try {
       const { sourceProjectId, targetProjectId, reason } = req.body;
       if (!sourceProjectId || !targetProjectId) {
@@ -727,7 +728,7 @@ export function registerLifecycleRoutes(app: Express) {
     }
   });
 
-  app.post("/api/lifecycle-board/projects/promote-engineering", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+  app.post("/api/lifecycle-board/projects/promote-engineering", requireAuth, requireExecRole, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
     try {
       const { engineeringProjectName, phase } = req.body;
       if (!engineeringProjectName) {
@@ -795,7 +796,7 @@ export function registerLifecycleRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/lifecycle-board/projects/:id", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+  app.patch("/api/lifecycle-board/projects/:id", requireAuth, requireExecRole, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
     try {
       const idParam = req.params.id as string;
       const id = parseInt(idParam);
@@ -834,7 +835,7 @@ export function registerLifecycleRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/lifecycle-board/projects/:id/phase", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+  app.patch("/api/lifecycle-board/projects/:id/phase", requireAuth, requireExecRole, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
     try {
       const idParam = req.params.id as string;
       const id = parseInt(idParam);
@@ -913,7 +914,7 @@ export function registerLifecycleRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/lifecycle-board/projects/:id/execution-gate", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+  app.patch("/api/lifecycle-board/projects/:id/execution-gate", requireAuth, requireExecRole, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid project id" });
@@ -1085,7 +1086,7 @@ export function registerLifecycleRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/lifecycle-board/projects/:id/restore", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+  app.patch("/api/lifecycle-board/projects/:id/restore", requireAuth, requireExecRole, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id as string, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -1123,7 +1124,7 @@ export function registerLifecycleRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/lifecycle-board/projects/:id", requireAuth, requireExecRole, async (req: Request, res: Response) => {
+  app.delete("/api/lifecycle-board/projects/:id", requireAuth, requireExecRole, requirePermission('projects', 'delete'), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id as string, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });

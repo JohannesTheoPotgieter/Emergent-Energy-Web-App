@@ -526,8 +526,9 @@ function PermissionsTab({ toast, shared }: { toast: any; shared: ReturnType<type
                 <div className="text-xs text-amber-800 space-y-1">
                   <p className="font-semibold">Permission Scope</p>
                   <p><strong>Navigation access</strong> (section toggles) is fully enforced — hiding a section removes the sidebar link and blocks the route.</p>
-                  <p><strong>Entity permissions</strong> (View, Edit, Approve, Override, Delete) control UI visibility of features within pages. Most are enforced at the UI level. Backend admin-only endpoints are separately protected via role checks.</p>
-                  <p>Row-level or project-level ownership scoping (e.g. "PM can only edit their own projects") is not configurable here — it is handled by assignment logic in the application.</p>
+                  <p><strong>Entity permissions</strong> (View, Edit, Approve, Override, Delete) are enforced at both UI and backend levels. Over 40 critical write routes now have backend <code>requirePermission</code> middleware. Smart Import routes require admin access. Financial approvals require finance-specific roles.</p>
+                  <p><strong>Ownership scoping</strong>: Project lists include ownership metadata. Non-management users see scoped task lists. My Work data is strictly user-scoped. Project Developers see only their own tickets.</p>
+                  <p>Full row-level security across all endpoints is not yet implemented — some read endpoints still rely on application-level filtering. See the Admin Control Center for detailed enforcement coverage.</p>
                 </div>
               </div>
 

@@ -9,6 +9,7 @@ import {
 } from "@shared/schema";
 import { eq, and, desc, sql, isNull, isNotNull } from "drizzle-orm";
 import { classifyCostLines, generateRuleFromInvoice, normalizeInvoiceNumber } from "./lib/import/invoice-classifier";
+import { requirePermission } from "./permission-middleware";
 
 const router = Router();
 
@@ -146,7 +147,7 @@ router.get("/api/invoice-patterns", requireAuth, async (_req: Request, res: Resp
   }
 });
 
-router.post("/api/invoice-patterns", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/invoice-patterns", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const { patternType, patternValue, inferredType, counterpartyId, counterpartyName, confidenceWeight, normalizedExample } = req.body;
     if (!patternType || !patternValue || !inferredType) {
@@ -192,7 +193,7 @@ router.post("/api/invoice-patterns", requireAuth, async (req: Request, res: Resp
   }
 });
 
-router.patch("/api/invoice-patterns/:id", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/invoice-patterns/:id", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
@@ -214,7 +215,7 @@ router.patch("/api/invoice-patterns/:id", requireAuth, async (req: Request, res:
   }
 });
 
-router.delete("/api/invoice-patterns/:id", requireAuth, async (req: Request, res: Response) => {
+router.delete("/api/invoice-patterns/:id", requireAuth, requirePermission('procurement', 'delete'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
@@ -231,7 +232,7 @@ router.delete("/api/invoice-patterns/:id", requireAuth, async (req: Request, res
   }
 });
 
-router.post("/api/smart-import/:runId/classify", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/classify", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -265,7 +266,7 @@ router.post("/api/smart-import/:runId/classify", requireAuth, async (req: Reques
   }
 });
 
-router.post("/api/smart-import/:runId/classify-review", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/classify-review", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -396,7 +397,7 @@ router.post("/api/smart-import/:runId/classify-review", requireAuth, async (req:
   }
 });
 
-router.post("/api/procurement-analysis/classify", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/procurement-analysis/classify", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id || null;
 
@@ -604,7 +605,7 @@ router.get("/api/invoice-pattern-matches", requireAuth, async (req: Request, res
   }
 });
 
-router.post("/api/procurement-analysis/reset-tags", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/procurement-analysis/reset-tags", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     const userRole = user?.role;
@@ -649,7 +650,7 @@ router.post("/api/procurement-analysis/reset-tags", requireAuth, async (req: Req
   }
 });
 
-router.post("/api/admin/wipe-all-data", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/admin/wipe-all-data", requireAuth, requirePermission('admin', 'delete'), async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     const userRole = user?.role;
@@ -755,7 +756,7 @@ router.get("/api/counterparties", requireAuth, async (_req: Request, res: Respon
   }
 });
 
-router.post("/api/counterparties", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/counterparties", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const { nameCanonical, typeDefault, nameAliases, isCore } = req.body;
     if (!nameCanonical || !nameCanonical.trim()) {
@@ -784,7 +785,7 @@ router.post("/api/counterparties", requireAuth, async (req: Request, res: Respon
   }
 });
 
-router.patch("/api/counterparties/:id", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/counterparties/:id", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
@@ -815,7 +816,7 @@ router.patch("/api/counterparties/:id", requireAuth, async (req: Request, res: R
   }
 });
 
-router.delete("/api/counterparties/:id", requireAuth, async (req: Request, res: Response) => {
+router.delete("/api/counterparties/:id", requireAuth, requirePermission('procurement', 'delete'), async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });

@@ -2219,6 +2219,36 @@ export async function registerRoutes(
         counts[status] = (counts[status] || 0) + 1;
       }
 
+      const currentUser = (req as any).user;
+      const currentUserId = currentUser?.id || currentUser?.userId;
+      const currentUserName = currentUser?.name || "";
+      const currentRole = currentUser?.role || "";
+      const FULL_OVERSIGHT_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "ACCOUNTANT"];
+      const isFullOversight = FULL_OVERSIGHT_ROLES.includes(currentRole);
+
+      const userOwnedProjectIds = new Set<number>();
+      const userAssignedProjectNames = new Set<string>();
+
+      if (!isFullOversight && currentUserId) {
+        for (const info of allProjectInfo) {
+          if (info.pmUserId === currentUserId || info.pd === currentUserName) {
+            userOwnedProjectIds.add(info.id);
+            userAssignedProjectNames.add(info.projectName);
+          }
+        }
+        for (const task of allOpTasks) {
+          const assignees = (task.assignees || "").toLowerCase();
+          const isAssigned = assignees.includes(currentUserName.toLowerCase()) ||
+            (task as any).ownerUserId === currentUserId ||
+            (task as any).createdBy === currentUserId;
+          if (isAssigned && task.projectName) {
+            userAssignedProjectNames.add(resolveToCanonical(task.projectName));
+          }
+        }
+      }
+
+      const scopeParam = (req.query.scope as string || "").toLowerCase();
+
       const projectsSummary = Array.from(allProjectNames).map(projectName => {
         const info = projectInfoMap.get(projectName);
 
@@ -2523,10 +2553,22 @@ export async function registerRoutes(
           has_tracker_import: nameVariants.some(v => importedProjectNames.has(v)) || importedProjectNames.has(cleanName),
           last_import_at: nameVariants.reduce<string | null>((acc, v) => acc || lastImportByProject.get(v) || null, null) || lastImportByProject.get(cleanName) || null,
           is_active: info?.isActive !== false && info?.phase?.toLowerCase() !== "gone",
+          _user_is_pm: info?.pmUserId === currentUserId,
+          _user_is_pd: info?.pd === currentUserName,
+          _user_has_tasks: !isFullOversight ? userAssignedProjectNames.has(projectName) || nameVariants.some(v => userAssignedProjectNames.has(v)) : false,
+          _user_scope: isFullOversight ? "full_oversight" : (
+            (info?.pmUserId === currentUserId || info?.pd === currentUserName) ? "owned" :
+            (userAssignedProjectNames.has(projectName) || nameVariants.some(v => userAssignedProjectNames.has(v))) ? "assigned" : "visible"
+          ),
         };
       });
 
-      res.json(projectsSummary);
+      let finalResult = projectsSummary;
+      if (scopeParam === "owned" && !isFullOversight) {
+        finalResult = projectsSummary.filter((p: any) => p._user_scope === "owned" || p._user_scope === "assigned");
+      }
+
+      res.json(finalResult);
     } catch (error) {
       console.error("Projects summary fetch error:", error);
       res.status(500).json({ error: "Failed to fetch projects summary", message: "Failed to fetch projects summary" });
@@ -2748,7 +2790,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/projects-summary/:projectName/latest-update", requireAuth, async (req, res) => {
+  app.patch("/api/projects-summary/:projectName/latest-update", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
     try {
       const projectName = decodeURIComponent(req.params.projectName as string);
       const schema = z.object({
@@ -4490,7 +4532,25 @@ export async function registerRoutes(
         return res.json(tasks);
       }
       const tasks = await storage.getAllTasks();
-      res.json(tasks);
+
+      const user = (req as any).user;
+      const role = user?.role || "";
+      const FULL_ACCESS_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "ENGINEERING_MANAGER", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER"];
+      if (FULL_ACCESS_ROLES.includes(role)) {
+        return res.json(tasks);
+      }
+
+      const userId = user?.id || user?.userId;
+      const userName = (user?.name || "").toLowerCase();
+      const scopedTasks = tasks.filter((t: any) => {
+        if (t.ownerUserId === userId || t.createdBy === userId) return true;
+        const assignees = (t.assignees || "").toLowerCase();
+        if (userName && assignees.includes(userName)) return true;
+        const assigneeIds = t.assigneeUserIds || [];
+        if (Array.isArray(assigneeIds) && assigneeIds.includes(userId)) return true;
+        return false;
+      });
+      res.json(scopedTasks);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch tasks", message: "Failed to fetch tasks" });
     }

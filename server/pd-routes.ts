@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { clients, pdTickets, operationalTasks, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES } from "@shared/schema";
 import { eq, ilike, sql, and, desc, asc, or, count } from "drizzle-orm";
+import { requirePermission } from "./permission-middleware";
 
 function requireAuth(req: Request, res: Response, next: () => void) {
   if (!req.isAuthenticated || !req.isAuthenticated()) {
@@ -40,7 +41,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd/clients", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/pd/clients", requireAuth, requirePermission('pd_quality', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
@@ -72,7 +73,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/pd/clients/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/pd/clients/:id", requireAuth, requirePermission('pd_quality', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
@@ -244,7 +245,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd/tickets", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/pd/tickets", requireAuth, requirePermission('pd_quality', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
@@ -299,7 +300,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/pd/tickets/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/pd/tickets/:id", requireAuth, requirePermission('pd_quality', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
@@ -337,7 +338,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd/tickets/:id/spawn-tasks", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/pd/tickets/:id/spawn-tasks", requireAuth, requirePermission('pd_quality', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";

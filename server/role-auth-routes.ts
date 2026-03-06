@@ -12,6 +12,7 @@ import {
   ADMIN_ROLES,
   type CompanyRole,
 } from "@shared/schema";
+import { requireAuth, requireAdmin } from "./departments/shared-middleware";
 
 function isValidCompanyRole(role: string): role is CompanyRole {
   return (COMPANY_ROLES as readonly string[]).includes(role);
@@ -284,17 +285,9 @@ export function registerRoleAuthRoutes(app: Express) {
     }
   });
 
-  app.put("/api/settings", async (req: Request, res: Response) => {
+  app.put("/api/settings", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const authHeader = req.headers.authorization;
-      let currentRole = "unknown";
-      if (authHeader?.startsWith("Bearer ")) {
-        const payload = verifyToken(authHeader.substring(7));
-        if (payload) currentRole = payload.role;
-      }
-      if (currentRole !== "COO_ADMIN" && currentRole !== "admin") {
-        return res.status(403).json({ error: "forbidden", message: "Only COO_ADMIN can modify settings" });
-      }
+      const currentRole = req.user?.role || "unknown";
 
       const { key, value } = req.body;
       if (!key) return res.status(400).json({ error: "key is required" });

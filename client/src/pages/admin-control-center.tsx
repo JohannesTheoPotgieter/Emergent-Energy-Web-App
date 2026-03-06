@@ -169,6 +169,22 @@ export default function AdminControlCenterPage() {
     ["admin-control-integration-health"]
   );
 
+  const { data: permEnforcement, isLoading: permEnforcementLoading } = useAdminFetch<{
+    summary: {
+      totalBackendEnforcedRoutes: number;
+      totalOwnershipScopedEndpoints: number;
+      totalApplicationLogicOnly: number;
+      recentAccessDenials7d: number;
+      recentImportIssues7d: number;
+    };
+    backendEnforced: { route: string; entity: string; action: string; level: string }[];
+    ownershipScoping: { endpoint: string; scope: string; enforced: string }[];
+    applicationLogicOnly: { endpoint: string; scope: string; status: string }[];
+  }>(
+    "/api/admin/control-center/permission-enforcement",
+    ["admin-control-perm-enforcement"]
+  );
+
   const { data: opsExceptions, isLoading: opsExceptionsLoading } = useAdminFetch<{
     unassignedTasks: number;
     unassignedProjects: number;
@@ -471,6 +487,85 @@ export default function AdminControlCenterPage() {
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">Failed to load exceptions</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-permission-enforcement">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-emerald-600" />
+            Permission Enforcement Coverage
+          </CardTitle>
+          <CardDescription>Backend security enforcement status and recent governance signals</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {permEnforcementLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+            </div>
+          ) : permEnforcement ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-center">
+                  <p className="text-2xl font-bold text-emerald-700">{permEnforcement.summary.totalBackendEnforcedRoutes}</p>
+                  <p className="text-xs text-muted-foreground">Backend-Enforced Routes</p>
+                </div>
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-center">
+                  <p className="text-2xl font-bold text-blue-700">{permEnforcement.summary.totalOwnershipScopedEndpoints}</p>
+                  <p className="text-xs text-muted-foreground">Ownership-Scoped</p>
+                </div>
+                <div className="rounded-lg border p-3 text-center border-border">
+                  <p className="text-2xl font-bold text-foreground">{permEnforcement.summary.totalApplicationLogicOnly}</p>
+                  <p className="text-xs text-muted-foreground">Application Logic Only</p>
+                </div>
+                <div className={`rounded-lg border p-3 text-center ${permEnforcement.summary.recentAccessDenials7d > 0 ? "border-amber-200 bg-amber-50" : "border-border"}`}>
+                  <p className={`text-2xl font-bold ${permEnforcement.summary.recentAccessDenials7d > 0 ? "text-amber-600" : "text-foreground"}`}>{permEnforcement.summary.recentAccessDenials7d}</p>
+                  <p className="text-xs text-muted-foreground">Access Denials (7d)</p>
+                </div>
+                <div className={`rounded-lg border p-3 text-center ${permEnforcement.summary.recentImportIssues7d > 0 ? "border-red-200 bg-red-50" : "border-border"}`}>
+                  <p className={`text-2xl font-bold ${permEnforcement.summary.recentImportIssues7d > 0 ? "text-red-600" : "text-foreground"}`}>{permEnforcement.summary.recentImportIssues7d}</p>
+                  <p className="text-xs text-muted-foreground">Import Issues (7d)</p>
+                </div>
+              </div>
+              <Separator />
+              <details className="text-sm">
+                <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground">View Backend-Enforced Routes ({permEnforcement.backendEnforced.length})</summary>
+                <div className="mt-2 max-h-48 overflow-y-auto border rounded-md">
+                  <Table>
+                    <TableHeader><TableRow><TableHead className="text-xs">Route</TableHead><TableHead className="text-xs">Entity</TableHead><TableHead className="text-xs">Level</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {permEnforcement.backendEnforced.map((r, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="text-xs font-mono py-1">{r.route}</TableCell>
+                          <TableCell className="text-xs py-1"><Badge variant="outline" className="text-[10px]">{r.entity}/{r.action}</Badge></TableCell>
+                          <TableCell className="text-xs py-1">{r.level}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </details>
+              <details className="text-sm">
+                <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground">View Ownership-Scoped Endpoints ({permEnforcement.ownershipScoping.length})</summary>
+                <div className="mt-2 max-h-32 overflow-y-auto border rounded-md">
+                  <Table>
+                    <TableHeader><TableRow><TableHead className="text-xs">Endpoint</TableHead><TableHead className="text-xs">Scope</TableHead><TableHead className="text-xs">Enforced</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {permEnforcement.ownershipScoping.map((r, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="text-xs font-mono py-1">{r.endpoint}</TableCell>
+                          <TableCell className="text-xs py-1">{r.scope}</TableCell>
+                          <TableCell className="text-xs py-1"><Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">{r.enforced}</Badge></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </details>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Failed to load enforcement data</p>
           )}
         </CardContent>
       </Card>
