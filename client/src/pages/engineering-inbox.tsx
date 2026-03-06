@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { EnergyLoader } from "@/components/ui/energy-loader";
 import {
   Inbox,
   Loader2,
@@ -530,17 +531,8 @@ export default function EngineeringInbox() {
 
   if (isLoading) {
     return (
-      <div data-testid="engineering-inbox" className="space-y-5">
-        <div className="flex items-center gap-3">
-          <Inbox className="h-7 w-7 text-blue-500" />
-          <div>
-            <h2 className="text-lg sm:text-xl md:text-2xl font-heading font-bold">Engineering Pipeline</h2>
-            <p className="text-xs text-muted-foreground">Loading...</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[1, 2, 3, 4].map((i) => <div key={i} className="h-24 bg-muted animate-pulse rounded-xl" />)}
-        </div>
+      <div data-testid="engineering-inbox" className="flex items-center justify-center min-h-[400px]">
+        <EnergyLoader size="lg" label="Loading engineering pipeline..." />
       </div>
     );
   }

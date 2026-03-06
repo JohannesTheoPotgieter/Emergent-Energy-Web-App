@@ -8,10 +8,11 @@ import {
   ResponsiveContainer, ComposedChart, Line,
 } from "recharts";
 import {
-  DollarSign, TrendingUp, Activity, Percent, Search, Loader2,
+  DollarSign, TrendingUp, Activity, Percent, Search,
   Target, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { useLocation } from "wouter";
+import { EnergyLoader } from "@/components/ui/energy-loader";
 
 function authHeaders() {
   const token = localStorage.getItem("auth_token");
@@ -107,7 +108,7 @@ export default function GpTrackerPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-[60vh]" data-testid="gp-tracker-page">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <EnergyLoader size="lg" label="Loading GP tracker..." />
       </div>
     );
   }

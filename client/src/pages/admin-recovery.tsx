@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -246,22 +247,39 @@ function TaskRecoveryTab() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setEditingTask(null); setEditFields({}); }}>Cancel</Button>
-            <Button
-              onClick={() => {
-                if (!editingTask) return;
-                const source = editingTask.taskSource || editingTask.taskType;
-                updateMutation.mutate({
-                  taskId: editingTask.id,
-                  taskSource: source === "engineering" ? "engineering_task" : source === "work_item" ? "plan" : source,
-                  updates: editFields,
-                });
-              }}
-              disabled={updateMutation.isPending}
-              data-testid="button-save-task-edit"
-            >
-              {updateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Save Changes
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button disabled={updateMutation.isPending} data-testid="button-save-task-edit">
+                  {updateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Save Changes
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Confirm Recovery Edit</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    You are about to modify {editingTask?.taskType} task #{editingTask?.id} "{editFields.title}". This action will be audit-logged. Are you sure you want to proceed?
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      if (!editingTask) return;
+                      const source = editingTask.taskSource || editingTask.taskType;
+                      updateMutation.mutate({
+                        taskId: editingTask.id,
+                        taskSource: source === "engineering" ? "engineering_task" : source === "work_item" ? "plan" : source,
+                        updates: editFields,
+                      });
+                    }}
+                    data-testid="button-confirm-task-edit"
+                  >
+                    Confirm Edit
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -690,15 +708,32 @@ function DeletedItemsTab() {
       {selectedItems.size > 0 && (
         <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
           <span className="text-sm font-medium">{selectedItems.size} item(s) selected</span>
-          <Button
-            size="sm"
-            onClick={handleRestore}
-            disabled={restoreMutation.isPending}
-            data-testid="button-restore-selected"
-          >
-            {restoreMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RotateCcw className="h-4 w-4 mr-2" />}
-            Restore Selected
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                size="sm"
+                disabled={restoreMutation.isPending}
+                data-testid="button-restore-selected"
+              >
+                {restoreMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RotateCcw className="h-4 w-4 mr-2" />}
+                Restore Selected
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirm Restore</AlertDialogTitle>
+                <AlertDialogDescription>
+                  You are about to restore {selectedItems.size} deleted item(s). This action will be audit-logged.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleRestore} data-testid="button-confirm-restore">
+                  Restore Items
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       )}
 

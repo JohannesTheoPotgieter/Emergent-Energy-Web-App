@@ -11,6 +11,7 @@ import {
   Activity, FileUp, Edit, Shield, GitMerge, Cpu, Users, Settings, LogIn, Trash2, PenLine,
   ChevronLeft, ChevronRight, Loader2, Search, ArrowRight, Filter, AlertTriangle,
 } from "lucide-react";
+import { EnergyLoader } from "@/components/ui/energy-loader";
 
 const SOURCE_ICONS: Record<string, any> = {
   IMPORT: FileUp, MANUAL_EDIT: Edit, OVERRIDE: Shield,
@@ -168,8 +169,7 @@ export default function SystemActivityLogPage() {
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12" data-testid="activity-loading">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          <span className="ml-2 text-muted-foreground">Loading activity log...</span>
+          <EnergyLoader size="md" label="Loading activity log..." />
         </div>
       ) : items.length === 0 ? (
         <Card>

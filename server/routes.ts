@@ -28,6 +28,9 @@ import { createNameResolver, mapCostToExpenseInput } from "./lib/data-merge";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
 import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getAllWorkItemsForPlanTab, getWorkItemsAsOperationalTasks, getWorkItemsAsMytoolTasks } from "./work-items-adapter";
+import { ApiError, sendError, badRequest, notFound, validationError } from "./lib/api-error";
+import { validateTaskCreate, validateTaskUpdate } from "./lib/task-validation";
+import { normalizeStatus, normalizePriority } from "./lib/canonical-task-engine";
 
 function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
   if (fontColor === 'red') return false;
@@ -10310,9 +10313,9 @@ export async function registerRoutes(
         if (!planTask) return res.status(404).json({ error: "Baseline task not found" });
 
         const pctComplete = planTask.actualPctComplete != null ? Math.round(planTask.actualPctComplete * 100) : 0;
-        let status = "Not Started";
-        if (pctComplete >= 100) status = "Done";
-        else if (pctComplete > 0) status = "In Progress";
+        let status = "todo";
+        if (pctComplete >= 100) status = "complete";
+        else if (pctComplete > 0) status = "in_progress";
 
         const syntheticTask = {
           id: -planTask.id,
@@ -10458,9 +10461,14 @@ export async function registerRoutes(
 
   app.post("/api/operational-tasks", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      if (!req.body.title || typeof req.body.title !== "string" || !req.body.title.trim()) {
-        return res.status(400).json({ error: "validation_error", message: "Title is required" });
+      const validationErrors = validateTaskCreate(req.body);
+      if (validationErrors.length > 0) {
+        const fields: Record<string, string> = {};
+        validationErrors.forEach(e => { fields[e.field] = e.message; });
+        return sendError(res, validationError(fields));
       }
+      if (req.body.status) req.body.status = normalizeStatus(req.body.status);
+      if (req.body.priority) req.body.priority = normalizePriority(req.body.priority);
       const task = await storage.createOperationalTask(req.body);
       await storage.createTaskActivityLog({
         taskId: task.id,
@@ -10473,7 +10481,7 @@ export async function registerRoutes(
       logAuditFromReq(req, { entityType: "operational_task", action: "create", entityId: String(task.id), projectName: req.body.projectName, changesJson: { description: "Operational task created", title: req.body.title, projectName: req.body.projectName } });
       res.json(task);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, err);
     }
   });
 
@@ -10481,6 +10489,14 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const updates = req.body;
+      const validationErrors = validateTaskUpdate(updates);
+      if (validationErrors.length > 0) {
+        const fields: Record<string, string> = {};
+        validationErrors.forEach(e => { fields[e.field] = e.message; });
+        return sendError(res, validationError(fields));
+      }
+      if (updates.status) updates.status = normalizeStatus(updates.status);
+      if (updates.priority) updates.priority = normalizePriority(updates.priority);
 
       if (id < 0) {
         const planId = -id;
@@ -10504,9 +10520,9 @@ export async function registerRoutes(
         if (!planTask) return res.status(404).json({ error: "Baseline task not found" });
 
         const pctComplete = planTask.actualPctComplete != null ? Math.round(planTask.actualPctComplete * 100) : 0;
-        let status = "Not Started";
-        if (pctComplete >= 100) status = "Done";
-        else if (pctComplete > 0) status = "In Progress";
+        let status = "todo";
+        if (pctComplete >= 100) status = "complete";
+        else if (pctComplete > 0) status = "in_progress";
 
         const newTask = await storage.createOperationalTask({
           projectName: planTask.projectName,
@@ -10545,7 +10561,7 @@ export async function registerRoutes(
       }
 
       const oldTask = await storage.getOperationalTask(id);
-      if (!oldTask) return res.status(404).json({ error: "Task not found" });
+      if (!oldTask) return sendError(res, notFound("Operational task"));
       const updated = await storage.updateOperationalTask(id, updates);
       for (const [key, value] of Object.entries(updates)) {
         if ((oldTask as any)[key] !== value) {
@@ -10562,7 +10578,7 @@ export async function registerRoutes(
       logAuditFromReq(req, { entityType: "operational_task", action: "update", entityId: String(id), changesJson: { description: "Operational task updated", changedFields: Object.keys(updates) } });
       res.json(updated);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, err);
     }
   });
 
@@ -11676,16 +11692,25 @@ export async function registerRoutes(
     try {
       const user = req.user as any;
       const { projectName, title, startDate, dueDate, status, priority, isMilestone, parentTaskId } = req.body;
-      if (!projectName || !title) return res.status(400).json({ error: "projectName and title are required" });
+      if (!projectName) return sendError(res, badRequest("projectName is required"));
+      const validationErrors = validateTaskCreate(req.body);
+      if (validationErrors.length > 0) {
+        const fields: Record<string, string> = {};
+        validationErrors.forEach(e => { fields[e.field] = e.message; });
+        return sendError(res, validationError(fields));
+      }
 
       const canEdit = await canEditProjectTasks(req, projectName);
-      if (!canEdit) return res.status(403).json({ error: "You don't have permission to create tasks" });
+      if (!canEdit) return res.status(403).json({ error: "FORBIDDEN", message: "You don't have permission to create tasks" });
+
+      const normalizedStatus = normalizeStatus(status || "Not Started");
+      const normalizedPriority = normalizePriority(priority || "Normal");
 
       const [task] = await db.insert(operationalTasks).values({
         projectName,
         title,
-        status: status || "Not Started",
-        priority: priority || "Normal",
+        status: normalizedStatus,
+        priority: normalizedPriority,
         startDate: startDate || null,
         dueDate: dueDate || null,
         isMilestone: isMilestone || false,
@@ -11731,7 +11756,7 @@ export async function registerRoutes(
       res.json(task);
     } catch (err: any) {
       console.error("Plan task create error:", err);
-      res.status(500).json({ error: err.message });
+      sendError(res, err);
     }
   });
 
@@ -12656,19 +12681,27 @@ export async function registerRoutes(
 
   app.post("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
     try {
+      const validationErrors = validateTaskCreate(req.body);
+      if (validationErrors.length > 0) {
+        const fields: Record<string, string> = {};
+        validationErrors.forEach(e => { fields[e.field] = e.message; });
+        return sendError(res, validationError(fields));
+      }
       const userId = (req.user as any).id;
       const bucket = req.body.bucket || 'personal';
       if (bucket === 'project' && !req.body.projectName) {
-        return res.status(400).json({ error: "Project name is required when bucket is 'project'" });
+        return sendError(res, badRequest("Project name is required when bucket is 'project'"));
       }
       if (bucket !== 'project' && req.body.projectName) {
         req.body.projectName = null;
       }
+      if (req.body.status) req.body.status = normalizeStatus(req.body.status);
+      if (req.body.priority) req.body.priority = normalizePriority(req.body.priority);
       const task = await storage.createMytoolTask({ ...req.body, bucket, ownerUserId: userId });
       logAuditFromReq(req, { entityType: "mytool_task", action: "create", entityId: String(task.id), changesJson: { description: "MyTool task created", title: req.body.title, bucket } });
       res.json(task);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      sendError(res, err);
     }
   });
 
@@ -12676,30 +12709,38 @@ export async function registerRoutes(
     try {
       const taskId = parseInt(req.params.id);
       const userId = (req.user as any).id;
+      const validationErrors = validateTaskUpdate(req.body);
+      if (validationErrors.length > 0) {
+        const fields: Record<string, string> = {};
+        validationErrors.forEach(e => { fields[e.field] = e.message; });
+        return sendError(res, validationError(fields));
+      }
+      if (req.body.status) req.body.status = normalizeStatus(req.body.status);
+      if (req.body.priority) req.body.priority = normalizePriority(req.body.priority);
       const existingTask = await storage.getMytoolTask(taskId);
 
       if (req.body.bucket !== undefined || req.body.projectName !== undefined) {
         const bucket = req.body.bucket || existingTask?.bucket || 'personal';
         const projectName = req.body.projectName !== undefined ? req.body.projectName : existingTask?.projectName;
         if (bucket === 'project' && !projectName) {
-          return res.status(400).json({ error: "Project name is required when bucket is 'project'" });
+          return sendError(res, badRequest("Project name is required when bucket is 'project'"));
         }
         if (bucket !== 'project') {
           req.body.projectName = null;
         }
       }
 
-      if (req.body.status === 'done' && existingTask) {
+      if (req.body.status === 'complete' && existingTask) {
         const dod = req.body.definitionOfDone || existingTask.definitionOfDone;
         if (!dod || !dod.trim()) {
-          return res.status(422).json({ error: "Cannot mark task as done without a Definition of Done." });
+          return sendError(res, validationError({ definitionOfDone: "Cannot mark task as done without a Definition of Done." }));
         }
       }
 
       const task = await storage.updateMytoolTask(taskId, req.body);
 
       if (
-        req.body.status === "done" &&
+        (req.body.status === "complete" || req.body.status === "done") &&
         existingTask &&
         existingTask.isRecurring &&
         existingTask.recurrenceFrequency
@@ -12715,7 +12756,7 @@ export async function registerRoutes(
           await storage.createMytoolTask({
             ownerUserId: userId,
             title: existingTask.title,
-            status: "planned",
+            status: "todo",
             priority: existingTask.priority,
             plannedForDate: nextDate,
             dueAt: existingTask.dueAt ? computeNextDueDate(existingTask.dueAt, existingTask.recurrenceFrequency, existingTask.recurrenceInterval || 1) : null,
@@ -14198,5 +14239,9 @@ function registerUserFolderRoutes(app: Express) {
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    sendError(res, err);
   });
 }

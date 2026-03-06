@@ -8,11 +8,12 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
 import {
-  Loader2, Search, Zap, AlertCircle, CheckCircle2, AlertTriangle,
+  Search, Zap, AlertCircle, CheckCircle2, AlertTriangle,
   TrendingUp, TrendingDown, DollarSign, BarChart3,
   Calendar, ChevronDown, ChevronUp, ExternalLink, Target,
   Building2, ArrowRight, ClipboardList, Receipt, Activity,
 } from "lucide-react";
+import { EnergyLoader } from "@/components/ui/energy-loader";
 
 interface ProjectInfo {
   id: number | null;
@@ -211,8 +212,7 @@ export default function ExecutionBoard() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-3" data-testid="execution-board-loading">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <p className="text-sm text-muted-foreground">Loading execution data...</p>
+        <EnergyLoader size="lg" label="Loading execution data..." />
       </div>
     );
   }

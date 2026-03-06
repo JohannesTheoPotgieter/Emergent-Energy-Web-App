@@ -82,6 +82,16 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Audit & Data Governance**: Enhanced `server/audit-logger.ts` with typed helpers (logStatusChange, logReassignment, logTypeChange, logImportAction, logAdminRecovery). Task validation module `server/lib/task-validation.ts`. Admin-only enforcement on all control tower and recovery endpoints.
 -   **Navigation**: All new pages registered in `App.tsx` and sidebar (`AppLayout.tsx`) with proper permission gating.
 
+## Platform Stabilization (2026-03-06)
+-   **Admin Control Center**: `/admin/control-center` — unified admin dashboard with system health, import stats, integration status, feature flags, system enums, quick links, and dangerous actions with AlertDialog confirmations. Server: `server/admin-control-routes.ts`.
+-   **Transactional Logging Hardening**: 170+ audit logging calls across all route files. Role management (7 new calls for role CRUD, user CRUD, password resets). All admin recovery edits and dangerous actions audit-logged.
+-   **Canonical Task Normalization**: All task write paths now normalize status via `normalizeStatus()` — operational tasks, mytool tasks, planning tasks, baseline promotion, admin recovery PATCH. Recurring task creation uses canonical "todo". Fixed legacy "done"/"planned"/"Not Started" values on write paths.
+-   **Admin Recovery Hardening**: AlertDialog confirmation dialogs on task edits and deleted item restores. Status normalization on recovery PATCH handler. 11 correction scenarios covered.
+-   **Shared Platform Cleanup**: ApiError class standardized across routes. Task validation on creation endpoints. EnergyLoader on 6+ pages. SearchableSelect on revenue-tracker dropdown. Global error handler middleware.
+-   **Stabilization Defects**: 7 found, 7 fixed (STAB-001 through STAB-007). See `FINAL_DEFECT_REGISTER.md`.
+-   **Total (All Sessions)**: 153 test cases. 20 total defects — all 20 fixed, 0 open.
+-   **Deliverables**: `PLATFORM_STABILIZATION_PLAN.md`, `ROLE_PERMISSION_MATRIX.md`, `ADMIN_CONTROL_CENTRE.md`, `TRANSACTION_LOGGING_SPEC.md`, `FINAL_QA_MATRIX.md`, `FINAL_DEFECT_REGISTER.md`, `FINAL_RELEASE_READINESS.md`, `FUTURE_PM_FOUNDATION_MAP.md`.
+
 ## System Audit (2026-03-06)
 -   **Pass 1**: Full system audit. 73 tests, 5 defects found and fixed (DEF-001–DEF-005). See `SYSTEM_AUDIT.md`.
 -   **Pass 2**: Trust-hardening gap closure. 30 additional tests, 8 new defects identified and fixed (DEF-006–DEF-013, all MEDIUM/LOW). See `GAP_CLOSE_REPORT.md`.
