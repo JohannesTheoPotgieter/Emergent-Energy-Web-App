@@ -1,0 +1,512 @@
+You are working on the existing Emergent Energy operational web application.
+The application is already live or nearing controlled internal go-live and already contains the following major capability areas:
+engineering
+quality
+financial and program reporting
+project detail reporting
+planning / schedule visibility
+project management views
+admin controls
+role and permission framework
+transactional audit logging
+canonical task direction
+project-centric architecture
+project management on the go capability in earlier form
+Your task in this pass is NOT to redesign the platform and NOT to break existing functionality.
+Your task is to SCOPE, DESIGN, IMPLEMENT, INTEGRATE, AND TEST the next layer of PM maturity capability in a way that extends the current architecture cleanly and prepares the platform to become a full project management operating system over time.
+The features to implement are:
+dependencies
+approvals
+change control
+RAID
+procurement
+subcontractor controls
+commissioning / closeout flows
+full integration of Project Management On The Go, including PO generation, PO capture, and invoice capture
+These are phase-after-go-live maturity features. They are not to be built as disconnected mini-modules. They must plug into the existing project spine, task engine, permissions, admin controls, logging, and reporting model.
+Do not make assumptions where business rules are unclear. Where there is true ambiguity, ask a specific question only for that point.
+Do not break any working current functionality.
+Do not duplicate engines that already exist.
+Work like a senior PM platform architect, systems engineer, and QA lead.
+The standard is not “feature exists.”
+The standard is “feature fits the platform, works end to end, is permission-safe, auditable, mobile-usable where needed, and operationally useful.”
+==================================================
+PRIMARY OBJECTIVE
+Add the 8 PM maturity features in a controlled and platform-consistent way so that:
+they reuse current data structures and shared services where possible
+they are governed by the current role and permission system
+they are visible and editable through the front end where appropriate
+they are linked to projects and tasks correctly
+they are transactionally logged with acting user attribution
+they are testable end to end
+they do not break current engineering, quality, PM, finance, reporting, or mobile PM flows
+==================================================
+ARCHITECTURAL RULES
+The project remains the master object
+All new features must link back to project_id and fit the project detail and program rollup structure.
+The task engine remains the execution engine
+If a feature requires work to be done, it should create, link, or reference canonical tasks instead of inventing a separate execution system.
+Shared services must be reused
+Use existing patterns where possible for:
+comments
+attachments
+assignee / owner / viewer logic
+audit logs
+permissions
+activity history
+filters
+status badges
+detail drawers / dialogs
+mobile action cards
+document links
+No duplicate logic
+Do not build separate mini-permission systems, separate comment systems, separate attachment systems, separate audit models, separate PO systems, or separate invoice systems inside each new feature.
+Everything important must be auditable
+Create/update/approve/reject/close/delete actions must log:
+acting user
+entity
+action
+before/after summary where practical
+timestamp
+project link where applicable
+Mobile and desktop must be one system
+Project Management On The Go must not become a disconnected mode. It must read and write the same underlying project, procurement, approval, task, PO, and invoice data as the full platform.
+==================================================
+IMPLEMENT IN THIS ORDER
+Dependencies
+Approvals
+Change Control
+RAID
+Procurement
+Subcontractor Controls
+Commissioning / Closeout
+Project Management On The Go full integration
+Each later feature should reuse data and controls built earlier where sensible.
+==================================================
+DEPENDENCIES
+==================================================
+Implement task and milestone dependency capability in a controlled way.
+Requirements:
+allow dependency links between canonical tasks and/or key milestones
+support at minimum dependency types:
+Finish-to-Start
+Start-to-Start
+Finish-to-Finish
+support predecessor and successor visibility
+show blocked / dependency-aware state where practical
+prevent invalid circular dependency creation where possible
+allow dependency display in project schedule/planning views
+link dependencies to project_id
+audit dependency create/update/delete
+Do not build a massive planning engine yet.
+Build the dependency foundation cleanly so future Gantt / critical path can grow from it.
+==================================================
+2. APPROVALS
+Implement a shared approval framework.
+Requirements:
+approvals must be usable by multiple modules, not just one
+approval object should support:
+project_id
+related_entity_type
+related_entity_id
+approval_type
+requested_by
+assigned_approver
+status
+due_date
+notes / comments
+decision timestamp
+statuses at minimum:
+pending
+approved
+rejected
+cancelled
+show approval requests in relevant role views
+allow approval actions through UI
+create audit logs for request, approve, reject, cancel
+optionally create or update linked tasks for pending approvals where useful
+Use this framework later for:
+procurement approvals
+change approvals
+closeout approvals
+document signoff if relevant
+==================================================
+3. CHANGE CONTROL
+Implement project change control.
+Requirements:
+create change request records linked to project
+support types such as:
+scope
+cost
+schedule
+technical
+commercial
+fields should include:
+title
+description
+requested_by
+owner
+impact summary
+cost impact
+schedule impact
+status
+approval link if required
+statuses at minimum:
+draft
+submitted
+under_review
+approved
+rejected
+implemented
+closed
+allow attachment/document linkage
+allow linked tasks
+allow change requests to appear in project detail and program oversight
+audit all major state changes
+Do not hardcode VO-only logic unless already existing.
+Build this as a broader change control foundation.
+==================================================
+4. RAID
+Implement RAID capability as a structured control layer.
+RAID = Risks, Assumptions, Issues, Decisions
+Requirements:
+support RAID entry types:
+risk
+assumption
+issue
+decision
+action if useful as linked output
+each item linked to project_id and optionally program/portfolio if model exists
+fields at minimum:
+type
+title
+description
+owner
+status
+priority / severity
+due_date where relevant
+mitigation / response
+linked_task_id where applicable
+created_by
+allow filtering by type, owner, status, project
+show RAID summary in project detail
+optionally show cross-project RAID rollup for Program Manager / COO
+audit create/update/close/delete
+Do not make RAID just a notes table.
+It must be operational and owned.
+==================================================
+5. PROCUREMENT
+Implement procurement capability that fits the project system and integrates with PM On The Go.
+Requirements:
+procurement items linked to project_id
+support categories such as material, equipment, service, subcontract, other
+procurement item fields at minimum:
+title / item description
+quantity
+unit
+expected cost
+supplier / vendor
+requested_by
+owner
+status
+required_date
+PO link
+invoice link
+linked task if applicable
+statuses at minimum:
+requested
+quoted
+approved
+ordered
+partially_received
+received
+invoiced
+closed
+support procurement list on project detail
+support approval integration
+support audit logging
+support attachment/document linkage
+Do not create procurement only as a spreadsheet viewer.
+Make it a first-class controlled workflow.
+==================================================
+6. SUBCONTRACTOR CONTROLS
+Implement subcontractor management linked to projects and procurement/execution.
+Requirements:
+subcontractor entity or controlled relation with:
+name
+contact details
+service type
+active flag
+linked projects
+linked procurement or scope packages
+project-level subcontractor assignments
+ability to track subcontractor-related:
+work package
+owner / PM
+status
+key dates
+performance notes if practical
+linked approvals / linked issues
+audit create/update/assignment actions
+ensure role-safe visibility
+support PM and Construction Manager use cases
+Do not overbuild a CRM.
+Build controlled operational visibility and linkage.
+==================================================
+7. COMMISSIONING / CLOSEOUT FLOWS
+Implement commissioning and closeout control flows.
+Requirements:
+linked to project_id
+support stage-based closeout / commissioning items
+allow configurable checklist-style records if possible using existing task/checklist patterns
+include at minimum:
+commissioning item / closeout item
+owner
+due_date
+status
+evidence / attachment link
+comments
+approval requirement if needed
+support high-level closeout states such as:
+not_started
+in_progress
+ready_for_review
+approved
+closed
+visible on project detail
+usable by PM, Quality, Engineering, and admin where appropriate
+auditable
+This should support the later handover to O&M / Matriarch without rework.
+==================================================
+8. FULL INTEGRATION OF PROJECT MANAGEMENT ON THE GO
+Project Management On The Go must be fully integrated into the current platform and the new PM maturity layer.
+Requirements:
+mobile-oriented PM workflows must use the same underlying project, task, procurement, PO, invoice, approval, and audit structures as desktop
+users must be able to switch between On The Go mode and full-detail mode without data inconsistency
+role permissions must be enforced identically in both modes
+audit logging must work identically in both modes
+Specific functionality to implement or harden:
+A. PO Generation
+generate purchase orders from procurement items or approved requests
+PO fields should include:
+project_id
+supplier
+PO number
+date
+line items
+total value
+requested_by
+approved_by if applicable
+status
+support PO creation from mobile-friendly flow where practical
+support desktop review/edit where appropriate
+ensure PO creation is audit logged
+B. PO Capture / Update
+allow PM or authorized role to capture or update PO records from On The Go mode
+attach related documents if supported by current platform
+link PO to project, procurement item, and supplier
+allow status tracking such as:
+draft
+submitted
+approved
+issued
+received
+closed
+prevent duplicate PO confusion where practical
+C. Invoice Capture
+allow authorized users to capture invoices from mobile-friendly and desktop flows
+invoice fields at minimum:
+project_id
+supplier
+invoice number
+invoice date
+amount
+VAT if relevant
+linked PO if applicable
+linked procurement item if applicable
+status
+captured_by
+support document/photo upload or file link where current app patterns allow
+ensure invoice is visible in project financial and procurement context where appropriate
+audit all invoice actions
+D. PM On The Go UX
+keep the fast, mobile-oriented workflow
+make forms short and usable on phone
+reduce unnecessary clicks
+preserve role restrictions
+surface urgent actions, approvals, procurement tasks, invoice capture, and closeout actions clearly
+do not remove the ability to use full-detail desktop mode
+E. End-to-End Integration
+Test and ensure these real flows work:
+procurement request created → approval → PO generated → invoice captured → project/procurement visibility updated
+PM on site captures invoice or PO → finance/admin can see it in full-detail mode
+approval raised in desktop mode → approver can act from mobile-friendly mode where appropriate
+commissioning/closeout tasks visible and updatable from On The Go where appropriate
+==================================================
+ROLE AND PERMISSION REQUIREMENTS
+Use the current role and permission system. Extend it only where necessary.
+At minimum validate behavior for:
+COO / Super Admin
+Program Manager
+Program Finance Manager
+Construction Manager
+Quality Manager
+Engineering Manager
+Engineer
+Project Manager
+Project Developer
+Accountant / Finance roles if present
+Requirements:
+no broad accidental access
+admin-only controls remain admin-only
+approval rights are explicit
+procurement / PO / invoice rights are explicit
+mobile mode must honor same permissions as desktop mode
+==================================================
+AUDIT AND GOVERNANCE REQUIREMENTS
+Every important mutation must be logged with acting user attribution.
+At minimum log:
+dependency create/update/delete
+approval request / approve / reject / cancel
+change request create/update/status change
+RAID item create/update/close/delete
+procurement item create/update/status change
+subcontractor assignment / update
+commissioning / closeout create/update/approve/close
+PO create/update/status change
+invoice capture/update/status change
+PM On The Go actions affecting these records
+Logs must be visible through the existing admin activity log structure.
+==================================================
+REPORTING AND VISIBILITY REQUIREMENTS
+Where appropriate, add summary visibility without breaking current reports.
+At minimum add sensible summary visibility for:
+project dependencies summary
+open approvals
+open changes
+open RAID items
+procurement pipeline
+subcontractor activity summary
+commissioning / closeout progress
+PO and invoice counts/statuses
+Program-level or portfolio-level rollups may be added only where they can reuse existing patterns safely.
+Do not break existing financial, quality, or engineering reports.
+==================================================
+END-TO-END QA REQUIREMENTS
+After implementation, run a real engineering-grade QA and regression pass.
+Do not skim.
+Test at minimum:
+Dependencies
+create dependency
+invalid dependency rejection
+dependency visibility
+dependency-linked blocking state
+Approvals
+create request
+approve
+reject
+cancel
+permission enforcement
+audit log
+Change Control
+create change
+submit
+approve/reject if linked
+status transitions
+attachment linkage
+reporting visibility
+RAID
+create each RAID type
+assign owner
+update status
+filter and view
+link task where applicable
+Procurement
+create procurement item
+edit
+approve
+status progression
+project visibility
+audit logging
+Subcontractor Controls
+create/update subcontractor
+assign to project
+visibility by PM / admin
+linked package visibility
+Commissioning / Closeout
+create item
+update item
+approval / review if present
+close item
+project detail visibility
+PM On The Go Integration
+mobile-friendly creation and update of PO
+mobile-friendly invoice capture
+procurement-to-PO-to-invoice flow
+desktop/mobile consistency
+permission enforcement
+audit logging
+no breakage in existing PM On The Go mode
+Regression
+ensure current engineering, quality, finance, schedule, reporting, and admin flows still work
+ensure no current screens break
+ensure role permissions still hold
+ensure audit logs still write correctly
+==================================================
+REQUIRED DELIVERABLES
+Create or update the following files:
+PM_MATURITY_SCOPE.md
+scope of each of the 8 features
+data model choices
+reused shared services
+what was intentionally limited for now
+PM_MATURITY_IMPLEMENTATION.md
+what was actually built
+routes
+tables/models
+UI areas
+permission rules
+audit logging coverage
+PM_ON_THE_GO_INTEGRATION_SPEC.md
+how mobile and desktop now share data and workflows
+PO flow
+invoice flow
+procurement linkage
+approval linkage
+PM_MATURITY_QA_MATRIX.md
+all tests executed
+expected vs actual
+pass/fail
+defects and retests
+PM_MATURITY_DEFECT_REGISTER.md
+remaining issues
+severity
+operational impact
+workaround if any
+PM_MATURITY_RELEASE_NOTE.md
+what is ready
+what is partially ready
+what should wait for a later phase
+FUTURE_PM_EXPANSION_MAP.md
+how this implementation supports future:
+gantt / critical path
+resource loading
+VO/change control growth
+procurement maturity
+subcontractor performance
+commissioning to O&M handover
+==================================================
+SUCCESS CRITERIA
+This pass is only complete when:
+the 8 PM maturity features are implemented in platform-consistent ways
+PM On The Go is fully integrated, not standalone
+PO generation and capture works through the correct project-linked workflow
+invoice capture works and links correctly to project/procurement/PO context
+permissions work
+audit logs work
+end-to-end flows work
+no existing critical functionality is broken
+readiness is stated honestly
+Do not optimize for feature count.
+Optimize for platform coherence, stability, and proof.
+Work like true engineers.
