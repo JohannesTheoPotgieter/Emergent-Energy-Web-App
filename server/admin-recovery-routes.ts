@@ -6,7 +6,7 @@ import { verifyToken } from "./jwt";
 import { logAuditFromReq } from "./audit-logger";
 import {
   operationalTasks, mytoolTasks, engineeringTasks, workItems,
-  smartImportRuns, importIssues, projectInfo, users,
+  smartImportRuns, importIssues, projectInfo, users, pdTickets, qcItemInstance,
 } from "@shared/schema";
 import { normalizeStatus } from "./lib/canonical-task-engine";
 
@@ -153,6 +153,55 @@ export function registerAdminRecoveryRoutes(app: Express) {
 
         for (const r of rows) {
           results.push({ ...r, taskType: "work_item", taskSource: "plan" });
+        }
+      }
+
+      if (!params.taskType || params.taskType === "pd_ticket") {
+        const pdRows = await db.execute(sql`
+          SELECT pd.*, pi.project_name as project_name, u.name as pd_user_name
+          FROM pd_tickets pd
+          LEFT JOIN project_info pi ON pd.project_id = pi.id
+          LEFT JOIN users u ON pd.project_developer_user_id = u.id
+          WHERE 1=1
+            ${searchTerm ? sql`AND (pd.project_site_name ILIKE ${searchTerm} OR pd.request_type ILIKE ${searchTerm})` : sql``}
+            ${params.status ? sql`AND pd.status = ${params.status}` : sql``}
+            ${params.assigneeUserId ? sql`AND pd.project_developer_user_id = ${parseInt(params.assigneeUserId)}` : sql``}
+          ORDER BY pd.id DESC
+          LIMIT ${limit} OFFSET ${offset}
+        `).then((r: any) => Array.isArray(r) ? r : (r.rows || []));
+
+        for (const r of pdRows) {
+          results.push({
+            ...r,
+            title: r.project_site_name || r.request_type || `PD Ticket #${r.id}`,
+            taskType: "pd_ticket",
+            taskSource: "pd_ticket",
+          });
+        }
+      }
+
+      if (!params.taskType || params.taskType === "quality") {
+        const qcRows = await db.execute(sql`
+          SELECT qi.*, qc.project_name, qc.project_id, qti.item_name
+          FROM qc_item_instance qi
+          JOIN qc_checklist qc ON qi.checklist_id = qc.id
+          JOIN qc_template_item qti ON qi.template_item_id = qti.id
+          WHERE qi.is_applicable = true
+            ${searchTerm ? sql`AND qti.item_name ILIKE ${searchTerm}` : sql``}
+            ${params.status ? sql`AND qi.qm_status = ${params.status}` : sql``}
+            ${params.assigneeUserId ? sql`AND qi.assignee_user_id = ${parseInt(params.assigneeUserId)}` : sql``}
+          ORDER BY qi.last_updated_at DESC
+          LIMIT ${limit} OFFSET ${offset}
+        `).then((r: any) => Array.isArray(r) ? r : (r.rows || []));
+
+        for (const r of qcRows) {
+          results.push({
+            ...r,
+            title: r.item_name || `QC Item #${r.id}`,
+            status: r.qm_status || "not_started",
+            taskType: "quality",
+            taskSource: "quality_task",
+          });
         }
       }
 
