@@ -1,99 +1,122 @@
 # Future PM Platform Foundation Map
 
-## Version: 1.0 | Date: 2026-03-06
+## Version: 2.0 | Date: 2026-03-06
 
 ## Purpose
-This document maps the current platform foundation to future PM (Project Management) platform expansion, identifying which systems are ready for scaling and which need further work.
+This document assesses whether the current architecture supports growth into a full PM platform without major rework. It identifies what foundation exists, what extends cleanly, and what would require architectural changes.
 
-## Foundation Components Ready for Expansion
+---
 
-### 1. Canonical Task Engine
-**Current State**: Fully operational with 6 statuses, 4 priorities, 5 task types
-**Future PM Use**: Foundation for cross-project task aggregation, portfolio-level task analytics, resource capacity planning
-**Extension Points**:
-- Add `estimated_hours` and `actual_hours` to canonical task model for effort tracking
-- Add `milestone_id` for milestone-based tracking
-- Add `dependency_ids` array for task dependency chains
-- Add `sprint_id` for agile sprint tracking (if adopted)
+## Foundation Components — Ready to Extend
 
-### 2. Role & Permission System
-**Current State**: 13 roles, 30+ entities, configurable entity-level permissions
-**Future PM Use**: Support for client-facing roles, contractor roles, external auditor read-only access
-**Extension Points**:
-- Add `CLIENT` and `EXTERNAL_AUDITOR` roles with view-only permissions
-- Add project-level role overrides (PM per project, not just globally)
-- Add team-based permissions (engineering team A vs B)
+### 1. Canonical Task Engine (`server/lib/canonical-task-engine.ts`)
+**What exists**: 6 statuses (todo, in_progress, blocked, review, complete, cancelled), 4 priorities, 5 task types, 5 converter functions (fromWorkItem, fromOperational, fromEngineering, fromPersonal, fromQuality)
+**Why it scales**: Any new task source can be added by writing a `fromNewSource()` function. The canonical model serves as a universal adapter — My Work already aggregates 5 different task types into one unified view.
+**Extension cost**: LOW — add a new converter function + query, no existing code changes needed.
+**Current limitation**: The canonical model is read-only (used for display aggregation). Writes still go to source tables directly. A future "write through canonical" layer would require new work.
 
-### 3. Audit Trail
-**Current State**: 170+ audit points, typed helpers, activity log UI
-**Future PM Use**: Compliance reporting, change management audit, client-visible activity feeds
-**Extension Points**:
-- Add audit report generation (PDF export by date range)
-- Add project-scoped audit views for PM dashboards
-- Add automated alerts on sensitive changes (role modifications, financial edits)
+### 2. Work Items Table (`work_items`)
+**What exists**: 3,292 records with WBS hierarchy, project linkage, baseline dates, actual dates (actual_start, actual_end, actual_duration), percent complete, owner_user_id, workstream, parent_task_id
+**Why it scales**: Already serves as the canonical planning table. Has the columns needed for Gantt charts, critical path analysis, and earned value management.
+**Extension points that work without rework**:
+- Add `predecessor_ids` column (array) for task dependency chains
+- Add `constraint_type` and `constraint_date` for scheduling constraints
+- Add `estimated_hours` and `actual_hours` for effort tracking
+- Add `baseline_start_2`, `baseline_end_2` for multiple baselines
+**Current limitation**: No predecessor/successor relationship table exists. No calendar table for working days. These are additive changes (new columns or tables), not architectural rework.
 
-### 4. Admin Control Center
-**Current State**: System health, feature flags, integration status, dangerous actions
-**Future PM Use**: Multi-tenant system administration, per-client configuration
-**Extension Points**:
-- Add system performance metrics (API response times, query counts)
-- Add user session monitoring
-- Add data export/import tools for client data migration
+### 3. Role & Permission System
+**What exists**: 14 roles, 90+ entity permissions, configurable via admin UI at `/admin/roles`
+**Why it scales**: Permissions are stored in JSONB (`entity_permissions` column on `role_permissions` table), so adding new entities requires zero schema changes — just add the entity key to the defaults and role UI.
+**Extension points that work without rework**:
+- Add CLIENT, EXTERNAL_AUDITOR, CONTRACTOR roles with view-only permissions
+- Add new entity keys for any new feature (e.g., "resource_calendar", "milestone_payments")
+**What requires rework for PM platform**: Project-level role overrides. Currently all permissions are global. A PM has PM access to ALL projects. Adding per-project permissions would require a new `project_role_assignments` table and middleware changes to check project-scoped permissions. This is a MEDIUM rework.
+
+### 4. Audit Trail System
+**What exists**: 233+ audit calls, `audit_events` table, activity log UI
+**Why it scales**: `logAuditFromReq` is a simple, universal logging function. Any new feature can log by calling it with the appropriate entityType and action.
+**Extension points that work without rework**:
+- Add audit calls to any new route (one line per endpoint)
+- Add new entityType values as features are added
+- Add audit report export (query audit_events with filters, render PDF)
+**What requires rework**: Advanced audit analytics (trends over time, compliance dashboards) would need new query infrastructure. Current activity log is a simple list.
 
 ### 5. Financial Engine
-**Current State**: COS tracking, revenue calculation, GP tracking, cashflow, OPEX
-**Future PM Use**: Budget forecasting, earned value management, multi-currency support
-**Extension Points**:
-- Add budget vs actual variance reporting
-- Add forecasting models (linear, curve-based)
-- Add multi-currency with exchange rate tracking
+**What exists**: `normalized_cost_lines`, `normalized_revenue_lines` as canonical data sources. Revenue calculated from COS realization. GP tracking. Cashflow with weekly granularity. OPEX budgets.
+**Why it scales**: Financial data is already normalized into canonical tables, separate from project-specific imports. Any new financial feature can query these tables.
+**Extension points that work without rework**:
+- Add budget vs actual variance columns to existing tables
+- Add currency columns (currently ZAR-only assumed)
+- Add invoice generation from cost/revenue data
+**What requires rework for PM platform**: Multi-currency with exchange rate tracking would require a `currency_rates` table and conversion logic in all financial calculations. Earned value management (CPI, SPI, EAC) would need new computed fields on work_items cross-referencing financial data. These are MEDIUM additions.
 
-### 6. Work Item Model
-**Current State**: 3,000+ work items, WBS hierarchy, baseline tracking, actual dates
-**Future PM Use**: MS Project integration, critical path analysis, resource leveling
-**Extension Points**:
-- Add `constraint_type` and `constraint_date` for scheduling constraints
-- Add `calendar_id` for working day calendars
-- Add `cost_rate` for resource cost tracking
+### 6. Smart Import System
+**What exists**: Excel file upload, row-by-row parsing, staging with commit/rollback, error tracking per row
+**Why it scales**: The import framework already handles multi-sheet Excel files with column mapping. Adding new import types means adding new parsers.
+**Extension points that work without rework**:
+- Add new import templates for resource plans, budgets, schedules
+- Add validation rules for new data types
+**Current limitation**: Import is batch-only (upload file → parse → commit). No real-time sync with external PM tools. A live MS Project integration would require significant new architecture (webhook-based sync, conflict resolution).
 
-## Architecture Decisions for Future
+---
 
-### Database
-- Continue using PostgreSQL with Drizzle ORM
-- Use raw SQL migrations via db.execute for schema changes
-- Consider read replicas for reporting queries at scale
+## Foundation Components — Need Significant Work
 
-### API Design
-- Maintain RESTful patterns with typed error responses
-- Add pagination to all list endpoints (some already have it)
-- Consider GraphQL for complex cross-entity queries
+### 1. Resource Management
+**What exists**: Tasks have `owner_user_id` (assignee) but no concept of resource capacity, availability, or allocation.
+**What's missing**:
+- Resource capacity table (hours per week per user)
+- Resource allocation tracking (user X assigned 40% to project Y)
+- Resource leveling algorithm
+- Skills/competency matrix
+**Rework level**: HIGH — entirely new subsystem, new tables, new UI pages
 
-### Frontend
-- Maintain React + TanStack Query + shadcn/ui stack
-- Add virtualized lists for large datasets (>1000 items)
-- Consider micro-frontend architecture if separate PM and Finance modules emerge
+### 2. Dependency / Critical Path
+**What exists**: Work items have `parent_task_id` for hierarchy (WBS). No predecessor/successor relationships.
+**What's missing**:
+- Task dependency table (finish-to-start, start-to-start, etc.)
+- Critical path calculation engine
+- Dependency violation alerts
+**Rework level**: MEDIUM — new table + algorithm + Gantt visualization update. The work_items table structure supports it, but no logic exists.
 
-### Authentication
-- Maintain Azure AD SSO as primary
-- Add multi-tenant support via organization_id on all entities
-- Consider OAuth2 for client portal access
+### 3. Time Tracking
+**What exists**: Tasks have `estimated_hours` (future) and `percent_complete`. No actual time logging.
+**What's missing**:
+- Timesheet entry table (user, project, task, date, hours)
+- Timesheet approval workflow
+- Time vs estimate variance reporting
+**Rework level**: MEDIUM — new tables, new pages, new approval workflow
 
-## Priority Roadmap
+### 4. Multi-Tenant / Client Portal
+**What exists**: Single-tenant. One company's data. No client-facing views.
+**What's missing**:
+- Organization_id on all entities
+- Tenant isolation middleware
+- Client-facing dashboard with limited data
+**Rework level**: HIGH — fundamental data model change affecting every table and query
 
-### Phase 1 (Next Quarter)
-1. Project-level role overrides
-2. Budget vs actual variance reporting
-3. Audit report PDF export
-4. API pagination on all endpoints
+---
 
-### Phase 2 (Following Quarter)
-1. Client portal with read-only access
-2. Resource capacity planning
-3. Multi-currency support
-4. Task dependency visualization
+## Architecture Assessment for PM Platform Growth
 
-### Phase 3 (Future)
-1. MS Project live sync
-2. Critical path analysis
-3. Multi-tenant architecture
-4. Mobile app (React Native)
+| Component | Current State | Extends Without Rework | Needs Rework |
+|---|---|---|---|
+| Task model | 5 types, canonical engine | New task types, custom fields | Write-through canonical layer |
+| Planning | Work items with WBS | New columns for constraints, predecessors | Dependency engine, critical path |
+| Financial | Normalized cost/revenue | Budget variance, invoice gen | Multi-currency, earned value |
+| Permissions | 14 roles, 90+ entities | New roles, new entities | Project-level permissions |
+| Audit | 233+ calls, activity log | New entity types, new actions | Advanced analytics, compliance reports |
+| Import | Excel upload with staging | New parsers, new templates | Live sync with MS Project |
+| Resource mgmt | Assignee only | — | Entire subsystem needed |
+| Time tracking | Percent complete only | — | Entire subsystem needed |
+| Multi-tenant | Single tenant | — | Fundamental rework needed |
+
+## Verdict
+The current architecture **can grow into a PM platform** for the following reasons:
+1. The canonical task engine provides a universal task aggregation layer — adding new task sources is additive
+2. The work_items table has the right shape (WBS, dates, assignments, percent complete) for planning features
+3. The permission system uses JSONB for entity permissions — adding new entities requires no schema changes
+4. Financial data is already normalized — adding budget/variance features extends existing tables
+
+The areas that would require **significant architectural work** are: resource management, critical path, time tracking, and multi-tenancy. These are expected gaps for a V1 platform and are typical Phase 2 investments for PM tooling.

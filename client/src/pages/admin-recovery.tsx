@@ -632,17 +632,37 @@ function ProjectRecoveryTab() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setEditingProject(null); setEditFields({}); }}>Cancel</Button>
-            <Button
-              onClick={() => {
-                if (!editingProject) return;
-                updateMutation.mutate({ projectId: editingProject.id, updates: editFields });
-              }}
-              disabled={updateMutation.isPending}
-              data-testid="button-save-project-edit"
-            >
-              {updateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              Save Changes
-            </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  disabled={updateMutation.isPending}
+                  data-testid="button-save-project-edit"
+                >
+                  {updateMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Save Changes
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Confirm Project Edit</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    You are about to modify project #{editingProject?.id} ({editFields.projectName}). This action will be audit logged. Are you sure?
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      if (!editingProject) return;
+                      updateMutation.mutate({ projectId: editingProject.id, updates: editFields });
+                    }}
+                    data-testid="button-confirm-project-edit"
+                  >
+                    Confirm Save
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </DialogFooter>
         </DialogContent>
       </Dialog>
