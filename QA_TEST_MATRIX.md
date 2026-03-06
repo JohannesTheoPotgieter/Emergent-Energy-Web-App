@@ -147,7 +147,46 @@
 
 ---
 
-## Summary
+## 13. Second Pass — Trust Hardening Tests
+
+| # | Module | Screen | User Action | Expected Result | Actual Result | Status | Defect |
+|---|--------|--------|-------------|-----------------|---------------|--------|--------|
+| 13.1 | Smart Import | Upload | Upload non-Excel file (.txt) | 400 with clear message | 500 with stack trace | FAIL | DEF-007 |
+| 13.2 | Smart Import | Upload | Upload fake .xlsx (corrupt) | 400 with corruption message | 500 with JSZip error | FAIL | DEF-008 |
+| 13.3 | Smart Import | Runs | List import runs | Run history | Route returns HTML fallback | FAIL | DEF-009 |
+| 13.4 | KPI | GP Tracker | Verify GP = Rev - COS | R36M = R445M - R409M | R36,212,816 = R445,173,516 - R408,960,700 | PASS | |
+| 13.5 | KPI | Cashflow | Verify weekly balance formula | Opening + In - Out = Closing | 51/53 weeks with data, formula correct | PASS | |
+| 13.6 | KPI | Rev Tracker | Monthly revenue breakdown | Per-project monthly data | 12 projects, all monthly values empty | PARTIAL | DEF-012 |
+| 13.7 | KPI | COS Tracker | Monthly COS breakdown | Per-project monthly data | 12 projects, 0 monthly entries | PARTIAL | DEF-012 |
+| 13.8 | Role | Login | Non-admin password login | Blocked with clear message | 403: "Password login restricted to administrators" | PASS | |
+| 13.9 | Role | Engineer | View permissions | Engineering sections visible | Sections: DELIVERY, GOVERNANCE, COCKPIT, PROJECTS | PASS | |
+| 13.10 | Role | Engineer | Access admin | Blocked | 403 | PASS | |
+| 13.11 | Role | Program Mgr | View permissions | Delivery + Money sections | Sections: PROJECTS, DELIVERY, GOVERNANCE, MONEY, INFORMATION, COCKPIT | PASS | |
+| 13.12 | Task | Plan | Plan task field check | workItemId + null rowNumber | 49 tasks: workItemId=49/49, rowNumber=0/49 | PASS | |
+| 13.13 | Task | Engineering | Status distribution | Mixed statuses | TO DO:84, IN PROGRESS:34, COMPLETE:3, HOLD:7 | PASS | |
+| 13.14 | Task | Consistency | Status names match across types | Unified naming | Different names per type (Done vs COMPLETE vs done) | FAIL | DEF-010 |
+| 13.15 | Viewer | My Work | Viewer tasks visible | Tasks with "Viewing" badge | 0 tasks for admin users (no assignments) | NOT PROVEN | DEF-013 |
+| 13.16 | Viewer | UI | Add viewer via UI | Viewer assignment created | No viewer management UI exists | FAIL | DEF-006 |
+| 13.17 | MS | Outlook | Outlook status | Connection status | configured:true, connected:true, email shown | PASS | |
+| 13.18 | MS | Calendar | Get events | Event list | Empty array (no synced events) | PARTIAL | |
+| 13.19 | MS | Teams | Teams chat data | Chat data | 404: Project not found | NOT PROVEN | |
+| 13.20 | MS | SharePoint | SharePoint access | File list | Route returns HTML (not registered) | NOT PROVEN | |
+| 13.21 | Admin | Recovery | Reassign task | Success | {"success":true} | PASS | |
+| 13.22 | Admin | Recovery | Edit project | Success | HTTP 200 | PASS | |
+| 13.23 | Admin | Recovery | Create work item | Success | HTTP 200 | PASS | |
+| 13.24 | Admin | Recovery | Delete work item | Success | {"message":"Deleted 1 work item(s)"} | PASS | |
+| 13.25 | Admin | Recovery | Revenue override (wrong format) | 400 validation | 400: "Overrides must be an array" | PASS | |
+| 13.26 | Admin | Recovery | Undo task deletion | Task restored | No undo capability exists | FAIL | DEF-011 |
+| 13.27 | QC | Dashboard | QC metrics | Dashboard data | 10 checklists, 460 pending approvals | PASS | |
+| 13.28 | Finance | Headline | Financial summary | Summary data | Revenue R445M, COS R409M, GP R36M | PASS | |
+| 13.29 | Projects | Summary | Contract values | Financial rollup | All 70 projects: contract_value=null | FAIL | DEF-012 |
+| 13.30 | My Work | All Tasks | Admin task list | Assigned tasks | 0 tasks for both admin users | FAIL | DEF-013 |
+
+---
+
+## Combined Summary (Pass 1 + Pass 2)
+
+### Pass 1
 
 | Category | Total Tests | Pass | Fixed | Fail | N/A |
 |----------|------------|------|-------|------|-----|
@@ -163,6 +202,22 @@
 | Smart Import | 2 | 2 | 0 | 0 | 0 |
 | Error Handling | 3 | 2 | 1 | 0 | 0 |
 | Miscellaneous | 16 | 16 | 0 | 0 | 0 |
-| **TOTAL** | **73** | **61** | **10** | **0** | **2** |
+| **Pass 1 Total** | **73** | **61** | **10** | **0** | **2** |
 
-All defects found during testing have been fixed. Zero outstanding failures.
+### Pass 2 — Trust Hardening
+
+| Category | Total Tests | Pass | Partial | Fail | Not Proven |
+|----------|------------|------|---------|------|------------|
+| Smart Import | 3 | 0 | 0 | 3 | 0 |
+| KPI Traceability | 5 | 3 | 2 | 0 | 0 |
+| Role Access | 4 | 4 | 0 | 0 | 0 |
+| Task Consistency | 3 | 2 | 0 | 1 | 0 |
+| Viewer Logic | 2 | 0 | 0 | 1 | 1 |
+| MS Integration | 4 | 1 | 1 | 0 | 2 |
+| Admin Recovery | 6 | 5 | 0 | 1 | 0 |
+| Data Integrity | 3 | 1 | 0 | 2 | 0 |
+| **Pass 2 Total** | **30** | **16** | **3** | **8** | **3** |
+
+### Grand Total: 103 tests executed across both passes.
+- Pass 1: 73 tests, 5 defects found and fixed, 0 remaining failures
+- Pass 2: 30 tests, 8 new defects identified (all MEDIUM/LOW severity, all open)
