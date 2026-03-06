@@ -65,6 +65,10 @@ import MyWorkCalendarPage from "@/pages/my-work-calendar";
 import ApprovalsPage from "@/pages/admin-approvals";
 import DatabaseMigrationPage from "@/pages/database-migration";
 import ClientsPage from "@/pages/clients";
+import ImportControlTowerPage from "@/pages/import-control-tower";
+import KpiTraceabilityPage from "@/pages/kpi-traceability";
+import AdminRecoveryPage from "@/pages/admin-recovery";
+import CommandCenterPage from "@/pages/command-center";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { checkPermission, type PermissionEntity } from "@shared/schema";
@@ -115,10 +119,14 @@ const ROUTE_TO_ENTITY: Record<string, PermissionEntity> = {
   "/admin/activity-log": "activity_log",
   "/admin/roles": "admin_roles",
   "/admin/settings": "admin",
+  "/admin/kpi-traceability": "admin",
+  "/admin/import-control-tower": "admin",
+  "/admin/recovery": "admin",
+  "/command-center": "home",
 };
 
-const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams"];
-const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams"];
+const EPM_ALLOWED_PATHS = ["/", "/command-center", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams"];
+const PM_ALLOWED_PATHS = ["/", "/command-center", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams"];
 
 function AccessDenied() {
   return (
@@ -176,7 +184,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (user?.role === "quality_manager") {
-    const qmAllowed = ["/", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams"];
+    const qmAllowed = ["/", "/command-center", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams"];
     const allowed = qmAllowed.some(p => 
       p === location || (p === "/projects" && location.startsWith("/project/"))
     );
@@ -283,6 +291,10 @@ function ProtectedPages() {
         <Route path="/my-work/email" component={CollabEmailPage} />
         <Route path="/my-work/teams" component={TeamsChatsPage} />
         <Route path="/admin/database-migration" component={DatabaseMigrationPage} />
+        <Route path="/admin/kpi-traceability" component={KpiTraceabilityPage} />
+        <Route path="/admin/import-control-tower" component={ImportControlTowerPage} />
+        <Route path="/admin/recovery" component={AdminRecoveryPage} />
+        <Route path="/command-center" component={CommandCenterPage} />
         <Route path="/clients" component={ClientsPage} />
 
         <Route component={NotFound} />

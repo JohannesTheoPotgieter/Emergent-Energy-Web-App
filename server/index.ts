@@ -1023,6 +1023,19 @@ async function backfillPmUserIds() {
     console.error('[Migration] user_project_folders error:', err.message);
   }
 
+  try {
+    await db.execute(sql.raw(`ALTER TABLE smart_import_runs ADD COLUMN IF NOT EXISTS records_attempted INTEGER`));
+    await db.execute(sql.raw(`ALTER TABLE smart_import_runs ADD COLUMN IF NOT EXISTS records_succeeded INTEGER`));
+    await db.execute(sql.raw(`ALTER TABLE smart_import_runs ADD COLUMN IF NOT EXISTS records_failed INTEGER`));
+    await db.execute(sql.raw(`ALTER TABLE smart_import_runs ADD COLUMN IF NOT EXISTS import_type TEXT`));
+  } catch (err: any) {
+    console.error('[Migration] smart_import_runs columns error:', err.message);
+  }
+
+  const { registerHandoverRoutes, ensureHandoverTables } = await import("./handover-routes");
+  await ensureHandoverTables();
+  registerHandoverRoutes(app);
+
   registerAdminRoutes(app);
   registerExcoRoutes(app);
   const { financialIntegrationRouter } = await import("./departments/financial-integration-routes");
@@ -1031,6 +1044,12 @@ async function backfillPmUserIds() {
   registerFinanceRoutes(app);
   const { registerMigrationFinalizeRoutes } = await import("./migration-finalize-routes");
   registerMigrationFinalizeRoutes(app);
+
+  const { registerKpiTraceabilityRoutes } = await import("./kpi-traceability-routes");
+  registerKpiTraceabilityRoutes(app);
+
+  const { registerAdminRecoveryRoutes } = await import("./admin-recovery-routes");
+  registerAdminRecoveryRoutes(app);
 
   await registerRoutes(httpServer, app);
 

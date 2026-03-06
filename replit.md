@@ -72,6 +72,16 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Microsoft Graph API**: For Outlook calendar, SharePoint, and Teams integration.
 -   **Read.ai**: For meeting data ingestion via webhooks.
 
+## Platform Upgrades (2026-03-06)
+-   **Canonical Task Engine**: Shared `server/lib/canonical-task-engine.ts` with unified status model (todo, in_progress, blocked, review, complete, cancelled). All task APIs normalize statuses. Frontend My Work page uses canonical statuses with review column and 5-column board.
+-   **Admin Recovery Center**: `/admin/recovery` — admin-only page with Task Recovery (search/edit all task types), Import Recovery (view import runs/errors), Project Recovery (edit project fields), Deleted Items (restore soft-deleted items). Server: `server/admin-recovery-routes.ts`.
+-   **KPI Traceability Panel**: `/admin/kpi-traceability` — admin-only page showing all KPIs with source tables, fields, formulas, API endpoints, and consuming components. Server: `server/kpi-traceability-routes.ts`.
+-   **Smart Import Control Tower**: `/admin/import-control-tower` — admin-only page showing import history, record counts, row-level errors, retry capability. Enhanced `server/smart-import-routes.ts` with record tracking columns and admin-only endpoints.
+-   **Role-Based Command Centers**: `/command-center` — role-aware landing page with attention items, task breakdown, project RAG status, and role-specific KPIs. 8 role categories with tailored views.
+-   **Workflow Gates & Handover Control**: 4-gate handover system (PD→Eng, Eng→PM, PM→QM, Execution→Closeout) with checklists, progress tracking, gate history. Server: `server/handover-routes.ts`. DB tables: `project_handover_gates`, `project_handover_history`.
+-   **Audit & Data Governance**: Enhanced `server/audit-logger.ts` with typed helpers (logStatusChange, logReassignment, logTypeChange, logImportAction, logAdminRecovery). Task validation module `server/lib/task-validation.ts`. Admin-only enforcement on all control tower and recovery endpoints.
+-   **Navigation**: All new pages registered in `App.tsx` and sidebar (`AppLayout.tsx`) with proper permission gating.
+
 ## System Audit (2026-03-06)
 -   **Pass 1**: Full system audit. 73 tests, 5 defects found and fixed (DEF-001–DEF-005). See `SYSTEM_AUDIT.md`.
 -   **Pass 2**: Trust-hardening gap closure. 30 additional tests, 8 new defects identified and fixed (DEF-006–DEF-013, all MEDIUM/LOW). See `GAP_CLOSE_REPORT.md`.

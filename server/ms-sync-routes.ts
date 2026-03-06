@@ -57,18 +57,10 @@ async function requireUnifiedWorkFlag(_req: Request, res: Response, next: NextFu
   }
 }
 
+import { normalizeStatus as canonicalNormalizeStatus } from "./lib/canonical-task-engine";
+
 function normalizeTaskStatus(status: string | null | undefined): string {
-  const s = (status || "").toLowerCase().trim();
-  if (s === "done" || s === "complete" || s === "completed") return "done";
-  if (s === "in progress" || s === "in_progress" || s === "active") return "in_progress";
-  if (s === "to do" || s === "todo" || s === "not started" || s === "not_started") return "inbox";
-  if (s === "blocked") return "blocked";
-  if (s === "on hold" || s === "on_hold" || s === "waiting") return "waiting";
-  if (s === "planned") return "planned";
-  if (s === "cancelled" || s === "canceled") return "cancelled";
-  if (s === "pending" || s === "review") return "in_progress";
-  if (!s) return "inbox";
-  return s;
+  return canonicalNormalizeStatus(status);
 }
 
 export function registerMsSyncRoutes(app: Express) {
@@ -560,6 +552,7 @@ export function registerMsSyncRoutes(app: Express) {
           const trackingRole = isOwnerOrAssignee && isCreator ? "both" : isOwnerOrAssignee ? "assignee" : "creator";
           return {
             ...t,
+            status: normalizeTaskStatus(t.status),
             subtaskCount: subtaskCounts[t.id] || 0,
             resolvedAssignees: mergeResolvedWithTextNames(resolveUserIds(t.assigneeUserIds), t.assignees, userMap),
             resolvedOwner: resolveUserId(t.ownerUserId),
