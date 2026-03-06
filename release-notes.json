@@ -1,56 +1,52 @@
 {
   "notes": [
     {
-      "title": "V1.0.0 — She's Alive. God Help Us All.",
-      "description": "After mass migrations, duplicate purges, column name existential crises, and enough SQL debugging to qualify as a form of therapy — Emergent Energy Dashboard V1 is officially real. We built an entire renewable energy project management platform. The sun rises, the panels generate, and the dashboard finally loads without a 500 error. Mostly."
+      "title": "V1.1.0 — The Trust Issues Update",
+      "description": "V1.0 worked. It was alive. It had data, dashboards, and dreams. But it also had the security posture of a house with the front door wide open and a sign that said 'FREE LAPTOPS.' V1.1 is the deadbolt, the alarm system, and the slightly aggressive neighbourhood watch. We went from 'it works' to 'it works and we've thought about what happens when someone tries to make it not work.' Welcome to adulthood."
     },
     {
-      "title": "The Great Light Theme Reformation",
-      "description": "The entire app was reborn in glorious white and Emergent green (#16A34A). The dark theme has been exiled, banished, sent to live on a farm upstate. Every pixel now sparkles with the energy of a freshly cleaned solar panel. Your retinas may need a moment to adjust. We recommend sunglasses."
+      "title": "PUT /api/settings Had No Auth. Yes, Really.",
+      "description": "The endpoint that controls your entire application's settings — the one that changes system behaviour — had zero authentication. None. Not a token. Not a cookie. Not even a polite 'please log in first.' Any human, bot, or particularly ambitious browser extension could have rewritten your app config. We discovered this during the hardening pass and fixed it so fast the commit message was just 'OH NO.' It now requires both authentication AND admin privileges. The door is closed. The deadbolt is on. We've added a chain lock for good measure."
     },
     {
-      "title": "Project Command Center: Now With 73% Less Scrolling",
-      "description": "The project detail page got a full makeover. The header went from 'corporate PowerPoint circa 2019' to 'clean command center you'd actually want to look at.' Six overview cards were ruthlessly compressed into a compact tabbed layout because apparently people have things to do other than scroll. Plan, Engineering, Quality, Finance, Collaboration, and PD — all one click away. Revolutionary concept: fitting information on one screen."
+      "title": "47 Routes Now Have Opinions About Who You Are",
+      "description": "We added backend permission middleware to 47 write routes across the application. Previously, if you knew the URL, you could POST to it. Create a purchase order? Sure. Delete a lifecycle board entry? Why not. Reassign a project manager? Be our guest. Now every one of these routes checks your role, checks your permissions, and returns a 403 Forbidden with the quiet dignity of a bouncer who doesn't need to explain himself. PO routes, PD routes, weekly reviews, lifecycle transitions, invoice patterns, subcontractor operations, and all Smart Import mutations — all locked down. Your curl commands will need to try harder."
     },
     {
-      "title": "Permission Gating: Your Access Has Been Denied (Politely)",
-      "description": "We built an entire permission system so that not everyone can see everything anymore. Sidebar items now vanish like your motivation on a Monday if you don't have the right role. Try to sneak in via URL? Access Denied page. Beautiful, clean, and deeply unsympathetic. We mapped 30+ routes to permission entities. Some of you will log in and wonder where half the sidebar went. That's not a bug. That's governance."
+      "title": "Smart Import: Now Admin-Only (All 12 Routes)",
+      "description": "Smart Import is the feature that ingests Excel spreadsheets and creates projects, cost lines, and revenue records from them. It is, objectively, the most dangerous feature in the application. It was previously accessible to anyone who could spell '/api/smart-import/upload.' We have now placed 12 Smart Import routes behind requireAdmin middleware. Upload, commit, rollback, bulk-commit, ignore-all-blockers (yes, that's a real endpoint name), allow-all, apply-prior-resolutions, assign-project, and project-matches — all admin-only. The import cannon now has a safety lock. You're welcome."
     },
     {
-      "title": "Universal Search: It Actually Searches Now",
-      "description": "The search bar on the home page used to be decorative. A beautiful, non-functional input field — like a chocolate teapot. It now searches across projects, tasks, cost lines, and revenue lines in real time. The SQL JOIN that powered it was using a column that didn't exist (project_info_id as a primary key — narrator: it was just called 'id'). Fixed. You're welcome."
+      "title": "Fuzzy Matching: Because 'Kuilsrivier Phase 2' and 'Kuils River Ph2' Are The Same Project",
+      "description": "Smart Import used to match project names with exact string comparison. If the spreadsheet said 'Kuils River Phase 2' and the database had 'Kuilsrivier Ph2,' congratulations — you just created a duplicate project with duplicate cost lines and duplicate revenue records. We built a fuzzy matching engine that normalises names, strips version suffixes, computes Jaccard similarity scores, and returns confidence levels. Above 85%? Auto-mapped. Between 50-85%? Flagged for review. Below 50%? Treated as new, but only if you explicitly confirm it. We also added SHA-256 hash-based rerun detection so importing the same file twice doesn't double your data. Again."
     },
     {
-      "title": "The Great Duplicate Purge of 2026",
-      "description": "We discovered 2,105 duplicate work items living rent-free in the database. The backfill script was creating new records every time it ran instead of updating existing ones. It was like a copy machine that nobody turned off. We deleted them all and added deduplication logic. The database lost weight. It feels lighter. It's been doing yoga."
+      "title": "Ownership Scoping: You Can't See What Isn't Yours",
+      "description": "Engineers used to be able to see every project in the system. Site PMs could browse tasks they had nothing to do with. Project Developers could read everyone's tickets. This was philosophically generous but operationally unhinged. We implemented backend ownership scoping: the projects endpoint now returns scope metadata per project, the tasks endpoint filters non-management users to their assigned or owned tasks, and My Work was already strictly user-scoped (credit where it's due). Full oversight is reserved for management roles. Everyone else sees their lane. The concept of 'need to know' has arrived."
     },
     {
-      "title": "Task Deletion: Now Deletes Tasks",
-      "description": "Plan tasks without a rowNumber were being silently skipped when you tried to delete them. The button worked, the confirmation appeared, the loading spinner spun — and absolutely nothing happened. The task would stare back at you, undeletable, eternal. We added a direct database delete endpoint for these rogue tasks. They can now be sent to the shadow realm as intended."
+      "title": "The Roles & Permissions Screen: Now Actually Useful",
+      "description": "The old Roles & Permissions screen was a single scrollable wall of tiny toggle buttons. It mixed navigation access with entity permissions in a way that made admins question their life choices. Section toggles lived next to delete permission pills. There was no way to know what was enforced by the backend vs what was just hiding a button. We rebuilt it into four tabs: Navigation (what the sidebar shows), Capabilities (what the role can do, with search), Scope & Limits (what data they can see), and Enforcement & Risks (what's actually secured vs what's just politely hidden). It's the difference between a control panel and a pile of switches taped to a wall."
     },
     {
-      "title": "Cashflow Endpoint: No Longer Crashes The Universe",
-      "description": "The /api/cashflow endpoint existed in two places simultaneously — routes.ts AND finance-routes.ts — like a project manager double-booked in meetings. One had a safety guard requiring a project filter. The other did not. Guess which one Express picked? Without the guard, it tried to load every cashflow point, every expense, every inflow, every operational task, and every project plan simultaneously. Stack overflow. Maximum call stack size exceeded. The server briefly contemplated the meaning of existence before giving up. Fixed with six lines of code."
+      "title": "Role Comparison: Spot The Difference, Enterprise Edition",
+      "description": "Admins can now select two roles and see every permission difference between them in a table. Is the Site PM supposed to have delete access to lifecycle board entries? Probably not, but you'd never have known without clicking through 80+ toggles one at a time. Now you click 'Compare,' pick two roles, and get a clean diff. It's like git diff but for access control, and significantly less likely to make you cry."
     },
     {
-      "title": "Revenue Tab: Now Speaks Bearer Token",
-      "description": "The Revenue tab's API calls were going out without authentication headers, like showing up to a black-tie event in pyjamas. Every fetch got a 401 Unauthorized. We gave them their Bearer tokens. They're dressed appropriately now. The PLANNED column was also removed because it contained no data and existed purely to make the table wider."
+      "title": "High-Risk Permission Alerts: The 'Are You Sure?' Tab",
+      "description": "The Enforcement tab now highlights every delete and override permission enabled for the selected role. These are collected into a 'High-Risk Permissions' card with red badges and stern formatting. It's the permission equivalent of a surgeon's checklist — 'You have granted this role the ability to delete procurement records, override quality approvals, and remove lifecycle board entries. Are you sure? Are you really sure? Have you consulted a responsible adult?' Roles with 3+ high-risk permissions get a shield icon in the role list. Consider it a gentle warning."
     },
     {
-      "title": "Capture Deliverable: Because Email Attachments Are Not A Filing System",
-      "description": "You can now capture project deliverables directly from the Collaboration tab. Upload documents, assign them to team members, categorise them by type. It's everything your shared drive folder named 'FINAL_FINAL_v3_ACTUALLY_FINAL' wished it could be."
+      "title": "Enforcement Truth: Honesty Is The Best Policy",
+      "description": "We added a panel that tells you, honestly, what is actually enforced by the backend vs what is just UI-level visibility gating. Backend-enforced features get green badges. UI-only features get amber badges. Known limitations are listed in plain text. We tell you about the missing row-level security, the endpoints that rely on frontend context, and the absence of rate limiting. This is not a sales pitch. This is a security disclosure. We believe you deserve to know what you're configuring."
     },
     {
-      "title": "Roles & Permissions Grid: Compact Edition",
-      "description": "The permissions page went from a scrollable novel to a compact grid with single-letter action toggles. V, C, E, D — View, Create, Edit, Delete. It's like a board game but for access control. Bulk-set entire categories with one click. Your scroll wheel has been formally laid off."
-    },
-    {
-      "title": "63 Projects. 4,500+ Cost Lines. 361 Inflows. One Dashboard.",
-      "description": "This thing manages actual renewable energy projects with actual money. Total contract revenue across the portfolio: R263 million. Gross profit margin: 17%. We computed these numbers live from canonical tables with pure-function modules because we are professionals. The KPIs update in real time. The charts use Recharts. The data is real. None of this is mocked. We repeat: none of this is mocked."
+      "title": "The Admin Control Center Knows Things Now",
+      "description": "The Admin Control Center has a new 'Permission Enforcement Coverage' card that shows: total backend-enforced routes (47), ownership-scoped endpoints (5), application-logic-only endpoints (2), recent access denials in the last 7 days, and recent import issues. It's a dashboard for your security posture. It updates live. It knows how many times someone has been told 'no' this week. The Enforcement tab in Roles & Permissions pulls from the same API. The data is consistent because we are professionals."
     },
     {
       "title": "Easter Egg Status Update",
-      "description": "Still there. Still undiscovered. It's starting to develop abandonment issues. If you find it, it will be genuinely surprised. It had given up hope. Please look for it. It's lonely."
+      "description": "Still there. Still undiscovered. It survived the security hardening pass because it doesn't have a write endpoint. It's read-only. It's harmless. It's also getting increasingly existential about its purpose. If a secret exists in a codebase and nobody finds it, does it bring joy? It doesn't know. But it's still waiting. Version 1.1 has not improved its social life."
     }
   ]
 }

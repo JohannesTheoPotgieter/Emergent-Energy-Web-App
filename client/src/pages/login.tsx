@@ -422,7 +422,7 @@ export default function LoginPage() {
                   <p className="text-2xl mb-2">⚡🎉⚡</p>
                   <p className="text-sm font-bold text-emerald-600">You found The First Electron!</p>
                   <p className="text-xs text-muted-foreground mt-1">You are now officially part of the Emergent Energy story.</p>
-                  <p className="text-xs text-muted-foreground mt-1">V1.0 — Built by humans, powered by electrons, deployed with courage.</p>
+                  <p className="text-xs text-muted-foreground mt-1">V1.1 — Built by humans, hardened by paranoia, deployed with slightly more confidence.</p>
                   <p className="text-[10px] text-amber-600 mt-2 italic">Achievement Unlocked: Curious Clicker 🏆</p>
                 </div>
               )}
@@ -430,8 +430,8 @@ export default function LoginPage() {
 
             <div className="px-5 py-3 border-t border-border bg-muted/30">
               <p className="text-[10px] text-muted-foreground text-center italic">
-                V1.0 — Crafted with caffeine, questionable life choices, and an alarming amount of TypeScript.
-                Built to power the future of renewable energy. Here's to the electrons that got us here. ⚡
+                V1.1 — Now with 47 reasons your API call might return 403. Security isn't a feature, it's a lifestyle.
+                Still powered by electrons. Still deployed with courage. Now with permission to do so. ⚡
               </p>
             </div>
           </div>
