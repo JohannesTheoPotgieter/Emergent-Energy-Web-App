@@ -79,14 +79,113 @@
 
 ---
 
-## Summary
+## Second Pass — Gap Close Defects (2026-03-06)
 
-| Severity | Found | Fixed | Open |
-|----------|-------|-------|------|
-| CRITICAL | 1 | 1 | 0 |
-| HIGH | 3 | 3 | 0 |
-| MEDIUM | 1 | 1 | 0 |
-| LOW | 0 | 0 | 0 |
-| **TOTAL** | **5** | **5** | **0** |
+### DEF-006: No UI to Add/Remove Viewers on Tasks
+- **Module**: Task Management / Viewer System
+- **Gap Area**: Viewer Management
+- **Severity**: MEDIUM
+- **Root Cause**: The `work_item_assignments` table supports a VIEWER role, and the backend correctly filters viewer tasks in My Work. However, the `UserAssignmentPicker` component only supports OWNER/ASSIGNEE assignment. There is no toggle, button, or UI path to explicitly add or remove a viewer from a task.
+- **Operational Impact**: Admins cannot manage viewer assignments through the UI. Viewers are only created during Smart Import. If incorrect viewers are assigned, they cannot be removed without direct database access.
+- **UI Recoverable**: NO
+- **Fix Recommendation**: Add a "Viewer" toggle to `UserAssignmentPicker.tsx` that creates `work_item_assignments` entries with `role: 'VIEWER'`. Add a "Remove Viewer" action in the assignment list.
+- **Status**: OPEN
 
-All identified defects have been resolved.
+---
+
+### DEF-007: Smart Import Returns HTTP 500 for Invalid File Type
+- **Module**: Smart Import
+- **Gap Area**: Error Handling / Security
+- **Severity**: MEDIUM
+- **Root Cause**: The `multer` file filter in `smart-import-routes.ts` throws an Error for non-Excel file types. This error is caught by the generic Express error handler which returns HTTP 500 instead of 400. Additionally, the full stack trace is included in the response, which is a security concern.
+- **Operational Impact**: Non-Excel file uploads show a confusing 500 error instead of a user-friendly 400. Stack trace exposes internal file paths.
+- **UI Recoverable**: Yes (upload correct file)
+- **Fix Recommendation**: Add multer error handling middleware that catches `MulterError` and file filter errors, returning 400 with a clean message and no stack trace.
+- **Status**: OPEN
+
+---
+
+### DEF-008: Smart Import Returns HTTP 500 for Corrupt Excel Files
+- **Module**: Smart Import
+- **Gap Area**: Error Handling
+- **Severity**: MEDIUM
+- **Root Cause**: When a file passes the extension check but is not a valid ZIP/Excel file, ExcelJS throws "Can't find end of central directory." This exception is not caught specifically and falls through to the generic 500 error handler.
+- **Operational Impact**: Users uploading corrupted files see a technical error message instead of a clear "File is corrupted or not a valid Excel file" message.
+- **UI Recoverable**: Yes (upload valid file)
+- **Fix Recommendation**: Wrap ExcelJS workbook loading in a try-catch that returns 400 with user-friendly message for parsing errors.
+- **Status**: OPEN
+
+---
+
+### DEF-009: Smart Import Runs Listing Route Not Found
+- **Module**: Smart Import
+- **Gap Area**: API Completeness
+- **Severity**: LOW
+- **Root Cause**: The `/api/smart-import/runs` endpoint (without a runId parameter) returns Vite HTML fallback, suggesting the route is not registered or uses a different path pattern. The route requires `/:runId` in the path.
+- **Operational Impact**: Frontend may not be able to list all import runs for review. The Admin Data Import tab may use a different endpoint or client-side listing.
+- **UI Recoverable**: N/A
+- **Fix Recommendation**: Verify the correct endpoint for listing import runs and ensure it's accessible.
+- **Status**: OPEN (needs investigation)
+
+---
+
+### DEF-010: Status Enum Inconsistency Across Task Types
+- **Module**: Task Engine / Frontend
+- **Gap Area**: Task Consistency
+- **Severity**: MEDIUM
+- **Root Cause**: Different task sources use different status naming conventions: Plan tasks use "Done/Not Started", Engineering uses "COMPLETE/TO DO", MyTool uses "done/inbox", and Operational uses "COMPLETE/TO DO". The My Work page has a `normalizeStatus()` function to bridge these, but the underlying data model is fragmented.
+- **Operational Impact**: Users see different labels for the same logical state depending on which screen they're on. This undermines trust in the system as a single source of truth.
+- **UI Recoverable**: N/A (design issue)
+- **Fix Recommendation**: Define a canonical display status set (e.g., Not Started, In Progress, Done, Blocked) and apply normalization at the API response level, not just in the frontend.
+- **Status**: OPEN
+
+---
+
+### DEF-011: No Undo for Task Deletion
+- **Module**: Task Management
+- **Gap Area**: Admin Recovery
+- **Severity**: MEDIUM
+- **Root Cause**: All task deletions except plan override-based soft-deletes are permanent hard deletes. There is no trash/recycle bin, no soft-delete flag, and no undo capability. The delete endpoint `POST /api/work-items/delete` even returns success for nonexistent IDs.
+- **Operational Impact**: If an admin accidentally deletes a task, it cannot be recovered. The data is permanently lost. This violates the principle that admins should be able to correct mistakes through the UI.
+- **UI Recoverable**: NO
+- **Fix Recommendation**: Implement soft-delete with `deleted_at` timestamp and a "Deleted Items" view for admins. Add confirmation dialog showing task details before deletion.
+- **Status**: OPEN
+
+---
+
+### DEF-012: Projects Summary Shows Null Contract Values
+- **Module**: Financial / Project Management
+- **Gap Area**: KPI Traceability
+- **Severity**: LOW
+- **Root Cause**: All 70 projects in `/api/projects-summary` show `contract_value: null`, `total_contract_revenue: 0`, `total_expenses: 0`. Financial data exists in separate tables (program_inflows, program_expenses) but is not rolled up to the project level in the summary endpoint.
+- **Operational Impact**: Portfolio-level financial metrics appear empty. Revenue/COS trackers only show 12 projects with monthly data. Dashboard GP calculations use project-level fields that are zero.
+- **UI Recoverable**: N/A (data flow issue)
+- **Fix Recommendation**: Ensure project summary endpoint aggregates financial data from inflow/expense tables, or populate `contract_value` on `project_info` during Smart Import.
+- **Status**: OPEN
+
+---
+
+### DEF-013: My Work Returns Zero Tasks for Admin Users
+- **Module**: My Work / Task Assignment
+- **Gap Area**: Role Workflow Continuity
+- **Severity**: MEDIUM
+- **Root Cause**: Admin users (CEO_ADMIN, COO_ADMIN) have no entries in `work_item_assignments` and are not set as `owner_user_id` on any work items. The My Work endpoint correctly queries assignments but finds none for these users.
+- **Operational Impact**: Admins cannot use My Work as a personal task dashboard. There is no system-level task aggregation or "all tasks" admin view in My Work.
+- **UI Recoverable**: Admin can manually create tasks and assign to themselves
+- **Fix Recommendation**: Consider adding an admin mode to My Work that shows all tasks or recently created/modified tasks. Alternatively, ensure admin users are assigned to tasks they create.
+- **Status**: OPEN
+
+---
+
+## Updated Summary
+
+| Severity | Found (Pass 1) | Fixed (Pass 1) | Found (Pass 2) | Open |
+|----------|----------------|-----------------|-----------------|------|
+| CRITICAL | 1 | 1 | 0 | 0 |
+| HIGH | 3 | 3 | 0 | 0 |
+| MEDIUM | 1 | 1 | 6 | 6 |
+| LOW | 0 | 0 | 2 | 2 |
+| **TOTAL** | **5** | **5** | **8** | **8** |
+
+Pass 1: 5 defects found and fixed (DEF-001 through DEF-005).
+Pass 2: 8 additional defects identified (DEF-006 through DEF-013). These are operational trust gaps, not system crashes. None are critical severity but several impact admin recovery capability and user trust.

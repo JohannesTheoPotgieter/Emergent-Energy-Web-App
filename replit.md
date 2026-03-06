@@ -73,7 +73,8 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Read.ai**: For meeting data ingestion via webhooks.
 
 ## System Audit (2026-03-06)
--   Full system audit completed. See `SYSTEM_AUDIT.md`, `QA_TEST_MATRIX.md`, `DEFECT_REGISTER.md`, `RELEASE_READINESS.md`.
--   5 defects identified and fixed (DEF-001 through DEF-005).
--   73 test cases executed, all passing.
--   Key fixes: MS sync status endpoint, QC migration, project edit validation, task detail drawer crash, task deletion routing.
+-   **Pass 1**: Full system audit. 73 tests, 5 defects found and fixed (DEF-001–DEF-005). See `SYSTEM_AUDIT.md`.
+-   **Pass 2**: Trust-hardening gap closure. 30 additional tests, 8 new defects identified (DEF-006–DEF-013, all MEDIUM/LOW, all open). See `GAP_CLOSE_REPORT.md`.
+-   **Total**: 103 test cases across 13 categories. 13 total defects (5 fixed, 8 open).
+-   **Assessment**: CONDITIONALLY READY — core modules proven, trust gaps in viewer management, task deletion undo, Smart Import error handling, and status consistency.
+-   **Deliverables**: `SYSTEM_AUDIT.md`, `QA_TEST_MATRIX.md`, `DEFECT_REGISTER.md`, `RELEASE_READINESS.md`, `GAP_CLOSE_REPORT.md`, `ROLE_WORKFLOW_UAT.md`, `KPI_TRACEABILITY_MATRIX.md`, `ADMIN_RECOVERY_MATRIX.md`, `FRONTEND_CONSISTENCY_AUDIT.md`, `SMART_IMPORT_SCENARIO_TESTS.md`.
