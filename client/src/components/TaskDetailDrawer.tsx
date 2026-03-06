@@ -374,6 +374,7 @@ export default function TaskDetailDrawer({
                 isDeleting={deleteTaskMutation.isPending}
                 isConverting={convertToMilestoneMutation.isPending}
                 isBaselineTask={isBaselineTask}
+                trackingRole={trackingRole}
               />
             )}
           </div>
@@ -398,6 +399,7 @@ function TaskDetailContent({
   isDeleting,
   isConverting,
   isBaselineTask,
+  trackingRole,
 }: {
   data: TaskDetailResponse;
   updateTask: (updates: Record<string, unknown>) => void;
@@ -412,6 +414,7 @@ function TaskDetailContent({
   onUpdateDuration: (d: number) => void;
   isDeleting: boolean;
   isConverting: boolean;
+  trackingRole?: "assignee" | "creator" | "both" | "viewer" | null;
   isBaselineTask: boolean;
 }) {
   const { task, comments, checklists, attachments, activity } = data;

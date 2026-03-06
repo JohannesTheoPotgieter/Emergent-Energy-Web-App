@@ -62,6 +62,7 @@ function mapWorkItemsToNormalizedFormat(items: WorkItem[], projectName: string, 
 
     return {
       id: wi.legacyId ?? wi.id,
+      workItemId: wi.id,
       projectId: wi.projectId,
       projectName: projectName,
       taskName: wi.title,

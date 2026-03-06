@@ -613,7 +613,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
           }
         }
         if (withoutRowNumber.length > 0) {
-          const workItemIds = withoutRowNumber.map(t => Math.abs(t.id));
+          const workItemIds = withoutRowNumber.map(t => (t as any).workItemId || Math.abs(t.id));
           await apiRequest("POST", "/api/work-items/delete", { ids: workItemIds });
         }
       }
