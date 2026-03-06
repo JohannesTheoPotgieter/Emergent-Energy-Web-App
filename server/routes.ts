@@ -10607,6 +10607,8 @@ export async function registerRoutes(
   app.post("/api/operational-tasks/bulk-update", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { taskIds, updates } = req.body as { taskIds: number[]; updates: Record<string, any> };
+      if (updates.status) updates.status = normalizeStatus(updates.status);
+      if (updates.priority) updates.priority = normalizePriority(updates.priority);
       const results = [];
       for (const taskId of taskIds) {
         if (taskId < 0) {
@@ -11356,6 +11358,9 @@ export async function registerRoutes(
       const canEdit = await canEditProjectTasks(req, projectName);
       if (!canEdit) return res.status(403).json({ error: "You don't have permission to edit this project's tasks" });
 
+      if (updates.status) updates.status = normalizeStatus(updates.status);
+      if (updates.priority) updates.priority = normalizePriority(updates.priority);
+
       const actualTaskId = Math.abs(taskId);
 
       const planTaskResult = await db.select().from(workItems).where(
@@ -11605,7 +11610,7 @@ export async function registerRoutes(
           wiUpdateFields.taskMode = updates.taskMode;
         }
 
-        if (updates.status === "Done" && updates.percentComplete == null) {
+        if ((updates.status === "complete" || updates.status === "Done") && updates.percentComplete == null) {
           wiUpdateFields.percentComplete = 1.0;
         }
 
@@ -11619,7 +11624,7 @@ export async function registerRoutes(
           if (updates.startDate != null) wiSyncFields.startDate = updates.startDate;
           if (updates.dueDate != null || updates.endDate != null) wiSyncFields.endDate = updates.dueDate || updates.endDate;
           if (updates.percentComplete != null) wiSyncFields.percentComplete = updates.percentComplete / 100;
-          if (updates.status === "Done" && updates.percentComplete == null) wiSyncFields.percentComplete = 1.0;
+          if ((updates.status === "complete" || updates.status === "Done") && updates.percentComplete == null) wiSyncFields.percentComplete = 1.0;
           if (Object.keys(wiSyncFields).length > 0) {
             await db.update(workItems).set(wiSyncFields).where(
               and(eq(workItems.legacyTable, "normalized_plan_tasks"), eq(workItems.legacyId, actualTaskId), isNull(workItems.deletedAt))

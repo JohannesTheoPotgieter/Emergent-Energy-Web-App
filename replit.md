@@ -88,8 +88,8 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Canonical Task Normalization**: All task write paths now normalize status via `normalizeStatus()` — operational tasks, mytool tasks, planning tasks, baseline promotion, admin recovery PATCH. Recurring task creation uses canonical "todo". Fixed legacy "done"/"planned"/"Not Started" values on write paths.
 -   **Admin Recovery Hardening**: AlertDialog confirmation dialogs on task edits and deleted item restores. Status normalization on recovery PATCH handler. 11 correction scenarios covered.
 -   **Shared Platform Cleanup**: ApiError class standardized across routes. Task validation on creation endpoints. EnergyLoader on 6+ pages. SearchableSelect on revenue-tracker dropdown. Global error handler middleware.
--   **Stabilization Defects**: 7 found, 7 fixed (STAB-001 through STAB-007). See `FINAL_DEFECT_REGISTER.md`.
--   **Total (All Sessions)**: 153 test cases. 20 total defects — all 20 fixed, 0 open.
+-   **Stabilization Defects**: 15 total (STAB-001 through STAB-015). 10 fixed, 5 open (1 HIGH: smart-import audit logging, 3 MEDIUM: sync/department audit logging gaps, 1 LOW: recovery field gap). See `FINAL_DEFECT_REGISTER.md`.
+-   **Total (All Sessions)**: 153 test cases. 28 total defects — 23 fixed, 5 open.
 -   **Deliverables**: `PLATFORM_STABILIZATION_PLAN.md`, `ROLE_PERMISSION_MATRIX.md`, `ADMIN_CONTROL_CENTRE.md`, `TRANSACTION_LOGGING_SPEC.md`, `FINAL_QA_MATRIX.md`, `FINAL_DEFECT_REGISTER.md`, `FINAL_RELEASE_READINESS.md`, `FUTURE_PM_FOUNDATION_MAP.md`.
 
 ## System Audit (2026-03-06)
