@@ -1,7 +1,7 @@
 # Roles & Permissions — Release Note
 
 ## Version
-UX Rework v1.0 — 2026-03-06
+UX Rework v1.1 — 2026-03-06
 
 ## Summary
 The Roles & Permissions screen has been restructured from a single flat list into a 4-tab information architecture that separates navigation access, functional capabilities, scope rules, and enforcement truth. The goal is to make it materially easier for admins to understand what a role can see, what it can do, and how well that is actually enforced.
