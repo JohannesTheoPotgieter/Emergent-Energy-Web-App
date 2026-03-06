@@ -11842,25 +11842,72 @@ export async function registerRoutes(
       const normalizedStatus = normalizeStatus(status || "Not Started");
       const normalizedPriority = normalizePriority(priority || "Normal");
 
-      const [task] = await db.insert(operationalTasks).values({
-        projectName,
-        title,
-        status: normalizedStatus,
-        priority: normalizedPriority,
-        startDate: startDate || null,
-        dueDate: dueDate || null,
-        isMilestone: isMilestone || false,
-        parentTaskId: parentTaskId || null,
-        percentComplete: 0,
-        createdBy: user.id,
-      }).returning();
+      const projectInfoRow = await storage.getProjectInfo(projectName);
+      const projectId = projectInfoRow?.id || null;
+
+      const existingItems = await db.select({ wbsCode: workItems.wbsCode })
+        .from(workItems)
+        .where(and(
+          projectId ? eq(workItems.projectId, projectId) : sql`false`,
+          eq(workItems.workstream, "PM"),
+          isNull(workItems.deletedAt),
+          isNull(workItems.parentId),
+        ))
+        .orderBy(desc(workItems.id));
+
+      let nextTopLevelNum = 1;
+      for (const item of existingItems) {
+        if (item.wbsCode) {
+          const topLevel = parseInt(item.wbsCode.split('.')[0]);
+          if (!isNaN(topLevel) && topLevel >= nextTopLevelNum) {
+            nextTopLevelNum = topLevel + 1;
+          }
+        }
+      }
+      const newWbsCode = String(nextTopLevelNum);
+
+      let workItem: any;
+      let task: any;
+
+      await db.transaction(async (tx) => {
+        [workItem] = await tx.insert(workItems).values({
+          projectId,
+          workstream: "PM",
+          source: "UI",
+          title,
+          status: normalizedStatus,
+          priority: normalizedPriority,
+          startDate: startDate || null,
+          endDate: dueDate || null,
+          percentComplete: 0,
+          wbsCode: newWbsCode,
+          indentLevel: 0,
+          parentId: null,
+          isMilestone: isMilestone || false,
+          createdBy: user.id,
+          taskMode: "auto",
+        }).returning();
+
+        [task] = await tx.insert(operationalTasks).values({
+          projectName,
+          title,
+          status: normalizedStatus,
+          priority: normalizedPriority,
+          startDate: startDate || null,
+          dueDate: dueDate || null,
+          isMilestone: isMilestone || false,
+          parentTaskId: null,
+          percentComplete: 0,
+          createdBy: user.id,
+          importedTaskId: workItem.id,
+        }).returning();
+      });
 
       const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
       if (!isAdmin) {
-        const projectInfoRow = await storage.getProjectInfo(projectName);
         await db.insert(planEditNotifications).values({
           projectName,
-          projectId: projectInfoRow?.id || null,
+          projectId,
           taskId: task.id,
           taskName: title,
           editType: "task_created",
@@ -11877,19 +11924,19 @@ export async function registerRoutes(
         projectName,
         changedByUserId: user.id || 0,
         changeType: "plan_task_created",
-        changeDescription: `New plan task added: "${title}".`,
-        details: { taskId: task.id, title, startDate, dueDate, status, priority },
+        changeDescription: `New plan task added: "${title}". Please add this task to the Excel tracker.`,
+        details: { taskId: task.id, workItemId: workItem.id, title, wbsCode: newWbsCode, startDate, dueDate, status, priority },
       }).catch(() => {});
 
       logAuditFromReq(req, {
         entityType: "plan_task",
         action: "create",
-        entityId: String(task.id),
+        entityId: String(workItem.id),
         projectName,
-        changesJson: { title, status, priority },
+        changesJson: { title, status, priority, wbsCode: newWbsCode },
       });
 
-      res.json(task);
+      res.json({ ...task, workItemId: workItem.id, wbsCode: newWbsCode });
     } catch (err: any) {
       console.error("Plan task create error:", err);
       sendError(res, err);
