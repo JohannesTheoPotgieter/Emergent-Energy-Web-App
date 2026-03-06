@@ -744,6 +744,7 @@ export async function registerRoutes(
       if (!key) return res.status(400).json({ error: "key is required" });
       const { setFeatureFlag } = await import("./lib/feature-flags");
       await setFeatureFlag(key, !!value, (req as any).user?.name || "admin");
+      logAuditFromReq(req, { entityType: "settings", action: "update", changesJson: { key, value: !!value }, source: "SETTINGS" });
       res.json({ success: true, key, value: !!value });
     } catch (err: any) {
       res.status(500).json({ error: "Failed to update setting" });
@@ -4951,6 +4952,8 @@ export async function registerRoutes(
         triggeredBy: req.user?.id || null,
         status: reprocessResults.every(r => r.status === "success") ? "success" : "partial"
       });
+
+      logAuditFromReq(req, { entityType: "system", action: "reprocess_all", source: "SYSTEM", changesJson: { projectsProcessed: projectFiles.size, results: reprocessResults.map(r => ({ file: r.fileName, status: r.status })) } });
       
       res.json({
         message: `Reprocessed ${projectFiles.size} project(s)`,
@@ -5191,6 +5194,7 @@ export async function registerRoutes(
         createdBy: req.user?.id,
         updatedBy: req.user?.id,
       }).returning();
+      logAuditFromReq(req, { entityType: "client", entityId: String(created.id), action: "create", changesJson: { name: parsed.name, clientId: generatedClientId } });
       res.json(created);
     } catch (error) {
       console.error("Client create error:", error);
@@ -7315,6 +7319,7 @@ export async function registerRoutes(
         triggeredBy: req.user?.id || null,
         status: "success"
       });
+      logAuditFromReq(req, { entityType: "system", action: "refresh", source: "SYSTEM" });
       res.json({ message: "Data refresh recorded", refreshedAt: refreshLog.refreshedAt });
     } catch (error) {
       res.status(500).json({ error: "Failed to record refresh", message: "Failed to record refresh", code: "REFRESH_ERROR" });
@@ -7400,6 +7405,7 @@ export async function registerRoutes(
         await storage.createRefreshLog({ triggeredBy: req.user?.id || null, status: refreshResults.every(r => r.status === "success") ? "success" : "partial" });
         const refreshActiveNames = refreshResults.filter(r => r.status === "success").map(r => r.projectName);
         if (refreshActiveNames.length > 0) await storage.markProjectsActive(refreshActiveNames);
+        logAuditFromReq(req, { entityType: "system", action: "admin_refresh_data", source: "SYSTEM", changesJson: { projectsProcessed: total, durationMs: Date.now() - startTime } });
         sendEvent({ type: 'complete', results: refreshResults, durationMs: Date.now() - startTime });
         res.end();
       } catch (error: any) {
@@ -7790,6 +7796,8 @@ export async function registerRoutes(
       const failedCount = results.filter(r => r.status === "failed").length;
       const totalRecords = results.reduce((sum, r) => sum + (r.recordsProcessed || 0), 0);
       
+      logAuditFromReq(req, { entityType: "system", action: "scan_folder", source: "SYSTEM", changesJson: { filesProcessed: successCount, filesFailed: failedCount, filesTotal: allFiles.length, totalRecords } });
+
       res.json({
         success: failedCount < results.length,
         message: `Processed ${successCount}/${allFiles.length} files (${failedCount} failed)`,
@@ -9226,6 +9234,7 @@ export async function registerRoutes(
     try {
       const { runBackfill } = await import("./lib/backfill");
       await runBackfill();
+      logAuditFromReq(req, { entityType: "system", action: "backfill", source: "SYSTEM" });
       res.json({ success: true, message: 'Backfill completed' });
     } catch (err: any) {
       console.error('[Admin] backfill error:', err);
@@ -9238,6 +9247,7 @@ export async function registerRoutes(
       const { backfillInvoiceDateConfirmed } = await import("./backfillInvoiceConfirmed");
       const result = await backfillInvoiceDateConfirmed();
       console.log('[Admin] Invoice date confirmed backfill:', result);
+      logAuditFromReq(req, { entityType: "system", action: "backfill_invoice_confirmed", source: "SYSTEM", changesJson: result });
       res.json({ success: true, ...result });
     } catch (err: any) {
       console.error('[Admin] invoice confirmed backfill error:', err);
@@ -11993,6 +12003,7 @@ export async function registerRoutes(
         resolution: resolution || "acknowledged",
       }).where(eq(planEditNotifications.id, id));
 
+      logAuditFromReq(req, { entityType: "plan_edit_notification", entityId: String(id), action: "resolve", changesJson: { resolution: resolution || "acknowledged" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -12016,6 +12027,7 @@ export async function registerRoutes(
         resolution: resolution || "bulk_acknowledged",
       }).where(inArray(planEditNotifications.id, ids));
 
+      logAuditFromReq(req, { entityType: "plan_edit_notification", action: "bulk_resolve", changesJson: { count: ids.length, resolution: resolution || "bulk_acknowledged" } });
       res.json({ success: true, resolved: ids.length });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -12036,6 +12048,7 @@ export async function registerRoutes(
   app.post("/api/key-date-mappings", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const mapping = await storage.createKeyDateMapping({ ...req.body, createdBy: (req.user as any)?.id });
+      logAuditFromReq(req, { entityType: "key_date_mapping", entityId: String(mapping.id), action: "create", changesJson: req.body });
       res.json(mapping);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -12045,6 +12058,7 @@ export async function registerRoutes(
   app.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const updated = await storage.updateKeyDateMapping(parseInt(req.params.id), req.body);
+      logAuditFromReq(req, { entityType: "key_date_mapping", entityId: req.params.id, action: "update", changesJson: req.body });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -12054,6 +12068,7 @@ export async function registerRoutes(
   app.delete("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       await storage.deleteKeyDateMapping(parseInt(req.params.id));
+      logAuditFromReq(req, { entityType: "key_date_mapping", entityId: req.params.id, action: "delete" });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -13646,6 +13661,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Message content is required" });
       }
       const result = await outlook.sendChatMessage(req.params.chatId, content.trim(), ssoToken);
+      logAuditFromReq(req, { entityType: "ms_teams_chat", entityId: req.params.chatId, action: "send_message" });
       res.json({ success: true, message: result });
     } catch (err: any) {
       console.error("[Teams] Send chat message error:", err);
@@ -13664,6 +13680,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Message content is required" });
       }
       const result = await outlook.sendChannelMessage(req.params.teamId, req.params.channelId, content.trim(), ssoToken);
+      logAuditFromReq(req, { entityType: "ms_teams_channel", entityId: `${req.params.teamId}/${req.params.channelId}`, action: "send_message" });
       res.json({ success: true, message: result });
     } catch (err: any) {
       console.error("[Teams] Send channel message error:", err);
@@ -13805,6 +13822,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "siteId and driveId are required" });
       }
       const result = await testConnection(siteId, driveId);
+      logAuditFromReq(req, { entityType: "sp_settings", action: "test_connection", changesJson: { siteId, driveId } });
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -14223,6 +14241,7 @@ function registerUserFolderRoutes(app: Express) {
       const [created] = await db.insert(userProjectFolders)
         .values({ userId, projectName, folderName, folderPath: folderPath || null })
         .returning();
+      logAuditFromReq(req, { entityType: "user_project_folder", action: "upsert", projectName, changesJson: { folderName } });
       res.json(created);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -14240,6 +14259,7 @@ function registerUserFolderRoutes(app: Express) {
           eq(userProjectFolders.userId, userId),
           eq(userProjectFolders.projectName, projectName)
         ));
+      logAuditFromReq(req, { entityType: "user_project_folder", action: "delete", projectName });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

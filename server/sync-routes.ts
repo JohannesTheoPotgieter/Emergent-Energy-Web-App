@@ -2,6 +2,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
+import { logAuditFromReq } from "./audit-logger";
 import {
   intakeRequests, intakeTasks, intakeTaskTemplates,
   spListConfig, syncAuditLog, projectInfo,
@@ -132,6 +133,7 @@ export function registerSyncRoutes(app: Express) {
         syncViewFilter: syncViewFilter || "IN PROGRESS",
         configuredByRole: getUserRole(req),
       });
+      logAuditFromReq(req, { entityType: "sp_sync", action: "configure", changesJson: { siteId, listId, siteName, listName } });
       res.json({ config });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -162,6 +164,7 @@ export function registerSyncRoutes(app: Express) {
         columnMappingJson: { mapping, columnTypes, detectedColumns: columns },
       });
 
+      logAuditFromReq(req, { entityType: "sp_sync", action: "auto_detect_columns", changesJson: { totalColumns: columns.length, mappedColumns: Object.keys(mapping).length } });
       res.json({ mapping, columnTypes, totalColumns: columns.length, mappedColumns: Object.keys(mapping).length });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -184,6 +187,7 @@ export function registerSyncRoutes(app: Express) {
         },
       });
 
+      logAuditFromReq(req, { entityType: "sp_sync", action: "update_mapping", changesJson: { fieldsUpdated: Object.keys(mapping || {}).length } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -394,6 +398,8 @@ export function registerSyncRoutes(app: Express) {
       };
       await db.insert(syncAuditLog).values(auditEntry);
 
+      logAuditFromReq(req, { entityType: "sp_sync", action: "pull", changesJson: { totalItems: items.length, newProjects, newRequests, updatedRequests, conflicts, errors } });
+
       res.json({
         success: true,
         totalItems: items.length,
@@ -498,6 +504,7 @@ export function registerSyncRoutes(app: Express) {
         errorsCount: errors,
       });
 
+      logAuditFromReq(req, { entityType: "sp_sync", action: "push", changesJson: { pushed, errors } });
       res.json({ success: true, pushed, errors, errorList: errorList.length > 0 ? errorList : undefined });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -545,6 +552,7 @@ export function registerSyncRoutes(app: Express) {
         errorsCount: 0,
       });
 
+      logAuditFromReq(req, { entityType: "sp_sync", entityId: requestId, action: "resolve_conflict", changesJson: { resolutions } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -618,6 +626,7 @@ export function registerSyncRoutes(app: Express) {
         errorsCount: 0,
       });
 
+      logAuditFromReq(req, { entityType: "intake_request", entityId: requestId, action: "cp_signed", changesJson: { clientName: request.clientName, evidenceType, signedDate } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -677,6 +686,7 @@ export function registerSyncRoutes(app: Express) {
         .where(eq(intakeRequests.id, parseInt(req.params.id)))
         .returning();
 
+      logAuditFromReq(req, { entityType: "intake_request", entityId: req.params.id, action: "update", changesJson: { fieldsUpdated: Object.keys(updates).filter(k => k !== "updatedAt" && k !== "lastAppEditAt") } });
       res.json({ request: updated });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -711,6 +721,7 @@ export function registerSyncRoutes(app: Express) {
         .set(updates)
         .where(eq(intakeTasks.id, parseInt(req.params.taskId)))
         .returning();
+      logAuditFromReq(req, { entityType: "intake_task", entityId: req.params.taskId, action: "update", changesJson: { status, assignedTo } });
       res.json({ task: updated });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -752,6 +763,7 @@ export function registerSyncRoutes(app: Express) {
         updatedAt: new Date(),
       }).where(eq(intakeRequests.id, parseInt(req.params.requestId)));
 
+      logAuditFromReq(req, { entityType: "intake_request", entityId: req.params.requestId, action: "generate_tasks", changesJson: { tasksCreated: templates.length, requestType } });
       res.json({ success: true, tasksCreated: templates.length });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

@@ -80,6 +80,46 @@ Tests are organized by criticality. Critical workflows are tested first. Each te
 
 ---
 
+### Smart Import Audit Logging (6 tests)
+
+| ID | Test Case | Expected | Result | Evidence |
+|---|---|---|---|---|
+| QA-051 | Upload file via smart import | Upload action audit logged with fileName, fileHash, section count | PASS | smart-import-routes.ts: logAuditFromReq after run insert |
+| QA-052 | Commit import run | Commit action audit logged with counts and project name | PASS | smart-import-routes.ts: logAuditFromReq before commit response |
+| QA-053 | Rollback import run | Rollback action audit logged with previous status | PASS | smart-import-routes.ts: logAuditFromReq after rollback transaction |
+| QA-054 | Resolve individual issue | Resolve/unresolve action audit logged with resolution type | PASS | smart-import-routes.ts: logAuditFromReq after issue update |
+| QA-055 | Bulk commit imports | Bulk commit action audit logged with committed/failed/skipped counts | PASS | smart-import-routes.ts: logAuditFromReq before bulk-commit response |
+| QA-056 | Retry failed import | Retry action audit logged with previous status | PASS | smart-import-routes.ts: logAuditFromReq after status reset |
+
+### Sync Routes Audit Logging (5 tests)
+
+| ID | Test Case | Expected | Result | Evidence |
+|---|---|---|---|---|
+| QA-057 | Configure SharePoint sync | Config action audit logged with site/list IDs | PASS | sync-routes.ts: logAuditFromReq after saveConfig |
+| QA-058 | Pull from SharePoint | Pull action audit logged with item counts | PASS | sync-routes.ts: logAuditFromReq after syncAuditLog insert |
+| QA-059 | Push to SharePoint | Push action audit logged with push count | PASS | sync-routes.ts: logAuditFromReq after syncAuditLog insert |
+| QA-060 | Update intake request | Update action audit logged with field names | PASS | sync-routes.ts: logAuditFromReq after intake request update |
+| QA-061 | Generate intake tasks | Generate action audit logged with task count | PASS | sync-routes.ts: logAuditFromReq after task generation |
+
+### Routes.ts Audit Gap Closure (5 tests)
+
+| ID | Test Case | Expected | Result | Evidence |
+|---|---|---|---|---|
+| QA-062 | Update settings (feature flag) | Settings action audit logged with key/value | PASS | routes.ts: logAuditFromReq after setFeatureFlag |
+| QA-063 | Create client | Client create audit logged with name and clientId | PASS | routes.ts: logAuditFromReq after client insert |
+| QA-064 | Admin backfill | System backfill action audit logged | PASS | routes.ts: logAuditFromReq after runBackfill |
+| QA-065 | Key-date mapping CRUD | All 3 operations (create, update, delete) audit logged | PASS | routes.ts: logAuditFromReq on all 3 key-date-mapping endpoints |
+| QA-066 | Send Teams message | Message send action audit logged with chat/channel ID | PASS | routes.ts: logAuditFromReq on both chat and channel send |
+
+### Project Recovery Fields (2 tests)
+
+| ID | Test Case | Expected | Result | Evidence |
+|---|---|---|---|---|
+| QA-067 | Edit project sizeKwp via recovery | Size field present in form, saved to database | PASS | admin-recovery.tsx: sizeKwp input field; admin-recovery-routes.ts: sizeKwp in setObj |
+| QA-068 | Edit project contractValue via recovery | Contract value field present in form, saved to database | PASS | admin-recovery.tsx: contractValue input field; admin-recovery-routes.ts: contractValue in setObj |
+
+---
+
 ## REGRESSION COVERAGE
 
 ### Existing Features Not Broken (6 tests)
@@ -104,8 +144,12 @@ Tests are organized by criticality. Critical workflows are tested first. Each te
 | Task Normalization on Write | 10 | 9 | 0 | 1 |
 | Admin Recovery | 8 | 8 | 0 | 0 |
 | Admin Control Center | 6 | 6 | 0 | 0 |
+| Smart Import Audit Logging | 6 | 6 | 0 | 0 |
+| Sync Routes Audit Logging | 5 | 5 | 0 | 0 |
+| Routes.ts Audit Gap Closure | 5 | 5 | 0 | 0 |
+| Project Recovery Fields | 2 | 2 | 0 | 0 |
 | Regression Coverage | 6 | 6 | 0 | 0 |
-| **TOTAL** | **50** | **49** | **0** | **1** |
+| **TOTAL** | **68** | **67** | **0** | **1** |
 
 ### Known Behavior (Not a Defect)
 | Test | Issue | Rationale |

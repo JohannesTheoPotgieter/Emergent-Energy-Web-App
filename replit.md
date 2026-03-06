@@ -84,12 +84,12 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 
 ## Platform Stabilization (2026-03-06)
 -   **Admin Control Center**: `/admin/control-center` — unified admin dashboard with system health, import stats, integration status, feature flags, system enums, quick links, and dangerous actions with AlertDialog confirmations. Server: `server/admin-control-routes.ts`.
--   **Transactional Logging Hardening**: 170+ audit logging calls across all route files. Role management (7 new calls for role CRUD, user CRUD, password resets). All admin recovery edits and dangerous actions audit-logged.
+-   **Transactional Logging Hardening**: 292 audit logging calls across all route files. Role management (8 calls), smart-import (12 calls), sync-routes (11 calls), routes.ts (145 calls). All admin recovery edits and dangerous actions audit-logged. Only 5 pre-auth/read-only endpoints intentionally excluded.
 -   **Canonical Task Normalization**: All task write paths now normalize status via `normalizeStatus()` — operational tasks, mytool tasks, planning tasks, baseline promotion, admin recovery PATCH. Recurring task creation uses canonical "todo". Fixed legacy "done"/"planned"/"Not Started" values on write paths.
 -   **Admin Recovery Hardening**: AlertDialog confirmation dialogs on task edits and deleted item restores. Status normalization on recovery PATCH handler. 11 correction scenarios covered.
 -   **Shared Platform Cleanup**: ApiError class standardized across routes. Task validation on creation endpoints. EnergyLoader on 6+ pages. SearchableSelect on revenue-tracker dropdown. Global error handler middleware.
--   **Stabilization Defects**: 15 total (STAB-001 through STAB-015). 10 fixed, 5 open (1 HIGH: smart-import audit logging, 3 MEDIUM: sync/department audit logging gaps, 1 LOW: recovery field gap). See `FINAL_DEFECT_REGISTER.md`.
--   **Total (All Sessions)**: 153 test cases. 28 total defects — 23 fixed, 5 open.
+-   **Stabilization Defects**: 15 total (STAB-001 through STAB-015). 14 fixed, 1 closed as invalid (STAB-013: departments directory doesn't exist), 0 open. See `FINAL_DEFECT_REGISTER.md`.
+-   **Total (All Sessions)**: 171 test cases. 28 total defects — 27 fixed, 1 invalid, 0 open.
 -   **Deliverables**: `PLATFORM_STABILIZATION_PLAN.md`, `ROLE_PERMISSION_MATRIX.md`, `ADMIN_CONTROL_CENTRE.md`, `TRANSACTION_LOGGING_SPEC.md`, `FINAL_QA_MATRIX.md`, `FINAL_DEFECT_REGISTER.md`, `FINAL_RELEASE_READINESS.md`, `FUTURE_PM_FOUNDATION_MAP.md`.
 
 ## System Audit (2026-03-06)

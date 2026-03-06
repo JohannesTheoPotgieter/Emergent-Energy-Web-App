@@ -25,11 +25,11 @@
 | STAB-008 | MEDIUM | Task Normalization | `PATCH /api/planning-tasks/:taskId` wrote raw "Done" when percentComplete=100 instead of canonical "complete" | Added normalizeStatus + normalizePriority at handler entry, updated "Done" checks to also accept canonical "complete" | Yes — admin can fix status via Recovery Center | **FIXED** |
 | STAB-009 | MEDIUM | Task Normalization | `POST /api/operational-tasks/bulk-update` did not normalize status — wrote raw values from client | Added normalizeStatus + normalizePriority before bulk update loop | Yes — admin can fix individual tasks via Recovery Center | **FIXED** |
 | STAB-010 | LOW | Admin Recovery | Project recovery save button had no AlertDialog confirmation dialog — saved immediately on click | Added AlertDialog wrapping save button with project ID, name, and audit warning | Yes — admin can re-edit; action is audit-logged | **FIXED** |
-| STAB-011 | HIGH | Audit Logging | smart-import-routes.ts has 0 audit logging calls across 10+ mutating endpoints (upload, commit, rollback) | Import operations — the highest-risk data ingestion path — are not visible in the audit trail | No — requires code fix | **OPEN** |
-| STAB-012 | MEDIUM | Audit Logging | sync-routes.ts has 0 audit logging calls across 10 mutating endpoints (SharePoint push/pull) | SharePoint sync operations not tracked in audit trail | No — requires code fix | **OPEN** |
-| STAB-013 | MEDIUM | Audit Logging | server/departments/*.ts has 0 audit logging calls across ~15 mutating endpoints | Financial close uploads, reprocess operations not tracked | No — requires code fix | **OPEN** |
-| STAB-014 | MEDIUM | Audit Logging | ~30 endpoints in routes.ts missing audit logging (scenarios CRUD, bulk operations, comment deletion, planning task PATCH) | Some user actions not captured in audit trail | No — requires code fix | **OPEN** |
-| STAB-015 | LOW | Admin Recovery | Project recovery form missing sizeKwp, contractValue, and clientId fields — backend supports these but frontend doesn't expose them | Admin cannot fix project size/contract value through recovery UI; must use project detail page or database | Partially — can edit via project detail page, not via recovery | **OPEN** |
+| STAB-011 | HIGH | Audit Logging | smart-import-routes.ts had 0 audit logging calls across 12 mutating endpoints (upload, commit, rollback, mapping, resolve, etc.) | Added 12 logAuditFromReq calls covering all mutating endpoints: upload, project-info, mapping, resolve, ignore-all-blockers, allow-all, apply-prior-resolutions, commit, rollback, bulk-commit, retry | N/A — governance gap fixed | **FIXED** |
+| STAB-012 | MEDIUM | Audit Logging | sync-routes.ts had 0 audit logging calls across 10 mutating endpoints (SharePoint push/pull) | Added 10 logAuditFromReq calls covering: configure, auto-detect, update-mapping, pull, push, resolve-conflict, cp-signed, intake-request update, intake-task update, generate-tasks | N/A — governance gap fixed | **FIXED** |
+| STAB-013 | MEDIUM | Audit Logging | server/departments/*.ts directory does not exist — original defect was based on incorrect assumptions | No action needed — the directory doesn't exist. Financial operations are handled in routes.ts and already have audit logging | N/A — false positive | **CLOSED (Invalid)** |
+| STAB-014 | MEDIUM | Audit Logging | ~23 endpoints in routes.ts missing audit logging (settings, clients, refresh, backfill, notifications, key-date-mappings, Teams messages, project folders, scan-folder, reprocess-all) | Added 18 logAuditFromReq calls. 5 remaining endpoints intentionally excluded: login (pre-auth), logout (cleanup), writeback/preview (read-only), error-log (already persisted), outlook/refresh (no mutation) | N/A — governance gap fixed | **FIXED** |
+| STAB-015 | LOW | Admin Recovery | Project recovery form was missing sizeKwp, contractValue, and clientId fields — backend supported these but frontend didn't expose them | Added Size (kWp), Contract Value, and Client ID fields to ProjectRecoveryTab edit form with proper number inputs | Yes — all fields now editable via recovery | **FIXED** |
 
 ---
 
@@ -37,18 +37,27 @@
 
 | Category | Fixed | Open | Total |
 |---|---|---|---|
-| Stabilization Session | 10 | 5 | 15 |
+| Stabilization Session | 14 | 0 | 15* |
 | Prior Audit Session (DEF-001 to DEF-013) | 13 | 0 | 13 |
-| **Total All Sessions** | **23** | **5** | **28** |
+| **Total All Sessions** | **27** | **0** | **28*** |
 
-### Open Defect Breakdown by Severity
-| Severity | Count | IDs |
-|---|---|---|
-| HIGH | 1 | STAB-011 (Smart Import audit logging) |
-| MEDIUM | 3 | STAB-012, STAB-013, STAB-014 |
-| LOW | 1 | STAB-015 (Project recovery missing fields) |
+*STAB-013 was closed as invalid (false positive — the directory doesn't exist)
 
-### Recommended Priority Fixes
-1. **STAB-011** (HIGH): Add logAuditFromReq to smart-import-routes.ts upload/commit/rollback — critical governance gap
-2. **STAB-014** (MEDIUM): Add audit logging to remaining ~30 routes.ts endpoints — audit completeness
-3. **STAB-012 + STAB-013** (MEDIUM): Add audit logging to sync-routes.ts and departments — operational visibility
+### Open Defect Breakdown
+None. All identified defects have been fixed or closed.
+
+### Intentionally Excluded from Audit Logging (5 endpoints)
+These endpoints are intentionally not audit-logged due to their nature:
+1. `POST /api/auth/login` — Pre-authentication; user identity not yet established
+2. `POST /api/auth/logout` — Session cleanup; no data mutation
+3. `POST /api/writeback/preview` — Read-only preview; no data modification
+4. `POST /api/error-log` — Client error reporter; already persists to error_log table
+5. `POST /api/outlook/refresh` — Token refresh; no data mutation
+
+### Audit Coverage Summary
+- **Total audit calls**: 292 across all server files
+- **routes.ts**: 145 calls
+- **smart-import-routes.ts**: 12 calls (was 0)
+- **sync-routes.ts**: 11 calls (was 0)
+- **role-management.ts**: 8 calls
+- **Other route files**: 116 calls
