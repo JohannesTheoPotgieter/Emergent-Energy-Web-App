@@ -1079,7 +1079,7 @@ router.post("/api/projects-summary/:projectName/edit", requireAuth, requireAdmin
   }
 });
 
-router.patch("/api/projects-summary/:projectName/latest-update", requireAuth, async (req, res) => {
+router.patch("/api/projects-summary/:projectName/latest-update", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
   try {
     const projectName = decodeURIComponent(req.params.projectName as string);
     const schema = z.object({
@@ -1870,7 +1870,7 @@ router.get("/api/pd-assignable-users", requireAuth, async (_req, res) => {
   }
 });
 
-router.patch("/api/project-info/:id/assign-pm", requireAuth, async (req, res) => {
+router.patch("/api/project-info/:id/assign-pm", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid project ID" });

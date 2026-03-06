@@ -3,6 +3,7 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import { logAuditFromReq } from "./audit-logger";
+import { requirePermission } from "./permission-middleware";
 import PDFDocument from "pdfkit";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -200,7 +201,7 @@ export function registerPoRoutes(app: Express) {
     }
   });
 
-  app.post("/api/po/generate", requireAuth, async (req, res) => {
+  app.post("/api/po/generate", requireAuth, requirePermission('procurement', 'edit'), async (req, res) => {
     try {
       const user = (req as any).user;
       const {
@@ -325,7 +326,7 @@ export function registerPoRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/po/:poId/status", requireAuth, async (req, res) => {
+  app.patch("/api/po/:poId/status", requireAuth, requirePermission('procurement', 'edit'), async (req, res) => {
     try {
       const poIdNum = parseInt(req.params.poId);
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
@@ -362,7 +363,7 @@ export function registerPoRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/po/:poId", requireAuth, async (req, res) => {
+  app.delete("/api/po/:poId", requireAuth, requirePermission('procurement', 'delete'), async (req, res) => {
     try {
       const poIdNum = parseInt(req.params.poId);
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });

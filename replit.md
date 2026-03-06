@@ -75,3 +75,12 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 ### Third-Party Integrations
 -   **Microsoft Graph API**: For Outlook calendar, SharePoint, and Teams integration.
 -   **Read.ai**: For meeting data ingestion via webhooks.
+
+## Security & Permission Hardening (2026-03-06)
+-   **Backend Permission Enforcement**: 47 critical write routes now have `requirePermission` or `requireAdmin` middleware. Covers: procurement (PO, counterparties, invoice patterns, subcontractor), project development (clients, tickets), projects (assign-pm, lifecycle, weekly reviews), and Smart Import (all write routes admin-only).
+-   **Critical Fix**: `PUT /api/settings` previously had NO authentication — now requires `requireAuth` + `requireAdmin`.
+-   **Ownership Scoping**: Projects-summary returns `_user_scope` metadata (full_oversight/owned/assigned/visible). Supports `?scope=owned` filter. `/api/tasks` endpoint scopes non-management users to assigned/owned tasks. My Work already strictly user-scoped.
+-   **Smart Import Duplicate Prevention**: Normalized comparison, fuzzy matching with confidence scoring (auto-map ≥85%, conflict 50-85%), rerun detection via SHA-256 hash, `confirmNewProject` required to create new projects when matches exist. New endpoints: `GET /api/smart-import/project-matches/:name`, `PATCH /api/smart-import/:runId/assign-project`.
+-   **Admin Governance**: New "Permission Enforcement Coverage" card in Admin Control Center showing backend-enforced route count, ownership-scoped endpoints, application-logic-only endpoints, recent access denials, and recent import issues. Updated permissions honesty notice.
+-   **Assessment**: READY FOR CONTROLLED INTERNAL USE — security posture materially improved.
+-   **Deliverables**: `BACKEND_PERMISSION_ENFORCEMENT_PLAN.md`, `OWNERSHIP_SCOPE_HARDENING.md`, `SMART_IMPORT_DUPLICATE_PREVENTION.md`, `ADMIN_GOVERNANCE_HARDENING.md`, `HARDENING_QA_MATRIX.md`, `HARDENING_DEFECT_REGISTER.md`, `HARDENING_RELEASE_RECOMMENDATION.md`.

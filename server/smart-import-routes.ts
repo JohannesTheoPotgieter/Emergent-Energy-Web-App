@@ -37,12 +37,117 @@ import {
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
 
+function normalizeForComparison(name: string): string {
+  let n = name.toLowerCase().trim();
+  n = n.replace(/\.(xlsx|xlsm|xls)$/i, "");
+  n = n.replace(/[_\-]+/g, " ");
+  n = n.replace(/\b(rev|revision|version|ver|v)\s*\d+\b/gi, "");
+  n = n.replace(/\bv\d+(\.\d+)*\b/gi, "");
+  n = n.replace(/\b(tracker|template|copy|final|draft|updated|new|old)\b/gi, "");
+  n = n.replace(/\b(ph\d+|phase\s*\d+)\b/gi, "");
+  n = n.replace(/\(\d+\)/g, "");
+  n = n.replace(/\d{4}[-\/]\d{2}[-\/]\d{2}/g, "");
+  n = n.replace(/\d{8,}/g, "");
+  n = n.replace(/[^a-z0-9\s]/g, "");
+  n = n.replace(/\s+/g, " ").trim();
+  return n;
+}
+
+function computeSimilarity(a: string, b: string): number {
+  if (a === b) return 1.0;
+  if (!a || !b) return 0;
+
+  const normA = normalizeForComparison(a);
+  const normB = normalizeForComparison(b);
+
+  if (normA === normB) return 1.0;
+  if (!normA || !normB) return 0;
+
+  const tokensA = normA.split(/\s+/).filter(Boolean);
+  const tokensB = normB.split(/\s+/).filter(Boolean);
+
+  if (tokensA.length === 0 || tokensB.length === 0) return 0;
+
+  let matchCount = 0;
+  for (const t of tokensA) {
+    if (tokensB.includes(t)) matchCount++;
+  }
+  const tokenSimilarity = (2 * matchCount) / (tokensA.length + tokensB.length);
+
+  const maxLen = Math.max(normA.length, normB.length);
+  const minLen = Math.min(normA.length, normB.length);
+  let commonPrefix = 0;
+  for (let i = 0; i < minLen; i++) {
+    if (normA[i] === normB[i]) commonPrefix++;
+    else break;
+  }
+  const prefixSimilarity = commonPrefix / maxLen;
+
+  if (normA.includes(normB) || normB.includes(normA)) {
+    return Math.max(0.85, tokenSimilarity, minLen / maxLen);
+  }
+
+  return Math.max(tokenSimilarity, prefixSimilarity);
+}
+
+async function findProjectMatches(projectName: string): Promise<Array<{ projectId: number; projectName: string; confidence: number; matchReason: string }>> {
+  const allProjects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
+  const matches: Array<{ projectId: number; projectName: string; confidence: number; matchReason: string }> = [];
+
+  const normInput = normalizeForComparison(projectName);
+
+  for (const p of allProjects) {
+    const normDB = normalizeForComparison(p.projectName);
+
+    if (normInput === normDB) {
+      matches.push({ projectId: p.id, projectName: p.projectName, confidence: 1.0, matchReason: "exact_normalized_match" });
+      continue;
+    }
+
+    if (p.projectName.toLowerCase().trim() === projectName.toLowerCase().trim()) {
+      matches.push({ projectId: p.id, projectName: p.projectName, confidence: 1.0, matchReason: "exact_case_insensitive_match" });
+      continue;
+    }
+
+    const sim = computeSimilarity(projectName, p.projectName);
+    if (sim >= 0.5) {
+      let reason = "fuzzy_match";
+      if (sim >= 0.85) reason = "high_confidence_match";
+      else if (sim >= 0.7) reason = "medium_confidence_match";
+      matches.push({ projectId: p.id, projectName: p.projectName, confidence: Math.round(sim * 100) / 100, matchReason: reason });
+    }
+  }
+
+  matches.sort((a, b) => b.confidence - a.confidence);
+  return matches.slice(0, 5);
+}
+
+async function checkRerunProtection(fileHash: string, fileName: string): Promise<{ isDuplicate: boolean; existingRun?: { id: number; projectName: string; status: string; uploadedAt: any } }> {
+  const existing = await db.select({
+    id: smartImportRuns.id,
+    projectName: smartImportRuns.projectName,
+    status: smartImportRuns.status,
+    uploadedAt: smartImportRuns.uploadedAt,
+  }).from(smartImportRuns)
+    .where(eq(smartImportRuns.sourceFileHash, fileHash))
+    .orderBy(desc(smartImportRuns.uploadedAt))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return { isDuplicate: true, existingRun: existing[0] };
+  }
+  return { isDuplicate: false };
+}
+
 function extractProjectNameFromFilename(fileName: string): string {
   let name = fileName.replace(/\.(xlsx|xlsm|xls)$/i, "");
+  name = name.replace(/^\d+_/, "");
   const trackerIdx = name.toLowerCase().indexOf("tracker");
   if (trackerIdx > 0) {
     name = name.substring(0, trackerIdx);
   }
+  name = name.replace(/\b(rev|revision|version|ver)\s*\d+\b/gi, "");
+  name = name.replace(/\bv\d+(\.\d+)*\b/gi, "");
   name = name.replace(/[_\-]+/g, " ").replace(/[^a-zA-Z0-9\s]/g, "").trim();
   name = name.replace(/\s+/g, " ");
   return name || "Untitled Project";
@@ -129,7 +234,7 @@ router.get("/api/smart-import/runs", requireAuth, async (req: Request, res: Resp
 });
 
 // POST /api/smart-import/upload
-router.post("/api/smart-import/upload", requireAuth, (req: Request, res: Response, next: NextFunction) => {
+router.post("/api/smart-import/upload", requireAuth, requireAdmin, (req: Request, res: Response, next: NextFunction) => {
   upload.single("file")(req, res, (err: any) => {
     if (err) {
       const message = err.message || "File upload failed";
@@ -162,7 +267,32 @@ router.post("/api/smart-import/upload", requireAuth, (req: Request, res: Respons
 
     const fileHash = crypto.createHash("sha256").update(buffer).digest("hex");
 
+    const rerunCheck = await checkRerunProtection(fileHash, fileName);
+    let rerunWarning: { isDuplicate: boolean; existingRunId?: number; existingProjectName?: string; existingStatus?: string; existingUploadedAt?: any } | undefined;
+    if (rerunCheck.isDuplicate && rerunCheck.existingRun) {
+      rerunWarning = {
+        isDuplicate: true,
+        existingRunId: rerunCheck.existingRun.id,
+        existingProjectName: rerunCheck.existingRun.projectName,
+        existingStatus: rerunCheck.existingRun.status,
+        existingUploadedAt: rerunCheck.existingRun.uploadedAt,
+      };
+      console.log(`[SmartImport] Rerun detected: file hash matches run #${rerunCheck.existingRun.id} (${rerunCheck.existingRun.projectName}, status=${rerunCheck.existingRun.status})`);
+    }
+
     const projectName = extractProjectNameFromFilename(fileName);
+
+    const projectMatches = await findProjectMatches(projectName);
+    const bestMatch = projectMatches.length > 0 ? projectMatches[0] : null;
+    const autoMappedProjectId = bestMatch && bestMatch.confidence >= 0.85 ? bestMatch.projectId : null;
+    const matchDiagnostics = {
+      extractedName: projectName,
+      normalizedName: normalizeForComparison(projectName),
+      matchCandidates: projectMatches,
+      autoMappedProjectId,
+      autoMappedProjectName: bestMatch && bestMatch.confidence >= 0.85 ? bestMatch.projectName : null,
+      requiresUserConfirmation: projectMatches.length > 0 && !autoMappedProjectId && projectMatches.some(m => m.confidence >= 0.5),
+    };
 
     if (preview.detection.projectInfo) {
       if (!preview.detection.projectInfo.name) {
@@ -179,11 +309,13 @@ router.post("/api/smart-import/upload", requireAuth, (req: Request, res: Respons
 
     const userId = (req as any).user?.id || null;
 
+    const resolvedProjectId = projectId || autoMappedProjectId || null;
+
     const [run] = await db
       .insert(smartImportRuns)
       .values({
-        projectId: projectId,
-        projectName,
+        projectId: resolvedProjectId,
+        projectName: autoMappedProjectId && bestMatch ? bestMatch.projectName : projectName,
         uploadedBy: userId,
         sourceFileName: fileName,
         sourceFileHash: fileHash,
@@ -246,12 +378,17 @@ router.post("/api/smart-import/upload", requireAuth, (req: Request, res: Respons
       entityType: "smart_import",
       entityId: String(run.id),
       action: "upload",
-      projectName: projectName,
+      projectName: run.projectName,
       source: "IMPORT",
-      changesJson: { fileName, fileHash, sections: preview.detection.sections.length, issues: preview.normalization.issues.length },
+      changesJson: { fileName, fileHash, sections: preview.detection.sections.length, issues: preview.normalization.issues.length, autoMappedProjectId, rerunDetected: !!rerunWarning },
     });
 
-    res.json({ runId: run.id, preview });
+    res.json({
+      runId: run.id,
+      preview,
+      matchDiagnostics,
+      rerunWarning: rerunWarning || null,
+    });
   } catch (err: any) {
     console.error("[smart-import] POST upload error:", err.message);
     let userMessage = err.message || "Unknown error";
@@ -362,6 +499,55 @@ router.get("/api/smart-import/pending-runs", requireAuth, async (_req: Request, 
   }
 });
 
+router.get("/api/smart-import/project-matches/:name", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const name = decodeURIComponent(req.params.name as string);
+    const matches = await findProjectMatches(name);
+    res.json({
+      inputName: name,
+      normalizedName: normalizeForComparison(name),
+      matches,
+    });
+  } catch (err: any) {
+    console.error("[smart-import] GET project-matches error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch("/api/smart-import/:runId/assign-project", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    const { projectId: targetProjectId } = req.body;
+    if (!targetProjectId) return res.status(400).json({ error: "projectId is required" });
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    const [targetProject] = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
+      .from(projectInfo).where(eq(projectInfo.id, parseInt(targetProjectId)));
+    if (!targetProject) return res.status(404).json({ error: "Target project not found" });
+
+    await db.update(smartImportRuns)
+      .set({ projectId: targetProject.id, projectName: targetProject.projectName })
+      .where(eq(smartImportRuns.id, runId));
+
+    logAuditFromReq(req, {
+      entityType: "smart_import",
+      entityId: String(runId),
+      action: "assign_project",
+      source: "IMPORT",
+      changesJson: { previousProjectName: run.projectName, newProjectId: targetProject.id, newProjectName: targetProject.projectName },
+    });
+
+    res.json({ success: true, projectId: targetProject.id, projectName: targetProject.projectName });
+  } catch (err: any) {
+    console.error("[smart-import] PATCH assign-project error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/smart-import/:runId
 router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Response) => {
   try {
@@ -385,7 +571,7 @@ router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Re
 });
 
 // PATCH /api/smart-import/:runId/project-info
-router.patch("/api/smart-import/:runId/project-info", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/smart-import/:runId/project-info", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -433,7 +619,7 @@ router.patch("/api/smart-import/:runId/project-info", requireAuth, async (req: R
 });
 
 // PATCH /api/smart-import/:runId/mapping
-router.patch("/api/smart-import/:runId/mapping", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/smart-import/:runId/mapping", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -574,7 +760,7 @@ router.patch("/api/smart-import/:runId/mapping", requireAuth, async (req: Reques
 });
 
 // PATCH /api/smart-import/:runId/issue/:issueId/resolve
-router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     const issueId = parseInt(req.params.issueId as string);
@@ -657,7 +843,7 @@ router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, asy
 });
 
 // POST /api/smart-import/:runId/ignore-all-blockers
-router.post("/api/smart-import/:runId/ignore-all-blockers", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/ignore-all-blockers", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -713,7 +899,7 @@ router.post("/api/smart-import/:runId/ignore-all-blockers", requireAuth, async (
 });
 
 // POST /api/smart-import/:runId/allow-all
-router.post("/api/smart-import/:runId/allow-all", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/allow-all", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -760,7 +946,7 @@ router.post("/api/smart-import/:runId/allow-all", requireAuth, async (req: Reque
 });
 
 // POST /api/smart-import/:runId/apply-prior-resolutions
-router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -832,7 +1018,7 @@ router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, asy
 });
 
 // POST /api/smart-import/:runId/commit
-router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/commit", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -1014,6 +1200,18 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
     let projectId = run.projectId;
     const userId = (req as any).user?.id || null;
 
+    if (req.body?.projectId && !projectId) {
+      const overrideProjectId = parseInt(req.body.projectId);
+      if (!isNaN(overrideProjectId)) {
+        const [existsCheck] = await db.select({ id: projectInfo.id }).from(projectInfo)
+          .where(eq(projectInfo.id, overrideProjectId));
+        if (existsCheck) {
+          projectId = overrideProjectId;
+          await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
+        }
+      }
+    }
+
     if (!projectId && projectName) {
       const existingProj = await db.select({ id: projectInfo.id }).from(projectInfo)
         .where(eq(projectInfo.projectName, projectName)).limit(1);
@@ -1022,6 +1220,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
         await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
       } else {
         const forceRecreate = req.body?.forceRecreate === true;
+        const confirmNewProject = req.body?.confirmNewProject === true;
         if (!forceRecreate) {
           const deletedAudit = await db.select({ id: auditEvents.id, createdAt: auditEvents.createdAt, userName: auditEvents.userName })
             .from(auditEvents)
@@ -1043,6 +1242,20 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
             });
           }
         }
+
+        if (!confirmNewProject) {
+          const closeMatches = await findProjectMatches(projectName);
+          const significantMatches = closeMatches.filter(m => m.confidence >= 0.5);
+          if (significantMatches.length > 0) {
+            return res.status(409).json({
+              error: "duplicate_project_candidate",
+              message: `A similar project already exists. "${projectName}" closely matches existing project(s). Please select the correct project or confirm creating a new one.`,
+              matchCandidates: significantMatches,
+              hint: "Set confirmNewProject=true to create a new project, or set projectId in the request body to map to an existing project.",
+            });
+          }
+        }
+
         const detectedInfo = summary.detection?.projectInfo;
         const [newProject] = await db.insert(projectInfo).values({
           projectName,
@@ -1732,7 +1945,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, async (req: Request,
 });
 
 // POST /api/smart-import/:runId/rollback
-router.post("/api/smart-import/:runId/rollback", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/rollback", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -1935,7 +2148,7 @@ router.get("/api/smart-import/normalized/:projectName/expenditure", requireAuth,
 });
 
 // POST /api/smart-import/bulk-commit
-router.post("/api/smart-import/bulk-commit", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/smart-import/bulk-commit", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id || null;
     const { runIds, acknowledgeManualEdits, forceCommit } = req.body || {};

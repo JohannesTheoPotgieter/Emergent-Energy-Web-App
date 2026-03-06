@@ -358,7 +358,7 @@ router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req:
   }
 });
 
-router.post("/api/procurement-analysis/run", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/procurement-analysis/run", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id || null;
 
@@ -748,7 +748,7 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission
   }
 });
 
-router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const { costLineIds, counterpartyId, counterpartyName, counterpartyType, createPattern } = req.body;
     if (!costLineIds || !Array.isArray(costLineIds) || costLineIds.length === 0) {

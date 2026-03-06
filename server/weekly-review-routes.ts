@@ -4,6 +4,7 @@ import { weeklyReviews } from "@shared/schema";
 import { eq, desc, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { logAuditFromReq } from "./audit-logger";
+import { requirePermission } from "./permission-middleware";
 
 function requireAuth(req: Request, res: Response, next: Function) {
   if (!req.isAuthenticated()) return res.status(401).json({ error: "Not authenticated" });
@@ -48,7 +49,7 @@ export function registerWeeklyReviewRoutes(app: Express) {
     }
   });
 
-  app.post("/api/weekly-reviews/:projectName", requireAuth, async (req, res) => {
+  app.post("/api/weekly-reviews/:projectName", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
     try {
       const { projectName } = req.params;
       const userId = (req.user as any)?.id;
@@ -74,7 +75,7 @@ export function registerWeeklyReviewRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/weekly-reviews/:projectName/:id", requireAuth, async (req, res) => {
+  app.patch("/api/weekly-reviews/:projectName/:id", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
     try {
       const id = Number(req.params.id);
       const body = req.body;

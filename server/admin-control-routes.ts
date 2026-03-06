@@ -402,6 +402,107 @@ router.get("/api/admin/control-center/operational-exceptions", requireAuth, requ
   }
 });
 
+router.get("/api/admin/control-center/permission-enforcement", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const backendEnforced = [
+      { route: "POST /api/po/generate", entity: "procurement", action: "edit", level: "requirePermission" },
+      { route: "PATCH /api/po/:poId/status", entity: "procurement", action: "edit", level: "requirePermission" },
+      { route: "DELETE /api/po/:poId", entity: "procurement", action: "delete", level: "requirePermission" },
+      { route: "POST /api/pd/clients", entity: "pd_quality", action: "edit", level: "requirePermission" },
+      { route: "PATCH /api/pd/clients/:id", entity: "pd_quality", action: "edit", level: "requirePermission" },
+      { route: "POST /api/pd/tickets", entity: "pd_quality", action: "edit", level: "requirePermission" },
+      { route: "PATCH /api/pd/tickets/:id", entity: "pd_quality", action: "edit", level: "requirePermission" },
+      { route: "POST /api/pd/tickets/:id/spawn-tasks", entity: "pd_quality", action: "edit", level: "requirePermission" },
+      { route: "PATCH /api/projects-summary/:projectName/latest-update", entity: "projects", action: "edit", level: "requirePermission" },
+      { route: "PATCH /api/project-info/:id/assign-pm", entity: "projects", action: "edit", level: "requirePermission" },
+      { route: "POST /api/weekly-reviews/:projectName", entity: "projects", action: "edit", level: "requirePermission" },
+      { route: "PATCH /api/weekly-reviews/:projectName/:id", entity: "projects", action: "edit", level: "requirePermission" },
+      { route: "POST /api/lifecycle-board/projects/:id/rag", entity: "projects", action: "edit", level: "requirePermission + role check" },
+      { route: "POST /api/lifecycle-board/projects/link-engineering", entity: "projects", action: "edit", level: "requirePermission + requireExecRole" },
+      { route: "POST /api/lifecycle-board/projects/merge", entity: "projects", action: "edit", level: "requirePermission + requireExecRole" },
+      { route: "PATCH /api/lifecycle-board/projects/:id", entity: "projects", action: "edit", level: "requirePermission + requireExecRole" },
+      { route: "DELETE /api/lifecycle-board/projects/:id", entity: "projects", action: "delete", level: "requirePermission + requireExecRole" },
+      { route: "POST /api/invoice-patterns", entity: "procurement", action: "edit", level: "requirePermission" },
+      { route: "PATCH /api/invoice-patterns/:id", entity: "procurement", action: "edit", level: "requirePermission" },
+      { route: "DELETE /api/invoice-patterns/:id", entity: "procurement", action: "delete", level: "requirePermission" },
+      { route: "POST /api/counterparties", entity: "procurement", action: "edit", level: "requirePermission" },
+      { route: "PATCH /api/counterparties/:id", entity: "procurement", action: "edit", level: "requirePermission" },
+      { route: "DELETE /api/counterparties/:id", entity: "procurement", action: "delete", level: "requirePermission" },
+      { route: "POST /api/procurement-analysis/run", entity: "procurement", action: "edit", level: "requirePermission" },
+      { route: "POST /api/subcontractor-dashboard/link-counterparty", entity: "procurement", action: "edit", level: "requirePermission" },
+      { route: "PATCH /api/subcontractor-dashboard/rename", entity: "procurement", action: "edit", level: "requirePermission" },
+      { route: "DELETE /api/subcontractor-dashboard/counterparty/:name", entity: "procurement", action: "edit", level: "requirePermission" },
+      { route: "POST /api/subcontractor-dashboard/merge", entity: "procurement", action: "edit", level: "requirePermission" },
+      { route: "POST /api/smart-import/upload", entity: "admin", action: "all", level: "requireAdmin" },
+      { route: "POST /api/smart-import/:runId/commit", entity: "admin", action: "all", level: "requireAdmin" },
+      { route: "POST /api/smart-import/:runId/rollback", entity: "admin", action: "all", level: "requireAdmin" },
+      { route: "POST /api/smart-import/bulk-commit", entity: "admin", action: "all", level: "requireAdmin" },
+      { route: "GET /api/smart-import/project-matches/:name", entity: "admin", action: "all", level: "requireAdmin" },
+      { route: "PATCH /api/smart-import/:runId/assign-project", entity: "admin", action: "all", level: "requireAdmin" },
+      { route: "POST /api/smart-import/:runId/ignore-all-blockers", entity: "admin", action: "all", level: "requireAdmin" },
+      { route: "POST /api/smart-import/:runId/allow-all", entity: "admin", action: "all", level: "requireAdmin" },
+      { route: "POST /api/smart-import/:runId/apply-prior-resolutions", entity: "admin", action: "all", level: "requireAdmin" },
+      { route: "POST /api/operational-tasks", entity: "tasks", action: "create", level: "requireAdmin" },
+      { route: "PATCH /api/operational-tasks/:id", entity: "tasks", action: "edit", level: "requireAdmin" },
+      { route: "DELETE /api/operational-tasks/:id", entity: "tasks", action: "delete", level: "requireAdmin" },
+      { route: "PUT /api/settings", entity: "admin", action: "all", level: "requireAdmin" },
+      { route: "POST /api/eng/tasks/:id/send-for-approval", entity: "engineering", action: "approve", level: "requireAuth" },
+      { route: "POST /api/quality/.../approve", entity: "quality", action: "approve", level: "requirePermission('quality','approve')" },
+      { route: "POST /api/financial-edit-requests", entity: "financials", action: "edit", level: "requireFinancialEditor" },
+      { route: "POST /api/financial-edit-requests/:id/approve", entity: "financials", action: "approve", level: "requireFinancialApprover" },
+      { route: "PATCH /api/tasks/reassign", entity: "tasks", action: "edit", level: "requireAuth + inline role check" },
+    ];
+
+    const ownershipScoping = [
+      { endpoint: "GET /api/projects-summary", scope: "ownership metadata + optional scope=owned filter", enforced: "backend" },
+      { endpoint: "GET /api/tasks", scope: "non-management scoped to assigned/owned tasks", enforced: "backend" },
+      { endpoint: "GET /api/my-work/all-tasks", scope: "strictly scoped to current user", enforced: "backend" },
+      { endpoint: "GET /api/pd/tickets", scope: "PD sees own tickets, admin sees all", enforced: "backend" },
+      { endpoint: "GET /api/projects-summary (management roles)", scope: "full oversight for admin/COO/CEO/CCO/CFO/PM", enforced: "backend" },
+    ];
+
+    const applicationLogicOnly = [
+      { endpoint: "GET /api/work-items (project-specific)", scope: "filtered by project context", status: "application_logic" },
+      { endpoint: "GET /api/engineering tasks", scope: "project-scoped by frontend context", status: "application_logic" },
+    ];
+
+    let recentDenials = 0;
+    try {
+      const [result] = await db.execute(sql`
+        SELECT COUNT(*) as count FROM audit_events
+        WHERE action IN ('permission_denied', 'forbidden')
+        AND created_at > NOW() - INTERVAL '7 days'
+      `).then((r: any) => r.rows || r);
+      recentDenials = parseInt(result?.count || "0");
+    } catch {}
+
+    let recentImportIssues = 0;
+    try {
+      const [result] = await db.execute(sql`
+        SELECT COUNT(*) as count FROM smart_import_runs
+        WHERE status IN ('FAILED', 'ERROR')
+        AND uploaded_at > NOW() - INTERVAL '7 days'
+      `).then((r: any) => r.rows || r);
+      recentImportIssues = parseInt(result?.count || "0");
+    } catch {}
+
+    res.json({
+      summary: {
+        totalBackendEnforcedRoutes: backendEnforced.length,
+        totalOwnershipScopedEndpoints: ownershipScoping.length,
+        totalApplicationLogicOnly: applicationLogicOnly.length,
+        recentAccessDenials7d: recentDenials,
+        recentImportIssues7d: recentImportIssues,
+      },
+      backendEnforced,
+      ownershipScoping,
+      applicationLogicOnly,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch permission enforcement data", message: err.message });
+  }
+});
+
 export function registerAdminControlRoutes(app: Express) {
   app.use(router);
 }
