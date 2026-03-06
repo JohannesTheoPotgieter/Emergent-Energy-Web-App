@@ -29,7 +29,7 @@ export function registerKpiTraceabilityRoutes(app: Express) {
     try {
       const kpis: any[] = [];
 
-      const [revSummary] = await db.execute(sql`
+      const revResult = await db.execute(sql`
         SELECT 
           COALESCE(SUM(CAST(planned_revenue AS NUMERIC)), 0) as total_planned_revenue,
           COALESCE(SUM(CAST(actual_revenue AS NUMERIC)), 0) as total_actual_revenue,
@@ -39,6 +39,7 @@ export function registerKpiTraceabilityRoutes(app: Express) {
           COALESCE(SUM(CAST(actual_profit AS NUMERIC)), 0) as total_actual_profit
         FROM project_revenue_summary
       `);
+      const revSummary = (Array.isArray(revResult) ? revResult : (revResult as any).rows || [])[0] || {};
 
       kpis.push({
         id: "revenue_planned",
@@ -64,13 +65,14 @@ export function registerKpiTraceabilityRoutes(app: Express) {
         lastComputed: new Date().toISOString(),
       });
 
-      const [cosAgg] = await db.execute(sql`
+      const cosResult = await db.execute(sql`
         SELECT 
           COALESCE(SUM(CAST(budget_total AS NUMERIC)), 0) as total_budget_cos,
           COALESCE(SUM(CAST(actual_cos_total AS NUMERIC)), 0) as total_actual_cos
         FROM program_expense
         WHERE row_type = 'item' OR row_type IS NULL
       `);
+      const cosAgg = (Array.isArray(cosResult) ? cosResult : (cosResult as any).rows || [])[0] || {};
 
       kpis.push({
         id: "cos_budget",
@@ -149,13 +151,14 @@ export function registerKpiTraceabilityRoutes(app: Express) {
         lastComputed: new Date().toISOString(),
       });
 
-      const [cashflowAgg] = await db.execute(sql`
+      const cfResult = await db.execute(sql`
         SELECT 
           COALESCE(SUM(CASE WHEN series_name ILIKE '%revenue%' THEN CAST(value AS NUMERIC) ELSE 0 END), 0) as total_cashflow_revenue,
           COALESCE(SUM(CASE WHEN series_name ILIKE '%expenditure%' OR series_name ILIKE '%expense%' THEN CAST(value AS NUMERIC) ELSE 0 END), 0) as total_cashflow_expenditure,
           COUNT(DISTINCT project_name) as project_count
         FROM cashflow_points
       `);
+      const cashflowAgg = (Array.isArray(cfResult) ? cfResult : (cfResult as any).rows || [])[0] || {};
 
       kpis.push({
         id: "cashflow_revenue",
@@ -181,13 +184,14 @@ export function registerKpiTraceabilityRoutes(app: Express) {
         lastComputed: new Date().toISOString(),
       });
 
-      const [projCounts] = await db.execute(sql`
+      const projResult = await db.execute(sql`
         SELECT 
           COUNT(*) as total_projects,
           COUNT(CASE WHEN is_active = true THEN 1 END) as active_projects,
           COUNT(CASE WHEN execution_enabled = true THEN 1 END) as execution_projects
         FROM project_info
       `);
+      const projCounts = (Array.isArray(projResult) ? projResult : (projResult as any).rows || [])[0] || {};
 
       kpis.push({
         id: "project_total",
@@ -225,7 +229,7 @@ export function registerKpiTraceabilityRoutes(app: Express) {
         lastComputed: new Date().toISOString(),
       });
 
-      const [planProgress] = await db.execute(sql`
+      const planResult = await db.execute(sql`
         SELECT 
           COALESCE(AVG(actual_pct_complete), 0) as avg_actual_progress,
           COALESCE(AVG(expected_pct_complete), 0) as avg_expected_progress,
@@ -233,6 +237,7 @@ export function registerKpiTraceabilityRoutes(app: Express) {
         FROM project_plan
         WHERE actual_pct_complete IS NOT NULL
       `);
+      const planProgress = (Array.isArray(planResult) ? planResult : (planResult as any).rows || [])[0] || {};
 
       kpis.push({
         id: "project_avg_progress",
@@ -248,13 +253,14 @@ export function registerKpiTraceabilityRoutes(app: Express) {
 
       let engTaskCounts = { total: 0, complete: 0, in_progress: 0 };
       try {
-        const [engAgg] = await db.execute(sql`
+        const engResult = await db.execute(sql`
           SELECT 
             COUNT(*) as total,
             COUNT(CASE WHEN status IN ('COMPLETE', 'Complete', 'Done', 'done') THEN 1 END) as complete,
             COUNT(CASE WHEN status IN ('IN_PROGRESS', 'In Progress', 'in_progress') THEN 1 END) as in_progress
           FROM engineering_tasks
         `);
+        const engAgg = (Array.isArray(engResult) ? engResult : (engResult as any).rows || [])[0] || {};
         engTaskCounts = {
           total: Number(engAgg?.total ?? 0),
           complete: Number(engAgg?.complete ?? 0),
@@ -300,13 +306,14 @@ export function registerKpiTraceabilityRoutes(app: Express) {
 
       let qualityCounts = { total: 0, passed: 0, failed: 0 };
       try {
-        const [qcAgg] = await db.execute(sql`
+        const qcResult = await db.execute(sql`
           SELECT 
             COUNT(*) as total,
             COUNT(CASE WHEN result = 'PASS' THEN 1 END) as passed,
             COUNT(CASE WHEN result = 'FAIL' THEN 1 END) as failed
           FROM qc_item_instance
         `);
+        const qcAgg = (Array.isArray(qcResult) ? qcResult : (qcResult as any).rows || [])[0] || {};
         qualityCounts = {
           total: Number(qcAgg?.total ?? 0),
           passed: Number(qcAgg?.passed ?? 0),
@@ -340,15 +347,18 @@ export function registerKpiTraceabilityRoutes(app: Express) {
 
       let myWorkCounts = { operational: 0, personal: 0, work_items: 0 };
       try {
-        const [opCount] = await db.execute(sql`SELECT COUNT(*) as c FROM operational_tasks`);
+        const opResult = await db.execute(sql`SELECT COUNT(*) as c FROM operational_tasks`);
+        const opCount = (Array.isArray(opResult) ? opResult : (opResult as any).rows || [])[0] || {};
         myWorkCounts.operational = Number(opCount?.c ?? 0);
       } catch { }
       try {
-        const [ptCount] = await db.execute(sql`SELECT COUNT(*) as c FROM mytool_tasks`);
+        const ptResult = await db.execute(sql`SELECT COUNT(*) as c FROM mytool_tasks`);
+        const ptCount = (Array.isArray(ptResult) ? ptResult : (ptResult as any).rows || [])[0] || {};
         myWorkCounts.personal = Number(ptCount?.c ?? 0);
       } catch { }
       try {
-        const [wiCount] = await db.execute(sql`SELECT COUNT(*) as c FROM work_items`);
+        const wiResult = await db.execute(sql`SELECT COUNT(*) as c FROM work_items`);
+        const wiCount = (Array.isArray(wiResult) ? wiResult : (wiResult as any).rows || [])[0] || {};
         myWorkCounts.work_items = Number(wiCount?.c ?? 0);
       } catch { }
 
@@ -390,7 +400,8 @@ export function registerKpiTraceabilityRoutes(app: Express) {
 
       let portfolioCount = 0;
       try {
-        const [pCount] = await db.execute(sql`SELECT COUNT(*) as c FROM portfolios`);
+        const pResult = await db.execute(sql`SELECT COUNT(*) as c FROM portfolios`);
+        const pCount = (Array.isArray(pResult) ? pResult : (pResult as any).rows || [])[0] || {};
         portfolioCount = Number(pCount?.c ?? 0);
       } catch { }
 
@@ -406,13 +417,14 @@ export function registerKpiTraceabilityRoutes(app: Express) {
         lastComputed: new Date().toISOString(),
       });
 
-      const [inflowAgg] = await db.execute(sql`
+      const inflowResult = await db.execute(sql`
         SELECT 
           COALESCE(SUM(CAST(milestone_amount AS NUMERIC)), 0) as total_milestone_value,
           COUNT(CASE WHEN in_bank = 1 THEN 1 END) as in_bank_count,
           COUNT(*) as total_milestones
         FROM program_inflows
       `);
+      const inflowAgg = (Array.isArray(inflowResult) ? inflowResult : (inflowResult as any).rows || [])[0] || {};
 
       kpis.push({
         id: "inflow_total_value",
