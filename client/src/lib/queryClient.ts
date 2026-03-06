@@ -122,10 +122,10 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
-      refetchInterval: 60_000,
-      refetchOnWindowFocus: true,
+      refetchInterval: false,
+      refetchOnWindowFocus: false,
       refetchOnReconnect: true,
-      staleTime: 15_000,
+      staleTime: 30_000,
       gcTime: 300_000,
       retry: (failureCount, error) => {
         if (error instanceof ApiError) {
