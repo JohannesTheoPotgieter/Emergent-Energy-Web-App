@@ -169,6 +169,16 @@ export default function AdminControlCenterPage() {
     ["admin-control-integration-health"]
   );
 
+  const { data: opsExceptions, isLoading: opsExceptionsLoading } = useAdminFetch<{
+    unassignedTasks: number;
+    unassignedProjects: number;
+    blockedItems: number;
+    overdueByOwner: { owner: string; count: number }[];
+  }>(
+    "/api/admin/control-center/operational-exceptions",
+    ["admin-control-ops-exceptions"]
+  );
+
   const forceLogout = useMutation({
     mutationFn: async (sid: string) => {
       const token = localStorage.getItem("auth_token");
@@ -411,6 +421,59 @@ export default function AdminControlCenterPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card data-testid="card-operational-exceptions">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-amber-600" />
+            Operational Exceptions
+          </CardTitle>
+          <CardDescription>Live management exceptions requiring attention</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {opsExceptionsLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+            </div>
+          ) : opsExceptions ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className={`rounded-lg border p-3 text-center ${opsExceptions.unassignedTasks > 0 ? "border-red-200 bg-red-50" : "border-border"}`}>
+                  <p className={`text-2xl font-bold ${opsExceptions.unassignedTasks > 0 ? "text-red-600" : "text-foreground"}`}>{opsExceptions.unassignedTasks}</p>
+                  <p className="text-xs text-muted-foreground">Unassigned Tasks</p>
+                </div>
+                <div className={`rounded-lg border p-3 text-center ${opsExceptions.unassignedProjects > 0 ? "border-amber-200 bg-amber-50" : "border-border"}`}>
+                  <p className={`text-2xl font-bold ${opsExceptions.unassignedProjects > 0 ? "text-amber-600" : "text-foreground"}`}>{opsExceptions.unassignedProjects}</p>
+                  <p className="text-xs text-muted-foreground">Projects Without PM</p>
+                </div>
+                <div className={`rounded-lg border p-3 text-center ${opsExceptions.blockedItems > 0 ? "border-orange-200 bg-orange-50" : "border-border"}`}>
+                  <p className={`text-2xl font-bold ${opsExceptions.blockedItems > 0 ? "text-orange-600" : "text-foreground"}`}>{opsExceptions.blockedItems}</p>
+                  <p className="text-xs text-muted-foreground">Blocked Items</p>
+                </div>
+                <div className="rounded-lg border p-3 text-center border-border">
+                  <p className="text-2xl font-bold text-foreground">{opsExceptions.overdueByOwner.reduce((s, o) => s + o.count, 0)}</p>
+                  <p className="text-xs text-muted-foreground">Total Overdue</p>
+                </div>
+              </div>
+              {opsExceptions.overdueByOwner.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Overdue by Owner</p>
+                  <div className="space-y-1.5">
+                    {opsExceptions.overdueByOwner.map((o, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground truncate">{o.owner || "Unassigned"}</span>
+                        <Badge variant="outline" className={o.count > 3 ? "bg-red-50 text-red-700 border-red-200" : ""}>{o.count}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Failed to load exceptions</p>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card data-testid="card-quick-links">

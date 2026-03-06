@@ -63,6 +63,16 @@ interface ProjectSummary {
   progress?: number;
 }
 
+function normalizeTaskStatus(s: string): string {
+  const v = (s || "").toLowerCase().trim();
+  if (["done", "complete", "completed", "closed", "finished", "resolved", "pass"].includes(v)) return "complete";
+  if (["in progress", "in_progress", "active", "pending", "started", "wip"].includes(v)) return "in_progress";
+  if (["blocked", "on hold", "on_hold", "waiting"].includes(v)) return "blocked";
+  if (["review", "in review", "in_review", "qa_review", "needs review"].includes(v)) return "review";
+  if (["cancelled", "canceled", "archived", "removed"].includes(v)) return "cancelled";
+  return "todo";
+}
+
 function StatusDot({ status }: { status: string }) {
   const colors: Record<string, string> = {
     Green: "bg-emerald-500", Amber: "bg-amber-500", Red: "bg-red-500",
@@ -283,6 +293,16 @@ export default function CommandCenterPage() {
 
     if (roleGroup === "coo_admin" || roleGroup === "program_manager") {
       kpis.push({ label: "Active Projects", value: myProjects.length, icon: FolderOpen, color: "bg-emerald-500" });
+      if (allTaskData) {
+        const allT: any[] = [...(allTaskData.operational || []), ...(allTaskData.planTasks || []), ...(allTaskData.engineeringTasks || []), ...(allTaskData.qualityTasks || [])];
+        const unassignedCount = allT.filter((t: any) => {
+          const st = normalizeTaskStatus(t.status || "todo");
+          return !t.assignedTo && !t.assigned_to && st !== "complete" && st !== "cancelled";
+        }).length;
+        if (unassignedCount > 0) {
+          kpis.push({ label: "Unassigned", value: unassignedCount, icon: Users, color: "bg-red-500", subtitle: "Needs owner" });
+        }
+      }
     }
     if (roleGroup === "finance" || roleGroup === "coo_admin") {
       const rev = financialData?.totalRevenue;
