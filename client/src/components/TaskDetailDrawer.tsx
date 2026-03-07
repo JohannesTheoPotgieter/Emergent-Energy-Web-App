@@ -146,6 +146,7 @@ export default function TaskDetailDrawer({
           .map((t: any) => ({ id: t.id, title: t.title || t.name || "", taskNumber: t.taskNumber || "" }));
         const task: any = {
           id: match.id,
+          workItemId: match.workItemId || Math.abs(match.id),
           title: match.title || match.name || "",
           status: match.status || "Not Started",
           priority: match.priority || "Normal",
@@ -156,6 +157,7 @@ export default function TaskDetailDrawer({
           isBaseline: true,
           importedTaskId: match.importedTaskId || Math.abs(taskId!),
           projectName,
+          projectId: match.projectId || null,
           assignees: match.assignees || (match.owner ? [match.owner] : []),
           taskNumber: match.taskNumber || null,
           rowNumber: match.rowNumber ?? null,
@@ -272,16 +274,12 @@ export default function TaskDetailDrawer({
       if (!taskId) return;
       if (isBaselineTask) {
         const taskData = data?.task as any;
-        if (taskData?.rowNumber != null) {
-          await apiRequest("POST", "/api/project-plan/delete-tasks", {
-            projectName,
-            rowNumbers: [taskData.rowNumber],
-          });
-        } else {
-          await apiRequest("POST", "/api/work-items/delete", {
-            ids: [Math.abs(taskId)],
-          });
-        }
+        const wiId = taskData?.workItemId || Math.abs(taskId);
+        await apiRequest("POST", "/api/project-plan/structure", {
+          operation: "deleteMilestoneWI",
+          projectName,
+          data: { workItemId: wiId },
+        });
       } else {
         await apiRequest("DELETE", `/api/operational-tasks/${taskId}`);
       }
@@ -300,11 +298,12 @@ export default function TaskDetailDrawer({
   const convertToMilestoneMutation = useMutation({
     mutationFn: async () => {
       const taskData = data?.task as any;
-      if (taskData?.rowNumber == null) throw new Error("Task has no row number");
+      const wiId = taskData?.workItemId || Math.abs(taskId!);
+      if (!wiId) throw new Error("Task has no work item ID");
       await apiRequest("POST", "/api/project-plan/structure", {
-        operation: "convertToMilestone",
+        operation: "convertToMilestoneWI",
         projectName,
-        data: { milestoneRowNumber: taskData.rowNumber, subtaskRowNumbers: [] },
+        data: { workItemId: wiId, subtaskWorkItemIds: [] },
       });
     },
     onSuccess: () => {
@@ -320,10 +319,10 @@ export default function TaskDetailDrawer({
   const updateDurationMutation = useMutation({
     mutationFn: async (duration: number) => {
       if (isBaselineTask) {
-        toast({ title: "Duration is read-only", description: "Baseline task duration comes from the imported plan", variant: "destructive" });
-        throw new Error("Baseline task duration is read-only");
+        await apiRequest("PATCH", `/api/planning-tasks/${taskId}`, { projectName, duration });
+      } else {
+        await apiRequest("PATCH", `/api/operational-tasks/${taskId}`, { duration });
       }
-      await apiRequest("PATCH", `/api/operational-tasks/${taskId}`, { duration });
     },
     onSuccess: () => {
       invalidateAll();
@@ -610,15 +609,7 @@ function TaskDetailContent({
                 <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
                   <Clock className="h-3 w-3" /> Duration
                 </label>
-                {isBaselineTask ? (
-                  <span
-                    className="text-sm font-medium text-muted-foreground"
-                    title="Baseline task duration is read-only"
-                    data-testid="text-duration"
-                  >
-                    {durationDays > 0 ? `${durationDays} working days` : "—"}
-                  </span>
-                ) : editingDuration ? (
+                {editingDuration ? (
                   <div className="flex items-center gap-1">
                     <Input
                       data-testid="input-duration"
@@ -821,9 +812,9 @@ function TaskDetailContent({
           <Input
             data-testid="input-start-date"
             className="h-8 text-xs"
-            type="text"
-            placeholder="YYYY-MM-DD"
-            defaultValue={task.startDate ?? ""}
+            type="date"
+            key={`start-${task.id}-${task.startDate}`}
+            defaultValue={task.startDate ? String(task.startDate).substring(0, 10) : ""}
             onBlur={(e) => updateTask({ startDate: e.target.value || null })}
           />
         </div>
@@ -835,9 +826,9 @@ function TaskDetailContent({
           <Input
             data-testid="input-due-date"
             className="h-8 text-xs"
-            type="text"
-            placeholder="YYYY-MM-DD"
-            defaultValue={task.dueDate ?? ""}
+            type="date"
+            key={`due-${task.id}-${task.dueDate}`}
+            defaultValue={task.dueDate ? String(task.dueDate).substring(0, 10) : ""}
             onBlur={(e) => updateTask({ dueDate: e.target.value || null })}
           />
         </div>
@@ -862,6 +853,7 @@ function TaskDetailContent({
               type="number"
               min={0}
               max={100}
+              key={`pct-${task.id}-${task.percentComplete}`}
               defaultValue={task.percentComplete ?? 0}
               onBlur={(e) => {
                 const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
@@ -909,7 +901,7 @@ function TaskDetailContent({
           <div data-testid="plan-actions-section">
             <label className="text-xs text-muted-foreground mb-2 block font-medium">Plan Actions</label>
             <div className="flex flex-wrap gap-2">
-              {!isMilestone && rowNumber != null && (
+              {!isMilestone && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -920,19 +912,6 @@ function TaskDetailContent({
                 >
                   <Diamond className="h-3 w-3" />
                   {isConverting ? "Converting…" : "Convert to Milestone"}
-                </Button>
-              )}
-              {!isMilestone && rowNumber == null && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-xs gap-1 opacity-50 cursor-not-allowed"
-                  disabled
-                  data-testid="button-convert-milestone-disabled"
-                  title="Task has no row number — cannot convert"
-                >
-                  <Diamond className="h-3 w-3" />
-                  Convert to Milestone
                 </Button>
               )}
               {confirmDelete ? (
