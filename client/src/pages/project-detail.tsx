@@ -52,6 +52,7 @@ import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
 import { ProjectChangeControlTab } from "@/components/tabs/ProjectChangeControlTab";
 import { ProjectProcurementTab } from "@/components/tabs/ProjectProcurementTab";
 import { ProjectCommissioningTab } from "@/components/tabs/ProjectCommissioningTab";
+import { ModuleContext } from "@/components/ModuleContext";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
@@ -1585,14 +1586,10 @@ export default function ProjectDetailPage() {
 
       {activeSection === "project-management" && (
         <div className="space-y-4" data-testid="pm-section">
-          <Button variant="ghost" size="sm" onClick={() => navigateToSection("overview")} className="gap-2 -ml-2" data-testid="button-back-overview">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Overview
-          </Button>
-
-          <div className="flex gap-1.5 flex-nowrap border-b pb-2 overflow-x-auto scrollbar-hide" data-testid="pm-sub-tabs">
+          <div className="flex items-center gap-3 flex-wrap border-b pb-2 overflow-x-auto scrollbar-hide" data-testid="pm-sub-tabs">
             {canViewTab.overview && (
-            <>
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Delivery</span>
               <Button size="sm" variant={activeSubTab === "task-grid" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("task-grid")} data-testid="subtab-task-grid">
                 <ListTodo className="h-3 w-3 mr-1" /> Project Plan
               </Button>
@@ -1602,79 +1599,94 @@ export default function ProjectDetailPage() {
               <Button size="sm" variant={activeSubTab === "calendar" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("calendar")} data-testid="subtab-calendar">
                 <CalendarDays className="h-3 w-3 mr-1" /> Calendar
               </Button>
+              <Button size="sm" variant={activeSubTab === "commissioning" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("commissioning")} data-testid="subtab-commissioning">
+                <CheckCircle className="h-3 w-3 mr-1" /> Commissioning
+              </Button>
+            </div>
+            )}
+            {canViewTab.finance && (
+            <>
+              <div className="w-px h-5 bg-border self-center shrink-0" />
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Commercial</span>
+                <Button size="sm" variant={activeSubTab === "procurement" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("procurement")} data-testid="subtab-procurement">
+                  <CreditCard className="h-3 w-3 mr-1" /> Procurement
+                </Button>
+                {canViewSubTab.revenue && (
+                <Button size="sm" variant={activeSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("revenue-tracking")} data-testid="subtab-revenue">
+                  <DollarSign className="h-3 w-3 mr-1" /> Inflows
+                </Button>
+                )}
+                {canViewSubTab.expenditure && (
+                <Button size="sm" variant={activeSubTab === "expenditure" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("expenditure")} data-testid="subtab-expenditure">
+                  <CreditCard className="h-3 w-3 mr-1" /> Expenditure
+                </Button>
+                )}
+                {canViewSubTab.cosTracker && (
+                <Button size="sm" variant={activeSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("monthly-realisation")} data-testid="subtab-monthly-realisation">
+                  <TrendingUp className="h-3 w-3 mr-1" /> COS
+                </Button>
+                )}
+                {canViewSubTab.cosTracker && (
+                <Button size="sm" variant={activeSubTab === "revenue-tracker" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("revenue-tracker")} data-testid="subtab-revenue-tracker">
+                  <TrendingUp className="h-3 w-3 mr-1" /> Revenue
+                </Button>
+                )}
+                {canViewSubTab.cosTracker && (
+                <Button size="sm" variant={activeSubTab === "gp-tracker" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("gp-tracker")} data-testid="subtab-gp-tracker">
+                  <BarChart3 className="h-3 w-3 mr-1" /> GP
+                </Button>
+                )}
+                {canViewSubTab.cashflow && (
+                <Button size="sm" variant={activeSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("cashflow")} data-testid="subtab-cashflow">
+                  <Activity className="h-3 w-3 mr-1" /> Cashflow
+                </Button>
+                )}
+              </div>
             </>
             )}
-            <div className="w-px h-5 bg-border self-center mx-1 shrink-0" />
-            {canViewTab.finance && canViewSubTab.revenue && (
-            <Button size="sm" variant={activeSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("revenue-tracking")} data-testid="subtab-revenue">
-              <DollarSign className="h-3 w-3 mr-1" /> Inflows
-            </Button>
-            )}
-            {canViewTab.finance && canViewSubTab.expenditure && (
-            <Button size="sm" variant={activeSubTab === "expenditure" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("expenditure")} data-testid="subtab-expenditure">
-              <CreditCard className="h-3 w-3 mr-1" /> Expenditure
-            </Button>
-            )}
-            {canViewTab.finance && canViewSubTab.cosTracker && (
-            <Button size="sm" variant={activeSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("monthly-realisation")} data-testid="subtab-monthly-realisation">
-              <TrendingUp className="h-3 w-3 mr-1" /> COS
-            </Button>
-            )}
-            {canViewTab.finance && canViewSubTab.cosTracker && (
-            <Button size="sm" variant={activeSubTab === "revenue-tracker" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("revenue-tracker")} data-testid="subtab-revenue-tracker">
-              <TrendingUp className="h-3 w-3 mr-1" /> Revenue
-            </Button>
-            )}
-            {canViewTab.finance && canViewSubTab.cosTracker && (
-            <Button size="sm" variant={activeSubTab === "gp-tracker" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("gp-tracker")} data-testid="subtab-gp-tracker">
-              <BarChart3 className="h-3 w-3 mr-1" /> GP
-            </Button>
-            )}
-            {canViewTab.finance && canViewSubTab.cashflow && (
-            <Button size="sm" variant={activeSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("cashflow")} data-testid="subtab-cashflow">
-              <Activity className="h-3 w-3 mr-1" /> Cashflow
-            </Button>
-            )}
+            <div className="w-px h-5 bg-border self-center shrink-0" />
+            <div className="flex items-center gap-1 shrink-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Control</span>
+              <Button size="sm" variant={activeSubTab === "raid" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("raid")} data-testid="subtab-raid">
+                <AlertTriangle className="h-3 w-3 mr-1" /> RAID
+              </Button>
+              <Button size="sm" variant={activeSubTab === "change-control" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("change-control")} data-testid="subtab-change-control">
+                <FileCheck className="h-3 w-3 mr-1" /> Changes
+              </Button>
+              {canViewTab.history && (
+              <Button size="sm" variant={activeSubTab === "history" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("history")} data-testid="subtab-history">
+                <History className="h-3 w-3 mr-1" /> History
+              </Button>
+              )}
+            </div>
             {canViewTab.finance && canViewSubTab.subcontractors && (
-            <Button size="sm" variant={activeSubTab === "subcontractors" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("subcontractors")} data-testid="subtab-subcontractors">
-              <Users className="h-3 w-3 mr-1" /> Subcontractors
-            </Button>
-            )}
-            <div className="w-px h-5 bg-border self-center mx-1 shrink-0" />
-            <Button size="sm" variant={activeSubTab === "procurement" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("procurement")} data-testid="subtab-procurement">
-              <CreditCard className="h-3 w-3 mr-1" /> Procurement
-            </Button>
-            <Button size="sm" variant={activeSubTab === "raid" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("raid")} data-testid="subtab-raid">
-              <AlertTriangle className="h-3 w-3 mr-1" /> RAID
-            </Button>
-            <Button size="sm" variant={activeSubTab === "change-control" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("change-control")} data-testid="subtab-change-control">
-              <FileCheck className="h-3 w-3 mr-1" /> Changes
-            </Button>
-            <Button size="sm" variant={activeSubTab === "commissioning" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("commissioning")} data-testid="subtab-commissioning">
-              <CheckCircle className="h-3 w-3 mr-1" /> Commissioning
-            </Button>
-            <div className="w-px h-5 bg-border self-center mx-1 shrink-0" />
-            {canViewTab.history && (
-            <Button size="sm" variant={activeSubTab === "history" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("history")} data-testid="subtab-history">
-              <History className="h-3 w-3 mr-1" /> History
-            </Button>
+            <>
+              <div className="w-px h-5 bg-border self-center shrink-0" />
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Partners</span>
+                <Button size="sm" variant={activeSubTab === "subcontractors" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("subcontractors")} data-testid="subtab-subcontractors">
+                  <Users className="h-3 w-3 mr-1" /> Subcontractors
+                </Button>
+              </div>
+            </>
             )}
           </div>
 
-          {activeSubTab === "task-grid" && canViewTab.overview && <UnifiedPlanTab projectName={projectName} onTaskClick={handleTaskClick} />}
+          {activeSubTab === "task-grid" && canViewTab.overview && <><ModuleContext module="task-grid" projectId={projectInfoId!} /><UnifiedPlanTab projectName={projectName} onTaskClick={handleTaskClick} /></>}
           {activeSubTab === "board" && canViewTab.overview && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "calendar" && canViewTab.overview && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
-          {activeSubTab === "revenue-tracking" && canViewTab.finance && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
-          {activeSubTab === "expenditure" && canViewTab.finance && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
+          {activeSubTab === "revenue-tracking" && canViewTab.finance && canViewSubTab.revenue && <><ModuleContext module="revenue-tracking" projectId={projectInfoId!} /><RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} /></>}
+          {activeSubTab === "expenditure" && canViewTab.finance && canViewSubTab.expenditure && <><ModuleContext module="expenditure" projectId={projectInfoId!} /><ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} /></>}
           {activeSubTab === "monthly-realisation" && canViewTab.finance && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
           {activeSubTab === "revenue-tracker" && canViewTab.finance && canViewSubTab.cosTracker && <RevenueTrackerTab projectName={projectName} />}
           {activeSubTab === "gp-tracker" && canViewTab.finance && canViewSubTab.cosTracker && <GpTrackerTab projectName={projectName} />}
-          {activeSubTab === "cashflow" && canViewTab.finance && canViewSubTab.cashflow && <CashflowTab projectName={projectName} />}
+          {activeSubTab === "cashflow" && canViewTab.finance && canViewSubTab.cashflow && <><ModuleContext module="cashflow" projectId={projectInfoId!} /><CashflowTab projectName={projectName} /></>}
           {activeSubTab === "subcontractors" && canViewTab.finance && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
-          {activeSubTab === "raid" && projectInfoId && <ProjectRaidTab projectId={projectInfoId} projectName={projectName} />}
-          {activeSubTab === "change-control" && projectInfoId && <ProjectChangeControlTab projectId={projectInfoId} projectName={projectName} />}
-          {activeSubTab === "procurement" && projectInfoId && <ProjectProcurementTab projectId={projectInfoId} projectName={projectName} />}
-          {activeSubTab === "commissioning" && projectInfoId && <ProjectCommissioningTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "raid" && projectInfoId && <><ModuleContext module="raid" projectId={projectInfoId} /><ProjectRaidTab projectId={projectInfoId} projectName={projectName} /></>}
+          {activeSubTab === "change-control" && projectInfoId && <><ModuleContext module="change-control" projectId={projectInfoId} /><ProjectChangeControlTab projectId={projectInfoId} projectName={projectName} /></>}
+          {activeSubTab === "procurement" && projectInfoId && <><ModuleContext module="procurement" projectId={projectInfoId} /><ProjectProcurementTab projectId={projectInfoId} projectName={projectName} /></>}
+          {activeSubTab === "commissioning" && projectInfoId && <><ModuleContext module="commissioning" projectId={projectInfoId} /><ProjectCommissioningTab projectId={projectInfoId} projectName={projectName} /></>}
           {activeSubTab === "history" && canViewTab.history && (
             <>
               <WeeklyReviewWizard
