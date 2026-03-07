@@ -1,0 +1,311 @@
+You are working inside our existing Emergent Energy web application.
+
+Your job is to overhaul the Project Management planning page shown in the screenshot and make it world-class for real project execution.
+
+CRITICAL RULES
+- Do not break any existing working functionality anywhere else in the app.
+- Reuse current architecture, components, auth, permissions, project objects, and styling patterns where possible.
+- Do not create parallel duplicate data models if an existing one can be fixed or extended.
+- Preserve all existing project/task data.
+- Work only in dev-safe, reversible steps.
+- Before deleting or replacing anything, first map how the current page works end-to-end.
+- If current implementation is unstable, refactor it cleanly rather than patching bugs on top of bugs.
+
+CONTEXT
+The current project planning page is a bad user experience.
+Main issues:
+1. Creating a task often creates duplicate tasks.
+2. Creating a milestone appears to do nothing.
+3. Converting a task to a milestone throws an error related to WBS.
+4. The page is hard to use for real planning and sequencing.
+5. The user cannot trust whether actions succeeded.
+6. The layout wastes space and does not feel like a professional project management / engineering planning tool.
+
+GOAL
+Transform this page into a robust, professional project planning experience that feels like a proper project management system for EPC delivery.
+Think MS Project + modern web UX + engineering/project delivery practicality.
+It must be fast, stable, obvious, and safe.
+
+PRIMARY OUTCOME
+Create a planning experience where a PM or COO can:
+- create tasks without duplicates
+- create milestones that visibly exist and render correctly
+- convert tasks to milestones and milestones back to tasks without errors
+- manage hierarchy, WBS, dates, dependencies, owners, workstreams, progress, and status cleanly
+- trust the page
+
+PHASE 1 — DIAGNOSE CURRENT STATE
+First inspect and document internally:
+- current task table component
+- current gantt component
+- current task create/update/delete handlers
+- current milestone logic
+- current WBS generation logic
+- current database tables / APIs used by this page
+- how optimistic updates / local state / server sync currently work
+- where duplicate creation is happening
+- why milestone creation is no-op
+- why “convert to milestone” fails on WBS
+
+Do not guess.
+Trace the actual code path.
+
+PHASE 2 — FIX CORE DATA / BEHAVIOR
+Implement the following functional rules:
+
+A. SINGLE SOURCE OF TRUTH
+- Tasks and milestones must use one clear and stable underlying model.
+- If milestone is a task type, make that explicit and supported everywhere.
+- Do not let the UI create phantom rows that are not persisted.
+- Every create, update, convert, reorder, and delete must use one consistent service layer.
+
+B. IDEMPOTENT CREATE
+- Fix duplicate task creation.
+- Ensure one click / one enter / one submit creates exactly one record.
+- Prevent duplicate submits caused by:
+  - double event firing
+  - optimistic UI duplication
+  - repeated API calls
+  - stale state re-renders
+  - enter key + blur both submitting
+- Add client-side submit locking and server-side idempotency where appropriate.
+
+C. MILESTONE MODEL
+Milestone behavior must be explicit:
+- milestone has no duration or duration = 0 depending on architecture
+- milestone renders as diamond or equivalent milestone marker on gantt
+- milestone has a date and optional finish same as start
+- milestone appears immediately in table and gantt after creation
+- milestone is sortable and valid in hierarchy
+- milestone can be assigned to a parent summary task if applicable
+
+D. CONVERT TASK <-> MILESTONE
+Fix conversion behavior:
+- converting task to milestone must:
+  - validate current task state
+  - safely adjust duration/start/finish fields
+  - preserve task id unless strong reason not to
+  - preserve comments/history/ownership/dependencies where possible
+  - update gantt render immediately
+  - never fail because of WBS formatting
+- converting milestone back to task must:
+  - default duration to 1 working day unless specified
+  - keep project/location/workstream/owner/status linkage
+
+E. WBS ENGINE
+Rebuild WBS handling so it is stable and automatic:
+- WBS must auto-generate from hierarchy and order
+- WBS must not be manually required for create/convert unless business explicitly needs that
+- WBS must update safely when:
+  - creating new task
+  - inserting task between rows
+  - indenting / outdenting
+  - converting task to milestone
+  - deleting task
+  - reordering tasks
+- Summary task examples:
+  1
+  1.1
+  1.2
+  2
+  2.1
+- Milestones must be fully compatible with WBS
+- No action should fail because WBS is null, stale, or temporarily recalculating
+- If needed, separate:
+  - hierarchy position logic
+  - human-readable WBS display logic
+
+F. TRANSACTION SAFETY
+- For complex actions like reorder, convert, indent, outdent, bulk delete:
+  - use safe transaction patterns
+  - rollback failed state updates
+  - show useful error messages
+- Never leave the UI in a half-saved ghost state
+
+PHASE 3 — UX OVERHAUL
+Redesign the page to feel professional and clear.
+
+DESIGN INTENT
+This is a real project planning screen for solar / EPC execution.
+It must feel controlled, modern, and productivity-focused.
+Not like an admin table pretending to be a gantt.
+
+REQUIRED LAYOUT
+1. Top action bar
+Keep and improve:
+- search
+- filter by status
+- filter by workstream
+- date window controls
+- today button
+- columns selector
+- zoom level selector
+Add:
+- New Task
+- New Milestone
+- Indent
+- Outdent
+- Link dependency
+- Convert to milestone
+- Convert to task
+- Duplicate task
+- Delete
+- Undo last change (session level at minimum)
+- Save state indicator / autosave status
+
+2. Left planning grid
+Must support:
+- row selection
+- inline edit
+- expand/collapse summaries
+- task name
+- WBS
+- duration
+- start
+- finish
+- predecessor
+- resource / owner
+- workstream
+- % complete
+- expected %
+- status
+- optional baseline fields if already supported
+Behavior:
+- clicking a row clearly selects it
+- keyboard navigation should work
+- inline edits should be stable and not accidentally create rows
+- add row should be obvious and predictable
+- summary rows visually distinct
+- milestone rows visually distinct
+
+3. Right gantt panel
+Must support:
+- real milestone markers
+- task bars
+- summary bars
+- dependency lines if available or add cleanly
+- hover details
+- drag to adjust dates if current architecture allows safely
+- synced horizontal/vertical scrolling with table
+- clean week/month timeline
+- better empty-state handling so the page does not feel broken
+
+4. Bottom / side detail panel
+Add a detail drawer or side panel for selected task:
+- task type
+- description
+- owner
+- workstream
+- dates
+- duration
+- dependencies
+- status
+- percent complete
+- notes
+- linked project object data if already available
+This reduces clutter and gives the user confidence.
+
+UX RULES
+- Every action must have visible feedback.
+- No silent failure.
+- No “nothing happened” behavior.
+- Loading, saving, success, error, and validation states must be obvious.
+- Toasts must be meaningful.
+- Prevent destructive actions without confirmation where appropriate.
+- Support bulk actions for selected rows.
+- Preserve performance with large plans.
+
+PHASE 4 — BUSINESS RULES
+Keep aligned to project delivery reality:
+- support summary phases like:
+  - Project Initiation
+  - Site Establishment
+  - AC Installation
+  - DC Works
+  - Commissioning
+  - QA Inspections
+  - Project Closure
+- support milestones like:
+  - PD Handover
+  - Construction Start
+  - Practical Completion
+  - Commissioning Complete
+  - O&M Handover
+  - Client Handover
+- workstream tagging must remain usable
+- role permissions must still apply
+- only authorized users can modify the plan
+- project plan must stay linked to the actual project record and not become a disconnected planning sandbox unless explicitly designed
+
+PHASE 5 — PERFORMANCE / RELIABILITY
+Improve technical quality:
+- debounced updates where appropriate
+- memoization / virtualization if grid is large
+- no duplicate renders creating duplicate API activity
+- stable row keys
+- stable state normalization
+- clean separation between UI state and persisted data state
+- add logging around create / convert / reorder failures in dev
+
+PHASE 6 — TESTING
+Create and run proper tests for this page.
+
+Must cover:
+1. create one task -> exactly one row and one DB record
+2. create milestone -> visible in table and gantt
+3. convert task to milestone -> no WBS error, row updates correctly
+4. convert milestone to task -> works correctly
+5. reorder tasks -> WBS recalculates correctly
+6. indent / outdent -> hierarchy and WBS remain valid
+7. delete single and bulk -> no ghost rows
+8. refresh page after edits -> data persists correctly
+9. no duplicate creates on double click / enter / blur
+10. filters/search still work
+11. permissions still work
+12. large project plan still performs acceptably
+
+Add:
+- unit tests for WBS logic
+- integration tests for create/convert/delete flows
+- UI regression checks for gantt rendering
+
+PHASE 7 — ACCEPTANCE CRITERIA
+The work is only done if all of these are true:
+- creating a task never duplicates
+- creating a milestone always creates a visible milestone
+- converting a task to a milestone never throws WBS errors
+- WBS numbering is stable and automatic
+- the page feels professional and intuitive
+- users can manage a real project plan from this page without workarounds
+- no existing unrelated app functionality is broken
+- code is cleaner than before, not more patched
+
+IMPLEMENTATION PREFERENCE
+Use current stack and patterns.
+Refactor where needed, but do not rewrite the whole app unless absolutely necessary.
+If a planning-specific service/module is needed, create one cleanly.
+Prefer maintainable architecture over quick hacks.
+
+DELIVERABLES REQUIRED
+1. Fix the page fully in code.
+2. Add any necessary schema/service/component updates.
+3. Add tests.
+4. Provide a concise changelog of what was changed.
+5. Provide a short “root cause” summary for each of these bugs:
+   - duplicate task creation
+   - milestone create no-op
+   - convert to milestone WBS error
+6. Flag any assumptions clearly.
+
+UI QUALITY BAR
+Professional engineering / project management application.
+Modern.
+Clean.
+Fast.
+Trustworthy.
+No dead actions.
+No weird table behavior.
+No duct-tape energy.
+
+Start by tracing the current implementation and fixing root causes, then improve UX.
+Do not stop at cosmetic changes.

@@ -579,7 +579,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
 
   const renumberMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/project-plan/structure", { operation: "renumber", projectName, data: {} });
+      await apiRequest("POST", "/api/project-plan/structure", { operation: "renumberWI", projectName, data: {} });
     },
     onSuccess: () => {
       invalidateProjectQueries(qc, projectName);
@@ -885,10 +885,13 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   });
 
   const convertToMilestoneMutation = useMutation({
-    mutationFn: async ({ milestoneRowNumber, subtaskRowNumbers }: { milestoneRowNumber: number; subtaskRowNumbers: number[] }) => {
+    mutationFn: async ({ workItemId, subtaskWorkItemIds }: { workItemId: number; subtaskWorkItemIds: number[] }) => {
       await apiRequest("POST", "/api/project-plan/structure", {
-        operation: "convertToMilestone", projectName,
-        data: { milestoneRowNumber, subtaskRowNumbers },
+        operation: "convertToMilestoneWI", projectName,
+        data: { workItemId, subtaskWorkItemIds },
+      });
+      await apiRequest("POST", "/api/project-plan/structure", {
+        operation: "renumberWI", projectName, data: {},
       });
     },
     onSuccess: () => {
@@ -902,14 +905,30 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     },
   });
 
-  const setParentMutation = useMutation({
-    mutationFn: async ({ taskRowNumbers, parentRowNumber }: { taskRowNumbers: number[]; parentRowNumber: number }) => {
+  const convertToTaskMutation = useMutation({
+    mutationFn: async (workItemId: number) => {
       await apiRequest("POST", "/api/project-plan/structure", {
-        operation: "setParent", projectName,
-        data: { taskRowNumbers, parentRowNumber },
+        operation: "convertToTaskWI", projectName,
+        data: { workItemId },
+      });
+    },
+    onSuccess: () => {
+      invalidateProjectQueries(qc, projectName);
+      toast({ title: "Converted to regular task" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Convert failed", description: err?.message || "Could not convert milestone", variant: "destructive" });
+    },
+  });
+
+  const setParentMutation = useMutation({
+    mutationFn: async ({ workItemIds, parentWorkItemId }: { workItemIds: number[]; parentWorkItemId: number }) => {
+      await apiRequest("POST", "/api/project-plan/structure", {
+        operation: "setParentWI", projectName,
+        data: { workItemIds, parentWorkItemId },
       });
       await apiRequest("POST", "/api/project-plan/structure", {
-        operation: "renumber", projectName, data: {},
+        operation: "renumberWI", projectName, data: {},
       });
     },
     onSuccess: () => {
@@ -924,13 +943,13 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   });
 
   const removeMilestoneMutation = useMutation({
-    mutationFn: async (taskRowNumbers: number[]) => {
+    mutationFn: async (workItemIds: number[]) => {
       await apiRequest("POST", "/api/project-plan/structure", {
-        operation: "removeMilestone", projectName,
-        data: { taskRowNumbers },
+        operation: "removeParentWI", projectName,
+        data: { workItemIds },
       });
       await apiRequest("POST", "/api/project-plan/structure", {
-        operation: "renumber", projectName, data: {},
+        operation: "renumberWI", projectName, data: {},
       });
     },
     onSuccess: () => {
@@ -943,12 +962,12 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   });
 
   const bulkReorderMutation = useMutation({
-    mutationFn: async (items: Array<{ rowNumber: number; sortOrder: number; parentRowNumber?: number | null }>) => {
+    mutationFn: async (items: Array<{ workItemId: number; sortOrder: number }>) => {
       await apiRequest("POST", "/api/project-plan/structure", {
-        operation: "bulkReorder", projectName, data: { items },
+        operation: "reorderWI", projectName, data: { items },
       });
       await apiRequest("POST", "/api/project-plan/structure", {
-        operation: "renumber", projectName, data: {},
+        operation: "renumberWI", projectName, data: {},
       });
     },
     onSuccess: () => {
@@ -1000,15 +1019,15 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       setDropTarget(null);
       return;
     }
-    const dragRn = draggedTask.rowNumber;
-    const targetRn = targetTask.rowNumber;
-    if (dragRn == null || targetRn == null) {
-      toast({ title: "Cannot reorder", description: "This task doesn't have a plan row number yet. Try refreshing WBS first.", variant: "destructive" });
+    const dragWiId = draggedTask.workItemId;
+    const targetWiId = targetTask.workItemId;
+    if (!dragWiId || !targetWiId) {
+      toast({ title: "Cannot reorder", description: "This task is missing its work item reference.", variant: "destructive" });
       setDragTaskId(null);
       setDropTarget(null);
       return;
     }
-    if (dragRn === targetRn) {
+    if (dragWiId === targetWiId) {
       setDragTaskId(null);
       setDropTarget(null);
       return;
@@ -1016,21 +1035,15 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
 
     if (dropTarget.position === "child") {
       setParentMutation.mutate({
-        taskRowNumbers: [dragRn],
-        parentRowNumber: targetRn,
+        workItemIds: [dragWiId],
+        parentWorkItemId: targetWiId,
       });
     } else {
-      const items: Array<{ rowNumber: number; sortOrder: number; parentRowNumber?: number | null }> = [];
-      const targetParent = targetTask.parentTaskId
-        ? (taskMap.get(targetTask.parentTaskId)?.rowNumber ?? null)
-        : null;
+      const items: Array<{ workItemId: number; sortOrder: number }> = [];
 
       const allSiblings = tasks.filter(t => {
-        const tParent = t.parentTaskId
-          ? (taskMap.get(t.parentTaskId)?.rowNumber ?? null)
-          : null;
-        return tParent === targetParent && t.id !== dragTaskId && t.rowNumber != null;
-      }).sort((a, b) => (a.sortOrder ?? a.rowNumber ?? 0) - (b.sortOrder ?? b.rowNumber ?? 0));
+        return t.parentTaskId === targetTask.parentTaskId && t.id !== dragTaskId && t.workItemId != null;
+      }).sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
 
       const insertIdx = dropTarget.position === "above"
         ? allSiblings.findIndex(t => t.id === targetTask.id)
@@ -1040,11 +1053,9 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       reordered.splice(Math.max(0, insertIdx), 0, draggedTask);
 
       for (let i = 0; i < reordered.length; i++) {
-        const item: any = { rowNumber: reordered[i].rowNumber, sortOrder: (i + 1) * 10 };
-        if (reordered[i].id === dragTaskId) {
-          item.parentRowNumber = targetParent;
+        if (reordered[i].workItemId) {
+          items.push({ workItemId: reordered[i].workItemId, sortOrder: (i + 1) * 10 });
         }
-        items.push(item);
       }
 
       if (items.length > 0) bulkReorderMutation.mutate(items);
@@ -1191,7 +1202,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                 <button
                   className="h-7 px-2 text-xs border-r hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                   disabled={!isAdmin}
-                  onClick={() => { if (newTaskTitle.trim()) createMutation.mutate(newTaskTitle.trim()); else { setNewTaskTitle("New Task"); createMutation.mutate("New Task"); } }}
+                  onClick={() => { if (!createMutation.isPending) { if (newTaskTitle.trim()) createMutation.mutate(newTaskTitle.trim()); else { setNewTaskTitle("New Task"); createMutation.mutate("New Task"); } } }}
                   data-testid="toolbar-add-task"
                 >
                   <Plus className="h-3.5 w-3.5 text-emerald-600" />
@@ -1225,9 +1236,10 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                     const idx = visibleTasks.findIndex(t => t.id === firstSel.id);
                     if (idx <= 0) return;
                     const above = visibleTasks[idx - 1];
-                    if (above?.rowNumber == null) return;
-                    const rowNums = selTasks.map((t: any) => t.rowNumber).filter((rn: any) => rn != null);
-                    if (rowNums.length > 0) setParentMutation.mutate({ taskRowNumbers: rowNums, parentRowNumber: above.rowNumber });
+                    const parentWiId = above?.workItemId;
+                    if (!parentWiId) return;
+                    const wiIds = selTasks.map((t: any) => t.workItemId).filter(Boolean);
+                    if (wiIds.length > 0) setParentMutation.mutate({ workItemIds: wiIds, parentWorkItemId: parentWiId });
                   }}
                   data-testid="toolbar-indent"
                 >
@@ -1244,8 +1256,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                   onClick={() => {
                     const selArr = Array.from(selectedIds);
                     const selTasks = selArr.map(id => taskMap.get(id)).filter(Boolean);
-                    const rowNums = selTasks.filter((t: any) => t.parentTaskId && t.rowNumber).map((t: any) => t.rowNumber);
-                    if (rowNums.length > 0) removeMilestoneMutation.mutate(rowNums);
+                    const wiIds = selTasks.filter((t: any) => t.parentTaskId && t.workItemId).map((t: any) => t.workItemId);
+                    if (wiIds.length > 0) removeMilestoneMutation.mutate(wiIds);
                   }}
                   data-testid="toolbar-outdent"
                 >
@@ -1265,9 +1277,9 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                     if (idx <= 0) return;
                     const task = visibleTasks[idx];
                     const above = visibleTasks[idx - 1];
-                    if (task?.rowNumber == null || above?.rowNumber == null) return;
+                    if (!task?.workItemId || !above?.workItemId) return;
                     bulkReorderMutation.mutate([
-                      { rowNumber: task.rowNumber, sortOrder: (above.sortOrder ?? above.rowNumber ?? 0) - 1 },
+                      { workItemId: task.workItemId, sortOrder: (above.sortOrder ?? 0) - 1 },
                     ]);
                   }}
                   data-testid="toolbar-move-up"
@@ -1288,9 +1300,9 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                     if (idx < 0 || idx >= visibleTasks.length - 1) return;
                     const task = visibleTasks[idx];
                     const below = visibleTasks[idx + 1];
-                    if (task?.rowNumber == null || below?.rowNumber == null) return;
+                    if (!task?.workItemId || !below?.workItemId) return;
                     bulkReorderMutation.mutate([
-                      { rowNumber: task.rowNumber, sortOrder: (below.sortOrder ?? below.rowNumber ?? 0) + 1 },
+                      { workItemId: task.workItemId, sortOrder: (below.sortOrder ?? 0) + 1 },
                     ]);
                   }}
                   data-testid="toolbar-move-down"
@@ -1697,7 +1709,8 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                               {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                             </button>
                           )}
-                          <span className={`truncate ${isMilestone ? "text-amber-800" : hasChildren ? "text-foreground" : ""}`} title={task.title}>
+                          {isMilestone && !hasChildren && <Diamond className="h-3 w-3 text-amber-500 flex-shrink-0" />}
+                          <span className={`truncate ${isMilestone ? "font-medium text-amber-800" : hasChildren ? "text-foreground" : ""}`} title={task.title}>
                             {task.title}
                           </span>
                           {task.assignmentRole === "VIEWER" && (
@@ -1825,6 +1838,15 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                                   Convert to Milestone
                                 </DropdownMenuItem>
                               )}
+                              {isMilestone && task.workItemId && (
+                                <DropdownMenuItem
+                                  onClick={() => convertToTaskMutation.mutate(task.workItemId)}
+                                  data-testid={`action-convert-task-${task.id}`}
+                                >
+                                  <CheckCircle2 className="h-3 w-3 mr-2 text-emerald-600" />
+                                  Convert to Task
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuItem
                                 onClick={() => {
                                   setGroupUnderTask(task);
@@ -1835,11 +1857,9 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                                 <ArrowDownToLine className="h-3 w-3 mr-2 text-blue-600" />
                                 Move Under Parent...
                               </DropdownMenuItem>
-                              {task.parentTaskId && (
+                              {task.parentTaskId && task.workItemId && (
                                 <DropdownMenuItem
-                                  onClick={() => {
-                                    if (task.rowNumber) removeMilestoneMutation.mutate([task.rowNumber]);
-                                  }}
+                                  onClick={() => removeMilestoneMutation.mutate([task.workItemId])}
                                   data-testid={`action-ungroup-${task.id}`}
                                 >
                                   <Unlink className="h-3 w-3 mr-2 text-muted-foreground" />
@@ -1939,7 +1959,17 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                     style={{ height: ROW_HEIGHT }}
                     data-testid={`gantt-row-${task.id}`}
                   >
-                    {bar && (
+                    {bar && isMilestone && (
+                      <div
+                        className="absolute top-1.5"
+                        style={{ left: bar.left + (bar.width / 2) - 6 }}
+                        title={`${task.title}${pct >= 100 ? " (Done)" : ""}`}
+                        data-testid={`gantt-bar-${task.id}`}
+                      >
+                        <div className={`w-3 h-3 rotate-45 border ${pct >= 100 ? "bg-emerald-500 border-emerald-600" : "bg-amber-500 border-amber-600"}`} />
+                      </div>
+                    )}
+                    {bar && !isMilestone && (
                       <div
                         className={`absolute top-1 rounded-sm overflow-hidden border ${
                           isLate
@@ -1980,7 +2010,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                         className="absolute top-2"
                         style={{ left: todayOffset }}
                       >
-                        <div className={`w-3 h-3 rotate-45 ${gc.fill}`} />
+                        <div className={`w-3 h-3 rotate-45 bg-amber-400 border border-amber-600`} />
                       </div>
                     )}
                   </div>
@@ -1998,7 +2028,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             placeholder="Add a new task..."
             value={newTaskTitle}
             onChange={(e) => setNewTaskTitle(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && newTaskTitle.trim()) createMutation.mutate(newTaskTitle.trim()); }}
+            onKeyDown={(e) => { if (e.key === "Enter" && newTaskTitle.trim() && !createMutation.isPending) createMutation.mutate(newTaskTitle.trim()); }}
             className="h-7 text-xs border-none bg-transparent shadow-none focus-visible:ring-0"
             data-testid="input-add-task"
           />
@@ -2023,12 +2053,12 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             placeholder="Milestone name..."
             value={milestoneTitle}
             onChange={(e) => setMilestoneTitle(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleCreateMilestone(); }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !structureMutation.isPending) handleCreateMilestone(); }}
             data-testid="input-milestone-title"
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setMilestoneDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreateMilestone} disabled={!milestoneTitle.trim()}>Create</Button>
+            <Button onClick={handleCreateMilestone} disabled={!milestoneTitle.trim() || structureMutation.isPending}>Create</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2077,24 +2107,21 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             <Button variant="outline" onClick={() => { setConvertMilestoneDialogOpen(false); setConvertMilestoneTask(null); setSelectedIds(new Set()); }}>Cancel</Button>
             <Button
               onClick={() => {
-                if (convertMilestoneTask?.rowNumber == null) {
-                  toast({ title: "Cannot convert", description: "This task doesn't have a plan row number. Try refreshing WBS first.", variant: "destructive" });
+                const wiId = convertMilestoneTask?.workItemId;
+                if (!wiId) {
+                  toast({ title: "Cannot convert", description: "This task is missing its work item reference.", variant: "destructive" });
                   return;
                 }
-                const subtaskRows = Array.from(selectedIds)
-                  .map(id => taskMap.get(id)?.rowNumber)
-                  .filter((rn): rn is number => rn !== undefined && rn !== null);
-                if (subtaskRows.length === 0) {
-                  toast({ title: "No valid subtasks", description: "Selected tasks don't have plan row numbers. Select different tasks.", variant: "destructive" });
-                  return;
-                }
+                const subtaskWiIds = Array.from(selectedIds)
+                  .map(id => taskMap.get(id)?.workItemId)
+                  .filter((wid): wid is number => wid !== undefined && wid !== null);
                 convertToMilestoneMutation.mutate({
-                  milestoneRowNumber: convertMilestoneTask.rowNumber,
-                  subtaskRowNumbers: subtaskRows,
+                  workItemId: wiId,
+                  subtaskWorkItemIds: subtaskWiIds,
                 });
                 setSelectedIds(new Set());
               }}
-              disabled={selectedIds.size === 0 || convertToMilestoneMutation.isPending}
+              disabled={convertToMilestoneMutation.isPending}
               data-testid="button-confirm-convert-milestone"
             >
               Convert
@@ -2115,7 +2142,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
               </p>
               <div className="max-h-60 overflow-y-auto border rounded-md p-2 space-y-0.5">
                 {tasks
-                  .filter(t => t.id !== groupUnderTask.id && t.rowNumber != null)
+                  .filter(t => t.id !== groupUnderTask.id && t.workItemId != null)
                   .map(t => {
                     const isMil = t.isVirtualMilestone || t.isMilestone;
                     const hasCh = t.isParent || t.childCount > 0;
@@ -2124,10 +2151,10 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                         key={t.id}
                         className={`w-full text-left px-2 py-1.5 rounded text-xs hover:bg-muted flex items-center gap-2 ${isMil ? "font-semibold" : ""}`}
                         onClick={() => {
-                          if (groupUnderTask.rowNumber && t.rowNumber) {
+                          if (groupUnderTask.workItemId && t.workItemId) {
                             setParentMutation.mutate({
-                              taskRowNumbers: [groupUnderTask.rowNumber],
-                              parentRowNumber: t.rowNumber,
+                              workItemIds: [groupUnderTask.workItemId],
+                              parentWorkItemId: t.workItemId,
                             });
                           }
                         }}

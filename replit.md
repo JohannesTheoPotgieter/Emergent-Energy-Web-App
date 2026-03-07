@@ -99,3 +99,10 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Permission Entities**: 5 new entities (pd_raid, pd_change_control, pd_procurement, pd_commissioning, pd_dependencies) in admin roles.
 -   **Assessment**: READY FOR CONTROLLED INTERNAL USE — full project lifecycle management.
 -   **Deliverables**: `PM_MATURITY_SCOPE.md`, `PM_MATURITY_IMPLEMENTATION.md`, `PM_ON_THE_GO_INTEGRATION_SPEC.md`, `PM_MATURITY_QA_MATRIX.md`, `PM_MATURITY_DEFECT_REGISTER.md`, `PM_MATURITY_RELEASE_NOTE.md`, `FUTURE_PM_EXPANSION_MAP.md`.
+
+## Project Planning Overhaul (2026-03-07)
+-   **Canonical work_items**: All plan structure operations (create, convert, reorder, renumber, delete, set/remove parent) now use `workItemId` against the `work_items` table. No more row-number-based mutations.
+-   **Backend**: `POST /api/project-plan/structure` handles operations: `createMilestone`, `convertToMilestoneWI`, `convertToTaskWI`, `setParentWI`, `removeParentWI`, `reorderWI`, `renumberWI`, `deleteMilestoneWI`. Multi-step operations use DB transactions. `projectId` enforced on milestone creation. `renumberWI` syncs both `wbsCode` and `indentLevel` from parent chain depth.
+-   **Frontend**: `UnifiedPlanTab.tsx` mutations updated from `rowNumber`/`rowNumbers` to `workItemId`/`workItemIds`. Submit locking via `isPending` prevents double-click. Milestone Gantt renders as diamond. Drag-and-drop uses workItemId.
+-   **GET handler**: Canonical mode skips `operationalTasks` merge (prevents duplicates). WI-based parent resolution via `workItemIdToTaskId` map.
+-   **Migration**: `sort_order` integer column added to `work_items` via raw SQL migration in `server/index.ts`.

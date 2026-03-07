@@ -907,6 +907,7 @@ async function backfillPmUserIds() {
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS actual_start TEXT;
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS actual_end TEXT;
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS actual_duration INTEGER;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
     `));
 
     await db.execute(sql.raw(`
