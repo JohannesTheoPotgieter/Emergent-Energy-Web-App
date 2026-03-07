@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, User, Activity, TrendingUp, DollarSign,
   CalendarDays, Target, Loader2, ChevronDown,
+  AlertTriangle, ShoppingCart, Shield, GitPullRequest, Wrench, CheckCircle2,
 } from "lucide-react";
 import { POGenerator } from "@/components/POGenerator";
 import CaptureDeliverable from "@/components/CaptureDeliverable";
@@ -75,6 +76,178 @@ function StatBlock({ label, value, color, suffix }: { label: string; value: stri
       <p className={`text-lg sm:text-xl font-bold leading-none ${color || "text-[var(--cmd-text)]"}`}>
         {value}{suffix && <span className="text-xs font-normal text-[var(--cmd-text-muted)] ml-0.5">{suffix}</span>}
       </p>
+    </div>
+  );
+}
+
+function useAlertStripData(projectInfoId: number | null) {
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const fetchOpts = { headers, credentials: "include" as RequestCredentials };
+  const enabled = !!projectInfoId;
+
+  const procurement = useQuery({
+    queryKey: ["alert-procurement", projectInfoId],
+    queryFn: async () => {
+      const res = await fetch(`/api/procurement/project/${projectInfoId}`, fetchOpts);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled,
+    staleTime: 60000,
+    retry: false,
+  });
+
+  const raid = useQuery({
+    queryKey: ["alert-raid", projectInfoId],
+    queryFn: async () => {
+      const res = await fetch(`/api/raid/project/${projectInfoId}`, fetchOpts);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled,
+    staleTime: 60000,
+    retry: false,
+  });
+
+  const changes = useQuery({
+    queryKey: ["alert-changes", projectInfoId],
+    queryFn: async () => {
+      const res = await fetch(`/api/change-requests/project/${projectInfoId}`, fetchOpts);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled,
+    staleTime: 60000,
+    retry: false,
+  });
+
+  const commissioning = useQuery({
+    queryKey: ["alert-commissioning", projectInfoId],
+    queryFn: async () => {
+      const res = await fetch(`/api/commissioning/project/${projectInfoId}`, fetchOpts);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled,
+    staleTime: 60000,
+    retry: false,
+  });
+
+  const today = new Date().toISOString().split("T")[0];
+  const closedProcStatuses = ["received", "invoiced", "closed"];
+  const overdueProcurement = (procurement.data as any[] || []).filter(
+    (item: any) => item.required_date && item.required_date < today && !closedProcStatuses.includes(item.status)
+  ).length;
+
+  const openRaid = (raid.data as any[] || []).filter(
+    (item: any) => item.status === "open" || item.status === "in_progress" || item.status === "mitigating"
+  ).length;
+
+  const activeChanges = (changes.data as any[] || []).filter(
+    (item: any) => item.status !== "closed" && item.status !== "rejected"
+  ).length;
+
+  const incompleteCommissioning = (commissioning.data as any[] || []).filter(
+    (item: any) => item.status !== "approved" && item.status !== "closed"
+  ).length;
+
+  const allLoading = procurement.isLoading && raid.isLoading && changes.isLoading && commissioning.isLoading;
+  const allFailed = procurement.isError && raid.isError && changes.isError && commissioning.isError;
+  const anyLoaded = procurement.isSuccess || raid.isSuccess || changes.isSuccess || commissioning.isSuccess;
+
+  return {
+    overdueProcurement,
+    openRaid,
+    activeChanges,
+    incompleteCommissioning,
+    allLoading,
+    allFailed,
+    anyLoaded,
+  };
+}
+
+function AlertStrip({ projectInfoId }: { projectInfoId: number | null }) {
+  const {
+    overdueProcurement,
+    openRaid,
+    activeChanges,
+    incompleteCommissioning,
+    allLoading,
+    allFailed,
+    anyLoaded,
+  } = useAlertStripData(projectInfoId);
+
+  if (!projectInfoId) return null;
+  if (allFailed) return null;
+
+  if (allLoading) {
+    return (
+      <div className="border-t border-[var(--cmd-border)] bg-gray-50 px-4 py-1.5" data-testid="alert-strip-loading">
+        <div className="flex items-center gap-2">
+          <Loader2 className="h-3 w-3 animate-spin text-gray-400" />
+          <span className="text-[10px] text-gray-400">Checking cross-module alerts...</span>
+        </div>
+      </div>
+    );
+  }
+
+  const totalAlerts = overdueProcurement + openRaid + activeChanges + incompleteCommissioning;
+  const hasAlerts = totalAlerts > 0;
+
+  const badges: { key: string; count: number; label: string; icon: React.ReactNode; color: "red" | "amber" }[] = [];
+
+  if (overdueProcurement > 0) {
+    badges.push({ key: "procurement", count: overdueProcurement, label: "Overdue Procurement", icon: <ShoppingCart className="h-3 w-3" />, color: "red" });
+  }
+  if (openRaid > 0) {
+    badges.push({ key: "raid", count: openRaid, label: "Open RAID", icon: <Shield className="h-3 w-3" />, color: "amber" });
+  }
+  if (activeChanges > 0) {
+    badges.push({ key: "changes", count: activeChanges, label: "Active Changes", icon: <GitPullRequest className="h-3 w-3" />, color: "amber" });
+  }
+  if (incompleteCommissioning > 0) {
+    badges.push({ key: "commissioning", count: incompleteCommissioning, label: "Incomplete Commissioning", icon: <Wrench className="h-3 w-3" />, color: "amber" });
+  }
+
+  return (
+    <div
+      className={`border-t border-[var(--cmd-border)] px-4 py-1.5 ${hasAlerts ? "bg-amber-50/50" : "bg-green-50/50"}`}
+      data-testid="alert-strip"
+    >
+      <div className="flex items-center gap-2 flex-wrap">
+        {hasAlerts ? (
+          <>
+            <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
+            {badges.map((b) => (
+              <span
+                key={b.key}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-default ${
+                  b.color === "red"
+                    ? "bg-red-100 text-red-700 border border-red-200"
+                    : "bg-amber-100 text-amber-700 border border-amber-200"
+                }`}
+                data-testid={`alert-badge-${b.key}`}
+                title={`${b.count} ${b.label}`}
+              >
+                {b.icon}
+                <span>{b.count}</span>
+                <span className="hidden sm:inline">{b.label}</span>
+              </span>
+            ))}
+          </>
+        ) : anyLoaded ? (
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-700 border border-green-200 cursor-default"
+            data-testid="alert-badge-all-clear"
+          >
+            <CheckCircle2 className="h-3 w-3" />
+            All Clear
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -308,6 +481,8 @@ export function ProjectCommandHeader({
               />
             </div>
           </div>
+
+          <AlertStrip projectInfoId={projectInfoId} />
         </div>
       </div>
 

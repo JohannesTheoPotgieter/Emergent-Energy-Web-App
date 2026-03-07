@@ -27,6 +27,10 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Permission Gating**: Both sidebar items and routes are permission-gated based on entity-level view permissions.
 -   **Admin Tools**: Recovery Center, KPI Traceability Panel, Smart Import Control Tower, Control Center for system health, and Operational Exceptions.
 -   **Workflow Management**: 4-gate handover system with checklists and progress tracking.
+-   **Grouped Tab Navigation**: Project detail page tabs organized into DELIVERY (Plan, Board, Calendar, Commissioning), COMMERCIAL (Procurement, Inflows, Expenditure, COS, Revenue, GP, Cashflow), CONTROL (RAID, Changes, History), PARTNERS (Subcontractors).
+-   **Procurement Hub**: Enhanced procurement tab with internal sub-tabs: Overview (KPIs), Items (pipeline), Purchase Orders (PO generation), Deliveries (with CaptureDeliverable), Invoices (capture + list), Traceability (lifecycle flow visualization).
+-   **Module Context Panels**: Collapsible info strips on major tabs showing purpose, upstream/downstream connections. Component: `client/src/components/ModuleContext.tsx`.
+-   **Cross-Module Alert Strip**: ProjectCommandHeader shows procurement/RAID/changes/commissioning alert badges with counts.
 
 ### Backend
 -   **Frameworks & Libraries**: Express.js with TypeScript.
