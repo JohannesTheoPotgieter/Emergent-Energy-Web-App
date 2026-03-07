@@ -80,9 +80,11 @@ function mapWorkItemsToNormalizedFormat(items: WorkItem[], projectName: string, 
       pctComplete: wi.percentComplete != null ? wi.percentComplete : null,
       expectedPctComplete: null,
       comment: wi.description,
-      isMilestone: wi.type === "milestone",
+      isMilestone: wi.isMilestone === true || wi.type === "milestone",
       parentTaskNo,
-      indentLevel,
+      parentWorkItemId: wi.parentId || null,
+      indentLevel: wi.indentLevel ?? indentLevel,
+      sortOrder: wi.sortOrder ?? 0,
       sourceSheet: null,
       sourceRow: null,
       importRunId: wi.legacyId ?? 0,
@@ -376,7 +378,7 @@ export async function getAllPMWorkItemsAsProjectPlan(): Promise<any[]> {
       actualPctComplete: wi.percentComplete,
       expectedPctComplete: null,
       durationDays: wi.duration,
-      isMilestone: wi.type === "milestone",
+      isMilestone: wi.isMilestone === true || wi.type === "milestone",
     };
   });
 }

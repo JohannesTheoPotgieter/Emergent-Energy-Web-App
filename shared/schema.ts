@@ -4847,6 +4847,7 @@ export const workItems = pgTable("work_items", {
   actualStart: text("actual_start"),
   actualEnd: text("actual_end"),
   actualDuration: integer("actual_duration"),
+  sortOrder: integer("sort_order").default(0),
 });
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;

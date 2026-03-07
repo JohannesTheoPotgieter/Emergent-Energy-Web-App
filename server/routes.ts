@@ -5651,6 +5651,65 @@ export async function registerRoutes(
         const { title } = data || {};
         if (!title) return res.status(400).json({ error: "title required" });
 
+        const useCanonical = await isWorkItemsEnabled();
+        if (useCanonical) {
+          const projectInfoRow = await storage.getProjectInfo(rawProjectName);
+          const projectId = projectInfoRow?.id || null;
+          if (!projectId) return res.status(400).json({ error: "Project not found" });
+
+          const existingItems = await db.select({ wbsCode: workItems.wbsCode })
+            .from(workItems)
+            .where(and(
+              projectId ? eq(workItems.projectId, projectId) : sql`false`,
+              eq(workItems.workstream, "PM"),
+              isNull(workItems.deletedAt),
+              isNull(workItems.parentId),
+            ))
+            .orderBy(desc(workItems.id));
+
+          let nextTopLevelNum = 1;
+          for (const item of existingItems) {
+            if (item.wbsCode) {
+              const topLevel = parseInt(item.wbsCode.split('.')[0]);
+              if (!isNaN(topLevel) && topLevel >= nextTopLevelNum) {
+                nextTopLevelNum = topLevel + 1;
+              }
+            }
+          }
+          const newWbsCode = String(nextTopLevelNum);
+
+          const maxSort = await db.select({ maxSort: sql`COALESCE(MAX(sort_order), 0)` })
+            .from(workItems)
+            .where(and(
+              projectId ? eq(workItems.projectId, projectId) : sql`false`,
+              isNull(workItems.deletedAt),
+            ));
+          const nextSortOrder = (Number((maxSort[0] as any)?.maxSort) || 0) + 10;
+
+          const [newMilestone] = await db.insert(workItems).values({
+            projectId,
+            workstream: "PM",
+            source: "UI",
+            title,
+            status: "Not Started",
+            priority: "Normal",
+            startDate: null,
+            endDate: null,
+            duration: 0,
+            percentComplete: 0,
+            wbsCode: newWbsCode,
+            indentLevel: 0,
+            parentId: null,
+            isMilestone: true,
+            createdBy: userId,
+            taskMode: "auto",
+            sortOrder: nextSortOrder,
+          }).returning();
+
+          notifyStructureChange(`New milestone created: "${title}".`);
+          return res.json({ message: "Milestone created", workItemId: newMilestone.id, wbsCode: newWbsCode });
+        }
+
         const existingOverrides = await storage.getProjectPlanOverridesByProject(projectName);
         let minRow = 0;
         for (const o of existingOverrides) {
@@ -5906,6 +5965,169 @@ export async function registerRoutes(
           await storage.upsertManyProjectPlanOverrides(overridesToSave);
         }
         return res.json({ message: `Renumbered ${overridesToSave.length} tasks` });
+      }
+
+      if (operation === "convertToMilestoneWI") {
+        const { workItemId, subtaskWorkItemIds } = data || {};
+        if (!workItemId) return res.status(400).json({ error: "workItemId required" });
+        await db.transaction(async (tx) => {
+          await tx.update(workItems)
+            .set({ isMilestone: true, duration: 0, updatedAt: new Date() })
+            .where(eq(workItems.id, workItemId));
+          if (Array.isArray(subtaskWorkItemIds) && subtaskWorkItemIds.length > 0) {
+            const parentItem = await tx.select({ indentLevel: workItems.indentLevel }).from(workItems).where(eq(workItems.id, workItemId));
+            const parentIndent = parentItem[0]?.indentLevel ?? 0;
+            for (const stId of subtaskWorkItemIds) {
+              if (stId === workItemId) continue;
+              await tx.update(workItems)
+                .set({ parentId: workItemId, indentLevel: parentIndent + 1, updatedAt: new Date() })
+                .where(eq(workItems.id, stId));
+            }
+          }
+        });
+        notifyStructureChange(`Task converted to milestone.`);
+        return res.json({ message: "Converted to milestone" });
+      }
+
+      if (operation === "convertToTaskWI") {
+        const { workItemId } = data || {};
+        if (!workItemId) return res.status(400).json({ error: "workItemId required" });
+        await db.update(workItems)
+          .set({ isMilestone: false, duration: 1, updatedAt: new Date() })
+          .where(eq(workItems.id, workItemId));
+        notifyStructureChange(`Milestone converted to regular task.`);
+        return res.json({ message: "Converted to task" });
+      }
+
+      if (operation === "indentWI") {
+        const { workItemId, parentWorkItemId } = data || {};
+        if (!workItemId || !parentWorkItemId) return res.status(400).json({ error: "workItemId and parentWorkItemId required" });
+        if (workItemId === parentWorkItemId) return res.status(400).json({ error: "Cannot indent a task under itself" });
+        const parentItem = await db.select({ indentLevel: workItems.indentLevel }).from(workItems).where(eq(workItems.id, parentWorkItemId));
+        const parentIndent = parentItem[0]?.indentLevel ?? 0;
+        await db.update(workItems)
+          .set({ parentId: parentWorkItemId, indentLevel: parentIndent + 1, updatedAt: new Date() })
+          .where(eq(workItems.id, workItemId));
+        await db.update(workItems)
+          .set({ isMilestone: true, updatedAt: new Date() })
+          .where(and(eq(workItems.id, parentWorkItemId), eq(workItems.isMilestone, false)));
+        notifyStructureChange(`Task indented under parent.`);
+        return res.json({ message: "Task indented" });
+      }
+
+      if (operation === "outdentWI") {
+        const { workItemId } = data || {};
+        if (!workItemId) return res.status(400).json({ error: "workItemId required" });
+        await db.update(workItems)
+          .set({ parentId: null, indentLevel: 0, updatedAt: new Date() })
+          .where(eq(workItems.id, workItemId));
+        notifyStructureChange(`Task outdented to top level.`);
+        return res.json({ message: "Task outdented" });
+      }
+
+      if (operation === "setParentWI") {
+        const { workItemIds, parentWorkItemId } = data || {};
+        if (!Array.isArray(workItemIds) || parentWorkItemId === undefined) {
+          return res.status(400).json({ error: "workItemIds[] and parentWorkItemId required" });
+        }
+        const safeIds = workItemIds.filter((id: number) => id !== parentWorkItemId);
+        if (safeIds.length === 0) return res.status(400).json({ error: "No valid tasks after excluding parent" });
+        await db.transaction(async (tx) => {
+          const parentItem = await tx.select({ indentLevel: workItems.indentLevel }).from(workItems).where(eq(workItems.id, parentWorkItemId));
+          const parentIndent = parentItem[0]?.indentLevel ?? 0;
+          for (const wiId of safeIds) {
+            await tx.update(workItems)
+              .set({ parentId: parentWorkItemId, indentLevel: parentIndent + 1, updatedAt: new Date() })
+              .where(eq(workItems.id, wiId));
+          }
+          await tx.update(workItems)
+            .set({ isMilestone: true, updatedAt: new Date() })
+            .where(and(eq(workItems.id, parentWorkItemId), eq(workItems.isMilestone, false)));
+        });
+        notifyStructureChange(`${safeIds.length} task(s) grouped under parent.`);
+        return res.json({ message: `${safeIds.length} tasks grouped` });
+      }
+
+      if (operation === "removeParentWI") {
+        const { workItemIds } = data || {};
+        if (!Array.isArray(workItemIds)) return res.status(400).json({ error: "workItemIds[] required" });
+        for (const wiId of workItemIds) {
+          await db.update(workItems)
+            .set({ parentId: null, indentLevel: 0, updatedAt: new Date() })
+            .where(eq(workItems.id, wiId));
+        }
+        notifyStructureChange(`${workItemIds.length} task(s) ungrouped.`);
+        return res.json({ message: `${workItemIds.length} tasks ungrouped` });
+      }
+
+      if (operation === "reorderWI") {
+        const { items } = data || {};
+        if (!Array.isArray(items) || items.length === 0) {
+          return res.status(400).json({ error: "items[] with {workItemId, sortOrder} required" });
+        }
+        for (const item of items) {
+          await db.update(workItems)
+            .set({ sortOrder: item.sortOrder, updatedAt: new Date() })
+            .where(eq(workItems.id, item.workItemId));
+        }
+        notifyStructureChange(`${items.length} task(s) reordered.`);
+        return res.json({ message: `Reordered ${items.length} tasks` });
+      }
+
+      if (operation === "renumberWI") {
+        const projectInfoRow = await storage.getProjectInfo(rawProjectName);
+        const projectId = projectInfoRow?.id || null;
+        if (!projectId) return res.status(400).json({ error: "Project not found" });
+
+        const allItems = await db.select({
+          id: workItems.id,
+          parentId: workItems.parentId,
+          wbsCode: workItems.wbsCode,
+          sortOrder: workItems.sortOrder,
+        }).from(workItems).where(and(
+          eq(workItems.projectId, projectId),
+          eq(workItems.workstream, "PM"),
+          isNull(workItems.deletedAt),
+        )).orderBy(asc(workItems.sortOrder), asc(workItems.id));
+
+        const childMap = new Map<number | null, any[]>();
+        for (const item of allItems) {
+          const parent = item.parentId || null;
+          if (!childMap.has(parent)) childMap.set(parent, []);
+          childMap.get(parent)!.push(item);
+        }
+
+        const updates: Array<{ id: number; wbsCode: string; indentLevel: number }> = [];
+        const assignWbs = (parentId: number | null, prefix: string, depth: number) => {
+          const children = childMap.get(parentId) || [];
+          children.forEach((child: any, idx: number) => {
+            const num = prefix ? `${prefix}.${idx + 1}` : String(idx + 1);
+            updates.push({ id: child.id, wbsCode: num, indentLevel: depth });
+            assignWbs(child.id, num, depth + 1);
+          });
+        };
+        assignWbs(null, "", 0);
+
+        for (const u of updates) {
+          await db.update(workItems)
+            .set({ wbsCode: u.wbsCode, indentLevel: u.indentLevel, updatedAt: new Date() })
+            .where(eq(workItems.id, u.id));
+        }
+        notifyStructureChange(`WBS renumbered for ${updates.length} tasks.`);
+        return res.json({ message: `Renumbered ${updates.length} tasks` });
+      }
+
+      if (operation === "deleteMilestoneWI") {
+        const { workItemId } = data || {};
+        if (!workItemId) return res.status(400).json({ error: "workItemId required" });
+        await db.update(workItems)
+          .set({ parentId: null, indentLevel: 0, updatedAt: new Date() })
+          .where(eq(workItems.parentId, workItemId));
+        await db.update(workItems)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(eq(workItems.id, workItemId));
+        notifyStructureChange(`Milestone deleted and children ungrouped.`);
+        return res.json({ message: "Milestone deleted and children ungrouped" });
       }
 
       logAuditFromReq(req, { entityType: "plan_structure", action: "update", projectName: rawProjectName, changesJson: { description: `Plan structure operation: ${operation}`, operation, projectName: rawProjectName } });
@@ -10962,12 +11184,12 @@ export async function registerRoutes(
         if (canonicalTasks.length > 0) {
           const allOps = await storage.getOperationalTasksByProject(projectName);
           const nonClickupOps = allOps.filter((t: any) => t.externalSource !== "clickup");
-          operationalTasks = nonClickupOps.filter((t: any) => t.importedTaskId != null);
-          unlinkedOperationalCount = nonClickupOps.length - operationalTasks.length;
+          unlinkedOperationalCount = nonClickupOps.filter((t: any) => t.importedTaskId == null).length;
 
           const filteredCanonical = canonicalTasks.filter((ct: any) => {
             const ws = ct.workstream || "PM";
             if (ws === "ENG" || ws === "QUALITY") return true;
+            if (ct.isMilestone) return true;
             const hasWbs = ct.taskNo && String(ct.taskNo).trim().length > 0;
             const hasStart = ct.startDate && String(ct.startDate).trim().length > 0;
             const hasEnd = ct.endDate && String(ct.endDate).trim().length > 0;
@@ -11015,6 +11237,7 @@ export async function registerRoutes(
               importedTaskId: ct.id,
               taskNumber: ct.taskNo || String(idx + 1),
               parentTaskId: null as number | null,
+              parentWorkItemId: ct.parentWorkItemId || null,
               title: ct.taskName || `Task ${ct.taskNo || idx + 1}`,
               description: ct.comment || null,
               status,
@@ -11034,7 +11257,7 @@ export async function registerRoutes(
               actualEndDate: tActualEnd || tPlannedEnd || null,
               actualDurationDays: ct.actualDurationDays || ct.durationDays || null,
               comment: ct.comment || null,
-              sortOrder: idx,
+              sortOrder: ct.sortOrder ?? idx,
               isBaseline: true,
               isVirtualMilestone: false,
               isMilestone: ct.isMilestone === true,
@@ -11160,9 +11383,11 @@ export async function registerRoutes(
 
       const rowNumberToId = new Map<number, number>();
       const taskNumToId = new Map<string, number>();
+      const workItemIdToTaskId = new Map<number, number>();
       let summaryTaskId: number | null = null;
       for (const t of allTasks) {
         if (t.rowNumber != null) rowNumberToId.set(t.rowNumber, t.id);
+        if (t.workItemId) workItemIdToTaskId.set(t.workItemId, t.id);
         if (t.taskNumber) {
           taskNumToId.set(String(t.taskNumber), t.id);
           const num = String(t.taskNumber).toLowerCase();
@@ -11173,6 +11398,13 @@ export async function registerRoutes(
       }
 
       for (const t of allTasks) {
+        if (t.parentWorkItemId) {
+          const parentId = workItemIdToTaskId.get(t.parentWorkItemId);
+          if (parentId !== undefined) {
+            t.parentTaskId = parentId;
+            continue;
+          }
+        }
         if (t.parentRowNumber != null && t.parentRowNumber !== 0) {
           const parentId = rowNumberToId.get(t.parentRowNumber);
           if (parentId !== undefined) {
