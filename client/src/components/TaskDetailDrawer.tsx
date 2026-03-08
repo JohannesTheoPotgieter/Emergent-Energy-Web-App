@@ -789,9 +789,15 @@ function TaskDetailContent({
             <User className="h-3 w-3" /> Assignees
           </label>
           {isBaselineTask ? (
-            <span className="text-sm text-muted-foreground" data-testid="text-assignees-readonly">
-              {task.assignees?.length ? task.assignees.join(", ") : "Unassigned (from imported plan)"}
-            </span>
+            <UserAssignmentPicker
+              taskId={Math.abs(task.id)}
+              taskSource="plan"
+              resolvedUsers={task.resolvedAssignees || null}
+              textNames={task.assignees || null}
+              mode="multi"
+              size="sm"
+              invalidateKeys={[`baseline-task-detail`, `planning-tasks`]}
+            />
           ) : (
             <UserAssignmentPicker
               taskId={task.id}
