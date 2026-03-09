@@ -19,9 +19,11 @@ import { startScheduler } from "./importPipeline";
 import { startMilestoneChecker } from "./milestone-notifications";
 import { registerAdminRoutes } from "./departments/admin-routes";
 import { registerExcoRoutes } from "./departments/exco-routes";
+import { getStartupFlags } from "./startup-flags";
 
 const app = express();
 const httpServer = createServer(app);
+const startupFlags = getStartupFlags();
 
 declare module "http" {
   interface IncomingMessage {
@@ -85,9 +87,9 @@ if (dbMode === 'postgres' && dbConfig.connectionString) {
   const pool = new pg.Pool({ connectionString: dbConfig.connectionString });
   sessionStore = new PgSession({
     pool,
-    createTableIfMissing: true,
+    createTableIfMissing: startupFlags.modes.schemaRepair,
   });
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' && startupFlags.modes.sessionReset) {
     pool.query('DELETE FROM "session"').then(() => {
       log('Cleared all sessions on deploy startup');
     }).catch(() => {});
@@ -307,10 +309,15 @@ async function backfillPmUserIds() {
 
 (async () => {
   // Initialize database FIRST before any storage operations
+  // initializeDatabase() only establishes DB connectivity/mode and SQLite baseline schema when needed.
   await initializeDatabase();
-  
-  await seedUsers();
-  await backfillPmUserIds();
+
+  if (startupFlags.modes.dataSeed) {
+    await seedUsers();
+  }
+  if (startupFlags.modes.backfill) {
+    await backfillPmUserIds();
+  }
 
   try {
     await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
@@ -1059,25 +1066,33 @@ async function backfillPmUserIds() {
   registerChangeControlRoutes(app);
 
   const { registerProcurementRoutes, ensureProcurementTables } = await import("./procurement-routes");
-  await ensureProcurementTables();
+  if (startupFlags.modes.schemaRepair) {
+    await ensureProcurementTables();
+  }
   registerProcurementRoutes(app);
 
   const { registerCommissioningRoutes, ensureCommissioningTables } = await import("./commissioning-routes");
-  await ensureCommissioningTables();
+  if (startupFlags.modes.schemaRepair) {
+    await ensureCommissioningTables();
+  }
   registerCommissioningRoutes(app);
 
-  await db.execute(sql.raw(`
-    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS related_entity_type TEXT;
-    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS related_entity_id INTEGER;
-    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS assigned_approver INTEGER REFERENCES users(id);
-    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS due_date TIMESTAMP;
-    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES project_info(id);
-    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS approval_category TEXT;
-  `));
-  console.log("[Approvals] Enhanced columns ensured");
+  if (startupFlags.modes.schemaRepair) {
+    await db.execute(sql.raw(`
+      ALTER TABLE approvals ADD COLUMN IF NOT EXISTS related_entity_type TEXT;
+      ALTER TABLE approvals ADD COLUMN IF NOT EXISTS related_entity_id INTEGER;
+      ALTER TABLE approvals ADD COLUMN IF NOT EXISTS assigned_approver INTEGER REFERENCES users(id);
+      ALTER TABLE approvals ADD COLUMN IF NOT EXISTS due_date TIMESTAMP;
+      ALTER TABLE approvals ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES project_info(id);
+      ALTER TABLE approvals ADD COLUMN IF NOT EXISTS approval_category TEXT;
+    `));
+    console.log("[Approvals] Enhanced columns ensured");
+  }
 
   const { registerInvoiceCaptureRoutes, ensureInvoiceCaptureTables } = await import("./invoice-capture-routes");
-  await ensureInvoiceCaptureTables();
+  if (startupFlags.modes.schemaRepair) {
+    await ensureInvoiceCaptureTables();
+  }
   registerInvoiceCaptureRoutes(app);
 
   registerAdminRoutes(app);
@@ -1133,7 +1148,9 @@ async function backfillPmUserIds() {
     },
     () => {
       log(`serving on port ${port}`);
-      runBackfill().catch(err => console.error('[Backfill] startup error:', err));
+      if (startupFlags.modes.backfill) {
+        runBackfill().catch(err => console.error('[Backfill] startup error:', err));
+      }
       startScheduler();
       startMilestoneChecker();
       log('SharePoint scheduled import checker started');

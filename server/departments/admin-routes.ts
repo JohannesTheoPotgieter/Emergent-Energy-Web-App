@@ -10,6 +10,7 @@ import fs from "fs";
 import path from "path";
 import { generateToken, verifyToken } from "../jwt";
 import { parseTrackerFile, applyFontColors } from "../excelParser";
+import { getStartupFlags } from "../startup-flags";
 
 const router = Router();
 
@@ -66,6 +67,8 @@ router.get("/api/health", async (req, res) => {
   const envDbMode = process.env.DB_MODE;
   const hasDatabaseUrl = !!process.env.DATABASE_URL;
 
+  const startupFlags = getStartupFlags();
+
   res.json({
     ok: dbStatus.connected,
     dbMode: dbMode,
@@ -75,6 +78,10 @@ router.get("/api/health", async (req, res) => {
     envDbMode: envDbMode || 'auto',
     hasDatabaseUrl,
     message: dbStatus.message,
+    startup: {
+      rawEnv: startupFlags.rawEnv,
+      derivedModes: startupFlags.modes,
+    },
     timestamp: new Date().toISOString(),
   });
 });
