@@ -54,6 +54,7 @@ import {
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import DataSourceDebug from "@/components/DataSourceDebug";
+import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 
 async function pmFetch(url: string) {
   const token = localStorage.getItem("auth_token");
@@ -784,11 +785,12 @@ export default function PMDashboard() {
       );
     }
     return (
-      <div className="space-y-4 p-4 md:p-6" data-testid="pm-dashboard">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="pm-title">PM Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Select a project manager to view their portfolio</p>
-        </div>
+      <PageShell className="p-4 md:p-6" data-testid="pm-dashboard">
+        <SectionHeader
+          icon={<Briefcase className="h-5 w-5" />}
+          title="PM Dashboard"
+          description="Select a project manager to view their portfolio"
+        />
         <div className="max-w-xs">
           <SearchableSelect
             value={selectedPmId}
@@ -801,7 +803,7 @@ export default function PMDashboard() {
             }))}
           />
         </div>
-      </div>
+      </PageShell>
     );
   }
 
@@ -833,18 +835,12 @@ export default function PMDashboard() {
   const { summary } = data;
 
   return (
-    <div className="space-y-4 p-4 md:p-6" data-testid="pm-dashboard">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight" data-testid="pm-title">
-            {isCooView ? "PM Dashboard" : "My Projects"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {isCooView && selectedPmName ? `${selectedPmName} — ` : user?.name ? `${user.name} \u2014 ` : ""}
-            {summary.totalProjects} project{summary.totalProjects !== 1 ? "s" : ""} assigned
-          </p>
-        </div>
-        {isCooView && (
+    <PageShell className="p-4 md:p-6" data-testid="pm-dashboard">
+      <SectionHeader
+        icon={<Briefcase className="h-5 w-5" />}
+        title={isCooView ? "PM Dashboard" : "My Projects"}
+        description={`${isCooView && selectedPmName ? `${selectedPmName} — ` : user?.name ? `${user.name} — ` : ""}${summary.totalProjects} project${summary.totalProjects !== 1 ? "s" : ""} assigned`}
+        actions={isCooView ? (
           <div className="w-56">
             <SearchableSelect
               value={selectedPmId}
@@ -858,8 +854,8 @@ export default function PMDashboard() {
               }))}
             />
           </div>
-        )}
-      </div>
+        ) : null}
+      />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} data-testid="pm-tabs">
         <TabsList className="grid w-full grid-cols-3 max-w-md">
@@ -898,6 +894,6 @@ export default function PMDashboard() {
           { endpoint: "/api/pm/calendar-events", tables: ["project_info", "engineering_tasks", "normalized_plan_tasks"], description: "Milestone and task calendar events" },
         ]}
       />
-    </div>
+    </PageShell>
   );
 }
