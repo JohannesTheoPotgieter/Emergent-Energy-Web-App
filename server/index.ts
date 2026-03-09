@@ -333,7 +333,13 @@ async function backfillPmUserIds() {
 
   // TODO(phase-3): Evaluate gating startup seeding/backfill under explicit maintenance flags.
   await seedUsers();
-  await backfillPmUserIds();
+  const startupPmUserBackfillEnabled = process.env.ENABLE_STARTUP_BACKFILL === "true";
+  if (startupPmUserBackfillEnabled) {
+    log("[Startup] PM/user backfill enabled (ENABLE_STARTUP_BACKFILL=true)");
+    await backfillPmUserIds();
+  } else {
+    log("[Startup] PM/user backfill skipped on normal boot (set ENABLE_STARTUP_BACKFILL=true to enable)");
+  }
 
   // TODO(phase-3): These startup schema mutations are intentionally left unchanged for now to avoid risky boot regressions.
   try {
