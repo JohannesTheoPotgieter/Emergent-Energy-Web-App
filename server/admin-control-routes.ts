@@ -3,7 +3,8 @@ import { requireAuth, requireAdmin } from "./departments/shared-middleware";
 import { db } from "./db";
 import { sql, eq } from "drizzle-orm";
 import { appSettings, users, projectInfo, smartImportRuns, auditEvents } from "@shared/schema";
-import { getFeatureFlag, setFeatureFlag } from "./lib/feature-flags";
+import { getFeatureFlag, getRolloutFeatureFlags, setFeatureFlag } from "./lib/feature-flags";
+import { ROLLOUT_FEATURE_FLAGS } from "@shared/feature-flags";
 import { logAuditFromReq } from "./audit-logger";
 import { getStartupFlags } from "./startup-flags";
 const { rawEnv: startupRawFlags, modes: startupEffectiveModes } = getStartupFlags();
@@ -96,6 +97,24 @@ router.put("/api/admin/control-center/feature-flags/:key", requireAuth, requireA
     res.json({ success: true, key, value: !!value });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to update feature flag" });
+  }
+});
+
+
+router.get("/api/admin/control-center/rollout-foundation", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const flags = await getRolloutFeatureFlags();
+    res.json({
+      flags: ROLLOUT_FEATURE_FLAGS.map((flag) => ({
+        key: flag.key,
+        label: flag.label,
+        description: flag.description,
+        defaultValue: flag.defaultValue,
+        value: flags[flag.key],
+      })),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch rollout foundation" });
   }
 });
 
