@@ -23,19 +23,12 @@ import { getStartupModes } from "./startup-modes";
 
 const app = express();
 const httpServer = createServer(app);
-const startupFlags = getStartupFlags();
-
-const startupFlags = {
-  ENABLE_STARTUP_MAINTENANCE: process.env.ENABLE_STARTUP_MAINTENANCE,
-  ENABLE_STARTUP_SCHEMA_REPAIR: process.env.ENABLE_STARTUP_SCHEMA_REPAIR,
-  ENABLE_STARTUP_SESSION_RESET: process.env.ENABLE_STARTUP_SESSION_RESET,
-};
-
-const startupMaintenanceEnabled = startupFlags.ENABLE_STARTUP_MAINTENANCE === "true";
-const startupSchemaRepairEnabled =
-  startupMaintenanceEnabled || startupFlags.ENABLE_STARTUP_SCHEMA_REPAIR === "true";
-const startupSessionResetEnabled =
-  startupMaintenanceEnabled || startupFlags.ENABLE_STARTUP_SESSION_RESET === "true";
+const startupModes = getStartupModes();
+const {
+  startupMaintenanceEnabled,
+  startupSchemaRepairEnabled,
+  startupSessionResetEnabled,
+} = startupModes;
 
 const isStrictRuntime = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
 const isLocalDevelopmentMode = process.env.LOCAL_DEV_MODE === "true";
@@ -113,7 +106,6 @@ app.set('trust proxy', 1);
 
 // Session configuration - use appropriate store based on DB mode
 let sessionStore: any;
-const startupMaintenanceEnabled = process.env.STARTUP_MAINTENANCE_MODE === "true";
 const startupSyncEnabled = process.env.STARTUP_ENABLE_PERIODIC_SYNC !== "false";
 
 if (dbMode === 'postgres' && dbConfig.connectionString) {
