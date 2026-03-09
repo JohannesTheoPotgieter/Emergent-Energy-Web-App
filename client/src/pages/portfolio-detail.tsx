@@ -15,6 +15,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { PageShell, SectionHeader, KPIStrip } from "@/components/layout/page-shell";
 import {
   ArrowLeft, Plus, Trash2, DollarSign, TrendingUp, TrendingDown, Users,
   ShieldCheck, Wrench, Zap, AlertTriangle, ChevronRight, Edit, Calendar,
@@ -517,29 +518,17 @@ export default function PortfolioDetailPage() {
   const projects = portfolio.projects || [];
 
   return (
-    <div className="space-y-6" data-testid="page-portfolio-detail">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/portfolios")} data-testid="button-back">
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold" data-testid="text-portfolio-name">{portfolio.name}</h1>
-            <Badge variant="outline">{portfolio.status}</Badge>
-          </div>
-          <div className="flex items-center gap-3 text-sm text-muted-foreground mt-0.5">
-            {portfolio.clientName && <span>Client: {portfolio.clientName}</span>}
-            {portfolio.ownerName && <span>Owner: {portfolio.ownerName}</span>}
-            <span>{projects.length} projects</span>
-          </div>
-        </div>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setEditData({ name: portfolio.name, clientName: portfolio.clientName || "", status: portfolio.status, description: portfolio.description || "", ownerUserId: portfolio.ownerUserId ? String(portfolio.ownerUserId) : "" }); setEditOpen(true); }} data-testid="button-edit-portfolio">
-          <Edit className="h-3.5 w-3.5" /> Edit
-        </Button>
-      </div>
+    <PageShell className="p-4 md:p-6" data-testid="page-portfolio-detail">
+      <SectionHeader
+        icon={<Briefcase className="h-5 w-5" />}
+        title={portfolio.name}
+        description={`${portfolio.clientName ? `Client: ${portfolio.clientName} · ` : ""}${portfolio.ownerName ? `Owner: ${portfolio.ownerName} · ` : ""}${projects.length} projects`}
+        meta={<Badge variant="outline">{portfolio.status}</Badge>}
+        actions={<><Button variant="ghost" size="icon" onClick={() => navigate("/portfolios")} data-testid="button-back"><ArrowLeft className="h-4 w-4" /></Button><Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setEditData({ name: portfolio.name, clientName: portfolio.clientName || "", status: portfolio.status, description: portfolio.description || "", ownerUserId: portfolio.ownerUserId ? String(portfolio.ownerUserId) : "" }); setEditOpen(true); }} data-testid="button-edit-portfolio"><Edit className="h-3.5 w-3.5" /> Edit</Button></>}
+      />
 
       {rollups && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KPIStrip className="grid-cols-2 md:grid-cols-4">
           <Card>
             <CardContent className="p-4">
               <div className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Projects</div>
@@ -570,7 +559,7 @@ export default function PortfolioDetailPage() {
               <div className="text-xs text-muted-foreground">{rollups.finance?.grossMarginPct || 0}% margin</div>
             </CardContent>
           </Card>
-        </div>
+        </KPIStrip>
       )}
 
       <Tabs defaultValue="projects" className="space-y-4">
@@ -847,7 +836,7 @@ export default function PortfolioDetailPage() {
         <TabsContent value="quality" className="space-y-4">
           <h3 className="font-semibold text-sm">Quality Rollup</h3>
           {rollups ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <KPIStrip className="grid-cols-2 md:grid-cols-4">
               <Card className="border-0 shadow-sm bg-blue-50/80">
                 <CardContent className="p-3.5">
                   <div className="flex items-center gap-2.5">
@@ -1291,6 +1280,6 @@ export default function PortfolioDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }

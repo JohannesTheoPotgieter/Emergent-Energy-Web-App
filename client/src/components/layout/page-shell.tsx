@@ -51,3 +51,21 @@ export function FilterBar({ children, className }: { children: React.ReactNode; 
     </Card>
   );
 }
+
+export function PrimaryActionBar({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <div className={cn("flex flex-wrap items-center gap-2", className)}>{children}</div>;
+}
+
+export function DetailDrawerHeader({ title, description, actions }: { title: string; description?: string; actions?: React.ReactNode }) {
+  return (
+    <div className="border-b border-border/60 pb-3 mb-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h3 className="text-base font-semibold tracking-tight">{title}</h3>
+          {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+        </div>
+        {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+      </div>
+    </div>
+  );
+}

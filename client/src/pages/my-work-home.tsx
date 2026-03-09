@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { PageShell, SectionHeader, KPIStrip } from "@/components/layout/page-shell";
 import { format, parseISO } from "date-fns";
 import {
   CheckCircle2,
@@ -629,26 +630,15 @@ export default function MyWorkHomePage() {
   [calendarEvents]);
 
   return (
-    <div className="space-y-6" data-testid="my-work-home">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-foreground" data-testid="text-my-work-title">
-            My Work
-          </h1>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            {format(new Date(), "EEEE, MMMM d, yyyy")}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href="/my-work/tasks">
-            <Button variant="outline" size="sm" data-testid="link-all-tasks">
-              All Tasks <ArrowRight className="h-3 w-3 ml-1" />
-            </Button>
-          </Link>
-        </div>
-      </div>
+    <PageShell className="p-4 md:p-6" data-testid="my-work-home">
+      <SectionHeader
+        icon={<Target className="h-5 w-5" />}
+        title="My Work"
+        description={format(new Date(), "EEEE, MMMM d, yyyy")}
+        actions={<Link href="/my-work/tasks"><Button variant="outline" size="sm" data-testid="link-all-tasks">All Tasks <ArrowRight className="h-3 w-3 ml-1" /></Button></Link>}
+      />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" data-testid="my-work-grid">
+      <KPIStrip className="grid-cols-1 lg:grid-cols-3" data-testid="my-work-grid">
         <div className="lg:col-span-1 space-y-4" data-testid="my-work-tasks-column">
           <Card>
             <CardHeader className="pb-2">
@@ -956,7 +946,7 @@ export default function MyWorkHomePage() {
             </CardContent>
           </Card>
         </div>
-      </div>
-    </div>
+      </KPIStrip>
+    </PageShell>
   );
 }
