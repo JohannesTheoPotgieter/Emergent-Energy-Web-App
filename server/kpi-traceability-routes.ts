@@ -2,6 +2,8 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { verifyToken } from "./jwt";
+import { KPI_DEFINITIONS } from "@shared/kpi-definitions";
+import { summarizeEngineeringStatuses, summarizeQualityStatuses } from "./services/kpi-service";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated()) return next();
@@ -70,20 +72,8 @@ export function registerKpiTraceabilityRoutes(app: Express) {
           FROM project_plan
           WHERE actual_pct_complete IS NOT NULL
         `).then(rows0),
-        db.execute(sql`
-          SELECT 
-            COUNT(*) as total,
-            COUNT(CASE WHEN status IN ('COMPLETE', 'Complete', 'Done', 'done') THEN 1 END) as complete,
-            COUNT(CASE WHEN status IN ('IN_PROGRESS', 'In Progress', 'in_progress') THEN 1 END) as in_progress
-          FROM engineering_tasks WHERE soft_deleted_at IS NULL
-        `).then(rows0).catch(() => ({ total: 0, complete: 0, in_progress: 0 })),
-        db.execute(sql`
-          SELECT 
-            COUNT(*) as total,
-            COUNT(CASE WHEN approved = true THEN 1 END) as passed,
-            COUNT(CASE WHEN approved = false AND qm_status = 'failed' THEN 1 END) as failed
-          FROM qc_item_instance
-        `).then(rows0).catch(() => ({ total: 0, passed: 0, failed: 0 })),
+        db.execute(sql`SELECT status FROM project_eng_stages`).then((r: any) => summarizeEngineeringStatuses((r.rows || []) as Array<{ status: unknown }>)).catch(() => ({ total: 0, complete: 0, inProgress: 0, notStarted: 0 })),
+        db.execute(sql`SELECT status FROM qc_item_instance`).then((r: any) => summarizeQualityStatuses((r.rows || []) as Array<{ status: unknown }>)).catch(() => ({ total: 0, approved: 0, pending: 0, failed: 0 })),
         db.execute(sql`SELECT COUNT(*) as c FROM operational_tasks WHERE deleted_at IS NULL`).then(rows0).catch(() => ({ c: 0 })),
         db.execute(sql`SELECT COUNT(*) as c FROM mytool_tasks WHERE deleted_at IS NULL`).then(rows0).catch(() => ({ c: 0 })),
         db.execute(sql`SELECT COUNT(*) as c FROM work_items WHERE deleted_at IS NULL`).then(rows0).catch(() => ({ c: 0 })),
@@ -104,8 +94,15 @@ export function registerKpiTraceabilityRoutes(app: Express) {
       const engTotal = Number(engAgg?.total ?? 0);
       const engComplete = Number(engAgg?.complete ?? 0);
       const qcTotal = Number(qcAgg?.total ?? 0);
-      const qcPassed = Number(qcAgg?.passed ?? 0);
+      const qcPassed = Number(qcAgg?.approved ?? 0);
 
+
+      const withTraceability = (kpi: any) => ({
+        ...kpi,
+        sourceLayer: KPI_DEFINITIONS[kpi.id]?.sourceLayer ?? "foundation",
+        businessRule: KPI_DEFINITIONS[kpi.id]?.businessRule ?? "Rule inherited from canonical aggregation in server routes.",
+        aggregationPath: KPI_DEFINITIONS[kpi.id]?.aggregationPath ?? "foundation -> api endpoint -> consuming pages",
+      });
       const kpis = [
         { id: "revenue_planned", name: "Total Planned Revenue", currentValue: Number(revSummary?.total_planned_revenue ?? 0), sourceTable: "project_revenue_summary", sourceFields: "planned_revenue", formula: "SUM(project_revenue_summary.planned_revenue)", apiEndpoint: "/api/revenue-summary", consumingComponent: "Dashboard SummaryCard, RevenueTrackerTab" },
         { id: "revenue_actual", name: "Total Actual Revenue", currentValue: Number(revSummary?.total_actual_revenue ?? 0), sourceTable: "project_revenue_summary", sourceFields: "actual_revenue", formula: "SUM(project_revenue_summary.actual_revenue)", apiEndpoint: "/api/revenue-summary", consumingComponent: "Dashboard SummaryCard, RevenueTrackerTab" },
@@ -134,10 +131,12 @@ export function registerKpiTraceabilityRoutes(app: Express) {
         { id: "inflow_in_bank", name: "Milestones In Bank", currentValue: Number(inflowAgg?.in_bank_count ?? 0), sourceTable: "program_inflows", sourceFields: "in_bank", formula: "COUNT(program_inflows.*) WHERE in_bank = 1", apiEndpoint: "/api/inflows/:project", consumingComponent: "RevenueTrackingTab, Dashboard" },
       ];
 
-      const now = new Date().toISOString();
-      for (const k of kpis) (k as any).lastComputed = now;
+      const enrichedKpis = kpis.map(withTraceability);
 
-      res.json({ kpis, generatedAt: now, totalKpis: kpis.length });
+      const now = new Date().toISOString();
+      for (const k of enrichedKpis) (k as any).lastComputed = now;
+
+      res.json({ kpis: enrichedKpis, generatedAt: now, totalKpis: enrichedKpis.length });
     } catch (err: any) {
       console.error("[KPI Traceability] Error:", err.message);
       res.status(500).json({ error: err.message });
