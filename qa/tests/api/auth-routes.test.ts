@@ -39,6 +39,20 @@ describe("API: Authentication", () => {
     expect(typeof res.data.startupMutationClassification).toBe("string");
   });
 
+
+  it("auth/session smoke: login and token auth remain functional alongside startup hardening diagnostics", async () => {
+    const health = await apiRequest("GET", "/api/health");
+    expect(health.status).toBe(200);
+    expect(typeof health.data?.startupReadOnlyByDefault).toBe("boolean");
+
+    const loginRes = await login("johannes", "2023");
+    expect(loginRes.status).toBe(200);
+
+    const me = await apiRequest("GET", "/api/auth/me", undefined, loginRes.token);
+    expect(me.status).toBe(200);
+    expect((me.data?.user || me.data)?.role).toBe("COO_ADMIN");
+  });
+
   it("POST /api/auth/login succeeds with valid credentials", async () => {
     const res = await login("johannes", "2023");
     expect(res.status).toBe(200);
