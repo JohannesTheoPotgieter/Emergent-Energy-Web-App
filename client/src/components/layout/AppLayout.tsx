@@ -89,8 +89,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { findPageByPath, getPermissionEntityForPath, PAGE_REGISTRY, type SidebarVariant } from "@/config/page-registry";
+import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
+import { getRoleSectionPriority, sortRoleAwareNavItems } from "@/config/role-aware-ux";
 
 interface NavItem {
+  id?: string;
   label: string;
   icon: any;
   path: string;
@@ -194,6 +197,7 @@ function makeNavItem(id: string, variant: SidebarVariant, overrides?: Partial<Na
   const icon = page.iconKey ? ICON_MAP[page.iconKey] : undefined;
 
   return {
+    id: page.id,
     label: page.labels?.[variant] ?? page.label,
     icon: icon ?? FileSpreadsheet,
     path: page.path,
@@ -350,6 +354,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     staleTime: 60_000,
   });
 
+  const { data: rolloutFlags } = useQuery({
+    queryKey: ["rollout-feature-flags"],
+    queryFn: fetchRolloutFeatureFlags,
+    staleTime: 60_000,
+  });
+  const roleAwareUxEnabled = rolloutFlags?.find((flag) => flag.key === "role_aware_ux")?.value === true;
+
   const [screenTourActive, setScreenTourActive] = useState(false);
   const screenTour = getScreenTour(location);
   const screenTourSteps = screenTour ? screenTour.steps.map((s: ScreenTourStep) => ({
@@ -411,7 +422,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   });
 
   const allowedSections: string[] = permissions?.sections || [];
-  const navGroups = getNavGroups(!!unifiedWorkFlag);
+  const navGroups = (() => {
+    const groups = getNavGroups(!!unifiedWorkFlag).map((group) => ({ ...group, items: [...group.items] }));
+    if (!roleAwareUxEnabled) return groups;
+
+    const sectionOrder = getRoleSectionPriority(activeRole);
+    const sectionRank = new Map(sectionOrder.map((section, index) => [section, index]));
+
+    const reordered = groups
+      .map((group) => {
+        const sortedItems = sortRoleAwareNavItems(group.items, activeRole) as NavItem[];
+        return { ...group, items: sortedItems };
+      })
+      .sort((a, b) => (sectionRank.get(a.section as any) ?? 999) - (sectionRank.get(b.section as any) ?? 999));
+
+    return reordered;
+  })();
   const allItems = navGroups.flatMap(g => g.items);
   const currentPageLabel = location === "/" ? "Home" : findPageByPath(location)?.label || allItems.find(i => i.path === location)?.label || "Dashboard";
 
@@ -528,9 +554,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 : !hasActiveItem
             );
             const sectionColor = SECTION_COLORS[group.section] || "text-muted-foreground";
+            const isPrimarySection = !roleAwareUxEnabled || getRoleSectionPriority(activeRole).slice(0, 3).includes(group.section as any);
 
             return (
-              <div key={group.heading} className="pt-2 first:pt-1">
+              <div key={group.heading} className={cn("pt-2 first:pt-1 transition-opacity", isPrimarySection ? "opacity-100" : "opacity-70") }>
                 {sidebarShowLabels ? (
                   <button
                     onClick={() => toggleSection(group.heading)}

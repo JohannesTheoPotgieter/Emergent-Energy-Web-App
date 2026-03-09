@@ -776,6 +776,42 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/ux/role-aware-interaction", requireAuth, async (req, res) => {
+    try {
+      const action = String(req.body?.action || "");
+      const suggestion = String(req.body?.suggestion || "");
+      const finalValue = String(req.body?.finalValue || "");
+      const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+      const role = typeof req.body?.role === "string" ? req.body.role : null;
+
+      if (!["suggestion_accepted", "suggestion_overridden"].includes(action)) {
+        return res.status(400).json({ error: "Invalid action" });
+      }
+      if (!suggestion || !finalValue) {
+        return res.status(400).json({ error: "suggestion and finalValue are required" });
+      }
+      if (action === "suggestion_overridden" && !reason) {
+        return res.status(400).json({ error: "reason is required for overrides" });
+      }
+
+      logAuditFromReq(req, {
+        source: "UI",
+        entityType: "role_aware_shell",
+        action,
+        changesJson: {
+          suggestion,
+          finalValue,
+          reason: reason || null,
+          role,
+        },
+      });
+
+      res.json({ ok: true });
+    } catch {
+      res.status(500).json({ error: "Failed to log interaction" });
+    }
+  });
+
   // ==================== HEALTH CHECK ====================
   
   app.get("/api/version", async (_req, res) => {
