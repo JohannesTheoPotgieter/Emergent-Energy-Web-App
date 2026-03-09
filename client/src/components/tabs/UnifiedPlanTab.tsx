@@ -365,6 +365,149 @@ function InlineDurationEditor({ value, onCommit }: { value: number | string; onC
   );
 }
 
+interface DependencyRecord {
+  id: number;
+  predecessorId: number;
+  successorId: number;
+  depType: string;
+  lagDays: number;
+}
+
+function InlinePredecessorEditor({
+  task,
+  allTasks,
+  dependencies,
+  onAdd,
+  onRemove,
+  isPending,
+}: {
+  task: any;
+  allTasks: any[];
+  dependencies: DependencyRecord[];
+  onAdd: (predecessorWorkItemId: number, successorWorkItemId: number) => void;
+  onRemove: (depId: number) => void;
+  isPending: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const workItemId = task.workItemId || Math.abs(task.id);
+
+  const predecessorDeps = dependencies.filter(d => d.successorId === workItemId);
+
+  const wiToRowMap = useMemo(() => {
+    const m = new Map<number, number>();
+    allTasks.forEach((t, idx) => {
+      const wi = t.workItemId || Math.abs(t.id);
+      m.set(wi, idx + 1);
+    });
+    return m;
+  }, [allTasks]);
+
+  const predDisplay = predecessorDeps.map(d => {
+    const row = wiToRowMap.get(d.predecessorId);
+    const suffix = d.depType && d.depType !== "FS" ? d.depType : "";
+    const lag = d.lagDays && d.lagDays !== 0 ? `+${d.lagDays}d` : "";
+    return `${row ?? "?"}${suffix}${lag}`;
+  }).join(", ");
+
+  const existingPredIds = new Set(predecessorDeps.map(d => d.predecessorId));
+
+  const availableTasks = allTasks.filter(t => {
+    const wi = t.workItemId || Math.abs(t.id);
+    if (wi === workItemId) return false;
+    if (existingPredIds.has(wi)) return false;
+    if (search) {
+      const s = search.toLowerCase();
+      const row = wiToRowMap.get(wi);
+      if (String(row) === s) return true;
+      return (t.title || "").toLowerCase().includes(s);
+    }
+    return true;
+  });
+
+  useEffect(() => {
+    if (open && inputRef.current) setTimeout(() => inputRef.current?.focus(), 50);
+  }, [open]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <span
+          className="cursor-pointer hover:text-primary hover:underline block truncate"
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+          title={predDisplay || "Click to set predecessor"}
+          data-testid={`pred-trigger-${task.id}`}
+        >
+          {predDisplay || "—"}
+        </span>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-2" align="start" side="bottom" onClick={(e) => e.stopPropagation()}>
+        {predecessorDeps.length > 0 && (
+          <div className="mb-2 space-y-1">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Current</p>
+            {predecessorDeps.map(d => {
+              const row = wiToRowMap.get(d.predecessorId);
+              const predTask = allTasks.find(t => (t.workItemId || Math.abs(t.id)) === d.predecessorId);
+              return (
+                <div key={d.id} className="flex items-center justify-between gap-1 px-1.5 py-1 rounded bg-blue-50 border border-blue-200 text-[10px]">
+                  <span className="truncate text-blue-800">
+                    <span className="font-bold">#{row}</span> {predTask?.title || "Unknown"} <span className="text-blue-500">({d.depType || "FS"})</span>
+                  </span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onRemove(d.id); }}
+                    className="text-red-400 hover:text-red-600 shrink-0"
+                    disabled={isPending}
+                    data-testid={`pred-remove-${d.id}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <Search className="h-3 w-3 text-muted-foreground shrink-0" />
+          <input
+            ref={inputRef}
+            className="flex-1 h-6 text-xs border-0 bg-transparent outline-none placeholder:text-muted-foreground"
+            placeholder="Row # or task name..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            data-testid={`pred-search-${task.id}`}
+          />
+        </div>
+        <div className="max-h-40 overflow-y-auto space-y-0.5">
+          {availableTasks.slice(0, 30).map(t => {
+            const wi = t.workItemId || Math.abs(t.id);
+            const row = wiToRowMap.get(wi);
+            return (
+              <button
+                key={t.id}
+                className="w-full flex items-center gap-1.5 px-1.5 py-1 rounded text-[10px] hover:bg-muted text-foreground transition-colors text-left"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAdd(wi, workItemId);
+                  setSearch("");
+                }}
+                disabled={isPending}
+                data-testid={`pred-add-${t.id}`}
+              >
+                <span className="font-bold text-primary shrink-0">#{row}</span>
+                <span className="truncate">{t.title}</span>
+              </button>
+            );
+          })}
+          {availableTasks.length === 0 && <p className="text-[10px] text-muted-foreground text-center py-2">No tasks available</p>}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 type ZoomLevel = "week" | "month";
 
 interface PlanColumn {
@@ -534,6 +677,46 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
       return res.json();
     },
     enabled: !!projectName,
+  });
+
+  const { data: projectDependencies = [] } = useQuery<DependencyRecord[]>({
+    queryKey: ["project-dependencies", projectName],
+    queryFn: async () => {
+      const token = localStorage.getItem('auth_token');
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/dependencies/project-name/${encodeURIComponent(projectName)}`, { credentials: "include", headers });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.dependencies || [];
+    },
+    enabled: !!projectName,
+  });
+
+  const addDependencyMutation = useMutation({
+    mutationFn: async ({ predecessorId, successorId }: { predecessorId: number; successorId: number }) => {
+      await apiRequest("POST", "/api/dependencies", { predecessorId, successorId, depType: "FS", lagDays: 0 });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["project-dependencies", projectName] });
+      toast({ title: "Predecessor added" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to add predecessor", description: err?.message || "Could not create dependency", variant: "destructive" });
+    },
+  });
+
+  const removeDependencyMutation = useMutation({
+    mutationFn: async (depId: number) => {
+      await apiRequest("DELETE", `/api/dependencies/${depId}`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["project-dependencies", projectName] });
+      toast({ title: "Predecessor removed" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to remove predecessor", description: err?.message || "Could not delete dependency", variant: "destructive" });
+    },
   });
 
   const updateMutation = useMutation({
@@ -1758,8 +1941,15 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                       </td>
                       )}
                       {isColumnVisible("predecessors") && (
-                      <td className="px-1 text-center border-r text-[10px] text-slate-500 truncate" data-testid={`predecessors-${task.id}`}>
-                        {task.dependencies && typeof task.dependencies === 'string' ? task.dependencies : task.predecessorTaskId ? `${task.predecessorTaskId} FS` : "—"}
+                      <td className="px-1 text-center border-r text-[10px] text-slate-500 truncate" onClick={(e) => e.stopPropagation()} data-testid={`predecessors-${task.id}`}>
+                        <InlinePredecessorEditor
+                          task={task}
+                          allTasks={visibleTasks}
+                          dependencies={projectDependencies}
+                          onAdd={(predWI, succWI) => addDependencyMutation.mutate({ predecessorId: predWI, successorId: succWI })}
+                          onRemove={(depId) => removeDependencyMutation.mutate(depId)}
+                          isPending={addDependencyMutation.isPending || removeDependencyMutation.isPending}
+                        />
                       </td>
                       )}
                       {isColumnVisible("resource") && (
