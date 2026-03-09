@@ -113,7 +113,6 @@ const startupSyncEnabled = process.env.STARTUP_ENABLE_PERIODIC_SYNC !== "false";
 if (dbMode === 'postgres' && dbConfig.connectionString) {
   const PgSession = connectPgSimple(session);
   const pool = new pg.Pool({ connectionString: dbConfig.connectionString });
-  const { startupSchemaRepairEnabled, startupSessionResetEnabled } = getStartupModes();
 
   if (startupSchemaRepairEnabled) {
     log('Session schema auto-create enabled (startup schema repair is on)');
@@ -238,6 +237,7 @@ app.use((req, res, next) => {
 app.get("/api/environment/status", async (_req, res) => {
   const scheduler = getSchedulerStatus();
   const isProduction = process.env.NODE_ENV === "production";
+  const modes = getStartupModes();
   return res.status(200).json({
     dbMode,
     sessionMode: dbMode === "postgres" ? "postgres" : "memory",
@@ -245,6 +245,15 @@ app.get("/api/environment/status", async (_req, res) => {
     schedulerStatus: scheduler,
     nodeEnv: process.env.NODE_ENV || "development",
     productionPostgresRequired: isProduction,
+    startupModes: {
+      startupMaintenanceEnabled: modes.startupMaintenanceEnabled,
+      startupSchemaRepairEnabled: modes.startupSchemaRepairEnabled,
+      startupDataSeedEnabled: modes.startupDataSeedEnabled,
+      startupBackfillEnabled: modes.startupBackfillEnabled,
+      startupSessionResetEnabled: modes.startupSessionResetEnabled,
+      startupReadOnlyByDefault: modes.startupReadOnlyByDefault,
+      startupMutationClassification: modes.startupMutationClassification,
+    },
   });
 });
 
