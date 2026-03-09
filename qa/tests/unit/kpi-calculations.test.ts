@@ -1,39 +1,5 @@
 import { describe, it, expect } from "vitest";
-
-function computeProjectCompletion(plans: any[]) {
-  let weightedActual = 0;
-  let weightedExpected = 0;
-  let totalWeight = 0;
-  const todayStr = new Date().toISOString().split("T")[0];
-
-  for (const t of plans) {
-    const duration = Number(t.durationDays) || 1;
-    const actual = Number(t.actualPctComplete ?? t.percentComplete ?? 0);
-    let expected = Number(t.expectedPctComplete ?? 0);
-
-    if (!expected && t.actualStart && t.actualEnd) {
-      const start = new Date(t.actualStart);
-      const end = new Date(t.actualEnd);
-      const today = new Date(todayStr);
-      if (today <= start) expected = 0;
-      else if (today >= end) expected = 100;
-      else {
-        const totalDays = (end.getTime() - start.getTime()) / 86400000;
-        const elapsed = (today.getTime() - start.getTime()) / 86400000;
-        expected = totalDays > 0 ? (elapsed / totalDays) * 100 : 0;
-      }
-    }
-
-    weightedActual += actual * duration;
-    weightedExpected += expected * duration;
-    totalWeight += duration;
-  }
-
-  if (totalWeight === 0) return { actualPct: 0, expectedPct: 0, delta: 0 };
-  const actualPct = weightedActual / totalWeight;
-  const expectedPct = weightedExpected / totalWeight;
-  return { actualPct, expectedPct, delta: actualPct - expectedPct };
-}
+import { computeProjectCompletion, summarizeEngineeringStatuses, summarizeQualityStatuses, calculateGrossMarginPercent } from "../../../server/services/kpi-service";
 
 describe("KPI Calculations", () => {
   describe("computeProjectCompletion", () => {
@@ -246,4 +212,38 @@ describe("KPI Calculations", () => {
       expect(spendPct).toBe(0);
     });
   });
+
+  describe("Canonical Status Logic", () => {
+    it("maps engineering statuses through shared canonical rules", () => {
+      const summary = summarizeEngineeringStatuses([
+        { status: "complete" },
+        { status: "DONE" },
+        { status: "in_progress" },
+        { status: "blocked" },
+        { status: null },
+      ]);
+      expect(summary.total).toBe(5);
+      expect(summary.complete).toBe(2);
+      expect(summary.inProgress).toBe(2);
+      expect(summary.notStarted).toBe(1);
+    });
+
+    it("maps quality statuses without treating approvals as implicit complete", () => {
+      const summary = summarizeQualityStatuses([
+        { status: "APPROVED" },
+        { status: "PENDING" },
+        { status: "IN_PROGRESS" },
+        { status: "REJECTED" },
+      ]);
+      expect(summary.approved).toBe(1);
+      expect(summary.pending).toBe(2);
+      expect(summary.failed).toBe(1);
+    });
+
+    it("calculates gross margin using canonical helper", () => {
+      expect(calculateGrossMarginPercent(1000, 700)).toBe(30);
+      expect(calculateGrossMarginPercent(0, 100)).toBe(0);
+    });
+  });
+
 });

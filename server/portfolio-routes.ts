@@ -9,49 +9,7 @@ import {
 } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
-
-function computeProjectCompletion(plans: any[]): { actualPct: number; expectedPct: number; delta: number } {
-  const todayStr = new Date().toISOString().split("T")[0];
-  const validPlans = plans.filter((p: any) => {
-    const hasActual = (p.actualPctComplete ?? p.percentComplete) != null;
-    const hasExpected = (p.expectedPctComplete ?? p.expectedProgress) != null;
-    const hasDateRange = p.actualStart && p.actualEnd;
-    return hasActual || hasExpected || hasDateRange;
-  });
-  if (validPlans.length === 0) return { actualPct: 0, expectedPct: 0, delta: 0 };
-
-  let totalWeight = 0, weightedActual = 0, weightedExpected = 0;
-  for (const p of validPlans) {
-    const dur = (p.durationDays && p.durationDays > 0) ? p.durationDays : 1;
-    const act = p.actualPctComplete ?? p.percentComplete ?? 0;
-    weightedActual += (parseFloat(act) || 0) * dur;
-    let exp = p.expectedPctComplete ?? p.expectedProgress ?? null;
-    if (exp == null) {
-      const tStart = p.actualStart?.substring(0, 10);
-      const tEnd = p.actualEnd?.substring(0, 10);
-      if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
-        if (todayStr >= tEnd) exp = 1.0;
-        else if (todayStr <= tStart) exp = 0.0;
-        else {
-          const totalDays = Math.max(1, (new Date(tEnd).getTime() - new Date(tStart).getTime()) / 86400000);
-          const elapsedDays = (new Date(todayStr).getTime() - new Date(tStart).getTime()) / 86400000;
-          exp = Math.min(elapsedDays / totalDays, 1.0);
-        }
-      } else {
-        exp = 0;
-      }
-    }
-    weightedExpected += (parseFloat(exp) || 0) * dur;
-    totalWeight += dur;
-  }
-
-  if (totalWeight === 0) return { actualPct: 0, expectedPct: 0, delta: 0 };
-  const rawActual = weightedActual / totalWeight;
-  const rawExpected = weightedExpected / totalWeight;
-  const actualPct = rawActual <= 1.0 ? Math.round(rawActual * 1000) / 10 : Math.round(rawActual * 10) / 10;
-  const expectedPct = rawExpected <= 1.0 ? Math.round(rawExpected * 1000) / 10 : Math.round(rawExpected * 10) / 10;
-  return { actualPct, expectedPct, delta: Math.round((actualPct - expectedPct) * 10) / 10 };
-}
+import { computeProjectCompletion, summarizeEngineeringStatuses, summarizeQualityStatuses, summarizeSchedule, calculateGrossMarginPercent } from "./services/kpi-service";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -389,21 +347,18 @@ export function registerPortfolioRoutes(app: Express) {
         totalPlannedExpenses: totalPlannedExp,
         totalActualExpenses: totalActualExp,
         grossProfit: totalGp,
-        grossMarginPct: 0,
+        grossMarginPct: calculateGrossMarginPercent(totalActualRev, totalActualExp),
       };
-      if (totalActualRev > 0) {
-        finance.grossMarginPct = Math.round((totalGp / totalActualRev) * 10000) / 100;
-      }
 
       const scheduleItems = projectNames.map(pn => completionByProject.get(pn) || { actualPct: 0, expectedPct: 0, delta: 0 });
-      const validSchedule = scheduleItems.filter(s => s.actualPct > 0 || s.expectedPct > 0);
+      const scheduleSummary = summarizeSchedule(scheduleItems);
       const schedule = {
-        avgActualPct: validSchedule.length > 0 ? Math.round(validSchedule.reduce((s, i) => s + i.actualPct, 0) / validSchedule.length * 10) / 10 : 0,
-        avgExpectedPct: validSchedule.length > 0 ? Math.round(validSchedule.reduce((s, i) => s + i.expectedPct, 0) / validSchedule.length * 10) / 10 : 0,
-        avgDelta: validSchedule.length > 0 ? Math.round(validSchedule.reduce((s, i) => s + i.delta, 0) / validSchedule.length * 10) / 10 : 0,
-        behindCount: scheduleItems.filter(i => i.delta < -5).length,
-        onTrackCount: scheduleItems.filter(i => i.delta >= -5).length,
-        atRiskCount: scheduleItems.filter(i => i.delta < -10).length,
+        avgActualPct: scheduleSummary.avgActualPct,
+        avgExpectedPct: scheduleSummary.avgExpectedPct,
+        avgDelta: scheduleSummary.avgDelta,
+        behindCount: scheduleSummary.behindCount,
+        onTrackCount: scheduleSummary.onTrackCount,
+        atRiskCount: scheduleSummary.atRiskCount,
       };
 
       let qualityData = { totalItems: 0, approvedItems: 0, pendingItems: 0, failedItems: 0 };
@@ -412,29 +367,21 @@ export function registerPortfolioRoutes(app: Express) {
         const checklistIds = checklists.map(c => c.id);
         if (checklistIds.length > 0) {
           const items = await db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklistIds));
+          const summary = summarizeQualityStatuses(items.map((i) => ({ status: i.status })));
           qualityData = {
-            totalItems: items.length,
-            approvedItems: items.filter(i => i.status === "APPROVED").length,
-            pendingItems: items.filter(i => i.status === "PENDING" || i.status === "IN_PROGRESS").length,
-            failedItems: items.filter(i => i.status === "FAILED" || i.status === "REJECTED").length,
+            totalItems: summary.total,
+            approvedItems: summary.approved,
+            pendingItems: summary.pending,
+            failedItems: summary.failed,
           };
         }
       } catch (e) {}
 
       let engData = { totalStages: 0, completedStages: 0, inProgressStages: 0 };
       try {
-        const stagesResult = await db.execute(sql`
-          SELECT status, COUNT(*)::int as cnt FROM project_eng_stages
-          WHERE project_id IN (${sql.join(projectIds.map(id => sql`${id}`), sql`, `)})
-          GROUP BY status
-        `);
-        const rows = stagesResult.rows || [];
-        for (const row of rows) {
-          const cnt = parseInt(String(row.cnt || "0"));
-          engData.totalStages += cnt;
-          if (row.status === "complete") engData.completedStages += cnt;
-          if (row.status === "in_progress") engData.inProgressStages += cnt;
-        }
+        const stagesResult = await db.execute(sql`SELECT status FROM project_eng_stages WHERE project_id IN (${sql.join(projectIds.map(id => sql`${id}`), sql`, `)})`);
+        const summary = summarizeEngineeringStatuses((stagesResult.rows || []) as Array<{ status: unknown }>);
+        engData = { totalStages: summary.total, completedStages: summary.complete, inProgressStages: summary.inProgress };
       } catch (e) {}
 
       const projectDetails = projects.map(p => {
@@ -653,14 +600,7 @@ export function registerPortfolioRoutes(app: Express) {
         const totalKwp = portfolioProjects.reduce((s, p) => s + (parseFloat(String(p.sizeKwp || "0")) || 0), 0);
 
         const projectCompletions = portfolioProjects.map(p => completionCache.get(p.projectName) || { actualPct: 0, expectedPct: 0, delta: 0 });
-        const validCompletions = projectCompletions.filter(c => c.actualPct > 0 || c.expectedPct > 0);
-        const scheduleDeltas = projectCompletions.map(c => c.delta);
-        const hasBehind = scheduleDeltas.some(d => d < -5);
-        const hasAtRisk = scheduleDeltas.some(d => d < -10);
-
-        let overallHealth: string = "On Track";
-        if (hasAtRisk) overallHealth = "At Risk";
-        else if (hasBehind) overallHealth = "Behind";
+        const scheduleSummary = summarizeSchedule(projectCompletions);
 
         const projectFinanceBreakdown = portfolioProjects.map(proj => {
           const expenses = expenseByProject.get(proj.projectName) || [];
@@ -717,20 +657,10 @@ export function registerPortfolioRoutes(app: Express) {
         });
 
         const portEngStages = engStageRows.filter((r: any) => portfolioProjectIds.includes(r.project_id));
-        const engSummary = {
-          total: portEngStages.length,
-          complete: portEngStages.filter((r: any) => r.status === "complete").length,
-          inProgress: portEngStages.filter((r: any) => r.status === "in_progress").length,
-          notStarted: portEngStages.filter((r: any) => r.status === "not_started" || !r.status).length,
-        };
+        const engSummary = summarizeEngineeringStatuses(portEngStages.map((r: any) => ({ status: r.status })));
 
         const portQuality = qualityRows.filter((r: any) => portfolioProjectNames.includes(r.projectName));
-        const qualitySummary = {
-          total: portQuality.length,
-          approved: portQuality.filter((r: any) => r.status === "APPROVED").length,
-          pending: portQuality.filter((r: any) => r.status === "PENDING" || r.status === "IN_PROGRESS").length,
-          failed: portQuality.filter((r: any) => r.status === "FAILED" || r.status === "REJECTED").length,
-        };
+        const qualitySummary = summarizeQualityStatuses(portQuality.map((r: any) => ({ status: r.status })));
 
         return {
           id: portfolio.id,
@@ -740,10 +670,10 @@ export function registerPortfolioRoutes(app: Express) {
           ownerName: portfolio.ownerUserId ? userMap.get(portfolio.ownerUserId) || null : null,
           projectCount: portfolioProjects.length,
           totalKwp: Math.round(totalKwp * 100) / 100,
-          overallHealth,
-          behindCount: scheduleDeltas.filter(d => d < -5).length,
-          avgActualPct: validCompletions.length > 0 ? Math.round(validCompletions.reduce((s, c) => s + c.actualPct, 0) / validCompletions.length * 10) / 10 : 0,
-          avgExpectedPct: validCompletions.length > 0 ? Math.round(validCompletions.reduce((s, c) => s + c.expectedPct, 0) / validCompletions.length * 10) / 10 : 0,
+          overallHealth: scheduleSummary.overallHealth,
+          behindCount: scheduleSummary.behindCount,
+          avgActualPct: scheduleSummary.avgActualPct,
+          avgExpectedPct: scheduleSummary.avgExpectedPct,
           finance: financeRollup,
           projectFinanceBreakdown,
           phaseCounts,
