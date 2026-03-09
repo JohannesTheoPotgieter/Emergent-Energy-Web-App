@@ -791,9 +791,9 @@ export async function registerRoutes(
     
     const dbStatus = getDbConfigStatus();
     
-    // Check DB_MODE env var support
     const envDbMode = process.env.DB_MODE;
     const hasDatabaseUrl = !!process.env.DATABASE_URL;
+    const { startupRawFlags, startupEffectiveModes } = await import("./startup-flags");
     
     res.json({
       ok: dbStatus.connected,
@@ -804,6 +804,10 @@ export async function registerRoutes(
       envDbMode: envDbMode || 'auto',
       hasDatabaseUrl,
       message: dbStatus.message,
+      startupFlags: {
+        raw: startupRawFlags,
+        effective: startupEffectiveModes,
+      },
       timestamp: new Date().toISOString(),
     });
   });
