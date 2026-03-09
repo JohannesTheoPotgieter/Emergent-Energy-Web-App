@@ -7,6 +7,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { resolveDbConfig, setDbConfigStatus } from "./db-config";
 import { sql } from "drizzle-orm";
+import { getStartupModes } from "./startup-modes";
 
 const config = resolveDbConfig();
 
@@ -16,11 +17,16 @@ let dbConfig: typeof config;
 let isInitialized = false;
 
 /**
- * Deterministic database initialization - selects DB ONCE and never switches
- * In strict runtime environments, fails hard if PostgreSQL is unavailable
+ * Deterministic database initialization - selects DB ONCE and never switches.
+ * In production, Postgres is mandatory and startup fails hard when unavailable.
  */
 async function initializeDatabase(): Promise<void> {
   if (isInitialized) return;
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (isProduction && (!config.connectionString || config.mode !== "postgres")) {
+    throw new Error("[DB] Production requires PostgreSQL. Set a valid DATABASE_URL.");
+  }
   
   if (config.mode === 'postgres' && config.connectionString) {
     // Try Postgres with short timeout to avoid blocking startup
@@ -50,18 +56,16 @@ async function initializeDatabase(): Promise<void> {
         
         isInitialized = true;
         return;
-      } else {
-        const msg = '[DB] PostgreSQL connection test failed';
-        if (config.strictMode) {
-          throw new Error(`${msg}; refusing SQLite fallback in strict runtime environment`);
-        }
-        console.warn(`${msg}, falling back to SQLite`);
       }
     } catch (err: any) {
-      if (config.strictMode) {
-        throw new Error(`[DB] PostgreSQL connection error: ${err.message}. Refusing SQLite fallback in strict runtime environment.`);
+      if (isProduction) {
+        throw new Error(`[DB] PostgreSQL connection failed in production: ${err.message}`);
       }
       console.warn(`[DB] ⚠ Postgres connection error (${err.message}), falling back to SQLite`);
+    }
+
+    if (isProduction) {
+      throw new Error('[DB] PostgreSQL is configured but unreachable; refusing SQLite fallback in production.');
     }
   }
 
@@ -71,7 +75,13 @@ async function initializeDatabase(): Promise<void> {
 
   // Use SQLite (local/dev mode only)
   initializeSqlite();
-  await ensureSqliteSchema();
+  const { startupSchemaRepairEnabled } = getStartupModes();
+  if (startupSchemaRepairEnabled) {
+    console.log('[DB] Startup schema repair enabled - running SQLite schema repair');
+    await ensureSqliteSchema();
+  } else {
+    console.log('[DB] Startup schema repair disabled - skipping SQLite schema repair (safe mode)');
+  }
   isInitialized = true;
 }
 

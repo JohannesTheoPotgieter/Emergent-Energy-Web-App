@@ -6,6 +6,7 @@ import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 import { verifyToken } from "./jwt";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { startupSchemaRepairEnabled } from "./startup-flags";
 
 const router = Router();
 
@@ -1163,8 +1164,10 @@ router.delete("/api/subcontractor-assignments/:id", requireAuth, requirePermissi
 });
 
 export function registerSubcontractorRoutes(app: any) {
-  ensureSupplierColumns().catch(err => console.error("[Procurement] Column migration error:", err.message));
-  ensureSubcontractorAssignmentTables().catch(err => console.error("[SubcontractorAssignments] Error:", err.message));
+  if (startupSchemaRepairEnabled) {
+    ensureSupplierColumns().catch(err => console.error("[Procurement] Column migration error:", err.message));
+    ensureSubcontractorAssignmentTables().catch(err => console.error("[SubcontractorAssignments] Error:", err.message));
+  }
   app.use(router);
 }
 

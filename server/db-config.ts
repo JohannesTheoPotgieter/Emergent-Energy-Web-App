@@ -1,6 +1,6 @@
 /**
  * Database configuration resolver
- * Production-safe: Uses SQLite by default for reliability, only uses Postgres if explicitly configured and connectable
+ * Production policy: PostgreSQL is required in production; SQLite remains available for local/dev mode
  */
 
 export interface DbConfig {
