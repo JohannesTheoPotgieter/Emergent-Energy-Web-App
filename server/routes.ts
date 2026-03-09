@@ -788,8 +788,10 @@ export async function registerRoutes(
   app.get("/api/health", async (req, res) => {
     const { dbMode } = await import("./db");
     const { getDbConfigStatus } = await import("./db-config");
+    const { getStartupModes } = await import("./startup-modes");
     
     const dbStatus = getDbConfigStatus();
+    const startupModes = getStartupModes();
     
     // Check DB_MODE env var support
     const envDbMode = process.env.DB_MODE;
@@ -804,6 +806,16 @@ export async function registerRoutes(
       envDbMode: envDbMode || 'auto',
       hasDatabaseUrl,
       message: dbStatus.message,
+      startupFlagsRaw: startupModes.startupFlagsRaw,
+      startupModes: {
+        startupMaintenanceEnabled: startupModes.startupMaintenanceEnabled,
+        startupSchemaRepairEnabled: startupModes.startupSchemaRepairEnabled,
+        startupSessionResetEnabled: startupModes.startupSessionResetEnabled,
+        startupReadOnlyByDefault: startupModes.startupReadOnlyByDefault,
+      },
+      startupMutationClassification: startupModes.startupMutationClassification,
+      startupReadOnlyByDefault: startupModes.startupReadOnlyByDefault,
+      sqliteSchemaRepairEnabled: startupModes.startupSchemaRepairEnabled,
       timestamp: new Date().toISOString(),
     });
   });
