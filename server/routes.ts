@@ -28,7 +28,7 @@ import { createNameResolver, mapCostToExpenseInput } from "./lib/data-merge";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
 import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getAllWorkItemsForPlanTab, getWorkItemsAsOperationalTasks, getWorkItemsAsMytoolTasks } from "./work-items-adapter";
-import { ApiError, sendError, badRequest, notFound, validationError } from "./lib/api-error";
+import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError, logApiError } from "./lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "./lib/task-validation";
 import { normalizeStatus, normalizePriority } from "./lib/canonical-task-engine";
 import {
@@ -786,53 +786,56 @@ export async function registerRoutes(
         releaseNotes = rnData.notes || [];
       } catch {}
       return res.json({ version, buildTime: data.lastUpdated, buildId: null, buildNumber, releaseNotes });
-    } catch {
+    } catch (error) {
+      logApiError("GET /api/version", error);
       return res.json({ version: "0.0.001", buildTime: null, buildId: null, buildNumber: null, releaseNotes: [] });
     }
   });
 
-  app.get("/api/health", async (req, res) => {
-    const { dbMode } = await import("./db");
-    const { getDbConfigStatus } = await import("./db-config");
-    const { getStartupModes } = await import("./startup-modes");
+  app.get("/api/health", async (_req, res) => {
+    try {
+      const { dbMode } = await import("./db");
+      const { getDbConfigStatus } = await import("./db-config");
+      const { getStartupModes } = await import("./startup-modes");
 
-    const dbStatus = getDbConfigStatus();
-    const startupModes = getStartupModes();
+      const dbStatus = getDbConfigStatus();
+      const startupModes = getStartupModes();
 
-    const envDbMode = process.env.DB_MODE;
-    const hasDatabaseUrl = !!process.env.DATABASE_URL;
+      const startupManifest = {
+        sessionSchemaRepair: startupModes.startupSchemaRepairEnabled,
+        sessionReset: startupModes.startupSessionResetEnabled,
+        userSeeding: startupModes.startupDataSeedEnabled,
+        backfill: startupModes.startupBackfillEnabled,
+        schemaRepairBlocks: startupModes.startupSchemaRepairEnabled,
+      };
 
-    const startupManifest = {
-      sessionSchemaRepair: startupModes.startupSchemaRepairEnabled,
-      sessionReset: startupModes.startupSessionResetEnabled,
-      userSeeding: startupModes.startupDataSeedEnabled,
-      backfill: startupModes.startupBackfillEnabled,
-      schemaRepairBlocks: startupModes.startupSchemaRepairEnabled,
-    };
-
-    res.json({
-      ok: dbStatus.connected,
-      dbMode,
-      dbConnected: dbStatus.connected,
-      dbHost: dbStatus.host,
-      dbError: dbStatus.error || null,
-      envDbMode: envDbMode || 'auto',
-      hasDatabaseUrl,
-      message: dbStatus.message,
-      startupFlagsRaw: startupModes.startupFlagsRaw,
-      startupModes: {
-        startupMaintenanceEnabled: startupModes.startupMaintenanceEnabled,
-        startupSchemaRepairEnabled: startupModes.startupSchemaRepairEnabled,
-        startupDataSeedEnabled: startupModes.startupDataSeedEnabled,
-        startupBackfillEnabled: startupModes.startupBackfillEnabled,
-        startupSessionResetEnabled: startupModes.startupSessionResetEnabled,
+      res.json({
+        ok: dbStatus.connected,
+        dbMode,
+        dbConnected: dbStatus.connected,
+        dbHost: dbStatus.host,
+        dbError: dbStatus.error || null,
+        envDbMode: process.env.DB_MODE || "auto",
+        hasDatabaseUrl: !!process.env.DATABASE_URL,
+        message: dbStatus.message,
+        startupFlagsRaw: startupModes.startupFlagsRaw,
+        startupModes: {
+          startupMaintenanceEnabled: startupModes.startupMaintenanceEnabled,
+          startupSchemaRepairEnabled: startupModes.startupSchemaRepairEnabled,
+          startupDataSeedEnabled: startupModes.startupDataSeedEnabled,
+          startupBackfillEnabled: startupModes.startupBackfillEnabled,
+          startupSessionResetEnabled: startupModes.startupSessionResetEnabled,
+          startupReadOnlyByDefault: startupModes.startupReadOnlyByDefault,
+        },
         startupReadOnlyByDefault: startupModes.startupReadOnlyByDefault,
-      },
-      startupReadOnlyByDefault: startupModes.startupReadOnlyByDefault,
-      startupMutationClassification: startupModes.startupMutationClassification,
-      startupMutationClassificationSummary: startupManifest,
-      timestamp: new Date().toISOString(),
-    });
+        startupMutationClassification: startupModes.startupMutationClassification,
+        startupMutationClassificationSummary: startupManifest,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logApiError("GET /api/health", error);
+      return sendError(res, new ApiError(500, "HEALTH_CHECK_FAILED", "Failed to collect health diagnostics."));
+    }
   });
   
   // ==================== AUTH ROUTES ====================
@@ -853,84 +856,65 @@ export async function registerRoutes(
         dbConnected: dbStatus.connected,
       });
     } catch (error) {
-      const errorMsg = "Failed to get auth status";
-      res.status(500).json({ 
-        error: errorMsg,
-        message: errorMsg,
-        detail: error instanceof Error ? error.message : String(error)
-      });
+      logApiError("GET /api/auth/status", error);
+      return sendError(res, serverError("Failed to get auth status"));
     }
   });
   
   app.post("/api/auth/login", async (req, res, next) => {
     const { dbMode } = await import("./db");
-    
+
     passport.authenticate("local", (err: any, user: Express.User | false, info: { message: string }) => {
       if (err) {
-        console.error("[LOGIN ERROR] Full error:", err);
-        console.error("[LOGIN ERROR] Stack trace:", err.stack);
-        
-        if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
-          return res.status(503).json({ 
-            error: "Database connection unavailable",
-            message: "Database connection unavailable. Please check the database configuration.",
-            detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
-            code: 'DB_CONNECTION_ERROR',
-            dbMode
-          });
+        logApiError("POST /api/auth/login", err);
+
+        if (err.message && (err.message.includes("ENOTFOUND") || err.message.includes("ECONNREFUSED"))) {
+          return sendError(
+            res,
+            new ApiError(503, "DB_CONNECTION_ERROR", "Database connection unavailable. Please check the database configuration.", {
+              dbMode,
+            }),
+          );
         }
-        
-        return res.status(500).json({ 
-          error: "Server error during login",
-          message: "An error occurred during login",
-          detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
-          stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
-          code: 'LOGIN_ERROR',
-          dbMode
-        });
+
+        return sendError(res, new ApiError(500, "LOGIN_ERROR", "An error occurred during login", { dbMode }));
       }
-      
+
       if (!user) {
         console.log("[LOGIN] Failed login attempt:", req.body?.username, "- Reason:", info?.message);
-        return res.status(401).json({ 
-          error: info?.message || "Invalid username or password",
-          message: info?.message || "Login failed" 
-        });
+        return sendError(res, unauthorized(info?.message || "Invalid username or password"));
       }
 
       const ADMIN_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN"];
       if (!ADMIN_ROLES.includes(user.role || "")) {
         console.log("[LOGIN] Non-admin password login blocked:", user.email, "role:", user.role);
-        return res.status(403).json({
-          error: "Password login is restricted to administrators. Please use Microsoft 365 sign-in.",
-          message: "Password login is restricted to administrators. Please use Microsoft 365 sign-in.",
-          code: "ADMIN_ONLY_PASSWORD_LOGIN"
-        });
+        return sendError(
+          res,
+          new ApiError(
+            403,
+            "ADMIN_ONLY_PASSWORD_LOGIN",
+            "Password login is restricted to administrators. Please use Microsoft 365 sign-in.",
+          ),
+        );
       }
-      
+
       req.logIn(user, (err) => {
         if (err) {
-          console.error("[SESSION ERROR]:", err);
-          return res.status(500).json({ 
-            error: "Failed to establish session",
-            message: "Failed to establish session",
-            detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
-            code: 'SESSION_ERROR'
-          });
+          logApiError("POST /api/auth/login session", err);
+          return sendError(res, new ApiError(500, "SESSION_ERROR", "Failed to establish session", { dbMode }));
         }
-        
+
         console.log("[LOGIN] Successful login:", user.email);
-        
-        // Generate JWT token as fallback auth mechanism
+
         const token = generateToken({
           userId: user.id,
           email: user.email,
           name: user.name,
           role: user.role,
         });
-        
-        return res.json({ 
-          message: "Login successful", 
+
+        return res.json({
+          message: "Login successful",
           user: { id: user.id, email: user.email, name: user.name, role: user.role },
           token,
         });
@@ -941,7 +925,7 @@ export async function registerRoutes(
   app.post("/api/auth/logout", (req, res) => {
     req.logout((err) => {
       if (err) {
-        return res.status(500).json({ error: "Logout failed", message: "Logout failed" });
+        return sendError(res, new ApiError(500, "LOGOUT_FAILED", "Logout failed"));
       }
       res.json({ message: "Logged out successfully" });
     });
@@ -968,7 +952,7 @@ export async function registerRoutes(
       }
     }
     
-    res.status(401).json({ error: "Not authenticated", message: "Not authenticated" });
+    return sendError(res, unauthorized("Not authenticated"));
   });
 
   // ─── Microsoft 365 OAuth Login ───
@@ -981,7 +965,7 @@ export async function registerRoutes(
   app.get("/api/auth/microsoft", async (req, res) => {
     try {
       if (!msAuth.isMicrosoftAuthConfigured()) {
-        return res.status(503).json({ error: "Microsoft authentication is not configured" });
+        return sendError(res, new ApiError(503, "MS_AUTH_NOT_CONFIGURED", "Microsoft authentication is not configured"));
       }
       const authUrl = await msAuth.getAuthorizationUrl();
       res.redirect(authUrl);
@@ -7936,7 +7920,8 @@ export async function registerRoutes(
       
       res.json({ folderPath, exists, fileCount, latestFileDate, projectCounts });
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to read folder config", message: error.message });
+      logApiError("GET /api/admin/folder-config", error);
+      return sendError(res, new ApiError(500, "FOLDER_CONFIG_READ_FAILED", "Failed to read folder config"));
     }
   });
 
@@ -7944,14 +7929,14 @@ export async function registerRoutes(
     try {
       const { folderPath } = req.body;
       if (!folderPath) {
-        return res.status(400).json({ error: "folderPath required" });
+        return sendError(res, badRequest("folderPath required"));
       }
       
       const resolvedPath = path.resolve(folderPath);
       const exists = fs.existsSync(resolvedPath);
       
       if (!exists) {
-        return res.status(400).json({ error: "Folder does not exist", path: resolvedPath });
+        return sendError(res, new ApiError(400, "FOLDER_NOT_FOUND", "Folder does not exist", { path: resolvedPath }));
       }
       
       process.env.TRACKER_FOLDER_PATH = resolvedPath;
@@ -7965,7 +7950,8 @@ export async function registerRoutes(
         message: `Folder set to ${resolvedPath} (${files.length} Excel files found)` 
       });
     } catch (error: any) {
-      res.status(500).json({ error: "Failed to set folder", message: error.message });
+      logApiError("POST /api/admin/folder-config", error);
+      return sendError(res, new ApiError(500, "FOLDER_CONFIG_WRITE_FAILED", "Failed to set folder"));
     }
   });
 
