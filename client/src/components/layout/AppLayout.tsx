@@ -66,7 +66,7 @@ import {
   Leaf,
   CircuitBoard,
 } from "lucide-react";
-import { UX_REDESIGN_ENABLED, checkPermission, ENTITY_PERMISSION_DEFAULTS, type PermissionEntity } from "@shared/schema";
+import { UX_REDESIGN_ENABLED, checkPermission, ENTITY_PERMISSION_DEFAULTS } from "@shared/schema";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import { authApi } from "@/lib/api";
@@ -88,6 +88,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { findPageByPath, getPermissionEntityForPath, PAGE_REGISTRY, type SidebarVariant } from "@/config/page-registry";
 
 interface NavItem {
   label: string;
@@ -129,56 +130,53 @@ const SECTION_COLORS: Record<string, string> = {
   OPERATIONS: "text-amber-600",
 };
 
-const PATH_TO_ENTITY: Record<string, PermissionEntity> = {
-  "/cashflow": "cashflow",
-  "/cos": "cos",
-  "/revenue-tracker": "revenue_tracker",
-  "/gp-tracker": "gp_tracker",
-  "/subcontractor-dashboard": "subcontractors",
-  "/engineering": "engineering",
-  "/engineering/tasks": "eng_tasks",
-  "/quality": "quality",
-  "/pd": "pd_dashboard",
-  "/pd/tickets": "pd_tickets",
-  "/pd/clients": "pd_clients",
-  "/lifecycle-board": "lifecycle",
-  "/projects": "projects",
-  "/portfolios": "portfolios",
-  "/dashboard": "execution_board",
-  "/pm-dashboard": "pm_dashboard",
-  "/pm/on-the-go": "pm_on_the_go",
-  "/weekly-reviews": "weekly_review_wizard",
-  "/admin/roles": "admin_roles",
-  "/admin/settings": "admin",
-  "/admin/activity-log": "activity_log",
-  "/admin/database-migration": "database_migration",
-  "/smart-import": "smart_import",
-  "/excel-updates": "excel_updates",
-  "/ee-info": "ee_info",
-  "/feedback": "feedback",
-  "/leaderboard": "leaderboard",
-  "/invoice-patterns": "invoice_patterns",
-  "/company-priorities": "company_priorities",
-  "/admin/kpi-traceability": "admin",
-  "/admin/import-control-tower": "admin",
-  "/admin/recovery": "admin",
-  "/admin/control-center": "admin",
-  "/command-center": "home",
-  "/my-work": "home",
-  "/my-work/tasks": "my_tool",
-  "/my-work/approvals": "my_work",
-  "/my-work/calendar": "my_work",
-  "/my-work/meetings": "meetings",
-  "/my-work/email": "collaboration_hub",
-  "/my-work/teams": "teams_chat",
+const ICON_MAP: Record<string, any> = {
+  LayoutDashboard,
+  FileSpreadsheet,
+  Wallet,
+  TrendingUp,
+  Settings,
+  Home,
+  Briefcase,
+  ShieldCheck,
+  Wrench,
+  ListTodo,
+  Flag,
+  Layers,
+  Users,
+  Activity,
+  FolderKanban,
+  ClipboardCheck,
+  CalendarCheck,
+  Gauge,
+  HardHat,
+  ShieldAlert,
+  ClipboardList,
+  MessageSquareText,
+  ListChecks,
+  Trophy,
+  FolderOpen,
+  MessageSquare,
+  MessagesSquare,
+  Smartphone,
+  Mail,
+  UserCog,
+  Zap,
+  Sun,
+  Wind,
+  Battery,
+  Leaf,
+  CircuitBoard,
 };
+
+const PAGE_BY_ID = new Map(PAGE_REGISTRY.map((page) => [page.id, page]));
 
 function hasEntityViewPermission(
   path: string,
   role: string | null,
   entityPermissions: Record<string, Record<string, boolean>> | null | undefined,
 ): boolean {
-  const entity = PATH_TO_ENTITY[path];
+  const entity = getPermissionEntityForPath(path);
   if (!entity) return true;
 
   if (entityPermissions && entityPermissions[entity]) {
@@ -190,65 +188,69 @@ function hasEntityViewPermission(
   return checkPermission(role, entity, "view");
 }
 
+function makeNavItem(id: string, variant: SidebarVariant, overrides?: Partial<NavItem>): NavItem {
+  const page = PAGE_BY_ID.get(id);
+  if (!page) throw new Error(`Missing page registry entry: ${id}`);
+  const icon = page.iconKey ? ICON_MAP[page.iconKey] : undefined;
+
+  return {
+    label: page.labels?.[variant] ?? page.label,
+    icon: icon ?? FileSpreadsheet,
+    path: page.path,
+    ...overrides,
+  };
+}
+
 function getLegacyNavGroups(): NavGroup[] {
   return [
     {
       heading: "EXCO",
       section: "EXCO",
       items: [
-        { label: "Exco", icon: Layers, path: "/lifecycle-board" },
-        { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
-        { label: "My Tool", icon: Briefcase, path: "/my-tool" },
+        makeNavItem("lifecycle", "legacy"),
+        makeNavItem("companyPriorities", "legacy"),
+        makeNavItem("myTool", "legacy"),
       ],
     },
     {
       heading: "PROJECT MANAGEMENT",
       section: "PROJECT_MANAGEMENT",
       items: [
-        { label: "Execution Dashboard", icon: LayoutDashboard, path: "/dashboard" },
-        { label: "Project Summary", icon: FileSpreadsheet, path: "/projects" },
-        { label: "Cashflow", icon: Wallet, path: "/cashflow" },
-        { label: "COS Tracker", icon: TrendingUp, path: "/cos", className: "rotate-180" },
-        { label: "Revenue Tracker", icon: TrendingUp, path: "/revenue-tracker" },
-        { label: "GP Tracker", icon: Activity, path: "/gp-tracker" },
-        { label: "Procurement", icon: Users, path: "/subcontractor-dashboard" },
+        makeNavItem("dashboard", "legacy"),
+        makeNavItem("projects", "legacy"),
+        makeNavItem("cashflow", "legacy"),
+        makeNavItem("cos", "legacy", { className: "rotate-180" }),
+        makeNavItem("revenueTracker", "legacy"),
+        makeNavItem("gpTracker", "legacy"),
+        makeNavItem("subcontractor", "legacy"),
       ],
     },
     {
       heading: "ENGINEERING",
       section: "ENGINEERING",
-      items: [
-        { label: "Eng Standup", icon: Wrench, path: "/engineering" },
-        { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
-      ],
+      items: [makeNavItem("engineering", "legacy"), makeNavItem("engineeringTasks", "legacy")],
     },
     {
       heading: "QUALITY",
       section: "QUALITY",
-      items: [
-        { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
-      ],
+      items: [makeNavItem("quality", "legacy")],
     },
     {
       heading: "FEEDBACK",
       section: "FEEDBACK",
-      items: [
-        { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
-        { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
-        { label: "Teams Chat", icon: MessageSquare, path: "/teams/chats" },
-      ],
+      items: [makeNavItem("feedback", "legacy"), makeNavItem("leaderboard", "legacy"), makeNavItem("teamsChats", "legacy")],
     },
     {
       heading: "SETTINGS",
       section: "SETTINGS",
       items: [
-        { label: "Settings", icon: Settings, path: "/admin/settings" },
-        { label: "Roles & Permissions", icon: ShieldAlert, path: "/admin/roles" },
-        { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
-        { label: "Import Control Tower", icon: FileSpreadsheet, path: "/admin/import-control-tower" },
-        { label: "Change Audit", icon: Activity, path: "/admin/activity-log" },
-        { label: "Recovery Center", icon: ShieldAlert, path: "/admin/recovery" },
-        { label: "KPI Traceability", icon: Activity, path: "/admin/kpi-traceability" },
+        makeNavItem("adminSettings", "legacy"),
+        makeNavItem("adminRoles", "legacy"),
+        makeNavItem("smartImport", "legacy"),
+        makeNavItem("adminImportControlTower", "legacy"),
+        makeNavItem("adminActivity", "legacy"),
+        makeNavItem("adminRecovery", "legacy"),
+        makeNavItem("adminKpiTraceability", "legacy"),
       ],
     },
   ];
@@ -256,94 +258,13 @@ function getLegacyNavGroups(): NavGroup[] {
 
 function getRedesignedNavGroups(): NavGroup[] {
   return [
-    {
-      heading: "MY WORK",
-      section: "MY_WORK",
-      icon: Zap,
-      items: [
-        { label: "Command Center", icon: Zap, path: "/command-center" },
-        { label: "Tasks", icon: ListChecks, path: "/my-work/tasks" },
-        { label: "Approvals", icon: ClipboardCheck, path: "/my-work/approvals" },
-        { label: "Calendar", icon: CalendarCheck, path: "/my-work/calendar" },
-        { label: "Meetings", icon: MessageSquareText, path: "/my-work/meetings" },
-        { label: "Email", icon: Mail, path: "/my-work/email" },
-        { label: "Teams Chat", icon: MessagesSquare, path: "/my-work/teams" },
-      ],
-    },
-    {
-      heading: "PROJECT DEVELOPMENT",
-      section: "PROJECT_DEVELOPMENT",
-      icon: Sun,
-      items: [
-        { label: "PD Dashboard", icon: Sun, path: "/pd" },
-        { label: "PD Tickets", icon: ClipboardList, path: "/pd/tickets" },
-        { label: "Clients", icon: Users, path: "/pd/clients" },
-        { label: "Lifecycle Board", icon: Layers, path: "/lifecycle-board" },
-      ],
-    },
-    {
-      heading: "ENGINEERING",
-      section: "ENGINEERING",
-      icon: HardHat,
-      items: [
-        { label: "Eng Dashboard", icon: HardHat, path: "/engineering" },
-        { label: "Task Board", icon: ListTodo, path: "/engineering/tasks" },
-      ],
-    },
-    {
-      heading: "QUALITY",
-      section: "QUALITY",
-      icon: ShieldCheck,
-      items: [
-        { label: "Quality Dashboard", icon: ShieldCheck, path: "/quality" },
-      ],
-    },
-    {
-      heading: "PROJECT MANAGEMENT",
-      section: "PROJECT_MANAGEMENT",
-      icon: Wind,
-      items: [
-        { label: "Project List", icon: FolderKanban, path: "/projects" },
-        { label: "Portfolios", icon: FolderOpen, path: "/portfolios" },
-        { label: "Execution Board", icon: Gauge, path: "/dashboard" },
-        { label: "PM Dashboard", icon: Briefcase, path: "/pm-dashboard" },
-        { label: "On-The-Go", icon: Smartphone, path: "/pm/on-the-go" },
-        { label: "Weekly Reviews", icon: CalendarCheck, path: "/weekly-reviews" },
-      ],
-    },
-    {
-      heading: "FINANCE",
-      section: "FINANCE",
-      icon: Battery,
-      items: [
-        { label: "Cashflow", icon: Wallet, path: "/cashflow" },
-        { label: "COS Tracker", icon: TrendingUp, path: "/cos" },
-        { label: "Revenue Tracker", icon: TrendingUp, path: "/revenue-tracker" },
-        { label: "GP Tracker", icon: Activity, path: "/gp-tracker" },
-        { label: "Procurement", icon: Truck, path: "/subcontractor-dashboard" },
-        { label: "Invoice Patterns", icon: FileSpreadsheet, path: "/invoice-patterns" },
-      ],
-    },
-    {
-      heading: "SYSTEM",
-      section: "SYSTEM",
-      icon: CircuitBoard,
-      items: [
-        { label: "Control Center", icon: Gauge, path: "/admin/control-center" },
-        { label: "Users & Roles", icon: UserCog, path: "/admin/roles" },
-        { label: "App Settings", icon: Settings, path: "/admin/settings" },
-        { label: "Activity Log", icon: Activity, path: "/admin/activity-log" },
-        { label: "Smart Import", icon: FileSpreadsheet, path: "/smart-import" },
-        { label: "Import Control Tower", icon: FileSpreadsheet, path: "/admin/import-control-tower" },
-        { label: "Recovery Center", icon: ShieldAlert, path: "/admin/recovery" },
-        { label: "KPI Traceability", icon: Activity, path: "/admin/kpi-traceability" },
-        { label: "Excel Updates", icon: ClipboardCheck, path: "/excel-updates" },
-        { label: "Emergent Energy Info", icon: Leaf, path: "/ee-info" },
-        { label: "Company Priorities", icon: Flag, path: "/company-priorities" },
-        { label: "Feedback & Support", icon: MessageSquareText, path: "/feedback" },
-        { label: "Leaderboard", icon: Trophy, path: "/leaderboard" },
-      ],
-    },
+    { heading: "MY WORK", section: "MY_WORK", icon: Zap, items: [makeNavItem("commandCenter", "redesigned"), makeNavItem("myWorkTasks", "redesigned"), makeNavItem("myWorkApprovals", "redesigned"), makeNavItem("myWorkCalendar", "redesigned"), makeNavItem("myWorkMeetings", "redesigned"), makeNavItem("myWorkEmail", "redesigned"), makeNavItem("myWorkTeams", "redesigned")] },
+    { heading: "PROJECT DEVELOPMENT", section: "PROJECT_DEVELOPMENT", icon: Sun, items: [makeNavItem("pdDashboard", "redesigned"), makeNavItem("pdTickets", "redesigned"), makeNavItem("clients", "redesigned"), makeNavItem("lifecycle", "redesigned")] },
+    { heading: "ENGINEERING", section: "ENGINEERING", icon: HardHat, items: [makeNavItem("engineering", "redesigned"), makeNavItem("engineeringTasks", "redesigned")] },
+    { heading: "QUALITY", section: "QUALITY", icon: ShieldCheck, items: [makeNavItem("quality", "redesigned")] },
+    { heading: "PROJECT MANAGEMENT", section: "PROJECT_MANAGEMENT", icon: Wind, items: [makeNavItem("projects", "redesigned"), makeNavItem("portfolios", "redesigned"), makeNavItem("dashboard", "redesigned"), makeNavItem("pmDashboard", "redesigned"), makeNavItem("pmOnTheGo", "redesigned"), makeNavItem("weeklyReviews", "redesigned")] },
+    { heading: "FINANCE", section: "FINANCE", icon: Battery, items: [makeNavItem("cashflow", "redesigned"), makeNavItem("cos", "redesigned"), makeNavItem("revenueTracker", "redesigned"), makeNavItem("gpTracker", "redesigned"), makeNavItem("subcontractor", "redesigned"), makeNavItem("invoicePatterns", "redesigned")] },
+    { heading: "SYSTEM", section: "SYSTEM", icon: CircuitBoard, items: [makeNavItem("adminControlCenter", "redesigned"), makeNavItem("adminRoles", "redesigned"), makeNavItem("adminSettings", "redesigned"), makeNavItem("adminActivity", "redesigned"), makeNavItem("smartImport", "redesigned"), makeNavItem("adminImportControlTower", "redesigned"), makeNavItem("adminRecovery", "redesigned"), makeNavItem("adminKpiTraceability", "redesigned"), makeNavItem("excelUpdates", "redesigned"), makeNavItem("eeInfo", "redesigned"), makeNavItem("companyPriorities", "redesigned"), makeNavItem("feedback", "redesigned"), makeNavItem("leaderboard", "redesigned")] },
   ];
 }
 
@@ -353,13 +274,7 @@ function getUnifiedWorkNavGroups(): NavGroup[] {
 
   for (const group of base) {
     if (group.section === "MY_WORK") {
-      result.push({
-        ...group,
-        items: [
-          { label: "Home", icon: Home, path: "/my-work" },
-          ...group.items,
-        ],
-      });
+      result.push({ ...group, items: [makeNavItem("myWork", "unified", { label: "Home" }), ...group.items] });
     } else {
       result.push(group);
     }
@@ -498,13 +413,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const allowedSections: string[] = permissions?.sections || [];
   const navGroups = getNavGroups(!!unifiedWorkFlag);
   const allItems = navGroups.flatMap(g => g.items);
-  const currentPageLabel = location === "/" 
-    ? "Home" 
-    : location.startsWith("/my-work")
-      ? "My Work"
-      : location.startsWith("/my-tool") 
-        ? "My Tool" 
-        : allItems.find(i => i.path === location)?.label || "Dashboard";
+  const currentPageLabel = location === "/" ? "Home" : findPageByPath(location)?.label || allItems.find(i => i.path === location)?.label || "Dashboard";
 
   const sidebarShowLabels = mobileOpen || !desktopCollapsed;
 
