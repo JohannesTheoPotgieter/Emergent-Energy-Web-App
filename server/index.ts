@@ -79,17 +79,20 @@ app.set('trust proxy', 1);
 
 // Session configuration - use appropriate store based on DB mode
 let sessionStore: any;
+const startupMaintenanceEnabled = process.env.STARTUP_MAINTENANCE_MODE === "true";
+const startupSyncEnabled = process.env.STARTUP_ENABLE_PERIODIC_SYNC !== "false";
 
 if (dbMode === 'postgres' && dbConfig.connectionString) {
   const PgSession = connectPgSimple(session);
   const pool = new pg.Pool({ connectionString: dbConfig.connectionString });
   sessionStore = new PgSession({
     pool,
-    createTableIfMissing: true,
+    // Phase 1 hardening: only allow schema/session maintenance work when explicitly enabled.
+    createTableIfMissing: startupMaintenanceEnabled,
   });
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' && startupMaintenanceEnabled) {
     pool.query('DELETE FROM "session"').then(() => {
-      log('Cleared all sessions on deploy startup');
+      log('Cleared all sessions on deploy startup (maintenance mode)');
     }).catch(() => {});
   }
   log('Using PostgreSQL session store');
@@ -652,7 +655,12 @@ async function backfillPmUserIds() {
   registerMsSyncRoutes(app);
 
   const { startPeriodicSync } = await import("./ms-sync-service");
-  startPeriodicSync();
+  // Startup behavior is intentionally explicit: periodic sync only starts when not disabled via env flag.
+  if (startupSyncEnabled) {
+    startPeriodicSync();
+  } else {
+    log('Skipped periodic sync startup due to STARTUP_ENABLE_PERIODIC_SYNC=false', 'sync');
+  }
 
   await db.execute(sql.raw(`
     CREATE TABLE IF NOT EXISTS portfolios (

@@ -794,6 +794,16 @@ export async function registerRoutes(
     // Check DB_MODE env var support
     const envDbMode = process.env.DB_MODE;
     const hasDatabaseUrl = !!process.env.DATABASE_URL;
+    const startupFlags = {
+      startupMaintenanceMode: process.env.STARTUP_MAINTENANCE_MODE === "true",
+      startupEnablePeriodicSync: process.env.STARTUP_ENABLE_PERIODIC_SYNC !== "false",
+      nodeEnv: process.env.NODE_ENV || "development",
+    };
+    const startupModes = {
+      maintenanceMode: startupFlags.startupMaintenanceMode,
+      periodicSyncMode: startupFlags.startupEnablePeriodicSync ? "enabled" : "disabled",
+      sessionMaintenanceMode: startupFlags.startupMaintenanceMode ? "enabled" : "disabled",
+    };
     
     res.json({
       ok: dbStatus.connected,
@@ -803,6 +813,8 @@ export async function registerRoutes(
       dbError: dbStatus.error || null,
       envDbMode: envDbMode || 'auto',
       hasDatabaseUrl,
+      startupFlags,
+      startupModes,
       message: dbStatus.message,
       timestamp: new Date().toISOString(),
     });
