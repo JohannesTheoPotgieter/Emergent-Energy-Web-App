@@ -65,58 +65,34 @@ router.get("/api/health", async (req, res) => {
 
   const dbStatus = getDbConfigStatus();
   const startupModes = getStartupModes();
+  const startupFlags = getStartupFlags();
 
   const envDbMode = process.env.DB_MODE;
   const hasDatabaseUrl = !!process.env.DATABASE_URL;
-  const startupFlags = {
-    startupMaintenanceMode: process.env.STARTUP_MAINTENANCE_MODE === "true",
-    startupEnablePeriodicSync: process.env.STARTUP_ENABLE_PERIODIC_SYNC !== "false",
-    nodeEnv: process.env.NODE_ENV || "development",
-  };
-  const startupModes = {
-    maintenanceMode: startupFlags.startupMaintenanceMode,
-    periodicSyncMode: startupFlags.startupEnablePeriodicSync ? "enabled" : "disabled",
-    sessionMaintenanceMode: startupFlags.startupMaintenanceMode ? "enabled" : "disabled",
-  };
-
-  const startupFlags = {
-    ENABLE_STARTUP_MAINTENANCE: process.env.ENABLE_STARTUP_MAINTENANCE,
-    ENABLE_STARTUP_SCHEMA_REPAIR: process.env.ENABLE_STARTUP_SCHEMA_REPAIR,
-    ENABLE_STARTUP_SESSION_RESET: process.env.ENABLE_STARTUP_SESSION_RESET,
-  };
-  const startupModes = {
-    startupMaintenanceEnabled: startupFlags.ENABLE_STARTUP_MAINTENANCE === "true",
-    startupSchemaRepairEnabled:
-      startupFlags.ENABLE_STARTUP_MAINTENANCE === "true" ||
-      startupFlags.ENABLE_STARTUP_SCHEMA_REPAIR === "true",
-    startupSessionResetEnabled:
-      startupFlags.ENABLE_STARTUP_MAINTENANCE === "true" ||
-      startupFlags.ENABLE_STARTUP_SESSION_RESET === "true",
-  };
-
-  const startupFlags = getStartupFlags();
 
   res.json({
     ok: dbStatus.connected,
-    dbMode: dbMode,
+    dbMode,
     dbConnected: dbStatus.connected,
     dbHost: dbStatus.host,
     dbError: dbStatus.error || null,
     envDbMode: envDbMode || 'auto',
     hasDatabaseUrl,
     startupFlags,
-    startupModes,
-    message: dbStatus.message,
     startupFlagsRaw: startupModes.startupFlagsRaw,
     startupModes: {
       startupMaintenanceEnabled: startupModes.startupMaintenanceEnabled,
       startupSchemaRepairEnabled: startupModes.startupSchemaRepairEnabled,
+      startupDataSeedEnabled: startupModes.startupDataSeedEnabled,
+      startupBackfillEnabled: startupModes.startupBackfillEnabled,
       startupSessionResetEnabled: startupModes.startupSessionResetEnabled,
+      startupUserSeedEnabled: startupModes.startupUserSeedEnabled,
       startupReadOnlyByDefault: startupModes.startupReadOnlyByDefault,
     },
     startupMutationClassification: startupModes.startupMutationClassification,
     startupReadOnlyByDefault: startupModes.startupReadOnlyByDefault,
     sqliteSchemaRepairEnabled: startupModes.startupSchemaRepairEnabled,
+    message: dbStatus.message,
     timestamp: new Date().toISOString(),
   });
 });

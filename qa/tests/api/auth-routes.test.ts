@@ -29,9 +29,14 @@ async function login(username: string, password: string) {
 }
 
 describe("API: Authentication", () => {
-  it("GET /api/health returns 200", async () => {
+  it("GET /api/health returns startup raw flags and derived modes", async () => {
     const res = await apiRequest("GET", "/api/health");
     expect(res.status).toBe(200);
+    expect(res.data).toBeTruthy();
+    expect(res.data.startupFlagsRaw).toBeTruthy();
+    expect(res.data.startupModes).toBeTruthy();
+    expect(typeof res.data.startupModes.startupReadOnlyByDefault).toBe("boolean");
+    expect(typeof res.data.startupMutationClassification).toBe("string");
   });
 
   it("POST /api/auth/login succeeds with valid credentials", async () => {
