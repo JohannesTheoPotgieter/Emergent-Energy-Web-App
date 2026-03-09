@@ -27,6 +27,8 @@ const startupModes = getStartupModes();
 const {
   startupMaintenanceEnabled,
   startupSchemaRepairEnabled,
+  startupDataSeedEnabled,
+  startupBackfillEnabled,
   startupSessionResetEnabled,
 } = startupModes;
 
@@ -222,13 +224,9 @@ app.use((req, res, next) => {
 
   res.on("finish", () => {
     const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      const includeApiResponseBodies = process.env.API_LOG_RESPONSE_BODIES === "true";
-      if (includeApiResponseBodies && capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
+    const requestPath = req.path;
+    if (requestPath.startsWith("/api")) {
+      const logLine = `${req.method} ${requestPath} ${res.statusCode} in ${duration}ms`;
       log(logLine);
     }
   });
@@ -444,8 +442,6 @@ async function backfillPmUserIds() {
     }
   }
 
-  }
-  }
 
   const { seedQualityTemplate } = await import("./seed-quality-template");
   if (startupDataSeedEnabled) await seedQualityTemplate().catch(err => console.error('[Seed] Quality template error:', err));
@@ -550,7 +546,6 @@ async function backfillPmUserIds() {
     } catch (err: any) {
       console.error("[Seed] Feature flag seed error:", err.message);
     }
-  }
 
   const { registerEeInfoRoutes, bootImportCheck, seedStoryLifecycleData, seedStoryDemoData } = await import("./ee-info-routes");
   registerEeInfoRoutes(app);
@@ -572,8 +567,6 @@ async function backfillPmUserIds() {
     } catch (err) {
       console.error('[Story] Seed error (non-fatal):', err);
     }
-  }
-  }
 
   const { seedEeInfoUpdates } = await import("./seed-ee-info-updates");
   if (startupDataSeedEnabled) await seedEeInfoUpdates().catch(err => console.error('[EE-Info-Update] Seed error:', err));
@@ -669,8 +662,6 @@ async function backfillPmUserIds() {
     } catch (err) {
       console.error('[MS-Filter] Assignment cleanup error:', err);
     }
-  }
-  }
 
   const { registerPortfolioRoutes } = await import("./portfolio-routes");
   registerPortfolioRoutes(app);
@@ -732,7 +723,6 @@ async function backfillPmUserIds() {
       moved_at TIMESTAMP
     );
   `)).catch(err => console.error('[Portfolio] Table creation error:', err));
-  }
 
   if (startupSchemaRepairEnabled) {
   // Phase 1: Canonical work_items schema migration (additive only)
@@ -927,7 +917,7 @@ async function backfillPmUserIds() {
   } catch (err: any) {
     console.error('[Migration] ms_accounts SSO token columns error:', err.message);
   }
-  }
+
 
   if (startupSchemaRepairEnabled) try {
     await db.execute(sql.raw(`
@@ -1059,7 +1049,6 @@ async function backfillPmUserIds() {
     } catch (err: any) {
       console.error("[Backfill] assignee_user_ids sync error:", err.message);
     }
-  }
 
   if (startupSchemaRepairEnabled) try {
     await db.execute(sql.raw(`
@@ -1076,7 +1065,6 @@ async function backfillPmUserIds() {
   } catch (err: any) {
     console.error('[Migration] user_project_folders error:', err.message);
   }
-  }
 
   if (startupSchemaRepairEnabled) try {
     await db.execute(sql.raw(`ALTER TABLE smart_import_runs ADD COLUMN IF NOT EXISTS records_attempted INTEGER`));
@@ -1085,7 +1073,6 @@ async function backfillPmUserIds() {
     await db.execute(sql.raw(`ALTER TABLE smart_import_runs ADD COLUMN IF NOT EXISTS import_type TEXT`));
   } catch (err: any) {
     console.error('[Migration] smart_import_runs columns error:', err.message);
-  }
   }
 
   const { registerHandoverRoutes, ensureHandoverTables } = await import("./handover-routes");
