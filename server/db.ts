@@ -17,11 +17,16 @@ let dbConfig: typeof config;
 let isInitialized = false;
 
 /**
- * Deterministic database initialization - selects DB ONCE and never switches
- * Falls back to SQLite if Postgres connection fails (production-safe)
+ * Deterministic database initialization - selects DB ONCE and never switches.
+ * In production, Postgres is mandatory and startup fails hard when unavailable.
  */
 async function initializeDatabase(): Promise<void> {
   if (isInitialized) return;
+  const isProduction = process.env.NODE_ENV === "production";
+
+  if (isProduction && (!config.connectionString || config.mode !== "postgres")) {
+    throw new Error("[DB] Production requires PostgreSQL. Set a valid DATABASE_URL.");
+  }
   
   if (config.mode === 'postgres' && config.connectionString) {
     // Try Postgres with short timeout to avoid blocking startup
@@ -51,15 +56,24 @@ async function initializeDatabase(): Promise<void> {
         
         isInitialized = true;
         return;
-      } else {
-        console.warn(`[DB] ⚠ PostgreSQL connection test failed, falling back to SQLite`);
       }
     } catch (err: any) {
+      if (isProduction) {
+        throw new Error(`[DB] PostgreSQL connection failed in production: ${err.message}`);
+      }
       console.warn(`[DB] ⚠ Postgres connection error (${err.message}), falling back to SQLite`);
     }
+
+    if (isProduction) {
+      throw new Error('[DB] PostgreSQL is configured but unreachable; refusing SQLite fallback in production.');
+    }
   }
-  
-  // Use SQLite (either by config or because Postgres failed)
+
+  if (config.strictMode) {
+    throw new Error('[DB] Strict runtime requires PostgreSQL. SQLite initialization blocked.');
+  }
+
+  // Use SQLite (local/dev mode only)
   initializeSqlite();
   const { startupSchemaRepairEnabled } = getStartupModes();
   if (startupSchemaRepairEnabled) {
