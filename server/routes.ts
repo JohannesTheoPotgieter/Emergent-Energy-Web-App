@@ -31,7 +31,6 @@ import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getAllWorkItemsF
 import { ApiError, sendError, badRequest, notFound, validationError } from "./lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "./lib/task-validation";
 import { normalizeStatus, normalizePriority } from "./lib/canonical-task-engine";
-import { startupFlags, startupModes } from "./startup-flags";
 
 function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
   if (fontColor === 'red') return false;
@@ -790,35 +789,42 @@ export async function registerRoutes(
     const { dbMode } = await import("./db");
     const { getDbConfigStatus } = await import("./db-config");
     const { getStartupModes } = await import("./startup-modes");
-    
+
     const dbStatus = getDbConfigStatus();
     const startupModes = getStartupModes();
-    
+
     const envDbMode = process.env.DB_MODE;
     const hasDatabaseUrl = !!process.env.DATABASE_URL;
-    const { startupRawFlags, startupEffectiveModes } = await import("./startup-flags");
-    
+
+    const startupManifest = {
+      sessionSchemaRepair: startupModes.startupSchemaRepairEnabled,
+      sessionReset: startupModes.startupSessionResetEnabled,
+      userSeeding: startupModes.startupDataSeedEnabled,
+      backfill: startupModes.startupBackfillEnabled,
+      schemaRepairBlocks: startupModes.startupSchemaRepairEnabled,
+    };
+
     res.json({
       ok: dbStatus.connected,
-      dbMode: dbMode,
+      dbMode,
       dbConnected: dbStatus.connected,
       dbHost: dbStatus.host,
       dbError: dbStatus.error || null,
       envDbMode: envDbMode || 'auto',
       hasDatabaseUrl,
-      startupFlags,
-      startupModes,
       message: dbStatus.message,
       startupFlagsRaw: startupModes.startupFlagsRaw,
       startupModes: {
         startupMaintenanceEnabled: startupModes.startupMaintenanceEnabled,
         startupSchemaRepairEnabled: startupModes.startupSchemaRepairEnabled,
+        startupDataSeedEnabled: startupModes.startupDataSeedEnabled,
+        startupBackfillEnabled: startupModes.startupBackfillEnabled,
         startupSessionResetEnabled: startupModes.startupSessionResetEnabled,
         startupReadOnlyByDefault: startupModes.startupReadOnlyByDefault,
       },
-      startupMutationClassification: startupModes.startupMutationClassification,
       startupReadOnlyByDefault: startupModes.startupReadOnlyByDefault,
-      sqliteSchemaRepairEnabled: startupModes.startupSchemaRepairEnabled,
+      startupMutationClassification: startupModes.startupMutationClassification,
+      startupMutationClassificationSummary: startupManifest,
       timestamp: new Date().toISOString(),
     });
   });
