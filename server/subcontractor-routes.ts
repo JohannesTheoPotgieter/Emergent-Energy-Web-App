@@ -6,7 +6,8 @@ import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 import { verifyToken } from "./jwt";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
-import { startupSchemaRepairEnabled } from "./startup-flags";
+import { getStartupModes } from "./startup-modes";
+const { startupSchemaRepairEnabled } = getStartupModes();
 
 const router = Router();
 

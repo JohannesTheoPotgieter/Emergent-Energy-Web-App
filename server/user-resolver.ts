@@ -31,8 +31,7 @@ export async function getAllUsers(): Promise<ResolvedUser[]> {
 }
 
 export async function getAssignableUsers(): Promise<ResolvedUser[]> {
-  const allUsers = await getAllUsers();
-  return allUsers.filter(u => u.microsoft_id != null && u.microsoft_id !== "");
+  return getAllUsers();
 }
 
 export function invalidateUserCache() {
