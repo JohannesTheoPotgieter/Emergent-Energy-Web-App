@@ -84,11 +84,18 @@ let sessionStore: any;
 if (dbMode === 'postgres' && dbConfig.connectionString) {
   const PgSession = connectPgSimple(session);
   const pool = new pg.Pool({ connectionString: dbConfig.connectionString });
+  const { startupSchemaRepairEnabled, startupSessionResetEnabled } = getStartupModes();
+
+  if (startupSchemaRepairEnabled) {
+    log('Session schema auto-create enabled (startup schema repair is on)');
+  } else {
+    log('Session schema auto-create disabled on normal boot');
+  }
+
   sessionStore = new PgSession({
     pool,
-    createTableIfMissing: true,
+    createTableIfMissing: startupSchemaRepairEnabled,
   });
-  const { startupSessionResetEnabled } = getStartupModes();
   if (process.env.NODE_ENV === 'production' && startupSessionResetEnabled) {
     pool.query('DELETE FROM "session"').then(() => {
       log('Cleared all sessions on deploy startup (startup session reset enabled)');
