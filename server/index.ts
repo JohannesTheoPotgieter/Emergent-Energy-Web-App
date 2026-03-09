@@ -19,6 +19,15 @@ import { startScheduler } from "./importPipeline";
 import { startMilestoneChecker } from "./milestone-notifications";
 import { registerAdminRoutes } from "./departments/admin-routes";
 import { registerExcoRoutes } from "./departments/exco-routes";
+import {
+  startupFlags,
+  startupModes,
+  startupBackfillEnabled,
+  startupDataSeedEnabled,
+  startupMaintenanceEnabled,
+  startupSchemaRepairEnabled,
+  startupSessionResetEnabled,
+} from "./startup-flags";
 
 const app = express();
 const httpServer = createServer(app);
@@ -85,9 +94,9 @@ if (dbMode === 'postgres' && dbConfig.connectionString) {
   const pool = new pg.Pool({ connectionString: dbConfig.connectionString });
   sessionStore = new PgSession({
     pool,
-    createTableIfMissing: true,
+    createTableIfMissing: startupSchemaRepairEnabled,
   });
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' && startupSessionResetEnabled) {
     pool.query('DELETE FROM "session"').then(() => {
       log('Cleared all sessions on deploy startup');
     }).catch(() => {});
@@ -308,28 +317,40 @@ async function backfillPmUserIds() {
 (async () => {
   // Initialize database FIRST before any storage operations
   await initializeDatabase();
-  
-  await seedUsers();
-  await backfillPmUserIds();
 
-  try {
-    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
+  log(`[Startup Flags] raw=${JSON.stringify(startupFlags)} effective=${JSON.stringify(startupModes)}`);
+
+  if (startupDataSeedEnabled) {
+    await seedUsers();
+  }
+
+  if (startupBackfillEnabled) {
+    await backfillPmUserIds();
+  }
+
+  if (startupSchemaRepairEnabled) {
+    try {
+      await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
     await db.execute(sql.raw(`ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS no_revenue_linked BOOLEAN DEFAULT FALSE`));
     await db.execute(sql.raw(`ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS has_deliverable BOOLEAN NOT NULL DEFAULT FALSE`));
     await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS project_eng_task_id INTEGER REFERENCES project_eng_tasks(id) ON DELETE SET NULL`));
     await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'pending'`));
     await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES users(id)`));
     await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP`));
-  } catch (e) {}
+    } catch (e) {}
+  }
 
-  try {
-    await db.execute(sql.raw(`ALTER TABLE operational_tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`));
+  if (startupSchemaRepairEnabled) {
+    try {
+      await db.execute(sql.raw(`ALTER TABLE operational_tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`));
     await db.execute(sql.raw(`ALTER TABLE mytool_tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`));
     console.log("[Soft Delete] deleted_at columns ensured on operational_tasks, mytool_tasks");
-  } catch (e) {}
+    } catch (e) {}
+  }
 
-  try {
-    await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS primary_instruction TEXT`));
+  if (startupSchemaRepairEnabled) {
+    try {
+      await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS primary_instruction TEXT`));
     await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS stage_code TEXT`));
     await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS definition_of_done TEXT`));
     await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS owner_role_id TEXT`));
@@ -339,10 +360,12 @@ async function backfillPmUserIds() {
     await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS example_notes TEXT`));
     await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS common_pitfalls JSONB`));
     await db.execute(sql.raw(`ALTER TABLE ee_info_nodes ADD COLUMN IF NOT EXISTS next_node_id TEXT`));
-  } catch (e) {}
+    } catch (e) {}
+  }
 
-  try {
-    await db.execute(sql.raw(`
+  if (startupSchemaRepairEnabled) {
+    try {
+      await db.execute(sql.raw(`
       DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'pm_action_type') THEN
           CREATE TYPE pm_action_type AS ENUM ('site_visit','generate_po','link_invoice','raise_variation','log_delay','log_risk','upload_photo','update_progress','escalate');
@@ -412,21 +435,26 @@ async function backfillPmUserIds() {
       );
     `));
     log('PM On-The-Go tables created/verified');
-  } catch (e: any) {
-    log('PM On-The-Go tables error: ' + e.message);
+    } catch (e: any) {
+      log('PM On-The-Go tables error: ' + e.message);
+    }
   }
 
-  try {
-    await db.execute(sql`ALTER TABLE ms_objects ADD COLUMN IF NOT EXISTS dismissed BOOLEAN DEFAULT FALSE`);
-  } catch (e: any) {
-    console.error('[Migration] ms_objects dismissed column error:', e.message);
+  if (startupSchemaRepairEnabled) {
+    try {
+      await db.execute(sql`ALTER TABLE ms_objects ADD COLUMN IF NOT EXISTS dismissed BOOLEAN DEFAULT FALSE`);
+    } catch (e: any) {
+      console.error('[Migration] ms_objects dismissed column error:', e.message);
+    }
   }
 
-  const { seedQualityTemplate } = await import("./seed-quality-template");
-  await seedQualityTemplate().catch(err => console.error('[Seed] Quality template error:', err));
+  if (startupDataSeedEnabled) {
+    const { seedQualityTemplate } = await import("./seed-quality-template");
+    await seedQualityTemplate().catch(err => console.error('[Seed] Quality template error:', err));
 
-  const { seedEngStageTemplates } = await import("./seed-eng-templates");
-  await seedEngStageTemplates().catch(err => console.error('[Seed] Eng stage templates error:', err));
+    const { seedEngStageTemplates } = await import("./seed-eng-templates");
+    await seedEngStageTemplates().catch(err => console.error('[Seed] Eng stage templates error:', err));
+  }
   
   const { registerQualityRoutes } = await import("./quality-routes");
   registerQualityRoutes(app);
@@ -445,7 +473,9 @@ async function backfillPmUserIds() {
 
   const { registerRoleAuthRoutes, seedRoleCredentials } = await import("./role-auth-routes");
   registerRoleAuthRoutes(app);
-  await seedRoleCredentials().catch(err => console.error('[Seed] Role credentials error:', err));
+  if (startupDataSeedEnabled) {
+    await seedRoleCredentials().catch(err => console.error('[Seed] Role credentials error:', err));
+  }
 
   const { registerLifecycleRoutes } = await import("./lifecycle-routes");
   registerLifecycleRoutes(app);
@@ -475,7 +505,9 @@ async function backfillPmUserIds() {
   registerApprovalsRoutes(app);
 
   const { registerGamificationRoutes, ensureGamificationTables } = await import("./gamification-routes");
-  await ensureGamificationTables();
+  if (startupSchemaRepairEnabled) {
+    await ensureGamificationTables();
+  }
   registerGamificationRoutes(app);
 
   const { registerWeeklyReviewRoutes } = await import("./weekly-review-routes");
@@ -488,32 +520,47 @@ async function backfillPmUserIds() {
   registerPmOnTheGoRoutes(app);
 
   const { registerPoRoutes, ensurePoTables } = await import("./po-routes");
-  await ensurePoTables();
+  if (startupSchemaRepairEnabled) {
+    await ensurePoTables();
+  }
   registerPoRoutes(app);
 
   const { registerDeliverableCaptureRoutes, ensureDeliverableCaptureColumns } = await import("./deliverable-capture-routes");
-  await ensureDeliverableCaptureColumns();
+  if (startupSchemaRepairEnabled) {
+    await ensureDeliverableCaptureColumns();
+  }
   registerDeliverableCaptureRoutes(app);
 
   const { registerTrRegisterRoutes, seedTrRegisterData } = await import("./tr-register-routes");
   registerTrRegisterRoutes(app);
-  await seedTrRegisterData().catch(err => console.error('[Seed] TR Register error:', err));
+  if (startupDataSeedEnabled) {
+    await seedTrRegisterData().catch(err => console.error('[Seed] TR Register error:', err));
+  }
 
   const { seedEngineeringData } = await import("./seed-engineering");
-  await seedEngineeringData().catch(err => console.error('[Seed] Engineering data error:', err));
+  if (startupDataSeedEnabled) {
+    await seedEngineeringData().catch(err => console.error('[Seed] Engineering data error:', err));
+  }
 
   const { seedIntakeTaskTemplates } = await import("./seed-intake-templates");
-  await seedIntakeTaskTemplates().catch(err => console.error('[Seed] Intake templates error:', err));
+  if (startupDataSeedEnabled) {
+    await seedIntakeTaskTemplates().catch(err => console.error('[Seed] Intake templates error:', err));
+  }
 
   const { registerRoleManagementRoutes, seedRolePermissions } = await import("./role-management");
   registerRoleManagementRoutes(app);
-  await seedRolePermissions().catch(err => console.error('[Seed] Role permissions error:', err));
+  if (startupDataSeedEnabled) {
+    await seedRolePermissions().catch(err => console.error('[Seed] Role permissions error:', err));
+  }
 
   const { runDataSeedMigration } = await import("./seed-data-migration");
-  await runDataSeedMigration().catch(err => console.error('[DataSeed] Migration error:', err));
+  if (startupDataSeedEnabled) {
+    await runDataSeedMigration().catch(err => console.error('[DataSeed] Migration error:', err));
+  }
 
-  try {
-    const { setFeatureFlag, getFeatureFlag } = await import("./lib/feature-flags");
+  if (startupDataSeedEnabled) {
+    try {
+      const { setFeatureFlag, getFeatureFlag } = await import("./lib/feature-flags");
     const existing = await getFeatureFlag("unified_work_v1");
     if (!existing) {
       const [row] = await db.select().from(appSettings).where(eq(appSettings.key, "unified_work_v1")).limit(1);
@@ -522,16 +569,20 @@ async function backfillPmUserIds() {
         console.log("[Seed] Feature flag unified_work_v1 seeded (ON)");
       }
     }
-  } catch (err: any) {
-    console.error("[Seed] Feature flag seed error:", err.message);
+    } catch (err: any) {
+      console.error("[Seed] Feature flag seed error:", err.message);
+    }
   }
 
   const { registerEeInfoRoutes, bootImportCheck, seedStoryLifecycleData, seedStoryDemoData } = await import("./ee-info-routes");
   registerEeInfoRoutes(app);
-  await bootImportCheck().catch(err => console.error('[EE-Info] Boot import error:', err));
+  if (startupMaintenanceEnabled) {
+    await bootImportCheck().catch(err => console.error('[EE-Info] Boot import error:', err));
+  }
 
-  try {
-    const storyCheck = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM ee_info_nodes WHERE stage_code IS NOT NULL AND stage_code != 'DEMO' AND node_type = 'lifecycle_stage'`));
+  if (startupDataSeedEnabled) {
+    try {
+      const storyCheck = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM ee_info_nodes WHERE stage_code IS NOT NULL AND stage_code != 'DEMO' AND node_type = 'lifecycle_stage'`));
     const storyCount = parseInt(String((storyCheck as any).rows?.[0]?.cnt || "0"));
     if (storyCount === 0) {
       const count = await seedStoryLifecycleData();
@@ -543,18 +594,24 @@ async function backfillPmUserIds() {
       const count = await seedStoryDemoData();
       console.log(`[Story] Demo walkthrough seeded: ${count} steps`);
     }
-  } catch (err) {
-    console.error('[Story] Seed error (non-fatal):', err);
+    } catch (err) {
+      console.error('[Story] Seed error (non-fatal):', err);
+    }
   }
 
   const { seedEeInfoUpdates } = await import("./seed-ee-info-updates");
-  await seedEeInfoUpdates().catch(err => console.error('[EE-Info-Update] Seed error:', err));
+  if (startupDataSeedEnabled) {
+    await seedEeInfoUpdates().catch(err => console.error('[EE-Info-Update] Seed error:', err));
+  }
 
   const { backfillProjectIds } = await import("./lib/backfill-project-ids");
-  await backfillProjectIds().catch(err => console.error('[Backfill] Project IDs error:', err));
+  if (startupBackfillEnabled) {
+    await backfillProjectIds().catch(err => console.error('[Backfill] Project IDs error:', err));
+  }
 
-  try {
-    const { resolveNameToUserId } = await import("./user-resolver");
+  if (startupBackfillEnabled) {
+    try {
+      const { resolveNameToUserId } = await import("./user-resolver");
     const opRows: any[] = await db.execute(sql.raw(`SELECT id, assignees, assignee_user_ids FROM operational_tasks WHERE array_length(assignees, 1) > 0`)).then((r: any) => Array.isArray(r) ? r : r.rows || []);
     let opFixed = 0;
     for (const row of opRows) {
@@ -638,8 +695,9 @@ async function backfillPmUserIds() {
       }
       if (opCleared > 0 || trCleared > 0) console.log(`[MS-Filter] Cleared non-MS-linked assignments: ${opCleared} operational tasks, ${trCleared} TR items`);
     }
-  } catch (err) {
-    console.error('[MS-Filter] Assignment cleanup error:', err);
+    } catch (err) {
+      console.error('[MS-Filter] Assignment cleanup error:', err);
+    }
   }
 
   const { registerPortfolioRoutes } = await import("./portfolio-routes");
@@ -652,8 +710,10 @@ async function backfillPmUserIds() {
   registerMsSyncRoutes(app);
 
   const { startPeriodicSync } = await import("./ms-sync-service");
+  // Runtime service: periodic external sync loop (not startup maintenance/schema/data mutation).
   startPeriodicSync();
 
+  if (startupSchemaRepairEnabled) {
   await db.execute(sql.raw(`
     CREATE TABLE IF NOT EXISTS portfolios (
       id SERIAL PRIMARY KEY,
@@ -697,7 +757,9 @@ async function backfillPmUserIds() {
       moved_at TIMESTAMP
     );
   `)).catch(err => console.error('[Portfolio] Table creation error:', err));
+  }
 
+  if (startupSchemaRepairEnabled) {
   // Phase 1: Canonical work_items schema migration (additive only)
   try {
     await db.execute(sql.raw(`ALTER TABLE project_info ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id)`));
@@ -880,7 +942,9 @@ async function backfillPmUserIds() {
   } catch (err: any) {
     console.error('[Migration] Phase 1 error:', err.message);
   }
+  }
 
+  if (startupSchemaRepairEnabled) {
   try {
     await db.execute(sql.raw(`
       ALTER TABLE ms_accounts ADD COLUMN IF NOT EXISTS sso_access_token TEXT;
@@ -889,7 +953,9 @@ async function backfillPmUserIds() {
   } catch (err: any) {
     console.error('[Migration] ms_accounts SSO token columns error:', err.message);
   }
+  }
 
+  if (startupSchemaRepairEnabled) {
   try {
     await db.execute(sql.raw(`
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS expected_pct_complete REAL;
@@ -938,16 +1004,18 @@ async function backfillPmUserIds() {
   } catch (err: any) {
     console.error('[Migration] work_items canonical columns error:', err.message);
   }
-
-  try {
-    const { backfillWorkItems } = await import("./work-items-backfill");
-    await backfillWorkItems();
-  } catch (err: any) {
-    console.error("[Backfill] work_items backfill failed:", err.message);
   }
 
-  try {
-    const { getAllUsers, resolveNameToUserId } = await import("./user-resolver");
+  if (startupBackfillEnabled) {
+    try {
+      const { backfillWorkItems } = await import("./work-items-backfill");
+      await backfillWorkItems();
+    } catch (err: any) {
+      console.error("[Backfill] work_items backfill failed:", err.message);
+    }
+
+    try {
+      const { getAllUsers, resolveNameToUserId } = await import("./user-resolver");
     await getAllUsers();
 
     async function resolveNamesForBackfill(names: string[]): Promise<number[]> {
@@ -1013,10 +1081,12 @@ async function backfillPmUserIds() {
     if (otUpdated > 0 || trUpdated > 0) {
       log(`[Backfill] assignee_user_ids: ${otUpdated} operational_tasks, ${trUpdated} tr_items updated`);
     }
-  } catch (err: any) {
-    console.error("[Backfill] assignee_user_ids sync error:", err.message);
+    } catch (err: any) {
+      console.error("[Backfill] assignee_user_ids sync error:", err.message);
+    }
   }
 
+  if (startupSchemaRepairEnabled) {
   try {
     await db.execute(sql.raw(`
       CREATE TABLE IF NOT EXISTS user_project_folders (
@@ -1032,7 +1102,9 @@ async function backfillPmUserIds() {
   } catch (err: any) {
     console.error('[Migration] user_project_folders error:', err.message);
   }
+  }
 
+  if (startupSchemaRepairEnabled) {
   try {
     await db.execute(sql.raw(`ALTER TABLE smart_import_runs ADD COLUMN IF NOT EXISTS records_attempted INTEGER`));
     await db.execute(sql.raw(`ALTER TABLE smart_import_runs ADD COLUMN IF NOT EXISTS records_succeeded INTEGER`));
@@ -1041,32 +1113,46 @@ async function backfillPmUserIds() {
   } catch (err: any) {
     console.error('[Migration] smart_import_runs columns error:', err.message);
   }
+  }
 
   const { registerHandoverRoutes, ensureHandoverTables } = await import("./handover-routes");
-  await ensureHandoverTables();
+  if (startupSchemaRepairEnabled) {
+    await ensureHandoverTables();
+  }
   registerHandoverRoutes(app);
 
   const { registerDependencyRoutes, ensureDependencyTables } = await import("./dependency-routes");
-  await ensureDependencyTables();
+  if (startupSchemaRepairEnabled) {
+    await ensureDependencyTables();
+  }
   registerDependencyRoutes(app);
 
   const { registerRaidRoutes, ensureRaidTables } = await import("./raid-routes");
-  await ensureRaidTables();
+  if (startupSchemaRepairEnabled) {
+    await ensureRaidTables();
+  }
   registerRaidRoutes(app);
 
   const { registerChangeControlRoutes, ensureChangeControlTables } = await import("./change-control-routes");
-  await ensureChangeControlTables();
+  if (startupSchemaRepairEnabled) {
+    await ensureChangeControlTables();
+  }
   registerChangeControlRoutes(app);
 
   const { registerProcurementRoutes, ensureProcurementTables } = await import("./procurement-routes");
-  await ensureProcurementTables();
+  if (startupSchemaRepairEnabled) {
+    await ensureProcurementTables();
+  }
   registerProcurementRoutes(app);
 
   const { registerCommissioningRoutes, ensureCommissioningTables } = await import("./commissioning-routes");
-  await ensureCommissioningTables();
+  if (startupSchemaRepairEnabled) {
+    await ensureCommissioningTables();
+  }
   registerCommissioningRoutes(app);
 
-  await db.execute(sql.raw(`
+  if (startupSchemaRepairEnabled) {
+    await db.execute(sql.raw(`
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS related_entity_type TEXT;
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS related_entity_id INTEGER;
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS assigned_approver INTEGER REFERENCES users(id);
@@ -1074,10 +1160,13 @@ async function backfillPmUserIds() {
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES project_info(id);
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS approval_category TEXT;
   `));
-  console.log("[Approvals] Enhanced columns ensured");
+    console.log("[Approvals] Enhanced columns ensured");
+  }
 
   const { registerInvoiceCaptureRoutes, ensureInvoiceCaptureTables } = await import("./invoice-capture-routes");
-  await ensureInvoiceCaptureTables();
+  if (startupSchemaRepairEnabled) {
+    await ensureInvoiceCaptureTables();
+  }
   registerInvoiceCaptureRoutes(app);
 
   registerAdminRoutes(app);
@@ -1133,8 +1222,12 @@ async function backfillPmUserIds() {
     },
     () => {
       log(`serving on port ${port}`);
-      runBackfill().catch(err => console.error('[Backfill] startup error:', err));
+      if (startupBackfillEnabled) {
+        runBackfill().catch(err => console.error('[Backfill] startup error:', err));
+      }
+      // Runtime service: scheduler loop (not startup maintenance/schema/data mutation).
       startScheduler();
+      // Runtime service: milestone checker loop (not startup maintenance/schema/data mutation).
       startMilestoneChecker();
       log('SharePoint scheduled import checker started');
     },

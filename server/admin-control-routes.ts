@@ -5,6 +5,7 @@ import { sql, eq } from "drizzle-orm";
 import { appSettings, users, projectInfo, smartImportRuns, auditEvents } from "@shared/schema";
 import { getFeatureFlag, setFeatureFlag } from "./lib/feature-flags";
 import { logAuditFromReq } from "./audit-logger";
+import { startupFlags, startupModes } from "./startup-flags";
 
 const router = Router();
 
@@ -43,6 +44,8 @@ router.get("/api/admin/control-center/health", requireAuth, requireAdmin, async 
         host: dbStatus.host,
         error: dbStatus.error || null,
       },
+      startupFlags,
+      startupModes,
       users: parseInt(userCountResult?.count || "0"),
       projects: {
         total: parseInt(projectCountResult?.count || "0"),
