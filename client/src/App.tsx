@@ -76,6 +76,9 @@ import { checkPermission } from "@shared/schema";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PAGE_REGISTRY, ROLE_LANDING_PAGE, getPermissionEntityForPath } from "@/config/page-registry";
+import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
+import { logRoleAwareInteraction } from "@/lib/role-aware-audit";
+import { pickRoleAwareLandingPage } from "@/config/role-aware-ux";
 
 const EPM_ALLOWED_PATHS = ["/", "/command-center", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
 const PM_ALLOWED_PATHS = ["/", "/command-center", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
@@ -259,12 +262,75 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
 }
 
 function ProtectedPages() {
+  const { user } = useAuth();
+  const [location] = useLocation();
+
+  const { data: permissions } = useQuery<{ entityPermissions?: Record<string, Record<string, boolean>> | null }>({
+    queryKey: ["auth-permissions-landing", user?.role],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      if (user?.role) headers["x-company-role"] = user.role;
+      const res = await fetch("/api/auth/permissions", { headers, credentials: "include" });
+      return res.json();
+    },
+    enabled: !!user?.role && location === "/",
+    staleTime: 60_000,
+  });
+
+  const { data: rolloutFlags } = useQuery({
+    queryKey: ["rollout-feature-flags"],
+    queryFn: fetchRolloutFeatureFlags,
+    staleTime: 60_000,
+  });
+  const roleAwareUxEnabled = rolloutFlags?.find((flag) => flag.key === "role_aware_ux")?.value === true;
+
   return (
     <RoleGuard>
     <AppLayout>
       <Switch>
         <Route path="/">{() => {
           const role = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+          const selectedRole = role || user?.role || null;
+
+          if (roleAwareUxEnabled) {
+            const pagesById = new Map(PAGE_REGISTRY.map((page) => [page.id, page]));
+            const canAccess = (path: string) => {
+              const entity = getPermissionEntityForPath(path);
+              if (!entity || !selectedRole) return true;
+              const ep = permissions?.entityPermissions;
+              if (ep && ep[entity]) return ep[entity].view === true;
+              return checkPermission(selectedRole, entity, "view");
+            };
+
+            const suggested = pickRoleAwareLandingPage(selectedRole, pagesById, canAccess);
+            const preferredLandingPath = typeof window !== "undefined" ? localStorage.getItem("preferred_landing_path") : null;
+            const preferredReason = typeof window !== "undefined" ? localStorage.getItem("preferred_landing_reason") : null;
+            const preferredAllowed = !!preferredLandingPath && canAccess(preferredLandingPath);
+            const finalPath = preferredAllowed ? preferredLandingPath : suggested?.path;
+
+            if (suggested?.path && finalPath && finalPath !== "/") {
+              if (preferredAllowed && preferredReason) {
+                void logRoleAwareInteraction({
+                  action: "suggestion_overridden",
+                  suggestion: suggested.path,
+                  finalValue: finalPath,
+                  reason: preferredReason,
+                  role: selectedRole,
+                });
+              } else {
+                void logRoleAwareInteraction({
+                  action: "suggestion_accepted",
+                  suggestion: suggested.path,
+                  finalValue: finalPath,
+                  role: selectedRole,
+                });
+              }
+              return <Redirect to={finalPath} />;
+            }
+          }
+
           const landingPath = role ? ROLE_LANDING_PAGE[role] : undefined;
           if (landingPath) return <Redirect to={landingPath} />;
           return <Home />;
