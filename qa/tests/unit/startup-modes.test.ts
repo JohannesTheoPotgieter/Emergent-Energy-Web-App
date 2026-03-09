@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { getStartupModes, parseEnvFlag } from "../../../server/startup-modes";
 
+import fs from "node:fs";
+import path from "node:path";
+
 const keys = [
   "ENABLE_STARTUP_MAINTENANCE",
   "ENABLE_STARTUP_SCHEMA_REPAIR",
@@ -66,5 +69,19 @@ describe("startup mode derivation", () => {
     expect(modes.startupSchemaRepairEnabled).toBe(false);
     expect(modes.startupSessionResetEnabled).toBe(true);
     expect(modes.startupMutationClassification).toBe("destructive_reset_enabled");
+  });
+});
+
+
+describe("server auth/session middleware wiring", () => {
+  it("mounts session and passport middleware once and keeps memory fallback", () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), "server/index.ts"), "utf8");
+
+    expect(source).toContain("else {");
+    expect(source).toContain("MemoryStore(session)");
+    expect(source).toContain(`app.use(
+  session({`);
+    expect((source.match(/app\.use\(passport\.initialize\(\)\);/g) || []).length).toBe(1);
+    expect((source.match(/app\.use\(passport\.session\(\)\);/g) || []).length).toBe(1);
   });
 });

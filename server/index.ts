@@ -124,6 +124,7 @@ if (dbMode === 'postgres' && dbConfig.connectionString) {
     pool,
     createTableIfMissing: startupSchemaRepairEnabled,
   });
+
   if (process.env.NODE_ENV === 'production' && startupSessionResetEnabled) {
     pool.query('DELETE FROM "session"').then(() => {
       log('Cleared all sessions on deploy startup (startup session reset enabled)');
@@ -131,9 +132,14 @@ if (dbMode === 'postgres' && dbConfig.connectionString) {
   } else if (process.env.NODE_ENV === 'production') {
     log('Startup session reset disabled; preserving existing sessions on boot');
   }
+} else {
+  const MemoryStoreSession = MemoryStore(session);
+  sessionStore = new MemoryStoreSession({
+    checkPeriod: 24 * 60 * 60 * 1000,
+  });
+  log(`Using in-memory session store (dbMode=${dbMode})`);
+}
 
-
-const sessionSecret = process.env.SESSION_SECRET;
 if (!sessionSecret) {
   throw new Error("[Session] SESSION_SECRET must be set. Refusing insecure default.");
 }
@@ -153,9 +159,8 @@ app.use(
   })
 );
 
-  app.use(passport.initialize());
-  app.use(passport.session());
-}
+app.use(passport.initialize());
+app.use(passport.session());
 
 // Passport Local Strategy
 passport.use(
