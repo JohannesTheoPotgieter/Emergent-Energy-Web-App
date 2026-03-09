@@ -31,6 +31,7 @@ import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getAllWorkItemsF
 import { ApiError, sendError, badRequest, notFound, validationError } from "./lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "./lib/task-validation";
 import { normalizeStatus, normalizePriority } from "./lib/canonical-task-engine";
+import { getStartupFlags } from "./startup-flags";
 
 function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
   if (fontColor === 'red') return false;
@@ -794,6 +795,7 @@ export async function registerRoutes(
     // Check DB_MODE env var support
     const envDbMode = process.env.DB_MODE;
     const hasDatabaseUrl = !!process.env.DATABASE_URL;
+    const startupFlags = getStartupFlags();
     
     res.json({
       ok: dbStatus.connected,
@@ -804,6 +806,10 @@ export async function registerRoutes(
       envDbMode: envDbMode || 'auto',
       hasDatabaseUrl,
       message: dbStatus.message,
+      startup: {
+        rawEnv: startupFlags.rawEnv,
+        derivedModes: startupFlags.modes,
+      },
       timestamp: new Date().toISOString(),
     });
   });
