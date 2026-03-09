@@ -1,20 +1,34 @@
-// audit.ts
+import { db } from "../db";
+import { auditEvents } from "@shared/schema";
 
-// A module for audit logging in the Emergent Energy Web App
+interface PersistentAuditEvent {
+  action: string;
+  username: string;
+  userId?: number | null;
+  entityType?: string;
+  entityId?: string | null;
+  source?: "UI" | "IMPORT" | "SETTINGS" | "DOCS" | "SYSTEM";
+  changesJson?: Record<string, unknown> | null;
+}
 
 class AuditLogger {
-    private logs: string[] = [];
+  async log(event: PersistentAuditEvent): Promise<void> {
+    await db.insert(auditEvents).values({
+      action: event.action,
+      userName: event.username,
+      userId: event.userId ?? null,
+      actorRole: "system",
+      entityType: event.entityType ?? "system",
+      entityId: event.entityId ?? null,
+      source: event.source ?? "SYSTEM",
+      changesJson: event.changesJson ?? null,
+    });
+  }
 
-    log(action: string, username: string): void {
-        const timestamp = new Date().toISOString();
-        const logEntry = `${timestamp} - ${username}: ${action}`;
-        this.logs.push(logEntry);
-        console.log(logEntry); // Output to console
-    }
-
-    getLogs(): string[] {
-        return this.logs;
-    }
+  async getLogs(limit = 100) {
+    const rows = await db.select().from(auditEvents).limit(limit);
+    return rows;
+  }
 }
 
 export default new AuditLogger();
