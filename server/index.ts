@@ -19,13 +19,7 @@ import { startScheduler } from "./importPipeline";
 import { startMilestoneChecker } from "./milestone-notifications";
 import { registerAdminRoutes } from "./departments/admin-routes";
 import { registerExcoRoutes } from "./departments/exco-routes";
-import {
-  startupMaintenanceEnabled,
-  startupSchemaRepairEnabled,
-  startupDataSeedEnabled,
-  startupBackfillEnabled,
-  startupSessionResetEnabled,
-} from "./startup-flags";
+import { getStartupModes } from "./startup-modes";
 
 const app = express();
 const httpServer = createServer(app);
@@ -94,10 +88,13 @@ if (dbMode === 'postgres' && dbConfig.connectionString) {
     pool,
     createTableIfMissing: startupSchemaRepairEnabled,
   });
+  const { startupSessionResetEnabled } = getStartupModes();
   if (process.env.NODE_ENV === 'production' && startupSessionResetEnabled) {
     pool.query('DELETE FROM "session"').then(() => {
-      log('Cleared all sessions on deploy startup');
+      log('Cleared all sessions on deploy startup (startup session reset enabled)');
     }).catch(() => {});
+  } else if (process.env.NODE_ENV === 'production') {
+    log('Startup session reset disabled; preserving existing sessions on boot');
   }
   log('Using PostgreSQL session store');
 } else {
@@ -315,6 +312,24 @@ async function backfillPmUserIds() {
 (async () => {
   // Initialize database FIRST before any storage operations
   await initializeDatabase();
+
+  const startupModes = getStartupModes();
+  log(`[Startup] dbMode=${dbMode} classification=${startupModes.startupMutationClassification} schemaRepair=${startupModes.startupSchemaRepairEnabled} sessionReset=${startupModes.startupSessionResetEnabled} readOnlyByDefault=${startupModes.startupReadOnlyByDefault}`);
+
+  // TODO(phase-3): Evaluate gating startup seeding/backfill under explicit maintenance flags.
+  await seedUsers();
+  await backfillPmUserIds();
+
+  // TODO(phase-3): These startup schema mutations are intentionally left unchanged for now to avoid risky boot regressions.
+  try {
+    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
+    await db.execute(sql.raw(`ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS no_revenue_linked BOOLEAN DEFAULT FALSE`));
+    await db.execute(sql.raw(`ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS has_deliverable BOOLEAN NOT NULL DEFAULT FALSE`));
+    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS project_eng_task_id INTEGER REFERENCES project_eng_tasks(id) ON DELETE SET NULL`));
+    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'pending'`));
+    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES users(id)`));
+    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP`));
+  } catch (e) {}
 
   log(`[Startup] maintenance=${startupMaintenanceEnabled} schemaRepair=${startupSchemaRepairEnabled} dataSeed=${startupDataSeedEnabled} backfill=${startupBackfillEnabled} sessionReset=${startupSessionResetEnabled}`);
 
