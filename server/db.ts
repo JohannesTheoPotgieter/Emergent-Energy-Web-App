@@ -7,6 +7,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { resolveDbConfig, setDbConfigStatus } from "./db-config";
 import { sql } from "drizzle-orm";
+import { getStartupModes } from "./startup-modes";
 
 const config = resolveDbConfig();
 
@@ -60,7 +61,13 @@ async function initializeDatabase(): Promise<void> {
   
   // Use SQLite (either by config or because Postgres failed)
   initializeSqlite();
-  await ensureSqliteSchema();
+  const { startupSchemaRepairEnabled } = getStartupModes();
+  if (startupSchemaRepairEnabled) {
+    console.log('[DB] Startup schema repair enabled - running SQLite schema repair');
+    await ensureSqliteSchema();
+  } else {
+    console.log('[DB] Startup schema repair disabled - skipping SQLite schema repair (safe mode)');
+  }
   isInitialized = true;
 }
 
