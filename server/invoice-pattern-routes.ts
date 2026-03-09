@@ -13,6 +13,13 @@ import { requirePermission } from "./permission-middleware";
 
 const router = Router();
 
+const strictRuntime = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
+const jwtSecret = process.env.JWT_SECRET;
+
+if (strictRuntime && !jwtSecret) {
+  throw new Error("JWT_SECRET must be set in staging/production. Refusing unsafe JWT fallback.");
+}
+
 function jwtAuth(req: Request, res: Response, next: NextFunction) {
   if ((req as any).user) return next();
   if (req.isAuthenticated?.()) return next();
@@ -20,7 +27,7 @@ function jwtAuth(req: Request, res: Response, next: NextFunction) {
   if (authHeader && authHeader.startsWith("Bearer ")) {
     try {
       const jwt = require("jsonwebtoken");
-      const decoded = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET || "emergent-energy-jwt-secret-2026");
+      const decoded = jwt.verify(authHeader.slice(7), jwtSecret || "emergent-energy-jwt-secret-2026");
       if (decoded && typeof decoded === "object") {
         (req as any).user = { id: decoded.userId || decoded.id, role: decoded.role };
       }

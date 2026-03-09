@@ -4,7 +4,7 @@ export type StartupMutationClassification =
   | "destructive_reset_enabled"
   | "mixed";
 
-function parseEnvFlag(value: string | undefined): boolean {
+export function parseEnvFlag(value: string | undefined): boolean {
   if (!value) return false;
   return ["1", "true", "yes", "on"].includes(value.toLowerCase());
 }
