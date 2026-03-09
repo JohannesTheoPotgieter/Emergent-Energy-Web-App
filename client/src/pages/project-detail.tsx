@@ -57,6 +57,7 @@ import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
+import { PageShell } from "@/components/layout/page-shell";
 import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
 import { usePermission } from "@/hooks/use-permissions";
 
@@ -1106,7 +1107,7 @@ export default function ProjectDetailPage() {
   const ragColor = (rag: "green" | "amber" | "red") => rag === "green" ? "text-emerald-600" : rag === "amber" ? "text-amber-600" : "text-red-600";
 
   return (
-    <div className="space-y-4">
+    <PageShell className="p-4 md:p-6">
       <ProjectCommandHeader
         projectName={projectName}
         displayName={displayName}
@@ -1786,6 +1787,6 @@ export default function ProjectDetailPage() {
           { endpoint: "/api/normalized-revenue-lines", tables: ["normalized_revenue_lines"], description: "Revenue tracking line items" },
         ]}
       />
-    </div>
+    </PageShell>
   );
 }
