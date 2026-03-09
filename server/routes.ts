@@ -788,22 +788,14 @@ export async function registerRoutes(
   app.get("/api/health", async (req, res) => {
     const { dbMode } = await import("./db");
     const { getDbConfigStatus } = await import("./db-config");
+    const { getStartupModes } = await import("./startup-modes");
     
     const dbStatus = getDbConfigStatus();
+    const startupModes = getStartupModes();
     
-    // Check DB_MODE env var support
     const envDbMode = process.env.DB_MODE;
     const hasDatabaseUrl = !!process.env.DATABASE_URL;
-    const startupFlags = {
-      startupMaintenanceMode: process.env.STARTUP_MAINTENANCE_MODE === "true",
-      startupEnablePeriodicSync: process.env.STARTUP_ENABLE_PERIODIC_SYNC !== "false",
-      nodeEnv: process.env.NODE_ENV || "development",
-    };
-    const startupModes = {
-      maintenanceMode: startupFlags.startupMaintenanceMode,
-      periodicSyncMode: startupFlags.startupEnablePeriodicSync ? "enabled" : "disabled",
-      sessionMaintenanceMode: startupFlags.startupMaintenanceMode ? "enabled" : "disabled",
-    };
+    const { startupRawFlags, startupEffectiveModes } = await import("./startup-flags");
     
     res.json({
       ok: dbStatus.connected,
@@ -816,6 +808,16 @@ export async function registerRoutes(
       startupFlags,
       startupModes,
       message: dbStatus.message,
+      startupFlagsRaw: startupModes.startupFlagsRaw,
+      startupModes: {
+        startupMaintenanceEnabled: startupModes.startupMaintenanceEnabled,
+        startupSchemaRepairEnabled: startupModes.startupSchemaRepairEnabled,
+        startupSessionResetEnabled: startupModes.startupSessionResetEnabled,
+        startupReadOnlyByDefault: startupModes.startupReadOnlyByDefault,
+      },
+      startupMutationClassification: startupModes.startupMutationClassification,
+      startupReadOnlyByDefault: startupModes.startupReadOnlyByDefault,
+      sqliteSchemaRepairEnabled: startupModes.startupSchemaRepairEnabled,
       timestamp: new Date().toISOString(),
     });
   });
