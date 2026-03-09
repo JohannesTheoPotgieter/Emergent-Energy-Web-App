@@ -5,7 +5,7 @@ import { sql, eq } from "drizzle-orm";
 import { appSettings, users, projectInfo, smartImportRuns, auditEvents } from "@shared/schema";
 import { getFeatureFlag, setFeatureFlag } from "./lib/feature-flags";
 import { logAuditFromReq } from "./audit-logger";
-import { startupFlags, startupModes } from "./startup-flags";
+import { startupRawFlags, startupEffectiveModes } from "./startup-flags";
 
 const router = Router();
 
@@ -53,6 +53,10 @@ router.get("/api/admin/control-center/health", requireAuth, requireAdmin, async 
       },
       imports: importStats,
       auditEvents: auditCount,
+      startupFlags: {
+        raw: startupRawFlags,
+        effective: startupEffectiveModes,
+      },
     });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to fetch system health", message: err.message });

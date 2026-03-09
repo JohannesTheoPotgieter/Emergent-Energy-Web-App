@@ -1,31 +1,25 @@
-const parseBooleanFlag = (value: string | undefined, defaultValue = false): boolean => {
-  if (value == null) return defaultValue;
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "off"].includes(normalized)) return false;
-  return defaultValue;
-};
+function isEnabled(value: string | undefined): boolean {
+  return value === "true";
+}
 
-export const startupFlags = {
-  schemaRepair: process.env.STARTUP_SCHEMA_REPAIR,
-  dataSeed: process.env.STARTUP_DATA_SEED,
-  backfill: process.env.STARTUP_BACKFILL,
-  sessionReset: process.env.STARTUP_SESSION_RESET,
-  maintenance: process.env.STARTUP_MAINTENANCE,
-};
+export const startupRawFlags = {
+  ENABLE_STARTUP_MAINTENANCE: process.env.ENABLE_STARTUP_MAINTENANCE,
+  ENABLE_STARTUP_SCHEMA_REPAIR: process.env.ENABLE_STARTUP_SCHEMA_REPAIR,
+  ENABLE_STARTUP_DATA_SEED: process.env.ENABLE_STARTUP_DATA_SEED,
+  ENABLE_STARTUP_BACKFILL: process.env.ENABLE_STARTUP_BACKFILL,
+  ENABLE_STARTUP_SESSION_RESET: process.env.ENABLE_STARTUP_SESSION_RESET,
+} as const;
 
-export const startupModes = {
-  startupSchemaRepairEnabled: parseBooleanFlag(startupFlags.schemaRepair, false),
-  startupDataSeedEnabled: parseBooleanFlag(startupFlags.dataSeed, false),
-  startupBackfillEnabled: parseBooleanFlag(startupFlags.backfill, false),
-  startupSessionResetEnabled: parseBooleanFlag(startupFlags.sessionReset, false),
-  startupMaintenanceEnabled: parseBooleanFlag(startupFlags.maintenance, false),
-};
+export const startupMaintenanceEnabled = isEnabled(startupRawFlags.ENABLE_STARTUP_MAINTENANCE);
+export const startupSchemaRepairEnabled = startupMaintenanceEnabled || isEnabled(startupRawFlags.ENABLE_STARTUP_SCHEMA_REPAIR);
+export const startupDataSeedEnabled = startupMaintenanceEnabled || isEnabled(startupRawFlags.ENABLE_STARTUP_DATA_SEED);
+export const startupBackfillEnabled = startupMaintenanceEnabled || isEnabled(startupRawFlags.ENABLE_STARTUP_BACKFILL);
+export const startupSessionResetEnabled = startupMaintenanceEnabled || isEnabled(startupRawFlags.ENABLE_STARTUP_SESSION_RESET);
 
-export const {
+export const startupEffectiveModes = {
+  startupMaintenanceEnabled,
   startupSchemaRepairEnabled,
   startupDataSeedEnabled,
   startupBackfillEnabled,
   startupSessionResetEnabled,
-  startupMaintenanceEnabled,
-} = startupModes;
+} as const;
