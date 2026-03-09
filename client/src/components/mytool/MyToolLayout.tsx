@@ -98,7 +98,7 @@ export default function MyToolLayout({
           <div className="flex items-center justify-between h-12">
             <div className="flex items-center gap-3">
               <h1 className="text-lg font-semibold tracking-tight text-foreground" data-testid="text-page-title">
-                My Tool
+                My Work
               </h1>
               <span className="text-sm text-muted-foreground hidden sm:inline">
                 {format(new Date(), "EEEE, d MMMM")}
