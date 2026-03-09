@@ -313,7 +313,7 @@ async function backfillPmUserIds() {
   await initializeDatabase();
 
   const startupModes = getStartupModes();
-  log(`[Startup] dbMode=${dbMode} classification=${startupModes.startupMutationClassification} schemaRepair=${startupModes.startupSchemaRepairEnabled} sessionReset=${startupModes.startupSessionResetEnabled} readOnlyByDefault=${startupModes.startupReadOnlyByDefault}`);
+  log(`[Startup] dbMode=${dbMode} classification=${startupModes.startupMutationClassification} schemaRepair=${startupModes.startupSchemaRepairEnabled} sessionReset=${startupModes.startupSessionResetEnabled} userSeed=${startupModes.startupUserSeedEnabled} readOnlyByDefault=${startupModes.startupReadOnlyByDefault}`);
 
   // Runtime user seeding removed for trustability; use explicit migration/seed scripts instead.
 
