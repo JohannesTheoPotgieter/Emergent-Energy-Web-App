@@ -1,69 +1,25 @@
-const startupFlagEnv = {
-  maintenance: {
-    enable: process.env.ENABLE_STARTUP_MAINTENANCE,
-    startup: process.env.STARTUP_MAINTENANCE,
-  },
-  schemaRepair: {
-    enable: process.env.ENABLE_STARTUP_SCHEMA_REPAIR,
-    startup: process.env.STARTUP_SCHEMA_REPAIR,
-  },
-  dataSeed: {
-    enable: process.env.ENABLE_STARTUP_DATA_SEED,
-    startup: process.env.STARTUP_DATA_SEED,
-  },
-  backfill: {
-    enable: process.env.ENABLE_STARTUP_BACKFILL,
-    startup: process.env.STARTUP_BACKFILL,
-  },
-  sessionReset: {
-    enable: process.env.ENABLE_STARTUP_SESSION_RESET,
-    startup: process.env.STARTUP_SESSION_RESET,
-  },
-} as const;
-
-function parseStartupFlag(rawValue: string | undefined): boolean {
-  return rawValue === "1" || rawValue === "true";
+function isEnabled(value: string | undefined): boolean {
+  return value === "true";
 }
 
-function resolveRawFlagValue(
-  value: { enable: string | undefined; startup: string | undefined },
-): string | undefined {
-  return value.enable ?? value.startup;
-}
-
-export const startupFlags = {
-  maintenance: {
-    ...startupFlagEnv.maintenance,
-    raw: resolveRawFlagValue(startupFlagEnv.maintenance),
-  },
-  schemaRepair: {
-    ...startupFlagEnv.schemaRepair,
-    raw: resolveRawFlagValue(startupFlagEnv.schemaRepair),
-  },
-  dataSeed: {
-    ...startupFlagEnv.dataSeed,
-    raw: resolveRawFlagValue(startupFlagEnv.dataSeed),
-  },
-  backfill: {
-    ...startupFlagEnv.backfill,
-    raw: resolveRawFlagValue(startupFlagEnv.backfill),
-  },
-  sessionReset: {
-    ...startupFlagEnv.sessionReset,
-    raw: resolveRawFlagValue(startupFlagEnv.sessionReset),
-  },
+export const startupRawFlags = {
+  ENABLE_STARTUP_MAINTENANCE: process.env.ENABLE_STARTUP_MAINTENANCE,
+  ENABLE_STARTUP_SCHEMA_REPAIR: process.env.ENABLE_STARTUP_SCHEMA_REPAIR,
+  ENABLE_STARTUP_DATA_SEED: process.env.ENABLE_STARTUP_DATA_SEED,
+  ENABLE_STARTUP_BACKFILL: process.env.ENABLE_STARTUP_BACKFILL,
+  ENABLE_STARTUP_SESSION_RESET: process.env.ENABLE_STARTUP_SESSION_RESET,
 } as const;
 
-const startupMaintenanceEnabled = parseStartupFlag(startupFlags.maintenance.raw);
+export const startupMaintenanceEnabled = isEnabled(startupRawFlags.ENABLE_STARTUP_MAINTENANCE);
+export const startupSchemaRepairEnabled = startupMaintenanceEnabled || isEnabled(startupRawFlags.ENABLE_STARTUP_SCHEMA_REPAIR);
+export const startupDataSeedEnabled = startupMaintenanceEnabled || isEnabled(startupRawFlags.ENABLE_STARTUP_DATA_SEED);
+export const startupBackfillEnabled = startupMaintenanceEnabled || isEnabled(startupRawFlags.ENABLE_STARTUP_BACKFILL);
+export const startupSessionResetEnabled = startupMaintenanceEnabled || isEnabled(startupRawFlags.ENABLE_STARTUP_SESSION_RESET);
 
-export const startupModes = {
+export const startupEffectiveModes = {
   startupMaintenanceEnabled,
-  startupSchemaRepairEnabled:
-    startupMaintenanceEnabled || parseStartupFlag(startupFlags.schemaRepair.raw),
-  startupDataSeedEnabled:
-    startupMaintenanceEnabled || parseStartupFlag(startupFlags.dataSeed.raw),
-  startupBackfillEnabled:
-    startupMaintenanceEnabled || parseStartupFlag(startupFlags.backfill.raw),
-  startupSessionResetEnabled:
-    startupMaintenanceEnabled || parseStartupFlag(startupFlags.sessionReset.raw),
+  startupSchemaRepairEnabled,
+  startupDataSeedEnabled,
+  startupBackfillEnabled,
+  startupSessionResetEnabled,
 } as const;
