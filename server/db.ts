@@ -118,7 +118,7 @@ function initializeSqlite() {
   const sqlite = new BetterSqlite3(sqliteFile);
   db = drizzleSqlite(sqlite, { schema });
   dbMode = 'sqlite';
-  dbConfig = { mode: 'sqlite', error: config.error || 'SQLite selected' };
+  dbConfig = { mode: 'sqlite', error: config.error || 'SQLite selected', strictMode: config.strictMode };
   
   setDbConfigStatus({
     connected: true,
