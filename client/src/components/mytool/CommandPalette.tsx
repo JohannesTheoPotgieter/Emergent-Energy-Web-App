@@ -21,11 +21,11 @@ interface SearchResult {
 }
 
 const NAV_ROUTES: SearchResult[] = [
-  { type: "route", id: "/my-tool", title: "My Tool — Today", icon: Navigation },
-  { type: "route", id: "/my-tool/week", title: "My Tool — Week", icon: Navigation },
-  { type: "route", id: "/my-tool/backlog", title: "My Tool — Backlog", icon: Navigation },
+  { type: "route", id: "/my-tool", title: "My Work — Today", icon: Navigation },
+  { type: "route", id: "/my-tool/week", title: "My Work — Week", icon: Navigation },
+  { type: "route", id: "/my-tool/backlog", title: "My Work — Backlog", icon: Navigation },
   { type: "route", id: "/company-priorities", title: "Company Priorities", icon: Navigation },
-  { type: "route", id: "/my-tool/settings", title: "My Tool — Settings", icon: Navigation },
+  { type: "route", id: "/my-tool/settings", title: "My Work — Settings", icon: Navigation },
   { type: "route", id: "/projects", title: "Projects Summary", icon: Navigation },
   { type: "route", id: "/lifecycle-board", title: "Lifecycle Board", icon: Navigation },
   { type: "route", id: "/engineering", title: "Engineering Dashboard", icon: Navigation },

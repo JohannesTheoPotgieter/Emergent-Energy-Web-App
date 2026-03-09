@@ -28,7 +28,7 @@ export default function MyToolNav({ subtitle }: { subtitle?: string }) {
             className="text-2xl font-bold tracking-tight text-foreground"
             data-testid="text-page-title"
           >
-            My Tool
+            My Work
           </h1>
           <Link
             href="/my-tool/help"
