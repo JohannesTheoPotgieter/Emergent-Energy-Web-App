@@ -1,4 +1,9 @@
 import { TASK_STATUSES as SCHEMA_TASK_STATUSES, type TaskStatus } from "./schema";
+import {
+  DEFAULT_TASK_WORKFLOW_TYPE,
+  getTaskWorkflowConfig,
+  type TaskWorkflowType,
+} from "./task-workflow-config";
 
 export const TASK_STATUSES = [...SCHEMA_TASK_STATUSES] as readonly TaskStatus[];
 
@@ -98,17 +103,12 @@ export const TASK_STATUS_META: Record<TaskStatus, TaskStatusMeta> = {
   },
 };
 
-export const TASK_STATUS_TRANSITIONS: Partial<Record<TaskStatus, TaskStatus[]>> = {
-  "TO DO": ["IN PROGRESS", "HOLD", "PROJECTS ASSISTANCE", "NEEDS APPROVAL", "COMPLETE"],
-  "IN PROGRESS": ["TO DO", "HOLD", "PROJECTS ASSISTANCE", "NEEDS APPROVAL", "COMPLETE"],
-  "HOLD": ["TO DO", "IN PROGRESS", "PROJECTS ASSISTANCE", "NEEDS APPROVAL"],
-  "PROJECTS ASSISTANCE": ["TO DO", "IN PROGRESS", "HOLD", "NEEDS APPROVAL"],
-  "NEEDS APPROVAL": ["PROVIDE FEEDBACK", "QC APPROVED", "OPERATIONAL APPROVAL", "IN PROGRESS"],
-  "PROVIDE FEEDBACK": ["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "HOLD"],
-  "QC APPROVED": ["COMPLETE", "IN PROGRESS", "OPERATIONAL APPROVAL"],
-  "OPERATIONAL APPROVAL": ["QC APPROVED", "PROVIDE FEEDBACK", "IN PROGRESS", "COMPLETE"],
-  "COMPLETE": ["TO DO", "IN PROGRESS", "HOLD"],
-};
+export const TASK_STATUS_TRANSITIONS: Partial<Record<TaskStatus, TaskStatus[]>> = Object.fromEntries(
+  Object.entries(getTaskWorkflowConfig(DEFAULT_TASK_WORKFLOW_TYPE).allowedTransitions).map(([status, transitions]) => [
+    status,
+    [...transitions],
+  ]),
+) as Partial<Record<TaskStatus, TaskStatus[]>>;
 
 export function isTaskStatus(value: string): value is TaskStatus {
   return (SCHEMA_TASK_STATUSES as readonly string[]).includes(value);
@@ -146,14 +146,22 @@ export function isExecutionState(status: string): boolean {
   return isTaskStatus(status) ? TASK_STATUS_META[status].stateType === "execution" : false;
 }
 
-export function canTransition(from: string, to: string): boolean {
+export function canTransition(from: string, to: string, taskWorkflowType: TaskWorkflowType = DEFAULT_TASK_WORKFLOW_TYPE): boolean {
   if (from === to) return true;
   if (!isTaskStatus(from) || !isTaskStatus(to)) return true;
-  return TASK_STATUS_TRANSITIONS[from]?.includes(to) ?? true;
+
+  const workflowConfig = getTaskWorkflowConfig(taskWorkflowType);
+  const transitions = workflowConfig.allowedTransitions[from];
+  return transitions ? transitions.includes(to) : true;
 }
 
-export function getVisibleStatusesForView(viewType: TaskStatusViewType): TaskStatus[] {
-  if (viewType === "approval") return SCHEMA_TASK_STATUSES.filter((s) => isApprovalState(s));
-  if (viewType === "execution") return SCHEMA_TASK_STATUSES.filter((s) => isExecutionState(s));
-  return [...SCHEMA_TASK_STATUSES];
+export function getVisibleStatusesForView(
+  viewType: TaskStatusViewType,
+  taskWorkflowType: TaskWorkflowType = DEFAULT_TASK_WORKFLOW_TYPE,
+): TaskStatus[] {
+  const statuses = getTaskWorkflowConfig(taskWorkflowType).defaultStatuses;
+
+  if (viewType === "approval") return statuses.filter((s) => isApprovalState(s));
+  if (viewType === "execution") return statuses.filter((s) => isExecutionState(s));
+  return [...statuses];
 }
