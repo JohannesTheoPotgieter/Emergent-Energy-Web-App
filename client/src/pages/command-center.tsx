@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { PageHeader } from "@/components/ui/page-header";
+import { PageShell, SectionHeader, KPIStrip } from "@/components/layout/page-shell";
 import {
   AlertTriangle, ArrowRight, BarChart3, Calendar, CheckCircle2,
   CircleDot, Clock, DollarSign, FileCheck, FolderOpen, Gauge,
@@ -390,10 +390,11 @@ export default function CommandCenterPage() {
   const isLoading = tasksLoading || projectsLoading;
 
   return (
-    <div className="space-y-6 pb-8" data-testid="command-center-page">
-      <PageHeader
-        title={`Command Center`}
-        subtitle={`${ROLE_GROUP_LABELS[roleGroup]} · ${user?.name || "User"}`}
+    <PageShell className="p-4 md:p-6" data-testid="command-center-page">
+      <SectionHeader
+        icon={<Gauge className="h-5 w-5" />}
+        title="Command Center"
+        description={`${ROLE_GROUP_LABELS[roleGroup]} · ${user?.name || "User"}`}
       />
 
       {isLoading ? (
@@ -405,11 +406,11 @@ export default function CommandCenterPage() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4" data-testid="kpi-cards-section">
+          <KPIStrip className="grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5" data-testid="kpi-cards-section">
             {roleKpis.map((kpi, i) => (
               <KpiCard key={i} {...kpi} />
             ))}
-          </div>
+          </KPIStrip>
 
           {attentionItems.length > 0 && (
             <Card data-testid="attention-section">
@@ -523,6 +524,6 @@ export default function CommandCenterPage() {
           </Card>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }
