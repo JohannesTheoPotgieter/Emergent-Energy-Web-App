@@ -94,6 +94,8 @@ router.get("/api/health", async (req, res) => {
       startupFlags.ENABLE_STARTUP_SESSION_RESET === "true",
   };
 
+  const startupFlags = getStartupFlags();
+
   res.json({
     ok: dbStatus.connected,
     dbMode: dbMode,

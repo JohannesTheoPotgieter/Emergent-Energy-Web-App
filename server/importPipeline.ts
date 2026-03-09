@@ -444,3 +444,8 @@ export function stopScheduler(): void {
     schedulerInterval = null;
   }
 }
+
+
+export function getSchedulerStatus(): { active: boolean; jobRunning: boolean } {
+  return { active: schedulerInterval !== null, jobRunning: isRunning };
+}
