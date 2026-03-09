@@ -548,7 +548,11 @@ async function backfillPmUserIds() {
   if (startupDataSeedEnabled) await runDataSeedMigration().catch(err => console.error('[DataSeed] Migration error:', err));
 
   if (startupDataSeedEnabled) try {
-    const { setFeatureFlag, getFeatureFlag } = await import("./lib/feature-flags");
+    const { setFeatureFlag, getFeatureFlag, ensureRolloutFeatureFlags } = await import("./lib/feature-flags");
+    if (allowStartupMutations) {
+      await ensureRolloutFeatureFlags("system");
+      console.log("[Seed] Rollout feature flags ensured (safe defaults)");
+    }
     const existing = await getFeatureFlag("unified_work_v1");
     if (!existing) {
       const [row] = await db.select().from(appSettings).where(eq(appSettings.key, "unified_work_v1")).limit(1);
