@@ -50,6 +50,16 @@ describe("startup mode derivation", () => {
     expect(modes.startupMutationClassification).toBe("mixed");
   });
 
+
+  it("schema repair flag enables repair classification without session reset", () => {
+    process.env.ENABLE_STARTUP_SCHEMA_REPAIR = "true";
+    const modes = getStartupModes();
+    expect(modes.startupSchemaRepairEnabled).toBe(true);
+    expect(modes.startupSessionResetEnabled).toBe(false);
+    expect(modes.startupReadOnlyByDefault).toBe(false);
+    expect(modes.startupMutationClassification).toBe("repair_enabled");
+  });
+
   it("explicit session reset without schema repair is destructive classification", () => {
     process.env.ENABLE_STARTUP_SESSION_RESET = "true";
     const modes = getStartupModes();
