@@ -314,10 +314,14 @@ async function backfillPmUserIds() {
   await initializeDatabase();
 
   const startupModes = getStartupModes();
-  log(`[Startup] dbMode=${dbMode} classification=${startupModes.startupMutationClassification} schemaRepair=${startupModes.startupSchemaRepairEnabled} sessionReset=${startupModes.startupSessionResetEnabled} readOnlyByDefault=${startupModes.startupReadOnlyByDefault}`);
+  log(`[Startup] dbMode=${dbMode} classification=${startupModes.startupMutationClassification} schemaRepair=${startupModes.startupSchemaRepairEnabled} sessionReset=${startupModes.startupSessionResetEnabled} userSeed=${startupModes.startupUserSeedEnabled} readOnlyByDefault=${startupModes.startupReadOnlyByDefault}`);
 
-  // TODO(phase-3): Evaluate gating startup seeding/backfill under explicit maintenance flags.
-  await seedUsers();
+  if (startupModes.startupUserSeedEnabled) {
+    log('Startup user seeding enabled (explicit startup seed mode on)');
+    await seedUsers();
+  } else {
+    log('Startup user seeding skipped on normal boot');
+  }
   await backfillPmUserIds();
 
   // TODO(phase-3): These startup schema mutations are intentionally left unchanged for now to avoid risky boot regressions.
