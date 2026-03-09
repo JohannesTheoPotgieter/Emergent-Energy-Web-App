@@ -210,7 +210,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const role = (req as any).user?.role;
-  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
+  const IMPORT_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "CONSTRUCTION_MANAGER", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER"];
+  if (IMPORT_ROLES.includes(role)) return next();
   res.status(403).json({ error: "Admin access required" });
 }
 
