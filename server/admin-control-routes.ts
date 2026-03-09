@@ -44,6 +44,8 @@ router.get("/api/admin/control-center/health", requireAuth, requireAdmin, async 
         host: dbStatus.host,
         error: dbStatus.error || null,
       },
+      startupFlags,
+      startupModes,
       users: parseInt(userCountResult?.count || "0"),
       projects: {
         total: parseInt(projectCountResult?.count || "0"),
