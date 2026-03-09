@@ -31,6 +31,12 @@ import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getAllWorkItemsF
 import { ApiError, sendError, badRequest, notFound, validationError } from "./lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "./lib/task-validation";
 import { normalizeStatus, normalizePriority } from "./lib/canonical-task-engine";
+import {
+  mirrorWorkItemToOperationalTask,
+  softDeleteCanonicalWorkItemByLegacyTaskId,
+  softDeleteLegacyOperationalTaskByWorkItemId,
+  syncOperationalTaskFromWorkItemUpdate,
+} from "./canonical-boundaries";
 
 function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
   if (fontColor === 'red') return false;
@@ -12054,20 +12060,35 @@ export async function registerRoutes(
 
         res.json({ success: true, taskId, workItemId: wi.id });
       } else {
-        const updateFields: any = {};
-        if (updates.title != null) updateFields.title = updates.title;
-        if (updates.status != null) updateFields.status = updates.status;
-        if (updates.priority != null) updateFields.priority = updates.priority;
-        if (updates.startDate != null) updateFields.startDate = updates.startDate;
-        if (updates.dueDate != null) updateFields.dueDate = updates.dueDate;
-        if (updates.percentComplete != null) updateFields.percentComplete = updates.percentComplete;
-        if (updates.comment != null) updateFields.comment = updates.comment;
-        if (updates.assignees != null) updateFields.assignees = updates.assignees;
+        // Canonical boundary: work_items is write-master for active planning task edits.
+        const wiUpdateFields: any = {};
+        if (updates.title != null) wiUpdateFields.title = updates.title;
+        if (updates.status != null) wiUpdateFields.status = updates.status;
+        if (updates.priority != null) wiUpdateFields.priority = updates.priority;
+        if (updates.startDate != null) wiUpdateFields.startDate = updates.startDate;
+        if (updates.dueDate != null) wiUpdateFields.endDate = updates.dueDate;
+        if (updates.percentComplete != null) wiUpdateFields.percentComplete = updates.percentComplete / 100;
+        if (updates.comment != null) wiUpdateFields.description = updates.comment;
 
-        if (Object.keys(updateFields).length > 0) {
-          await db.update(operationalTasks).set(updateFields).where(eq(operationalTasks.id, actualTaskId));
+        if (Object.keys(wiUpdateFields).length > 0 && isWorkItemTask) {
+          await db.update(workItems).set(wiUpdateFields).where(eq(workItems.id, wi.id));
+
+          // Legacy mirror only: keep operational_tasks readable for transitional consumers.
+          await syncOperationalTaskFromWorkItemUpdate({
+            workItemId: wi.id,
+            updates: {
+              title: updates.title,
+              status: updates.status,
+              priority: updates.priority,
+              startDate: updates.startDate,
+              dueDate: updates.dueDate,
+              percentComplete: updates.percentComplete,
+              comment: updates.comment,
+            },
+          });
         }
-        res.json({ success: true, taskId });
+
+        res.json({ success: true, taskId, workItemId: wi?.id ?? null });
       }
     } catch (err: any) {
       console.error("Plan task update error:", err);
@@ -12138,21 +12159,22 @@ export async function registerRoutes(
           createdBy: user.id,
           taskMode: "auto",
         }).returning();
-
-        [task] = await tx.insert(operationalTasks).values({
-          projectName,
-          title,
-          status: normalizedStatus,
-          priority: normalizedPriority,
-          startDate: startDate || null,
-          dueDate: dueDate || null,
-          isMilestone: isMilestone || false,
-          parentTaskId: null,
-          percentComplete: 0,
-          createdBy: user.id,
-          importedTaskId: workItem.id,
-        }).returning();
       });
+
+      // Legacy mirror write (non-canonical): safe best-effort only.
+      const mirroredTaskId = await mirrorWorkItemToOperationalTask({
+        workItemId: workItem.id,
+        projectName,
+        title,
+        status: normalizedStatus,
+        priority: normalizedPriority,
+        startDate,
+        dueDate,
+        isMilestone: isMilestone || false,
+        createdBy: user.id,
+      });
+
+      task = { id: mirroredTaskId ?? workItem.id };
 
       const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
       if (!isAdmin) {
@@ -12353,7 +12375,9 @@ export async function registerRoutes(
           });
         }
       } else {
-        await db.update(operationalTasks).set({ deletedAt: new Date() }).where(eq(operationalTasks.id, taskId));
+        // Canonical boundary: delete work_items first; mirror delete to legacy operational_tasks.
+        await softDeleteCanonicalWorkItemByLegacyTaskId(taskId);
+        await softDeleteLegacyOperationalTaskByWorkItemId(taskId);
       }
 
       sendExcelSyncNotification({
