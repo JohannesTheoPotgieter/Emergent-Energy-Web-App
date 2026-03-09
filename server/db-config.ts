@@ -1,6 +1,6 @@
 /**
  * Database configuration resolver
- * Production-safe: Uses SQLite by default for reliability, only uses Postgres if explicitly configured and connectable
+ * Production policy: PostgreSQL is required in production; SQLite remains available for local/dev mode
  */
 
 export interface DbConfig {
@@ -8,16 +8,26 @@ export interface DbConfig {
   connectionString?: string;
   dbHost?: string;
   error?: string;
+  strictMode: boolean;
+}
+
+function isStrictRuntimeEnvironment() {
+  return process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
 }
 
 export function resolveDbConfig(): DbConfig {
+  const strictMode = isStrictRuntimeEnvironment();
   // Priority 0: Check explicit DB_MODE env var
   const explicitMode = process.env.DB_MODE?.toLowerCase();
   if (explicitMode === 'sqlite') {
+    if (strictMode) {
+      throw new Error("[DB] Unsafe DB_MODE=sqlite in production/staging. Configure PostgreSQL and remove DB_MODE=sqlite.");
+    }
     console.log(`[DB] DB_MODE=sqlite, forcing SQLite mode`);
     return {
       mode: 'sqlite',
       error: 'DB_MODE=sqlite explicitly set',
+      strictMode,
     };
   }
   
@@ -36,7 +46,12 @@ export function resolveDbConfig(): DbConfig {
       mode: 'postgres',
       connectionString: url,
       dbHost,
+      strictMode,
     };
+  }
+
+  if (strictMode) {
+    throw new Error('[DB] DATABASE_URL is required in production/staging. Refusing to fall back to SQLite.');
   }
 
   // Priority 2: SQLite fallback (safe for all deployments)
@@ -44,6 +59,7 @@ export function resolveDbConfig(): DbConfig {
   return {
     mode: 'sqlite',
     error: 'No PostgreSQL configuration found, using SQLite fallback',
+    strictMode,
   };
 }
 
