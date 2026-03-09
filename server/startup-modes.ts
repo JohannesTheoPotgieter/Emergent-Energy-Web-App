@@ -15,6 +15,8 @@ export function getStartupModes() {
     startupMaintenanceEnabled || parseEnvFlag(process.env.ENABLE_STARTUP_SCHEMA_REPAIR);
   const startupSessionResetEnabled =
     startupMaintenanceEnabled || parseEnvFlag(process.env.ENABLE_STARTUP_SESSION_RESET);
+  const startupUserSeedEnabled =
+    startupMaintenanceEnabled || parseEnvFlag(process.env.ENABLE_STARTUP_USER_SEED);
 
   const startupReadOnlyByDefault = !startupSchemaRepairEnabled && !startupSessionResetEnabled;
 
@@ -31,12 +33,14 @@ export function getStartupModes() {
     startupMaintenanceEnabled,
     startupSchemaRepairEnabled,
     startupSessionResetEnabled,
+    startupUserSeedEnabled,
     startupReadOnlyByDefault,
     startupMutationClassification,
     startupFlagsRaw: {
       ENABLE_STARTUP_MAINTENANCE: process.env.ENABLE_STARTUP_MAINTENANCE ?? null,
       ENABLE_STARTUP_SCHEMA_REPAIR: process.env.ENABLE_STARTUP_SCHEMA_REPAIR ?? null,
       ENABLE_STARTUP_SESSION_RESET: process.env.ENABLE_STARTUP_SESSION_RESET ?? null,
+      ENABLE_STARTUP_USER_SEED: process.env.ENABLE_STARTUP_USER_SEED ?? null,
     },
   };
 }
