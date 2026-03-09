@@ -10,6 +10,9 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
 interface KpiItem {
+  sourceLayer: string;
+  businessRule: string;
+  aggregationPath: string;
   id: string;
   name: string;
   currentValue: number;
@@ -98,7 +101,7 @@ export default function KpiTraceabilityPage() {
     <div className="space-y-6 p-6" data-testid="page-kpi-traceability">
       <PageHeader
         title="KPI Traceability"
-        subtitle="Full traceability of every headline number — source table, formula, API endpoint, and consuming UI component."
+        subtitle="Full traceability of every headline number — including source layer, business rule, aggregation path, API endpoint, and consuming UI component."
       />
 
       <div className="flex items-center gap-3">
@@ -153,6 +156,7 @@ export default function KpiTraceabilityPage() {
                       <TableRow>
                         <TableHead className="w-[200px]">KPI Name</TableHead>
                         <TableHead className="w-[140px] text-right">Current Value</TableHead>
+                        <TableHead className="w-[120px]">Source Layer</TableHead>
                         <TableHead className="w-[160px]">
                           <div className="flex items-center gap-1">
                             <Database className="h-3 w-3" />
@@ -160,12 +164,14 @@ export default function KpiTraceabilityPage() {
                           </div>
                         </TableHead>
                         <TableHead className="w-[140px]">Source Fields</TableHead>
+                        <TableHead className="w-[220px]">Business Rule</TableHead>
                         <TableHead className="w-[240px]">
                           <div className="flex items-center gap-1">
                             <Code className="h-3 w-3" />
                             Formula
                           </div>
                         </TableHead>
+                        <TableHead className="w-[220px]">Aggregation Path</TableHead>
                         <TableHead className="w-[180px]">API Endpoint</TableHead>
                         <TableHead className="w-[220px]">
                           <div className="flex items-center gap-1">
@@ -185,16 +191,21 @@ export default function KpiTraceabilityPage() {
                             {formatValue(kpi.id, kpi.currentValue)}
                           </TableCell>
                           <TableCell>
+                            <Badge variant="outline" className="uppercase text-[10px]">{kpi.sourceLayer}</Badge>
+                          </TableCell>
+                          <TableCell>
                             <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
                               {kpi.sourceTable}
                             </code>
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">{kpi.sourceFields}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{kpi.businessRule}</TableCell>
                           <TableCell>
                             <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono break-all">
                               {kpi.formula}
                             </code>
                           </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{kpi.aggregationPath}</TableCell>
                           <TableCell>
                             <code className="text-xs text-blue-600 font-mono">{kpi.apiEndpoint}</code>
                           </TableCell>
