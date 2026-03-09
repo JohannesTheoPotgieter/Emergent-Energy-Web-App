@@ -48,6 +48,7 @@ import {
   X,
 } from "lucide-react";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
+import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 
 async function engFetch(url: string) {
   const token = localStorage.getItem("auth_token");
@@ -1339,7 +1340,13 @@ export default function EngineeringDashboard() {
   });
 
   return (
-    <div data-testid="eng-dashboard" className="space-y-5">
+    <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
+      <SectionHeader
+        icon={<Wrench className="h-5 w-5" />}
+        title={standupMode ? "Engineering Standup" : showAllTasks ? "Engineering Overview" : `${firstName}'s Dashboard`}
+        description={todayFormatted}
+      />
+
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center shadow-md">
@@ -1569,6 +1576,6 @@ export default function EngineeringDashboard() {
       </div>
       </>
       )}
-    </div>
+    </PageShell>
   );
 }
