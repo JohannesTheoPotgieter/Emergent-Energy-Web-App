@@ -78,6 +78,21 @@ router.get("/api/health", async (req, res) => {
     sessionMaintenanceMode: startupFlags.startupMaintenanceMode ? "enabled" : "disabled",
   };
 
+  const startupFlags = {
+    ENABLE_STARTUP_MAINTENANCE: process.env.ENABLE_STARTUP_MAINTENANCE,
+    ENABLE_STARTUP_SCHEMA_REPAIR: process.env.ENABLE_STARTUP_SCHEMA_REPAIR,
+    ENABLE_STARTUP_SESSION_RESET: process.env.ENABLE_STARTUP_SESSION_RESET,
+  };
+  const startupModes = {
+    startupMaintenanceEnabled: startupFlags.ENABLE_STARTUP_MAINTENANCE === "true",
+    startupSchemaRepairEnabled:
+      startupFlags.ENABLE_STARTUP_MAINTENANCE === "true" ||
+      startupFlags.ENABLE_STARTUP_SCHEMA_REPAIR === "true",
+    startupSessionResetEnabled:
+      startupFlags.ENABLE_STARTUP_MAINTENANCE === "true" ||
+      startupFlags.ENABLE_STARTUP_SESSION_RESET === "true",
+  };
+
   res.json({
     ok: dbStatus.connected,
     dbMode: dbMode,
