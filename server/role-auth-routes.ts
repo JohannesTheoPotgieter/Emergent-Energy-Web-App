@@ -13,6 +13,7 @@ import {
   type CompanyRole,
 } from "@shared/schema";
 import { requireAuth, requireAdmin } from "./departments/shared-middleware";
+import { ApiError, sendError, badRequest, unauthorized, forbidden, serverError, logApiError } from "./lib/api-error";
 
 function isValidCompanyRole(role: string): role is CompanyRole {
   return (COMPANY_ROLES as readonly string[]).includes(role);
@@ -22,16 +23,16 @@ export function requireCompanyRole(...allowedRoles: CompanyRole[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "auth_required", message: "Authorization header required" });
+      return sendError(res, unauthorized("Authorization header required"));
     }
     const token = authHeader.substring(7);
     const payload = verifyToken(token);
     if (!payload) {
-      return res.status(401).json({ error: "invalid_token", message: "Invalid or expired token" });
+      return sendError(res, new ApiError(401, "INVALID_TOKEN", "Invalid or expired token"));
     }
     const role = (payload as any).role as string;
     if (!role || !allowedRoles.includes(role as CompanyRole)) {
-      return res.status(403).json({ error: "forbidden", message: `Requires one of: ${allowedRoles.join(", ")}` });
+      return sendError(res, forbidden(`Requires one of: ${allowedRoles.join(", ")}`));
     }
     (req as any).companyRole = role;
     (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role };
@@ -72,26 +73,27 @@ export function registerRoleAuthRoutes(app: Express) {
       const { role, password } = req.body;
 
       if (!role || !password) {
-        return res.status(400).json({ error: "missing_fields", message: "Role and password are required" });
+        return sendError(res, badRequest("Role and password are required"));
       }
 
       if (!isValidCompanyRole(role)) {
-        return res.status(400).json({ error: "invalid_role", message: "Invalid company role" });
+        return sendError(res, badRequest("Invalid company role"));
       }
 
       const [cred] = await db.select().from(roleCredentials).where(eq(roleCredentials.role, role));
       if (!cred) {
-        return res.status(404).json({ error: "role_not_found", message: "Role credentials not configured. Run seed first." });
+        return sendError(res, new ApiError(404, "ROLE_NOT_FOUND", "Role credentials not configured. Run seed first."));
       }
 
       if (cred.failedAttempts >= 5 && cred.lockedUntil && new Date(cred.lockedUntil) > new Date()) {
         const lockoutRemaining = Math.ceil((new Date(cred.lockedUntil).getTime() - Date.now()) / 1000);
-        return res.status(429).json({
-          error: "account_locked",
-          message: `Too many failed attempts. Try again in ${Math.ceil(lockoutRemaining / 60)} minutes.`,
-          lockedUntil: cred.lockedUntil,
-          retryAfterSeconds: lockoutRemaining,
-        });
+        return sendError(
+          res,
+          new ApiError(429, "ACCOUNT_LOCKED", `Too many failed attempts. Try again in ${Math.ceil(lockoutRemaining / 60)} minutes.`, {
+            lockedUntil: String(cred.lockedUntil),
+            retryAfterSeconds: String(lockoutRemaining),
+          }),
+        );
       }
 
       const isMatch = await bcrypt.compare(password, cred.passwordHash);
@@ -113,7 +115,7 @@ export function registerRoleAuthRoutes(app: Express) {
           changesJson: { failedAttempts: newAttempts },
         });
 
-        return res.status(401).json({ error: "invalid_password", message: "Invalid password" });
+        return sendError(res, new ApiError(401, "INVALID_PASSWORD", "Invalid password"));
       }
 
       await db.update(roleCredentials).set({
@@ -146,7 +148,8 @@ export function registerRoleAuthRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[ROLE-AUTH] Login error:", err.message);
-      return res.status(500).json({ error: "server_error", message: "Login failed" });
+      logApiError("POST /api/role-auth/login", err);
+      return sendError(res, serverError("Login failed"));
     }
   });
 
@@ -160,7 +163,8 @@ export function registerRoleAuthRoutes(app: Express) {
       return res.json({ message: "Role credentials seeded successfully", count: COMPANY_ROLES.length });
     } catch (err: any) {
       console.error("[ROLE-AUTH] Seed error:", err.message);
-      return res.status(500).json({ error: "server_error", message: "Seed failed" });
+      logApiError("POST /api/role-auth/seed", err);
+      return sendError(res, serverError("Seed failed"));
     }
   });
 
@@ -168,18 +172,19 @@ export function registerRoleAuthRoutes(app: Express) {
     try {
       const authHeader = req.headers.authorization;
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return res.status(401).json({ error: "auth_required", message: "Authorization header required" });
+        return sendError(res, unauthorized("Authorization header required"));
       }
       const token = authHeader.substring(7);
       const payload = verifyToken(token);
       if (!payload) {
-        return res.status(401).json({ error: "invalid_token", message: "Invalid or expired token" });
+        return sendError(res, new ApiError(401, "INVALID_TOKEN", "Invalid or expired token"));
       }
       const role = (payload as any).role as string;
       const label = isValidCompanyRole(role) ? COMPANY_ROLE_LABELS[role] : role;
       return res.json({ role, label });
     } catch (err: any) {
-      return res.status(500).json({ error: "server_error", message: "Failed to get session" });
+      logApiError("GET /api/role-auth/me", err);
+      return sendError(res, serverError("Failed to get session"));
     }
   });
 
@@ -196,28 +201,28 @@ export function registerRoleAuthRoutes(app: Express) {
     try {
       const authHeader = req.headers.authorization;
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return res.status(401).json({ error: "auth_required", message: "Authorization header required" });
+        return sendError(res, unauthorized("Authorization header required"));
       }
       const token = authHeader.substring(7);
       const payload = verifyToken(token);
       if (!payload) {
-        return res.status(401).json({ error: "invalid_token", message: "Invalid or expired token" });
+        return sendError(res, new ApiError(401, "INVALID_TOKEN", "Invalid or expired token"));
       }
 
       const currentRole = (payload as any).role as string;
       if (currentRole !== "COO_ADMIN") {
-        return res.status(403).json({ error: "forbidden", message: "Only COO_ADMIN can change passwords" });
+        return sendError(res, forbidden("Only COO_ADMIN can change passwords"));
       }
 
       const { targetRole, newPassword } = req.body;
       if (!targetRole || !newPassword) {
-        return res.status(400).json({ error: "missing_fields", message: "targetRole and newPassword are required" });
+        return sendError(res, badRequest("targetRole and newPassword are required"));
       }
       if (!isValidCompanyRole(targetRole)) {
-        return res.status(400).json({ error: "invalid_role", message: "Invalid target role" });
+        return sendError(res, badRequest("Invalid target role"));
       }
       if (newPassword.length < 4) {
-        return res.status(400).json({ error: "weak_password", message: "Password must be at least 4 characters" });
+        return sendError(res, badRequest("Password must be at least 4 characters"));
       }
 
       const passwordHash = await bcrypt.hash(newPassword, 10);
@@ -242,7 +247,8 @@ export function registerRoleAuthRoutes(app: Express) {
       return res.json({ message: `Password updated for ${targetRole}` });
     } catch (err: any) {
       console.error("[ROLE-AUTH] Password change error:", err.message);
-      return res.status(500).json({ error: "server_error", message: "Password change failed" });
+      logApiError("PATCH /api/role-auth/password", err);
+      return sendError(res, serverError("Password change failed"));
     }
   });
 
@@ -250,11 +256,11 @@ export function registerRoleAuthRoutes(app: Express) {
     try {
       const authHeader = req.headers.authorization;
       if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return res.status(401).json({ error: "auth_required" });
+        return sendError(res, unauthorized("Authorization header required"));
       }
       const payload = verifyToken(authHeader.substring(7));
       if (!payload || (payload as any).role !== "COO_ADMIN") {
-        return res.status(403).json({ error: "forbidden", message: "Only COO_ADMIN can view passwords" });
+        return sendError(res, forbidden("Only COO_ADMIN can view passwords"));
       }
 
       const creds = await db.select({
@@ -266,7 +272,8 @@ export function registerRoleAuthRoutes(app: Express) {
 
       return res.json(creds);
     } catch (err: any) {
-      return res.status(500).json({ error: err.message });
+      logApiError("GET /api/role-auth/passwords", err);
+      return sendError(res, serverError("Failed to fetch passwords"));
     }
   });
 
@@ -281,7 +288,8 @@ export function registerRoleAuthRoutes(app: Express) {
       if (!setting) return res.json({ key, value: null });
       return res.json(setting);
     } catch (err: any) {
-      return res.status(500).json({ error: err.message });
+      logApiError("GET /api/settings", err);
+      return sendError(res, serverError("Failed to fetch settings"));
     }
   });
 
@@ -290,7 +298,7 @@ export function registerRoleAuthRoutes(app: Express) {
       const currentRole = req.user?.role || "unknown";
 
       const { key, value } = req.body;
-      if (!key) return res.status(400).json({ error: "key is required" });
+      if (!key) return sendError(res, badRequest("key is required"));
 
       const [existing] = await db.select().from(appSettings).where(eq(appSettings.key, key));
       if (existing) {
@@ -312,7 +320,8 @@ export function registerRoleAuthRoutes(app: Express) {
 
       return res.json({ message: "Setting saved", key, value });
     } catch (err: any) {
-      return res.status(500).json({ error: err.message });
+      logApiError("PUT /api/settings", err);
+      return sendError(res, serverError("Failed to save setting"));
     }
   });
 }

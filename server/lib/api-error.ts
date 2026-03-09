@@ -41,10 +41,34 @@ export function serverError(message = "Something went wrong. Please try again.")
   return new ApiError(500, "SERVER_ERROR", message);
 }
 
+function shouldExposeDetail() {
+  return process.env.NODE_ENV !== "production" || process.env.EXPOSE_ERROR_DETAIL === "true";
+}
+
+function extractDebugDetail(error: unknown) {
+  if (!shouldExposeDetail()) return undefined;
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return undefined;
+}
+
+export function logApiError(context: string, error: unknown) {
+  if (error instanceof Error) {
+    console.error(`[API Error] ${context}:`, {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    });
+    return;
+  }
+  console.error(`[API Error] ${context}:`, error);
+}
+
 export function sendError(res: Response, error: unknown) {
   if (error instanceof ApiError) {
     const body: Record<string, unknown> = {
       error: error.code,
+      code: error.code,
       type: error.code,
       message: error.message,
     };
@@ -58,20 +82,24 @@ export function sendError(res: Response, error: unknown) {
   }
 
   if (error instanceof Error) {
-    console.error("[API Error]", error.message);
+    logApiError("Unhandled", error);
     return res.status(500).json({
       error: "SERVER_ERROR",
+      code: "SERVER_ERROR",
       type: "SERVER_ERROR",
       message: "Something went wrong. Please try again.",
       nextAction: "Retry shortly or contact support if this continues.",
+      detail: extractDebugDetail(error),
     });
   }
 
-  console.error("[API Error] Unknown:", error);
+  logApiError("Unknown", error);
   return res.status(500).json({
     error: "SERVER_ERROR",
+    code: "SERVER_ERROR",
     type: "SERVER_ERROR",
     message: "Something went wrong. Please try again.",
     nextAction: "Retry shortly or contact support if this continues.",
+    detail: extractDebugDetail(error),
   });
 }
