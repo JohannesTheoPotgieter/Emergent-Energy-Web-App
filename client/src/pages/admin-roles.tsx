@@ -222,7 +222,6 @@ const SCOPE_RULES = [
   { endpoint: "Task List", scope: "Non-management users scoped to assigned or owned tasks only.", roles_affected: "ENGINEER, PROJECT_MANAGER_SITE, PROJECT_DEVELOPER", enforced: "backend" },
   { endpoint: "My Work", scope: "Strictly scoped to the current user. No cross-user visibility.", roles_affected: "All roles", enforced: "backend" },
   { endpoint: "PD Tickets", scope: "Project Developers see only their own tickets. Admin/management see all.", roles_affected: "PROJECT_DEVELOPER", enforced: "backend" },
-  { endpoint: "Smart Import", scope: "All write operations require admin-level access.", roles_affected: "Non-admin roles blocked", enforced: "backend" },
   { endpoint: "Weekly Reviews", scope: "Requires project edit permission. Scoped to assigned projects for site PMs.", roles_affected: "PROJECT_MANAGER_SITE", enforced: "backend" },
 ];
 
