@@ -97,51 +97,53 @@ app.use((err: any, _req: any, res: any, next: any) => {
 // Trust proxy for Replit deployment (needed for secure cookies)
 app.set('trust proxy', 1);
 
-// Session configuration - use appropriate store based on DB mode
-let sessionStore: any;
+function configureSessionAndAuth() {
+  // Session configuration must run after initializeDatabase() so dbMode/dbConfig are populated.
+  let sessionStore: any;
 
-if (dbMode === 'postgres' && dbConfig.connectionString) {
-  const PgSession = connectPgSimple(session);
-  const pool = new pg.Pool({ connectionString: dbConfig.connectionString });
-  sessionStore = new PgSession({
-    pool,
-    createTableIfMissing: true,
-  });
-  if (process.env.NODE_ENV === 'production') {
-    pool.query('DELETE FROM "session"').then(() => {
-      log('Cleared all sessions on deploy startup');
-    }).catch(() => {});
-  }
-  log('Using PostgreSQL session store');
-} else {
-  if (isStrictRuntime) {
-    throw new Error("Session store requires PostgreSQL in staging/production; in-memory sessions are disabled.");
+  if (dbMode === 'postgres' && dbConfig.connectionString) {
+    const PgSession = connectPgSimple(session);
+    const pool = new pg.Pool({ connectionString: dbConfig.connectionString });
+    sessionStore = new PgSession({
+      pool,
+      createTableIfMissing: true,
+    });
+    if (process.env.NODE_ENV === 'production') {
+      pool.query('DELETE FROM "session"').then(() => {
+        log('Cleared all sessions on deploy startup');
+      }).catch(() => {});
+    }
+    log('Using PostgreSQL session store');
+  } else {
+    if (isStrictRuntime) {
+      throw new Error("Session store requires PostgreSQL in staging/production; in-memory sessions are disabled.");
+    }
+
+    const MemoryStoreSession = MemoryStore(session);
+    sessionStore = new MemoryStoreSession({
+      checkPeriod: 86400000,
+    });
+    log('Using in-memory session store (local development mode)');
   }
 
-  const MemoryStoreSession = MemoryStore(session);
-  sessionStore = new MemoryStoreSession({
-    checkPeriod: 86400000,
-  });
-  log('Using in-memory session store (local development mode)');
+  app.use(
+    session({
+      store: sessionStore,
+      secret: sessionSecret || "local-dev-session-secret-change-me",
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        secure: process.env.NODE_ENV === "production",
+        httpOnly: true,
+        sameSite: process.env.NODE_ENV === "production" ? 'none' : 'lax',
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+      },
+    })
+  );
+
+  app.use(passport.initialize());
+  app.use(passport.session());
 }
-
-app.use(
-  session({
-    store: sessionStore,
-    secret: sessionSecret || "local-dev-session-secret-change-me",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: process.env.NODE_ENV === "production",
-      httpOnly: true,
-      sameSite: process.env.NODE_ENV === "production" ? 'none' : 'lax',
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-    },
-  })
-);
-
-app.use(passport.initialize());
-app.use(passport.session());
 
 // Passport Local Strategy
 passport.use(
@@ -364,6 +366,7 @@ async function backfillPmUserIds() {
   // Initialize database FIRST before any storage operations
   await initializeDatabase();
   runtimeStatus.dbConnected = true;
+  configureSessionAndAuth();
   
   if (isLocalDevelopmentMode) {
     await seedUsers();
