@@ -80,6 +80,8 @@ app.set('trust proxy', 1);
 
 // Session configuration - use appropriate store based on DB mode
 let sessionStore: any;
+const startupMaintenanceEnabled = process.env.STARTUP_MAINTENANCE_MODE === "true";
+const startupSyncEnabled = process.env.STARTUP_ENABLE_PERIODIC_SYNC !== "false";
 
 if (dbMode === 'postgres' && dbConfig.connectionString) {
   const PgSession = connectPgSimple(session);
@@ -683,7 +685,12 @@ async function backfillPmUserIds() {
   registerMsSyncRoutes(app);
 
   const { startPeriodicSync } = await import("./ms-sync-service");
-  startPeriodicSync();
+  // Startup behavior is intentionally explicit: periodic sync only starts when not disabled via env flag.
+  if (startupSyncEnabled) {
+    startPeriodicSync();
+  } else {
+    log('Skipped periodic sync startup due to STARTUP_ENABLE_PERIODIC_SYNC=false', 'sync');
+  }
 
   if (startupSchemaRepairEnabled) await db.execute(sql.raw(`
     CREATE TABLE IF NOT EXISTS portfolios (

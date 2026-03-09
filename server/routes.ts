@@ -805,6 +805,8 @@ export async function registerRoutes(
       dbError: dbStatus.error || null,
       envDbMode: envDbMode || 'auto',
       hasDatabaseUrl,
+      startupFlags,
+      startupModes,
       message: dbStatus.message,
       startupFlagsRaw: startupModes.startupFlagsRaw,
       startupModes: {
