@@ -37,6 +37,26 @@ const startupSchemaRepairEnabled =
 const startupSessionResetEnabled =
   startupMaintenanceEnabled || startupFlags.ENABLE_STARTUP_SESSION_RESET === "true";
 
+const isStrictRuntime = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
+const isLocalDevelopmentMode = process.env.LOCAL_DEV_MODE === "true";
+const isAdminMigrationMode = process.env.ADMIN_MIGRATION_MODE === "true";
+const allowStartupMutations = isLocalDevelopmentMode || isAdminMigrationMode;
+
+const sessionSecret = process.env.SESSION_SECRET;
+if (isStrictRuntime && !sessionSecret) {
+  throw new Error("SESSION_SECRET must be set in staging/production. Refusing to start with an unsafe default secret.");
+}
+
+const runtimeStatus = {
+  schedulerRunning: false,
+  milestoneCheckerRunning: false,
+  dbConnected: false,
+};
+
+function generateRequestId() {
+  return `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -118,15 +138,6 @@ if (dbMode === 'postgres' && dbConfig.connectionString) {
   } else if (process.env.NODE_ENV === 'production') {
     log('Startup session reset disabled; preserving existing sessions on boot');
   }
-  log('Using PostgreSQL session store');
-} else {
-  // Fallback to memory store for SQLite mode
-  const MemoryStoreSession = MemoryStore(session);
-  sessionStore = new MemoryStoreSession({
-    checkPeriod: 86400000, // prune expired entries every 24h
-  });
-  log('Using in-memory session store (SQLite fallback mode)');
-}
 
 
 const sessionSecret = process.env.SESSION_SECRET;
@@ -149,8 +160,9 @@ app.use(
   })
 );
 
-app.use(passport.initialize());
-app.use(passport.session());
+  app.use(passport.initialize());
+  app.use(passport.session());
+}
 
 // Passport Local Strategy
 passport.use(
@@ -213,14 +225,8 @@ export function log(message: string, source = "express") {
 
 app.use((req, res, next) => {
   const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
+  const requestId = (req.headers["x-request-id"] as string) || generateRequestId();
+  res.setHeader("x-request-id", requestId);
 
   res.on("finish", () => {
     const duration = Date.now() - start;
@@ -447,6 +453,7 @@ async function backfillPmUserIds() {
   }
 
   }
+  }
 
   const { seedQualityTemplate } = await import("./seed-quality-template");
   if (startupDataSeedEnabled) await seedQualityTemplate().catch(err => console.error('[Seed] Quality template error:', err));
@@ -543,7 +550,7 @@ async function backfillPmUserIds() {
     const existing = await getFeatureFlag("unified_work_v1");
     if (!existing) {
       const [row] = await db.select().from(appSettings).where(eq(appSettings.key, "unified_work_v1")).limit(1);
-      if (!row) {
+      if (allowStartupMutations && !row) {
         await setFeatureFlag("unified_work_v1", true, "system");
         console.log("[Seed] Feature flag unified_work_v1 seeded (ON)");
       }
@@ -573,6 +580,7 @@ async function backfillPmUserIds() {
     } catch (err) {
       console.error('[Story] Seed error (non-fatal):', err);
     }
+  }
   }
 
   const { seedEeInfoUpdates } = await import("./seed-ee-info-updates");
@@ -669,6 +677,7 @@ async function backfillPmUserIds() {
     } catch (err) {
       console.error('[MS-Filter] Assignment cleanup error:', err);
     }
+  }
   }
 
   const { registerPortfolioRoutes } = await import("./portfolio-routes");
@@ -981,7 +990,7 @@ async function backfillPmUserIds() {
     console.error('[Backfill] work_items actual date sync error:', err.message);
   }
 
-  try {
+  if (allowStartupMutations) try {
     const { backfillWorkItems } = await import("./work-items-backfill");
     if (startupBackfillEnabled) await backfillWorkItems();
   } catch (err: any) {
@@ -1184,6 +1193,7 @@ async function backfillPmUserIds() {
       startScheduler();
       // Runtime service: milestone checker loop (not startup maintenance/schema/data mutation).
       startMilestoneChecker();
+      runtimeStatus.milestoneCheckerRunning = true;
       log('SharePoint scheduled import checker started');
     },
   );

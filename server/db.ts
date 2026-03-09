@@ -68,8 +68,12 @@ async function initializeDatabase(): Promise<void> {
       throw new Error('[DB] PostgreSQL is configured but unreachable; refusing SQLite fallback in production.');
     }
   }
-  
-  // Use SQLite (either by config or because Postgres failed)
+
+  if (config.strictMode) {
+    throw new Error('[DB] Strict runtime requires PostgreSQL. SQLite initialization blocked.');
+  }
+
+  // Use SQLite (local/dev mode only)
   initializeSqlite();
   const { startupSchemaRepairEnabled } = getStartupModes();
   if (startupSchemaRepairEnabled) {
