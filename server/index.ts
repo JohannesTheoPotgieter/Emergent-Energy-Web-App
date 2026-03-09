@@ -23,6 +23,18 @@ import { registerExcoRoutes } from "./departments/exco-routes";
 const app = express();
 const httpServer = createServer(app);
 
+const startupFlags = {
+  ENABLE_STARTUP_MAINTENANCE: process.env.ENABLE_STARTUP_MAINTENANCE,
+  ENABLE_STARTUP_SCHEMA_REPAIR: process.env.ENABLE_STARTUP_SCHEMA_REPAIR,
+  ENABLE_STARTUP_SESSION_RESET: process.env.ENABLE_STARTUP_SESSION_RESET,
+};
+
+const startupMaintenanceEnabled = startupFlags.ENABLE_STARTUP_MAINTENANCE === "true";
+const startupSchemaRepairEnabled =
+  startupMaintenanceEnabled || startupFlags.ENABLE_STARTUP_SCHEMA_REPAIR === "true";
+const startupSessionResetEnabled =
+  startupMaintenanceEnabled || startupFlags.ENABLE_STARTUP_SESSION_RESET === "true";
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -85,9 +97,9 @@ if (dbMode === 'postgres' && dbConfig.connectionString) {
   const pool = new pg.Pool({ connectionString: dbConfig.connectionString });
   sessionStore = new PgSession({
     pool,
-    createTableIfMissing: true,
+    createTableIfMissing: startupSchemaRepairEnabled,
   });
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' && startupSessionResetEnabled) {
     pool.query('DELETE FROM "session"').then(() => {
       log('Cleared all sessions on deploy startup');
     }).catch(() => {});
@@ -652,6 +664,7 @@ async function backfillPmUserIds() {
   registerMsSyncRoutes(app);
 
   const { startPeriodicSync } = await import("./ms-sync-service");
+  // Periodic Microsoft sync is normal runtime behavior and remains enabled by default.
   startPeriodicSync();
 
   await db.execute(sql.raw(`
