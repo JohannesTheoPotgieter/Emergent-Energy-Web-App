@@ -116,6 +116,41 @@ export function registerDependencyRoutes(app: Express) {
     }
   });
 
+  app.get("/api/dependencies/project-name/:projectName", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectName = decodeURIComponent(req.params.projectName);
+      const projectTasks = await db.select({ id: workItems.id })
+        .from(workItems)
+        .where(and(
+          sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${projectName})`,
+          sql`${workItems.deletedAt} IS NULL`
+        ));
+
+      if (projectTasks.length === 0) {
+        return res.json({ dependencies: [] });
+      }
+
+      const taskIds = projectTasks.map((t: { id: number }) => t.id);
+
+      const deps = await db.select({
+        id: workItemDependencies.id,
+        predecessorId: workItemDependencies.predecessorId,
+        successorId: workItemDependencies.successorId,
+        depType: workItemDependencies.depType,
+        lagDays: workItemDependencies.lagDays,
+      })
+        .from(workItemDependencies)
+        .where(
+          sql`(${workItemDependencies.predecessorId} = ANY(${taskIds}) OR ${workItemDependencies.successorId} = ANY(${taskIds}))`
+        );
+
+      res.json({ dependencies: deps });
+    } catch (err: any) {
+      console.error("[Dependencies] GET by project name error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/dependencies", requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
     try {
       const parsed = insertWorkItemDependencySchema.safeParse(req.body);
