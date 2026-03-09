@@ -343,7 +343,8 @@ async function backfillPmUserIds() {
     await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'pending'`));
     await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES users(id)`));
     await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP`));
-  } catch (e) {}
+    } catch (e) {}
+  }
 
   log(`[Startup] maintenance=${startupMaintenanceEnabled} schemaRepair=${startupSchemaRepairEnabled} dataSeed=${startupDataSeedEnabled} backfill=${startupBackfillEnabled} sessionReset=${startupSessionResetEnabled}`);
 
@@ -567,8 +568,9 @@ async function backfillPmUserIds() {
         console.log("[Seed] Feature flag unified_work_v1 seeded (ON)");
       }
     }
-  } catch (err: any) {
-    console.error("[Seed] Feature flag seed error:", err.message);
+    } catch (err: any) {
+      console.error("[Seed] Feature flag seed error:", err.message);
+    }
   }
 
   const { registerEeInfoRoutes, bootImportCheck, seedStoryLifecycleData, seedStoryDemoData } = await import("./ee-info-routes");
@@ -588,8 +590,9 @@ async function backfillPmUserIds() {
       const count = await seedStoryDemoData();
       console.log(`[Story] Demo walkthrough seeded: ${count} steps`);
     }
-  } catch (err) {
-    console.error('[Story] Seed error (non-fatal):', err);
+    } catch (err) {
+      console.error('[Story] Seed error (non-fatal):', err);
+    }
   }
 
   const { seedEeInfoUpdates } = await import("./seed-ee-info-updates");
@@ -683,8 +686,9 @@ async function backfillPmUserIds() {
       }
       if (opCleared > 0 || trCleared > 0) console.log(`[MS-Filter] Cleared non-MS-linked assignments: ${opCleared} operational tasks, ${trCleared} TR items`);
     }
-  } catch (err) {
-    console.error('[MS-Filter] Assignment cleanup error:', err);
+    } catch (err) {
+      console.error('[MS-Filter] Assignment cleanup error:', err);
+    }
   }
 
   const { registerPortfolioRoutes } = await import("./portfolio-routes");
@@ -747,7 +751,9 @@ async function backfillPmUserIds() {
       moved_at TIMESTAMP
     );
   `)).catch(err => console.error('[Portfolio] Table creation error:', err));
+  }
 
+  if (startupSchemaRepairEnabled) {
   // Phase 1: Canonical work_items schema migration (additive only)
   if (startupSchemaRepairEnabled) try {
     await db.execute(sql.raw(`ALTER TABLE project_info ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id)`));
@@ -930,6 +936,7 @@ async function backfillPmUserIds() {
   } catch (err: any) {
     console.error('[Migration] Phase 1 error:', err.message);
   }
+  }
 
   if (startupSchemaRepairEnabled) try {
     await db.execute(sql.raw(`
@@ -938,6 +945,7 @@ async function backfillPmUserIds() {
     `));
   } catch (err: any) {
     console.error('[Migration] ms_accounts SSO token columns error:', err.message);
+  }
   }
 
   if (startupSchemaRepairEnabled) try {
@@ -1067,8 +1075,9 @@ async function backfillPmUserIds() {
     if (otUpdated > 0 || trUpdated > 0) {
       log(`[Backfill] assignee_user_ids: ${otUpdated} operational_tasks, ${trUpdated} tr_items updated`);
     }
-  } catch (err: any) {
-    console.error("[Backfill] assignee_user_ids sync error:", err.message);
+    } catch (err: any) {
+      console.error("[Backfill] assignee_user_ids sync error:", err.message);
+    }
   }
 
   if (startupSchemaRepairEnabled) try {
@@ -1086,6 +1095,7 @@ async function backfillPmUserIds() {
   } catch (err: any) {
     console.error('[Migration] user_project_folders error:', err.message);
   }
+  }
 
   if (startupSchemaRepairEnabled) try {
     await db.execute(sql.raw(`ALTER TABLE smart_import_runs ADD COLUMN IF NOT EXISTS records_attempted INTEGER`));
@@ -1094,6 +1104,7 @@ async function backfillPmUserIds() {
     await db.execute(sql.raw(`ALTER TABLE smart_import_runs ADD COLUMN IF NOT EXISTS import_type TEXT`));
   } catch (err: any) {
     console.error('[Migration] smart_import_runs columns error:', err.message);
+  }
   }
 
   const { registerHandoverRoutes, ensureHandoverTables } = await import("./handover-routes");
@@ -1191,6 +1202,7 @@ async function backfillPmUserIds() {
       log(`serving on port ${port}`);
       if (startupBackfillEnabled) runBackfill().catch(err => console.error('[Backfill] startup error:', err));
       startScheduler();
+      // Runtime service: milestone checker loop (not startup maintenance/schema/data mutation).
       startMilestoneChecker();
       log('SharePoint scheduled import checker started');
     },
