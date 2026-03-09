@@ -66,6 +66,21 @@ router.get("/api/health", async (req, res) => {
   const envDbMode = process.env.DB_MODE;
   const hasDatabaseUrl = !!process.env.DATABASE_URL;
 
+  const startupFlags = {
+    ENABLE_STARTUP_MAINTENANCE: process.env.ENABLE_STARTUP_MAINTENANCE,
+    ENABLE_STARTUP_SCHEMA_REPAIR: process.env.ENABLE_STARTUP_SCHEMA_REPAIR,
+    ENABLE_STARTUP_SESSION_RESET: process.env.ENABLE_STARTUP_SESSION_RESET,
+  };
+  const startupModes = {
+    startupMaintenanceEnabled: startupFlags.ENABLE_STARTUP_MAINTENANCE === "true",
+    startupSchemaRepairEnabled:
+      startupFlags.ENABLE_STARTUP_MAINTENANCE === "true" ||
+      startupFlags.ENABLE_STARTUP_SCHEMA_REPAIR === "true",
+    startupSessionResetEnabled:
+      startupFlags.ENABLE_STARTUP_MAINTENANCE === "true" ||
+      startupFlags.ENABLE_STARTUP_SESSION_RESET === "true",
+  };
+
   res.json({
     ok: dbStatus.connected,
     dbMode: dbMode,
@@ -74,6 +89,8 @@ router.get("/api/health", async (req, res) => {
     dbError: dbStatus.error || null,
     envDbMode: envDbMode || 'auto',
     hasDatabaseUrl,
+    startupFlags,
+    startupModes,
     message: dbStatus.message,
     timestamp: new Date().toISOString(),
   });
