@@ -1174,7 +1174,7 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
     department: "EXCO",
     rhythm: [
       { frequency: "Daily", activity: "Review Engineering Standup board for blockers and overdue tasks" },
-      { frequency: "Daily", activity: "Check Execution Dashboard for project health across portfolio" },
+      { frequency: "Daily", activity: "Check Execution Board for project health across portfolio" },
       { frequency: "Weekly", activity: "Run Weekly Review wizard across all active projects" },
       { frequency: "Weekly", activity: "Review COS Control for budget variance exceptions" },
       { frequency: "Weekly", activity: "Check Lifecycle Board for phase-gate readiness" },
@@ -1207,7 +1207,7 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
       { role: "Legal", when: "Contract disputes or compliance issues" },
     ],
     dashboards: [
-      { label: "Execution Dashboard", path: "/dashboard" },
+      { label: "Execution Board", path: "/dashboard" },
       { label: "Engineering Dashboard", path: "/engineering" },
       { label: "COS Control", path: "/cos-control" },
       { label: "Lifecycle Board", path: "/lifecycle-board" },
@@ -1280,7 +1280,7 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
     roleLabel: "Program / Project Manager",
     department: "Project Management",
     rhythm: [
-      { frequency: "Daily", activity: "Check project progress on Execution Dashboard" },
+      { frequency: "Daily", activity: "Check project progress on Execution Board" },
       { frequency: "Daily", activity: "Review notifications for plan changes and approvals" },
       { frequency: "Weekly", activity: "Update project plan tasks and milestones" },
       { frequency: "Weekly", activity: "Review revenue tracking and milestone invoicing" },
@@ -1314,7 +1314,7 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
       { role: "Engineering Manager", when: "Technical issues blocking construction" },
     ],
     dashboards: [
-      { label: "Execution Dashboard", path: "/dashboard" },
+      { label: "Execution Board", path: "/dashboard" },
       { label: "Projects", path: "/projects" },
       { label: "Smart Import", path: "/smart-import" },
       { label: "PM Dashboard", path: "/pm-dashboard" },
@@ -1470,7 +1470,7 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
       { role: "Procurement", when: "Material shortages or delivery failures" },
     ],
     dashboards: [
-      { label: "Execution Dashboard", path: "/dashboard" },
+      { label: "Execution Board", path: "/dashboard" },
       { label: "Projects", path: "/projects" },
       { label: "Engineering Tasks", path: "/engineering/tasks" },
       { label: "Subcontractor Dashboard", path: "/subcontractor-dashboard" },
@@ -1671,7 +1671,7 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
     dashboards: [
       { label: "Portfolios", path: "/portfolios" },
       { label: "Projects", path: "/projects" },
-      { label: "Execution Dashboard", path: "/dashboard" },
+      { label: "Execution Board", path: "/dashboard" },
       { label: "Collaboration Hub", path: "/collaboration" },
     ],
     topActions: [

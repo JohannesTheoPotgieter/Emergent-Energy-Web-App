@@ -241,7 +241,7 @@ export default function ExecutionBoard() {
           <CardContent className="py-12 text-center">
             <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
             <h2 className="text-xl font-semibold mb-2" data-testid="text-access-denied">Access Denied</h2>
-            <p className="text-muted-foreground text-sm">You don't have permission to view the Execution Dashboard.</p>
+            <p className="text-muted-foreground text-sm">You don't have permission to view the Execution Board.</p>
           </CardContent>
         </Card>
       </div>
@@ -254,7 +254,7 @@ export default function ExecutionBoard() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="text-execution-title">
             <Activity className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
-            Execution Dashboard
+            Execution Board
           </h1>
           <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">Plan progress & financial health across active projects</p>
         </div>
