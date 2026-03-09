@@ -31,6 +31,7 @@ import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getAllWorkItemsF
 import { ApiError, sendError, badRequest, notFound, validationError } from "./lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "./lib/task-validation";
 import { normalizeStatus, normalizePriority } from "./lib/canonical-task-engine";
+import { getStartupFlags } from "./startup-flags";
 
 function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
   if (fontColor === 'red') return false;
@@ -788,13 +789,14 @@ export async function registerRoutes(
   app.get("/api/health", async (req, res) => {
     const { dbMode } = await import("./db");
     const { getDbConfigStatus } = await import("./db-config");
-    
+
     const dbStatus = getDbConfigStatus();
-    
+    const startupFlags = getStartupFlags();
+
     // Check DB_MODE env var support
     const envDbMode = process.env.DB_MODE;
     const hasDatabaseUrl = !!process.env.DATABASE_URL;
-    
+
     res.json({
       ok: dbStatus.connected,
       dbMode: dbMode,
@@ -803,6 +805,7 @@ export async function registerRoutes(
       dbError: dbStatus.error || null,
       envDbMode: envDbMode || 'auto',
       hasDatabaseUrl,
+      startupFlags,
       message: dbStatus.message,
       timestamp: new Date().toISOString(),
     });
