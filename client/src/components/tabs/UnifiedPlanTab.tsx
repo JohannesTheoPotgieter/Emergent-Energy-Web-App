@@ -1944,7 +1944,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                       <td className="px-1 text-center border-r text-[10px] text-slate-500 truncate" onClick={(e) => e.stopPropagation()} data-testid={`predecessors-${task.id}`}>
                         <InlinePredecessorEditor
                           task={task}
-                          allTasks={visibleTasks}
+                          allTasks={tasks}
                           dependencies={projectDependencies}
                           onAdd={(predWI, succWI) => addDependencyMutation.mutate({ predecessorId: predWI, successorId: succWI })}
                           onRemove={(depId) => removeDependencyMutation.mutate(depId)}
