@@ -154,6 +154,7 @@ router.get("/api/admin/control-center/integrations", requireAuth, requireAdmin, 
 
 router.post("/api/admin/control-center/dangerous/clear-sessions", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
+    // Canonical auth session state lives in the postgres "session" table (connect-pg-simple store).
     await db.execute(sql`DELETE FROM "session"`);
     logAuditFromReq(req, {
       entityType: "system",
