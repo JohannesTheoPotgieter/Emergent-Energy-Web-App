@@ -5,7 +5,8 @@ import { sql, eq } from "drizzle-orm";
 import { appSettings, users, projectInfo, smartImportRuns, auditEvents } from "@shared/schema";
 import { getFeatureFlag, setFeatureFlag } from "./lib/feature-flags";
 import { logAuditFromReq } from "./audit-logger";
-import { startupRawFlags, startupEffectiveModes } from "./startup-flags";
+import { getStartupFlags } from "./startup-flags";
+const { rawEnv: startupRawFlags, modes: startupEffectiveModes } = getStartupFlags();
 
 const router = Router();
 
