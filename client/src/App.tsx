@@ -74,6 +74,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { checkPermission, type PermissionEntity } from "@shared/schema";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const ROUTE_TO_ENTITY: Record<string, PermissionEntity> = {
   "/dashboard": "execution_board",
@@ -130,6 +131,88 @@ const ROUTE_TO_ENTITY: Record<string, PermissionEntity> = {
 const EPM_ALLOWED_PATHS = ["/", "/command-center", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams"];
 const PM_ALLOWED_PATHS = ["/", "/command-center", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams"];
 
+type RouteConfig = { path: string; component?: React.ComponentType<any>; redirectTo?: string };
+
+const ROLE_LANDING_PAGE: Record<string, string> = {
+  PROJECT_MANAGER_SITE: "/pm-dashboard",
+  quality_manager: "/quality",
+  eng_program_manager: "/engineering",
+};
+
+const NAVIGATION_MODE = {
+  desktop: "cockpit",
+  mobile: "capture-check-approve-update-escalate",
+} as const;
+
+const APP_ROUTES: RouteConfig[] = [
+  { path: "/dashboard", component: Dashboard },
+  { path: "/projects", component: ProjectsSummary },
+  { path: "/project/:projectName/financial-linking", component: FinancialLinkingPage },
+  { path: "/project/:projectName", component: ProjectDetailPage },
+  { path: "/cashflow", component: CashflowPage },
+  { path: "/revenue", component: RevenueTracker },
+  { path: "/cos", component: CostTracker },
+  { path: "/revenue-tracker", component: RevenueTrackerPage },
+  { path: "/gp-tracker", component: GpTrackerPage },
+  { path: "/my-tool", component: MyToolTodayPage },
+  { path: "/my-tool/week", component: MyToolWeekPage },
+  { path: "/my-tool/backlog", component: MyToolBacklogPage },
+  { path: "/my-tool/settings", component: MyToolSettingsPage },
+  { path: "/company-priorities", component: MyToolPrioritiesPage },
+  { path: "/my-tool/help", component: MyToolHelpPage },
+  { path: "/admin", component: AdminPage },
+  { path: "/admin/my-tool-settings", component: MyToolAdminSettingsPage },
+  { path: "/quality", component: QmDashboardPage },
+  { path: "/engineering", component: EngineeringDashboardPage },
+  { path: "/engineering/tasks", component: EngineeringTasksPage },
+  { path: "/lifecycle-board", component: LifecycleBoardPage },
+  { path: "/execution-board", component: ExecutionBoardPage },
+  { path: "/my-tool/meetings", component: MyToolMeetingsPage },
+  { path: "/admin/settings", component: RoleSettingsPage },
+  { path: "/smart-import", component: SmartImportPage },
+  { path: "/invoice-patterns", component: InvoicePatternsPage },
+  { path: "/subcontractor-dashboard", component: SubcontractorDashboardPage },
+  { path: "/admin/activity-log", component: SystemActivityLogPage },
+  { path: "/weekly-reviews", component: WeeklyReviewsPage },
+  { path: "/admin/roles", component: AdminRolesPage },
+  { path: "/leaderboard", component: LeaderboardPage },
+  { path: "/tr-register", redirectTo: "/my-work/tasks" },
+  { path: "/feedback", component: FeedbackPage },
+  { path: "/ee-info", component: EeInfoPage },
+  { path: "/pm-dashboard", component: PMDashboard },
+  { path: "/excel-updates", component: ExcelUpdatesPage },
+  { path: "/portfolios", component: PortfoliosPage },
+  { path: "/portfolios/:id", component: PortfolioDetailPage },
+  { path: "/pd", component: PdDashboardPage },
+  { path: "/pd/tickets", component: PdTicketsPage },
+  { path: "/pd/tickets/create", component: PdTicketCreatePage },
+  { path: "/pd/tickets/:id", component: PdTicketDetailPage },
+  { path: "/settings/integrations", redirectTo: "/admin/settings" },
+  { path: "/admin/ms-integration", redirectTo: "/admin/settings" },
+  { path: "/teams/chats", component: TeamsChatsPage },
+  { path: "/admin/ms-mapping", redirectTo: "/admin/settings" },
+  { path: "/collaboration", component: CollaborationPage },
+  { path: "/collaboration/email", component: CollabEmailPage },
+  { path: "/collaboration/teams", component: CollabTeamsPage },
+  { path: "/pm/on-the-go", component: PMOnTheGoHome },
+  { path: "/pm/on-the-go/project/:projectId", component: PMOnTheGoProject },
+  { path: "/my-work", component: MyWorkHomePage },
+  { path: "/my-work/calendar", component: MyWorkCalendarPage },
+  { path: "/my-work/tasks", component: MyWorkTasksPage },
+  { path: "/my-work/approvals", component: ApprovalsPage },
+  { path: "/my-work/meetings", component: MyToolMeetingsPage },
+  { path: "/my-work/email", component: CollabEmailPage },
+  { path: "/my-work/teams", component: TeamsChatsPage },
+  { path: "/admin/database-migration", component: DatabaseMigrationPage },
+  { path: "/admin/kpi-traceability", component: KpiTraceabilityPage },
+  { path: "/admin/import-control-tower", component: ImportControlTowerPage },
+  { path: "/admin/recovery", component: AdminRecoveryPage },
+  { path: "/admin/control-center", component: AdminControlCenterPage },
+  { path: "/command-center", component: CommandCenterPage },
+  { path: "/clients", component: ClientsPage },
+];
+
+
 function AccessDenied() {
   return (
     <div className="min-h-[60vh] flex items-center justify-center">
@@ -150,8 +233,14 @@ function AccessDenied() {
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [location] = useLocation();
+  const isMobile = useIsMobile();
+  const navMode = isMobile ? NAVIGATION_MODE.mobile : NAVIGATION_MODE.desktop;
 
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+
+  if (process.env.NODE_ENV !== "production") {
+    (window as any).__navMode = navMode;
+  }
 
   const { data: permissions } = useQuery<{ role?: string; entityPermissions?: Record<string, Record<string, boolean>> | null }>({
     queryKey: ["auth-permissions", user?.role],
@@ -229,77 +318,16 @@ function ProtectedPages() {
       <Switch>
         <Route path="/">{() => {
           const role = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-          if (role === "PROJECT_MANAGER_SITE") return <Redirect to="/pm-dashboard" />;
+          const landingPath = role ? ROLE_LANDING_PAGE[role] : undefined;
+          if (landingPath) return <Redirect to={landingPath} />;
           return <Home />;
         }}</Route>
-        <Route path="/dashboard" component={Dashboard} />
-        <Route path="/projects" component={ProjectsSummary} />
-        <Route path="/project/:projectName/financial-linking" component={FinancialLinkingPage} />
-        <Route path="/project/:projectName" component={ProjectDetailPage} />
-        <Route path="/cashflow" component={CashflowPage} />
-        <Route path="/revenue" component={RevenueTracker} />
-        <Route path="/cos" component={CostTracker} />
-        <Route path="/revenue-tracker" component={RevenueTrackerPage} />
-        <Route path="/gp-tracker" component={GpTrackerPage} />
-        <Route path="/my-tool" component={MyToolTodayPage} />
-        <Route path="/my-tool/week" component={MyToolWeekPage} />
-        <Route path="/my-tool/backlog" component={MyToolBacklogPage} />
-        <Route path="/my-tool/settings" component={MyToolSettingsPage} />
-        <Route path="/company-priorities" component={MyToolPrioritiesPage} />
-        <Route path="/my-tool/help" component={MyToolHelpPage} />
-        <Route path="/admin" component={AdminPage} />
-        <Route path="/admin/my-tool-settings" component={MyToolAdminSettingsPage} />
-        <Route path="/quality" component={QmDashboardPage} />
-        <Route path="/engineering" component={EngineeringDashboardPage} />
-        <Route path="/engineering/tasks" component={EngineeringTasksPage} />
-        <Route path="/lifecycle-board" component={LifecycleBoardPage} />
-        <Route path="/execution-board" component={ExecutionBoardPage} />
-        <Route path="/my-tool/meetings" component={MyToolMeetingsPage} />
-        <Route path="/admin/settings" component={RoleSettingsPage} />
-        <Route path="/smart-import" component={SmartImportPage} />
-        <Route path="/invoice-patterns" component={InvoicePatternsPage} />
-        <Route path="/subcontractor-dashboard" component={SubcontractorDashboardPage} />
-        <Route path="/admin/activity-log" component={SystemActivityLogPage} />
-        <Route path="/weekly-reviews" component={WeeklyReviewsPage} />
-        <Route path="/admin/roles" component={AdminRolesPage} />
-        <Route path="/leaderboard" component={LeaderboardPage} />
-        <Route path="/tr-register">
-          <Redirect to="/my-work/tasks" />
-        </Route>
-        <Route path="/feedback" component={FeedbackPage} />
-        <Route path="/ee-info" component={EeInfoPage} />
-        <Route path="/pm-dashboard" component={PMDashboard} />
-        <Route path="/excel-updates" component={ExcelUpdatesPage} />
-        <Route path="/portfolios" component={PortfoliosPage} />
-        <Route path="/portfolios/:id" component={PortfolioDetailPage} />
-        <Route path="/pd" component={PdDashboardPage} />
-        <Route path="/pd/tickets" component={PdTicketsPage} />
-        <Route path="/pd/tickets/create" component={PdTicketCreatePage} />
-        <Route path="/pd/tickets/:id" component={PdTicketDetailPage} />
-        <Route path="/settings/integrations">{() => <Redirect to="/admin/settings" />}</Route>
-        <Route path="/admin/ms-integration">{() => <Redirect to="/admin/settings" />}</Route>
-        <Route path="/teams/chats" component={TeamsChatsPage} />
-        <Route path="/admin/ms-mapping">{() => <Redirect to="/admin/settings" />}</Route>
-        <Route path="/collaboration" component={CollaborationPage} />
-        <Route path="/collaboration/email" component={CollabEmailPage} />
-        <Route path="/collaboration/teams" component={CollabTeamsPage} />
-        <Route path="/pm/on-the-go" component={PMOnTheGoHome} />
-        <Route path="/pm/on-the-go/project/:projectId" component={PMOnTheGoProject} />
-        <Route path="/my-work" component={MyWorkHomePage} />
-        <Route path="/my-work/calendar" component={MyWorkCalendarPage} />
-        <Route path="/my-work/tasks" component={MyWorkTasksPage} />
-        <Route path="/my-work/approvals" component={ApprovalsPage} />
-        <Route path="/my-work/meetings" component={MyToolMeetingsPage} />
-        <Route path="/my-work/email" component={CollabEmailPage} />
-        <Route path="/my-work/teams" component={TeamsChatsPage} />
-        <Route path="/admin/database-migration" component={DatabaseMigrationPage} />
-        <Route path="/admin/kpi-traceability" component={KpiTraceabilityPage} />
-        <Route path="/admin/import-control-tower" component={ImportControlTowerPage} />
-        <Route path="/admin/recovery" component={AdminRecoveryPage} />
-        <Route path="/admin/control-center" component={AdminControlCenterPage} />
-        <Route path="/command-center" component={CommandCenterPage} />
-        <Route path="/clients" component={ClientsPage} />
-
+        {APP_ROUTES.map((route) => {
+          if (route.redirectTo) {
+            return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;
+          }
+          return <Route key={route.path} path={route.path} component={route.component!} />;
+        })}
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
