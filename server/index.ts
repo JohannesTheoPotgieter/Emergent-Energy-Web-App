@@ -23,19 +23,12 @@ import { getStartupModes } from "./startup-modes";
 
 const app = express();
 const httpServer = createServer(app);
-const startupFlags = getStartupFlags();
-
-const startupFlags = {
-  ENABLE_STARTUP_MAINTENANCE: process.env.ENABLE_STARTUP_MAINTENANCE,
-  ENABLE_STARTUP_SCHEMA_REPAIR: process.env.ENABLE_STARTUP_SCHEMA_REPAIR,
-  ENABLE_STARTUP_SESSION_RESET: process.env.ENABLE_STARTUP_SESSION_RESET,
-};
-
-const startupMaintenanceEnabled = startupFlags.ENABLE_STARTUP_MAINTENANCE === "true";
-const startupSchemaRepairEnabled =
-  startupMaintenanceEnabled || startupFlags.ENABLE_STARTUP_SCHEMA_REPAIR === "true";
-const startupSessionResetEnabled =
-  startupMaintenanceEnabled || startupFlags.ENABLE_STARTUP_SESSION_RESET === "true";
+const startupModes = getStartupModes();
+const {
+  startupMaintenanceEnabled,
+  startupSchemaRepairEnabled,
+  startupSessionResetEnabled,
+} = startupModes;
 
 declare module "http" {
   interface IncomingMessage {
@@ -93,7 +86,6 @@ app.set('trust proxy', 1);
 
 // Session configuration - use appropriate store based on DB mode
 let sessionStore: any;
-const startupMaintenanceEnabled = process.env.STARTUP_MAINTENANCE_MODE === "true";
 const startupSyncEnabled = process.env.STARTUP_ENABLE_PERIODIC_SYNC !== "false";
 
 if (dbMode === 'postgres' && dbConfig.connectionString) {
@@ -103,7 +95,6 @@ if (dbMode === 'postgres' && dbConfig.connectionString) {
     pool,
     createTableIfMissing: startupSchemaRepairEnabled,
   });
-  const { startupSessionResetEnabled } = getStartupModes();
   if (process.env.NODE_ENV === 'production' && startupSessionResetEnabled) {
     pool.query('DELETE FROM "session"').then(() => {
       log('Cleared all sessions on deploy startup (startup session reset enabled)');
@@ -328,22 +319,28 @@ async function backfillPmUserIds() {
   // Initialize database FIRST before any storage operations
   await initializeDatabase();
 
-  const startupModes = getStartupModes();
   log(`[Startup] dbMode=${dbMode} classification=${startupModes.startupMutationClassification} schemaRepair=${startupModes.startupSchemaRepairEnabled} sessionReset=${startupModes.startupSessionResetEnabled} readOnlyByDefault=${startupModes.startupReadOnlyByDefault}`);
+
+  if (startupSchemaRepairEnabled) {
+    log('[Startup] Startup schema repair is enabled; migration-style SQL blocks will run');
+  } else {
+    log('[Startup] Startup schema repair is disabled; migration-style SQL blocks will be skipped on normal boot');
+  }
 
   // TODO(phase-3): Evaluate gating startup seeding/backfill under explicit maintenance flags.
   await seedUsers();
   await backfillPmUserIds();
 
   // TODO(phase-3): These startup schema mutations are intentionally left unchanged for now to avoid risky boot regressions.
-  try {
-    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
-    await db.execute(sql.raw(`ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS no_revenue_linked BOOLEAN DEFAULT FALSE`));
-    await db.execute(sql.raw(`ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS has_deliverable BOOLEAN NOT NULL DEFAULT FALSE`));
-    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS project_eng_task_id INTEGER REFERENCES project_eng_tasks(id) ON DELETE SET NULL`));
-    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'pending'`));
-    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES users(id)`));
-    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP`));
+  if (startupSchemaRepairEnabled) {
+    try {
+      await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
+      await db.execute(sql.raw(`ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS no_revenue_linked BOOLEAN DEFAULT FALSE`));
+      await db.execute(sql.raw(`ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS has_deliverable BOOLEAN NOT NULL DEFAULT FALSE`));
+      await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS project_eng_task_id INTEGER REFERENCES project_eng_tasks(id) ON DELETE SET NULL`));
+      await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'pending'`));
+      await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES users(id)`));
+      await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP`));
     } catch (e) {}
   }
 
