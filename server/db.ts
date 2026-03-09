@@ -17,7 +17,7 @@ let isInitialized = false;
 
 /**
  * Deterministic database initialization - selects DB ONCE and never switches
- * Falls back to SQLite if Postgres connection fails (production-safe)
+ * In strict runtime environments, fails hard if PostgreSQL is unavailable
  */
 async function initializeDatabase(): Promise<void> {
   if (isInitialized) return;
@@ -51,14 +51,25 @@ async function initializeDatabase(): Promise<void> {
         isInitialized = true;
         return;
       } else {
-        console.warn(`[DB] ⚠ PostgreSQL connection test failed, falling back to SQLite`);
+        const msg = '[DB] PostgreSQL connection test failed';
+        if (config.strictMode) {
+          throw new Error(`${msg}; refusing SQLite fallback in strict runtime environment`);
+        }
+        console.warn(`${msg}, falling back to SQLite`);
       }
     } catch (err: any) {
+      if (config.strictMode) {
+        throw new Error(`[DB] PostgreSQL connection error: ${err.message}. Refusing SQLite fallback in strict runtime environment.`);
+      }
       console.warn(`[DB] ⚠ Postgres connection error (${err.message}), falling back to SQLite`);
     }
   }
-  
-  // Use SQLite (either by config or because Postgres failed)
+
+  if (config.strictMode) {
+    throw new Error('[DB] Strict runtime requires PostgreSQL. SQLite initialization blocked.');
+  }
+
+  // Use SQLite (local/dev mode only)
   initializeSqlite();
   await ensureSqliteSchema();
   isInitialized = true;

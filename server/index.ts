@@ -23,6 +23,26 @@ import { registerExcoRoutes } from "./departments/exco-routes";
 const app = express();
 const httpServer = createServer(app);
 
+const isStrictRuntime = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
+const isLocalDevelopmentMode = process.env.LOCAL_DEV_MODE === "true";
+const isAdminMigrationMode = process.env.ADMIN_MIGRATION_MODE === "true";
+const allowStartupMutations = isLocalDevelopmentMode || isAdminMigrationMode;
+
+const sessionSecret = process.env.SESSION_SECRET;
+if (isStrictRuntime && !sessionSecret) {
+  throw new Error("SESSION_SECRET must be set in staging/production. Refusing to start with an unsafe default secret.");
+}
+
+const runtimeStatus = {
+  schedulerRunning: false,
+  milestoneCheckerRunning: false,
+  dbConnected: false,
+};
+
+function generateRequestId() {
+  return `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -94,18 +114,21 @@ if (dbMode === 'postgres' && dbConfig.connectionString) {
   }
   log('Using PostgreSQL session store');
 } else {
-  // Fallback to memory store for SQLite mode
+  if (isStrictRuntime) {
+    throw new Error("Session store requires PostgreSQL in staging/production; in-memory sessions are disabled.");
+  }
+
   const MemoryStoreSession = MemoryStore(session);
   sessionStore = new MemoryStoreSession({
-    checkPeriod: 86400000, // prune expired entries every 24h
+    checkPeriod: 86400000,
   });
-  log('Using in-memory session store (SQLite fallback mode)');
+  log('Using in-memory session store (local development mode)');
 }
 
 app.use(
   session({
     store: sessionStore,
-    secret: process.env.SESSION_SECRET || "emergent-energy-secret-key-2026",
+    secret: sessionSecret || "local-dev-session-secret-change-me",
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -181,28 +204,60 @@ export function log(message: string, source = "express") {
 
 app.use((req, res, next) => {
   const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
+  const requestId = (req.headers["x-request-id"] as string) || generateRequestId();
+  res.setHeader("x-request-id", requestId);
 
   res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
+    if (!req.path.startsWith("/api")) return;
 
-      log(logLine);
-    }
+    const durationMs = Date.now() - start;
+    const route = req.route?.path || req.path;
+    const userId = (req.user as any)?.id || null;
+    const structuredLog = {
+      requestId,
+      method: req.method,
+      route,
+      status: res.statusCode,
+      durationMs,
+      userId,
+    };
+
+    log(JSON.stringify(structuredLog), "api-request");
   });
 
   next();
+});
+
+app.get("/api/health/status", async (_req, res) => {
+  const dbState = {
+    mode: dbMode,
+    configuredMode: dbConfig.mode,
+    connected: runtimeStatus.dbConnected,
+    strictRuntime: isStrictRuntime,
+  };
+
+  const sessionMode = dbMode === "postgres" ? "postgres" : "memory";
+
+  res.status(200).json({
+    status: runtimeStatus.dbConnected ? "UP" : "DEGRADED",
+    environment: process.env.NODE_ENV || "development",
+    db: dbState,
+    session: {
+      mode: sessionMode,
+      strictSecretRequired: isStrictRuntime,
+      hasSessionSecret: Boolean(sessionSecret),
+    },
+    jobs: {
+      schedulerRunning: runtimeStatus.schedulerRunning,
+      milestoneCheckerRunning: runtimeStatus.milestoneCheckerRunning,
+    },
+    startupModes: {
+      localDevelopmentMode: isLocalDevelopmentMode,
+      adminMigrationMode: isAdminMigrationMode,
+      startupMutationsEnabled: allowStartupMutations,
+    },
+    timestamp: new Date().toISOString(),
+  });
 });
 
 async function seedUsers() {
@@ -308,10 +363,17 @@ async function backfillPmUserIds() {
 (async () => {
   // Initialize database FIRST before any storage operations
   await initializeDatabase();
+  runtimeStatus.dbConnected = true;
   
-  await seedUsers();
-  await backfillPmUserIds();
+  if (isLocalDevelopmentMode) {
+    await seedUsers();
+  }
 
+  if (allowStartupMutations) {
+    await backfillPmUserIds();
+  }
+
+  if (allowStartupMutations) {
   try {
     await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
     await db.execute(sql.raw(`ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS no_revenue_linked BOOLEAN DEFAULT FALSE`));
@@ -421,12 +483,13 @@ async function backfillPmUserIds() {
   } catch (e: any) {
     console.error('[Migration] ms_objects dismissed column error:', e.message);
   }
+  }
 
   const { seedQualityTemplate } = await import("./seed-quality-template");
-  await seedQualityTemplate().catch(err => console.error('[Seed] Quality template error:', err));
+  if (allowStartupMutations) await seedQualityTemplate().catch(err => console.error('[Seed] Quality template error:', err));
 
   const { seedEngStageTemplates } = await import("./seed-eng-templates");
-  await seedEngStageTemplates().catch(err => console.error('[Seed] Eng stage templates error:', err));
+  if (allowStartupMutations) await seedEngStageTemplates().catch(err => console.error('[Seed] Eng stage templates error:', err));
   
   const { registerQualityRoutes } = await import("./quality-routes");
   registerQualityRoutes(app);
@@ -445,7 +508,7 @@ async function backfillPmUserIds() {
 
   const { registerRoleAuthRoutes, seedRoleCredentials } = await import("./role-auth-routes");
   registerRoleAuthRoutes(app);
-  await seedRoleCredentials().catch(err => console.error('[Seed] Role credentials error:', err));
+  if (isLocalDevelopmentMode) await seedRoleCredentials().catch(err => console.error('[Seed] Role credentials error:', err));
 
   const { registerLifecycleRoutes } = await import("./lifecycle-routes");
   registerLifecycleRoutes(app);
@@ -475,7 +538,7 @@ async function backfillPmUserIds() {
   registerApprovalsRoutes(app);
 
   const { registerGamificationRoutes, ensureGamificationTables } = await import("./gamification-routes");
-  await ensureGamificationTables();
+  if (allowStartupMutations) await ensureGamificationTables();
   registerGamificationRoutes(app);
 
   const { registerWeeklyReviewRoutes } = await import("./weekly-review-routes");
@@ -488,36 +551,36 @@ async function backfillPmUserIds() {
   registerPmOnTheGoRoutes(app);
 
   const { registerPoRoutes, ensurePoTables } = await import("./po-routes");
-  await ensurePoTables();
+  if (allowStartupMutations) await ensurePoTables();
   registerPoRoutes(app);
 
   const { registerDeliverableCaptureRoutes, ensureDeliverableCaptureColumns } = await import("./deliverable-capture-routes");
-  await ensureDeliverableCaptureColumns();
+  if (allowStartupMutations) await ensureDeliverableCaptureColumns();
   registerDeliverableCaptureRoutes(app);
 
   const { registerTrRegisterRoutes, seedTrRegisterData } = await import("./tr-register-routes");
   registerTrRegisterRoutes(app);
-  await seedTrRegisterData().catch(err => console.error('[Seed] TR Register error:', err));
+  if (allowStartupMutations) await seedTrRegisterData().catch(err => console.error('[Seed] TR Register error:', err));
 
   const { seedEngineeringData } = await import("./seed-engineering");
-  await seedEngineeringData().catch(err => console.error('[Seed] Engineering data error:', err));
+  if (allowStartupMutations) await seedEngineeringData().catch(err => console.error('[Seed] Engineering data error:', err));
 
   const { seedIntakeTaskTemplates } = await import("./seed-intake-templates");
-  await seedIntakeTaskTemplates().catch(err => console.error('[Seed] Intake templates error:', err));
+  if (allowStartupMutations) await seedIntakeTaskTemplates().catch(err => console.error('[Seed] Intake templates error:', err));
 
   const { registerRoleManagementRoutes, seedRolePermissions } = await import("./role-management");
   registerRoleManagementRoutes(app);
-  await seedRolePermissions().catch(err => console.error('[Seed] Role permissions error:', err));
+  if (allowStartupMutations) await seedRolePermissions().catch(err => console.error('[Seed] Role permissions error:', err));
 
   const { runDataSeedMigration } = await import("./seed-data-migration");
-  await runDataSeedMigration().catch(err => console.error('[DataSeed] Migration error:', err));
+  if (allowStartupMutations) await runDataSeedMigration().catch(err => console.error('[DataSeed] Migration error:', err));
 
   try {
     const { setFeatureFlag, getFeatureFlag } = await import("./lib/feature-flags");
     const existing = await getFeatureFlag("unified_work_v1");
     if (!existing) {
       const [row] = await db.select().from(appSettings).where(eq(appSettings.key, "unified_work_v1")).limit(1);
-      if (!row) {
+      if (allowStartupMutations && !row) {
         await setFeatureFlag("unified_work_v1", true, "system");
         console.log("[Seed] Feature flag unified_work_v1 seeded (ON)");
       }
@@ -528,8 +591,9 @@ async function backfillPmUserIds() {
 
   const { registerEeInfoRoutes, bootImportCheck, seedStoryLifecycleData, seedStoryDemoData } = await import("./ee-info-routes");
   registerEeInfoRoutes(app);
-  await bootImportCheck().catch(err => console.error('[EE-Info] Boot import error:', err));
+  if (allowStartupMutations) await bootImportCheck().catch(err => console.error('[EE-Info] Boot import error:', err));
 
+  if (allowStartupMutations) {
   try {
     const storyCheck = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM ee_info_nodes WHERE stage_code IS NOT NULL AND stage_code != 'DEMO' AND node_type = 'lifecycle_stage'`));
     const storyCount = parseInt(String((storyCheck as any).rows?.[0]?.cnt || "0"));
@@ -546,13 +610,15 @@ async function backfillPmUserIds() {
   } catch (err) {
     console.error('[Story] Seed error (non-fatal):', err);
   }
+  }
 
   const { seedEeInfoUpdates } = await import("./seed-ee-info-updates");
-  await seedEeInfoUpdates().catch(err => console.error('[EE-Info-Update] Seed error:', err));
+  if (allowStartupMutations) await seedEeInfoUpdates().catch(err => console.error('[EE-Info-Update] Seed error:', err));
 
   const { backfillProjectIds } = await import("./lib/backfill-project-ids");
-  await backfillProjectIds().catch(err => console.error('[Backfill] Project IDs error:', err));
+  if (allowStartupMutations) await backfillProjectIds().catch(err => console.error('[Backfill] Project IDs error:', err));
 
+  if (allowStartupMutations) {
   try {
     const { resolveNameToUserId } = await import("./user-resolver");
     const opRows: any[] = await db.execute(sql.raw(`SELECT id, assignees, assignee_user_ids FROM operational_tasks WHERE array_length(assignees, 1) > 0`)).then((r: any) => Array.isArray(r) ? r : r.rows || []);
@@ -641,6 +707,7 @@ async function backfillPmUserIds() {
   } catch (err) {
     console.error('[MS-Filter] Assignment cleanup error:', err);
   }
+  }
 
   const { registerPortfolioRoutes } = await import("./portfolio-routes");
   registerPortfolioRoutes(app);
@@ -654,6 +721,7 @@ async function backfillPmUserIds() {
   const { startPeriodicSync } = await import("./ms-sync-service");
   startPeriodicSync();
 
+  if (allowStartupMutations) {
   await db.execute(sql.raw(`
     CREATE TABLE IF NOT EXISTS portfolios (
       id SERIAL PRIMARY KEY,
@@ -939,14 +1007,14 @@ async function backfillPmUserIds() {
     console.error('[Migration] work_items canonical columns error:', err.message);
   }
 
-  try {
+  if (allowStartupMutations) try {
     const { backfillWorkItems } = await import("./work-items-backfill");
     await backfillWorkItems();
   } catch (err: any) {
     console.error("[Backfill] work_items backfill failed:", err.message);
   }
 
-  try {
+  if (allowStartupMutations) try {
     const { getAllUsers, resolveNameToUserId } = await import("./user-resolver");
     await getAllUsers();
 
@@ -1041,32 +1109,33 @@ async function backfillPmUserIds() {
   } catch (err: any) {
     console.error('[Migration] smart_import_runs columns error:', err.message);
   }
+  }
 
   const { registerHandoverRoutes, ensureHandoverTables } = await import("./handover-routes");
-  await ensureHandoverTables();
+  if (allowStartupMutations) await ensureHandoverTables();
   registerHandoverRoutes(app);
 
   const { registerDependencyRoutes, ensureDependencyTables } = await import("./dependency-routes");
-  await ensureDependencyTables();
+  if (allowStartupMutations) await ensureDependencyTables();
   registerDependencyRoutes(app);
 
   const { registerRaidRoutes, ensureRaidTables } = await import("./raid-routes");
-  await ensureRaidTables();
+  if (allowStartupMutations) await ensureRaidTables();
   registerRaidRoutes(app);
 
   const { registerChangeControlRoutes, ensureChangeControlTables } = await import("./change-control-routes");
-  await ensureChangeControlTables();
+  if (allowStartupMutations) await ensureChangeControlTables();
   registerChangeControlRoutes(app);
 
   const { registerProcurementRoutes, ensureProcurementTables } = await import("./procurement-routes");
-  await ensureProcurementTables();
+  if (allowStartupMutations) await ensureProcurementTables();
   registerProcurementRoutes(app);
 
   const { registerCommissioningRoutes, ensureCommissioningTables } = await import("./commissioning-routes");
-  await ensureCommissioningTables();
+  if (allowStartupMutations) await ensureCommissioningTables();
   registerCommissioningRoutes(app);
 
-  await db.execute(sql.raw(`
+  if (allowStartupMutations) await db.execute(sql.raw(`
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS related_entity_type TEXT;
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS related_entity_id INTEGER;
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS assigned_approver INTEGER REFERENCES users(id);
@@ -1077,7 +1146,7 @@ async function backfillPmUserIds() {
   console.log("[Approvals] Enhanced columns ensured");
 
   const { registerInvoiceCaptureRoutes, ensureInvoiceCaptureTables } = await import("./invoice-capture-routes");
-  await ensureInvoiceCaptureTables();
+  if (allowStartupMutations) await ensureInvoiceCaptureTables();
   registerInvoiceCaptureRoutes(app);
 
   registerAdminRoutes(app);
@@ -1133,9 +1202,13 @@ async function backfillPmUserIds() {
     },
     () => {
       log(`serving on port ${port}`);
-      runBackfill().catch(err => console.error('[Backfill] startup error:', err));
+      if (allowStartupMutations) {
+        runBackfill().catch(err => console.error('[Backfill] startup error:', err));
+      }
       startScheduler();
+      runtimeStatus.schedulerRunning = true;
       startMilestoneChecker();
+      runtimeStatus.milestoneCheckerRunning = true;
       log('SharePoint scheduled import checker started');
     },
   );
