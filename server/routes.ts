@@ -757,6 +757,25 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/feature-flags/rollout", requireAuth, async (req, res) => {
+    try {
+      const { getRolloutFeatureFlags } = await import("./lib/feature-flags");
+      const { ROLLOUT_FEATURE_FLAGS } = await import("@shared/feature-flags");
+      const values = await getRolloutFeatureFlags();
+      res.json({
+        flags: ROLLOUT_FEATURE_FLAGS.map((flag) => ({
+          key: flag.key,
+          label: flag.label,
+          description: flag.description,
+          defaultValue: flag.defaultValue,
+          value: values[flag.key],
+        })),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to fetch rollout feature flags" });
+    }
+  });
+
   // ==================== HEALTH CHECK ====================
   
   app.get("/api/version", async (_req, res) => {
