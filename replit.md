@@ -14,7 +14,7 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **UI/UX**: `shadcn/ui` and Tailwind CSS v4 for mobile-first responsive design; Recharts for data visualization. All dropdowns are searchable using Popover + Command combobox.
 -   **Forms**: React Hook Form with Zod validation.
 -   **Key Features**: Financial tracking, project and quality management, Smart Excel Import, Subcontractor Dashboard, UX Guidance System, Project Awareness Bar, Weekly Review Wizard, Execution Dashboard, Permission Gate System, PM Dashboard, Gamification System, Universal Search, RAID Log, Change Control, Procurement Pipeline, Commissioning & Closeout, and Task Dependencies.
--   **Project Planning**: MS Project-style grid with WBS, duration/date editing, predecessors, resource assignment, inline % complete, RAG status, and baseline tracking.
+-   **Project Planning**: MS Project-style grid with WBS, duration/date editing, inline predecessor editing (popover with search/add/remove via dependencies API), resource assignment, inline % complete, RAG status, and baseline tracking.
 -   **Financial Tracking**: Dedicated tabs for Inflows, Revenue Tracker (COS-linked), GP Tracker, Expenditure Breakdown, and Cashflow.
 -   **Project Management**: Card-based Execution Dashboard, Kanban-style Lifecycle Board, and a "Command Center" project detail page.
 -   **Unified Work ("My Work")**: Consolidates tasks from various sources into a unified board/list with filtering and task management, supporting canonical statuses (todo, in_progress, blocked, review, complete, cancelled).
