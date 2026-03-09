@@ -303,6 +303,7 @@ async function backfillPmUserIds() {
 
 (async () => {
   // Initialize database FIRST before any storage operations
+  // initializeDatabase() only establishes DB connectivity/mode and SQLite baseline schema when needed.
   await initializeDatabase();
 
   const startupModes = getStartupModes();
