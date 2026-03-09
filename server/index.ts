@@ -19,9 +19,11 @@ import { startScheduler } from "./importPipeline";
 import { startMilestoneChecker } from "./milestone-notifications";
 import { registerAdminRoutes } from "./departments/admin-routes";
 import { registerExcoRoutes } from "./departments/exco-routes";
+import { getStartupFlags } from "./startup-flags";
 
 const app = express();
 const httpServer = createServer(app);
+const startupFlags = getStartupFlags();
 
 declare module "http" {
   interface IncomingMessage {
@@ -87,7 +89,7 @@ if (dbMode === 'postgres' && dbConfig.connectionString) {
     pool,
     createTableIfMissing: true,
   });
-  if (process.env.NODE_ENV === 'production') {
+  if (process.env.NODE_ENV === 'production' && startupFlags.startupSessionResetEnabled) {
     pool.query('DELETE FROM "session"').then(() => {
       log('Cleared all sessions on deploy startup');
     }).catch(() => {});
@@ -307,10 +309,17 @@ async function backfillPmUserIds() {
 
 (async () => {
   // Initialize database FIRST before any storage operations
-  await initializeDatabase();
-  
-  await seedUsers();
-  await backfillPmUserIds();
+  if (startupFlags.startupSchemaRepairEnabled) {
+    await initializeDatabase();
+  }
+
+  if (startupFlags.startupDataSeedEnabled) {
+    await seedUsers();
+  }
+
+  if (startupFlags.startupBackfillEnabled) {
+    await backfillPmUserIds();
+  }
 
   try {
     await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
@@ -1133,7 +1142,9 @@ async function backfillPmUserIds() {
     },
     () => {
       log(`serving on port ${port}`);
-      runBackfill().catch(err => console.error('[Backfill] startup error:', err));
+      if (startupFlags.startupBackfillEnabled) {
+        runBackfill().catch(err => console.error('[Backfill] startup error:', err));
+      }
       startScheduler();
       startMilestoneChecker();
       log('SharePoint scheduled import checker started');
