@@ -13,7 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { TASK_STATUSES, TASK_PRIORITIES } from "@shared/schema";
+import { TASK_PRIORITIES } from "@shared/schema";
+import { TASK_STATUSES, getTaskStatusBadgeClass, getTaskStatusBarClass, getTaskStatusLabel, isTaskComplete } from "@shared/task-status";
 import {
   AlertTriangle,
   Wrench,
@@ -132,17 +133,6 @@ const PHASE_COLORS: Record<string, { bg: string; text: string; accent: string }>
   P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-50", text: "text-emerald-700", accent: "bg-emerald-500" },
 };
 
-const statusBadge: Record<string, string> = {
-  "TO DO": "bg-muted text-foreground",
-  "IN PROGRESS": "bg-blue-100 text-blue-700",
-  "HOLD": "bg-red-100 text-red-700",
-  "NEEDS APPROVAL": "bg-amber-100 text-amber-700",
-  "QC APPROVED": "bg-emerald-100 text-emerald-700",
-  "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700",
-  "OPERATIONAL APPROVAL": "bg-indigo-100 text-indigo-700",
-  "PROJECTS ASSISTANCE": "bg-cyan-100 text-cyan-700",
-  "COMPLETE": "bg-green-100 text-green-700",
-};
 
 const priorityColors: Record<string, string> = {
   "Critical": "text-red-600",
@@ -199,7 +189,7 @@ function displayProject(name: string | null | undefined) {
 
 function TaskRow({ task, showProject = true }: { task: StandupTask; showProject?: boolean }) {
   const [, setLocation] = useLocation();
-  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "COMPLETE";
+  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isTaskComplete(task.status);
   const isDueSoon = task.dueDate && !isOverdue && (() => {
     const diff = Math.round((new Date(task.dueDate!).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     return diff <= 2;
@@ -248,8 +238,8 @@ function TaskRow({ task, showProject = true }: { task: StandupTask; showProject?
             {daysFromNow(task.dueDate)}
           </span>
         )}
-        <Badge className={`text-[9px] px-1.5 py-0 ${statusBadge[task.status] || "bg-muted"}`}>
-          {task.status}
+        <Badge className={`text-[9px] px-1.5 py-0 ${getTaskStatusBadgeClass(task.status)}`}>
+          {getTaskStatusLabel(task.status)}
         </Badge>
         <ChevronRight className="h-3 w-3 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
@@ -556,7 +546,7 @@ function StandupTaskDrawer({
     queryClient.invalidateQueries({ queryKey: ["standup-task-activity", task.id] });
   };
 
-  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "COMPLETE";
+  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isTaskComplete(task.status);
 
   return (
     <div className="flex flex-col h-full" data-testid="standup-task-drawer">
@@ -582,7 +572,7 @@ function StandupTaskDrawer({
                 value={task.status}
                 onValueChange={(val) => handleFieldUpdate({ status: val })}
                 triggerClassName="h-8 text-xs mt-1"
-                options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+                options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
                 data-testid="drawer-status-select"
               />
             </div>
@@ -765,7 +755,7 @@ function InlineTaskRow({ task, onUpdate, onOpenTask }: { task: FullTask; onUpdat
   const [, setLocation] = useLocation();
   const [quickNote, setQuickNote] = useState("");
   const [showNote, setShowNote] = useState(false);
-  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "COMPLETE";
+  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isTaskComplete(task.status);
   const isDueSoon = task.dueDate && !isOverdue && (() => {
     const diff = Math.round((new Date(task.dueDate!).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     return diff <= 2;
@@ -828,7 +818,7 @@ function InlineTaskRow({ task, onUpdate, onOpenTask }: { task: FullTask; onUpdat
             value={task.status}
             onValueChange={(val) => onUpdate(task.id, { status: val })}
             triggerClassName="h-6 w-[100px] text-[10px] px-1.5 border-dashed"
-            options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+            options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
             data-testid={`status-select-${task.id}`}
           />
 
@@ -882,8 +872,8 @@ function InlineTaskRow({ task, onUpdate, onOpenTask }: { task: FullTask; onUpdat
               {daysFromNow(task.dueDate)}
             </span>
           )}
-          <Badge className={`text-[8px] px-1 py-0 ${statusBadge[task.status] || "bg-muted"}`}>
-            {task.status}
+          <Badge className={`text-[8px] px-1 py-0 ${getTaskStatusBadgeClass(task.status)}`}>
+            {getTaskStatusLabel(task.status)}
           </Badge>
           <Button
             variant="ghost"
@@ -927,7 +917,7 @@ function InlineTaskRow({ task, onUpdate, onOpenTask }: { task: FullTask; onUpdat
 
 function AssigneeGroup({ name, tasks, onUpdate, defaultOpen, onOpenTask }: { name: string; tasks: FullTask[]; onUpdate: (id: number, updates: Record<string, any>) => void; defaultOpen: boolean; onOpenTask?: (task: FullTask) => void }) {
   const [open, setOpen] = useState(defaultOpen);
-  const overdueCount = tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== "COMPLETE").length;
+  const overdueCount = tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !isTaskComplete(t.status)).length;
 
   return (
     <div data-testid={`assignee-group-${name}`}>
@@ -1067,7 +1057,7 @@ function StandupModeView() {
   sevenDays.setDate(sevenDays.getDate() + 7);
   const weekEnd = sevenDays.toISOString().split("T")[0];
 
-  const nonComplete = allTasks.filter(t => t.status !== "COMPLETE");
+  const nonComplete = allTasks.filter(t => !isTaskComplete(t.status));
 
   const overdueTasks = nonComplete.filter(t => t.dueDate && t.dueDate < today);
   const overduIds = new Set(overdueTasks.map(t => t.id));
@@ -1526,17 +1516,7 @@ export default function EngineeringDashboard() {
             <div className="space-y-2.5">
               {(() => {
                 const statusOrder = ["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "QC APPROVED", "PROVIDE FEEDBACK", "PROJECTS ASSISTANCE", "HOLD", "COMPLETE"];
-                const statusColors: Record<string, string> = {
-                  "COMPLETE": "bg-emerald-500",
-                  "HOLD": "bg-red-500",
-                  "IN PROGRESS": "bg-blue-500",
-                  "NEEDS APPROVAL": "bg-amber-500",
-                  "QC APPROVED": "bg-teal-500",
-                  "PROVIDE FEEDBACK": "bg-orange-500",
-                  "TO DO": "bg-slate-400",
-                  "PROJECTS ASSISTANCE": "bg-purple-500",
-                };
-                const total = summary.totalTasks || 1;
+                                const total = summary.totalTasks || 1;
                 return Object.entries(data.statusPipeline)
                   .sort(([a], [b]) => {
                     const ai = statusOrder.indexOf(a);
@@ -1550,7 +1530,7 @@ export default function EngineeringDashboard() {
                         <span className="w-[90px] sm:w-[130px] truncate text-muted-foreground group-hover:text-foreground transition-colors">{status}</span>
                         <div className="flex-1 h-4 bg-muted/60 rounded-md overflow-hidden">
                           <div
-                            className={`h-full rounded-md transition-all duration-500 ${statusColors[status] || "bg-slate-300"}`}
+                            className={`h-full rounded-md transition-all duration-500 ${getTaskStatusBarClass(status)}`}
                             style={{ width: `${Math.max(pct, 2)}%` }}
                           />
                         </div>

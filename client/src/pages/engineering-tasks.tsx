@@ -69,6 +69,17 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
+import {
+  TASK_STATUSES,
+  canTransition,
+  getTaskStatusBadgeClass,
+  getTaskStatusBarClass,
+  getTaskStatusColumnClass,
+  getTaskStatusLabel,
+  getVisibleStatusesForView,
+  isTaskComplete,
+  isTaskCompleteForReporting,
+} from "@shared/task-status";
 import { ActionBar } from "@/components/guidance/ActionBar";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import { InlineTip } from "@/components/guidance/InlineTip";
@@ -88,36 +99,7 @@ async function engFetch(url: string, options?: RequestInit) {
   return res.json();
 }
 
-const TASK_STATUSES = [
-  "TO DO", "IN PROGRESS", "HOLD", "PROJECTS ASSISTANCE", "NEEDS APPROVAL",
-  "QC APPROVED", "PROVIDE FEEDBACK", "OPERATIONAL APPROVAL", "COMPLETE"
-];
-
 const PRIORITIES = ["Critical", "Urgent", "High", "Medium", "Low"];
-
-const statusColors: Record<string, string> = {
-  "TO DO": "bg-muted text-foreground",
-  "IN PROGRESS": "bg-blue-100 text-blue-700",
-  "HOLD": "bg-red-100 text-red-700",
-  "NEEDS APPROVAL": "bg-amber-100 text-amber-700",
-  "QC APPROVED": "bg-emerald-100 text-emerald-700",
-  "PROVIDE FEEDBACK": "bg-purple-100 text-purple-700",
-  "OPERATIONAL APPROVAL": "bg-indigo-100 text-indigo-700",
-  "PROJECTS ASSISTANCE": "bg-cyan-100 text-cyan-700",
-  "COMPLETE": "bg-green-100 text-green-700",
-};
-
-const statusColumnColors: Record<string, string> = {
-  "TO DO": "border-t-gray-400",
-  "IN PROGRESS": "border-t-blue-500",
-  "HOLD": "border-t-red-500",
-  "NEEDS APPROVAL": "border-t-amber-500",
-  "QC APPROVED": "border-t-emerald-500",
-  "PROVIDE FEEDBACK": "border-t-purple-500",
-  "OPERATIONAL APPROVAL": "border-t-indigo-500",
-  "PROJECTS ASSISTANCE": "border-t-cyan-500",
-  "COMPLETE": "border-t-green-500",
-};
 
 const priorityColors: Record<string, string> = {
   Critical: "bg-red-600 text-white",
@@ -281,12 +263,12 @@ function formatDateShort(d: string | null) {
 }
 
 function isOverdue(dueDate: string | null, status: string) {
-  if (!dueDate || status === "COMPLETE") return false;
+  if (!dueDate || isTaskComplete(status)) return false;
   return new Date(dueDate) < new Date();
 }
 
 function isDueThisWeek(dueDate: string | null, status: string) {
-  if (!dueDate || status === "COMPLETE") return false;
+  if (!dueDate || isTaskComplete(status)) return false;
   const due = new Date(dueDate);
   const now = new Date();
   const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -312,7 +294,7 @@ function QuickStatusSelect({ task, onStatusChange }: { task: Task; onStatusChang
         }}
         placeholder="Status"
         triggerClassName="h-6 text-[9px] px-1.5 w-auto min-w-0 border-none shadow-none bg-transparent hover:bg-muted/40"
-        options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+        options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
         data-testid={`quick-status-${task.id}`}
       />
     </div>
@@ -564,7 +546,7 @@ function KanbanColumn({
   if (collapsed) {
     return (
       <div
-        className={`flex flex-col items-center w-10 bg-muted/20 rounded-lg border-t-4 cursor-pointer hover:bg-muted/40 transition-all ${statusColumnColors[status] || "border-t-gray-300"} ${dragOver ? "ring-2 ring-primary/40 bg-primary/5" : ""}`}
+        className={`flex flex-col items-center w-10 bg-muted/20 rounded-lg border-t-4 cursor-pointer hover:bg-muted/40 transition-all ${getTaskStatusColumnClass(status)} ${dragOver ? "ring-2 ring-primary/40 bg-primary/5" : ""}`}
         onClick={onToggleCollapse}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
@@ -575,11 +557,11 @@ function KanbanColumn({
           if (taskId) onDrop(taskId, status);
         }}
         data-testid={`kanban-column-${status.toLowerCase().replace(/\s+/g, "-")}`}
-        title={`${status} (${tasks.length}) — click to expand`}
+        title={`${getTaskStatusLabel(status)} (${tasks.length}) — click to expand`}
       >
         <div className="pt-3 pb-1">
           <span className="text-[10px] font-bold text-muted-foreground" style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}>
-            {status}
+            {getTaskStatusLabel(status)}
           </span>
         </div>
         <span className={`text-[10px] font-bold mt-1 px-1 py-0.5 rounded-full ${tasks.length > 0 ? "bg-primary/10 text-primary" : "text-muted-foreground/40"}`}>
@@ -594,7 +576,7 @@ function KanbanColumn({
 
   return (
     <div
-      className={`flex flex-col min-w-[240px] max-w-[280px] flex-1 bg-muted/20 rounded-lg border-t-4 transition-all ${statusColumnColors[status] || "border-t-gray-300"} ${dragOver ? "ring-2 ring-primary/40 bg-primary/5" : ""}`}
+      className={`flex flex-col min-w-[240px] max-w-[280px] flex-1 bg-muted/20 rounded-lg border-t-4 transition-all ${getTaskStatusColumnClass(status)} ${dragOver ? "ring-2 ring-primary/40 bg-primary/5" : ""}`}
       onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
       onDrop={(e) => {
@@ -608,7 +590,7 @@ function KanbanColumn({
       <div className="px-2.5 pt-2.5 pb-1.5 sticky top-0 bg-inherit z-10 rounded-t-lg">
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground truncate">{status}</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground truncate">{getTaskStatusLabel(status)}</span>
             <span className={`text-[10px] font-bold px-1.5 py-0 rounded-full ${tasks.length > 0 ? "bg-primary/10 text-primary" : "text-muted-foreground/40 bg-muted"}`}>{tasks.length}</span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
@@ -631,7 +613,7 @@ function KanbanColumn({
           </div>
         </div>
         <div className="h-1 bg-muted rounded-full overflow-hidden">
-          <div className={`h-full rounded-full transition-all duration-500 ${status === "COMPLETE" ? "bg-emerald-500" : status === "HOLD" ? "bg-red-400" : "bg-primary/40"}`} style={{ width: `${Math.max(pct, 1)}%` }} />
+          <div className={`h-full rounded-full transition-all duration-500 ${isTaskComplete(status) ? "bg-emerald-500" : status === "HOLD" ? "bg-red-400" : "bg-primary/40"}`} style={{ width: `${Math.max(pct, 1)}%` }} />
         </div>
       </div>
       <ScrollArea className="flex-1 px-1.5 pb-2" style={{ maxHeight: "calc(100vh - 280px)" }}>
@@ -730,7 +712,7 @@ function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { taskId:
             onValueChange={(v) => { setNewStatus(v); if (v !== "HOLD") { setHoldReason(""); setBlockedType(""); } }}
             placeholder="Status"
             triggerClassName="h-7 text-[10px] w-[140px]"
-            options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+            options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
             data-testid="select-post-update-status"
           />
         </div>
@@ -884,6 +866,12 @@ function TaskDetailDrawer({
   });
 
   const handleStatusChange = (newStatus: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    if (!canTransition(task.status, newStatus)) {
+      toast({ title: "Transition not allowed", description: `Cannot move task from ${getTaskStatusLabel(task.status)} to ${getTaskStatusLabel(newStatus)}.`, variant: "destructive" });
+      return;
+    }
     if (newStatus === "HOLD") {
       setDrawerHoldDialog(true);
       setDrawerHoldReason("");
@@ -919,7 +907,7 @@ function TaskDetailDrawer({
       <div className="relative w-full max-w-full sm:max-w-2xl bg-background border-l shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-2 min-w-0">
-            <Badge className={`text-[10px] shrink-0 ${statusColors[task.status] || "bg-muted"}`}>{task.status}</Badge>
+            <Badge className={`text-[10px] shrink-0 ${getTaskStatusBadgeClass(task.status)}`}>{task.status}</Badge>
             <span className="text-sm text-muted-foreground truncate">{projectDisplay}</span>
             {task.taskTypeTag === "PROJECT" && <Badge variant="outline" className="text-[9px]">Project</Badge>}
           </div>
@@ -984,7 +972,7 @@ function TaskDetailDrawer({
                   onValueChange={handleStatusChange}
                   placeholder="Status"
                   triggerClassName="h-8 text-xs"
-                  options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+                  options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
                   data-testid="select-drawer-status"
                 />
               </div>
@@ -1669,7 +1657,7 @@ function TaskDetailDrawer({
                         )}
                       </button>
                       <span className={`flex-1 truncate ${st.status === "COMPLETE" ? "line-through text-muted-foreground" : ""}`}>{st.title}</span>
-                      <Badge className={`text-[9px] ${statusColors[st.status] || "bg-muted"}`}>{st.status}</Badge>
+                      <Badge className={`text-[9px] ${getTaskStatusBadgeClass(st.status)}`}>{st.status}</Badge>
                     </div>
                   ))
                 )}
@@ -1829,7 +1817,7 @@ function ProjectKanbanView({
       const phaseLabel = dashInfo?.phaseLabel || PROJECT_PHASE_LABELS[phase as ProjectPhase] || "Unknown Phase";
       const displayName = dashInfo?.displayName || projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
 
-      const completedTasks = projectTasks.filter((t: Task) => t.status === "COMPLETE" || t.status === "QC APPROVED").length;
+      const completedTasks = projectTasks.filter((t: Task) => isTaskCompleteForReporting(t.status)).length;
       const overdueTasks = projectTasks.filter((t: Task) => isOverdue(t.dueDate, t.status)).length;
 
       groups.push({
@@ -1894,7 +1882,7 @@ function ProjectKanbanView({
     }
   }, [searchTerm]);
 
-  const STATUS_MINI = ["TO DO", "IN PROGRESS", "HOLD", "NEEDS APPROVAL", "QC APPROVED", "COMPLETE"];
+  const STATUS_MINI = getVisibleStatusesForView("board").filter((s) => s !== "PROJECTS ASSISTANCE" && s !== "OPERATIONAL APPROVAL");
 
   return (
     <div className="space-y-4" data-testid="projects-view">
@@ -1973,7 +1961,7 @@ function ProjectKanbanView({
                           <div className="flex gap-2 overflow-x-auto pb-2 pt-1" style={{ minHeight: "120px" }}>
                             {STATUS_MINI.map(status => {
                               const statusTasks = group.tasks.filter(t => {
-                                if (status === "COMPLETE") return t.status === "COMPLETE" || t.status === "QC APPROVED";
+                                if (status === "COMPLETE") return isTaskCompleteForReporting(t.status);
                                 return t.status === status;
                               });
                               if (status !== "TO DO" && status !== "IN PROGRESS" && statusTasks.length === 0) return null;
@@ -1981,7 +1969,7 @@ function ProjectKanbanView({
                               return (
                                 <div
                                   key={status}
-                                  className={`flex-shrink-0 w-[200px] bg-muted/20 rounded-lg border-t-2 ${statusColumnColors[status] || "border-t-gray-300"}`}
+                                  className={`flex-shrink-0 w-[200px] bg-muted/20 rounded-lg border-t-2 ${getTaskStatusColumnClass(status)}`}
                                   onDragOver={(e) => e.preventDefault()}
                                   onDrop={(e) => {
                                     e.preventDefault();
@@ -1991,7 +1979,7 @@ function ProjectKanbanView({
                                   data-testid={`mini-col-${group.projectName}-${status}`}
                                 >
                                   <div className="px-2 py-1.5 flex items-center justify-between">
-                                    <span className="text-[10px] font-medium text-muted-foreground truncate">{status}</span>
+                                    <span className="text-[10px] font-medium text-muted-foreground truncate">{getTaskStatusLabel(status)}</span>
                                     <span className="text-[10px] text-muted-foreground">{statusTasks.length}</span>
                                   </div>
                                   <div className="px-1.5 pb-1.5 space-y-1 max-h-[250px] overflow-y-auto">
@@ -2063,7 +2051,7 @@ function ProjectKanbanView({
 }
 
 function PersonalKpiStrip({ tasks, myTasks }: { tasks: Task[]; myTasks: Task[] }) {
-  const myActive = myTasks.filter(t => t.status !== "COMPLETE").length;
+  const myActive = myTasks.filter(t => !isTaskComplete(t.status)).length;
   const myOverdue = myTasks.filter(t => isOverdue(t.dueDate, t.status)).length;
   const myDueThisWeek = myTasks.filter(t => isDueThisWeek(t.dueDate, t.status)).length;
   const myHold = myTasks.filter(t => t.status === "HOLD").length;
@@ -2140,7 +2128,7 @@ function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }
                       onValueChange={(v) => onStatusChange(task.id, v)}
                       placeholder="Status"
                       triggerClassName="h-7 text-[10px] w-[130px] border-none shadow-none p-0"
-                      options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+                      options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
                       data-testid={`inline-status-${task.id}`}
                     />
                   </td>
@@ -2257,7 +2245,7 @@ function MyTasksView({
         hold.push(t);
       } else if (t.status === "IN PROGRESS") {
         inProgress.push(t);
-      } else if (t.status !== "COMPLETE") {
+      } else if (!isTaskComplete(t.status)) {
         rest.push(t);
       }
     }
@@ -2346,7 +2334,7 @@ function MyTasksView({
           triggerClassName="w-[130px] h-8 text-xs"
           options={[
             { value: "all", label: "All Statuses" },
-            ...TASK_STATUSES.map(s => ({ value: s, label: s })),
+            ...filterStatuses.map(s => ({ value: s, label: getTaskStatusLabel(s) })),
           ]}
           data-testid="my-tasks-filter-status"
         />
@@ -2448,7 +2436,7 @@ function MyTasksView({
                                 onValueChange={v => { if (v !== task.status) onStatusChange(task.id, v); }}
                                 placeholder="Status"
                                 triggerClassName="h-7 text-[10px] w-[130px] border-none shadow-none p-0"
-                                options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+                                options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
                                 data-testid={`my-task-status-${task.id}`}
                               />
                             </td>
@@ -2555,7 +2543,7 @@ function MyTasksView({
                             onValueChange={v => { if (v !== task.status) onStatusChange(task.id, v); }}
                             placeholder="Status"
                             triggerClassName="h-6 text-[10px] w-auto min-w-0 border-none shadow-none p-0"
-                            options={TASK_STATUSES.map(s => ({ value: s, label: s }))}
+                            options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
                             data-testid={`my-task-status-${task.id}`}
                           />
                           <SearchableSelect
@@ -2732,17 +2720,20 @@ export default function EngineeringTasksPage() {
   });
 
   const requestStatusChange = useCallback((taskId: number, newStatus: string) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    if (!canTransition(task.status, newStatus)) {
+      toast({ title: "Transition not allowed", description: `Cannot move task from ${getTaskStatusLabel(task.status)} to ${getTaskStatusLabel(newStatus)}.`, variant: "destructive" });
+      return;
+    }
     if (newStatus === "HOLD") {
       setHoldDialog({ taskId, reason: "", blockedType: "" });
       return;
     }
-    if (newStatus === "PROJECTS ASSISTANCE") {
-      const task = tasks.find(t => t.id === taskId);
-      if (task && !task.projectName) {
-        setSelectedTask(task);
-        toast({ title: "Project required", description: "Link a project to this task before setting Projects Assistance status.", variant: "destructive" });
-        return;
-      }
+    if (newStatus === "PROJECTS ASSISTANCE" && !task.projectName) {
+      setSelectedTask(task);
+      toast({ title: "Project required", description: "Link a project to this task before setting Projects Assistance status.", variant: "destructive" });
+      return;
     }
     updateStatusMutation.mutate({ taskId, status: newStatus });
   }, [tasks, updateStatusMutation, toast]);
@@ -2806,6 +2797,9 @@ export default function EngineeringTasksPage() {
     setMyTasksOnly(false);
     if (preset.filter.status) setStatusFilter(preset.filter.status);
   };
+
+  const boardStatuses = getVisibleStatusesForView("board");
+  const filterStatuses = getVisibleStatusesForView("list");
 
   const tasksByStatus = TASK_STATUSES.reduce((acc, status) => {
     acc[status] = filtered.filter(t => t.status === status);
@@ -3078,7 +3072,7 @@ export default function EngineeringTasksPage() {
           triggerClassName="w-[130px] sm:w-[150px] h-8 text-xs"
           options={[
             { value: "all", label: "All Statuses" },
-            ...TASK_STATUSES.map(s => ({ value: s, label: s })),
+            ...filterStatuses.map(s => ({ value: s, label: getTaskStatusLabel(s) })),
           ]}
           data-testid="filter-task-status"
         />
@@ -3207,22 +3201,16 @@ export default function EngineeringTasksPage() {
         </div>
 
         <div className="h-2 bg-muted/40 rounded-full overflow-hidden flex" data-testid="status-distribution-bar" title="Status distribution">
-          {TASK_STATUSES.map(status => {
+          {boardStatuses.map(status => {
             const count = (tasksByStatus[status] || []).length;
             if (count === 0) return null;
             const pct = (count / (filtered.length || 1)) * 100;
-            const barColors: Record<string, string> = {
-              "TO DO": "bg-gray-400", "IN PROGRESS": "bg-blue-500", "HOLD": "bg-red-500",
-              "NEEDS APPROVAL": "bg-amber-500", "QC APPROVED": "bg-emerald-500",
-              "PROVIDE FEEDBACK": "bg-purple-500", "OPERATIONAL APPROVAL": "bg-indigo-500",
-              "PROJECTS ASSISTANCE": "bg-cyan-500", "COMPLETE": "bg-green-500",
-            };
             return (
               <div
                 key={status}
-                className={`h-full ${barColors[status] || "bg-gray-300"} transition-all duration-500 hover:brightness-110 cursor-pointer`}
+                className={`h-full ${getTaskStatusBarClass(status)} transition-all duration-500 hover:brightness-110 cursor-pointer`}
                 style={{ width: `${Math.max(pct, 0.5)}%` }}
-                title={`${status}: ${count} (${Math.round(pct)}%)`}
+                title={`${getTaskStatusLabel(status)}: ${count} (${Math.round(pct)}%)`}
                 onClick={() => setStatusFilter(statusFilter === status ? "all" : status)}
                 data-testid={`status-bar-${status.toLowerCase().replace(/\s+/g, "-")}`}
               />
@@ -3231,7 +3219,7 @@ export default function EngineeringTasksPage() {
         </div>
 
         <div className="flex gap-1.5 overflow-x-auto pb-4" style={{ minHeight: "400px" }}>
-          {TASK_STATUSES.map(status => (
+          {boardStatuses.map(status => (
             <KanbanColumn
               key={status}
               status={status}
