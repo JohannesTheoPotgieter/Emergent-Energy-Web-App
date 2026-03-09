@@ -10,6 +10,7 @@ import fs from "fs";
 import path from "path";
 import { generateToken, verifyToken } from "../jwt";
 import { parseTrackerFile, applyFontColors } from "../excelParser";
+import { getStartupFlags } from "../startup-flags";
 
 const router = Router();
 

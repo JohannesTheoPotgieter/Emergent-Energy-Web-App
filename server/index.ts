@@ -23,6 +23,7 @@ import { getStartupModes } from "./startup-modes";
 
 const app = express();
 const httpServer = createServer(app);
+const startupFlags = getStartupFlags();
 
 const startupFlags = {
   ENABLE_STARTUP_MAINTENANCE: process.env.ENABLE_STARTUP_MAINTENANCE,
