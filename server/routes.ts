@@ -12178,11 +12178,11 @@ export async function registerRoutes(
       const user = req.user as any;
       const { projectName, operation, taskIds } = req.body;
       if (!projectName || !operation || !Array.isArray(taskIds) || taskIds.length === 0) {
-        return res.status(400).json({ error: "projectName, operation, and taskIds[] required" });
+        return sendError(res, badRequest("projectName, operation, and taskIds[] required"));
       }
 
       const canEdit = await canEditProjectTasks(req, projectName);
-      if (!canEdit) return res.status(403).json({ error: "No permission" });
+      if (!canEdit) return sendError(res, forbidden("You don't have permission to update tasks"));
 
       const results: Array<{ id: number; success: boolean; error?: string }> = [];
 
@@ -12294,7 +12294,7 @@ export async function registerRoutes(
       res.json({ success: true, results });
     } catch (err: any) {
       console.error("Bulk plan task error:", err);
-      res.status(500).json({ error: err.message });
+      sendError(res, err);
     }
   });
 
@@ -12303,10 +12303,10 @@ export async function registerRoutes(
       const taskId = parseInt(req.params.taskId);
       const user = req.user as any;
       const { projectName } = req.body;
-      if (!projectName) return res.status(400).json({ error: "projectName is required" });
+      if (!projectName) return sendError(res, badRequest("projectName is required"));
 
       const canEdit = await canEditProjectTasks(req, projectName);
-      if (!canEdit) return res.status(403).json({ error: "You don't have permission to delete tasks" });
+      if (!canEdit) return sendError(res, forbidden("You don't have permission to delete tasks"));
 
       const isBaselineTask = taskId < 0;
       const actualTaskId = Math.abs(taskId);
@@ -12356,7 +12356,7 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (err: any) {
       console.error("Plan task delete error:", err);
-      res.status(500).json({ error: err.message });
+      sendError(res, err);
     }
   });
 

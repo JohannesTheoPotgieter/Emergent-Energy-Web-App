@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "server/startup-modes.ts",
+    "server/health-diagnostics.ts",
+    "server/lib/api-error.ts",
+    "server/startup-flags.ts",
+    "server/canonical-boundaries.ts",
+    "qa/tests/unit/startup-modes.test.ts",
+    "qa/tests/unit/health-diagnostics.test.ts",
+    "qa/tests/unit/api-error.test.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist"
+  ]
+}
