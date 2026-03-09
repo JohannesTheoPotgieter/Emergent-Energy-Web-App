@@ -15,7 +15,7 @@ import { sql, eq } from "drizzle-orm";
 import { appSettings } from "@shared/schema";
 import { runBackfill } from "./lib/backfill";
 import path from "path";
-import { startScheduler } from "./importPipeline";
+import { startScheduler, getSchedulerStatus } from "./importPipeline";
 import { startMilestoneChecker } from "./milestone-notifications";
 import { registerAdminRoutes } from "./departments/admin-routes";
 import { registerExcoRoutes } from "./departments/exco-routes";
@@ -36,6 +36,26 @@ const startupSchemaRepairEnabled =
   startupMaintenanceEnabled || startupFlags.ENABLE_STARTUP_SCHEMA_REPAIR === "true";
 const startupSessionResetEnabled =
   startupMaintenanceEnabled || startupFlags.ENABLE_STARTUP_SESSION_RESET === "true";
+
+const isStrictRuntime = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
+const isLocalDevelopmentMode = process.env.LOCAL_DEV_MODE === "true";
+const isAdminMigrationMode = process.env.ADMIN_MIGRATION_MODE === "true";
+const allowStartupMutations = isLocalDevelopmentMode || isAdminMigrationMode;
+
+const sessionSecret = process.env.SESSION_SECRET;
+if (isStrictRuntime && !sessionSecret) {
+  throw new Error("SESSION_SECRET must be set in staging/production. Refusing to start with an unsafe default secret.");
+}
+
+const runtimeStatus = {
+  schedulerRunning: false,
+  milestoneCheckerRunning: false,
+  dbConnected: false,
+};
+
+function generateRequestId() {
+  return `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
 
 declare module "http" {
   interface IncomingMessage {
@@ -99,11 +119,18 @@ const startupSyncEnabled = process.env.STARTUP_ENABLE_PERIODIC_SYNC !== "false";
 if (dbMode === 'postgres' && dbConfig.connectionString) {
   const PgSession = connectPgSimple(session);
   const pool = new pg.Pool({ connectionString: dbConfig.connectionString });
+  const { startupSchemaRepairEnabled, startupSessionResetEnabled } = getStartupModes();
+
+  if (startupSchemaRepairEnabled) {
+    log('Session schema auto-create enabled (startup schema repair is on)');
+  } else {
+    log('Session schema auto-create disabled on normal boot');
+  }
+
   sessionStore = new PgSession({
     pool,
     createTableIfMissing: startupSchemaRepairEnabled,
   });
-  const { startupSessionResetEnabled } = getStartupModes();
   if (process.env.NODE_ENV === 'production' && startupSessionResetEnabled) {
     pool.query('DELETE FROM "session"').then(() => {
       log('Cleared all sessions on deploy startup (startup session reset enabled)');
@@ -111,20 +138,17 @@ if (dbMode === 'postgres' && dbConfig.connectionString) {
   } else if (process.env.NODE_ENV === 'production') {
     log('Startup session reset disabled; preserving existing sessions on boot');
   }
-  log('Using PostgreSQL session store');
-} else {
-  // Fallback to memory store for SQLite mode
-  const MemoryStoreSession = MemoryStore(session);
-  sessionStore = new MemoryStoreSession({
-    checkPeriod: 86400000, // prune expired entries every 24h
-  });
-  log('Using in-memory session store (SQLite fallback mode)');
+
+
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret) {
+  throw new Error("[Session] SESSION_SECRET must be set. Refusing insecure default.");
 }
 
 app.use(
   session({
     store: sessionStore,
-    secret: process.env.SESSION_SECRET || "emergent-energy-secret-key-2026",
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -136,8 +160,9 @@ app.use(
   })
 );
 
-app.use(passport.initialize());
-app.use(passport.session());
+  app.use(passport.initialize());
+  app.use(passport.session());
+}
 
 // Passport Local Strategy
 passport.use(
@@ -200,20 +225,15 @@ export function log(message: string, source = "express") {
 
 app.use((req, res, next) => {
   const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
+  const requestId = (req.headers["x-request-id"] as string) || generateRequestId();
+  res.setHeader("x-request-id", requestId);
 
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
+      const includeApiResponseBodies = process.env.API_LOG_RESPONSE_BODIES === "true";
+      if (includeApiResponseBodies && capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 
@@ -224,56 +244,19 @@ app.use((req, res, next) => {
   next();
 });
 
-async function seedUsers() {
-  const usersToSeed = [
-    { username: "dayne", name: "Dayne", role: "CEO_ADMIN" as const, password: "2020" },
-    { username: "natasha", name: "Natasha", role: "CCO" as const, password: "2021" },
-    { username: "tasneema", name: "Tasneema", role: "CFO" as const, password: "2022" },
-    { username: "johannes", name: "Johannes", role: "COO_ADMIN" as const, password: "2023" },
-    { username: "roedolph", name: "Roedolph", role: "PROGRAM_MANAGER" as const, password: "2024" },
-    { username: "dean", name: "Dean", role: "QUALITY_MANAGER" as const, password: "2025" },
-    { username: "peet", name: "Peet", role: "CONSTRUCTION_MANAGER" as const, password: "2026" },
-    { username: "mizelda", name: "Mizelda", role: "PROGRAM_FINANCE_MANAGER" as const, password: "2027" },
-    { username: "thami", name: "Thami", role: "ACCOUNTANT" as const, password: "2028" },
-    { username: "paul", name: "Paul", role: "ENGINEER" as const, password: "2029" },
-    { username: "tanaka", name: "Tanaka", role: "ENGINEER" as const, password: "2030" },
-    { username: "johan", name: "Johan", role: "ENGINEER" as const, password: "2031" },
-    { username: "mary", name: "Mary", role: "ENGINEER" as const, password: "2032" },
-    { username: "gerhard", name: "Gerhard", role: "ENGINEER" as const, password: "2033" },
-    { username: "brandon", name: "Brandon", role: "ENGINEER" as const, password: "2034" },
-    { username: "eon", name: "Eon Van Rensburg", role: "PROJECT_MANAGER_SITE" as const, password: "2035" },
-    { username: "shaun", name: "Shaun", role: "PROJECT_MANAGER_SITE" as const, password: "2036" },
-    { username: "jt", name: "JT Moorosi", role: "PROJECT_MANAGER_SITE" as const, password: "2037" },
-    { username: "lloyd", name: "Lloyd Brown", role: "PROJECT_MANAGER_SITE" as const, password: "2038" },
-    { username: "justin", name: "Justin Franke", role: "PROJECT_MANAGER_SITE" as const, password: "2039" },
-    { username: "cole", name: "Cole Bisset", role: "PROJECT_DEVELOPER" as const, password: "2040" },
-    { username: "gordon", name: "Gordon Upton", role: "PROJECT_DEVELOPER" as const, password: "2041" },
-    { username: "megan", name: "Megan Moore", role: "PROJECT_DEVELOPER" as const, password: "2042" },
-    { username: "kirsten", name: "Kirsten Marwick", role: "PROJECT_DEVELOPER" as const, password: "2043" },
-  ];
 
-  for (const u of usersToSeed) {
-    try {
-      const existing = await storage.getUserByUsername(u.username);
-      if (!existing) {
-        const hashedPassword = await bcrypt.hash(u.password, 10);
-        await storage.createUser({
-          username: u.username,
-          email: `${u.username}@emergent.energy`,
-          password: hashedPassword,
-          name: u.name,
-          role: u.role,
-        });
-        log(`✓ User seeded: ${u.username} (${u.role})`);
-      } else {
-        log(`✓ User exists: ${u.username} (${u.role})`);
-      }
-    } catch (error) {
-      log(`✗ Error seeding user ${u.username}: ` + error);
-      console.error("[SEED ERROR] Full error:", error);
-    }
-  }
-}
+app.get("/api/environment/status", async (_req, res) => {
+  const scheduler = getSchedulerStatus();
+  const isProduction = process.env.NODE_ENV === "production";
+  return res.status(200).json({
+    dbMode,
+    sessionMode: dbMode === "postgres" ? "postgres" : "memory",
+    migrationStatus: process.env.ENABLE_STARTUP_MIGRATIONS === "true" ? "runtime-startup-enabled" : "startup-disabled-use-migrations",
+    schedulerStatus: scheduler,
+    nodeEnv: process.env.NODE_ENV || "development",
+    productionPostgresRequired: isProduction,
+  });
+});
 
 async function backfillPmUserIds() {
   try {
@@ -326,22 +309,16 @@ async function backfillPmUserIds() {
 
 (async () => {
   // Initialize database FIRST before any storage operations
+  // initializeDatabase() only establishes DB connectivity/mode and SQLite baseline schema when needed.
   await initializeDatabase();
 
   const startupModes = getStartupModes();
-  log(`[Startup] dbMode=${dbMode} classification=${startupModes.startupMutationClassification} schemaRepair=${startupModes.startupSchemaRepairEnabled} sessionReset=${startupModes.startupSessionResetEnabled} readOnlyByDefault=${startupModes.startupReadOnlyByDefault}`);
+  log(`[Startup] dbMode=${dbMode} classification=${startupModes.startupMutationClassification} schemaRepair=${startupModes.startupSchemaRepairEnabled} sessionReset=${startupModes.startupSessionResetEnabled} userSeed=${startupModes.startupUserSeedEnabled} readOnlyByDefault=${startupModes.startupReadOnlyByDefault}`);
 
-  // TODO(phase-3): Evaluate gating startup seeding/backfill under explicit maintenance flags.
-  await seedUsers();
-  const startupPmUserBackfillEnabled = process.env.ENABLE_STARTUP_BACKFILL === "true";
-  if (startupPmUserBackfillEnabled) {
-    log("[Startup] PM/user backfill enabled (ENABLE_STARTUP_BACKFILL=true)");
-    await backfillPmUserIds();
-  } else {
-    log("[Startup] PM/user backfill skipped on normal boot (set ENABLE_STARTUP_BACKFILL=true to enable)");
-  }
+  // Runtime user seeding removed for trustability; use explicit migration/seed scripts instead.
 
-  // TODO(phase-3): These startup schema mutations are intentionally left unchanged for now to avoid risky boot regressions.
+  const startupMigrationsEnabled = process.env.ENABLE_STARTUP_MIGRATIONS === "true";
+  if (startupMigrationsEnabled) {
   try {
     await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
     await db.execute(sql.raw(`ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS no_revenue_linked BOOLEAN DEFAULT FALSE`));
@@ -475,6 +452,9 @@ async function backfillPmUserIds() {
     }
   }
 
+  }
+  }
+
   const { seedQualityTemplate } = await import("./seed-quality-template");
   if (startupDataSeedEnabled) await seedQualityTemplate().catch(err => console.error('[Seed] Quality template error:', err));
 
@@ -570,7 +550,7 @@ async function backfillPmUserIds() {
     const existing = await getFeatureFlag("unified_work_v1");
     if (!existing) {
       const [row] = await db.select().from(appSettings).where(eq(appSettings.key, "unified_work_v1")).limit(1);
-      if (!row) {
+      if (allowStartupMutations && !row) {
         await setFeatureFlag("unified_work_v1", true, "system");
         console.log("[Seed] Feature flag unified_work_v1 seeded (ON)");
       }
@@ -600,6 +580,7 @@ async function backfillPmUserIds() {
     } catch (err) {
       console.error('[Story] Seed error (non-fatal):', err);
     }
+  }
   }
 
   const { seedEeInfoUpdates } = await import("./seed-ee-info-updates");
@@ -696,6 +677,7 @@ async function backfillPmUserIds() {
     } catch (err) {
       console.error('[MS-Filter] Assignment cleanup error:', err);
     }
+  }
   }
 
   const { registerPortfolioRoutes } = await import("./portfolio-routes");
@@ -1008,7 +990,7 @@ async function backfillPmUserIds() {
     console.error('[Backfill] work_items actual date sync error:', err.message);
   }
 
-  try {
+  if (allowStartupMutations) try {
     const { backfillWorkItems } = await import("./work-items-backfill");
     if (startupBackfillEnabled) await backfillWorkItems();
   } catch (err: any) {
@@ -1211,6 +1193,7 @@ async function backfillPmUserIds() {
       startScheduler();
       // Runtime service: milestone checker loop (not startup maintenance/schema/data mutation).
       startMilestoneChecker();
+      runtimeStatus.milestoneCheckerRunning = true;
       log('SharePoint scheduled import checker started');
     },
   );
