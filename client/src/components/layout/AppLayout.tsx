@@ -386,7 +386,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           const ip = item.path.split("?")[0];
           const iq = item.path.includes("?") ? item.path.split("?")[1] : null;
           if (iq) return location === ip && currentSearch === `?${iq}`;
-          return location === item.path || (item.path === "/my-tool" && location.startsWith("/my-tool")) || (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path));
+          return location === item.path || (item.path === "/my-work" && (location.startsWith("/my-work") || location.startsWith("/my-tool"))) || (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path));
         });
         next[heading] = !!groupHasActive;
       }
@@ -517,7 +517,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               const iq = item.path.includes("?") ? item.path.split("?")[1] : null;
               if (iq) return location === ip && currentSearchStr === `?${iq}`;
               return location === item.path || 
-                (item.path === "/my-tool" && location.startsWith("/my-tool")) || 
+                (item.path === "/my-work" && (location.startsWith("/my-work") || location.startsWith("/my-tool"))) || 
                 (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path)) ||
                 (item.children && item.children.some(c => location === c.path || location.startsWith(c.path)));
             });
@@ -562,7 +562,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       const currentSearch = typeof window !== "undefined" ? window.location.search : "";
                       const isActive = itemQuery
                         ? location === itemPathname && currentSearch === `?${itemQuery}`
-                        : location === item.path || (item.path === "/my-tool" && location.startsWith("/my-tool")) || (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path));
+                        : location === item.path || (item.path === "/my-work" && (location.startsWith("/my-work") || location.startsWith("/my-tool"))) || (item.path !== "/" && item.path !== "/engineering" && location.startsWith(item.path));
                       const hasChildren = item.children && item.children.length > 0;
                       const childActive = hasChildren && item.children!.some(c => location === c.path || location.startsWith(c.path));
                       const isParentExpanded = expandedParents[item.path] ?? childActive ?? false;

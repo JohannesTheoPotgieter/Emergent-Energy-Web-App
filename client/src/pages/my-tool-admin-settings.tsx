@@ -245,7 +245,7 @@ export default function MyToolAdminSettingsPage() {
     <div className="space-y-6 max-w-[1400px] mx-auto" data-testid="mytool-admin-settings-page">
       <header>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground" data-testid="text-page-title">
-          My Tool — Administration
+          My Work — Administration
         </h1>
         <p className="text-sm text-muted-foreground mt-1">Manage global settings and company priorities</p>
       </header>
@@ -266,7 +266,7 @@ export default function MyToolAdminSettingsPage() {
               data-testid="switch-enabled"
             />
             <Label htmlFor="mytool-enabled" data-testid="label-enabled">
-              Enable My Tool for the organization
+              Enable My Work for the organization
             </Label>
           </div>
 
@@ -280,7 +280,7 @@ export default function MyToolAdminSettingsPage() {
               onChange={(e) => setSettingsForm({ ...settingsForm, allowedRoles: e.target.value })}
               data-testid="input-allowed-roles"
             />
-            <p className="text-xs text-muted-foreground">Comma-separated list of roles that can access My Tool</p>
+            <p className="text-xs text-muted-foreground">Comma-separated list of roles that can access My Work</p>
           </div>
 
           <div className="space-y-2 max-w-xs">

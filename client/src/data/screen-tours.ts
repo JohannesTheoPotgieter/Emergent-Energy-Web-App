@@ -20,10 +20,10 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
 
   "/dashboard": {
     id: "execution-dashboard",
-    title: "Execution Dashboard",
+    title: "Execution Board",
     steps: [
       {
-        title: "Execution Dashboard",
+        title: "Execution Board",
         description: "This is your company-wide project overview. It shows KPIs, project health, Gantt chart, and financial summaries across all active projects.",
         position: "center",
       },
@@ -500,10 +500,10 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
 
   "/my-tool": {
     id: "my-tool",
-    title: "My Tool",
+    title: "My Work",
     steps: [
       {
-        title: "My Tool — Today",
+        title: "My Work — Today",
         description: "Your personal productivity hub. See today's tasks, meetings, priorities, and quick actions. Everything you need to start your day effectively.",
         position: "center",
       },
