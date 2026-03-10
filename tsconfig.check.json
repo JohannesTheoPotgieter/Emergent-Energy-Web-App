@@ -12,7 +12,14 @@
     "qa/tests/unit/health-diagnostics.test.ts",
     "qa/tests/unit/api-error.test.ts",
     "qa/tests/unit/bootstrap-env-guard.test.ts",
-    "qa/tests/unit/bootstrap-maintenance-guard.test.ts"
+    "qa/tests/unit/bootstrap-maintenance-guard.test.ts",
+    "server/routes.ts",
+    "server/storage.ts",
+    "server/routes/auth-routes.ts",
+    "server/bootstrap/environment-status.ts",
+    "server/bootstrap/runtime-mutation-policy.ts",
+    "server/repositories/work-management-repository.ts",
+    "qa/tests/unit/runtime-mutation-policy.test.ts"
   ],
   "exclude": [
     "node_modules",
