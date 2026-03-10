@@ -8,7 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle, XCircle, Loader2, Play, RefreshCw, FileSpreadsheet, Clock, Database, Trash2, FolderOpen, AlertTriangle, Upload } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { useToast } from "@/hooks/use-toast";
 
 interface FolderConfig {
@@ -87,6 +88,13 @@ export default function AdminPage() {
   const [singleUploadResult, setSingleUploadResult] = useState<{ status: string; projectName: string; message: string; records?: number } | null>(null);
 
   const viewerOnly = !isAdmin;
+
+  const { data: rolloutFlags } = useQuery({
+    queryKey: ["rollout-feature-flags"],
+    queryFn: fetchRolloutFeatureFlags,
+    staleTime: 60_000,
+  });
+  const cleanedAdminVisibilityEnabled = rolloutFlags?.find((flag) => flag.key === "cleaned_admin_visibility")?.value === true;
 
   const loadFolderConfig = async () => {
     setFolderLoading(true);
@@ -322,11 +330,12 @@ export default function AdminPage() {
 
       <Tabs defaultValue="import" className="w-full">
         {!viewerOnly && (
-          <TabsList className="grid w-full grid-cols-3 h-auto">
+          <TabsList className={`grid w-full ${cleanedAdminVisibilityEnabled ? "grid-cols-1" : "grid-cols-3"} h-auto`}>
             <TabsTrigger value="import" data-testid="tab-data-import">
               <FolderOpen className="h-4 w-4 mr-2" />
               Data Import
             </TabsTrigger>
+            {!cleanedAdminVisibilityEnabled && (<>
             <TabsTrigger value="maintenance" data-testid="tab-maintenance">
               <Database className="h-4 w-4 mr-2" />
               Maintenance
@@ -335,6 +344,7 @@ export default function AdminPage() {
               <Play className="h-4 w-4 mr-2" />
               Smoke Test
             </TabsTrigger>
+            </>)}
           </TabsList>
         )}
 

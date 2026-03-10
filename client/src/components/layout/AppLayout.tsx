@@ -205,7 +205,7 @@ function makeNavItem(id: string, variant: SidebarVariant, overrides?: Partial<Na
   };
 }
 
-function getLegacyNavGroups(contextualMsSurfacesEnabled: boolean): NavGroup[] {
+function getLegacyNavGroups(contextualMsSurfacesEnabled: boolean, cleanedAdminVisibilityEnabled: boolean): NavGroup[] {
   return [
     {
       heading: "EXCO",
@@ -254,17 +254,17 @@ function getLegacyNavGroups(contextualMsSurfacesEnabled: boolean): NavGroup[] {
       items: [
         makeNavItem("adminSettings", "legacy"),
         makeNavItem("adminRoles", "legacy"),
-        makeNavItem("smartImport", "legacy"),
         makeNavItem("adminImportControlTower", "legacy"),
         makeNavItem("adminActivity", "legacy"),
         makeNavItem("adminRecovery", "legacy"),
         makeNavItem("adminKpiTraceability", "legacy"),
+        ...(!cleanedAdminVisibilityEnabled ? [makeNavItem("smartImport", "legacy")] : []),
       ],
     },
   ];
 }
 
-function getRedesignedNavGroups(contextualMsSurfacesEnabled: boolean): NavGroup[] {
+function getRedesignedNavGroups(contextualMsSurfacesEnabled: boolean, cleanedAdminVisibilityEnabled: boolean): NavGroup[] {
   return [
     {
       heading: "MY WORK",
@@ -285,12 +285,27 @@ function getRedesignedNavGroups(contextualMsSurfacesEnabled: boolean): NavGroup[
     { heading: "QUALITY", section: "QUALITY", icon: ShieldCheck, items: [makeNavItem("quality", "redesigned")] },
     { heading: "PROJECT MANAGEMENT", section: "PROJECT_MANAGEMENT", icon: Wind, items: [makeNavItem("projects", "redesigned"), makeNavItem("portfolios", "redesigned"), makeNavItem("dashboard", "redesigned"), makeNavItem("pmDashboard", "redesigned"), makeNavItem("pmOnTheGo", "redesigned"), makeNavItem("weeklyReviews", "redesigned")] },
     { heading: "FINANCE", section: "FINANCE", icon: Battery, items: [makeNavItem("cashflow", "redesigned"), makeNavItem("cos", "redesigned"), makeNavItem("revenueTracker", "redesigned"), makeNavItem("gpTracker", "redesigned"), makeNavItem("subcontractor", "redesigned"), makeNavItem("invoicePatterns", "redesigned")] },
-    { heading: "SYSTEM", section: "SYSTEM", icon: CircuitBoard, items: [makeNavItem("adminControlCenter", "redesigned"), makeNavItem("adminRoles", "redesigned"), makeNavItem("adminSettings", "redesigned"), makeNavItem("adminActivity", "redesigned"), makeNavItem("smartImport", "redesigned"), makeNavItem("adminImportControlTower", "redesigned"), makeNavItem("adminRecovery", "redesigned"), makeNavItem("adminKpiTraceability", "redesigned"), makeNavItem("excelUpdates", "redesigned"), makeNavItem("eeInfo", "redesigned"), makeNavItem("companyPriorities", "redesigned"), makeNavItem("feedback", "redesigned"), makeNavItem("leaderboard", "redesigned")] },
+    {
+      heading: "SYSTEM",
+      section: "SYSTEM",
+      icon: CircuitBoard,
+      items: cleanedAdminVisibilityEnabled
+        ? [
+            makeNavItem("adminControlCenter", "redesigned"),
+            makeNavItem("adminRoles", "redesigned"),
+            makeNavItem("adminSettings", "redesigned"),
+            makeNavItem("adminImportControlTower", "redesigned"),
+            makeNavItem("adminKpiTraceability", "redesigned"),
+            makeNavItem("adminRecovery", "redesigned"),
+            makeNavItem("adminActivity", "redesigned"),
+          ]
+        : [makeNavItem("adminControlCenter", "redesigned"), makeNavItem("adminRoles", "redesigned"), makeNavItem("adminSettings", "redesigned"), makeNavItem("adminActivity", "redesigned"), makeNavItem("smartImport", "redesigned"), makeNavItem("adminImportControlTower", "redesigned"), makeNavItem("adminRecovery", "redesigned"), makeNavItem("adminKpiTraceability", "redesigned"), makeNavItem("excelUpdates", "redesigned"), makeNavItem("eeInfo", "redesigned"), makeNavItem("companyPriorities", "redesigned"), makeNavItem("feedback", "redesigned"), makeNavItem("leaderboard", "redesigned")],
+    },
   ];
 }
 
-function getUnifiedWorkNavGroups(contextualMsSurfacesEnabled: boolean): NavGroup[] {
-  const base = getRedesignedNavGroups(contextualMsSurfacesEnabled);
+function getUnifiedWorkNavGroups(contextualMsSurfacesEnabled: boolean, cleanedAdminVisibilityEnabled: boolean): NavGroup[] {
+  const base = getRedesignedNavGroups(contextualMsSurfacesEnabled, cleanedAdminVisibilityEnabled);
   const result: NavGroup[] = [];
 
   for (const group of base) {
@@ -304,9 +319,11 @@ function getUnifiedWorkNavGroups(contextualMsSurfacesEnabled: boolean): NavGroup
   return result;
 }
 
-function getNavGroups(unifiedWorkEnabled: boolean, contextualMsSurfacesEnabled: boolean): NavGroup[] {
-  if (unifiedWorkEnabled && UX_REDESIGN_ENABLED) return getUnifiedWorkNavGroups(contextualMsSurfacesEnabled);
-  return UX_REDESIGN_ENABLED ? getRedesignedNavGroups(contextualMsSurfacesEnabled) : getLegacyNavGroups(contextualMsSurfacesEnabled);
+function getNavGroups(unifiedWorkEnabled: boolean, contextualMsSurfacesEnabled: boolean, cleanedAdminVisibilityEnabled: boolean): NavGroup[] {
+  if (unifiedWorkEnabled && UX_REDESIGN_ENABLED) return getUnifiedWorkNavGroups(contextualMsSurfacesEnabled, cleanedAdminVisibilityEnabled);
+  return UX_REDESIGN_ENABLED
+    ? getRedesignedNavGroups(contextualMsSurfacesEnabled, cleanedAdminVisibilityEnabled)
+    : getLegacyNavGroups(contextualMsSurfacesEnabled, cleanedAdminVisibilityEnabled);
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -378,6 +395,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   });
   const roleAwareUxEnabled = rolloutFlags?.find((flag) => flag.key === "role_aware_ux")?.value === true;
   const contextualMsSurfacesEnabled = rolloutFlags?.find((flag) => flag.key === "contextual_ms_surfaces")?.value === true;
+  const cleanedAdminVisibilityEnabled = rolloutFlags?.find((flag) => flag.key === "cleaned_admin_visibility")?.value === true;
 
   const [screenTourActive, setScreenTourActive] = useState(false);
   const screenTour = getScreenTour(location);
@@ -408,7 +426,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       if (next[heading] !== undefined) {
         next[heading] = !next[heading];
       } else {
-        const groups = getNavGroups(!!unifiedWorkFlag, !!contextualMsSurfacesEnabled);
+        const groups = getNavGroups(!!unifiedWorkFlag, !!contextualMsSurfacesEnabled, !!cleanedAdminVisibilityEnabled);
         const group = groups.find(g => g.heading === heading);
         const currentSearch = window.location.search;
         const groupHasActive = group?.items.some(item => {
@@ -441,7 +459,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const allowedSections: string[] = permissions?.sections || [];
   const navGroups = (() => {
-    const groups = getNavGroups(!!unifiedWorkFlag, !!contextualMsSurfacesEnabled).map((group) => ({ ...group, items: [...group.items] }));
+    const groups = getNavGroups(!!unifiedWorkFlag, !!contextualMsSurfacesEnabled, !!cleanedAdminVisibilityEnabled).map((group) => ({ ...group, items: [...group.items] }));
     if (!roleAwareUxEnabled) return groups;
 
     const sectionOrder = getRoleSectionPriority(activeRole);
