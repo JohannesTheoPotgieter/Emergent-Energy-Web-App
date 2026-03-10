@@ -243,12 +243,16 @@ function KpiCard({
 
   const c = colorMap[color] || colorMap.blue;
   const isOpen = activeDrilldown === drilldownKey;
+  const isInteractive = Array.isArray(drilldownItems);
 
   return (
     <div className={`relative ${isOpen ? "z-50" : "z-0"}`}>
       <button
-        className={`w-full text-left rounded-xl border shadow-sm ${c.card} p-4 sm:p-5 cursor-pointer hover:shadow-md active:scale-[0.98] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary/30 ${isOpen ? "ring-2 ring-primary/30 shadow-lg" : ""}`}
-        onClick={() => onToggle(drilldownKey)}
+        className={`w-full text-left rounded-xl border shadow-sm ${c.card} p-4 sm:p-5 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary/30 ${isInteractive ? "cursor-pointer hover:shadow-md active:scale-[0.98]" : "cursor-default opacity-90"} ${isOpen ? "ring-2 ring-primary/30 shadow-lg" : ""}`}
+        onClick={() => {
+          if (isInteractive) onToggle(drilldownKey);
+        }}
+        aria-disabled={!isInteractive}
         data-testid={testId}
       >
         <div className="flex items-start gap-3">
@@ -264,7 +268,7 @@ function KpiCard({
           </div>
         </div>
       </button>
-      {isOpen && drilldownItems && (
+      {isOpen && isInteractive && drilldownItems && (
         <KpiDrilldown items={drilldownItems} type={drilldownType} onClose={onClose} onNavigate={onNavigate} />
       )}
     </div>
@@ -449,10 +453,18 @@ export default function Dashboard() {
     queryKey: ["/api/program-dashboard"],
   });
 
-  const { data: highPriority, isLoading: hpLoading } = useQuery<HighPriority>({
+  const { data: highPriority, isLoading: hpLoading, isFetching: hpFetching, dataUpdatedAt: hpUpdatedAt } = useQuery<HighPriority>({
     queryKey: ["/api/dashboard/high-priority"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
+
+  const highPriorityTotal = highPriority
+    ? highPriority.overdueExpenses.length +
+      highPriority.revenueOutstanding.length +
+      highPriority.projectsBehindPlan.length +
+      highPriority.upcomingMilestones.length +
+      highPriority.overdueTasks.length
+    : 0;
 
   const { data: projectsSummary = [] } = useQuery<any[]>({
     queryKey: ["/api/projects-summary"],
@@ -607,11 +619,32 @@ export default function Dashboard() {
           <p className="text-sm text-muted-foreground mt-1 animate-slide-up-fade stagger-1">
             FY26: 1 Sep 2025 – 31 Aug 2026
           </p>
+          <p className="text-xs text-muted-foreground mt-1.5 animate-slide-up-fade stagger-1">
+            Snapshot shown from latest successful sync{hpUpdatedAt ? ` · Priority feed updated ${format(new Date(hpUpdatedAt), "HH:mm d MMM")}` : ""}
+          </p>
         </div>
         <time className="text-sm font-medium text-muted-foreground tabular-nums animate-slide-in-right stagger-2" data-testid="text-today-date">
           {format(new Date(), "EEEE, d MMMM yyyy")}
         </time>
       </header>
+
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-3" aria-label="Operational focus">
+        <Link href="/execution-board" className="rounded-lg border bg-card p-3 hover:border-blue-200 transition-colors">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Immediate execution risk</p>
+          <p className="text-2xl font-bold text-foreground mt-1">{highPriority?.projectsBehindPlan.length ?? 0}</p>
+          <p className="text-xs text-muted-foreground mt-1">Projects behind plan</p>
+        </Link>
+        <Link href="/revenue-tracker" className="rounded-lg border bg-card p-3 hover:border-amber-200 transition-colors">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Cash protection</p>
+          <p className="text-2xl font-bold text-foreground mt-1">{formatRand(kpis?.revenueOutstanding ?? 0)}</p>
+          <p className="text-xs text-muted-foreground mt-1">Outstanding receivables</p>
+        </Link>
+        <Link href="/cashflow" className="rounded-lg border bg-card p-3 hover:border-red-200 transition-colors">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">Payment risk</p>
+          <p className="text-2xl font-bold text-foreground mt-1">{formatRand(kpis?.expenseOverdue ?? 0)}</p>
+          <p className="text-xs text-muted-foreground mt-1">Overdue expenses to clear</p>
+        </Link>
+      </section>
 
       <section aria-label="Milestone KPIs" className="animate-float-in stagger-2">
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
@@ -769,7 +802,7 @@ export default function Dashboard() {
               <div className="min-w-0">
                 <CardTitle className="text-base sm:text-lg font-bold text-foreground">High Priority Actions</CardTitle>
                 <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 line-clamp-1 sm:line-clamp-none">
-                  Overdue expenses · Revenue outstanding · Projects behind plan · Upcoming milestones · Overdue tasks
+                  {highPriorityTotal} open items · Overdue expenses · Revenue outstanding · Projects behind plan · Upcoming milestones · Overdue tasks
                 </p>
               </div>
             </div>
@@ -777,7 +810,7 @@ export default function Dashboard() {
               variant="ghost"
               size="sm"
               className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-              disabled={hpRefreshing}
+              disabled={hpRefreshing || hpFetching}
               onClick={async () => {
                 setHpRefreshing(true);
                 await queryClient.invalidateQueries({ queryKey: ["/api/dashboard/high-priority"] });
@@ -786,8 +819,8 @@ export default function Dashboard() {
               }}
               data-testid="btn-refresh-high-priority"
             >
-              <RefreshCw className={`h-3.5 w-3.5 ${hpRefreshing ? "animate-spin" : ""}`} />
-              {hpRefreshing ? "Refreshing…" : "Refresh"}
+              <RefreshCw className={`h-3.5 w-3.5 ${hpRefreshing || hpFetching ? "animate-spin" : ""}`} />
+              {hpRefreshing || hpFetching ? "Syncing…" : "Sync now"}
             </Button>
           </div>
         </CardHeader>
