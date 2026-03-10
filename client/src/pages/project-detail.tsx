@@ -10,18 +10,16 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import {
-  FileText, DollarSign, CreditCard, TrendingUp, BarChart3, Activity,
+  DollarSign, CreditCard, TrendingUp, BarChart3, Activity,
   ArrowLeft, User, CheckCircle, AlertCircle, Columns, CalendarDays,
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
-  MessageSquare, FolderOpen, Bell, Mail, ThumbsUp, ThumbsDown, FileCheck, Inbox, MoreHorizontal,
+  MessageSquare, FolderOpen, Bell, FileCheck,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
-import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
 import { MonthlyRealisationTab } from "@/components/tabs/MonthlyRealisationTab";
@@ -32,22 +30,15 @@ import { ProjectSubcontractorsTab } from "@/components/tabs/ProjectSubcontractor
 import TaskDetailDrawer from "@/components/TaskDetailDrawer";
 import BoardView from "@/components/BoardView";
 import CalendarView from "@/components/CalendarView";
-import TaskGridView from "@/components/TaskGridView";
-import KeyDatesPanel from "@/components/KeyDatesPanel";
 import UnifiedPlanTab from "@/components/tabs/UnifiedPlanTab";
 import { QualityTab } from "@/components/tabs/QualityTab";
 import { ProjectHistoryTab } from "@/components/tabs/ProjectHistoryTab";
-import { FinancialIntegrationPanel } from "@/components/FinancialIntegrationPanel";
-import EngineeringStagesTab from "@/components/tabs/EngineeringStagesTab";
 import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
 import { GuidancePrompt, getPhaseGuidance } from "@/components/MicroGuidance";
 import { ProjectChatTab } from "@/components/tabs/ProjectChatTab";
-import { SharePointFilesTab } from "@/components/tabs/SharePointFilesTab";
 import { LocalFolderTab } from "@/components/tabs/LocalFolderTab";
 import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
 import { ProjectNotificationsTab } from "@/components/tabs/ProjectNotificationsTab";
-import { POGenerator } from "@/components/POGenerator";
-import CaptureDeliverable from "@/components/CaptureDeliverable";
 import HandoverGatePanel from "@/components/HandoverGatePanel";
 import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
 import { ProjectChangeControlTab } from "@/components/tabs/ProjectChangeControlTab";
@@ -694,32 +685,32 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
 }
 
 const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = {
-  "task-grid": { section: "project-management", subTab: "task-grid" },
-  "board": { section: "project-management", subTab: "board" },
-  "calendar": { section: "project-management", subTab: "calendar" },
+  "task-grid": { section: "delivery", subTab: "task-grid" },
+  "board": { section: "delivery", subTab: "board" },
+  "calendar": { section: "delivery", subTab: "calendar" },
   "eng-tasks": { section: "engineering", subTab: "eng-tasks" },
   "eng-stages": { section: "engineering", subTab: "eng-stages" },
-  "project-plan": { section: "project-management", subTab: "plan" },
-  "gantt": { section: "project-management", subTab: "plan" },
-  "key-dates": { section: "project-management", subTab: "key-dates" },
-  "revenue-tracking": { section: "project-management", subTab: "revenue-tracking" },
-  "expenditure": { section: "project-management", subTab: "expenditure" },
-  "monthly-realisation": { section: "project-management", subTab: "monthly-realisation" },
-  "revenue-tracker": { section: "project-management", subTab: "revenue-tracker" },
-  "gp-tracker": { section: "project-management", subTab: "gp-tracker" },
-  "cashflow": { section: "project-management", subTab: "cashflow" },
-  "subcontractors": { section: "project-management", subTab: "subcontractors" },
-  "raid": { section: "project-management", subTab: "raid" },
-  "change-control": { section: "project-management", subTab: "change-control" },
-  "procurement": { section: "project-management", subTab: "procurement" },
-  "commissioning": { section: "project-management", subTab: "commissioning" },
+  "project-plan": { section: "delivery", subTab: "task-grid" },
+  "gantt": { section: "delivery", subTab: "task-grid" },
+  "key-dates": { section: "delivery", subTab: "task-grid" },
+  "revenue-tracking": { section: "commercial", subTab: "revenue-tracking" },
+  "expenditure": { section: "commercial", subTab: "expenditure" },
+  "monthly-realisation": { section: "commercial", subTab: "monthly-realisation" },
+  "revenue-tracker": { section: "commercial", subTab: "revenue-tracker" },
+  "gp-tracker": { section: "commercial", subTab: "gp-tracker" },
+  "cashflow": { section: "commercial", subTab: "cashflow" },
+  "subcontractors": { section: "commercial", subTab: "subcontractors" },
+  "raid": { section: "delivery", subTab: "raid" },
+  "change-control": { section: "commercial", subTab: "change-control" },
+  "procurement": { section: "commercial", subTab: "procurement" },
+  "commissioning": { section: "delivery", subTab: "commissioning" },
   "quality": { section: "quality", subTab: "quality" },
-  "history": { section: "project-management", subTab: "history" },
+  "history": { section: "collaboration", subTab: "history" },
   "overview": { section: "overview", subTab: "" },
   "engineering": { section: "engineering", subTab: "eng-tasks" },
-  "money": { section: "project-management", subTab: "revenue-tracking" },
-  "revenue": { section: "project-management", subTab: "revenue-tracking" },
-  "plan": { section: "project-management", subTab: "plan" },
+  "money": { section: "commercial", subTab: "revenue-tracking" },
+  "revenue": { section: "commercial", subTab: "revenue-tracking" },
+  "plan": { section: "delivery", subTab: "task-grid" },
   "chat": { section: "collaboration", subTab: "chat" },
   "sharepoint": { section: "collaboration", subTab: "sharepoint" },
   "local-files": { section: "collaboration", subTab: "local-files" },
@@ -729,7 +720,8 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
 };
 
 const SECTION_DEFAULT_SUBTAB: Record<string, string> = {
-  "project-management": "task-grid",
+  delivery: "task-grid",
+  commercial: "procurement",
   engineering: "eng-tasks",
   quality: "quality",
   collaboration: "chat",
@@ -827,21 +819,6 @@ export default function ProjectDetailPage() {
 
   const [activeSection, setActiveSection] = useState<string>(resolvedFromUrl?.section || "overview");
   const [activeSubTab, setActiveSubTab] = useState<string>(resolvedFromUrl?.subTab || "");
-  const [overviewTab, setOverviewTab] = useState<string>("");
-
-  useEffect(() => {
-    if (overviewTab) return;
-    const tabs = [
-      { key: "plan", visible: canViewTab.overview },
-      { key: "engineering", visible: canViewTab.engineering },
-      { key: "quality", visible: canViewTab.quality },
-      { key: "finance", visible: canViewTab.expenditure },
-      { key: "collaboration", visible: true },
-      { key: "pd", visible: true },
-    ];
-    const first = tabs.find(t => t.visible);
-    if (first) setOverviewTab(first.key);
-  }, [canViewTab.overview, canViewTab.engineering, canViewTab.quality, canViewTab.expenditure, overviewTab]);
 
   useEffect(() => {
     if (urlTab) {
@@ -856,6 +833,8 @@ export default function ProjectDetailPage() {
   const navigateToSection = (section: string, subTab?: string) => {
     if (section === "engineering" && !canViewTab.engineering) { setActiveSection("overview"); return; }
     if (section === "quality" && !canViewTab.quality) { setActiveSection("overview"); return; }
+    if (section === "commercial" && !canViewTab.finance) { setActiveSection("overview"); return; }
+    if (section === "collaboration" && !canViewSubTab.collaboration) { setActiveSection("overview"); return; }
     setActiveSection(section);
     setActiveSubTab(subTab || SECTION_DEFAULT_SUBTAB[section] || "");
   };
@@ -1147,462 +1126,109 @@ export default function ProjectDetailPage() {
         ) : null;
       })()}
 
+      <div className="flex items-center gap-1 bg-white border rounded-lg p-1 overflow-x-auto scrollbar-hide" data-testid="project-major-tabs">
+        {[
+          { key: "overview", label: "Overview", icon: Eye, visible: true },
+          { key: "delivery", label: "Delivery", icon: CalendarDays, visible: canViewTab.overview },
+          { key: "commercial", label: "Commercial", icon: DollarSign, visible: canViewTab.finance },
+          { key: "engineering", label: "Engineering", icon: Wrench, visible: canViewTab.engineering },
+          { key: "quality", label: "Quality", icon: ShieldCheck, visible: canViewTab.quality },
+          { key: "collaboration", label: "Collaboration & Records", icon: Users, visible: canViewSubTab.collaboration },
+        ].filter(t => t.visible).map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeSection === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => navigateToSection(tab.key)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-all ${isActive ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
+              data-testid={`major-tab-${tab.key}`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
 
       {activeSection === "overview" && (
-        <div className="space-y-3" data-testid="overview-section">
-          <div className="flex items-center gap-1 bg-white border rounded-lg p-1 overflow-x-auto scrollbar-hide" data-testid="overview-tabs">
-            {[
-              { key: "plan", label: "Plan", icon: CalendarDays, activeClass: "bg-sky-50 text-sky-700 shadow-sm", visible: canViewTab.overview },
-              { key: "engineering", label: "Engineering", icon: Wrench, activeClass: "bg-orange-50 text-orange-700 shadow-sm", visible: canViewTab.engineering },
-              { key: "quality", label: "Quality", icon: ShieldCheck, activeClass: "bg-emerald-50 text-emerald-700 shadow-sm", visible: canViewTab.quality },
-            ].filter(t => t.visible).map(tab => {
-              const Icon = tab.icon;
-              const isActive = overviewTab === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setOverviewTab(tab.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-all ${isActive ? tab.activeClass : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"}`}
-                  data-testid={`overview-tab-${tab.key}`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  {tab.label}
-                </button>
-              );
-            })}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="overview-tab-more">
-                  <MoreHorizontal className="h-3.5 w-3.5" /> More
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-44 p-1.5 space-y-1">
-                {[
-                  { key: "finance", label: "Finance", icon: DollarSign, visible: canViewTab.expenditure },
-                  { key: "collaboration", label: "Collaboration", icon: Users, visible: true },
-                  { key: "pd", label: "PD", icon: FileText, visible: true },
-                ].filter(t => t.visible).map(tab => {
-                  const Icon = tab.icon;
-                  return (
-                    <Button
-                      key={tab.key}
-                      variant={overviewTab === tab.key ? "secondary" : "ghost"}
-                      size="sm"
-                      className="w-full justify-start text-xs"
-                      onClick={() => setOverviewTab(tab.key)}
-                      data-testid={`overview-tab-${tab.key}`}
-                    >
-                      <Icon className="h-3.5 w-3.5 mr-1.5" /> {tab.label}
-                    </Button>
-                  );
-                })}
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          <Card className="shadow-sm" data-testid="overview-panel">
-            <CardContent className="p-4">
-              {overviewTab === "plan" && canViewTab.overview && (
-                <div className="space-y-3" data-testid="overview-plan-panel">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <CalendarDays className="h-4 w-4 text-sky-600" />
-                      <h3 className="font-semibold text-sm">Project Plan</h3>
-                      <RagDot color={scheduleRag} />
-                    </div>
-                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-sky-600" onClick={() => navigateToSection("project-management", "plan")} data-testid="button-goto-plan">
-                      Open Plan <ArrowRight className="h-3 w-3" />
-                    </Button>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
-                    <div className="flex-1 w-full sm:w-auto">
-                      <div className="flex items-center justify-between text-xs mb-1">
-                        <span className="text-muted-foreground">Progress</span>
-                        <span className="font-semibold">{planCompletionPct.toFixed(0)}%</span>
-                      </div>
-                      <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                        <div className="h-full bg-sky-500 rounded-full transition-all" style={{ width: `${planCompletionPct}%` }} />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 text-center shrink-0">
-                      <div>
-                        <p className="text-lg font-bold">{planTasks.length}</p>
-                        <p className="text-[9px] text-muted-foreground">Total</p>
-                      </div>
-                      <div>
-                        <p className="text-lg font-bold text-emerald-600">{completedPlanTasks.length}</p>
-                        <p className="text-[9px] text-muted-foreground">Done</p>
-                      </div>
-                      <div>
-                        <p className={`text-lg font-bold ${overduePlanTasks.length > 0 ? "text-red-600" : ""}`}>{overduePlanTasks.length}</p>
-                        <p className="text-[9px] text-muted-foreground">Overdue</p>
-                      </div>
-                      <div>
-                        <p className="text-lg font-bold text-sky-600">{Math.max(0, planTasks.length - completedPlanTasks.length - overduePlanTasks.length)}</p>
-                        <p className="text-[9px] text-muted-foreground">On Track</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1 border-t pt-2">
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                      {overduePlanTasks.length > 0 ? "Urgent Tasks" : "Upcoming"}
-                    </p>
-                    {(() => {
-                      if (planTasks.length === 0) return <p className="text-xs text-muted-foreground text-center py-1">No plan data uploaded yet</p>;
-                      const urgent = [...overduePlanTasks]
-                        .sort((a: any, b: any) => (a.actualEnd || a.endDate || "").localeCompare(b.actualEnd || b.endDate || ""))
-                        .slice(0, 3);
-                      if (urgent.length === 0) {
-                        const upcoming = planTasks
-                          .filter((t: any) => {
-                            const endDate = t.actualEnd || t.endDate;
-                            const pct = Number(t.actualPctComplete) || 0;
-                            return endDate && endDate >= today && pct < 1;
-                          })
-                          .sort((a: any, b: any) => (a.actualEnd || a.endDate || "").localeCompare(b.actualEnd || b.endDate || ""))
-                          .slice(0, 3);
-                        if (upcoming.length === 0) return <p className="text-xs text-emerald-600 text-center py-1">All tasks on track</p>;
-                        return upcoming.map((t: any, i: number) => (
-                          <div key={i} className="flex items-center gap-2 text-[11px] py-1 px-2 rounded bg-muted/50 hover:bg-muted cursor-pointer" onClick={() => navigateToSection("project-management", "plan")} data-testid={`row-plan-upcoming-${t.id || i}`}>
-                            <Circle className="h-2 w-2 text-sky-400 shrink-0" />
-                            <span className="truncate flex-1">{t.highLevelProgramme || t.taskName || t.task_name || "Unnamed"}</span>
-                            <span className="text-sky-600 font-medium shrink-0 text-[10px]">{((Number(t.actualPctComplete) || 0) * 100).toFixed(0)}%</span>
-                          </div>
-                        ));
-                      }
-                      return urgent.map((t: any, i: number) => {
-                        const endDate = t.actualEnd || t.endDate || "";
-                        const daysLate = endDate ? Math.floor((new Date().getTime() - new Date(endDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
-                        return (
-                          <div key={i} className="flex items-center gap-2 text-[11px] py-1 px-2 rounded bg-red-50 border border-red-100 cursor-pointer" onClick={() => navigateToSection("project-management", "plan")} data-testid={`row-plan-overdue-${t.id || i}`}>
-                            <AlertCircle className="h-3 w-3 text-red-500 shrink-0" />
-                            <span className="truncate flex-1">{t.highLevelProgramme || t.taskName || t.task_name || "Unnamed"}</span>
-                            <Badge variant="destructive" className="text-[9px] px-1 py-0 shrink-0">{daysLate}d</Badge>
-                          </div>
-                        );
-                      });
-                    })()}
+        <div className="space-y-4" data-testid="overview-section">
+          <Card className="shadow-sm" data-testid="overview-truth-center">
+            <CardContent className="p-4 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Project truth center</p>
+                  <h2 className="text-lg font-semibold">{displayName}</h2>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <PhaseBadge phase={phase} />
+                    <span>Execution: {getPhaseLabel(executionPhase)}</span>
+                    <span>•</span>
+                    <span>Size: {sizeKwp}</span>
                   </div>
                 </div>
-              )}
-
-              {overviewTab === "engineering" && canViewTab.engineering && (
-                <div className="space-y-3" data-testid="overview-engineering-panel">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Wrench className="h-4 w-4 text-orange-600" />
-                      <h3 className="font-semibold text-sm">Engineering</h3>
-                    </div>
-                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-orange-600" onClick={() => navigateToSection("engineering")} data-testid="button-goto-engineering">
-                      Open Engineering <ArrowRight className="h-3 w-3" />
-                    </Button>
+                <div className="grid grid-cols-3 gap-2 text-center min-w-[260px]">
+                  <div className="rounded-md border p-2">
+                    <p className="text-[10px] text-muted-foreground">Schedule</p>
+                    <p className={`text-sm font-semibold ${ragColor(scheduleRag)}`}>{scheduleRag.toUpperCase()}</p>
                   </div>
-
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between text-xs mb-1">
-                        <span className="text-muted-foreground">Stage Progress</span>
-                        <span className="font-semibold">{engStagePct.toFixed(0)}%</span>
-                      </div>
-                      <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                        <div className="h-full bg-orange-500 rounded-full transition-all" style={{ width: `${engStagePct}%` }} />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 text-center shrink-0">
-                      <div>
-                        <p className="text-lg font-bold">{engStages.length}</p>
-                        <p className="text-[9px] text-muted-foreground">Stages</p>
-                      </div>
-                      <div>
-                        <p className="text-lg font-bold text-emerald-600">{engCompletedStages}</p>
-                        <p className="text-[9px] text-muted-foreground">Complete</p>
-                      </div>
-                      <div>
-                        <p className="text-lg font-bold">{engCompletedTasks}/{engTotalTasks}</p>
-                        <p className="text-[9px] text-muted-foreground">Tasks</p>
-                      </div>
-                    </div>
+                  <div className="rounded-md border p-2">
+                    <p className="text-[10px] text-muted-foreground">Cost</p>
+                    <p className={`text-sm font-semibold ${ragColor(costRag)}`}>{costRag.toUpperCase()}</p>
                   </div>
-
-                  <div className="flex items-center gap-2 border-t pt-2">
-                    <Target className="h-3.5 w-3.5 text-orange-500" />
-                    <span className="text-[11px] font-medium text-muted-foreground truncate">
-                      {engActiveStage ? `Active: ${engActiveStage.stageName || engActiveStage.templateName || "Stage"}` : engStages.length === 0 && engBoardTotal > 0 ? `${engBoardTotal} board task${engBoardTotal !== 1 ? "s" : ""}` : engStages.length === 0 ? "No stages yet" : "All complete"}
-                    </span>
+                  <div className="rounded-md border p-2">
+                    <p className="text-[10px] text-muted-foreground">Quality</p>
+                    <p className={`text-sm font-semibold ${ragColor(qualityRag)}`}>{qualityRag.toUpperCase()}</p>
                   </div>
                 </div>
-              )}
+              </div>
 
-              {overviewTab === "quality" && canViewTab.quality && (
-                <div className="space-y-3" data-testid="overview-quality-panel">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                      <h3 className="font-semibold text-sm">Quality</h3>
-                      <RagDot color={qualityRag} />
-                    </div>
-                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-emerald-600" onClick={() => navigateToSection("quality")} data-testid="button-goto-quality">
-                      Open Quality <ArrowRight className="h-3 w-3" />
-                    </Button>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between text-xs mb-1">
-                        <span className="text-muted-foreground">Gate Progress</span>
-                        <span className="font-semibold">{qualityGatesTotal > 0 ? `${qualityGatesPassed}/${qualityGatesTotal}` : "No gates"}</span>
-                      </div>
-                      <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                        <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${qualityGatesTotal > 0 ? (qualityGatesPassed / qualityGatesTotal) * 100 : 0}%` }} />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 text-center shrink-0">
-                      <div>
-                        <p className="text-lg font-bold">{qualityGatesTotal}</p>
-                        <p className="text-[9px] text-muted-foreground">Gates</p>
-                      </div>
-                      <div>
-                        <p className="text-lg font-bold text-emerald-600">{qualityGatesPassed}</p>
-                        <p className="text-[9px] text-muted-foreground">Passed</p>
-                      </div>
-                      <div>
-                        <p className={`text-lg font-bold ${qualityGatesTotal - qualityGatesPassed > 0 ? "text-amber-600" : ""}`}>
-                          {qualityGatesTotal - qualityGatesPassed}
-                        </p>
-                        <p className="text-[9px] text-muted-foreground">Pending</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 border-t pt-2">
-                    <span className={`text-[11px] font-medium ${ragColor(qualityRag)}`}>
-                      {qualityRag === "green" ? "On Track" : qualityRag === "amber" ? "Needs Review" : "Action Required"}
-                    </span>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                <div className="rounded-lg border p-3 space-y-2" data-testid="overview-key-facts">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Key facts & owners</p>
+                  <div className="space-y-1 text-sm">
+                    <p><span className="text-muted-foreground">PD:</span> {pd}</p>
+                    <p><span className="text-muted-foreground">PM:</span> {pm}</p>
+                    <p><span className="text-muted-foreground">Completion:</span> {completion}</p>
+                    <p><span className="text-muted-foreground">Contract value:</span> R{contractValue.toLocaleString()}</p>
+                    <p><span className="text-muted-foreground">Budget total:</span> R{budgetTotal.toLocaleString()}</p>
                   </div>
                 </div>
-              )}
 
-              {overviewTab === "finance" && canViewTab.expenditure && (
-                <div className="space-y-3" data-testid="overview-finance-panel">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <DollarSign className="h-4 w-4 text-violet-600" />
-                      <h3 className="font-semibold text-sm">Finance</h3>
-                    </div>
-                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-violet-600" onClick={() => navigateToSection("project-management", "expenditure")} data-testid="button-goto-expenditure">
-                      Open Expenditure <ArrowRight className="h-3 w-3" />
-                    </Button>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-center">
-                    <div className="rounded-lg bg-violet-50 py-2 px-3">
-                      <p className="text-[10px] text-muted-foreground mb-0.5">Costed</p>
-                      <p className="text-sm font-bold">R{(budgetTotal / 1000).toFixed(0)}k</p>
-                    </div>
-                    <div className={`rounded-lg py-2 px-3 ${costRag === "red" ? "bg-red-50" : costRag === "amber" ? "bg-amber-50" : "bg-muted/50"}`}>
-                      <p className="text-[10px] text-muted-foreground mb-0.5">Actual</p>
-                      <p className={`text-sm font-bold ${costRag === "red" ? "text-red-600" : costRag === "amber" ? "text-amber-600" : ""}`}>R{(totalExpenses / 1000).toFixed(0)}k</p>
-                    </div>
-                    <div className={`rounded-lg py-2 px-3 ${(budgetTotal - totalExpenses) < 0 ? "bg-red-50" : "bg-emerald-50"}`}>
-                      <p className="text-[10px] text-muted-foreground mb-0.5">Variance</p>
-                      <p className={`text-sm font-bold ${(budgetTotal - totalExpenses) < 0 ? "text-red-600" : "text-emerald-600"}`}>
-                        {(budgetTotal - totalExpenses) >= 0 ? "" : "-"}R{(Math.abs(budgetTotal - totalExpenses) / 1000).toFixed(0)}k
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5 border-t pt-2">
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Top Categories</p>
-                    {(() => {
-                      const categories = (expenseData as any[]).reduce((acc: Record<string, { actual: number; paid: number; count: number }>, e: any) => {
-                        const cat = e.expenseCategory || "Uncategorised";
-                        if (!acc[cat]) acc[cat] = { actual: 0, paid: 0, count: 0 };
-                        const amt = Number(e.expenseActualTotal) || 0;
-                        acc[cat].actual += amt;
-                        acc[cat].count += 1;
-                        const isPaid = e.computedState === "Paid" || (e.expensePaymentDate && String(e.expensePaymentDate).trim());
-                        if (isPaid) acc[cat].paid += amt;
-                        return acc;
-                      }, {});
-                      const sorted = Object.entries(categories).sort((a, b) => b[1].actual - a[1].actual);
-                      const totalActual = sorted.reduce((sum, [, v]) => sum + v.actual, 0);
-                      const maxVal = Math.max(...sorted.map(([, v]) => v.actual), 1);
-                      if (sorted.length === 0) return <p className="text-xs text-muted-foreground text-center py-1">No expenditure data</p>;
-                      return sorted.slice(0, 5).map(([cat, vals]) => {
-                        const pct = totalActual > 0 ? ((vals.actual / totalActual) * 100).toFixed(0) : "0";
-                        const paidPct = vals.actual > 0 ? ((vals.paid / vals.actual) * 100).toFixed(0) : "0";
-                        const fmtAmt = vals.actual >= 1000000 ? `R${(vals.actual / 1000000).toFixed(1)}M` : `R${(vals.actual / 1000).toFixed(0)}k`;
-                        const fmtPaid = vals.paid >= 1000000 ? `R${(vals.paid / 1000000).toFixed(1)}M` : `R${(vals.paid / 1000).toFixed(0)}k`;
-                        return (
-                          <div key={cat} className="space-y-0.5" data-testid={`exp-cat-${cat.replace(/\s+/g, "-").toLowerCase()}`}>
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="truncate max-w-[200px] text-muted-foreground">{cat}</span>
-                              <span className="font-medium">
-                                {fmtAmt} <span className="text-muted-foreground font-normal">({pct}%)</span>
-                                {Number(paidPct) > 0 && <span className="text-emerald-600 ml-1">{fmtPaid} paid</span>}
-                              </span>
-                            </div>
-                            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                              <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.min((vals.actual / maxVal) * 100, 100)}%` }} />
-                            </div>
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
-
-                  <FinancialIntegrationPanel projectName={projectName} />
-                </div>
-              )}
-
-              {overviewTab === "collaboration" && (
-                <div className="space-y-3" data-testid="overview-collaboration-panel">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4 text-teal-600" />
-                      <h3 className="font-semibold text-sm">Collaboration</h3>
-                    </div>
-                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-teal-600" onClick={() => navigateToSection("collaboration", "chat")} data-testid="button-goto-collaboration">
-                      Open <ArrowRight className="h-3 w-3" />
-                    </Button>
-                  </div>
-
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                    <div
-                      className="flex flex-col items-center gap-2 p-3 rounded-lg bg-teal-50 border border-teal-100 cursor-pointer hover:shadow-sm transition-all"
-                      onClick={() => navigateToSection("collaboration", "chat")}
-                      data-testid="collab-chat-link"
-                    >
-                      <div className="w-9 h-9 rounded-lg bg-teal-100 flex items-center justify-center">
-                        <MessageSquare className="h-4 w-4 text-teal-700" />
-                      </div>
-                      <p className="text-xs font-medium">Project Chat</p>
-                    </div>
-
-                    <div
-                      className="flex flex-col items-center gap-2 p-3 rounded-lg bg-blue-50 border border-blue-100 cursor-pointer hover:shadow-sm transition-all"
-                      onClick={() => navigateToSection("collaboration", "local-files")}
-                      data-testid="collab-folder-link"
-                    >
-                      <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center">
-                        <FolderOpen className="h-4 w-4 text-blue-700" />
-                      </div>
-                      <p className="text-xs font-medium">Project Folder</p>
-                    </div>
-
-                    <div
-                      className="flex flex-col items-center gap-2 p-3 rounded-lg bg-violet-50 border border-violet-100 cursor-pointer hover:shadow-sm transition-all"
-                      onClick={() => navigateToSection("collaboration", "approvals")}
-                      data-testid="collab-approvals-link"
-                    >
-                      <div className="w-9 h-9 rounded-lg bg-violet-100 flex items-center justify-center">
-                        <FileCheck className="h-4 w-4 text-violet-700" />
-                      </div>
-                      <p className="text-xs font-medium">Approvals</p>
-                    </div>
-
-                    <CaptureDeliverable
-                      projectId={projectInfoId ?? undefined}
-                      projectName={projectName}
-                      trigger={
-                        <div
-                          className="flex flex-col items-center gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-100 cursor-pointer hover:shadow-sm transition-all"
-                          data-testid="collab-capture-deliverable"
-                        >
-                          <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center">
-                            <Inbox className="h-4 w-4 text-emerald-700" />
-                          </div>
-                          <p className="text-xs font-medium">Capture Deliverable</p>
-                        </div>
-                      }
-                    />
-                  </div>
-                </div>
-              )}
-
-              {overviewTab === "pd" && (
-                <div className="space-y-3" data-testid="overview-pd-panel">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-indigo-600" />
-                      <h3 className="font-semibold text-sm">Project Development</h3>
-                    </div>
-                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-indigo-600" onClick={() => setLocation("/pd-tickets")} data-testid="button-goto-pd">
-                      View All <ArrowRight className="h-3 w-3" />
-                    </Button>
-                  </div>
-
+                <div className="rounded-lg border p-3 space-y-2" data-testid="overview-urgent-blockers">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Urgent blockers</p>
                   {(() => {
-                    const tickets = pdTicketsData || [];
-                    const active = tickets.filter((t: any) => t.status === "In Progress" || t.status === "Draft");
-                    const completed = tickets.filter((t: any) => t.status === "Completed");
-                    const overdue = tickets.filter((t: any) => {
-                      if (!t.dueDate || t.status === "Completed" || t.status === "Cancelled") return false;
-                      return t.dueDate < new Date().toISOString().split("T")[0];
-                    });
-                    const totalTasks = tickets.reduce((sum: number, t: any) => sum + (t.taskCount?.total || 0), 0);
-                    const completedTasks = tickets.reduce((sum: number, t: any) => sum + (t.taskCount?.completed || 0), 0);
-                    const progressPct = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
-
-                    return (
-                      <>
-                        <div className="flex items-center gap-4">
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between text-xs mb-1">
-                              <span className="text-muted-foreground">Task Progress</span>
-                              <span className="font-semibold">{totalTasks > 0 ? `${completedTasks}/${totalTasks}` : "No tasks"}</span>
-                            </div>
-                            <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                              <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${progressPct}%` }} />
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3 text-center shrink-0">
-                            <div>
-                              <p className="text-lg font-bold">{tickets.length}</p>
-                              <p className="text-[9px] text-muted-foreground">Tickets</p>
-                            </div>
-                            <div>
-                              <p className="text-lg font-bold text-emerald-600">{completed.length}</p>
-                              <p className="text-[9px] text-muted-foreground">Done</p>
-                            </div>
-                            <div>
-                              <p className={`text-lg font-bold ${active.length > 0 ? "text-indigo-600" : ""}`}>{active.length}</p>
-                              <p className="text-[9px] text-muted-foreground">Active</p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="space-y-1 border-t pt-2">
-                          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Recent Tickets</p>
-                          {tickets.length === 0 ? (
-                            <p className="text-xs text-muted-foreground text-center py-1">No PD tickets for this project</p>
-                          ) : (
-                            tickets.slice(0, 3).map((t: any) => {
-                              const isOverdue = t.dueDate && t.status !== "Completed" && t.status !== "Cancelled" && t.dueDate < new Date().toISOString().split("T")[0];
-                              return (
-                                <div key={t.id} className={`flex items-center gap-2 text-[11px] py-1 px-2 rounded ${isOverdue ? "bg-red-50 border border-red-100" : "bg-muted/50"} hover:bg-muted cursor-pointer`} onClick={() => setLocation(`/pd-tickets/${t.id}`)} data-testid={`row-pd-ticket-${t.id}`}>
-                                  {isOverdue ? <AlertCircle className="h-3 w-3 text-red-500 shrink-0" /> : <Circle className="h-2 w-2 text-indigo-400 shrink-0" />}
-                                  <span className="truncate flex-1">{t.requestType || t.projectSiteName}</span>
-                                  <Badge variant={t.status === "Completed" ? "default" : t.status === "In Progress" ? "secondary" : "outline"} className="text-[9px] px-1.5 py-0 shrink-0">{t.status}</Badge>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2 pt-1 border-t">
-                          <RagDot color={overdue.length > 0 ? "red" : active.length > 0 ? "amber" : "green"} />
-                          <span className={`text-[11px] font-medium ${overdue.length > 0 ? "text-red-600" : active.length > 0 ? "text-amber-600" : "text-emerald-600"}`}>
-                            {overdue.length > 0 ? `${overdue.length} overdue` : active.length > 0 ? `${active.length} active` : tickets.length === 0 ? "No tickets" : "All complete"}
-                          </span>
-                        </div>
-                      </>
-                    );
+                    const overdueEng = engBoardTasks.filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "COMPLETE").length;
+                    const blockers = [
+                      { label: "Overdue plan tasks", count: overduePlanTasks.length, onClick: () => navigateToSection("delivery", "task-grid") },
+                      { label: "Overdue engineering tasks", count: overdueEng, onClick: () => navigateToSection("engineering", "eng-tasks") },
+                      { label: "Unapproved quality items", count: Math.max(qualityTotalItems - qualityApprovedItems, 0), onClick: () => navigateToSection("quality", "quality") },
+                    ].filter((b) => b.count > 0);
+                    if (blockers.length === 0) return <p className="text-sm text-emerald-600">No urgent blockers detected.</p>;
+                    return blockers.map((b) => (
+                      <button key={b.label} onClick={b.onClick} className="w-full text-left rounded-md border border-red-100 bg-red-50 px-2 py-1.5 text-xs hover:bg-red-100">
+                        <span className="font-semibold text-red-700">{b.count}</span> {b.label}
+                      </button>
+                    ));
                   })()}
                 </div>
-              )}
+
+                <div className="rounded-lg border p-3 space-y-2" data-testid="overview-next-actions">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Latest critical actions</p>
+                  <div className="space-y-1 text-xs">
+                    <button onClick={() => navigateToSection("delivery", "raid")} className="w-full rounded-md border px-2 py-1.5 text-left hover:bg-muted/60">Update RAID log and close top risks.</button>
+                    <button onClick={() => navigateToSection("commercial", "procurement")} className="w-full rounded-md border px-2 py-1.5 text-left hover:bg-muted/60">Confirm procurement and invoice commitments.</button>
+                    <button onClick={() => navigateToSection("collaboration", "approvals")} className="w-full rounded-md border px-2 py-1.5 text-left hover:bg-muted/60">Capture latest approvals and deliverable evidence.</button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2" data-testid="overview-linked-statuses">
+                <Button variant="outline" size="sm" onClick={() => navigateToSection("delivery", "task-grid")} className="justify-start">Delivery</Button>
+                <Button variant="outline" size="sm" onClick={() => navigateToSection("commercial", "procurement")} className="justify-start">Commercial</Button>
+                {canViewTab.engineering && <Button variant="outline" size="sm" onClick={() => navigateToSection("engineering", "eng-tasks")} className="justify-start">Engineering</Button>}
+                {canViewTab.quality && <Button variant="outline" size="sm" onClick={() => navigateToSection("quality", "quality")} className="justify-start">Quality</Button>}
+                <Button variant="outline" size="sm" onClick={() => navigateToSection("collaboration", "chat")} className="justify-start">Collaboration & Records</Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -1611,98 +1237,52 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {activeSection === "project-management" && (
-        <div className="space-y-4" data-testid="pm-section">
-          <div className="flex items-center gap-3 flex-wrap border-b pb-2 overflow-x-auto scrollbar-hide" data-testid="pm-sub-tabs">
-            {canViewTab.overview && (
-            <div className="flex items-center gap-1 shrink-0">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Delivery</span>
-              <Button size="sm" variant={activeSubTab === "task-grid" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("task-grid")} data-testid="subtab-task-grid">
-                <ListTodo className="h-3 w-3 mr-1" /> Project Plan
-              </Button>
-              <Button size="sm" variant={activeSubTab === "board" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("board")} data-testid="subtab-board">
-                <Columns className="h-3 w-3 mr-1" /> Board
-              </Button>
-              <Button size="sm" variant={activeSubTab === "calendar" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("calendar")} data-testid="subtab-calendar">
-                <CalendarDays className="h-3 w-3 mr-1" /> Calendar
-              </Button>
-              <Button size="sm" variant={activeSubTab === "commissioning" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("commissioning")} data-testid="subtab-commissioning">
-                <CheckCircle className="h-3 w-3 mr-1" /> Commissioning
-              </Button>
-            </div>
-            )}
-            {canViewTab.finance && (
-            <>
-              <div className="w-px h-5 bg-border self-center shrink-0" />
-              <div className="flex items-center gap-1 shrink-0">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Commercial</span>
-                <Button size="sm" variant={activeSubTab === "procurement" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("procurement")} data-testid="subtab-procurement">
-                  <CreditCard className="h-3 w-3 mr-1" /> Procurement
-                </Button>
-                {canViewSubTab.revenue && (
-                <Button size="sm" variant={activeSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("revenue-tracking")} data-testid="subtab-revenue">
-                  <DollarSign className="h-3 w-3 mr-1" /> Inflows
-                </Button>
-                )}
-                {canViewSubTab.expenditure && (
-                <Button size="sm" variant={activeSubTab === "expenditure" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("expenditure")} data-testid="subtab-expenditure">
-                  <CreditCard className="h-3 w-3 mr-1" /> Expenditure
-                </Button>
-                )}
-                {canViewSubTab.cosTracker && (
-                <Button size="sm" variant={activeSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("monthly-realisation")} data-testid="subtab-monthly-realisation">
-                  <TrendingUp className="h-3 w-3 mr-1" /> COS
-                </Button>
-                )}
-                {canViewSubTab.cosTracker && (
-                <Button size="sm" variant={activeSubTab === "revenue-tracker" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("revenue-tracker")} data-testid="subtab-revenue-tracker">
-                  <TrendingUp className="h-3 w-3 mr-1" /> Revenue
-                </Button>
-                )}
-                {canViewSubTab.cosTracker && (
-                <Button size="sm" variant={activeSubTab === "gp-tracker" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("gp-tracker")} data-testid="subtab-gp-tracker">
-                  <BarChart3 className="h-3 w-3 mr-1" /> GP
-                </Button>
-                )}
-                {canViewSubTab.cashflow && (
-                <Button size="sm" variant={activeSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("cashflow")} data-testid="subtab-cashflow">
-                  <Activity className="h-3 w-3 mr-1" /> Cashflow
-                </Button>
-                )}
-              </div>
-            </>
-            )}
-            <div className="w-px h-5 bg-border self-center shrink-0" />
-            <div className="flex items-center gap-1 shrink-0">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Control</span>
-              <Button size="sm" variant={activeSubTab === "raid" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("raid")} data-testid="subtab-raid">
-                <AlertTriangle className="h-3 w-3 mr-1" /> RAID
-              </Button>
-              <Button size="sm" variant={activeSubTab === "change-control" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("change-control")} data-testid="subtab-change-control">
-                <FileCheck className="h-3 w-3 mr-1" /> Changes
-              </Button>
-              {canViewTab.history && (
-              <Button size="sm" variant={activeSubTab === "history" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("history")} data-testid="subtab-history">
-                <History className="h-3 w-3 mr-1" /> History
-              </Button>
-              )}
-            </div>
-            {canViewTab.finance && canViewSubTab.subcontractors && (
-            <>
-              <div className="w-px h-5 bg-border self-center shrink-0" />
-              <div className="flex items-center gap-1 shrink-0">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Partners</span>
-                <Button size="sm" variant={activeSubTab === "subcontractors" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("subcontractors")} data-testid="subtab-subcontractors">
-                  <Users className="h-3 w-3 mr-1" /> Subcontractors
-                </Button>
-              </div>
-            </>
-            )}
+      {activeSection === "delivery" && (
+        <div className="space-y-4" data-testid="delivery-section">
+          <div className="flex items-center gap-3 flex-wrap border-b pb-2 overflow-x-auto scrollbar-hide" data-testid="delivery-sub-tabs">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Operational movement</span>
+            <Button size="sm" variant={activeSubTab === "task-grid" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("task-grid")} data-testid="subtab-task-grid">
+              <ListTodo className="h-3 w-3 mr-1" /> Milestones & Plan
+            </Button>
+            <Button size="sm" variant={activeSubTab === "board" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("board")} data-testid="subtab-board">
+              <Columns className="h-3 w-3 mr-1" /> Board
+            </Button>
+            <Button size="sm" variant={activeSubTab === "calendar" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("calendar")} data-testid="subtab-calendar">
+              <CalendarDays className="h-3 w-3 mr-1" /> Calendar
+            </Button>
+            <Button size="sm" variant={activeSubTab === "raid" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("raid")} data-testid="subtab-raid">
+              <AlertTriangle className="h-3 w-3 mr-1" /> Blockers / RAID
+            </Button>
+            <Button size="sm" variant={activeSubTab === "commissioning" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("commissioning")} data-testid="subtab-commissioning">
+              <CheckCircle className="h-3 w-3 mr-1" /> Commissioning
+            </Button>
           </div>
 
           {activeSubTab === "task-grid" && canViewTab.overview && <><ModuleContext module="task-grid" projectId={projectInfoId!} /><UnifiedPlanTab projectName={projectName} onTaskClick={handleTaskClick} /></>}
           {activeSubTab === "board" && canViewTab.overview && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "calendar" && canViewTab.overview && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
+          {activeSubTab === "raid" && projectInfoId && <><ModuleContext module="raid" projectId={projectInfoId} /><ProjectRaidTab projectId={projectInfoId} projectName={projectName} /></>}
+          {activeSubTab === "commissioning" && projectInfoId && <><ModuleContext module="commissioning" projectId={projectInfoId} /><ProjectCommissioningTab projectId={projectInfoId} projectName={projectName} /></>}
+        </div>
+      )}
+
+      {activeSection === "commercial" && canViewTab.finance && (
+        <div className="space-y-4" data-testid="commercial-section">
+          <div className="flex items-center gap-3 flex-wrap border-b pb-2 overflow-x-auto scrollbar-hide" data-testid="commercial-sub-tabs">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Commercial controls</span>
+            <Button size="sm" variant={activeSubTab === "procurement" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("procurement")} data-testid="subtab-procurement">
+              <CreditCard className="h-3 w-3 mr-1" /> Procurement
+            </Button>
+            {canViewSubTab.revenue && <Button size="sm" variant={activeSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("revenue-tracking")} data-testid="subtab-revenue"><DollarSign className="h-3 w-3 mr-1" /> Invoices / Inflows</Button>}
+            {canViewSubTab.expenditure && <Button size="sm" variant={activeSubTab === "expenditure" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("expenditure")} data-testid="subtab-expenditure"><CreditCard className="h-3 w-3 mr-1" /> Commitments / COS</Button>}
+            {canViewSubTab.cosTracker && <Button size="sm" variant={activeSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("monthly-realisation")} data-testid="subtab-monthly-realisation"><TrendingUp className="h-3 w-3 mr-1" /> COS Tracker</Button>}
+            {canViewSubTab.cosTracker && <Button size="sm" variant={activeSubTab === "revenue-tracker" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("revenue-tracker")} data-testid="subtab-revenue-tracker"><TrendingUp className="h-3 w-3 mr-1" /> Revenue Tracker</Button>}
+            {canViewSubTab.cosTracker && <Button size="sm" variant={activeSubTab === "gp-tracker" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("gp-tracker")} data-testid="subtab-gp-tracker"><BarChart3 className="h-3 w-3 mr-1" /> GP</Button>}
+            {canViewSubTab.cashflow && <Button size="sm" variant={activeSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("cashflow")} data-testid="subtab-cashflow"><Activity className="h-3 w-3 mr-1" /> Cashflow</Button>}
+            <Button size="sm" variant={activeSubTab === "change-control" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("change-control")} data-testid="subtab-change-control"><FileCheck className="h-3 w-3 mr-1" /> VO / Changes</Button>
+            {canViewTab.finance && canViewSubTab.subcontractors && <Button size="sm" variant={activeSubTab === "subcontractors" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("subcontractors")} data-testid="subtab-subcontractors"><Users className="h-3 w-3 mr-1" /> Subcontractors</Button>}
+          </div>
+
           {activeSubTab === "revenue-tracking" && canViewTab.finance && canViewSubTab.revenue && <><ModuleContext module="revenue-tracking" projectId={projectInfoId!} /><RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} /></>}
           {activeSubTab === "expenditure" && canViewTab.finance && canViewSubTab.expenditure && <><ModuleContext module="expenditure" projectId={projectInfoId!} /><ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} /></>}
           {activeSubTab === "monthly-realisation" && canViewTab.finance && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
@@ -1710,26 +1290,8 @@ export default function ProjectDetailPage() {
           {activeSubTab === "gp-tracker" && canViewTab.finance && canViewSubTab.cosTracker && <GpTrackerTab projectName={projectName} />}
           {activeSubTab === "cashflow" && canViewTab.finance && canViewSubTab.cashflow && <><ModuleContext module="cashflow" projectId={projectInfoId!} /><CashflowTab projectName={projectName} /></>}
           {activeSubTab === "subcontractors" && canViewTab.finance && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
-          {activeSubTab === "raid" && projectInfoId && <><ModuleContext module="raid" projectId={projectInfoId} /><ProjectRaidTab projectId={projectInfoId} projectName={projectName} /></>}
           {activeSubTab === "change-control" && projectInfoId && <><ModuleContext module="change-control" projectId={projectInfoId} /><ProjectChangeControlTab projectId={projectInfoId} projectName={projectName} /></>}
           {activeSubTab === "procurement" && projectInfoId && <><ModuleContext module="procurement" projectId={projectInfoId} /><ProjectProcurementTab projectId={projectInfoId} projectName={projectName} /></>}
-          {activeSubTab === "commissioning" && projectInfoId && <><ModuleContext module="commissioning" projectId={projectInfoId} /><ProjectCommissioningTab projectId={projectInfoId} projectName={projectName} /></>}
-          {activeSubTab === "history" && canViewTab.history && (
-            <>
-              <WeeklyReviewWizard
-                projectName={projectName}
-                snapshotMetrics={{
-                  phase: phase || undefined,
-                  completion: projectInfo?.project_pct_complete ?? undefined,
-                  totalRevenue: totalPaidInflows,
-                  totalExpenses,
-                  margin: totalPaidInflows > 0 ? (totalPaidInflows - totalExpenses) / totalPaidInflows : 0,
-                  overdueCount: (engDataForAlerts as any[])?.filter?.((t: any) => t.dueDate && t.dueDate < new Date().toISOString().split("T")[0] && t.status !== "COMPLETE")?.length || 0,
-                }}
-              />
-              <ProjectHistoryTab projectName={projectName} />
-            </>
-          )}
         </div>
       )}
 
@@ -1763,25 +1325,40 @@ export default function ProjectDetailPage() {
 
           <div className="flex gap-1.5 flex-nowrap border-b pb-2 overflow-x-auto scrollbar-hide" data-testid="collab-sub-tabs">
             <Button size="sm" variant={activeSubTab === "chat" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("chat")} data-testid="subtab-chat">
-              <MessageSquare className="h-3 w-3 mr-1" /> Chat
+              <MessageSquare className="h-3 w-3 mr-1" /> Linked Comms
             </Button>
-            <div className="w-px h-5 bg-border self-center mx-1 shrink-0" />
             <Button size="sm" variant={activeSubTab === "approvals" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("approvals")} data-testid="subtab-approvals">
-              <FileCheck className="h-3 w-3 mr-1" /> Approvals & Deliverables
+              <FileCheck className="h-3 w-3 mr-1" /> Approvals
             </Button>
             <Button size="sm" variant={activeSubTab === "notifications" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("notifications")} data-testid="subtab-notifications">
               <Bell className="h-3 w-3 mr-1" /> Notifications
             </Button>
-            <div className="w-px h-5 bg-border self-center mx-1 shrink-0" />
             <Button size="sm" variant={activeSubTab === "local-files" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("local-files")} data-testid="subtab-local-files">
-              <FolderOpen className="h-3 w-3 mr-1" /> Project Folder
+              <FolderOpen className="h-3 w-3 mr-1" /> Docs & Folders
             </Button>
+            {canViewTab.history && <Button size="sm" variant={activeSubTab === "history" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("history")} data-testid="subtab-history"><History className="h-3 w-3 mr-1" /> History & Audit</Button>}
           </div>
 
           {activeSubTab === "chat" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "notifications" && <ProjectNotificationsTab projectName={projectName} />}
           {activeSubTab === "local-files" && <LocalFolderTab projectName={projectName} />}
+          {activeSubTab === "history" && canViewTab.history && (
+            <>
+              <WeeklyReviewWizard
+                projectName={projectName}
+                snapshotMetrics={{
+                  phase: phase || undefined,
+                  completion: projectInfo?.project_pct_complete ?? undefined,
+                  totalRevenue: totalPaidInflows,
+                  totalExpenses,
+                  margin: totalPaidInflows > 0 ? (totalPaidInflows - totalExpenses) / totalPaidInflows : 0,
+                  overdueCount: (engDataForAlerts as any[])?.filter?.((t: any) => t.dueDate && t.dueDate < new Date().toISOString().split("T")[0] && t.status !== "COMPLETE")?.length || 0,
+                }}
+              />
+              <ProjectHistoryTab projectName={projectName} />
+            </>
+          )}
         </div>
       )}
 
