@@ -88,6 +88,7 @@ import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 import type { Task, Comment, ActivityEntry, TeamMember, EngDefaultView } from "@/components/tasks/types";
 import { formatDate, formatDateShort, isOverdue, isDueThisWeek, daysLabel, getAvatarColor, getInitials, sortTasksForColumn } from "@/lib/task-formatters";
 import { useEngineeringTaskFilters } from "@/hooks/useEngineeringTaskFilters";
+import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 
 async function engFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
@@ -656,11 +657,24 @@ function TaskDetailDrawer({
   const [deliverableRecipient, setDeliverableRecipient] = useState("");
   const [deliverableNote, setDeliverableNote] = useState("");
   const [sendingDeliverable, setSendingDeliverable] = useState(false);
+  const [recipientSuggestion, setRecipientSuggestion] = useState("");
+  const [recipientOverrideReason, setRecipientOverrideReason] = useState("");
+  const [linkedProjectSuggestion, setLinkedProjectSuggestion] = useState("");
+  const [linkedProjectFinal, setLinkedProjectFinal] = useState("");
+  const [linkedProjectOverrideReason, setLinkedProjectOverrideReason] = useState("");
+  const [approvalProjectSuggestion, setApprovalProjectSuggestion] = useState("");
+  const [approvalProjectFinal, setApprovalProjectFinal] = useState("");
+  const [approvalProjectOverrideReason, setApprovalProjectOverrideReason] = useState("");
+  const [approvalRouteSuggestion, setApprovalRouteSuggestion] = useState("");
+  const [approvalRouteFinal, setApprovalRouteFinal] = useState("");
+  const [approvalRouteOverrideReason, setApprovalRouteOverrideReason] = useState("");
   const [drawerHoldDialog, setDrawerHoldDialog] = useState(false);
   const [drawerHoldReason, setDrawerHoldReason] = useState("");
   const [drawerBlockedType, setDrawerBlockedType] = useState("");
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [mappedPathDraft, setMappedPathDraft] = useState("");
+  const [fallbackDraft, setFallbackDraft] = useState<"download" | "clipboard">("download");
   const { allowed: canDelete } = usePermission('eng_tasks', 'delete');
 
   const { data: comments = [] } = useQuery<Comment[]>({
@@ -683,6 +697,19 @@ function TaskDetailDrawer({
     queryFn: () => engFetch(`/api/eng/tasks/${task.id}/deliverables`),
   });
 
+  const { data: rolloutFlags = [] } = useQuery({
+    queryKey: ["rollout-feature-flags"],
+    queryFn: fetchRolloutFeatureFlags,
+  });
+
+  const localSyncedSaveEnabled = rolloutFlags.find((flag) => flag.key === "local_synced_save_flow")?.value === true;
+
+  const { data: localSyncedConfig } = useQuery<{ enabled: boolean; mappedPath: string | null; fallbackPreference: "download" | "clipboard" }>({
+    queryKey: ["local-synced-save-config"],
+    queryFn: () => engFetch("/api/eng/local-synced-save/config"),
+    enabled: localSyncedSaveEnabled,
+  });
+
   const { data: teamMembers = [] } = useQuery<TeamMember[]>({
     queryKey: ["team-members"],
     queryFn: () => engFetch("/api/eng/team-members"),
@@ -697,6 +724,45 @@ function TaskDetailDrawer({
       raw: p.project_name || "",
       phase: p.phase || "",
     })).filter((p: any) => p.project_name && !EXCLUDED_PHASES_DRAWER.includes(p.phase)).sort((a: any, b: any) => a.project_name.localeCompare(b.project_name)),
+  });
+
+
+  useEffect(() => {
+    if (!showSendDeliverable) return;
+    const suggestedRecipient = task.ownerUserId ? String(task.ownerUserId) : "";
+    setRecipientSuggestion(suggestedRecipient);
+    if (!deliverableRecipient && suggestedRecipient) {
+      setDeliverableRecipient(suggestedRecipient);
+    }
+    const projectSuggestion = task.projectName || "";
+    setLinkedProjectSuggestion(projectSuggestion);
+    if (!linkedProjectFinal) setLinkedProjectFinal(projectSuggestion);
+  }, [showSendDeliverable, task.id]);
+
+  useEffect(() => {
+    if (!showSendForApproval) return;
+    const projectSuggestion = task.projectName || "";
+    setApprovalProjectSuggestion(projectSuggestion);
+    if (!approvalProjectFinal) setApprovalProjectFinal(projectSuggestion);
+    const routeSuggestion = task.ownerUserId ? String(task.ownerUserId) : "owner";
+    setApprovalRouteSuggestion(routeSuggestion);
+    if (!approvalRouteFinal) setApprovalRouteFinal(routeSuggestion);
+  }, [showSendForApproval, task.id]);
+
+
+  useEffect(() => {
+    if (!localSyncedConfig) return;
+    setMappedPathDraft(localSyncedConfig.mappedPath || "");
+    setFallbackDraft(localSyncedConfig.fallbackPreference || "download");
+  }, [localSyncedConfig?.mappedPath, localSyncedConfig?.fallbackPreference]);
+
+  const saveLocalConfigMutation = useMutation({
+    mutationFn: () => engFetch("/api/eng/local-synced-save/config", { method: "PUT", body: JSON.stringify({ mappedPath: mappedPathDraft, fallbackPreference: fallbackDraft }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["local-synced-save-config"] });
+      toast({ title: "Local synced save config updated" });
+    },
+    onError: (e: Error) => toast({ title: "Config update failed", description: e.message, variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
@@ -733,6 +799,28 @@ function TaskDetailDrawer({
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
+
+  const runLocalSyncedSaveAttempt = async (file: File | null, suggestedName: string) => {
+    if (!localSyncedSaveEnabled) return null;
+    if (!file) {
+      return { supported: false, status: "failed", error: "No file available for local save." };
+    }
+    const pickerSupported = typeof window !== "undefined" && "showSaveFilePicker" in window;
+    if (!pickerSupported) {
+      return { supported: false, status: "failed", error: "showSaveFilePicker is unavailable in this runtime." };
+    }
+    try {
+      // @ts-ignore
+      const handle = await window.showSaveFilePicker({ suggestedName });
+      const writable = await handle.createWritable();
+      await writable.write(await file.arrayBuffer());
+      await writable.close();
+      const targetPath = `${localSyncedConfig?.mappedPath || "mapped_path"}/${suggestedName}`;
+      return { supported: true, status: "succeeded", targetPath };
+    } catch (err: any) {
+      return { supported: true, status: "failed", error: err?.message || "Local save cancelled or failed." };
+    }
+  };
 
   const handleStatusChange = (newStatus: string) => {
     const task = tasks.find(t => t.id === taskId);
@@ -1075,6 +1163,26 @@ function TaskDetailDrawer({
                             )}
                           </div>
                         </div>
+                        {localSyncedSaveEnabled && (
+                          <div className="rounded-md border p-2 text-[11px] text-muted-foreground space-y-1">
+                            <div>Local synced save mapping: <span className="font-medium">{localSyncedConfig?.mappedPath || "Not configured"}</span></div>
+                            {!localSyncedConfig?.mappedPath && <div className="text-amber-700">Fallback will be used; local synced save cannot be confirmed.</div>}
+                          </div>
+                        )}
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium">Suggested project</Label>
+                          <Input value={approvalProjectFinal} onChange={(e) => setApprovalProjectFinal(e.target.value)} className="h-8 text-xs" />
+                          {approvalProjectSuggestion && approvalProjectSuggestion !== approvalProjectFinal && (
+                            <Input value={approvalProjectOverrideReason} onChange={(e) => setApprovalProjectOverrideReason(e.target.value)} placeholder="Reason for overriding suggested project (required)" className="h-8 text-xs border-amber-300" />
+                          )}
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-medium">Suggested approval route</Label>
+                          <Input value={approvalRouteFinal} onChange={(e) => setApprovalRouteFinal(e.target.value)} className="h-8 text-xs" />
+                          {approvalRouteSuggestion && approvalRouteSuggestion !== approvalRouteFinal && (
+                            <Input value={approvalRouteOverrideReason} onChange={(e) => setApprovalRouteOverrideReason(e.target.value)} placeholder="Reason for overriding suggested route (required)" className="h-8 text-xs border-amber-300" />
+                          )}
+                        </div>
                         <div className="space-y-1.5">
                           <Label className="text-xs font-medium">Note (optional)</Label>
                           <Textarea
@@ -1088,13 +1196,25 @@ function TaskDetailDrawer({
                         <div className="flex gap-2 pt-2">
                           <Button
                             className="flex-1 h-9 text-sm bg-amber-600 hover:bg-amber-700 gap-1.5"
-                            disabled={sendingForApproval}
+                            disabled={sendingForApproval || (approvalProjectSuggestion && approvalProjectFinal && approvalProjectSuggestion !== approvalProjectFinal && !approvalProjectOverrideReason.trim()) || (approvalRouteSuggestion && approvalRouteFinal && approvalRouteSuggestion !== approvalRouteFinal && !approvalRouteOverrideReason.trim())}
                             onClick={async () => {
                               setSendingForApproval(true);
                               try {
                                 const formData = new FormData();
                                 formData.append("note", sendApprovalNote);
                                 if (sendApprovalFile) formData.append("file", sendApprovalFile);
+                                formData.append("projectSuggestion", approvalProjectSuggestion || "");
+                                formData.append("projectFinal", approvalProjectFinal || "");
+                                formData.append("projectOverrideReason", approvalProjectOverrideReason || "");
+                                formData.append("routeSuggestion", approvalRouteSuggestion || "");
+                                formData.append("routeFinal", approvalRouteFinal || "");
+                                formData.append("routeOverrideReason", approvalRouteOverrideReason || "");
+
+                                const localSave = await runLocalSyncedSaveAttempt(sendApprovalFile, sendApprovalFile?.name || `task_${task.id}_approval.txt`);
+                                if (localSave) {
+                                  formData.append("localSave", JSON.stringify(localSave));
+                                }
+
                                 const token = localStorage.getItem("auth_token");
                                 const res = await fetch(`/api/eng/tasks/${task.id}/send-for-approval`, {
                                   method: "POST",
@@ -1106,7 +1226,10 @@ function TaskDetailDrawer({
                                   const err = await res.json().catch(() => ({ error: "Failed" }));
                                   throw new Error(err.error);
                                 }
-                                toast({ title: "Sent for approval", description: "Task status changed to Needs Approval" });
+                                const payload = await res.json();
+                                const canonicalSaved = payload?.sendResult?.canonicalSystemRecord?.saved ? "Yes" : "No";
+                                const localSaved = payload?.sendResult?.localSyncedPath?.saved ? "Yes" : "No";
+                                toast({ title: "Sent for approval", description: `Saved to system: ${canonicalSaved} • Saved to local synced path: ${localSaved}` });
                                 setShowSendForApproval(false);
                                 setSendApprovalNote(""); setSendApprovalFile(null);
                                 onUpdate();
@@ -1133,6 +1256,25 @@ function TaskDetailDrawer({
                 </>
               )}
             </div>
+
+            {localSyncedSaveEnabled && (
+              <div className="space-y-2 p-3 bg-muted/30 rounded-lg border">
+                <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Local Synced Save Mapping</Label>
+                <Input value={mappedPathDraft} onChange={(e) => setMappedPathDraft(e.target.value)} placeholder="e.g. C:\Users\you\OneDrive - Org\Project Deliverables" className="h-8 text-xs" />
+                <div className="flex gap-2 items-center">
+                  <SearchableSelect
+                    value={fallbackDraft}
+                    onValueChange={(v) => setFallbackDraft((v as "download" | "clipboard") || "download")}
+                    placeholder="Fallback"
+                    triggerClassName="h-8 text-xs w-[180px]"
+                    options={[{ value: "download", label: "Manual download" }, { value: "clipboard", label: "Copy path + manual save" }]}
+                  />
+                  <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => saveLocalConfigMutation.mutate()} disabled={saveLocalConfigMutation.isPending}>
+                    {saveLocalConfigMutation.isPending ? "Saving..." : "Save mapping"}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-3 p-3 bg-blue-50/30 rounded-lg border border-blue-200/50/30">
               <div className="flex items-center justify-between">
@@ -1268,6 +1410,26 @@ function TaskDetailDrawer({
                       </div>
                     </div>
                     <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Recipient suggestion</Label>
+                      <div className="text-[11px] text-muted-foreground">Suggested: {recipientSuggestion || "None"}</div>
+                      {recipientSuggestion && deliverableRecipient && recipientSuggestion !== deliverableRecipient && (
+                        <Input value={recipientOverrideReason} onChange={(e) => setRecipientOverrideReason(e.target.value)} placeholder="Reason for overriding suggested recipient (required)" className="h-8 text-xs border-amber-300" />
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Linked project</Label>
+                      <Input value={linkedProjectFinal} onChange={(e) => setLinkedProjectFinal(e.target.value)} className="h-8 text-xs" />
+                      {linkedProjectSuggestion && linkedProjectSuggestion !== linkedProjectFinal && (
+                        <Input value={linkedProjectOverrideReason} onChange={(e) => setLinkedProjectOverrideReason(e.target.value)} placeholder="Reason for overriding suggested linked project (required)" className="h-8 text-xs border-amber-300" />
+                      )}
+                    </div>
+                    {localSyncedSaveEnabled && (
+                      <div className="rounded-md border p-2 text-[11px] text-muted-foreground space-y-1">
+                        <div>Local synced save mapping: <span className="font-medium">{localSyncedConfig?.mappedPath || "Not configured"}</span></div>
+                        {!localSyncedConfig?.mappedPath && <div className="text-amber-700">Fallback will be used; local synced save cannot be confirmed.</div>}
+                      </div>
+                    )}
+                    <div className="space-y-1.5">
                       <Label className="text-xs font-medium">Note (optional)</Label>
                       <Textarea
                         value={deliverableNote}
@@ -1280,7 +1442,7 @@ function TaskDetailDrawer({
                     <div className="flex gap-2 pt-2">
                       <Button
                         className="flex-1 h-9 text-sm bg-blue-600 hover:bg-blue-700 gap-1.5"
-                        disabled={!deliverableRecipient || !deliverableFile || sendingDeliverable}
+                        disabled={!deliverableRecipient || !deliverableFile || sendingDeliverable || (recipientSuggestion && deliverableRecipient && recipientSuggestion !== deliverableRecipient && !recipientOverrideReason.trim()) || (linkedProjectSuggestion && linkedProjectFinal && linkedProjectSuggestion !== linkedProjectFinal && !linkedProjectOverrideReason.trim())}
                         onClick={async () => {
                           setSendingDeliverable(true);
                           try {
@@ -1288,6 +1450,18 @@ function TaskDetailDrawer({
                             formData.append("recipientUserId", deliverableRecipient);
                             formData.append("note", deliverableNote);
                             if (deliverableFile) formData.append("file", deliverableFile);
+                            formData.append("recipientSuggestion", recipientSuggestion || "");
+                            formData.append("recipientFinal", deliverableRecipient || "");
+                            formData.append("recipientOverrideReason", recipientOverrideReason || "");
+                            formData.append("linkedProjectSuggestion", linkedProjectSuggestion || "");
+                            formData.append("linkedProjectFinal", linkedProjectFinal || "");
+                            formData.append("linkedProjectOverrideReason", linkedProjectOverrideReason || "");
+
+                            const localSave = await runLocalSyncedSaveAttempt(deliverableFile, deliverableFile?.name || `task_${task.id}_deliverable.bin`);
+                            if (localSave) {
+                              formData.append("localSave", JSON.stringify(localSave));
+                            }
+
                             const token = localStorage.getItem("auth_token");
                             const res = await fetch(`/api/eng/tasks/${task.id}/send-deliverable`, {
                               method: "POST",
@@ -1299,7 +1473,10 @@ function TaskDetailDrawer({
                               const err = await res.json().catch(() => ({ error: "Failed" }));
                               throw new Error(err.error);
                             }
-                            toast({ title: "Deliverable sent", description: "The recipient has been notified" });
+                            const payload = await res.json();
+                            const canonicalSaved = payload?.sendResult?.canonicalSystemRecord?.saved ? "Yes" : "No";
+                            const localSaved = payload?.sendResult?.localSyncedPath?.saved ? "Yes" : "No";
+                            toast({ title: "Deliverable sent", description: `Saved to system: ${canonicalSaved} • Saved to local synced path: ${localSaved}` });
                             setShowSendDeliverable(false);
                             setDeliverableFile(null); setDeliverableRecipient(""); setDeliverableNote("");
                             queryClient.invalidateQueries({ queryKey: ["task-deliverables", task.id] });

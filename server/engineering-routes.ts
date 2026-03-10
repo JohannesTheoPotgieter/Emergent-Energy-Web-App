@@ -14,7 +14,7 @@ import {
   projectEngApprovals, projectEngStages, engStageTemplates,
   dashboardWidgetConfig, DEFAULT_WIDGET_ORDER,
   phaseTemplate as phaseTemplateTbl,
-  uploadMetadata, refreshLogs, writebackAuditLog, phaseTemplateApplication,
+  uploadMetadata, refreshLogs, writebackAuditLog, phaseTemplateApplication, appSettings,
   TASK_STATUSES, TASK_WORKSTREAMS, TASK_PRIORITIES, PROJECT_PHASES,
   DELIVERABLE_STATUSES, PROJECT_PHASE_LABELS,
   type ProjectPhase,
@@ -61,6 +61,38 @@ function jwtAuth(req: Request, _res: Response, next: NextFunction) {
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated?.() || (req as any).user) return next();
   res.status(401).json({ error: "auth_required", message: "Authentication required" });
+}
+
+async function isLocalSyncedSaveFlowEnabled(): Promise<boolean> {
+  try {
+    const { getRolloutFeatureFlags } = await import("./lib/feature-flags");
+    const flags = await getRolloutFeatureFlags();
+    return flags.local_synced_save_flow === true;
+  } catch {
+    return false;
+  }
+}
+
+function getLocalSyncedPathSettingKey(userId: number): string {
+  return `local_synced_path_user_${userId}`;
+}
+
+function getSendFlowFallbackSettingKey(userId: number): string {
+  return `local_synced_fallback_user_${userId}`;
+}
+
+async function getLocalSyncedPathForUser(userId: number): Promise<string | null> {
+  const key = getLocalSyncedPathSettingKey(userId);
+  const rows = await db.select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, key)).limit(1);
+  const path = rows[0]?.value?.trim();
+  return path || null;
+}
+
+async function getFallbackPreferenceForUser(userId: number): Promise<"download" | "clipboard"> {
+  const key = getSendFlowFallbackSettingKey(userId);
+  const rows = await db.select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, key)).limit(1);
+  const value = (rows[0]?.value || "download").toLowerCase();
+  return value === "clipboard" ? "clipboard" : "download";
 }
 
 function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
@@ -126,6 +158,59 @@ export function registerEngineeringRoutes(app: Express) {
   app.use("/api/project-team", jwtAuth);
   app.use("/api/home", jwtAuth);
   app.use("/api/dashboard", jwtAuth);
+  app.get("/api/eng/local-synced-save/config", requireAuth, async (req, res) => {
+    try {
+      const user = getUser(req);
+      const [enabled, mappedPath, fallbackPreference] = await Promise.all([
+        isLocalSyncedSaveFlowEnabled(),
+        getLocalSyncedPathForUser(user.id),
+        getFallbackPreferenceForUser(user.id),
+      ]);
+
+      res.json({ enabled, mappedPath, fallbackPreference });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to load local synced save config" });
+    }
+  });
+
+  app.put("/api/eng/local-synced-save/config", requireAuth, async (req, res) => {
+    try {
+      const user = getUser(req);
+      const mappedPath = typeof req.body?.mappedPath === "string" ? req.body.mappedPath.trim() : "";
+      const fallbackPreference = req.body?.fallbackPreference === "clipboard" ? "clipboard" : "download";
+
+      await db.insert(appSettings).values({
+        key: getLocalSyncedPathSettingKey(user.id),
+        value: mappedPath,
+        updatedBy: user.name,
+        updatedAt: new Date(),
+      }).onConflictDoUpdate({
+        target: appSettings.key,
+        set: { value: mappedPath, updatedBy: user.name, updatedAt: new Date() },
+      });
+
+      await db.insert(appSettings).values({
+        key: getSendFlowFallbackSettingKey(user.id),
+        value: fallbackPreference,
+        updatedBy: user.name,
+        updatedAt: new Date(),
+      }).onConflictDoUpdate({
+        target: appSettings.key,
+        set: { value: fallbackPreference, updatedBy: user.name, updatedAt: new Date() },
+      });
+
+      logAuditFromReq(req, {
+        entityType: "local_synced_save_config",
+        entityId: String(user.id),
+        action: "update",
+        changesJson: { mappedPath, fallbackPreference },
+      });
+
+      res.json({ ok: true, mappedPath, fallbackPreference });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to save local synced save config" });
+    }
+  });
 
   // ========== PROJECT TEAM MEMBERSHIP ==========
 
@@ -435,13 +520,84 @@ export function registerEngineeringRoutes(app: Express) {
   });
 
   app.post("/api/eng/tasks/:id/send-for-approval", requireAuth, approvalUpload.single("file"), async (req, res) => {
+    const id = parseInt(req.params.id);
+    const user = getUser(req);
+    const note = req.body.note || "";
+    const file = req.file;
+    let localSave: any = null;
+    if (typeof req.body?.localSave === "string") {
+      try { localSave = JSON.parse(req.body.localSave); } catch { localSave = null; }
+    } else if (req.body?.localSave && typeof req.body.localSave === "object") {
+      localSave = req.body.localSave;
+    }
+
+    const projectSuggestion = req.body?.projectSuggestion || null;
+    const projectFinal = req.body?.projectFinal || null;
+    const projectOverrideReason = typeof req.body?.projectOverrideReason === "string" ? req.body.projectOverrideReason.trim() : "";
+    const routeSuggestion = req.body?.routeSuggestion || null;
+    const routeFinal = req.body?.routeFinal || null;
+    const routeOverrideReason = typeof req.body?.routeOverrideReason === "string" ? req.body.routeOverrideReason.trim() : "";
+
     try {
-      const id = parseInt(req.params.id);
       const [existing] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
       if (!existing) return res.status(404).json({ error: "Task not found" });
 
-      const note = req.body.note || "";
-      const file = req.file;
+      logAuditFromReq(req, {
+        entityType: "approval_send_flow",
+        entityId: String(id),
+        action: "send_flow_opened",
+        projectName: existing.projectName || undefined,
+      });
+
+      logAuditFromReq(req, {
+        entityType: "approval_send_flow",
+        entityId: String(id),
+        action: "suggestions_presented",
+        projectName: existing.projectName || undefined,
+        changesJson: { projectSuggestion, routeSuggestion },
+      });
+
+      const suggestionChecks = [
+        { field: "project", suggestion: projectSuggestion, final: projectFinal, reason: projectOverrideReason },
+        { field: "route", suggestion: routeSuggestion, final: routeFinal, reason: routeOverrideReason },
+      ];
+
+      for (const check of suggestionChecks) {
+        if (check.suggestion && check.final && check.suggestion !== check.final) {
+          if (!check.reason) {
+            return res.status(400).json({ error: `${check.field} override reason is required` });
+          }
+          logAuditFromReq(req, {
+            entityType: "approval_send_flow",
+            entityId: String(id),
+            action: "suggestion_overridden",
+            projectName: existing.projectName || undefined,
+            changesJson: { field: check.field, suggestion: check.suggestion, finalValue: check.final, reason: check.reason },
+          });
+          logAuditFromReq(req, {
+            entityType: "approval_send_flow",
+            entityId: String(id),
+            action: "override_reason_captured",
+            projectName: existing.projectName || undefined,
+            changesJson: { field: check.field, reason: check.reason },
+          });
+        } else if (check.suggestion) {
+          logAuditFromReq(req, {
+            entityType: "approval_send_flow",
+            entityId: String(id),
+            action: "suggestion_accepted",
+            projectName: existing.projectName || undefined,
+            changesJson: { field: check.field, suggestion: check.suggestion, finalValue: check.final || check.suggestion },
+          });
+        }
+      }
+
+      logAuditFromReq(req, {
+        entityType: "approval_send_flow",
+        entityId: String(id),
+        action: "canonical_save_attempted",
+        projectName: existing.projectName || undefined,
+      });
 
       const [updated] = await db.update(operationalTasks).set({
         status: "NEEDS APPROVAL",
@@ -450,7 +606,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       await db.insert(taskActivityLog).values({
         taskId: id,
-        actorId: getUser(req).id,
+        actorId: user.id,
         actionType: "field_changed",
         fieldName: "status",
         oldValue: existing.status,
@@ -461,18 +617,25 @@ export function registerEngineeringRoutes(app: Express) {
         const fileInfo = file ? ` [Attachment: ${file.originalname}]` : "";
         await db.insert(taskComments).values({
           taskId: id,
-          userId: getUser(req).id,
+          userId: user.id,
           text: `[Sent for Approval] ${note.trim()}${fileInfo}`,
         });
       } else if (file) {
         await db.insert(taskComments).values({
           taskId: id,
-          userId: getUser(req).id,
+          userId: user.id,
           text: `[Sent for Approval] Attachment: ${file.originalname}`,
         });
       }
 
-      if (updated.ownerUserId && updated.ownerUserId !== getUser(req).id) {
+      logAuditFromReq(req, {
+        entityType: "approval_send_flow",
+        entityId: String(id),
+        action: "canonical_save_succeeded",
+        projectName: existing.projectName || undefined,
+      });
+
+      if (updated.ownerUserId && updated.ownerUserId !== user.id) {
         await createNotification(updated.ownerUserId, "deliverable.submitted_for_approval",
           `Approval needed: ${updated.title}`,
           `Task "${updated.title}" has been sent for approval${file ? ` with attachment: ${file.originalname}` : ""}`,
@@ -480,31 +643,211 @@ export function registerEngineeringRoutes(app: Express) {
         );
       }
 
+      const localFlowEnabled = await isLocalSyncedSaveFlowEnabled();
+      const mappedPath = await getLocalSyncedPathForUser(user.id);
+      let localResult: any = {
+        attempted: false,
+        saved: false,
+        mode: "not_requested",
+        mappedPath: mappedPath || null,
+        fallbackUsed: false,
+      };
+
+      if (localFlowEnabled) {
+        localResult.attempted = true;
+        logAuditFromReq(req, {
+          entityType: "approval_send_flow",
+          entityId: String(id),
+          action: "local_save_attempted",
+          projectName: existing.projectName || undefined,
+          changesJson: { mappedPath: mappedPath || null },
+        });
+
+        if (!mappedPath) {
+          localResult.mode = "missing_mapping";
+          localResult.error = "No mapped local synced path configured for this user.";
+          localResult.fallbackUsed = true;
+          logAuditFromReq(req, {
+            entityType: "approval_send_flow",
+            entityId: String(id),
+            action: "local_save_failed",
+            projectName: existing.projectName || undefined,
+            changesJson: { reason: "missing_mapping" },
+          });
+          logAuditFromReq(req, {
+            entityType: "approval_send_flow",
+            entityId: String(id),
+            action: "fallback_used",
+            projectName: existing.projectName || undefined,
+            changesJson: { fallbackType: "manual_download" },
+          });
+        } else if (!localSave?.supported) {
+          localResult.mode = "runtime_not_supported";
+          localResult.error = "Browser/runtime cannot write to local synced path directly.";
+          localResult.fallbackUsed = true;
+          logAuditFromReq(req, {
+            entityType: "approval_send_flow",
+            entityId: String(id),
+            action: "local_save_failed",
+            projectName: existing.projectName || undefined,
+            changesJson: { reason: "runtime_not_supported" },
+          });
+          logAuditFromReq(req, {
+            entityType: "approval_send_flow",
+            entityId: String(id),
+            action: "fallback_used",
+            projectName: existing.projectName || undefined,
+            changesJson: { fallbackType: "manual_download" },
+          });
+        } else if (localSave?.status === "succeeded") {
+          localResult.saved = true;
+          localResult.mode = "runtime_supported";
+          logAuditFromReq(req, {
+            entityType: "approval_send_flow",
+            entityId: String(id),
+            action: "local_save_succeeded",
+            projectName: existing.projectName || undefined,
+            changesJson: { targetPath: localSave?.targetPath || mappedPath },
+          });
+        } else {
+          localResult.mode = "runtime_supported";
+          localResult.error = localSave?.error || "Local save was not completed.";
+          localResult.fallbackUsed = true;
+          logAuditFromReq(req, {
+            entityType: "approval_send_flow",
+            entityId: String(id),
+            action: "local_save_failed",
+            projectName: existing.projectName || undefined,
+            changesJson: { reason: localSave?.error || "unknown" },
+          });
+          logAuditFromReq(req, {
+            entityType: "approval_send_flow",
+            entityId: String(id),
+            action: "fallback_used",
+            projectName: existing.projectName || undefined,
+            changesJson: { fallbackType: "manual_download" },
+          });
+        }
+      }
+
+      logAuditFromReq(req, {
+        entityType: "approval_send_flow",
+        entityId: String(id),
+        action: "send_completed",
+        projectName: existing.projectName || undefined,
+        changesJson: { canonicalSaved: true, localSaved: localResult.saved },
+      });
+
       res.json({
         ...updated,
         uploadedFile: file ? { filename: file.filename, originalName: file.originalname, size: file.size } : null,
+        sendResult: {
+          canonicalSystemRecord: { saved: true },
+          localSyncedPath: localResult,
+        },
       });
     } catch (err: any) {
+      logAuditFromReq(req, {
+        entityType: "approval_send_flow",
+        entityId: String(id),
+        action: "canonical_save_failed",
+        changesJson: { error: err?.message || "unknown" },
+      });
+      logAuditFromReq(req, {
+        entityType: "approval_send_flow",
+        entityId: String(id),
+        action: "send_failed",
+        changesJson: { error: err?.message || "unknown" },
+      });
       console.error("[Eng] Send for approval error:", err);
-      console.error("[Engineering] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
 
   app.post("/api/eng/tasks/:id/send-deliverable", requireAuth, approvalUpload.single("file"), async (req, res) => {
+    const id = parseInt(req.params.id);
+    const user = getUser(req);
+
     try {
-      const id = parseInt(req.params.id);
       const [existing] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
       if (!existing) return res.status(404).json({ error: "Task not found" });
 
       const recipientUserId = parseInt(req.body.recipientUserId);
       if (!recipientUserId) return res.status(400).json({ error: "Recipient is required" });
 
+      const recipientSuggestion = req.body?.recipientSuggestion || null;
+      const recipientFinal = req.body?.recipientFinal || String(recipientUserId);
+      const recipientOverrideReason = typeof req.body?.recipientOverrideReason === "string" ? req.body.recipientOverrideReason.trim() : "";
+      const linkedProjectSuggestion = req.body?.linkedProjectSuggestion || null;
+      const linkedProjectFinal = req.body?.linkedProjectFinal || existing.projectName || null;
+      const linkedProjectOverrideReason = typeof req.body?.linkedProjectOverrideReason === "string" ? req.body.linkedProjectOverrideReason.trim() : "";
+
+      logAuditFromReq(req, {
+        entityType: "deliverable_send_flow",
+        entityId: String(id),
+        action: "send_flow_opened",
+        projectName: existing.projectName || undefined,
+      });
+
+      logAuditFromReq(req, {
+        entityType: "deliverable_send_flow",
+        entityId: String(id),
+        action: "suggestions_presented",
+        projectName: existing.projectName || undefined,
+        changesJson: { recipientSuggestion, linkedProjectSuggestion },
+      });
+
+      const overrideChecks = [
+        { field: "recipient", suggestion: recipientSuggestion, final: recipientFinal, reason: recipientOverrideReason },
+        { field: "linked_project", suggestion: linkedProjectSuggestion, final: linkedProjectFinal, reason: linkedProjectOverrideReason },
+      ];
+
+      for (const check of overrideChecks) {
+        if (check.suggestion && check.final && check.suggestion !== check.final) {
+          if (!check.reason) {
+            return res.status(400).json({ error: `${check.field} override reason is required` });
+          }
+          logAuditFromReq(req, {
+            entityType: "deliverable_send_flow",
+            entityId: String(id),
+            action: "suggestion_overridden",
+            projectName: existing.projectName || undefined,
+            changesJson: { field: check.field, suggestion: check.suggestion, finalValue: check.final, reason: check.reason },
+          });
+          logAuditFromReq(req, {
+            entityType: "deliverable_send_flow",
+            entityId: String(id),
+            action: "override_reason_captured",
+            projectName: existing.projectName || undefined,
+            changesJson: { field: check.field, reason: check.reason },
+          });
+        } else if (check.suggestion) {
+          logAuditFromReq(req, {
+            entityType: "deliverable_send_flow",
+            entityId: String(id),
+            action: "suggestion_accepted",
+            projectName: existing.projectName || undefined,
+            changesJson: { field: check.field, suggestion: check.suggestion, finalValue: check.final || check.suggestion },
+          });
+        }
+      }
+
       const file = req.file;
       if (!file) return res.status(400).json({ error: "A file attachment is required" });
-
       const note = req.body.note || "";
-      const user = getUser(req);
+      let localSave: any = null;
+    if (typeof req.body?.localSave === "string") {
+      try { localSave = JSON.parse(req.body.localSave); } catch { localSave = null; }
+    } else if (req.body?.localSave && typeof req.body.localSave === "object") {
+      localSave = req.body.localSave;
+    }
+
+      logAuditFromReq(req, {
+        entityType: "deliverable_send_flow",
+        entityId: String(id),
+        action: "canonical_save_attempted",
+        projectName: existing.projectName || undefined,
+      });
 
       const [deliverable] = await db.insert(taskDeliverables).values({
         taskId: id,
@@ -531,16 +874,138 @@ export function registerEngineeringRoutes(app: Express) {
         newValue: file.originalname,
       });
 
+      logAuditFromReq(req, {
+        entityType: "deliverable_send_flow",
+        entityId: String(id),
+        action: "canonical_save_succeeded",
+        projectName: existing.projectName || undefined,
+        changesJson: { deliverableId: deliverable.id },
+      });
+
       await createNotification(recipientUserId, "deliverable.sent_for_acknowledgment",
         `Deliverable received: ${existing.title}`,
         `"${file.originalname}" has been sent to you for acknowledgment on task "${existing.title}"${note.trim() ? ` — ${note.trim()}` : ""}`,
         { projectName: existing.projectName, linkedTaskId: id }
       );
 
-      res.json(deliverable);
+      const localFlowEnabled = await isLocalSyncedSaveFlowEnabled();
+      const mappedPath = await getLocalSyncedPathForUser(user.id);
+      const fallbackPreference = await getFallbackPreferenceForUser(user.id);
+      let localResult: any = {
+        attempted: false,
+        saved: false,
+        mode: "not_requested",
+        mappedPath: mappedPath || null,
+        fallbackUsed: false,
+        fallbackPreference,
+      };
+
+      if (localFlowEnabled) {
+        localResult.attempted = true;
+        logAuditFromReq(req, {
+          entityType: "deliverable_send_flow",
+          entityId: String(id),
+          action: "local_save_attempted",
+          projectName: existing.projectName || undefined,
+          changesJson: { mappedPath: mappedPath || null, fallbackPreference },
+        });
+
+        if (!mappedPath) {
+          localResult.mode = "missing_mapping";
+          localResult.error = "No mapped local synced path configured for this user.";
+          localResult.fallbackUsed = true;
+          logAuditFromReq(req, {
+            entityType: "deliverable_send_flow",
+            entityId: String(id),
+            action: "local_save_failed",
+            projectName: existing.projectName || undefined,
+            changesJson: { reason: "missing_mapping" },
+          });
+          logAuditFromReq(req, {
+            entityType: "deliverable_send_flow",
+            entityId: String(id),
+            action: "fallback_used",
+            projectName: existing.projectName || undefined,
+            changesJson: { fallbackType: fallbackPreference },
+          });
+        } else if (!localSave?.supported) {
+          localResult.mode = "runtime_not_supported";
+          localResult.error = "Browser/runtime cannot write to local synced path directly.";
+          localResult.fallbackUsed = true;
+          logAuditFromReq(req, {
+            entityType: "deliverable_send_flow",
+            entityId: String(id),
+            action: "local_save_failed",
+            projectName: existing.projectName || undefined,
+            changesJson: { reason: "runtime_not_supported" },
+          });
+          logAuditFromReq(req, {
+            entityType: "deliverable_send_flow",
+            entityId: String(id),
+            action: "fallback_used",
+            projectName: existing.projectName || undefined,
+            changesJson: { fallbackType: fallbackPreference },
+          });
+        } else if (localSave?.status === "succeeded") {
+          localResult.saved = true;
+          localResult.mode = "runtime_supported";
+          logAuditFromReq(req, {
+            entityType: "deliverable_send_flow",
+            entityId: String(id),
+            action: "local_save_succeeded",
+            projectName: existing.projectName || undefined,
+            changesJson: { targetPath: localSave?.targetPath || mappedPath },
+          });
+        } else {
+          localResult.mode = "runtime_supported";
+          localResult.error = localSave?.error || "Local save was not completed.";
+          localResult.fallbackUsed = true;
+          logAuditFromReq(req, {
+            entityType: "deliverable_send_flow",
+            entityId: String(id),
+            action: "local_save_failed",
+            projectName: existing.projectName || undefined,
+            changesJson: { reason: localSave?.error || "unknown" },
+          });
+          logAuditFromReq(req, {
+            entityType: "deliverable_send_flow",
+            entityId: String(id),
+            action: "fallback_used",
+            projectName: existing.projectName || undefined,
+            changesJson: { fallbackType: fallbackPreference },
+          });
+        }
+      }
+
+      logAuditFromReq(req, {
+        entityType: "deliverable_send_flow",
+        entityId: String(id),
+        action: "send_completed",
+        projectName: existing.projectName || undefined,
+        changesJson: { canonicalSaved: true, localSaved: localResult.saved, deliverableId: deliverable.id },
+      });
+
+      res.json({
+        ...deliverable,
+        sendResult: {
+          canonicalSystemRecord: { saved: true },
+          localSyncedPath: localResult,
+        },
+      });
     } catch (err: any) {
+      logAuditFromReq(req, {
+        entityType: "deliverable_send_flow",
+        entityId: String(id),
+        action: "canonical_save_failed",
+        changesJson: { error: err?.message || "unknown" },
+      });
+      logAuditFromReq(req, {
+        entityType: "deliverable_send_flow",
+        entityId: String(id),
+        action: "send_failed",
+        changesJson: { error: err?.message || "unknown" },
+      });
       console.error("[Eng] Send deliverable error:", err);
-      console.error("[Engineering] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
