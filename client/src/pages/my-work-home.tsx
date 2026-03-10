@@ -661,6 +661,26 @@ export default function MyWorkHomePage() {
     }),
   [calendarEvents]);
 
+  const myDaySummary = useMemo(() => {
+    const urgentActions = actionItems.length;
+    const dueToday = openTasks.filter((task) => {
+      if (!task.dueAt) return false;
+      return task.dueAt.startsWith(today);
+    }).length;
+    const upcomingMeetings = sortedEvents.filter((event) => {
+      if (event.isAllDay || !event.start) return false;
+      return event.start.startsWith(today);
+    }).length;
+
+    return {
+      urgentActions,
+      dueToday,
+      upcomingMeetings,
+      openTasks: openTasks.length,
+      escalatedCount: escalatedItems.length,
+    };
+  }, [actionItems.length, escalatedItems.length, openTasks, sortedEvents]);
+
   return (
     <PageShell className="p-4 md:p-6" data-testid="my-work-home">
       <SectionHeader
@@ -669,6 +689,24 @@ export default function MyWorkHomePage() {
         description={format(new Date(), "EEEE, MMMM d, yyyy")}
         actions={<Link href="/my-work/tasks"><Button variant="outline" size="sm" data-testid="link-all-tasks">All Tasks <ArrowRight className="h-3 w-3 ml-1" /></Button></Link>}
       />
+
+      <Card className="mb-4 border-emerald-200/70 bg-gradient-to-r from-emerald-50/60 via-background to-background" data-testid="my-work-focus-summary">
+        <CardContent className="pt-4 pb-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-emerald-800">What matters now</p>
+              <p className="text-xs text-muted-foreground">Your personal priorities for today across tasks, timeline, and action surfaces.</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <Badge variant="outline" className="justify-center bg-background/80">{myDaySummary.urgentActions} action now</Badge>
+              <Badge variant="outline" className="justify-center bg-background/80">{myDaySummary.dueToday} due today</Badge>
+              <Badge variant="outline" className="justify-center bg-background/80">{myDaySummary.upcomingMeetings} meetings</Badge>
+              <Badge variant="outline" className="justify-center bg-background/80">{myDaySummary.openTasks} open tasks</Badge>
+              <Badge variant="outline" className="justify-center bg-background/80">{myDaySummary.escalatedCount} alerts</Badge>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <KPIStrip className="grid-cols-1 lg:grid-cols-3" data-testid="my-work-grid">
         <div className="lg:col-span-1 space-y-4" data-testid="my-work-tasks-column">
@@ -729,7 +767,7 @@ export default function MyWorkHomePage() {
               ) : filteredTasks.length === 0 ? (
                 <div className="flex flex-col items-center py-8 text-center" data-testid="empty-tasks">
                   <Inbox className="h-8 w-8 text-muted-foreground/50 mb-2" />
-                  <p className="text-sm text-muted-foreground">{sourceFilter === "all" ? "No open tasks" : `No ${SOURCE_FILTERS.find(f => f.key === sourceFilter)?.label || ""} tasks`}</p>
+                  <p className="text-sm text-muted-foreground">{sourceFilter === "all" ? "No open tasks right now" : `No ${SOURCE_FILTERS.find(f => f.key === sourceFilter)?.label || ""} tasks`}</p>
                 </div>
               ) : (
                 <ScrollArea className="max-h-[500px]">
@@ -825,7 +863,7 @@ export default function MyWorkHomePage() {
               ) : sortedEvents.length === 0 ? (
                 <div className="flex flex-col items-center py-8 text-center" data-testid="empty-calendar">
                   <Calendar className="h-8 w-8 text-muted-foreground/50 mb-2" />
-                  <p className="text-sm text-muted-foreground">No events today</p>
+                  <p className="text-sm text-muted-foreground">No meetings on your calendar today</p>
                 </div>
               ) : (
                 <ScrollArea className="max-h-[500px]">
@@ -949,10 +987,11 @@ export default function MyWorkHomePage() {
                   <Mail className="h-4 w-4 text-purple-600" />
                   Action Required
                 </CardTitle>
-                <Badge variant="secondary" className="text-xs" data-testid="badge-action-count">
+                <Badge variant="destructive" className="text-xs" data-testid="badge-action-count">
                   {actionItems.length}
                 </Badge>
               </div>
+              <p className="text-xs text-muted-foreground">Items waiting on your response from approvals, notifications, and Microsoft tools.</p>
             </CardHeader>
             <CardContent className="pt-0">
               {actionsLoading ? (
@@ -964,7 +1003,7 @@ export default function MyWorkHomePage() {
               ) : actionItems.length === 0 ? (
                 <div className="flex flex-col items-center py-6 text-center" data-testid="empty-actions">
                   <Inbox className="h-6 w-6 text-muted-foreground/50 mb-2" />
-                  <p className="text-xs text-muted-foreground">No action required items</p>
+                  <p className="text-xs text-muted-foreground">You're clear — no immediate action required.</p>
                 </div>
               ) : (
                 <ScrollArea className="max-h-[300px]">
@@ -972,7 +1011,7 @@ export default function MyWorkHomePage() {
                     {actionItems.slice(0, 20).map(item => (
                       <div
                         key={item.id}
-                        className="flex items-start gap-2 p-2 rounded-md border border-border/50 hover:bg-purple-50/40 hover:border-purple-200/60 transition-colors cursor-pointer group"
+                        className="flex items-start gap-2 p-2 rounded-md border border-purple-200/60 bg-purple-50/30 hover:bg-purple-50/60 hover:border-purple-300 transition-colors cursor-pointer group"
                         onClick={() => handleActionClick(item)}
                         data-testid={`action-item-${item.id}`}
                       >
