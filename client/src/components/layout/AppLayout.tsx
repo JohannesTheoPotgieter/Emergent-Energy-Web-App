@@ -60,6 +60,8 @@ import {
   ChevronLeft,
   FileUp,
   Zap,
+  CheckCheck,
+  Upload,
   Sun,
   Wind,
   Battery,
@@ -333,6 +335,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [showValidationReport, setShowValidationReport] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
+  const [viewportWidth, setViewportWidth] = useState<number>(typeof window !== "undefined" ? window.innerWidth : 1440);
   
   useEffect(() => {
     setCollapsedSections({});
@@ -420,6 +423,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return () => { document.body.style.overflow = ""; };
   }, [mobileOpen]);
 
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   const toggleSection = (heading: string) => {
     setCollapsedSections(prev => {
       const next = { ...prev };
@@ -458,6 +467,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   });
 
   const allowedSections: string[] = permissions?.sections || [];
+  const isMobileViewport = viewportWidth < 768;
+  const isTabletViewport = viewportWidth >= 768 && viewportWidth < 1280;
+  const isDesktopViewport = viewportWidth >= 1280;
   const navGroups = (() => {
     const groups = getNavGroups(!!unifiedWorkFlag, !!contextualMsSurfacesEnabled, !!cleanedAdminVisibilityEnabled).map((group) => ({ ...group, items: [...group.items] }));
     if (!roleAwareUxEnabled) return groups;
@@ -480,6 +492,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const sidebarShowLabels = mobileOpen || !desktopCollapsed;
 
   const isAdmin = ['COO_ADMIN', 'CEO_ADMIN'].includes(companyRole || '') || ['COO_ADMIN', 'CEO_ADMIN', 'admin'].includes(user?.role || '');
+
+  const quickActions = [
+    { label: "Approvals", path: "/my-work/approvals", icon: CheckCheck, permissionEntity: "my_work" },
+    { label: "Updates", path: "/my-work/tasks", icon: RefreshCw, permissionEntity: "my_tool" },
+    { label: "Upload", path: "/smart-import", icon: Upload, permissionEntity: "smart_import" },
+    { label: "Escalate", path: "/feedback", icon: AlertTriangle, permissionEntity: "feedback" },
+    { label: "From Microsoft", path: "/pd/tickets/create", icon: FileUp, permissionEntity: "project_development" },
+  ].filter((action) => hasEntityViewPermission(action.path, activeRole, permissions?.entityPermissions));
+
+  const navGroupsForViewport = navGroups.filter((group) => {
+    if (!isMobileViewport) return true;
+    return ["MY_WORK", "PROJECT_DEVELOPMENT", "PROJECT_MANAGEMENT", "SYSTEM"].includes(group.section);
+  });
 
   const getRoleDisplayName = (role: string | undefined | null): string => {
     if (!role) return "";
@@ -544,7 +569,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5 overscroll-contain scrollbar-thin">
-          {navGroups.filter(group => {
+          {navGroupsForViewport.filter(group => {
             if (["FEEDBACK", "INFORMATION", "MY_WORK", "SYSTEM"].includes(group.section)) return true;
             if (allowedSections.length === 0 && !activeRole) return group.section === "PROJECT_MANAGEMENT";
             const sectionAliases: Record<string, string[]> = {
@@ -587,7 +612,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             const isCollapsed = sidebarShowLabels && (
               collapsedSections[group.heading] !== undefined
                 ? collapsedSections[group.heading]
-                : !hasActiveItem
+                : isMobileViewport
+                  ? group.section !== "MY_WORK"
+                  : isTabletViewport
+                    ? !hasActiveItem && group.section !== "PROJECT_MANAGEMENT"
+                    : !hasActiveItem
             );
             const sectionColor = SECTION_COLORS[group.section] || "text-muted-foreground";
             const isPrimarySection = !roleAwareUxEnabled || getRoleSectionPriority(activeRole).slice(0, 3).includes(group.section as any);
@@ -834,6 +863,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2 md:gap-3 shrink-0">
+            {isTabletViewport && (
+              <Link href="/projects" className="hidden md:inline-flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-50 border border-green-200 px-2.5 py-1.5 rounded-md hover:bg-green-100 transition-colors">
+                <FolderOpen className="w-3.5 h-3.5" />
+                Switch Project
+              </Link>
+            )}
             <PmModeToggle />
 
             <NotificationBell />
@@ -860,8 +895,31 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
+        {isMobileViewport && quickActions.length > 0 && (
+          <div className="border-b border-border bg-white px-2 py-2 overflow-x-auto">
+            <div className="flex gap-2 min-w-max">
+              {quickActions.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <Link
+                    key={action.path}
+                    href={action.path}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-md px-2.5 py-1.5 hover:bg-green-100 transition-colors"
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {action.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 flex flex-col min-h-0">
-          <div className="w-full max-w-[1920px] mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300 flex-1 flex flex-col min-h-0 min-w-0 gap-4" data-page-content>
+          <div className={cn(
+            "w-full mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300 flex-1 flex flex-col min-h-0 min-w-0 gap-4",
+            isDesktopViewport ? "max-w-[1920px]" : isTabletViewport ? "max-w-[1280px]" : "max-w-full"
+          )} data-page-content>
             <DatabaseStatusBanner />
             {showValidationReport && lastUploadResult && (
               <UploadValidationReport 
