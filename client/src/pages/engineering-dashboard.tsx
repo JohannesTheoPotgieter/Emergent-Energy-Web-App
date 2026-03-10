@@ -48,6 +48,7 @@ import {
   ArrowLeft,
   X,
   MoreHorizontal,
+  ArrowRightLeft,
 } from "lucide-react";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
@@ -1306,9 +1307,9 @@ export default function EngineeringDashboard() {
             <Wrench className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h2 className="text-xl sm:text-2xl font-heading font-bold">Engineering Dashboard</h2>
+            <h2 className="text-xl sm:text-2xl font-heading font-bold">Engineering Overview & Team Ops</h2>
             <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <Loader2 className="h-3 w-3 animate-spin" /> Loading your tasks...
+              <Loader2 className="h-3 w-3 animate-spin" /> Loading standup and team ops data...
             </p>
           </div>
         </div>
@@ -1327,8 +1328,9 @@ export default function EngineeringDashboard() {
       <div data-testid="eng-dashboard" className="flex items-center justify-center py-20">
         <div className="text-center">
           <AlertTriangle className="h-10 w-10 text-red-600 mx-auto mb-2" />
-          <p className="font-medium">Failed to load dashboard data</p>
+          <p className="font-medium">Failed to load engineering overview data</p>
           <p className="text-sm text-muted-foreground mt-1">{(error as Error)?.message || "Unknown error"}</p>
+          <p className="text-xs text-muted-foreground mt-1">Try refreshing this page. Core task execution remains available in /engineering/tasks.</p>
         </div>
       </div>
     );
@@ -1345,7 +1347,7 @@ export default function EngineeringDashboard() {
     <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
       <SectionHeader
         icon={<Wrench className="h-5 w-5" />}
-        title={standupMode ? "Engineering Standup" : showAllTasks ? "Engineering Overview" : `${firstName}'s Dashboard`}
+        title={standupMode ? "Engineering Standup & Team Triage" : showAllTasks ? "Engineering Overview & Team Ops" : `${firstName}'s Dashboard`}
         description={todayFormatted}
       />
 
@@ -1356,7 +1358,7 @@ export default function EngineeringDashboard() {
           </div>
           <div>
             <h2 className="text-xl sm:text-2xl font-heading font-bold tracking-tight" data-testid="text-standup-title">
-              {standupMode ? "Engineering Standup" : showAllTasks ? "Engineering Overview" : `${firstName}'s Dashboard`}
+              {standupMode ? "Engineering Standup & Team Triage" : showAllTasks ? "Engineering Overview & Team Ops" : `${firstName}'s Dashboard`}
             </h2>
             <p className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Clock className="h-3 w-3" />
@@ -1415,6 +1417,24 @@ export default function EngineeringDashboard() {
           )}
         </div>
       </div>
+
+      {!standupMode && (
+        <Card className="shadow-sm border-blue-200/70 bg-gradient-to-r from-blue-50/70 to-transparent" data-testid="engineering-workspace-handoff">
+          <CardContent className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Workspace intent</p>
+              <p className="text-sm font-medium">This page is for standup, blockers, approvals and team coordination.</p>
+              <p className="text-xs text-muted-foreground">Use the task board for active execution, detailed updates, and delivery flow.</p>
+            </div>
+            <Link href="/engineering/tasks">
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="btn-open-task-execution-board">
+                <ArrowRightLeft className="h-3.5 w-3.5" />
+                Go to Task Execution Board
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
 
       {standupMode ? (
         <StandupModeView />

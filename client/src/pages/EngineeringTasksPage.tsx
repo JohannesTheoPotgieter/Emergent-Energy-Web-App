@@ -19,6 +19,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/use-auth";
+import { Link } from "wouter";
 import {
   ListTodo,
   Plus,
@@ -65,6 +66,7 @@ import {
   Paperclip,
   Save,
   RotateCw,
+  ArrowLeftRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
@@ -2697,7 +2699,7 @@ export default function EngineeringTasksPage() {
     });
   }, []);
 
-  const { data: tasks = [], isLoading } = useQuery<Task[]>({
+  const { data: tasks = [], isLoading, error } = useQuery<Task[]>({
     queryKey: ["eng-tasks"],
     queryFn: () => engFetch("/api/eng/tasks"),
     refetchOnMount: "always",
@@ -2906,7 +2908,8 @@ export default function EngineeringTasksPage() {
             <ListTodo className="h-5 w-5 text-white" />
           </div>
           <div>
-            <h2 className="text-2xl font-heading font-bold" data-testid="text-tasks-title">Task Board</h2>
+            <h2 className="text-2xl font-heading font-bold" data-testid="text-tasks-title">Engineering Task Execution Board</h2>
+            <p className="text-xs text-muted-foreground">Detailed execution workspace for moving and closing work.</p>
             <p className="text-xs text-muted-foreground">
               {myTasksOnly ? `${myTasks.length} of your tasks` : `${tasks.length} tasks`} · {overdueTasks.length} overdue
             </p>
@@ -3089,6 +3092,34 @@ export default function EngineeringTasksPage() {
           </Dialog>
         </div>
       </div>
+
+      <Card className="shadow-sm border-indigo-200/70 bg-gradient-to-r from-indigo-50/70 to-transparent" data-testid="engineering-execution-handoff">
+        <CardContent className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wider text-indigo-700">Workspace intent</p>
+            <p className="text-sm font-medium">Use this page for execution: update statuses, move work, and deliver tasks.</p>
+            <p className="text-xs text-muted-foreground">For standup triage, team blockers, and project health, switch to Engineering Overview.</p>
+          </div>
+          <Link href="/engineering">
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="btn-open-engineering-overview">
+              <ArrowLeftRight className="h-3.5 w-3.5" />
+              Back to Engineering Overview
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
+
+      {error && (
+        <Card className="shadow-sm border-red-200 bg-red-50/60" data-testid="engineering-tasks-error-banner">
+          <CardContent className="p-3 flex items-start gap-2 text-sm text-red-700">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium">Task data did not refresh cleanly.</p>
+              <p className="text-xs text-red-600/90">{(error as Error).message || "Unknown error"}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {(myTasksOnly || viewMode === "mytasks") && (
         <PersonalKpiStrip tasks={tasks} myTasks={myTasks} />
