@@ -299,8 +299,28 @@ function getRedesignedNavGroups(contextualMsSurfacesEnabled: boolean, cleanedAdm
     { heading: "PROJECT DEVELOPMENT", section: "PROJECT_DEVELOPMENT", icon: Sun, items: [makeNavItem("pdDashboard", "redesigned"), makeNavItem("pdTickets", "redesigned"), makeNavItem("clients", "redesigned"), makeNavItem("lifecycle", "redesigned")] },
     { heading: "ENGINEERING", section: "ENGINEERING", icon: HardHat, items: [makeNavItem("engineering", "redesigned"), makeNavItem("engineeringTasks", "redesigned")] },
     { heading: "QUALITY", section: "QUALITY", icon: ShieldCheck, items: [makeNavItem("quality", "redesigned")] },
-    { heading: "PROJECT MANAGEMENT", section: "PROJECT_MANAGEMENT", icon: Wind, items: [makeNavItem("projects", "redesigned"), makeNavItem("portfolios", "redesigned"), makeNavItem("dashboard", "redesigned"), makeNavItem("pmDashboard", "redesigned"), makeNavItem("pmOnTheGo", "redesigned"), makeNavItem("weeklyReviews", "redesigned")] },
-    { heading: "FINANCE", section: "FINANCE", icon: Battery, items: [makeNavItem("cashflow", "redesigned"), makeNavItem("cos", "redesigned"), makeNavItem("revenueTracker", "redesigned"), makeNavItem("gpTracker", "redesigned"), makeNavItem("subcontractor", "redesigned"), makeNavItem("invoicePatterns", "redesigned")] },
+    {
+      heading: "PROJECT MANAGEMENT",
+      section: "PROJECT_MANAGEMENT",
+      icon: Wind,
+      items: [
+        makeNavItem("projects", "redesigned"),
+        makeNavItem("portfolios", "redesigned"),
+        makeNavItem("dashboard", "redesigned"),
+        makeNavItem("pmDashboard", "redesigned"),
+        makeNavItem("weeklyReviews", "redesigned"),
+      ],
+    },
+    {
+      heading: "FINANCE",
+      section: "FINANCE",
+      icon: Battery,
+      items: [
+        makeNavItem("cashflow", "redesigned"),
+        makeNavItem("cos", "redesigned"),
+        makeNavItem("subcontractor", "redesigned"),
+      ],
+    },
     {
       heading: "SYSTEM",
       section: "SYSTEM",
