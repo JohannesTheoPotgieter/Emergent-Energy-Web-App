@@ -1,6 +1,7 @@
 import { db, getDbMode } from "./db";
 import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
 import { UsersRepository } from "./repositories/users-repository";
+import { WorkManagementRepository } from "./repositories/work-management-repository";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
@@ -467,6 +468,7 @@ export interface IStorage {
 export class DatabaseStorage implements IStorage {
   private _dbInstance?: typeof db;
   private readonly usersRepository: UsersRepository;
+  private readonly workManagementRepository: WorkManagementRepository;
   
   // Getter that always returns the current db (handles dynamic switching)
   private get dbInstance(): typeof db {
@@ -476,6 +478,7 @@ export class DatabaseStorage implements IStorage {
   constructor(dbInstance?: typeof db) {
     this._dbInstance = dbInstance;
     this.usersRepository = new UsersRepository(this.dbInstance);
+    this.workManagementRepository = new WorkManagementRepository(this.dbInstance);
   }
   
   // Transaction support
@@ -1952,246 +1955,60 @@ export class DatabaseStorage implements IStorage {
     await this.dbInstance.delete(dateOverrides).where(eq(dateOverrides.scenarioId, scenarioId));
   }
 
-  // Operational Tasks
-  async getAllOperationalTasks(): Promise<OperationalTask[]> {
-    return safeLegacyQuery(() => this.dbInstance.select().from(operationalTasks).where(isNull(operationalTasks.deletedAt)), []);
-  }
+  // Operational and work-management domains (repository extracted)
+  async getAllOperationalTasks(): Promise<OperationalTask[]> { return this.workManagementRepository.getAllOperationalTasks(); }
+  async getOperationalTasksByProject(projectName: string): Promise<OperationalTask[]> { return this.workManagementRepository.getOperationalTasksByProject(projectName); }
+  async getOperationalTask(id: number): Promise<OperationalTask | undefined> { return this.workManagementRepository.getOperationalTask(id); }
+  async createOperationalTask(data: InsertOperationalTask): Promise<OperationalTask> { return this.workManagementRepository.createOperationalTask(data); }
+  async updateOperationalTask(id: number, data: Partial<InsertOperationalTask>): Promise<OperationalTask> { return this.workManagementRepository.updateOperationalTask(id, data); }
+  async deleteOperationalTask(id: number): Promise<void> { return this.workManagementRepository.deleteOperationalTask(id); }
 
-  async getOperationalTasksByProject(projectName: string): Promise<OperationalTask[]> {
-    return safeLegacyQuery(() => this.dbInstance.select().from(operationalTasks).where(and(eq(operationalTasks.projectName, projectName), isNull(operationalTasks.deletedAt))).orderBy(operationalTasks.sortOrder), []);
-  }
+  async getTaskComments(taskId: number): Promise<TaskComment[]> { return this.workManagementRepository.getTaskComments(taskId); }
+  async createTaskComment(data: InsertTaskComment): Promise<TaskComment> { return this.workManagementRepository.createTaskComment(data); }
+  async deleteTaskComment(id: number): Promise<void> { return this.workManagementRepository.deleteTaskComment(id); }
 
-  async getOperationalTask(id: number): Promise<OperationalTask | undefined> {
-    const results = await safeLegacyQuery(() => this.dbInstance.select().from(operationalTasks).where(eq(operationalTasks.id, id)), []);
-    return results[0];
-  }
+  async getTaskChecklists(taskId: number): Promise<TaskChecklist[]> { return this.workManagementRepository.getTaskChecklists(taskId); }
+  async createTaskChecklist(data: InsertTaskChecklist): Promise<TaskChecklist> { return this.workManagementRepository.createTaskChecklist(data); }
+  async deleteTaskChecklist(id: number): Promise<void> { return this.workManagementRepository.deleteTaskChecklist(id); }
 
-  async createOperationalTask(data: InsertOperationalTask): Promise<OperationalTask> {
-    const now = new Date();
-    const [created] = await this.dbInstance.insert(operationalTasks).values({ ...data, createdAt: now, updatedAt: now }).returning();
-    return created;
-  }
+  async getChecklistItems(checklistId: number): Promise<TaskChecklistItem[]> { return this.workManagementRepository.getChecklistItems(checklistId); }
+  async createChecklistItem(data: InsertTaskChecklistItem): Promise<TaskChecklistItem> { return this.workManagementRepository.createChecklistItem(data); }
+  async updateChecklistItem(id: number, data: Partial<InsertTaskChecklistItem>): Promise<TaskChecklistItem> { return this.workManagementRepository.updateChecklistItem(id, data); }
+  async deleteChecklistItem(id: number): Promise<void> { return this.workManagementRepository.deleteChecklistItem(id); }
 
-  async updateOperationalTask(id: number, data: Partial<InsertOperationalTask>): Promise<OperationalTask> {
-    const [updated] = await this.dbInstance.update(operationalTasks).set({ ...data, updatedAt: new Date() }).where(eq(operationalTasks.id, id)).returning();
-    return updated;
-  }
+  async getTaskAttachments(taskId: number): Promise<TaskAttachment[]> { return this.workManagementRepository.getTaskAttachments(taskId); }
+  async createTaskAttachment(data: InsertTaskAttachment): Promise<TaskAttachment> { return this.workManagementRepository.createTaskAttachment(data); }
+  async deleteTaskAttachment(id: number): Promise<void> { return this.workManagementRepository.deleteTaskAttachment(id); }
 
-  async deleteOperationalTask(id: number): Promise<void> {
-    await safeLegacyWrite(() => this.dbInstance.update(operationalTasks).set({ deletedAt: new Date() }).where(eq(operationalTasks.id, id)));
-  }
+  async getTaskActivityLog(taskId: number): Promise<TaskActivityLog[]> { return this.workManagementRepository.getTaskActivityLog(taskId); }
+  async createTaskActivityLog(data: InsertTaskActivityLog): Promise<TaskActivityLog> { return this.workManagementRepository.createTaskActivityLog(data); }
 
-  // Task Comments
-  async getTaskComments(taskId: number): Promise<TaskComment[]> {
-    return this.dbInstance.select().from(taskComments).where(eq(taskComments.taskId, taskId)).orderBy(desc(taskComments.createdAt));
-  }
+  async getAllWritebackMappings(): Promise<WritebackMapping[]> { return this.workManagementRepository.getAllWritebackMappings(); }
+  async getWritebackMapping(id: number): Promise<WritebackMapping | undefined> { return this.workManagementRepository.getWritebackMapping(id); }
+  async createWritebackMapping(data: InsertWritebackMapping): Promise<WritebackMapping> { return this.workManagementRepository.createWritebackMapping(data); }
+  async updateWritebackMapping(id: number, data: Partial<InsertWritebackMapping>): Promise<WritebackMapping> { return this.workManagementRepository.updateWritebackMapping(id, data); }
+  async deleteWritebackMapping(id: number): Promise<void> { return this.workManagementRepository.deleteWritebackMapping(id); }
 
-  async createTaskComment(data: InsertTaskComment): Promise<TaskComment> {
-    const [created] = await this.dbInstance.insert(taskComments).values({ ...data, createdAt: new Date() }).returning();
-    return created;
-  }
+  async getWritebackAuditLogs(mappingId?: number): Promise<WritebackAuditLog[]> { return this.workManagementRepository.getWritebackAuditLogs(mappingId); }
+  async createWritebackAuditLog(data: InsertWritebackAuditLog): Promise<WritebackAuditLog> { return this.workManagementRepository.createWritebackAuditLog(data); }
+  async updateWritebackAuditLog(id: number, data: Partial<InsertWritebackAuditLog>): Promise<WritebackAuditLog> { return this.workManagementRepository.updateWritebackAuditLog(id, data); }
 
-  async deleteTaskComment(id: number): Promise<void> {
-    await this.dbInstance.delete(taskComments).where(eq(taskComments.id, id));
-  }
+  async getKeyDateMappings(projectName: string): Promise<KeyDateMapping[]> { return this.workManagementRepository.getKeyDateMappings(projectName); }
+  async createKeyDateMapping(data: InsertKeyDateMapping): Promise<KeyDateMapping> { return this.workManagementRepository.createKeyDateMapping(data); }
+  async updateKeyDateMapping(id: number, data: Partial<InsertKeyDateMapping>): Promise<KeyDateMapping> { return this.workManagementRepository.updateKeyDateMapping(id, data); }
+  async deleteKeyDateMapping(id: number): Promise<void> { return this.workManagementRepository.deleteKeyDateMapping(id); }
 
-  // Task Checklists
-  async getTaskChecklists(taskId: number): Promise<TaskChecklist[]> {
-    return this.dbInstance.select().from(taskChecklists).where(eq(taskChecklists.taskId, taskId)).orderBy(taskChecklists.sortOrder);
-  }
+  async getMytoolTasks(ownerUserId: number): Promise<MytoolTask[]> { return this.workManagementRepository.getMytoolTasks(ownerUserId); }
+  async getMytoolTasksByDate(ownerUserId: number, date: string): Promise<MytoolTask[]> { return this.workManagementRepository.getMytoolTasksByDate(ownerUserId, date); }
+  async getMytoolTask(id: number): Promise<MytoolTask | undefined> { return this.workManagementRepository.getMytoolTask(id); }
+  async createMytoolTask(data: InsertMytoolTask): Promise<MytoolTask> { return this.workManagementRepository.createMytoolTask(data); }
+  async updateMytoolTask(id: number, data: Partial<InsertMytoolTask>): Promise<MytoolTask> { return this.workManagementRepository.updateMytoolTask(id, data); }
+  async deleteMytoolTask(id: number): Promise<void> { return this.workManagementRepository.deleteMytoolTask(id); }
 
-  async createTaskChecklist(data: InsertTaskChecklist): Promise<TaskChecklist> {
-    const [created] = await this.dbInstance.insert(taskChecklists).values({ ...data, createdAt: new Date() }).returning();
-    return created;
-  }
-
-  async deleteTaskChecklist(id: number): Promise<void> {
-    await this.dbInstance.delete(taskChecklists).where(eq(taskChecklists.id, id));
-  }
-
-  // Task Checklist Items
-  async getChecklistItems(checklistId: number): Promise<TaskChecklistItem[]> {
-    return this.dbInstance.select().from(taskChecklistItems).where(eq(taskChecklistItems.checklistId, checklistId)).orderBy(taskChecklistItems.sortOrder);
-  }
-
-  async createChecklistItem(data: InsertTaskChecklistItem): Promise<TaskChecklistItem> {
-    const [created] = await this.dbInstance.insert(taskChecklistItems).values({ ...data, createdAt: new Date() }).returning();
-    return created;
-  }
-
-  async updateChecklistItem(id: number, data: Partial<InsertTaskChecklistItem>): Promise<TaskChecklistItem> {
-    const [updated] = await this.dbInstance.update(taskChecklistItems).set(data).where(eq(taskChecklistItems.id, id)).returning();
-    return updated;
-  }
-
-  async deleteChecklistItem(id: number): Promise<void> {
-    await this.dbInstance.delete(taskChecklistItems).where(eq(taskChecklistItems.id, id));
-  }
-
-  // Task Attachments
-  async getTaskAttachments(taskId: number): Promise<TaskAttachment[]> {
-    return this.dbInstance.select().from(taskAttachments).where(eq(taskAttachments.taskId, taskId)).orderBy(desc(taskAttachments.createdAt));
-  }
-
-  async createTaskAttachment(data: InsertTaskAttachment): Promise<TaskAttachment> {
-    const [created] = await this.dbInstance.insert(taskAttachments).values({ ...data, createdAt: new Date() }).returning();
-    return created;
-  }
-
-  async deleteTaskAttachment(id: number): Promise<void> {
-    await this.dbInstance.delete(taskAttachments).where(eq(taskAttachments.id, id));
-  }
-
-  // Task Activity Log
-  async getTaskActivityLog(taskId: number): Promise<TaskActivityLog[]> {
-    return this.dbInstance.select().from(taskActivityLog).where(eq(taskActivityLog.taskId, taskId)).orderBy(desc(taskActivityLog.createdAt));
-  }
-
-  async createTaskActivityLog(data: InsertTaskActivityLog): Promise<TaskActivityLog> {
-    const [created] = await this.dbInstance.insert(taskActivityLog).values({ ...data, createdAt: new Date() }).returning();
-    return created;
-  }
-
-  // Writeback Mappings
-  async getAllWritebackMappings(): Promise<WritebackMapping[]> {
-    return this.dbInstance.select().from(writebackMappings).orderBy(desc(writebackMappings.createdAt));
-  }
-
-  async getWritebackMapping(id: number): Promise<WritebackMapping | undefined> {
-    const [mapping] = await this.dbInstance.select().from(writebackMappings).where(eq(writebackMappings.id, id));
-    return mapping;
-  }
-
-  async createWritebackMapping(data: InsertWritebackMapping): Promise<WritebackMapping> {
-    const now = new Date();
-    const [created] = await this.dbInstance.insert(writebackMappings).values({ ...data, createdAt: now, updatedAt: now }).returning();
-    return created;
-  }
-
-  async updateWritebackMapping(id: number, data: Partial<InsertWritebackMapping>): Promise<WritebackMapping> {
-    const [updated] = await this.dbInstance.update(writebackMappings).set({ ...data, updatedAt: new Date() }).where(eq(writebackMappings.id, id)).returning();
-    return updated;
-  }
-
-  async deleteWritebackMapping(id: number): Promise<void> {
-    await this.dbInstance.delete(writebackMappings).where(eq(writebackMappings.id, id));
-  }
-
-  // Writeback Audit Log
-  async getWritebackAuditLogs(mappingId?: number): Promise<WritebackAuditLog[]> {
-    if (mappingId !== undefined) {
-      return this.dbInstance.select().from(writebackAuditLog).where(eq(writebackAuditLog.mappingId, mappingId)).orderBy(desc(writebackAuditLog.appliedAt));
-    }
-    return this.dbInstance.select().from(writebackAuditLog).orderBy(desc(writebackAuditLog.appliedAt));
-  }
-
-  async createWritebackAuditLog(data: InsertWritebackAuditLog): Promise<WritebackAuditLog> {
-    const [created] = await this.dbInstance.insert(writebackAuditLog).values({ ...data, appliedAt: new Date() }).returning();
-    return created;
-  }
-
-  async updateWritebackAuditLog(id: number, data: Partial<InsertWritebackAuditLog>): Promise<WritebackAuditLog> {
-    const [updated] = await this.dbInstance.update(writebackAuditLog).set(data).where(eq(writebackAuditLog.id, id)).returning();
-    return updated;
-  }
-
-  async getKeyDateMappings(projectName: string): Promise<KeyDateMapping[]> {
-    return await this.dbInstance.select().from(keyDateMappings)
-      .where(eq(keyDateMappings.projectName, projectName))
-      .orderBy(keyDateMappings.sortOrder);
-  }
-
-  async createKeyDateMapping(data: InsertKeyDateMapping): Promise<KeyDateMapping> {
-    const [created] = await this.dbInstance.insert(keyDateMappings).values(data).returning();
-    return created;
-  }
-
-  async updateKeyDateMapping(id: number, data: Partial<InsertKeyDateMapping>): Promise<KeyDateMapping> {
-    const [updated] = await this.dbInstance.update(keyDateMappings)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(keyDateMappings.id, id))
-      .returning();
-    return updated;
-  }
-
-  async deleteKeyDateMapping(id: number): Promise<void> {
-    await this.dbInstance.delete(keyDateMappings).where(eq(keyDateMappings.id, id));
-  }
-
-  // My Tool - Tasks
-  async getMytoolTasks(ownerUserId: number): Promise<MytoolTask[]> {
-    return this.dbInstance.select().from(mytoolTasks)
-      .where(and(eq(mytoolTasks.ownerUserId, ownerUserId), isNull(mytoolTasks.deletedAt)))
-      .orderBy(mytoolTasks.sortOrder);
-  }
-
-  async getMytoolTasksByDate(ownerUserId: number, date: string): Promise<MytoolTask[]> {
-    return this.dbInstance.select().from(mytoolTasks)
-      .where(and(
-        eq(mytoolTasks.ownerUserId, ownerUserId),
-        isNull(mytoolTasks.deletedAt),
-        or(
-          eq(mytoolTasks.plannedForDate, date),
-          and(
-            not(inArray(mytoolTasks.status, ['done', 'cancelled'])),
-            sql`${mytoolTasks.plannedForDate} < ${date}`
-          ),
-          and(
-            not(inArray(mytoolTasks.status, ['done', 'cancelled'])),
-            sql`${mytoolTasks.plannedForDate} IS NULL`
-          )
-        )
-      ))
-      .orderBy(mytoolTasks.sortOrder);
-  }
-
-  async getMytoolTask(id: number): Promise<MytoolTask | undefined> {
-    const [task] = await this.dbInstance.select().from(mytoolTasks).where(eq(mytoolTasks.id, id));
-    return task;
-  }
-
-  async createMytoolTask(data: InsertMytoolTask): Promise<MytoolTask> {
-    const now = new Date();
-    const [created] = await this.dbInstance.insert(mytoolTasks).values({ ...data, createdAt: now, updatedAt: now }).returning();
-    return created;
-  }
-
-  async updateMytoolTask(id: number, data: Partial<InsertMytoolTask>): Promise<MytoolTask> {
-    const updateData: any = { ...data, updatedAt: new Date() };
-    if ((data as any).status === 'done') {
-      updateData.completedAt = new Date();
-    }
-    const [updated] = await this.dbInstance.update(mytoolTasks).set(updateData).where(eq(mytoolTasks.id, id)).returning();
-    return updated;
-  }
-
-  async deleteMytoolTask(id: number): Promise<void> {
-    await this.dbInstance.update(mytoolTasks).set({ deletedAt: new Date() }).where(eq(mytoolTasks.id, id));
-  }
-
-  // My Tool - Timeblocks
-  async getMytoolTimeblocks(ownerUserId: number, date: string): Promise<MytoolTimeblock[]> {
-    return this.dbInstance.select().from(mytoolTimeblocks)
-      .where(and(
-        eq(mytoolTimeblocks.ownerUserId, ownerUserId),
-        eq(mytoolTimeblocks.date, date)
-      ));
-  }
-
-  async createMytoolTimeblock(data: InsertMytoolTimeblock): Promise<MytoolTimeblock> {
-    const now = new Date();
-    const [created] = await this.dbInstance.insert(mytoolTimeblocks).values({ ...data, createdAt: now, updatedAt: now }).returning();
-    return created;
-  }
-
-  async updateMytoolTimeblock(id: number, data: Partial<InsertMytoolTimeblock>): Promise<MytoolTimeblock> {
-    const [updated] = await this.dbInstance.update(mytoolTimeblocks).set({ ...data, updatedAt: new Date() }).where(eq(mytoolTimeblocks.id, id)).returning();
-    return updated;
-  }
-
-  async deleteMytoolTimeblock(id: number): Promise<void> {
-    await this.dbInstance.delete(mytoolTimeblocks).where(eq(mytoolTimeblocks.id, id));
-  }
+  async getMytoolTimeblocks(ownerUserId: number, date: string): Promise<MytoolTimeblock[]> { return this.workManagementRepository.getMytoolTimeblocks(ownerUserId, date); }
+  async createMytoolTimeblock(data: InsertMytoolTimeblock): Promise<MytoolTimeblock> { return this.workManagementRepository.createMytoolTimeblock(data); }
+  async updateMytoolTimeblock(id: number, data: Partial<InsertMytoolTimeblock>): Promise<MytoolTimeblock> { return this.workManagementRepository.updateMytoolTimeblock(id, data); }
+  async deleteMytoolTimeblock(id: number): Promise<void> { return this.workManagementRepository.deleteMytoolTimeblock(id); }
 
   // My Tool - Daily Reviews
   async getMytoolDailyReview(ownerUserId: number, date: string): Promise<MytoolDailyReview | undefined> {

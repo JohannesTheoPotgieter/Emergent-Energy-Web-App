@@ -4,11 +4,26 @@ import path from "path";
 type RateLimitEntry = {
   count: number;
   resetAt: number;
+  lastSeenAt: number;
 };
 
 const authLimiterStore = new Map<string, RateLimitEntry>();
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
-const AUTH_MAX_REQUESTS = 120;
+const AUTH_MAX_REQUESTS = 20;
+const AUTH_STORE_TTL_MS = 60 * 60 * 1000;
+
+const AUTH_ENDPOINTS = new Set([
+  "/api/auth/login",
+  "/api/auth/microsoft",
+  "/api/auth/microsoft/callback",
+]);
+
+const LARGE_JSON_ROUTES = new Set([
+  "/api/project-plan/structure",
+  "/api/planning-tasks/bulk",
+  "/api/operational-tasks/bulk-update",
+  "/api/admin/import/run",
+]);
 
 function getClientKey(req: Request): string {
   const forwardedFor = req.headers["x-forwarded-for"];
@@ -16,13 +31,31 @@ function getClientKey(req: Request): string {
   return `${ip}:${req.path}`;
 }
 
+function cleanupAuthLimiter(now: number): void {
+  for (const [key, value] of authLimiterStore.entries()) {
+    if (value.resetAt <= now || now - value.lastSeenAt > AUTH_STORE_TTL_MS) {
+      authLimiterStore.delete(key);
+    }
+  }
+}
+
 function authRateLimit(req: Request, res: Response, next: NextFunction): void {
+  if (!AUTH_ENDPOINTS.has(req.path)) {
+    next();
+    return;
+  }
+
   const key = getClientKey(req);
   const now = Date.now();
+
+  if (authLimiterStore.size > 5000 || now % 50 === 0) {
+    cleanupAuthLimiter(now);
+  }
+
   const current = authLimiterStore.get(key);
 
   if (!current || current.resetAt <= now) {
-    authLimiterStore.set(key, { count: 1, resetAt: now + AUTH_WINDOW_MS });
+    authLimiterStore.set(key, { count: 1, resetAt: now + AUTH_WINDOW_MS, lastSeenAt: now });
     next();
     return;
   }
@@ -33,6 +66,7 @@ function authRateLimit(req: Request, res: Response, next: NextFunction): void {
   }
 
   current.count += 1;
+  current.lastSeenAt = now;
   authLimiterStore.set(key, current);
   next();
 }
@@ -43,19 +77,33 @@ export function applySecurityAndParsingMiddleware(app: Express): void {
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
     next();
   });
 
-  app.use(
-    express.json({
-      limit: "100mb",
-      verify: (req, _res, buf) => {
-        (req as Request & { rawBody: unknown }).rawBody = buf;
-      },
-    }),
-  );
+  const defaultJsonParser = express.json({
+    limit: "2mb",
+    verify: (req, _res, buf) => {
+      (req as Request & { rawBody: unknown }).rawBody = buf;
+    },
+  });
 
-  app.use(express.urlencoded({ extended: false, limit: "1mb" }));
+  const largeJsonParser = express.json({
+    limit: "25mb",
+    verify: (req, _res, buf) => {
+      (req as Request & { rawBody: unknown }).rawBody = buf;
+    },
+  });
+
+  app.use((req, res, next) => {
+    if (LARGE_JSON_ROUTES.has(req.path)) {
+      return largeJsonParser(req, res, next);
+    }
+    return defaultJsonParser(req, res, next);
+  });
+
+  app.use(express.urlencoded({ extended: false, limit: "512kb" }));
 
   app.use(
     "/uploads",
@@ -78,5 +126,5 @@ export function applySecurityAndParsingMiddleware(app: Express): void {
     next(err);
   });
 
-  app.use(["/api/login", "/api/auth"], authRateLimit);
+  app.use(authRateLimit);
 }
