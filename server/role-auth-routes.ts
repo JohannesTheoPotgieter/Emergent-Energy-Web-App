@@ -6,13 +6,11 @@ import { generateToken, verifyToken } from "./jwt";
 import {
   roleCredentials,
   auditEvents,
-  appSettings,
   COMPANY_ROLES,
   COMPANY_ROLE_LABELS,
   ADMIN_ROLES,
   type CompanyRole,
 } from "@shared/schema";
-import { requireAuth, requireAdmin } from "./departments/shared-middleware";
 import { ApiError, sendError, badRequest, unauthorized, forbidden, serverError, logApiError } from "./lib/api-error";
 
 function isValidCompanyRole(role: string): role is CompanyRole {
@@ -277,51 +275,4 @@ export function registerRoleAuthRoutes(app: Express) {
     }
   });
 
-  app.get("/api/settings", async (req: Request, res: Response) => {
-    try {
-      const key = req.query.key as string;
-      if (!key) {
-        const all = await db.select().from(appSettings);
-        return res.json(all);
-      }
-      const [setting] = await db.select().from(appSettings).where(eq(appSettings.key, key));
-      if (!setting) return res.json({ key, value: null });
-      return res.json(setting);
-    } catch (err: any) {
-      logApiError("GET /api/settings", err);
-      return sendError(res, serverError("Failed to fetch settings"));
-    }
-  });
-
-  app.put("/api/settings", requireAuth, requireAdmin, async (req: Request, res: Response) => {
-    try {
-      const currentRole = req.user?.role || "unknown";
-
-      const { key, value } = req.body;
-      if (!key) return sendError(res, badRequest("key is required"));
-
-      const [existing] = await db.select().from(appSettings).where(eq(appSettings.key, key));
-      if (existing) {
-        await db.update(appSettings)
-          .set({ value, updatedBy: currentRole, updatedAt: new Date() })
-          .where(eq(appSettings.key, key));
-      } else {
-        await db.insert(appSettings).values({ key, value, updatedBy: currentRole });
-      }
-
-      await db.insert(auditEvents).values({
-        actorRole: currentRole,
-        source: "SETTINGS",
-        entityType: "app_settings",
-        entityId: key,
-        action: "setting_updated",
-        changesJson: { key, oldValue: existing?.value || null, newValue: value },
-      });
-
-      return res.json({ message: "Setting saved", key, value });
-    } catch (err: any) {
-      logApiError("PUT /api/settings", err);
-      return sendError(res, serverError("Failed to save setting"));
-    }
-  });
 }
