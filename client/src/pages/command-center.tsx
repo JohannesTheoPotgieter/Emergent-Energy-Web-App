@@ -64,6 +64,13 @@ interface ProjectSummary {
   progress?: number;
 }
 
+interface ApprovalSummaryItem {
+  title: string;
+  projectName: string;
+  status: string;
+  ageDays: number;
+}
+
 function normalizeTaskStatus(s: string): string {
   const v = (s || "").toLowerCase().trim();
   if (["done", "complete", "completed", "closed", "finished", "resolved", "pass"].includes(v)) return "complete";
@@ -287,6 +294,93 @@ export default function CommandCenterPage() {
       .slice(0, 12);
   }, [projectsData]);
 
+  const approvalQueue = useMemo(() => {
+    const pending = [
+      ...(allTaskData?.approvals?.engineering || []),
+      ...(allTaskData?.approvals?.quality || []),
+    ].filter((a: any) => {
+      const status = (a.status || "").toLowerCase();
+      return status === "pending" || status === "review";
+    });
+
+    const parseAgeDays = (value: any) => {
+      if (!value) return 0;
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return 0;
+      return Math.max(0, Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24)));
+    };
+
+    const queue: ApprovalSummaryItem[] = pending.map((a: any) => ({
+      title: a.title || a.stageName || "Pending Approval",
+      projectName: a.projectName || a.project || "Unknown Project",
+      status: a.status || "Pending",
+      ageDays: parseAgeDays(a.updatedAt || a.updated_at || a.createdAt || a.created_at || a.requestedAt || a.requested_at),
+    }));
+
+    const overdue = queue.filter((item) => item.ageDays >= 3).length;
+    return {
+      totalPending: queue.length,
+      overdue,
+      items: queue.sort((a, b) => b.ageDays - a.ageDays).slice(0, 6),
+    };
+  }, [allTaskData]);
+
+  const riskHotspots = useMemo(() => {
+    const redProjects = myProjects.filter((p) => (p.ragStatus || "").toLowerCase() === "red");
+    const amberProjects = myProjects.filter((p) => (p.ragStatus || "").toLowerCase() === "amber");
+    const greenProjects = myProjects.filter((p) => (p.ragStatus || "").toLowerCase() === "green");
+
+    const engineeringBlocked = (allTaskData?.engineeringTasks || []).filter((t: any) => normalizeTaskStatus(t.status || "") === "blocked").length;
+    const qualityBlocked = (allTaskData?.qualityTasks || []).filter((t: any) => normalizeTaskStatus(t.status || "") === "blocked").length;
+    const operationalBlocked = (allTaskData?.operational || []).filter((t: any) => normalizeTaskStatus(t.status || "") === "blocked").length;
+
+    return {
+      redProjects,
+      amberProjects,
+      greenProjects,
+      engineeringBlocked,
+      qualityBlocked,
+      operationalBlocked,
+    };
+  }, [myProjects, allTaskData]);
+
+  const executiveSignals = useMemo(() => {
+    return [
+      {
+        label: "Immediate Exceptions",
+        value: taskSummary.overdue + taskSummary.blocked,
+        subtitle: `${taskSummary.overdue} overdue · ${taskSummary.blocked} blocked`,
+        icon: AlertTriangle,
+        tone: taskSummary.overdue + taskSummary.blocked > 0 ? "border-red-200 bg-red-50" : "border-green-200 bg-green-50",
+        href: "/my-work/tasks",
+      },
+      {
+        label: "Projects At Risk",
+        value: riskHotspots.redProjects.length + riskHotspots.amberProjects.length,
+        subtitle: `${riskHotspots.redProjects.length} red · ${riskHotspots.amberProjects.length} amber`,
+        icon: FolderOpen,
+        tone: riskHotspots.redProjects.length > 0 ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50",
+        href: "/projects",
+      },
+      {
+        label: "Overdue Approvals",
+        value: approvalQueue.overdue,
+        subtitle: `${approvalQueue.totalPending} pending decisions`,
+        icon: FileCheck,
+        tone: approvalQueue.overdue > 0 ? "border-amber-200 bg-amber-50" : "border-green-200 bg-green-50",
+        href: "/my-work/approvals",
+      },
+      {
+        label: "Open Workload",
+        value: taskSummary.total - taskSummary.complete,
+        subtitle: `${taskSummary.inProgress} in progress · ${taskSummary.review} in review`,
+        icon: ListTodo,
+        tone: "border-slate-200 bg-slate-50",
+        href: "/my-work/tasks",
+      },
+    ];
+  }, [approvalQueue, riskHotspots, taskSummary]);
+
   const roleKpis = useMemo(() => {
     const kpis: { label: string; value: string | number; icon: any; color: string; subtitle?: string }[] = [];
     kpis.push({ label: "My Tasks", value: taskSummary.total, icon: ListTodo, color: "bg-blue-500", subtitle: `${taskSummary.inProgress} in progress` });
@@ -440,117 +534,172 @@ export default function CommandCenterPage() {
             </Card>
           )}
 
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3" data-testid="executive-signals">
+            {executiveSignals.map((signal) => (
+              <Link key={signal.label} href={signal.href}>
+                <Card className={`border ${signal.tone} hover:shadow-sm transition-shadow`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">{signal.label}</p>
+                        <p className="text-2xl font-bold leading-tight">{signal.value}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{signal.subtitle}</p>
+                      </div>
+                      <signal.icon className="h-4 w-4 text-green-700" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            <div className="xl:col-span-7 space-y-6">
+              <Card data-testid="attention-section">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-500" />
+                      Immediate Attention Queue
+                    </CardTitle>
+                    <Badge variant="secondary">{attentionItems.length}</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {attentionItems.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No urgent exceptions currently open.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-[360px] overflow-y-auto">
+                      {attentionItems.map((item, i) => (
+                        <AttentionItem key={i} {...item} />
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card data-testid="approvals-command-section">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <FileCheck className="h-4 w-4 text-green-600" />
+                      Approval Command Queue
+                    </CardTitle>
+                    <Link href="/my-work/approvals">
+                      <Button variant="ghost" size="sm" className="text-xs">Open Approvals <ArrowRight className="h-3 w-3 ml-1" /></Button>
+                    </Link>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg border bg-muted/30 p-3">
+                      <p className="text-xs text-muted-foreground">Pending approvals</p>
+                      <p className="text-xl font-semibold">{approvalQueue.totalPending}</p>
+                    </div>
+                    <div className="rounded-lg border bg-muted/30 p-3">
+                      <p className="text-xs text-muted-foreground">Overdue (&gt;= 3 days)</p>
+                      <p className="text-xl font-semibold">{approvalQueue.overdue}</p>
+                    </div>
+                  </div>
+                  {approvalQueue.items.length > 0 ? (
+                    <div className="space-y-2">
+                      {approvalQueue.items.map((item, idx) => (
+                        <div key={`${item.title}-${idx}`} className="flex items-center gap-3 rounded-lg border p-2.5">
+                          <Clock className="h-4 w-4 text-amber-500" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">{item.title}</p>
+                            <p className="text-xs text-muted-foreground truncate">{item.projectName} · {item.status}</p>
+                          </div>
+                          <Badge variant={item.ageDays >= 3 ? "destructive" : "outline"}>{item.ageDays}d</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No approvals waiting for decision.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="xl:col-span-5 space-y-6">
+              <Card data-testid="risk-hotspots-section">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-green-600" />
+                      Risk Hotspots
+                    </CardTitle>
+                    <Link href="/projects"><Button variant="ghost" size="sm" className="text-xs">View Projects <ArrowRight className="h-3 w-3 ml-1" /></Button></Link>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-center">
+                      <p className="text-xs text-muted-foreground">Red</p>
+                      <p className="text-xl font-semibold">{riskHotspots.redProjects.length}</p>
+                    </div>
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-center">
+                      <p className="text-xs text-muted-foreground">Amber</p>
+                      <p className="text-xl font-semibold">{riskHotspots.amberProjects.length}</p>
+                    </div>
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-center">
+                      <p className="text-xs text-muted-foreground">Green</p>
+                      <p className="text-xl font-semibold">{riskHotspots.greenProjects.length}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {riskHotspots.redProjects.slice(0, 4).map((p, i) => (
+                      <Link key={`${p.name}-${i}`} href={`/project/${encodeURIComponent(p.name)}`}>
+                        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50/60 p-2.5">
+                          <AlertTriangle className="h-4 w-4 text-red-600" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">{p.name}</p>
+                            <p className="text-xs text-muted-foreground">{p.phase || "No phase set"}</p>
+                          </div>
+                          <Badge variant="destructive">Red</Badge>
+                        </div>
+                      </Link>
+                    ))}
+                    {riskHotspots.redProjects.length === 0 && (
+                      <p className="text-sm text-muted-foreground">No red projects right now.</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card data-testid="portfolio-health-section">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Gauge className="h-4 w-4 text-green-600" />
+                    Portfolio & Delivery Health
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <StatusBreakdownBar summary={taskSummary} />
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-lg border bg-muted/40 p-2.5 text-center">
+                      <p className="text-xs text-muted-foreground">Engineering blocked</p>
+                      <p className="text-lg font-semibold">{riskHotspots.engineeringBlocked}</p>
+                    </div>
+                    <div className="rounded-lg border bg-muted/40 p-2.5 text-center">
+                      <p className="text-xs text-muted-foreground">Quality blocked</p>
+                      <p className="text-lg font-semibold">{riskHotspots.qualityBlocked}</p>
+                    </div>
+                    <div className="rounded-lg border bg-muted/40 p-2.5 text-center">
+                      <p className="text-xs text-muted-foreground">Ops blocked</p>
+                      <p className="text-lg font-semibold">{riskHotspots.operationalBlocked}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
           <KPIStrip className="grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5" data-testid="kpi-cards-section">
             {(isMobile ? roleKpis.slice(0, 4) : roleKpis).map((kpi, i) => (
               <KpiCard key={i} {...kpi} />
             ))}
           </KPIStrip>
-
-          {attentionItems.length > 0 && (
-            <Card data-testid="attention-section">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
-                  What Needs Your Attention
-                  <Badge variant="secondary" className="ml-auto">{attentionItems.length}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                  {attentionItems.map((item, i) => (
-                    <AttentionItem key={i} {...item} />
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          <div className="grid md:grid-cols-2 gap-6">
-            <Card className="hidden md:block lg:hidden" data-testid="tablet-field-execution-section">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Gauge className="h-4 w-4 text-green-600" />
-                  Field Execution
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-2">
-                  <Link href="/projects"><Button variant="outline" className="w-full justify-start">Switch Project</Button></Link>
-                  <Link href="/execution-board"><Button variant="outline" className="w-full justify-start">Execution Board</Button></Link>
-                  <Link href="/my-work/approvals"><Button variant="outline" className="w-full justify-start">Approvals</Button></Link>
-                  <Link href="/pm/on-the-go"><Button variant="outline" className="w-full justify-start">On-the-Go</Button></Link>
-                </div>
-              </CardContent>
-            </Card>
-            <Card data-testid="task-status-section">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <ListTodo className="h-4 w-4" />
-                    My Tasks
-                  </CardTitle>
-                  <Link href="/my-work/tasks">
-                    <Button variant="ghost" size="sm" className="text-xs" data-testid="link-view-all-tasks">
-                      View All <ArrowRight className="h-3 w-3 ml-1" />
-                    </Button>
-                  </Link>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <StatusBreakdownBar summary={taskSummary} />
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <p className="text-2xl font-bold">{taskSummary.total - taskSummary.complete}</p>
-                    <p className="text-xs text-muted-foreground">Open Tasks</p>
-                  </div>
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <p className="text-2xl font-bold">{taskSummary.complete}</p>
-                    <p className="text-xs text-muted-foreground">Completed</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card data-testid="projects-section">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <FolderOpen className="h-4 w-4" />
-                    Projects
-                  </CardTitle>
-                  <Link href="/projects">
-                    <Button variant="ghost" size="sm" className="text-xs" data-testid="link-view-all-projects">
-                      View All <ArrowRight className="h-3 w-3 ml-1" />
-                    </Button>
-                  </Link>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {myProjects.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">No active projects</p>
-                ) : (
-                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                    {myProjects.map((p, i) => (
-                      <Link key={i} href={`/project/${encodeURIComponent(p.name)}`}>
-                        <div className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer" data-testid={`project-row-${i}`}>
-                          <StatusDot status={p.ragStatus || ""} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{p.name}</p>
-                            {p.phase && <p className="text-xs text-muted-foreground">{p.phase}</p>}
-                          </div>
-                          {p.ragStatus && (
-                            <Badge variant="outline" className="text-xs shrink-0">
-                              {p.ragStatus}
-                            </Badge>
-                          )}
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
 
           <Card data-testid="quick-links-section">
             <CardHeader className="pb-3">
