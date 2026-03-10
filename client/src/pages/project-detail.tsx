@@ -10,6 +10,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import {
   FileText, DollarSign, CreditCard, TrendingUp, BarChart3, Activity,
@@ -17,7 +18,7 @@ import {
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
-  MessageSquare, FolderOpen, Bell, Mail, ThumbsUp, ThumbsDown, FileCheck, Inbox,
+  MessageSquare, FolderOpen, Bell, Mail, ThumbsUp, ThumbsDown, FileCheck, Inbox, MoreHorizontal,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { ProjectPlanTab } from "@/components/tabs/ProjectPlanTab";
@@ -1154,9 +1155,6 @@ export default function ProjectDetailPage() {
               { key: "plan", label: "Plan", icon: CalendarDays, activeClass: "bg-sky-50 text-sky-700 shadow-sm", visible: canViewTab.overview },
               { key: "engineering", label: "Engineering", icon: Wrench, activeClass: "bg-orange-50 text-orange-700 shadow-sm", visible: canViewTab.engineering },
               { key: "quality", label: "Quality", icon: ShieldCheck, activeClass: "bg-emerald-50 text-emerald-700 shadow-sm", visible: canViewTab.quality },
-              { key: "finance", label: "Finance", icon: DollarSign, activeClass: "bg-violet-50 text-violet-700 shadow-sm", visible: canViewTab.expenditure },
-              { key: "collaboration", label: "Collaboration", icon: Users, activeClass: "bg-teal-50 text-teal-700 shadow-sm", visible: true },
-              { key: "pd", label: "PD", icon: FileText, activeClass: "bg-indigo-50 text-indigo-700 shadow-sm", visible: true },
             ].filter(t => t.visible).map(tab => {
               const Icon = tab.icon;
               const isActive = overviewTab === tab.key;
@@ -1172,6 +1170,34 @@ export default function ProjectDetailPage() {
                 </button>
               );
             })}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="overview-tab-more">
+                  <MoreHorizontal className="h-3.5 w-3.5" /> More
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-44 p-1.5 space-y-1">
+                {[
+                  { key: "finance", label: "Finance", icon: DollarSign, visible: canViewTab.expenditure },
+                  { key: "collaboration", label: "Collaboration", icon: Users, visible: true },
+                  { key: "pd", label: "PD", icon: FileText, visible: true },
+                ].filter(t => t.visible).map(tab => {
+                  const Icon = tab.icon;
+                  return (
+                    <Button
+                      key={tab.key}
+                      variant={overviewTab === tab.key ? "secondary" : "ghost"}
+                      size="sm"
+                      className="w-full justify-start text-xs"
+                      onClick={() => setOverviewTab(tab.key)}
+                      data-testid={`overview-tab-${tab.key}`}
+                    >
+                      <Icon className="h-3.5 w-3.5 mr-1.5" /> {tab.label}
+                    </Button>
+                  );
+                })}
+              </PopoverContent>
+            </Popover>
           </div>
 
           <Card className="shadow-sm" data-testid="overview-panel">

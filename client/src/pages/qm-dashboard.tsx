@@ -593,6 +593,25 @@ export default function QmDashboardPage() {
                       { value: "completed", label: "Completed" },
                     ]}
                   />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5" data-testid="qm-project-more-filters">
+                        <ListFilter className="h-3.5 w-3.5" /> More
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-56 p-3">
+                      <label className="text-[11px] text-muted-foreground font-medium block mb-2">Warnings</label>
+                      <Button
+                        variant={warningFilter ? "default" : "outline"}
+                        size="sm"
+                        className="w-full justify-start text-xs"
+                        onClick={() => setWarningFilter(!warningFilter)}
+                        data-testid="toggle-warning-filter"
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5 mr-1.5" /> Only projects with warnings
+                      </Button>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
             </CardHeader>
@@ -787,28 +806,37 @@ export default function QmDashboardPage() {
                       { value: "na", label: "N/A" },
                     ]}
                   />
-                  <SearchableSelect
-                    value={itemsProjectFilter}
-                    onValueChange={setItemsProjectFilter}
-                    placeholder="Project"
-                    triggerClassName="w-[150px] h-9"
-                    data-testid="select-items-project"
-                    options={[
-                      { value: "all", label: "All Projects" },
-                      ...itemProjects.map(p => ({ value: p, label: p })),
-                    ]}
-                  />
-                  <SearchableSelect
-                    value={itemsPhaseFilter}
-                    onValueChange={setItemsPhaseFilter}
-                    placeholder="Phase"
-                    triggerClassName="w-[140px] h-9"
-                    data-testid="select-items-phase"
-                    options={[
-                      { value: "all", label: "All Phases" },
-                      ...itemPhases.map(p => ({ value: p, label: p })),
-                    ]}
-                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5" data-testid="qm-items-more-filters">
+                        <ListFilter className="h-3.5 w-3.5" /> More
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-64 p-3 space-y-2.5">
+                      <SearchableSelect
+                        value={itemsProjectFilter}
+                        onValueChange={setItemsProjectFilter}
+                        placeholder="Project"
+                        triggerClassName="w-full h-9"
+                        data-testid="select-items-project"
+                        options={[
+                          { value: "all", label: "All Projects" },
+                          ...itemProjects.map(p => ({ value: p, label: p })),
+                        ]}
+                      />
+                      <SearchableSelect
+                        value={itemsPhaseFilter}
+                        onValueChange={setItemsPhaseFilter}
+                        placeholder="Phase"
+                        triggerClassName="w-full h-9"
+                        data-testid="select-items-phase"
+                        options={[
+                          { value: "all", label: "All Phases" },
+                          ...itemPhases.map(p => ({ value: p, label: p })),
+                        ]}
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </div>
             </CardHeader>

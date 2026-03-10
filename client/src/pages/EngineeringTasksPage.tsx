@@ -3095,7 +3095,7 @@ export default function EngineeringTasksPage() {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[150px] sm:min-w-[200px] max-w-xs">
+        <div className="relative flex-1 min-w-[150px] sm:min-w-[220px] max-w-sm">
           <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
           <Input
             data-testid="input-task-search"
@@ -3116,52 +3116,61 @@ export default function EngineeringTasksPage() {
           ]}
           data-testid="filter-task-status"
         />
-        <SearchableSelect
-          value={priorityFilter}
-          onValueChange={setPriorityFilter}
-          placeholder="Priority"
-          triggerClassName="w-[110px] sm:w-[130px] h-8 text-xs"
-          options={[
-            { value: "all", label: "All Priorities" },
-            ...PRIORITIES.map(p => ({ value: p, label: p })),
-          ]}
-          data-testid="filter-task-priority"
-        />
-        {uniqueAssignees.length > 0 && (
-          <SearchableSelect
-            value={assigneeFilter}
-            onValueChange={(val) => {
-              setAssigneeFilter(val);
-              if (val === "all") {
-                setMyTasksOnly(false);
-              } else if (myName && val.toLowerCase() === myName.toLowerCase()) {
-                setMyTasksOnly(true);
-              } else {
-                setMyTasksOnly(false);
-              }
-            }}
-            placeholder="Assignee"
-            triggerClassName="w-[120px] sm:w-[140px] h-8 text-xs"
-            options={[
-              { value: "all", label: "All Assignees" },
-              ...uniqueAssignees.map(a => ({ value: a, label: a })),
-            ]}
-            data-testid="filter-task-assignee"
-          />
-        )}
-        {uniqueProjects.length > 0 && (
-          <SearchableSelect
-            value={projectFilter}
-            onValueChange={setProjectFilter}
-            placeholder="Project"
-            triggerClassName="w-[130px] sm:w-[160px] h-8 text-xs"
-            options={[
-              { value: "all", label: "All Projects" },
-              ...uniqueProjects.map(p => ({ value: p, label: p.replace(/_Tracker.*$/i, "").replace(/_/g, " ") })),
-            ]}
-            data-testid="filter-task-project"
-          />
-        )}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="filter-task-more">
+              <Filter className="h-3.5 w-3.5" /> More
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-72 p-3 space-y-2.5">
+            <SearchableSelect
+              value={priorityFilter}
+              onValueChange={setPriorityFilter}
+              placeholder="Priority"
+              triggerClassName="w-full h-8 text-xs"
+              options={[
+                { value: "all", label: "All Priorities" },
+                ...PRIORITIES.map(p => ({ value: p, label: p })),
+              ]}
+              data-testid="filter-task-priority"
+            />
+            {uniqueAssignees.length > 0 && (
+              <SearchableSelect
+                value={assigneeFilter}
+                onValueChange={(val) => {
+                  setAssigneeFilter(val);
+                  if (val === "all") {
+                    setMyTasksOnly(false);
+                  } else if (myName && val.toLowerCase() === myName.toLowerCase()) {
+                    setMyTasksOnly(true);
+                  } else {
+                    setMyTasksOnly(false);
+                  }
+                }}
+                placeholder="Assignee"
+                triggerClassName="w-full h-8 text-xs"
+                options={[
+                  { value: "all", label: "All Assignees" },
+                  ...uniqueAssignees.map(a => ({ value: a, label: a })),
+                ]}
+                data-testid="filter-task-assignee"
+              />
+            )}
+            {uniqueProjects.length > 0 && (
+              <SearchableSelect
+                value={projectFilter}
+                onValueChange={setProjectFilter}
+                placeholder="Project"
+                triggerClassName="w-full h-8 text-xs"
+                options={[
+                  { value: "all", label: "All Projects" },
+                  ...uniqueProjects.map(p => ({ value: p, label: p.replace(/_Tracker.*$/i, "").replace(/_/g, " ") })),
+                ]}
+                data-testid="filter-task-project"
+              />
+            )}
+          </PopoverContent>
+        </Popover>
       </div>
 
       <MicroWalkthrough screenId="eng-tasks" steps={engWalkthroughSteps} />
