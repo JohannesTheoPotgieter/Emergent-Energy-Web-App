@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -4796,6 +4796,34 @@ export const projectLinks = pgTable("project_links", {
 export const insertProjectLinkSchema = createInsertSchema(projectLinks).omit({ id: true, linkedAt: true } as any);
 export type InsertProjectLink = z.infer<typeof insertProjectLinkSchema>;
 export type ProjectLink = typeof projectLinks.$inferSelect;
+
+export const msCreateItemLinks = pgTable("ms_create_item_links", {
+  id: serial("id").primaryKey(),
+  sourceType: text("source_type").notNull(),
+  sourceRef: text("source_ref").notNull(),
+  sourceDeepLink: text("source_deep_link"),
+  sourceTitle: text("source_title"),
+  sourceSenderOrAuthor: text("source_sender_or_author"),
+  createdItemType: text("created_item_type").notNull(),
+  createdItemId: integer("created_item_id").notNull(),
+  category: text("category"),
+  projectBehavior: text("project_behavior"),
+  suggestedValues: jsonb("suggested_values"),
+  chosenValues: jsonb("chosen_values"),
+  overrideReasons: jsonb("override_reasons"),
+  createdBy: integer("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  sourceItemCreateTypeUnique: unique("ms_create_item_links_source_ref_type_unique").on(
+    table.sourceType,
+    table.sourceRef,
+    table.createdItemType,
+  ),
+}));
+
+export const insertMsCreateItemLinkSchema = createInsertSchema(msCreateItemLinks).omit({ id: true, createdAt: true } as any);
+export type InsertMsCreateItemLink = z.infer<typeof insertMsCreateItemLinkSchema>;
+export type MsCreateItemLink = typeof msCreateItemLinks.$inferSelect;
 
 export const workItemWorkstreamEnum = pgEnum('work_item_workstream', ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE']);
 export const workItemSourceEnum = pgEnum('work_item_source', ['SMART_IMPORT', 'UI', 'INTEGRATION', 'SYSTEM']);
