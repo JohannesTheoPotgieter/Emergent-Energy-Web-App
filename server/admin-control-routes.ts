@@ -82,19 +82,32 @@ router.get("/api/admin/control-center/feature-flags", requireAuth, requireAdmin,
 router.put("/api/admin/control-center/feature-flags/:key", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { key } = req.params;
-    const { value } = req.body;
+    const { value, reason, suggestedValue } = req.body;
+    const normalizedValue = !!value;
+    const normalizedSuggestedValue = suggestedValue === undefined || suggestedValue === null ? null : !!suggestedValue;
+    const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+
+    if (normalizedSuggestedValue !== null && normalizedSuggestedValue !== normalizedValue && !normalizedReason) {
+      return res.status(400).json({ error: "Override reason is required when the chosen value differs from the suggested value." });
+    }
+
     const userName = (req.user as any)?.name || "admin";
-    await setFeatureFlag(key, !!value, userName);
+    await setFeatureFlag(key, normalizedValue, userName);
 
     logAuditFromReq(req, {
       entityType: "feature_flag",
       entityId: key,
-      action: "toggle",
+      action: normalizedSuggestedValue !== null && normalizedSuggestedValue !== normalizedValue ? "override" : "toggle",
       source: "SETTINGS",
-      changesJson: { key, value: !!value },
+      changesJson: {
+        key,
+        suggestedValue: normalizedSuggestedValue,
+        finalValue: normalizedValue,
+        reason: normalizedReason || null,
+      },
     });
 
-    res.json({ success: true, key, value: !!value });
+    res.json({ success: true, key, value: normalizedValue });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to update feature flag" });
   }
