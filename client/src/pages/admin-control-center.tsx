@@ -7,6 +7,8 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -64,6 +66,14 @@ interface FeatureFlag {
   rawValue: string | null;
   updatedBy: string | null;
   updatedAt: string | null;
+}
+
+interface RolloutFoundationFlag {
+  key: string;
+  label: string;
+  description: string;
+  defaultValue: boolean;
+  value: boolean;
 }
 
 interface EnumData {
@@ -128,6 +138,7 @@ export default function AdminControlCenterPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [clearDays, setClearDays] = useState("90");
+  const [flagOverrideDraft, setFlagOverrideDraft] = useState<{ key: string; value: boolean; suggestedValue: boolean; reason: string } | null>(null);
 
   const { data: health, isLoading: healthLoading } = useAdminFetch<HealthData>(
     "/api/admin/control-center/health",
@@ -138,6 +149,11 @@ export default function AdminControlCenterPage() {
     "/api/admin/control-center/feature-flags",
     ["admin-control-flags"]
   );
+  const { data: rolloutFoundation } = useAdminFetch<{ flags: RolloutFoundationFlag[] }>(
+    "/api/admin/control-center/rollout-foundation",
+    ["admin-control-rollout-foundation"]
+  );
+
 
   const { data: enums, isLoading: enumsLoading } = useAdminFetch<EnumData>(
     "/api/admin/control-center/enums",
@@ -215,7 +231,7 @@ export default function AdminControlCenterPage() {
   });
 
   const toggleFlag = useMutation({
-    mutationFn: async ({ key, value }: { key: string; value: boolean }) => {
+    mutationFn: async ({ key, value, reason, suggestedValue }: { key: string; value: boolean; reason?: string; suggestedValue?: boolean | null }) => {
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -223,7 +239,7 @@ export default function AdminControlCenterPage() {
         method: "PUT",
         headers,
         credentials: "include",
-        body: JSON.stringify({ value }),
+        body: JSON.stringify({ value, reason, suggestedValue }),
       });
       if (!res.ok) throw new Error("Failed to toggle flag");
       return res.json();
@@ -231,6 +247,10 @@ export default function AdminControlCenterPage() {
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ["admin-control-flags"] });
       toast({ title: "Feature flag updated", description: `${vars.key} set to ${vars.value ? "ON" : "OFF"}` });
+      setFlagOverrideDraft(null);
+    },
+    onError: (err: any) => {
+      toast({ title: "Update failed", description: err?.message || "Failed to update flag", variant: "destructive" });
     },
   });
 
@@ -272,16 +292,53 @@ export default function AdminControlCenterPage() {
     },
   });
 
-  const quickLinks = [
-    { label: "Recovery Center", path: "/admin/recovery", icon: ShieldAlert },
-    { label: "KPI Traceability", path: "/admin/kpi-traceability", icon: Activity },
-    { label: "Import Control Tower", path: "/admin/import-control-tower", icon: FileUp },
-    { label: "Users & Roles", path: "/admin/roles", icon: Users },
-    { label: "Activity Log", path: "/admin/activity-log", icon: Activity },
-    { label: "App Settings", path: "/admin/settings", icon: Settings },
-    { label: "Database Migration", path: "/admin/database-migration", icon: Database },
-    { label: "Smart Import", path: "/smart-import", icon: FileUp },
-  ];
+  const cleanedAdminVisibilityEnabled = flags?.find((flag) => flag.key === "cleaned_admin_visibility")?.value === true;
+
+  const quickLinkSections = cleanedAdminVisibilityEnabled
+    ? [
+        {
+          title: "Users & Roles",
+          items: [{ label: "Users & Roles", path: "/admin/roles", icon: Users }],
+        },
+        {
+          title: "Integrations",
+          items: [{ label: "App Settings", path: "/admin/settings", icon: Settings }],
+        },
+        {
+          title: "Import / Data Control",
+          items: [{ label: "Import Control Tower", path: "/admin/import-control-tower", icon: FileUp }],
+        },
+        {
+          title: "KPI / Traceability",
+          items: [{ label: "KPI Traceability", path: "/admin/kpi-traceability", icon: Activity }],
+        },
+        {
+          title: "Recovery / Audit",
+          items: [
+            { label: "Recovery Center", path: "/admin/recovery", icon: ShieldAlert },
+            { label: "Activity Log", path: "/admin/activity-log", icon: Activity },
+          ],
+        },
+        {
+          title: "System Controls",
+          items: [{ label: "Control Center", path: "/admin/control-center", icon: Database }],
+        },
+      ]
+    : [
+        {
+          title: "Admin pages and tools",
+          items: [
+            { label: "Recovery Center", path: "/admin/recovery", icon: ShieldAlert },
+            { label: "KPI Traceability", path: "/admin/kpi-traceability", icon: Activity },
+            { label: "Import Control Tower", path: "/admin/import-control-tower", icon: FileUp },
+            { label: "Users & Roles", path: "/admin/roles", icon: Users },
+            { label: "Activity Log", path: "/admin/activity-log", icon: Activity },
+            { label: "App Settings", path: "/admin/settings", icon: Settings },
+            { label: "Database Migration", path: "/admin/database-migration", icon: Database },
+            { label: "Smart Import", path: "/smart-import", icon: FileUp },
+          ],
+        },
+      ];
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto" data-testid="admin-control-center">
@@ -577,20 +634,27 @@ export default function AdminControlCenterPage() {
               <ExternalLink className="h-4 w-4 text-sky-600" />
               Quick Links
             </CardTitle>
-            <CardDescription>Admin pages and tools</CardDescription>
+            <CardDescription>{cleanedAdminVisibilityEnabled ? "Production-ready admin structure" : "Admin pages and tools"}</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-2">
-              {quickLinks.map(link => (
-                <a
-                  key={link.path}
-                  href={link.path}
-                  className="flex items-center gap-2 p-2.5 rounded-lg border border-border hover:bg-accent transition-colors text-sm"
-                  data-testid={`link-${link.label.toLowerCase().replace(/\s+/g, "-")}`}
-                >
-                  <link.icon className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="truncate">{link.label}</span>
-                </a>
+            <div className="space-y-3">
+              {quickLinkSections.map((section) => (
+                <div key={section.title} className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{section.title}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {section.items.map((link) => (
+                      <a
+                        key={link.path}
+                        href={link.path}
+                        className="flex items-center gap-2 p-2.5 rounded-lg border border-border hover:bg-accent transition-colors text-sm"
+                        data-testid={`link-${link.label.toLowerCase().replace(/\s+/g, "-")}`}
+                      >
+                        <link.icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="truncate">{link.label}</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </CardContent>
@@ -679,7 +743,14 @@ export default function AdminControlCenterPage() {
                   </div>
                   <Switch
                     checked={flag.value}
-                    onCheckedChange={(checked) => toggleFlag.mutate({ key: flag.key, value: checked })}
+                    onCheckedChange={(checked) => {
+                      const rolloutFlag = rolloutFoundation?.flags?.find((item) => item.key === flag.key);
+                      if (cleanedAdminVisibilityEnabled && rolloutFlag && rolloutFlag.defaultValue !== checked) {
+                        setFlagOverrideDraft({ key: flag.key, value: checked, suggestedValue: rolloutFlag.defaultValue, reason: "" });
+                        return;
+                      }
+                      toggleFlag.mutate({ key: flag.key, value: checked, suggestedValue: rolloutFlag?.defaultValue ?? null });
+                    }}
                     data-testid={`switch-flag-${flag.key}`}
                   />
                 </div>
@@ -1010,6 +1081,44 @@ export default function AdminControlCenterPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={!!flagOverrideDraft} onOpenChange={(open) => { if (!open) setFlagOverrideDraft(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Override suggested flag value</DialogTitle>
+            <DialogDescription>
+              A reason is required when overriding the recommended value. This is audit logged with suggested and final values.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="flag-override-reason">Reason</Label>
+            <Input
+              id="flag-override-reason"
+              value={flagOverrideDraft?.reason ?? ""}
+              onChange={(e) => setFlagOverrideDraft((prev) => (prev ? { ...prev, reason: e.target.value } : prev))}
+              placeholder="Describe why the suggested value is being overridden"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFlagOverrideDraft(null)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!flagOverrideDraft) return;
+                toggleFlag.mutate({
+                  key: flagOverrideDraft.key,
+                  value: flagOverrideDraft.value,
+                  suggestedValue: flagOverrideDraft.suggestedValue,
+                  reason: flagOverrideDraft.reason,
+                });
+              }}
+              disabled={!flagOverrideDraft?.reason.trim() || toggleFlag.isPending}
+            >
+              Save override
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
