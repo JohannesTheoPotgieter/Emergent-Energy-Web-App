@@ -20,6 +20,8 @@ import { enforceRuntimeEnvironmentGuards } from "./bootstrap/env-guard";
 import { applyRequestLogging } from "./bootstrap/http-observability";
 import { registerGlobalErrorHandler } from "./bootstrap/error-handling";
 import { shouldRunRuntimeStartupMigrations } from "./bootstrap/maintenance-guard";
+import { getEnvironmentStatus } from "./bootstrap/environment-status";
+import { getRuntimeMutationPolicy } from "./bootstrap/runtime-mutation-policy";
 
 const app = express();
 const httpServer = createServer(app);
@@ -94,31 +96,12 @@ app.use(passport.session());
 applyRequestLogging(app, log);
 
 app.get("/api/environment/status", async (_req, res) => {
-  const scheduler = getSchedulerStatus();
-  const isProduction = process.env.NODE_ENV === "production";
-  const modes = getStartupModes();
-  return res.status(200).json({
-    dbMode,
-    sessionMode: dbMode === "postgres" ? "postgres" : "memory",
-    migrationStatus: process.env.ENABLE_STARTUP_MIGRATIONS === "true" ? "runtime-startup-enabled" : "startup-disabled-use-migrations",
-    schedulerStatus: scheduler,
-    nodeEnv: process.env.NODE_ENV || "development",
-    productionPostgresRequired: isProduction,
-    startupModes: {
-      startupMaintenanceEnabled: modes.startupMaintenanceEnabled,
-      startupSchemaRepairEnabled: modes.startupSchemaRepairEnabled,
-      startupDataSeedEnabled: modes.startupDataSeedEnabled,
-      startupBackfillEnabled: modes.startupBackfillEnabled,
-      startupSessionResetEnabled: modes.startupSessionResetEnabled,
-      startupReadOnlyByDefault: modes.startupReadOnlyByDefault,
-      startupMutationClassification: modes.startupMutationClassification,
-    },
-  });
+  return res.status(200).json(getEnvironmentStatus());
 });
 
 async function backfillPmUserIds() {
   try {
-    if (startupSchemaRepairEnabled) await db.execute(sql.raw(`ALTER TABLE project_info ADD COLUMN IF NOT EXISTS pm_user_id INTEGER REFERENCES users(id)`));
+    if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) await db.execute(sql.raw(`ALTER TABLE project_info ADD COLUMN IF NOT EXISTS pm_user_id INTEGER REFERENCES users(id)`));
 
     const mappings: [string, string[]][] = [
       ["eon", ["Eon Van Rensburg", "Eon Van Rensberg"]],
@@ -175,7 +158,8 @@ async function backfillPmUserIds() {
 
   // Runtime user seeding removed for trustability; use explicit migration/seed scripts instead.
 
-  const startupMigrationsEnabled = shouldRunRuntimeStartupMigrations(startupSchemaRepairEnabled, log);
+  const runtimeMutationPolicy = getRuntimeMutationPolicy(startupModes);
+  const startupMigrationsEnabled = runtimeMutationPolicy.runtimeMaintenanceEnabled && shouldRunRuntimeStartupMigrations(startupSchemaRepairEnabled, log);
   if (startupMigrationsEnabled) {
   try {
     await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
@@ -190,15 +174,15 @@ async function backfillPmUserIds() {
 
   log(`[Startup] maintenance=${startupMaintenanceEnabled} schemaRepair=${startupSchemaRepairEnabled} dataSeed=${startupDataSeedEnabled} backfill=${startupBackfillEnabled} sessionReset=${startupSessionResetEnabled}`);
 
-  if (startupDataSeedEnabled) {
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupDataSeedEnabled) {
     log("[Startup] ENABLE_STARTUP_DATA_SEED is set, but user seeding is intentionally disabled at runtime. Use explicit seed scripts.");
   }
 
-  if (startupBackfillEnabled) {
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupBackfillEnabled) {
     await backfillPmUserIds();
   }
 
-  if (startupSchemaRepairEnabled) {
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) {
     try {
       await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
       await db.execute(sql.raw(`ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS no_revenue_linked BOOLEAN DEFAULT FALSE`));
@@ -364,7 +348,7 @@ async function backfillPmUserIds() {
   registerApprovalsRoutes(app);
 
   const { registerGamificationRoutes, ensureGamificationTables } = await import("./gamification-routes");
-  if (startupSchemaRepairEnabled) await ensureGamificationTables();
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) await ensureGamificationTables();
   registerGamificationRoutes(app);
 
   const { registerWeeklyReviewRoutes } = await import("./weekly-review-routes");
@@ -377,11 +361,11 @@ async function backfillPmUserIds() {
   registerPmOnTheGoRoutes(app);
 
   const { registerPoRoutes, ensurePoTables } = await import("./po-routes");
-  if (startupSchemaRepairEnabled) await ensurePoTables();
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) await ensurePoTables();
   registerPoRoutes(app);
 
   const { registerDeliverableCaptureRoutes, ensureDeliverableCaptureColumns } = await import("./deliverable-capture-routes");
-  if (startupSchemaRepairEnabled) await ensureDeliverableCaptureColumns();
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) await ensureDeliverableCaptureColumns();
   registerDeliverableCaptureRoutes(app);
 
   const { registerTrRegisterRoutes, seedTrRegisterData } = await import("./tr-register-routes");
@@ -552,7 +536,7 @@ async function backfillPmUserIds() {
     log('Skipped periodic sync startup due to STARTUP_ENABLE_PERIODIC_SYNC=false', 'sync');
   }
 
-  if (startupSchemaRepairEnabled) await db.execute(sql.raw(`
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) await db.execute(sql.raw(`
     CREATE TABLE IF NOT EXISTS portfolios (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
@@ -596,9 +580,9 @@ async function backfillPmUserIds() {
     );
   `)).catch(err => console.error('[Portfolio] Table creation error:', err));
 
-  if (startupSchemaRepairEnabled) {
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) {
   // Phase 1: Canonical work_items schema migration (additive only)
-  if (startupSchemaRepairEnabled) try {
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) try {
     await db.execute(sql.raw(`ALTER TABLE project_info ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id)`));
     await db.execute(sql.raw(`CREATE INDEX IF NOT EXISTS idx_project_info_client_id ON project_info(client_id)`));
 
@@ -781,7 +765,7 @@ async function backfillPmUserIds() {
   }
   }
 
-  if (startupSchemaRepairEnabled) try {
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) try {
     await db.execute(sql.raw(`
       ALTER TABLE ms_accounts ADD COLUMN IF NOT EXISTS sso_access_token TEXT;
       ALTER TABLE ms_accounts ADD COLUMN IF NOT EXISTS sso_token_expires_at TIMESTAMP;
@@ -791,7 +775,7 @@ async function backfillPmUserIds() {
   }
 
 
-  if (startupSchemaRepairEnabled) try {
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) try {
     await db.execute(sql.raw(`
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS expected_pct_complete REAL;
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS indent_level INTEGER DEFAULT 0;
@@ -922,7 +906,7 @@ async function backfillPmUserIds() {
       console.error("[Backfill] assignee_user_ids sync error:", err.message);
     }
 
-  if (startupSchemaRepairEnabled) try {
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) try {
     await db.execute(sql.raw(`
       CREATE TABLE IF NOT EXISTS user_project_folders (
         id SERIAL PRIMARY KEY,
@@ -938,7 +922,7 @@ async function backfillPmUserIds() {
     console.error('[Migration] user_project_folders error:', err.message);
   }
 
-  if (startupSchemaRepairEnabled) try {
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) try {
     await db.execute(sql.raw(`ALTER TABLE smart_import_runs ADD COLUMN IF NOT EXISTS records_attempted INTEGER`));
     await db.execute(sql.raw(`ALTER TABLE smart_import_runs ADD COLUMN IF NOT EXISTS records_succeeded INTEGER`));
     await db.execute(sql.raw(`ALTER TABLE smart_import_runs ADD COLUMN IF NOT EXISTS records_failed INTEGER`));
@@ -948,30 +932,30 @@ async function backfillPmUserIds() {
   }
 
   const { registerHandoverRoutes, ensureHandoverTables } = await import("./handover-routes");
-  if (startupSchemaRepairEnabled) await ensureHandoverTables();
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) await ensureHandoverTables();
   registerHandoverRoutes(app);
 
   const { registerDependencyRoutes, ensureDependencyTables } = await import("./dependency-routes");
-  if (startupSchemaRepairEnabled) await ensureDependencyTables();
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) await ensureDependencyTables();
   registerDependencyRoutes(app);
 
   const { registerRaidRoutes, ensureRaidTables } = await import("./raid-routes");
-  if (startupSchemaRepairEnabled) await ensureRaidTables();
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) await ensureRaidTables();
   registerRaidRoutes(app);
 
   const { registerChangeControlRoutes, ensureChangeControlTables } = await import("./change-control-routes");
-  if (startupSchemaRepairEnabled) await ensureChangeControlTables();
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) await ensureChangeControlTables();
   registerChangeControlRoutes(app);
 
   const { registerProcurementRoutes, ensureProcurementTables } = await import("./procurement-routes");
-  if (startupSchemaRepairEnabled) await ensureProcurementTables();
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) await ensureProcurementTables();
   registerProcurementRoutes(app);
 
   const { registerCommissioningRoutes, ensureCommissioningTables } = await import("./commissioning-routes");
-  if (startupSchemaRepairEnabled) await ensureCommissioningTables();
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) await ensureCommissioningTables();
   registerCommissioningRoutes(app);
 
-  if (startupSchemaRepairEnabled) {
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) {
     await db.execute(sql.raw(`
       ALTER TABLE approvals ADD COLUMN IF NOT EXISTS related_entity_type TEXT;
       ALTER TABLE approvals ADD COLUMN IF NOT EXISTS related_entity_id INTEGER;
@@ -984,7 +968,7 @@ async function backfillPmUserIds() {
   }
 
   const { registerInvoiceCaptureRoutes, ensureInvoiceCaptureTables } = await import("./invoice-capture-routes");
-  if (startupSchemaRepairEnabled) await ensureInvoiceCaptureTables();
+  if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) await ensureInvoiceCaptureTables();
   registerInvoiceCaptureRoutes(app);
 
   registerAdminRoutes(app);

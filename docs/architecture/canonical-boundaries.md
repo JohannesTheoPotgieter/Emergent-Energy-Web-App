@@ -16,13 +16,16 @@
 - Startup-gated schema repair paths still create/alter selected domain tables for backwards compatibility.
 - Route layer still mixes canonical and legacy reads in some endpoints (particularly large `server/routes.ts`).
 
-## Hardening done in this pass
-- Startup guardrails made explicit: runtime schema mutation now additionally requires schema-repair mode even if migration flag is set.
-- Bootstrapping responsibilities split into dedicated bootstrap modules (env guard, session, auth, security middleware, request observability, error handling).
-- Users persistence slice extracted from monolithic storage into `UsersRepository`, with compatibility facade retained.
+## Hardening done in phase 2
+- Effective runtime maintenance policy now controls startup mutation behavior; schema/backfill flags alone no longer imply mutations at boot.
+- `/api/environment/status` reports effective runtime mutation behavior (`runtimeMutationsActive`, `runtimeMaintenanceEnabled`) instead of raw env interpretation only.
+- Auth route domain extracted from `server/routes.ts`.
+- Operational/writeback/mytool persistence extracted from `server/storage.ts` into `WorkManagementRepository`.
+- Security defaults tightened: smaller default JSON limit, endpoint-scoped large payload parser, stricter auth attempt limiter with expiry cleanup.
+- Type-check coverage expanded to include `server/routes.ts` and `server/storage.ts` in `tsconfig.check.json`.
 
 ## Recommended next migration-safe steps
-1. Move remaining startup DDL/backfill logic into explicit maintenance scripts in `scripts/` and keep boot read-mostly.
-2. Incrementally extract storage domains (`work-items`, `procurement`, `finance`, `audit`) behind stable `IStorage` facade methods.
+1. Move remaining startup DDL/backfill logic into explicit maintenance scripts in `scripts/` and keep boot fully read-mostly.
+2. Incrementally extract additional storage domains (`work-items`, `procurement`, `finance`, `imports`) behind stable `IStorage` facade methods.
 3. Reduce `server/routes.ts` surface by route-domain module boundaries and per-domain validation schemas.
 4. Add integration tests for startup modes in postgres-backed CI to validate mutation gating behavior.
