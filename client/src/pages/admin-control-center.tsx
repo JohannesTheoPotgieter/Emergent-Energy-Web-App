@@ -292,59 +292,47 @@ export default function AdminControlCenterPage() {
     },
   });
 
-  const cleanedAdminVisibilityEnabled = flags?.find((flag) => flag.key === "cleaned_admin_visibility")?.value === true;
+  const quickLinkSections = [
+    {
+      title: "Users & Roles",
+      items: [{ label: "Users & Roles", path: "/admin/roles", icon: Users }],
+    },
+    {
+      title: "Integrations",
+      items: [{ label: "App Settings", path: "/admin/settings", icon: Settings }],
+    },
+    {
+      title: "Data / Import Control",
+      items: [{ label: "Import Control Tower", path: "/admin/import-control-tower", icon: FileUp }],
+    },
+    {
+      title: "KPI / Traceability",
+      items: [{ label: "KPI Traceability", path: "/admin/kpi-traceability", icon: Activity }],
+    },
+    {
+      title: "Recovery / Audit",
+      items: [
+        { label: "Recovery Center", path: "/admin/recovery", icon: ShieldAlert },
+        { label: "Activity Log", path: "/admin/activity-log", icon: Activity },
+      ],
+    },
+    {
+      title: "System Controls",
+      items: [{ label: "Control Center", path: "/admin/control-center", icon: Database }],
+    },
+  ];
 
-  const quickLinkSections = cleanedAdminVisibilityEnabled
-    ? [
-        {
-          title: "Users & Roles",
-          items: [{ label: "Users & Roles", path: "/admin/roles", icon: Users }],
-        },
-        {
-          title: "Integrations",
-          items: [{ label: "App Settings", path: "/admin/settings", icon: Settings }],
-        },
-        {
-          title: "Import / Data Control",
-          items: [{ label: "Import Control Tower", path: "/admin/import-control-tower", icon: FileUp }],
-        },
-        {
-          title: "KPI / Traceability",
-          items: [{ label: "KPI Traceability", path: "/admin/kpi-traceability", icon: Activity }],
-        },
-        {
-          title: "Recovery / Audit",
-          items: [
-            { label: "Recovery Center", path: "/admin/recovery", icon: ShieldAlert },
-            { label: "Activity Log", path: "/admin/activity-log", icon: Activity },
-          ],
-        },
-        {
-          title: "System Controls",
-          items: [{ label: "Control Center", path: "/admin/control-center", icon: Database }],
-        },
-      ]
-    : [
-        {
-          title: "Admin pages and tools",
-          items: [
-            { label: "Recovery Center", path: "/admin/recovery", icon: ShieldAlert },
-            { label: "KPI Traceability", path: "/admin/kpi-traceability", icon: Activity },
-            { label: "Import Control Tower", path: "/admin/import-control-tower", icon: FileUp },
-            { label: "Users & Roles", path: "/admin/roles", icon: Users },
-            { label: "Activity Log", path: "/admin/activity-log", icon: Activity },
-            { label: "App Settings", path: "/admin/settings", icon: Settings },
-            { label: "Database Migration", path: "/admin/database-migration", icon: Database },
-            { label: "Smart Import", path: "/smart-import", icon: FileUp },
-          ],
-        },
-      ];
+  const secondaryUtilityLinks = [
+    { label: "Legacy Admin Utilities", path: "/admin/legacy-utilities", icon: FolderOpen },
+    { label: "Database Migration", path: "/admin/database-migration", icon: Database },
+    { label: "Smart Import", path: "/smart-import", icon: FileUp },
+  ];
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto" data-testid="admin-control-center">
       <div>
-        <h1 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Admin Control Center</h1>
-        <p className="text-sm text-muted-foreground mt-1">System monitoring, configuration, and management</p>
+        <h1 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Admin Control Center / Settings</h1>
+        <p className="text-sm text-muted-foreground mt-1">Primary admin hub for trusted system controls, governance, and recovery</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -634,7 +622,7 @@ export default function AdminControlCenterPage() {
               <ExternalLink className="h-4 w-4 text-sky-600" />
               Quick Links
             </CardTitle>
-            <CardDescription>{cleanedAdminVisibilityEnabled ? "Production-ready admin structure" : "Admin pages and tools"}</CardDescription>
+            <CardDescription>Primary admin structure for day-to-day operations</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -657,6 +645,25 @@ export default function AdminControlCenterPage() {
                 </div>
               ))}
             </div>
+            <details className="pt-2">
+              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground">
+                Secondary utilities (maintenance only)
+              </summary>
+              <div className="grid grid-cols-1 gap-2 mt-2">
+                {secondaryUtilityLinks.map((link) => (
+                  <a
+                    key={link.path}
+                    href={link.path}
+                    className="flex items-center gap-2 p-2.5 rounded-lg border border-dashed border-border hover:bg-accent transition-colors text-sm"
+                    data-testid={`secondary-link-${link.label.toLowerCase().replace(/\s+/g, "-")}`}
+                  >
+                    <link.icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="truncate">{link.label}</span>
+                  </a>
+                ))}
+              </div>
+            </details>
+
           </CardContent>
         </Card>
 
