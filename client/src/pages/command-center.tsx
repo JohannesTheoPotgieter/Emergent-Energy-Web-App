@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
@@ -157,6 +158,7 @@ function StatusBreakdownBar({ summary }: { summary: TaskSummary }) {
 export default function CommandCenterPage() {
   const { user } = useAuth();
   const roleGroup = getRoleGroup(user?.role || "");
+  const isMobile = useIsMobile();
 
   const { data: allTaskData, isLoading: tasksLoading } = useQuery<any>({
     queryKey: ["/api/my-work/all-tasks"],
@@ -389,6 +391,15 @@ export default function CommandCenterPage() {
 
   const isLoading = tasksLoading || projectsLoading;
 
+
+  const mobilePrimaryActions = [
+    { label: "Approvals", path: "/my-work/approvals", icon: CheckCircle2 },
+    { label: "Update Tasks", path: "/my-work/tasks", icon: ListTodo },
+    { label: "Upload / Send", path: "/smart-import", icon: FolderOpen },
+    { label: "Escalate", path: "/feedback", icon: AlertTriangle },
+    { label: "Create from Microsoft", path: "/pd/tickets/create", icon: ClipboardList },
+  ];
+
   return (
     <PageShell className="p-4 md:p-6" data-testid="command-center-page">
       <SectionHeader
@@ -406,8 +417,31 @@ export default function CommandCenterPage() {
         </div>
       ) : (
         <>
+          {isMobile && (
+            <Card data-testid="mobile-action-first-section">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-green-600" />
+                  Action First
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-2">
+                  {mobilePrimaryActions.map((action) => (
+                    <Link key={action.path} href={action.path}>
+                      <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-700">
+                        <action.icon className="h-4 w-4" />
+                        <span>{action.label}</span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <KPIStrip className="grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5" data-testid="kpi-cards-section">
-            {roleKpis.map((kpi, i) => (
+            {(isMobile ? roleKpis.slice(0, 4) : roleKpis).map((kpi, i) => (
               <KpiCard key={i} {...kpi} />
             ))}
           </KPIStrip>
@@ -432,6 +466,22 @@ export default function CommandCenterPage() {
           )}
 
           <div className="grid md:grid-cols-2 gap-6">
+            <Card className="hidden md:block lg:hidden" data-testid="tablet-field-execution-section">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-green-600" />
+                  Field Execution
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-2">
+                  <Link href="/projects"><Button variant="outline" className="w-full justify-start">Switch Project</Button></Link>
+                  <Link href="/execution-board"><Button variant="outline" className="w-full justify-start">Execution Board</Button></Link>
+                  <Link href="/my-work/approvals"><Button variant="outline" className="w-full justify-start">Approvals</Button></Link>
+                  <Link href="/pm/on-the-go"><Button variant="outline" className="w-full justify-start">On-the-Go</Button></Link>
+                </div>
+              </CardContent>
+            </Card>
             <Card data-testid="task-status-section">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
