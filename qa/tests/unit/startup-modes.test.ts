@@ -53,7 +53,6 @@ describe("startup mode derivation", () => {
     expect(modes.startupMutationClassification).toBe("mixed");
   });
 
-
   it("schema repair flag enables repair classification without session reset", () => {
     process.env.ENABLE_STARTUP_SCHEMA_REPAIR = "true";
     const modes = getStartupModes();
@@ -72,16 +71,17 @@ describe("startup mode derivation", () => {
   });
 });
 
-
 describe("server auth/session middleware wiring", () => {
-  it("mounts session and passport middleware once and keeps memory fallback", () => {
-    const source = fs.readFileSync(path.resolve(process.cwd(), "server/index.ts"), "utf8");
+  it("delegates session/auth setup into bootstrap modules and keeps memory fallback path", () => {
+    const indexSource = fs.readFileSync(path.resolve(process.cwd(), "server/index.ts"), "utf8");
+    const sessionSource = fs.readFileSync(path.resolve(process.cwd(), "server/bootstrap/session.ts"), "utf8");
 
-    expect(source).toContain("else {");
-    expect(source).toContain("MemoryStore(session)");
-    expect(source).toContain(`app.use(
-  session({`);
-    expect((source.match(/app\.use\(passport\.initialize\(\)\);/g) || []).length).toBe(1);
-    expect((source.match(/app\.use\(passport\.session\(\)\);/g) || []).length).toBe(1);
+    expect(indexSource).toContain("configureSession({");
+    expect(indexSource).toContain("configurePassportAuth(storage);");
+    expect((indexSource.match(/app\.use\(passport\.initialize\(\)\);/g) || []).length).toBe(1);
+    expect((indexSource.match(/app\.use\(passport\.session\(\)\);/g) || []).length).toBe(1);
+
+    expect(sessionSource).toContain("MemoryStore(session)");
+    expect(sessionSource).toContain("createTableIfMissing: startupSchemaRepairEnabled");
   });
 });
