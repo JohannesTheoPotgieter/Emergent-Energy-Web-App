@@ -318,6 +318,8 @@ function getRedesignedNavGroups(contextualMsSurfacesEnabled: boolean, cleanedAdm
       items: [
         makeNavItem("cashflow", "redesigned"),
         makeNavItem("cos", "redesigned"),
+        makeNavItem("revenueTracker", "redesigned"),
+        makeNavItem("gpTracker", "redesigned"),
         makeNavItem("subcontractor", "redesigned"),
       ],
     },
