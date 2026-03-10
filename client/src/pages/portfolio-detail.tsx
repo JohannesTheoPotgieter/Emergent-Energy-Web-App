@@ -889,7 +889,7 @@ export default function PortfolioDetailPage() {
                   </div>
                 </CardContent>
               </Card>
-            </div>
+            </KPIStrip>
           ) : (
             <Card><CardContent className="py-10 text-center text-muted-foreground">Loading quality data...</CardContent></Card>
           )}
