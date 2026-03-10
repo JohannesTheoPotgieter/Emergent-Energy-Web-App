@@ -50,6 +50,7 @@ import {
   FileWarning,
   Gauge,
   Percent,
+  MoreHorizontal,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -858,20 +859,37 @@ export default function PMDashboard() {
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} data-testid="pm-tabs">
-        <TabsList className="grid w-full grid-cols-3 max-w-md">
+        <div className="flex items-center gap-2 flex-wrap">
+          <TabsList className="grid grid-cols-2 w-full max-w-[280px]">
           <TabsTrigger value="overview" className="text-xs" data-testid="tab-overview">
-            <BarChart3 className="h-3.5 w-3.5 mr-1.5" /> Overview
+            <BarChart3 className="h-3.5 w-3.5 mr-1.5" /> Delivery
           </TabsTrigger>
           <TabsTrigger value="priority" className="text-xs" data-testid="tab-priority">
-            <Flag className="h-3.5 w-3.5 mr-1.5" /> Priority Items
+            <Flag className="h-3.5 w-3.5 mr-1.5" /> Action Queue
             {summary.overdueTasks > 0 && (
               <Badge className="ml-1.5 h-4 text-[9px] bg-red-500">{summary.overdueTasks}</Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="calendar" className="text-xs" data-testid="tab-calendar">
-            <CalendarDays className="h-3.5 w-3.5 mr-1.5" /> Calendar
-          </TabsTrigger>
-        </TabsList>
+          </TabsList>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5" data-testid="tab-more-options">
+                <MoreHorizontal className="h-3.5 w-3.5" /> More
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-44 p-1.5">
+              <Button
+                variant={activeTab === "calendar" ? "secondary" : "ghost"}
+                size="sm"
+                className="w-full justify-start text-xs"
+                onClick={() => setActiveTab("calendar")}
+                data-testid="tab-calendar"
+              >
+                <CalendarDays className="h-3.5 w-3.5 mr-1.5" /> Calendar
+              </Button>
+            </PopoverContent>
+          </Popover>
+        </div>
 
         <TabsContent value="overview" className="mt-4">
           <OverviewTab data={data} navigate={navigate} />

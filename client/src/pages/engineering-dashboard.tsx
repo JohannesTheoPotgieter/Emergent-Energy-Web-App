@@ -10,6 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -46,6 +47,7 @@ import {
   Activity,
   ArrowLeft,
   X,
+  MoreHorizontal,
 } from "lucide-react";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
@@ -1381,26 +1383,35 @@ export default function EngineeringDashboard() {
               {standupMode ? "Exit Standup" : "Standup Mode"}
             </Button>
           )}
-          {!standupMode && firstName && isManagerRole && (
-            <Button
-              variant={showAllTasks ? "default" : "outline"}
-              size="sm"
-              className="h-8 text-xs gap-1.5 font-semibold"
-              onClick={() => setShowAllTasks(!showAllTasks)}
-              data-testid="toggle-all-tasks"
-            >
-              {showAllTasks ? (
-                <><UserCheck className="h-3.5 w-3.5" /> My Tasks</>
-              ) : (
-                <><Eye className="h-3.5 w-3.5" /> All Tasks</>
-              )}
-            </Button>
-          )}
           {!standupMode && totalBlockers > 0 && (
-            <div className="flex items-center gap-1.5 text-red-600 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-bold animate-pulse" data-testid="blocker-alert">
-              <ShieldAlert className="h-4 w-4" />
-              {totalBlockers} blocker{totalBlockers !== 1 ? "s" : ""} need attention
+            <div className="flex items-center gap-1.5 text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg text-xs font-bold" data-testid="blocker-alert">
+              <ShieldAlert className="h-3.5 w-3.5" />
+              {totalBlockers} blocker{totalBlockers !== 1 ? "s" : ""}
             </div>
+          )}
+          {!standupMode && firstName && isManagerRole && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="eng-more-controls">
+                  <MoreHorizontal className="h-3.5 w-3.5" /> More
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-44 p-1.5">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start text-xs"
+                  onClick={() => setShowAllTasks(!showAllTasks)}
+                  data-testid="toggle-all-tasks"
+                >
+                  {showAllTasks ? (
+                    <><UserCheck className="h-3.5 w-3.5 mr-1.5" /> My Tasks</>
+                  ) : (
+                    <><Eye className="h-3.5 w-3.5 mr-1.5" /> All Tasks</>
+                  )}
+                </Button>
+              </PopoverContent>
+            </Popover>
           )}
         </div>
       </div>
