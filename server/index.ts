@@ -1,25 +1,25 @@
-import express, { type Request, Response, NextFunction } from "express";
-import session from "express-session";
+import express from "express";
 import passport from "passport";
-import { Strategy as LocalStrategy } from "passport-local";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
-import bcrypt from "bcryptjs";
-import connectPgSimple from "connect-pg-simple";
-import MemoryStore from "memorystore";
-import pg from "pg";
-import { dbMode, dbConfig, initializeDatabase, db } from "./db";
+import { dbMode, initializeDatabase, db } from "./db";
 import { sql, eq } from "drizzle-orm";
 import { appSettings } from "@shared/schema";
 import { runBackfill } from "./lib/backfill";
-import path from "path";
 import { startScheduler, getSchedulerStatus } from "./importPipeline";
 import { startMilestoneChecker } from "./milestone-notifications";
 import { registerAdminRoutes } from "./departments/admin-routes";
 import { registerExcoRoutes } from "./departments/exco-routes";
 import { getStartupModes } from "./startup-modes";
+import { applySecurityAndParsingMiddleware } from "./bootstrap/security-middleware";
+import { configureSession } from "./bootstrap/session";
+import { configurePassportAuth } from "./bootstrap/auth";
+import { enforceRuntimeEnvironmentGuards } from "./bootstrap/env-guard";
+import { applyRequestLogging } from "./bootstrap/http-observability";
+import { registerGlobalErrorHandler } from "./bootstrap/error-handling";
+import { shouldRunRuntimeStartupMigrations } from "./bootstrap/maintenance-guard";
 
 const app = express();
 const httpServer = createServer(app);
@@ -32,25 +32,18 @@ const {
   startupSessionResetEnabled,
 } = startupModes;
 
-const isStrictRuntime = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
 const isLocalDevelopmentMode = process.env.LOCAL_DEV_MODE === "true";
 const isAdminMigrationMode = process.env.ADMIN_MIGRATION_MODE === "true";
 const allowStartupMutations = isLocalDevelopmentMode || isAdminMigrationMode;
+const startupSyncEnabled = process.env.STARTUP_ENABLE_PERIODIC_SYNC !== "false";
 
-const sessionSecret = process.env.SESSION_SECRET;
-if (isStrictRuntime && !sessionSecret) {
-  throw new Error("SESSION_SECRET must be set in staging/production. Refusing to start with an unsafe default secret.");
-}
+const { sessionSecret } = enforceRuntimeEnvironmentGuards();
 
 const runtimeStatus = {
   schedulerRunning: false,
   milestoneCheckerRunning: false,
   dbConnected: false,
 };
-
-function generateRequestId() {
-  return `req_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
 
 declare module "http" {
   interface IncomingMessage {
@@ -75,141 +68,7 @@ declare global {
   }
 }
 
-app.use(
-  express.json({
-    limit: '100mb',
-    verify: (req, _res, buf) => {
-      req.rawBody = buf;
-    },
-  }),
-);
-
-app.use("/uploads", (req: any, res: any, next: any) => {
-  if (req.path.includes("_private_")) {
-    return res.status(403).json({ error: "Access denied" });
-  }
-  next();
-}, express.static(path.join(process.cwd(), "uploads")));
-
-app.use(express.urlencoded({ extended: false }));
-
-app.use((err: any, _req: any, res: any, next: any) => {
-  if (err.type === 'entity.parse.failed') {
-    return res.status(400).json({
-      error: "Invalid request format",
-      message: "The request data could not be read. Please check the data and try again."
-    });
-  }
-  next(err);
-});
-
-// Trust proxy for Replit deployment (needed for secure cookies)
-app.set('trust proxy', 1);
-
-// Session configuration - use appropriate store based on DB mode
-let sessionStore: any;
-const startupSyncEnabled = process.env.STARTUP_ENABLE_PERIODIC_SYNC !== "false";
-
-if (dbMode === 'postgres' && dbConfig.connectionString) {
-  const PgSession = connectPgSimple(session);
-  const pool = new pg.Pool({ connectionString: dbConfig.connectionString });
-
-  if (startupSchemaRepairEnabled) {
-    log('Session schema auto-create enabled (startup schema repair is on)');
-  } else {
-    log('Session schema auto-create disabled on normal boot');
-  }
-
-  sessionStore = new PgSession({
-    pool,
-    createTableIfMissing: startupSchemaRepairEnabled,
-  });
-
-  if (process.env.NODE_ENV === 'production' && startupSessionResetEnabled) {
-    pool.query('DELETE FROM "session"').then(() => {
-      log('Cleared all sessions on deploy startup (startup session reset enabled)');
-    }).catch(() => {});
-  } else if (process.env.NODE_ENV === 'production') {
-    log('Startup session reset disabled; preserving existing sessions on boot');
-  }
-} else {
-  const MemoryStoreSession = MemoryStore(session);
-  sessionStore = new MemoryStoreSession({
-    checkPeriod: 24 * 60 * 60 * 1000,
-  });
-  log(`Using in-memory session store (dbMode=${dbMode})`);
-}
-
-if (!sessionSecret) {
-  throw new Error("[Session] SESSION_SECRET must be set. Refusing insecure default.");
-}
-
-app.use(
-  session({
-    store: sessionStore,
-    secret: sessionSecret,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: process.env.NODE_ENV === "production",
-      httpOnly: true,
-      sameSite: process.env.NODE_ENV === "production" ? 'none' : 'lax',
-      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-    },
-  })
-);
-
-app.use(passport.initialize());
-app.use(passport.session());
-
-// Passport Local Strategy
-passport.use(
-  new LocalStrategy(
-    { usernameField: "username" },
-    async (username, password, done) => {
-      try {
-        const user = await storage.getUserByUsername(username.toLowerCase());
-        if (!user) {
-          return done(null, false, { message: "Invalid username or password" });
-        }
-        const isValid = await bcrypt.compare(password, user.password);
-        if (!isValid) {
-          return done(null, false, { message: "Invalid username or password" });
-        }
-        return done(null, { 
-          id: user.id, 
-          email: user.email, 
-          name: user.name, 
-          role: user.role 
-        });
-      } catch (err) {
-        return done(err);
-      }
-    }
-  )
-);
-
-passport.serializeUser((user, done) => {
-  done(null, user.id);
-});
-
-passport.deserializeUser(async (id: number, done) => {
-  try {
-    const user = await storage.getUser(id);
-    if (!user) {
-      return done(null, false);
-    }
-    done(null, { 
-      id: user.id, 
-      email: user.email, 
-      name: user.name, 
-      role: user.role 
-    });
-  } catch (err) {
-    done(err);
-  }
-});
-
+applySecurityAndParsingMiddleware(app);
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -221,23 +80,18 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
-app.use((req, res, next) => {
-  const start = Date.now();
-  const requestId = (req.headers["x-request-id"] as string) || generateRequestId();
-  res.setHeader("x-request-id", requestId);
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    const requestPath = req.path;
-    if (requestPath.startsWith("/api")) {
-      const logLine = `${req.method} ${requestPath} ${res.statusCode} in ${duration}ms`;
-      log(logLine);
-    }
-  });
-
-  next();
+configureSession({
+  app,
+  sessionSecret,
+  startupSchemaRepairEnabled,
+  startupSessionResetEnabled,
+  log,
 });
 
+configurePassportAuth(storage);
+app.use(passport.initialize());
+app.use(passport.session());
+applyRequestLogging(app, log);
 
 app.get("/api/environment/status", async (_req, res) => {
   const scheduler = getSchedulerStatus();
@@ -321,7 +175,7 @@ async function backfillPmUserIds() {
 
   // Runtime user seeding removed for trustability; use explicit migration/seed scripts instead.
 
-  const startupMigrationsEnabled = process.env.ENABLE_STARTUP_MIGRATIONS === "true";
+  const startupMigrationsEnabled = shouldRunRuntimeStartupMigrations(startupSchemaRepairEnabled, log);
   if (startupMigrationsEnabled) {
   try {
     await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
@@ -337,7 +191,7 @@ async function backfillPmUserIds() {
   log(`[Startup] maintenance=${startupMaintenanceEnabled} schemaRepair=${startupSchemaRepairEnabled} dataSeed=${startupDataSeedEnabled} backfill=${startupBackfillEnabled} sessionReset=${startupSessionResetEnabled}`);
 
   if (startupDataSeedEnabled) {
-    await seedUsers();
+    log("[Startup] ENABLE_STARTUP_DATA_SEED is set, but user seeding is intentionally disabled at runtime. Use explicit seed scripts.");
   }
 
   if (startupBackfillEnabled) {
@@ -1150,18 +1004,7 @@ async function backfillPmUserIds() {
 
   await registerRoutes(httpServer, app);
 
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    console.error("Internal Server Error:", err);
-
-    if (res.headersSent) {
-      return next(err);
-    }
-
-    return res.status(status).json({ message });
-  });
+  registerGlobalErrorHandler(app);
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
