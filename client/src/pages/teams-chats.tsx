@@ -12,6 +12,8 @@ import {
   User, Clock, Globe, Lock, Loader2, Paperclip,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useLocation } from "wouter";
+import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 
 function authHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
@@ -501,12 +503,26 @@ function Sidebar({ selected, onSelect }: { selected: SelectedItem | null; onSele
 }
 
 export default function TeamsChatsPage() {
+  const [location] = useLocation();
   const { user } = useAuth();
   const [selected, setSelected] = useState<SelectedItem | null>(null);
   const currentUserName = user?.name || user?.username || "";
+  const isMyWorkRoute = location.startsWith("/my-work/");
+
+  const { data: rolloutFlags } = useQuery({
+    queryKey: ["rollout-feature-flags"],
+    queryFn: fetchRolloutFeatureFlags,
+    staleTime: 60_000,
+  });
+  const contextualMsSurfacesEnabled = rolloutFlags?.find((flag) => flag.key === "contextual_ms_surfaces")?.value === true;
 
   return (
     <div className="flex h-[calc(100vh-56px)] bg-white overflow-hidden page-enter" data-testid="teams-chats-page">
+      {contextualMsSurfacesEnabled && !isMyWorkRoute && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 rounded-md border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] text-blue-700">
+          This route is retained for compatibility. Use <strong>My Work → Personal Teams Chat</strong> for personal chats.
+        </div>
+      )}
       <Sidebar selected={selected} onSelect={setSelected} />
       <MessagePanel selected={selected} currentUserName={currentUserName} />
     </div>

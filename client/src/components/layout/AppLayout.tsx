@@ -205,7 +205,7 @@ function makeNavItem(id: string, variant: SidebarVariant, overrides?: Partial<Na
   };
 }
 
-function getLegacyNavGroups(): NavGroup[] {
+function getLegacyNavGroups(contextualMsSurfacesEnabled: boolean): NavGroup[] {
   return [
     {
       heading: "EXCO",
@@ -242,7 +242,11 @@ function getLegacyNavGroups(): NavGroup[] {
     {
       heading: "FEEDBACK",
       section: "FEEDBACK",
-      items: [makeNavItem("feedback", "legacy"), makeNavItem("leaderboard", "legacy"), makeNavItem("teamsChats", "legacy")],
+      items: [
+        makeNavItem("feedback", "legacy"),
+        makeNavItem("leaderboard", "legacy"),
+        ...(!contextualMsSurfacesEnabled ? [makeNavItem("teamsChats", "legacy")] : []),
+      ],
     },
     {
       heading: "SETTINGS",
@@ -260,9 +264,22 @@ function getLegacyNavGroups(): NavGroup[] {
   ];
 }
 
-function getRedesignedNavGroups(): NavGroup[] {
+function getRedesignedNavGroups(contextualMsSurfacesEnabled: boolean): NavGroup[] {
   return [
-    { heading: "MY WORK", section: "MY_WORK", icon: Zap, items: [makeNavItem("commandCenter", "redesigned"), makeNavItem("myWorkTasks", "redesigned"), makeNavItem("myWorkApprovals", "redesigned"), makeNavItem("myWorkCalendar", "redesigned"), makeNavItem("myWorkMeetings", "redesigned"), makeNavItem("myWorkEmail", "redesigned"), makeNavItem("myWorkTeams", "redesigned")] },
+    {
+      heading: "MY WORK",
+      section: "MY_WORK",
+      icon: Zap,
+      items: [
+        makeNavItem("commandCenter", "redesigned"),
+        makeNavItem("myWorkTasks", "redesigned"),
+        makeNavItem("myWorkApprovals", "redesigned"),
+        makeNavItem("myWorkCalendar", "redesigned"),
+        makeNavItem("myWorkMeetings", "redesigned"),
+        makeNavItem("myWorkEmail", "redesigned", { label: contextualMsSurfacesEnabled ? "Personal Email" : undefined }),
+        makeNavItem("myWorkTeams", "redesigned", { label: contextualMsSurfacesEnabled ? "Personal Teams Chat" : undefined }),
+      ],
+    },
     { heading: "PROJECT DEVELOPMENT", section: "PROJECT_DEVELOPMENT", icon: Sun, items: [makeNavItem("pdDashboard", "redesigned"), makeNavItem("pdTickets", "redesigned"), makeNavItem("clients", "redesigned"), makeNavItem("lifecycle", "redesigned")] },
     { heading: "ENGINEERING", section: "ENGINEERING", icon: HardHat, items: [makeNavItem("engineering", "redesigned"), makeNavItem("engineeringTasks", "redesigned")] },
     { heading: "QUALITY", section: "QUALITY", icon: ShieldCheck, items: [makeNavItem("quality", "redesigned")] },
@@ -272,8 +289,8 @@ function getRedesignedNavGroups(): NavGroup[] {
   ];
 }
 
-function getUnifiedWorkNavGroups(): NavGroup[] {
-  const base = getRedesignedNavGroups();
+function getUnifiedWorkNavGroups(contextualMsSurfacesEnabled: boolean): NavGroup[] {
+  const base = getRedesignedNavGroups(contextualMsSurfacesEnabled);
   const result: NavGroup[] = [];
 
   for (const group of base) {
@@ -287,9 +304,9 @@ function getUnifiedWorkNavGroups(): NavGroup[] {
   return result;
 }
 
-function getNavGroups(unifiedWorkEnabled: boolean): NavGroup[] {
-  if (unifiedWorkEnabled && UX_REDESIGN_ENABLED) return getUnifiedWorkNavGroups();
-  return UX_REDESIGN_ENABLED ? getRedesignedNavGroups() : getLegacyNavGroups();
+function getNavGroups(unifiedWorkEnabled: boolean, contextualMsSurfacesEnabled: boolean): NavGroup[] {
+  if (unifiedWorkEnabled && UX_REDESIGN_ENABLED) return getUnifiedWorkNavGroups(contextualMsSurfacesEnabled);
+  return UX_REDESIGN_ENABLED ? getRedesignedNavGroups(contextualMsSurfacesEnabled) : getLegacyNavGroups(contextualMsSurfacesEnabled);
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -360,6 +377,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     staleTime: 60_000,
   });
   const roleAwareUxEnabled = rolloutFlags?.find((flag) => flag.key === "role_aware_ux")?.value === true;
+  const contextualMsSurfacesEnabled = rolloutFlags?.find((flag) => flag.key === "contextual_ms_surfaces")?.value === true;
 
   const [screenTourActive, setScreenTourActive] = useState(false);
   const screenTour = getScreenTour(location);
@@ -390,7 +408,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       if (next[heading] !== undefined) {
         next[heading] = !next[heading];
       } else {
-        const groups = getNavGroups(!!unifiedWorkFlag);
+        const groups = getNavGroups(!!unifiedWorkFlag, !!contextualMsSurfacesEnabled);
         const group = groups.find(g => g.heading === heading);
         const currentSearch = window.location.search;
         const groupHasActive = group?.items.some(item => {
@@ -423,7 +441,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const allowedSections: string[] = permissions?.sections || [];
   const navGroups = (() => {
-    const groups = getNavGroups(!!unifiedWorkFlag).map((group) => ({ ...group, items: [...group.items] }));
+    const groups = getNavGroups(!!unifiedWorkFlag, !!contextualMsSurfacesEnabled).map((group) => ({ ...group, items: [...group.items] }));
     if (!roleAwareUxEnabled) return groups;
 
     const sectionOrder = getRoleSectionPriority(activeRole);
