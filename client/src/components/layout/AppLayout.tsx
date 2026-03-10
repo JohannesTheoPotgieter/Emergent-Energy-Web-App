@@ -112,6 +112,20 @@ interface NavGroup {
   items: NavItem[];
 }
 
+const LEADERSHIP_ROLES = new Set(["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "CCO", "CFO"]);
+const LEADERSHIP_PRIMARY_NAV_IDS = [
+  "commandCenter",
+  "dashboard",
+  "portfolios",
+  "projects",
+  "weeklyReviews",
+  "myWorkApprovals",
+  "myWorkTasks",
+  "cashflow",
+  "engineering",
+  "quality",
+];
+
 const SECTION_COLORS: Record<string, string> = {
   MY_WORK: "text-green-600",
   PROJECT_DEVELOPMENT: "text-amber-600",
@@ -331,7 +345,14 @@ function getNavGroups(unifiedWorkEnabled: boolean, contextualMsSurfacesEnabled: 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [desktopCollapsed, setDesktopCollapsed] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("sidebar_desktop_collapsed") === "true";
+  });
+  const [hasExplicitSidebarPreference, setHasExplicitSidebarPreference] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("sidebar_desktop_collapsed") !== null;
+  });
   const [showValidationReport, setShowValidationReport] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
@@ -453,6 +474,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const activeRole = companyRole || user?.role || null;
 
+  const isLeadershipRole = LEADERSHIP_ROLES.has(activeRole ?? "");
+
+  const setSidebarCollapsedPreference = (collapsed: boolean) => {
+    setDesktopCollapsed(collapsed);
+    setHasExplicitSidebarPreference(true);
+    if (typeof window !== "undefined") localStorage.setItem("sidebar_desktop_collapsed", String(collapsed));
+  };
+
+  useEffect(() => {
+    if (isLeadershipRole && !hasExplicitSidebarPreference) {
+      setDesktopCollapsed(false);
+    }
+  }, [isLeadershipRole, hasExplicitSidebarPreference]);
+
   const { data: permissions } = useQuery({
     queryKey: ["auth-permissions", activeRole],
     queryFn: async () => {
@@ -484,7 +519,43 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       })
       .sort((a, b) => (sectionRank.get(a.section as any) ?? 999) - (sectionRank.get(b.section as any) ?? 999));
 
-    return reordered;
+    if (!isLeadershipRole) return reordered;
+
+    const allNavItems = reordered.flatMap((group) => group.items);
+    const byId = new Map(allNavItems.filter((item) => !!item.id).map((item) => [item.id as string, item]));
+    const usedPaths = new Set<string>();
+
+    const steeringItems = LEADERSHIP_PRIMARY_NAV_IDS
+      .map((id) => byId.get(id))
+      .filter((item): item is NavItem => !!item && !usedPaths.has(item.path))
+      .map((item) => {
+        usedPaths.add(item.path);
+        return item;
+      });
+
+    const secondaryItems = reordered
+      .filter((group) => group.section !== "SYSTEM")
+      .flatMap((group) => group.items)
+      .filter((item) => !usedPaths.has(item.path))
+      .map((item) => {
+        usedPaths.add(item.path);
+        return item;
+      });
+
+    const systemItems = reordered
+      .filter((group) => group.section === "SYSTEM")
+      .flatMap((group) => group.items)
+      .filter((item) => !usedPaths.has(item.path));
+
+    return [
+      { heading: "STEERING", section: "MY_WORK", icon: Zap, items: steeringItems },
+      ...(secondaryItems.length > 0
+        ? [{ heading: "SECONDARY", section: "PROJECT_MANAGEMENT", icon: Layers, items: secondaryItems }]
+        : []),
+      ...(systemItems.length > 0
+        ? [{ heading: "SYSTEM", section: "SYSTEM", icon: CircuitBoard, items: systemItems }]
+        : []),
+    ];
   })();
   const allItems = navGroups.flatMap(g => g.items);
   const currentPageLabel = location === "/" ? "Home" : findPageByPath(location)?.label || allItems.find(i => i.path === location)?.label || "Dashboard";
@@ -554,11 +625,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             )}
           </Link>
-          {sidebarShowLabels && (
+          {sidebarShowLabels && !isLeadershipRole && (
             <button
               onClick={() => {
                 if (mobileOpen) setMobileOpen(false);
-                else setDesktopCollapsed(true);
+                else setSidebarCollapsedPreference(true);
               }}
               className="ml-auto p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
               aria-label="Collapse sidebar"
@@ -830,7 +901,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <aside 
         className={cn(
           "hidden md:flex bg-white text-foreground flex-col transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] border-r border-border z-20 will-change-[width]",
-          desktopCollapsed ? "w-[68px]" : "w-[240px]"
+          desktopCollapsed ? "w-[68px]" : isLeadershipRole ? "w-[280px]" : "w-[240px]"
         )}
       >
         {sidebarContent}
@@ -851,8 +922,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Button 
               variant="ghost" 
               size="icon" 
-              onClick={() => setDesktopCollapsed(!desktopCollapsed)}
-              className="hidden md:inline-flex shrink-0"
+              onClick={() => setSidebarCollapsedPreference(!desktopCollapsed)}
+              className={cn("hidden md:inline-flex shrink-0", isLeadershipRole && !hasExplicitSidebarPreference ? "opacity-60" : "")}
               data-testid="btn-desktop-sidebar-toggle"
             >
               {desktopCollapsed ? <PanelLeft className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
