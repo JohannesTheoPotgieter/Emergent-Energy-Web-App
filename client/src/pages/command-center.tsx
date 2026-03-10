@@ -167,7 +167,7 @@ export default function CommandCenterPage() {
   const roleGroup = getRoleGroup(user?.role || "");
   const isMobile = useIsMobile();
 
-  const { data: allTaskData, isLoading: tasksLoading } = useQuery<any>({
+  const { data: allTaskData, isLoading: tasksLoading, dataUpdatedAt: tasksUpdatedAt } = useQuery<any>({
     queryKey: ["/api/my-work/all-tasks"],
     queryFn: async () => {
       const res = await fetch("/api/my-work/all-tasks", { headers: getAuthHeaders(), credentials: "include" });
@@ -176,11 +176,11 @@ export default function CommandCenterPage() {
     },
   });
 
-  const { data: projectsData, isLoading: projectsLoading } = useQuery<any[]>({
+  const { data: projectsData, isLoading: projectsLoading, dataUpdatedAt: projectsUpdatedAt } = useQuery<any[]>({
     queryKey: ["/api/project-info"],
   });
 
-  const { data: financialData } = useQuery<any>({
+  const { data: financialData, dataUpdatedAt: financialUpdatedAt } = useQuery<any>({
     queryKey: ["/api/financial-headline"],
   });
 
@@ -485,6 +485,52 @@ export default function CommandCenterPage() {
 
   const isLoading = tasksLoading || projectsLoading;
 
+  const primaryActions = useMemo(() => {
+    const actions = [
+      {
+        label: "Resolve Exceptions",
+        helper: taskSummary.overdue + taskSummary.blocked > 0
+          ? `${taskSummary.overdue + taskSummary.blocked} open exceptions`
+          : "No open exceptions",
+        path: "/my-work/tasks",
+        icon: AlertTriangle,
+        tone: taskSummary.overdue + taskSummary.blocked > 0 ? "border-red-200 bg-red-50 text-red-700" : "border-slate-200 bg-slate-50 text-slate-600",
+        urgent: taskSummary.overdue + taskSummary.blocked > 0,
+      },
+      {
+        label: "Process Approvals",
+        helper: approvalQueue.totalPending > 0
+          ? `${approvalQueue.totalPending} waiting decisions`
+          : "Approval queue is clear",
+        path: "/my-work/approvals",
+        icon: FileCheck,
+        tone: approvalQueue.totalPending > 0 ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-50 text-slate-600",
+        urgent: approvalQueue.overdue > 0,
+      },
+      {
+        label: "Review Risk Projects",
+        helper: riskHotspots.redProjects.length + riskHotspots.amberProjects.length > 0
+          ? `${riskHotspots.redProjects.length} red · ${riskHotspots.amberProjects.length} amber`
+          : "Portfolio risk low",
+        path: "/projects",
+        icon: FolderOpen,
+        tone: riskHotspots.redProjects.length > 0 ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700",
+        urgent: riskHotspots.redProjects.length > 0,
+      },
+    ];
+
+    return actions;
+  }, [approvalQueue, riskHotspots, taskSummary]);
+
+  const freshnessLabel = useMemo(() => {
+    const latest = Math.max(tasksUpdatedAt || 0, projectsUpdatedAt || 0, financialUpdatedAt || 0);
+    if (!latest) return "Waiting for live data";
+    const minutes = Math.floor((Date.now() - latest) / 60000);
+    if (minutes <= 0) return "Live data synced just now";
+    if (minutes === 1) return "Live data synced 1 minute ago";
+    return `Live data synced ${minutes} minutes ago`;
+  }, [financialUpdatedAt, projectsUpdatedAt, tasksUpdatedAt]);
+
 
   const mobilePrimaryActions = [
     { label: "Approvals", path: "/my-work/approvals", icon: CheckCircle2 },
@@ -501,6 +547,11 @@ export default function CommandCenterPage() {
         title="Command Center"
         description={`${ROLE_GROUP_LABELS[roleGroup]} · ${user?.name || "User"}`}
       />
+
+      <div className="-mt-2 mb-3 flex items-center gap-2">
+        <CircleDot className="h-3.5 w-3.5 text-emerald-600" />
+        <p className="text-xs text-muted-foreground" data-testid="command-center-data-freshness">{freshnessLabel}</p>
+      </div>
 
       {isLoading ? (
         <div className="space-y-4">
@@ -552,6 +603,36 @@ export default function CommandCenterPage() {
               </Link>
             ))}
           </div>
+
+          <Card data-testid="primary-actions-section">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Target className="h-4 w-4 text-green-600" />
+                  Primary Actions
+                </CardTitle>
+                <Badge variant="outline">One-click execution</Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {primaryActions.map((action) => (
+                  <Link key={action.path} href={action.path}>
+                    <div className={`rounded-lg border px-3 py-3 transition-all hover:shadow-sm ${action.tone}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <action.icon className="h-4 w-4" />
+                          <p className="text-sm font-semibold">{action.label}</p>
+                        </div>
+                        {action.urgent && <Badge variant="destructive">Now</Badge>}
+                      </div>
+                      <p className="mt-1 text-xs opacity-80">{action.helper}</p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
 
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
             <div className="xl:col-span-7 space-y-6">
