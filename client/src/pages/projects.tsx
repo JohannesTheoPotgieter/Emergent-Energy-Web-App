@@ -816,6 +816,7 @@ const ACTIVE_VIEW_KEY = "project-summary-active-view";
 
 const COLUMN_WIDTHS: Record<string, string> = {
   project_name: "130px",
+  client_name: "120px",
   size_kwp: "42px",
   pd: "78px",
   pm: "78px",
@@ -840,7 +841,7 @@ const COLUMN_WIDTHS: Record<string, string> = {
 };
 
 const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; stickyFirst?: boolean }[] = [
-  { label: "Project Info", keys: ["project_name", "size_kwp", "pd", "pm"], color: "bg-muted text-muted-foreground", stickyFirst: true },
+  { label: "Project Info", keys: ["project_name", "client_name", "size_kwp", "pd", "pm"], color: "bg-muted text-muted-foreground", stickyFirst: true },
   { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
   { label: "Phase & Schedule", keys: ["phase", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
@@ -849,6 +850,17 @@ const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; sticky
 ];
 
 const ALL_COLUMN_KEYS_STATIC = COLUMN_GROUPS_META.flatMap(g => g.keys);
+const DEFAULT_DIRECTORY_COLUMNS = [
+  "project_name",
+  "client_name",
+  "phase",
+  "pm",
+  "pd",
+  "financial_close",
+  "project_pct_complete",
+  "delta_vs_expected",
+  "latest_update",
+];
 
 function loadSavedViews(): SavedView[] {
   try {
@@ -1139,6 +1151,7 @@ function MobileProjectCard({ project, setLocation }: { project: ProjectSummary; 
         </div>
 
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          {project.client_name && <span className="truncate max-w-[140px]">Client: <span className="text-foreground font-medium">{project.client_name}</span></span>}
           {project.pm && <span>PM: <span className="text-foreground font-medium">{project.pm}</span></span>}
           {project.size_kwp != null && <span>{project.size_kwp.toFixed(0)} kWp</span>}
         </div>
@@ -1210,7 +1223,7 @@ export default function ProjectsSummary() {
       const found = views.find(v => v.name === viewName);
       if (found) return new Set(found.visibleColumns);
     }
-    return new Set<string>();
+    return new Set(DEFAULT_DIRECTORY_COLUMNS);
   });
   const [newViewName, setNewViewName] = useState("");
 
@@ -1250,7 +1263,7 @@ export default function ProjectsSummary() {
     },
   });
 
-  const { data: projects = [], isLoading } = useQuery<ProjectSummary[]>({
+  const { data: projects = [], isLoading, isError, error, refetch } = useQuery<ProjectSummary[]>({
     queryKey: ["/api/projects-summary"],
     queryFn: async () => {
       const token = localStorage.getItem("auth_token");
@@ -1399,10 +1412,8 @@ export default function ProjectsSummary() {
     return { total, totalKwp, avgCompletion, behindSchedule, finCloseCount };
   }, [sorted]);
 
-  const isDefaultView = visibleColumns.size === 0;
-  const effectiveVisible = isDefaultView
-    ? new Set(ALL_COLUMN_KEYS_STATIC.concat(isAdmin ? ["actions"] : []))
-    : new Set(Array.from(visibleColumns).concat(isAdmin ? ["actions"] : []));
+  const isDefaultView = visibleColumns.size === DEFAULT_DIRECTORY_COLUMNS.length && DEFAULT_DIRECTORY_COLUMNS.every((k) => visibleColumns.has(k));
+  const effectiveVisible = new Set(Array.from(visibleColumns).concat(isAdmin ? ["actions"] : []));
 
   const toggleColumn = useCallback((key: string) => {
     if (key === "project_name") return;
@@ -1418,7 +1429,7 @@ export default function ProjectsSummary() {
   }, [isAdmin]);
 
   const selectAllColumns = useCallback(() => {
-    setVisibleColumns(new Set<string>());
+    setVisibleColumns(new Set<string>(ALL_COLUMN_KEYS_STATIC));
     setActiveViewName(null);
     persistActiveView(null);
   }, []);
@@ -1443,7 +1454,7 @@ export default function ProjectsSummary() {
 
   const applyView = useCallback((name: string) => {
     if (name === "__default__") {
-      setVisibleColumns(new Set<string>());
+      setVisibleColumns(new Set(DEFAULT_DIRECTORY_COLUMNS));
       setActiveViewName(null);
       persistActiveView(null);
       return;
@@ -1463,13 +1474,39 @@ export default function ProjectsSummary() {
     if (activeViewName === name) {
       setActiveViewName(null);
       persistActiveView(null);
-      setVisibleColumns(new Set<string>());
+      setVisibleColumns(new Set(DEFAULT_DIRECTORY_COLUMNS));
     }
   }, [savedViews, activeViewName]);
 
   const handleExport = () => {
     window.location.href = "/api/export/projects-summary";
   };
+
+  if (isError) {
+    return (
+      <div className="space-y-6 p-1">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+            <BarChart3 className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Projects Summary</h2>
+            <p className="text-sm text-muted-foreground">Portfolio overview</p>
+          </div>
+        </div>
+        <Card className="border border-red-200 bg-red-50/40">
+          <CardContent className="py-10 px-6 text-center">
+            <AlertCircle className="w-8 h-8 mx-auto mb-3 text-red-600" />
+            <h3 className="text-base font-semibold text-foreground mb-1">Unable to load projects</h3>
+            <p className="text-sm text-muted-foreground mb-4">{error instanceof Error ? error.message : "Please try again."}</p>
+            <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="btn-retry-projects">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -1483,7 +1520,7 @@ export default function ProjectsSummary() {
             <p className="text-sm text-muted-foreground">Loading portfolio data...</p>
           </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
           {[1,2,3,4].map(i => <div key={i} className="h-24 bg-muted animate-pulse rounded-xl" />)}
         </div>
         <div className="h-96 bg-muted animate-pulse rounded-xl" />
@@ -1537,14 +1574,29 @@ export default function ProjectsSummary() {
       header: "Project",
       sticky: true,
       render: (p) => (
-        <button
-          data-testid={`link-project-${p.project_name}`}
-          className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-[130px] block text-[10px]"
-          onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}?tab=task-grid`)}
-          title={cleanName(p.project_name)}
-        >
-          {cleanName(p.project_name)}
-        </button>
+        <div className="space-y-0.5">
+          <button
+            data-testid={`link-project-${p.project_name}`}
+            className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-[180px] block text-[10px]"
+            onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}?tab=task-grid`)}
+            title={cleanName(p.project_name)}
+          >
+            {cleanName(p.project_name)}
+          </button>
+          <span className="inline-flex items-center text-[9px] text-muted-foreground gap-0.5">
+            <ExternalLink className="w-2.5 h-2.5" />
+            Open details
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: "client_name",
+      header: "Client/Site",
+      render: (p) => (
+        <span className="text-muted-foreground truncate max-w-[130px] block" title={p.client_name || ""}>
+          {truncateName(p.client_name, 22)}
+        </span>
       ),
     },
     {
@@ -1917,9 +1969,9 @@ export default function ProjectsSummary() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
         <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-1">
-          <CardContent className="p-4">
+          <CardContent className="p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Projects</span>
               <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
@@ -1932,7 +1984,7 @@ export default function ProjectsSummary() {
         </Card>
 
         <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-2">
-          <CardContent className="p-4">
+          <CardContent className="p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Avg. Completion</span>
               <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
@@ -1947,7 +1999,7 @@ export default function ProjectsSummary() {
         </Card>
 
         <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-3">
-          <CardContent className="p-4">
+          <CardContent className="p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Behind Schedule</span>
               <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${stats.behindSchedule > 0 ? "bg-rose-50" : "bg-emerald-50"}`}>
@@ -1962,7 +2014,7 @@ export default function ProjectsSummary() {
         </Card>
 
         <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-4">
-          <CardContent className="p-4">
+          <CardContent className="p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Financial Close</span>
               <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
@@ -1975,7 +2027,7 @@ export default function ProjectsSummary() {
         </Card>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-1.5">
         <div className="relative flex-1 min-w-[140px] sm:flex-none">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <Input
