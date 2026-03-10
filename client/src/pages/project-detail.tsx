@@ -732,6 +732,24 @@ function RagDot({ color }: { color: "green" | "amber" | "red" }) {
   return <span className={`inline-block w-2.5 h-2.5 rounded-full ${cls}`} />;
 }
 
+function SectionBrief({ title, subtitle, points }: { title: string; subtitle: string; points: string[] }) {
+  return (
+    <Card className="shadow-sm">
+      <CardContent className="p-3 md:p-4">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">{subtitle}</p>
+        <h3 className="text-sm md:text-base font-semibold mt-1">{title}</h3>
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+          {points.map((point) => (
+            <div key={point} className="rounded-md border bg-muted/20 px-2.5 py-2 text-xs md:text-sm">
+              {point}
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ProjectDetailPage() {
   const [, params] = useRoute("/project/:projectName");
   const [, setLocation] = useLocation();
@@ -1067,6 +1085,16 @@ export default function ProjectDetailPage() {
   const marginDelta = revenueRealisedPct - cosRealisedPct;
 
   const hasRedRag = scheduleRag === "red" || costRag === "red" || qualityRag === "red";
+  const overallRag: "green" | "amber" | "red" = hasRedRag ? "red" : (scheduleRag === "amber" || costRag === "amber" || qualityRag === "amber") ? "amber" : "green";
+  const commercialPendingCount = Math.max((revenueData as any[]).filter((r: any) => !isInflowInBank(r)).length, 0);
+  const unpaidExpenseCount = Math.max((expenseData as any[]).filter((e: any) => !isExpensePaid(e)).length, 0);
+  const dependencyCount = pdTicketsData.length;
+  const overdueEngineeringCount = (engDataForAlerts?.tasks || []).filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "COMPLETE").length;
+  const collaborationSignals = {
+    hasHistory: !!projectInfoId,
+    hasApprovals: !!projectInfoId,
+    hasComms: !!projectName,
+  };
 
   const engStages = engStagesData?.stages || [];
   const engStageTotalTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.length || 0), 0);
@@ -1161,6 +1189,7 @@ export default function ProjectDetailPage() {
                   <h2 className="text-lg font-semibold">{displayName}</h2>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     <PhaseBadge phase={phase} />
+                    <span className="inline-flex items-center gap-1"><RagDot color={overallRag} />Overall: {overallRag.toUpperCase()}</span>
                     <span>Execution: {getPhaseLabel(executionPhase)}</span>
                     <span>•</span>
                     <span>Size: {sizeKwp}</span>
@@ -1234,11 +1263,27 @@ export default function ProjectDetailPage() {
 
           {projectInfoId && <PhaseHistoryTimeline projectId={projectInfoId} />}
           {projectInfoId && <HandoverGatePanel projectId={projectInfoId} />}
+          {!projectInfo && (
+            <Card>
+              <CardContent className="p-4 text-sm text-muted-foreground">
+                Project summary data is still syncing. Core tabs are available and will populate as data arrives.
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 
       {activeSection === "delivery" && (
         <div className="space-y-4" data-testid="delivery-section">
+          <SectionBrief
+            title="Delivery control room"
+            subtitle="Near-term movement"
+            points={[
+              `${planTasks.length} plan tasks (${Math.round(planCompletionPct)}% complete)`,
+              `${overduePlanTasks.length} overdue tasks + ${overdueEngineeringCount} overdue engineering tasks`,
+              `${dependencyCount} linked PD ticket dependencies`,
+            ]}
+          />
           <div className="flex items-center gap-3 flex-wrap border-b pb-2 overflow-x-auto scrollbar-hide" data-testid="delivery-sub-tabs">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Operational movement</span>
             <Button size="sm" variant={activeSubTab === "task-grid" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("task-grid")} data-testid="subtab-task-grid">
@@ -1268,6 +1313,15 @@ export default function ProjectDetailPage() {
 
       {activeSection === "commercial" && canViewTab.finance && (
         <div className="space-y-4" data-testid="commercial-section">
+          <SectionBrief
+            title="Commercial controls"
+            subtitle="Cash, commitments, and approvals"
+            points={[
+              `Contract value R${contractValue.toLocaleString()} | Budget R${budgetTotal.toLocaleString()}`,
+              `${commercialPendingCount} inflows pending, ${unpaidExpenseCount} expense payments pending`,
+              `Revenue realised ${revenueRealisedPct.toFixed(0)}% | COS realised ${cosRealisedPct.toFixed(0)}%`,
+            ]}
+          />
           <div className="flex items-center gap-3 flex-wrap border-b pb-2 overflow-x-auto scrollbar-hide" data-testid="commercial-sub-tabs">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Commercial controls</span>
             <Button size="sm" variant={activeSubTab === "procurement" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("procurement")} data-testid="subtab-procurement">
@@ -1275,10 +1329,12 @@ export default function ProjectDetailPage() {
             </Button>
             {canViewSubTab.revenue && <Button size="sm" variant={activeSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("revenue-tracking")} data-testid="subtab-revenue"><DollarSign className="h-3 w-3 mr-1" /> Invoices / Inflows</Button>}
             {canViewSubTab.expenditure && <Button size="sm" variant={activeSubTab === "expenditure" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("expenditure")} data-testid="subtab-expenditure"><CreditCard className="h-3 w-3 mr-1" /> Commitments / COS</Button>}
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Tracking</span>
             {canViewSubTab.cosTracker && <Button size="sm" variant={activeSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("monthly-realisation")} data-testid="subtab-monthly-realisation"><TrendingUp className="h-3 w-3 mr-1" /> COS Tracker</Button>}
             {canViewSubTab.cosTracker && <Button size="sm" variant={activeSubTab === "revenue-tracker" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("revenue-tracker")} data-testid="subtab-revenue-tracker"><TrendingUp className="h-3 w-3 mr-1" /> Revenue Tracker</Button>}
             {canViewSubTab.cosTracker && <Button size="sm" variant={activeSubTab === "gp-tracker" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("gp-tracker")} data-testid="subtab-gp-tracker"><BarChart3 className="h-3 w-3 mr-1" /> GP</Button>}
             {canViewSubTab.cashflow && <Button size="sm" variant={activeSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("cashflow")} data-testid="subtab-cashflow"><Activity className="h-3 w-3 mr-1" /> Cashflow</Button>}
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Controls</span>
             <Button size="sm" variant={activeSubTab === "change-control" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("change-control")} data-testid="subtab-change-control"><FileCheck className="h-3 w-3 mr-1" /> VO / Changes</Button>
             {canViewTab.finance && canViewSubTab.subcontractors && <Button size="sm" variant={activeSubTab === "subcontractors" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("subcontractors")} data-testid="subtab-subcontractors"><Users className="h-3 w-3 mr-1" /> Subcontractors</Button>}
           </div>
@@ -1297,6 +1353,15 @@ export default function ProjectDetailPage() {
 
       {activeSection === "engineering" && canViewTab.engineering && (
         <div className="space-y-4" data-testid="eng-section">
+          <SectionBrief
+            title="Engineering execution"
+            subtitle="Design and task flow"
+            points={[
+              `${engTotalTasks} tracked engineering tasks`,
+              `${Math.round(engStagePct)}% complete across stages + board`,
+              `${overdueEngineeringCount} overdue engineering tasks requiring action`,
+            ]}
+          />
           <Button variant="ghost" size="sm" onClick={() => navigateToSection("overview")} className="gap-2 -ml-2" data-testid="button-back-overview">
             <ArrowLeft className="h-4 w-4" />
             Back to Overview
@@ -1308,6 +1373,15 @@ export default function ProjectDetailPage() {
 
       {activeSection === "quality" && canViewTab.quality && (
         <div className="space-y-4" data-testid="quality-section">
+          <SectionBrief
+            title="Quality readiness"
+            subtitle="Gates and evidence"
+            points={[
+              `${qualityGatesPassed}/${qualityGatesTotal} quality gates passed`,
+              `${Math.round(qualityProgressPct)}% checklist item completion`,
+              `${Math.max(qualityTotalItems - qualityApprovedItems, 0)} quality items pending approval`,
+            ]}
+          />
           <Button variant="ghost" size="sm" onClick={() => navigateToSection("overview")} className="gap-2 -ml-2" data-testid="button-back-overview">
             <ArrowLeft className="h-4 w-4" />
             Back to Overview
@@ -1318,6 +1392,15 @@ export default function ProjectDetailPage() {
 
       {activeSection === "collaboration" && canViewSubTab.collaboration && (
         <div className="space-y-4" data-testid="collaboration-section">
+          <SectionBrief
+            title="Collaboration & records"
+            subtitle="Project communications and audit trail"
+            points={[
+              collaborationSignals.hasComms ? "Linked communication threads available" : "No linked communications detected yet",
+              collaborationSignals.hasApprovals ? "Approvals and notification records enabled" : "Approvals unavailable until project sync completes",
+              collaborationSignals.hasHistory ? "History and weekly review records available" : "History will appear once project id resolves",
+            ]}
+          />
           <Button variant="ghost" size="sm" onClick={() => navigateToSection("overview")} className="gap-2 -ml-2" data-testid="button-back-overview">
             <ArrowLeft className="h-4 w-4" />
             Back to Overview
