@@ -343,7 +343,7 @@ export default function CommandCenterPage() {
         links.push({ label: "Execution Board", path: "/execution-board", icon: Gauge });
         links.push({ label: "Cashflow", path: "/cashflow", icon: Wallet });
         links.push({ label: "Approvals", path: "/my-work/approvals", icon: CheckCircle2 });
-        links.push({ label: "Admin", path: "/admin/settings", icon: Target });
+        links.push({ label: "Admin Control Center", path: "/admin", icon: Target });
         break;
       case "program_manager":
         links.push({ label: "Execution Board", path: "/execution-board", icon: Gauge });
