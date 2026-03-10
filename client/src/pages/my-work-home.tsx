@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { PageShell, SectionHeader, KPIStrip } from "@/components/layout/page-shell";
 import { format, parseISO } from "date-fns";
 import {
@@ -185,6 +186,35 @@ export default function MyWorkHomePage() {
     },
   });
 
+  const { data: rolloutFlags } = useQuery({
+    queryKey: ["rollout-feature-flags"],
+    queryFn: fetchRolloutFeatureFlags,
+    staleTime: 60_000,
+  });
+  const contextualMsSurfacesEnabled = rolloutFlags?.find((flag) => flag.key === "contextual_ms_surfaces")?.value === true;
+
+  const { data: outlookStatus } = useQuery<{ configured: boolean; connected: boolean }>({
+    queryKey: ["outlook-status", "my-work-home"],
+    queryFn: async () => {
+      const res = await fetch("/api/outlook/status", { credentials: "include", headers: authHeaders() });
+      if (!res.ok) return { configured: false, connected: false };
+      return res.json();
+    },
+  });
+
+  const { data: teamsStatus } = useQuery<{ connected: boolean; ssoRequired?: boolean }>({
+    queryKey: ["teams-status", "my-work-home"],
+    queryFn: async () => {
+      const res = await fetch("/api/ms-teams/chats", { credentials: "include", headers: authHeaders() });
+      if (!res.ok) return { connected: false };
+      const data = await res.json();
+      if (Array.isArray(data)) return { connected: true };
+      if (data?.ssoRequired) return { connected: false, ssoRequired: true };
+      if (Array.isArray(data?.data)) return { connected: true };
+      return { connected: false };
+    },
+  });
+
   const { data: msActionItems = [], isLoading: msActionsLoading } = useQuery<MsObject[]>({
     queryKey: ["/api/ms-objects/mine", "action_required"],
     queryFn: async () => {
@@ -305,6 +335,7 @@ export default function MyWorkHomePage() {
     }
 
     for (const item of msActionItems) {
+      if (contextualMsSurfacesEnabled && item.linked_project_id) continue;
       items.push({
         id: `ms-${item.id}`,
         title: item.subject_or_title,
@@ -319,7 +350,7 @@ export default function MyWorkHomePage() {
 
     items.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     return items;
-  }, [allTaskData, unreadNotifs, msActionItems]);
+  }, [allTaskData, unreadNotifs, msActionItems, contextualMsSurfacesEnabled]);
 
   const actionsLoading = msActionsLoading;
 
@@ -511,6 +542,7 @@ export default function MyWorkHomePage() {
     }
 
     for (const item of msActionItems) {
+      if (contextualMsSurfacesEnabled && item.linked_project_id) continue;
       const key = `ms-${item.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -550,7 +582,7 @@ export default function MyWorkHomePage() {
     }
 
     return items;
-  }, [allTaskData, msActionItems, unreadNotifs]);
+  }, [allTaskData, msActionItems, unreadNotifs, contextualMsSurfacesEnabled]);
 
   const tasksLoading = allTasksLoading;
 
@@ -843,6 +875,33 @@ export default function MyWorkHomePage() {
         </div>
 
         <div className="lg:col-span-1 space-y-4" data-testid="my-work-alerts-column">
+          {contextualMsSurfacesEnabled && (
+            <Card data-testid="card-my-work-personal-ms-tools">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-blue-600" />
+                  Personal Microsoft Tools
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-2">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <Link href="/my-work/email"><Button variant="outline" size="sm" className="justify-start h-8">Personal Email</Button></Link>
+                  <Link href="/my-work/teams"><Button variant="outline" size="sm" className="justify-start h-8">Personal Teams</Button></Link>
+                  <Link href="/my-work/calendar"><Button variant="outline" size="sm" className="justify-start h-8">Personal Calendar</Button></Link>
+                  <Link href="/my-work/meetings"><Button variant="outline" size="sm" className="justify-start h-8">Meetings</Button></Link>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <Badge variant="outline" className={outlookStatus?.connected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600 border-slate-200"}>
+                    Outlook {outlookStatus?.connected ? "Connected" : "Not Connected"}
+                  </Badge>
+                  <Badge variant="outline" className={teamsStatus?.connected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600 border-slate-200"}>
+                    Teams {teamsStatus?.connected ? "Connected" : "Not Connected"}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
