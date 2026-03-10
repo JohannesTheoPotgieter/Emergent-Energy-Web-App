@@ -46,13 +46,13 @@ const ROLE_LANDING_CANDIDATES: Record<string, string[]> = {
 };
 
 const MICROSOFT_PRIORITY_BY_ROLE: Record<string, string[]> = {
-  LEADERSHIP: ["myWorkEmail", "myWorkTeams", "teamsChats", "myWorkMeetings"],
-  DELIVERY: ["myWorkTeams", "myWorkMeetings", "myWorkEmail", "teamsChats"],
-  ENGINEERING: ["myWorkTeams", "myWorkMeetings", "myWorkEmail", "teamsChats"],
-  QUALITY: ["myWorkMeetings", "myWorkTeams", "myWorkEmail", "teamsChats"],
-  FINANCE: ["myWorkEmail", "myWorkMeetings", "myWorkTeams", "teamsChats"],
-  PROJECT_DEVELOPMENT: ["myWorkTeams", "myWorkEmail", "myWorkMeetings", "teamsChats"],
-  DEFAULT: ["myWorkTeams", "myWorkEmail", "myWorkMeetings", "teamsChats"],
+  LEADERSHIP: ["myWorkEmail", "myWorkTeams", "myWorkMeetings"],
+  DELIVERY: ["myWorkTeams", "myWorkMeetings", "myWorkEmail"],
+  ENGINEERING: ["myWorkTeams", "myWorkMeetings", "myWorkEmail"],
+  QUALITY: ["myWorkMeetings", "myWorkTeams", "myWorkEmail"],
+  FINANCE: ["myWorkEmail", "myWorkMeetings", "myWorkTeams"],
+  PROJECT_DEVELOPMENT: ["myWorkTeams", "myWorkEmail", "myWorkMeetings"],
+  DEFAULT: ["myWorkTeams", "myWorkEmail", "myWorkMeetings"],
 };
 
 export function getRoleIntent(role?: string | null): string {
