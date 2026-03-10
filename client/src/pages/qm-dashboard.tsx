@@ -188,21 +188,21 @@ export default function QmDashboardPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: checklists = [], isLoading: checklistsLoading } = useQuery<Checklist[]>({
+  const { data: checklists = [], isLoading: checklistsLoading, isError: checklistsError, refetch: refetchChecklists } = useQuery<Checklist[]>({
     queryKey: ["quality-checklists"],
     queryFn: () => qFetch("/api/quality/checklists"),
     refetchOnMount: "always",
     staleTime: 0,
   });
 
-  const { data: warnings = [], isLoading: warningsLoading } = useQuery<Warning[]>({
+  const { data: warnings = [], isLoading: warningsLoading, isError: warningsError, refetch: refetchWarnings } = useQuery<Warning[]>({
     queryKey: ["quality-warnings-all"],
     queryFn: () => qFetch("/api/quality/warnings?status=open"),
     refetchOnMount: "always",
     staleTime: 0,
   });
 
-  const { data: allItems = [], isLoading: itemsLoading } = useQuery<QualityItem[]>({
+  const { data: allItems = [], isLoading: itemsLoading, isError: itemsError, refetch: refetchItems } = useQuery<QualityItem[]>({
     queryKey: ["quality-all-items"],
     queryFn: () => qFetch("/api/quality/all-items"),
     refetchOnMount: "always",
@@ -311,6 +311,8 @@ export default function QmDashboardPage() {
   }, [checklists]);
   const totalItemsReviewed = totalItemsPassed + totalItemsFailed;
   const activeWarnings = warnings.length;
+  const activeProjectsCount = checklists.filter(c => c.status === "active").length;
+  const completedProjectsCount = checklists.filter(c => c.status === "completed").length;
 
   const overallProgress = totalItemsAll > 0 ? Math.round((totalItemsReviewed / totalItemsAll) * 100) : 0;
   const overallScore = totalItemsReviewed > 0 ? Math.round((totalItemsPassed / totalItemsReviewed) * 100) : 0;
@@ -355,6 +357,8 @@ export default function QmDashboardPage() {
   const getProjectUpdated = (c: Checklist) => {
     return c.updatedAt || c.createdAt || "";
   };
+
+  const projectsWithWarningsCount = useMemo(() => checklists.filter(c => getProjectWarnings(c) > 0).length, [checklists, warnings]);
 
   const filteredProjects = useMemo(() => {
     let list = checklists.filter(c =>
@@ -475,6 +479,30 @@ export default function QmDashboardPage() {
       <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} />
       <ActionBar nextAction={qmNextAction} blockers={qmBlockers} />
 
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card className="border-amber-100 bg-amber-50/40">
+          <CardContent className="p-3">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Needs review now</p>
+            <p className="text-xl font-bold text-amber-600 tabular-nums mt-1">{activeWarnings}</p>
+            <p className="text-xs text-muted-foreground mt-1">Active warnings requiring resolve or override.</p>
+          </CardContent>
+        </Card>
+        <Card className="border-sky-100 bg-sky-50/40">
+          <CardContent className="p-3">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">In progress</p>
+            <p className="text-xl font-bold text-sky-600 tabular-nums mt-1">{activeProjectsCount}</p>
+            <p className="text-xs text-muted-foreground mt-1">Projects with active quality checklists.</p>
+          </CardContent>
+        </Card>
+        <Card className="border-emerald-100 bg-emerald-50/40">
+          <CardContent className="p-3">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Risk spread</p>
+            <p className="text-xl font-bold text-emerald-600 tabular-nums mt-1">{projectsWithWarningsCount}/{totalProjects}</p>
+            <p className="text-xs text-muted-foreground mt-1">Projects currently carrying quality warnings.</p>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
         <Card className="border-sky-100" data-testid="kpi-quality-progress">
           <CardContent className="p-3 text-center">
@@ -539,6 +567,12 @@ export default function QmDashboardPage() {
               <Table2 className="h-4 w-4" /> Items
             </TabsTrigger>
           </TabsList>
+          <div className="w-full rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+            {viewMode === "projects"
+              ? `Projects view: prioritize checklist-level review and navigate to project quality tabs (${activeProjectsCount} active, ${completedProjectsCount} completed).`
+              : "Items view: inspect individual checklist items across projects for fast triage."}
+          </div>
+
           {viewMode === "projects" && activeFiltersCount > 0 && (
             <Button
               variant="ghost"
@@ -620,6 +654,13 @@ export default function QmDashboardPage() {
                 <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                   <Loader2 className="h-8 w-8 mb-3 animate-spin text-emerald-500" />
                   <p className="text-sm">Loading checklists...</p>
+                </div>
+              ) : checklistsError ? (
+                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                  <AlertTriangle className="h-10 w-10 mb-3 text-amber-500" />
+                  <p className="font-medium">Couldn't load project checklists</p>
+                  <p className="text-xs mt-1">Please retry and confirm your connection.</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchChecklists()} data-testid="btn-retry-projects">Retry</Button>
                 </div>
               ) : filteredProjects.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
@@ -846,6 +887,13 @@ export default function QmDashboardPage() {
                   <Loader2 className="h-8 w-8 mb-3 animate-spin text-emerald-500" />
                   <p className="text-sm">Loading items...</p>
                 </div>
+              ) : itemsError ? (
+                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                  <AlertTriangle className="h-10 w-10 mb-3 text-amber-500" />
+                  <p className="font-medium">Couldn't load quality items</p>
+                  <p className="text-xs mt-1">Retry to continue item-level review.</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchItems()} data-testid="btn-retry-items">Retry</Button>
+                </div>
               ) : filteredItems.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                   <ListFilter className="h-16 w-16 mb-4 opacity-20" />
@@ -949,85 +997,107 @@ export default function QmDashboardPage() {
         </TabsContent>
       </Tabs>
 
-      {!warningsLoading && warnings.length > 0 && (
-        <Collapsible open={warningsExpanded} onOpenChange={setWarningsExpanded}>
-          <Card className="border-amber-200/50/40">
-            <CollapsibleTrigger asChild>
-              <CardHeader className="pb-3 cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg" data-testid="warnings-section-header">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base font-semibold flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-amber-50">
-                      <AlertTriangle className="h-4 w-4 text-amber-500" />
-                    </div>
-                    Active Warnings
-                    <Badge variant="outline" className="bg-amber-50 text-amber-600 border-amber-200 ml-1">
-                      {warnings.length}
-                    </Badge>
-                  </CardTitle>
-                  {warningsExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+      <Collapsible open={warningsExpanded} onOpenChange={setWarningsExpanded}>
+        <Card className="border-amber-200/50/40">
+          <CollapsibleTrigger asChild>
+            <CardHeader className="pb-3 cursor-pointer hover:bg-muted/30 transition-colors rounded-t-lg" data-testid="warnings-section-header">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-amber-50">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  </div>
+                  Active Warnings
+                  <Badge variant="outline" className="bg-amber-50 text-amber-600 border-amber-200 ml-1">
+                    {warnings.length}
+                  </Badge>
+                </CardTitle>
+                {warningsExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+              </div>
+            </CardHeader>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <CardContent className="pt-0">
+              {warningsLoading ? (
+                <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                  <Loader2 className="h-6 w-6 mb-2 animate-spin text-amber-500" />
+                  <p className="text-sm">Loading warnings...</p>
                 </div>
-              </CardHeader>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <CardContent className="pt-0">
-                {highSeverityWarnings.length > 0 && (
-                  <div className="mb-5">
-                    <div className="flex items-center gap-2 mb-2.5">
-                      <span className="h-2 w-2 rounded-full bg-red-500" />
-                      <p className="text-xs font-semibold text-red-600 uppercase tracking-wider">High Severity ({highSeverityWarnings.length})</p>
+              ) : warningsError ? (
+                <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                  <AlertTriangle className="h-9 w-9 mb-2 text-amber-500" />
+                  <p className="font-medium">Couldn't load warnings</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchWarnings()} data-testid="btn-retry-warnings">Retry</Button>
+                </div>
+              ) : warnings.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                  <ShieldCheck className="h-10 w-10 mb-2 text-emerald-500/70" />
+                  <p className="font-medium text-foreground">No active warnings</p>
+                  <p className="text-xs mt-1">Quality warning queue is currently clear.</p>
+                </div>
+              ) : (
+                <>
+                  {highSeverityWarnings.length > 0 && (
+                    <div className="mb-5">
+                      <div className="flex items-center gap-2 mb-2.5">
+                        <span className="h-2 w-2 rounded-full bg-red-500" />
+                        <p className="text-xs font-semibold text-red-600 uppercase tracking-wider">High Severity ({highSeverityWarnings.length})</p>
+                      </div>
+                      <div className="space-y-2">
+                        {highSeverityWarnings.map((warning) => (
+                          <WarningRow key={warning.id} warning={warning} severity="high"
+                            onView={() => setSelectedWarning(warning)}
+                            onOverride={() => { setSelectedWarning(warning); setActionType("override"); }}
+                            onResolve={() => { setSelectedWarning(warning); setActionType("resolve"); }}
+                            onViewProject={() => setLocation(`/project/${encodeURIComponent(warning.projectName)}?tab=quality`)}
+                          />
+                        ))}
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      {highSeverityWarnings.map((warning) => (
-                        <WarningRow key={warning.id} warning={warning} severity="high"
-                          onView={() => setSelectedWarning(warning)}
-                          onOverride={() => { setSelectedWarning(warning); setActionType("override"); }}
-                          onResolve={() => { setSelectedWarning(warning); setActionType("resolve"); }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
+                  )}
 
-                {mediumWarnings.length > 0 && (
-                  <div className="mb-5">
-                    <div className="flex items-center gap-2 mb-2.5">
-                      <span className="h-2 w-2 rounded-full bg-amber-500" />
-                      <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider">Medium Severity ({mediumWarnings.length})</p>
+                  {mediumWarnings.length > 0 && (
+                    <div className="mb-5">
+                      <div className="flex items-center gap-2 mb-2.5">
+                        <span className="h-2 w-2 rounded-full bg-amber-500" />
+                        <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider">Medium Severity ({mediumWarnings.length})</p>
+                      </div>
+                      <div className="space-y-2">
+                        {mediumWarnings.map((warning) => (
+                          <WarningRow key={warning.id} warning={warning} severity="medium"
+                            onView={() => setSelectedWarning(warning)}
+                            onOverride={() => { setSelectedWarning(warning); setActionType("override"); }}
+                            onResolve={() => { setSelectedWarning(warning); setActionType("resolve"); }}
+                            onViewProject={() => setLocation(`/project/${encodeURIComponent(warning.projectName)}?tab=quality`)}
+                          />
+                        ))}
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      {mediumWarnings.map((warning) => (
-                        <WarningRow key={warning.id} warning={warning} severity="medium"
-                          onView={() => setSelectedWarning(warning)}
-                          onOverride={() => { setSelectedWarning(warning); setActionType("override"); }}
-                          onResolve={() => { setSelectedWarning(warning); setActionType("resolve"); }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
+                  )}
 
-                {lowWarnings.length > 0 && (
-                  <div>
-                    <div className="flex items-center gap-2 mb-2.5">
-                      <span className="h-2 w-2 rounded-full bg-blue-400" />
-                      <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider">Low / Other ({lowWarnings.length})</p>
+                  {lowWarnings.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-2.5">
+                        <span className="h-2 w-2 rounded-full bg-blue-400" />
+                        <p className="text-xs font-semibold text-blue-600 uppercase tracking-wider">Low / Other ({lowWarnings.length})</p>
+                      </div>
+                      <div className="space-y-2">
+                        {lowWarnings.map((warning) => (
+                          <WarningRow key={warning.id} warning={warning} severity="low"
+                            onView={() => setSelectedWarning(warning)}
+                            onOverride={() => { setSelectedWarning(warning); setActionType("override"); }}
+                            onResolve={() => { setSelectedWarning(warning); setActionType("resolve"); }}
+                            onViewProject={() => setLocation(`/project/${encodeURIComponent(warning.projectName)}?tab=quality`)}
+                          />
+                        ))}
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      {lowWarnings.map((warning) => (
-                        <WarningRow key={warning.id} warning={warning} severity="low"
-                          onView={() => setSelectedWarning(warning)}
-                          onOverride={() => { setSelectedWarning(warning); setActionType("override"); }}
-                          onResolve={() => { setSelectedWarning(warning); setActionType("resolve"); }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </CollapsibleContent>
-          </Card>
-        </Collapsible>
-      )}
+                  )}
+                </>
+              )}
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
 
       <Dialog open={!!selectedWarning && !actionType} onOpenChange={(open) => { if (!open) closeDialog(); }}>
         <DialogContent className="max-w-lg">
@@ -1257,12 +1327,13 @@ export default function QmDashboardPage() {
   );
 }
 
-function WarningRow({ warning, severity, onView, onOverride, onResolve }: {
+function WarningRow({ warning, severity, onView, onOverride, onResolve, onViewProject }: {
   warning: Warning;
   severity: "high" | "medium" | "low";
   onView: () => void;
   onOverride: () => void;
   onResolve: () => void;
+  onViewProject: () => void;
 }) {
   const borderClass = severity === "high"
     ? "border-red-200/50/40 bg-red-50/30 hover:bg-red-50/60"
@@ -1293,8 +1364,18 @@ function WarningRow({ warning, severity, onView, onOverride, onResolve }: {
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">{warning.projectName}</p>
         {warning.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{warning.description}</p>}
+        <p className="text-[11px] text-muted-foreground mt-1">Opened {new Date(warning.createdAt).toLocaleDateString()}</p>
       </div>
       <div className="flex items-center gap-1 shrink-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={(e) => { e.stopPropagation(); onViewProject(); }}
+          data-testid={`btn-warning-project-${warning.id}`}
+        >
+          Project
+        </Button>
         <Button
           variant="ghost"
           size="sm"
