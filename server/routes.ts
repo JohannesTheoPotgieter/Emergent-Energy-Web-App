@@ -11380,7 +11380,7 @@ export async function registerRoutes(
 
             return {
               id: isVirtualMilestone ? pt.rowNumber : -pt.id,
-              projectName: projectName,
+              projectName: String(projectName),
               planProjectName: isVirtualMilestone ? projectName : pt.projectName,
               importedTaskId: isVirtualMilestone ? null : pt.id,
               taskNumber: pt.taskNo || String(pt.rowNumber || ""),
@@ -13926,46 +13926,216 @@ export async function registerRoutes(
 
   app.post("/api/outlook/email-to-task", requireAuth, requireAdmin, async (req, res) => {
     try {
+      const { getFeatureFlag } = await import("./lib/feature-flags");
+      const enabled = await getFeatureFlag("ms_create_action", false);
+      if (!enabled) {
+        return res.status(404).json({ error: "Microsoft create actions are not enabled" });
+      }
+
       const userId = (req.user as any).id;
-      const { outlookMessageId, subject, sender, receivedAt, snippet, webLink, targetType, targetId } = req.body;
-
-      if (!subject) {
-        return res.status(400).json({ error: "subject is required" });
-      }
-
-      let taskId: number | null = null;
-
-      if (targetType === "new") {
-        const task = await storage.createMytoolTask({
-          ownerUserId: userId,
-          title: subject,
-          status: "inbox",
-          priority: "normal",
-          notes: snippet ? `Email from: ${sender || "unknown"}\n\n${snippet}` : null,
-          sortOrder: 0,
-          isRecurring: false,
-        });
-        taskId = task.id;
-      } else if (targetType === "mytool" && targetId) {
-        taskId = parseInt(String(targetId));
-      }
-
-      const emailLink = await storage.createEmailLink({
+      const {
+        sourceType,
+        sourceRef,
+        webLink,
         subject,
-        sender: sender || null,
-        emailDate: receivedAt ? new Date(receivedAt).toISOString().slice(0, 10) : null,
-        snippet: snippet || null,
-        outlookMessageId: outlookMessageId || null,
-        webLink: webLink || null,
-        linkedTaskId: taskId,
-        linkedOperationalTaskId: targetType === "operational" && targetId ? parseInt(String(targetId)) : null,
-        linkedPriorityId: null,
-        createdBy: userId,
+        sender,
+        receivedAt,
+        snippet,
+        createType,
+        category,
+        projectBehavior,
+        projectName,
+        assigneeUserId,
+        priority,
+        dueDate,
+        description,
+        suggestions,
+        chosenValues,
+        overrideReasons,
+      } = req.body || {};
+
+      const normalizedSourceType = sourceType === "teams" || sourceType === "sharepoint" || sourceType === "email" ? sourceType : null;
+      const normalizedCreateType = createType === "task" || createType === "action" ? createType : null;
+      const normalizedProjectBehavior = projectBehavior === "accept_suggested" || projectBehavior === "choose_other" || projectBehavior === "leave_unlinked" ? projectBehavior : null;
+      if (!normalizedSourceType || !normalizedCreateType || !normalizedProjectBehavior) {
+        return res.status(400).json({ error: "sourceType, createType, and projectBehavior are required" });
+      }
+      if (!sourceRef || !subject || !category) {
+        return res.status(400).json({ error: "sourceRef, subject, and category are required" });
+      }
+      if ((normalizedProjectBehavior === "accept_suggested" || normalizedProjectBehavior === "choose_other") && !projectName) {
+        return res.status(400).json({ error: "projectName is required for linked items" });
+      }
+      if (normalizedCreateType === "task" && normalizedProjectBehavior === "leave_unlinked") {
+        return res.status(400).json({ error: "Unlinked creation is not supported for task items in the canonical task model. Choose action or link a project." });
+      }
+
+      const suggested = suggestions || {};
+      const chosen = chosenValues || {
+        projectName: projectName || null,
+        assigneeUserId: assigneeUserId || null,
+        dueDate: dueDate || null,
+        title: subject,
+        summary: description || snippet || null,
+      };
+      const reasons = overrideReasons || {};
+
+      const overrideFields = ["projectName", "assigneeUserId", "dueDate", "title", "summary"] as const;
+      for (const field of overrideFields) {
+        const suggestedValue = suggested[field] ?? null;
+        const chosenValue = chosen[field] ?? null;
+        if (suggestedValue !== null && chosenValue !== suggestedValue) {
+          const reason = reasons[field];
+          if (!reason || !String(reason).trim()) {
+            return res.status(400).json({ error: `Override reason required for ${field}` });
+          }
+          logAuditFromReq(req, {
+            entityType: "ms_create_action",
+            action: "suggestion_overridden",
+            entityId: `${normalizedSourceType}:${sourceRef}`,
+            changesJson: { field, suggestedValue, chosenValue, reason: String(reason).trim() },
+          });
+          logAuditFromReq(req, {
+            entityType: "ms_create_action",
+            action: "override_reason_captured",
+            entityId: `${normalizedSourceType}:${sourceRef}`,
+            changesJson: { field, reason: String(reason).trim() },
+          });
+        } else if (suggestedValue !== null) {
+          logAuditFromReq(req, {
+            entityType: "ms_create_action",
+            action: "suggestion_accepted",
+            entityId: `${normalizedSourceType}:${sourceRef}`,
+            changesJson: { field, value: chosenValue },
+          });
+        }
+      }
+
+      logAuditFromReq(req, {
+        entityType: "ms_create_action",
+        action: "source_item_opened",
+        entityId: `${normalizedSourceType}:${sourceRef}`,
+        changesJson: { sourceType: normalizedSourceType, sourceRef, webLink: webLink || null },
+      });
+      logAuditFromReq(req, {
+        entityType: "ms_create_action",
+        action: "create_clicked",
+        entityId: `${normalizedSourceType}:${sourceRef}`,
+        changesJson: { createType: normalizedCreateType, category, projectBehavior: normalizedProjectBehavior },
+      });
+      logAuditFromReq(req, {
+        entityType: "ms_create_action",
+        action: "suggestions_presented",
+        entityId: `${normalizedSourceType}:${sourceRef}`,
+        changesJson: { suggestions: suggested, chosenValues: chosen },
       });
 
-      logAuditFromReq(req, { entityType: "email_to_task", action: "create", changesJson: { description: "Email linked to task", subject, targetType, taskId } });
-      res.json({ task: taskId ? { id: taskId } : null, emailLink });
+      const existing = await db.execute(sql`
+        SELECT id, created_item_type, created_item_id
+        FROM ms_create_item_links
+        WHERE source_type = ${normalizedSourceType}
+          AND source_ref = ${sourceRef}
+          AND created_item_type = ${normalizedCreateType}
+        LIMIT 1
+      `).then((r: any) => r.rows || r);
+      if (existing?.length) {
+        return res.status(409).json({
+          error: "Duplicate create prevented",
+          existing: existing[0],
+        });
+      }
+
+      let createdItemType = normalizedCreateType;
+      let createdItemId: number | null = null;
+
+      if (normalizedCreateType === "task") {
+        const opTask = await storage.createOperationalTask({
+          projectName: String(projectName),
+          title: String(chosen.title || subject),
+          description: description || String(chosen.summary || snippet || ""),
+          status: "TO DO",
+          priority: priority || "Med",
+          ownerUserId: assigneeUserId ? parseInt(String(assigneeUserId)) : null,
+          requesterUserId: userId,
+          dueDate: dueDate || null,
+          sortOrder: 0,
+          externalSource: normalizedSourceType,
+          externalTaskId: sourceRef,
+          createdBy: userId,
+          domain: "BOTH",
+          percentComplete: 0,
+          taskTypeTag: category,
+        });
+        createdItemId = opTask.id;
+      } else {
+        const task = await storage.createMytoolTask({
+          ownerUserId: assigneeUserId ? parseInt(String(assigneeUserId)) : userId,
+          title: String(chosen.title || subject),
+          status: "inbox",
+          priority: "normal",
+          notes: description || String(chosen.summary || snippet || ""),
+          sortOrder: 0,
+          isRecurring: false,
+          bucket: projectName ? "project" : "personal",
+          projectName: projectName || null,
+          tag: category,
+          sourceEmailId: normalizedSourceType === "email" ? sourceRef : null,
+          sourceEmailSubject: normalizedSourceType === "email" ? subject : null,
+          dueAt: dueDate ? new Date(`${dueDate}T00:00:00.000Z`) : null,
+        });
+        createdItemId = task.id;
+      }
+
+      const [trace] = await db.execute(sql`
+        INSERT INTO ms_create_item_links (
+          source_type, source_ref, source_deep_link, source_title, source_sender_or_author,
+          created_item_type, created_item_id, category, project_behavior,
+          suggested_values, chosen_values, override_reasons, created_by
+        ) VALUES (
+          ${normalizedSourceType}, ${sourceRef}, ${webLink || null}, ${subject}, ${sender || null},
+          ${createdItemType}, ${createdItemId}, ${category}, ${normalizedProjectBehavior},
+          ${JSON.stringify(suggested)}, ${JSON.stringify(chosen)}, ${JSON.stringify(reasons)}, ${userId}
+        ) RETURNING *
+      `).then((r: any) => r.rows || r);
+
+      if (normalizedSourceType === "email") {
+        await storage.createEmailLink({
+          subject,
+          sender: sender || null,
+          emailDate: receivedAt ? new Date(receivedAt).toISOString().slice(0, 10) : null,
+          snippet: snippet || null,
+          outlookMessageId: sourceRef,
+          webLink: webLink || null,
+          linkedTaskId: normalizedCreateType === "action" ? createdItemId : null,
+          linkedOperationalTaskId: normalizedCreateType === "task" ? createdItemId : null,
+          linkedPriorityId: null,
+          createdBy: userId,
+        });
+      }
+
+      logAuditFromReq(req, {
+        entityType: "ms_create_action",
+        action: "create_confirmed",
+        entityId: `${normalizedSourceType}:${sourceRef}`,
+        changesJson: { createType: normalizedCreateType, category, createdItemId },
+      });
+      logAuditFromReq(req, {
+        entityType: "ms_create_action",
+        action: "create_succeeded",
+        entityId: `${normalizedSourceType}:${sourceRef}`,
+        changesJson: { createdItemType, createdItemId, projectName: projectName || null },
+      });
+
+      res.json({
+        createdItem: { type: createdItemType, id: createdItemId },
+        trace,
+      });
     } catch (err: any) {
+      logAuditFromReq(req, {
+        entityType: "ms_create_action",
+        action: "create_failed",
+        changesJson: { error: err?.message || "Unknown error" },
+      });
       console.error("[Outlook] Email-to-task error:", err);
       res.status(500).json({ error: err.message });
     }
