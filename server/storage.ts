@@ -1,5 +1,6 @@
 import { db, getDbMode } from "./db";
 import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
+import { UsersRepository } from "./repositories/users-repository";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
@@ -465,6 +466,7 @@ export interface IStorage {
 
 export class DatabaseStorage implements IStorage {
   private _dbInstance?: typeof db;
+  private readonly usersRepository: UsersRepository;
   
   // Getter that always returns the current db (handles dynamic switching)
   private get dbInstance(): typeof db {
@@ -473,6 +475,7 @@ export class DatabaseStorage implements IStorage {
   
   constructor(dbInstance?: typeof db) {
     this._dbInstance = dbInstance;
+    this.usersRepository = new UsersRepository(this.dbInstance);
   }
   
   // Transaction support
@@ -497,27 +500,19 @@ export class DatabaseStorage implements IStorage {
   
   // Users
   async getUser(id: number): Promise<User | undefined> {
-    const [user] = await this.dbInstance.select().from(users).where(eq(users.id, id));
-    return user;
+    return this.usersRepository.getById(id);
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const [user] = await this.dbInstance.select().from(users).where(eq(users.email, email));
-    return user;
+    return this.usersRepository.getByEmail(email);
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await this.dbInstance.select().from(users).where(eq(users.username, username));
-    return user;
+    return this.usersRepository.getByUsername(username);
   }
 
   async createUser(user: InsertUser): Promise<User> {
-    // Explicitly provide timestamp for SQLite compatibility
-    const [created] = await this.dbInstance.insert(users).values({
-      ...user,
-      createdAt: new Date(),
-    }).returning();
-    return created;
+    return this.usersRepository.create(user);
   }
 
   // Projects (legacy)
