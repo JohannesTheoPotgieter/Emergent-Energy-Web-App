@@ -34,7 +34,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "myToolSettings", path: "/my-tool/settings", label: "My Work Settings", routeComponentKey: "MyToolSettingsPage" },
   { id: "companyPriorities", path: "/company-priorities", label: "Company Priorities", iconKey: "Flag", navGroup: "EXCO", permissionEntity: "company_priorities", showInSidebar: true, routeComponentKey: "MyToolPrioritiesPage" },
   { id: "myToolHelp", path: "/my-tool/help", label: "My Work Help", routeComponentKey: "MyToolHelpPage" },
-  { id: "admin", path: "/admin", label: "Admin Control Center", permissionEntity: "admin", routeComponentKey: "AdminControlCenterPage" },
+  { id: "admin", path: "/admin", label: "Admin Control Center", permissionEntity: "admin", redirectTo: "/admin/control-center" },
   { id: "adminLegacyUtilities", path: "/admin/legacy-utilities", label: "Legacy Admin Utilities", permissionEntity: "admin", routeComponentKey: "AdminPage" },
   { id: "adminMyTool", path: "/admin/my-tool-settings", label: "Admin My Work Settings", permissionEntity: "admin", routeComponentKey: "MyToolAdminSettingsPage" },
   { id: "quality", path: "/quality", label: "Quality Dashboard", iconKey: "ShieldCheck", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "QmDashboardPage" },

@@ -744,7 +744,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/settings", requireAdmin, async (req, res) => {
+  app.put("/api/settings", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { key, value } = req.body;
       if (!key) return res.status(400).json({ error: "key is required" });
@@ -13340,127 +13340,7 @@ export async function registerRoutes(
     }
   });
 
-  // ==================== MY TOOL - COMPANY PRIORITIES ====================
-
-  app.get("/api/mytool/company-priorities", requireAuth, async (req, res) => {
-    try {
-      const { horizon } = req.query;
-      const priorities = await storage.getMytoolCompanyPriorities(horizon as string | undefined);
-      const nullRanked = priorities.filter(p => p.priorityRank == null);
-      if (nullRanked.length > 0) {
-        const deptMaxRanks: Record<string, number> = {};
-        priorities.forEach(p => {
-          const dept = p.department || "_none_";
-          if (p.priorityRank != null) {
-            deptMaxRanks[dept] = Math.max(deptMaxRanks[dept] || 0, p.priorityRank);
-          }
-        });
-        for (const p of nullRanked) {
-          const dept = p.department || "_none_";
-          const nextRank = (deptMaxRanks[dept] || 0) + 1;
-          deptMaxRanks[dept] = nextRank;
-          await storage.updateMytoolCompanyPriority(p.id, { priorityRank: nextRank });
-          p.priorityRank = nextRank;
-        }
-      }
-      const { priorityLinks: plTable } = await import("@shared/schema");
-      const allLinks = await db.select().from(plTable);
-      const linksByPriority: Record<number, any[]> = {};
-      allLinks.forEach(l => {
-        if (!linksByPriority[l.priorityId]) linksByPriority[l.priorityId] = [];
-        linksByPriority[l.priorityId].push(l);
-      });
-      const enriched = priorities.map(p => ({ ...p, links: linksByPriority[p.id] || [] }));
-      res.json(enriched);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  const requirePriorityAdmin = requireRole("admin", "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO");
-
-  app.post("/api/mytool/company-priorities", requireAuth, requirePriorityAdmin, async (req, res) => {
-    try {
-      const priority = await storage.createMytoolCompanyPriority(req.body);
-      logAuditFromReq(req, { entityType: "company_priority", action: "create", entityId: String(priority.id), changesJson: { description: "Company priority created", title: req.body.title } });
-      res.json(priority);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.patch("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
-    try {
-      const priority = await storage.updateMytoolCompanyPriority(parseInt(req.params.id), req.body);
-      logAuditFromReq(req, { entityType: "company_priority", action: "update", entityId: req.params.id, changesJson: { description: "Company priority updated" } });
-      res.json(priority);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.delete("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
-    try {
-      await storage.deleteMytoolCompanyPriority(parseInt(req.params.id));
-      logAuditFromReq(req, { entityType: "company_priority", action: "delete", entityId: req.params.id, changesJson: { description: "Company priority deleted" } });
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // ==================== PRIORITY LINKS (many-to-many) ====================
-
-  app.get("/api/mytool/company-priorities/:id/links", requireAuth, async (req, res) => {
-    try {
-      const { priorityLinks: plTable } = await import("@shared/schema");
-      const links = await db.select().from(plTable).where(eq(plTable.priorityId, parseInt(req.params.id)));
-      res.json(links);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.get("/api/mytool/priority-links", requireAuth, async (_req, res) => {
-    try {
-      const { priorityLinks: plTable } = await import("@shared/schema");
-      const links = await db.select().from(plTable);
-      res.json(links);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/mytool/company-priorities/:id/links", requireAuth, requirePriorityAdmin, async (req, res) => {
-    try {
-      const { priorityLinks: plTable } = await import("@shared/schema");
-      const priorityId = parseInt(req.params.id);
-      const { linkType, projectName, taskId, taskType } = req.body;
-      if (!linkType) return res.status(400).json({ error: "linkType is required" });
-      const [link] = await db.insert(plTable).values({
-        priorityId,
-        linkType,
-        projectName: projectName || null,
-        taskId: taskId ? parseInt(taskId) : null,
-        taskType: taskType || null,
-      }).returning();
-      logAuditFromReq(req, { entityType: "priority_link", action: "create", entityId: String(link.id), changesJson: { description: "Priority link created", priorityId, linkType, projectName } });
-      res.json(link);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.delete("/api/mytool/priority-links/:linkId", requireAuth, requirePriorityAdmin, async (req, res) => {
-    try {
-      const { priorityLinks: plTable } = await import("@shared/schema");
-      await db.delete(plTable).where(eq(plTable.id, parseInt(req.params.linkId)));
-      logAuditFromReq(req, { entityType: "priority_link", action: "delete", entityId: req.params.linkId, changesJson: { description: "Priority link deleted" } });
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+  // Company priorities and priority-link APIs are served by departments/exco-routes.ts.
 
   app.get("/api/mytool/escalated-priorities", requireAuth, requireAdmin, async (req, res) => {
     try {
