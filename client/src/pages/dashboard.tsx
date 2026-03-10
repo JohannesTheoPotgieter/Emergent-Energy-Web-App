@@ -350,6 +350,26 @@ function ProgressBar({ value, className = "" }: { value: number; className?: str
   );
 }
 
+function SectionHeading({
+  title,
+  description,
+  accent,
+}: {
+  title: string;
+  description: string;
+  accent: string;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className={`mt-0.5 h-8 w-1.5 rounded-full ${accent}`} aria-hidden="true" />
+      <div>
+        <h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">{title}</h2>
+        <p className="text-sm text-muted-foreground mt-0.5">{description}</p>
+      </div>
+    </div>
+  );
+}
+
 function SkeletonDashboard() {
   return (
     <div className="space-y-8 max-w-[1400px] mx-auto">
@@ -411,7 +431,7 @@ export default function Dashboard() {
   const [activeDrilldown, setActiveDrilldown] = useState<string | null>(null);
   const [hpRefreshing, setHpRefreshing] = useState(false);
 
-  const { data: dashboardData, isLoading: dashLoading } = useQuery<{
+  const { data: dashboardData, isLoading: dashLoading, isError: dashError } = useQuery<{
     kpis: {
       siteEstablishmentNext10: number;
       commissioningNext10: number;
@@ -453,7 +473,7 @@ export default function Dashboard() {
     queryKey: ["/api/program-dashboard"],
   });
 
-  const { data: highPriority, isLoading: hpLoading, isFetching: hpFetching, dataUpdatedAt: hpUpdatedAt } = useQuery<HighPriority>({
+  const { data: highPriority, isLoading: hpLoading, isFetching: hpFetching, isError: hpError, dataUpdatedAt: hpUpdatedAt } = useQuery<HighPriority>({
     queryKey: ["/api/dashboard/high-priority"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
@@ -600,13 +620,43 @@ export default function Dashboard() {
     setActiveDrilldown((prev) => (prev === key ? null : key));
   };
 
+  const immediateAttentionCount = highPriority
+    ? highPriority.overdueExpenses.length + highPriority.projectsBehindPlan.length + highPriority.overdueTasks.length
+    : 0;
+
   const navigateToProject = (projectName: string) => {
     setActiveDrilldown(null);
     setLocation(`/project/${encodeURIComponent(projectName)}`);
   };
 
+  if (!canView) {
+    return (
+      <div className="max-w-[900px] mx-auto py-12">
+        <Card className="border border-amber-200 bg-amber-50/40">
+          <CardContent className="py-8 text-center">
+            <p className="text-base font-semibold text-foreground">Execution Dashboard access required</p>
+            <p className="text-sm text-muted-foreground mt-2">You do not currently have permission to view cross-project execution controls.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (dashLoading && !dashboardData) {
     return <SkeletonDashboard />;
+  }
+
+  if (dashError && !dashboardData) {
+    return (
+      <div className="max-w-[900px] mx-auto py-12">
+        <Card className="border border-red-200 bg-red-50/40">
+          <CardContent className="py-8 text-center">
+            <p className="text-base font-semibold text-foreground">Unable to load execution dashboard</p>
+            <p className="text-sm text-muted-foreground mt-2">Please refresh or try again in a moment.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -614,13 +664,13 @@ export default function Dashboard() {
       <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 animate-fade-in">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground animate-slide-up-fade" data-testid="text-page-title">
-            Program Dashboard
+            Execution Command Center
           </h1>
           <p className="text-sm text-muted-foreground mt-1 animate-slide-up-fade stagger-1">
-            FY26: 1 Sep 2025 – 31 Aug 2026
+            Real-time cross-project execution oversight
           </p>
           <p className="text-xs text-muted-foreground mt-1.5 animate-slide-up-fade stagger-1">
-            Snapshot shown from latest successful sync{hpUpdatedAt ? ` · Priority feed updated ${format(new Date(hpUpdatedAt), "HH:mm d MMM")}` : ""}
+            Prioritized operational snapshot from latest successful sync{hpUpdatedAt ? ` · Priority feed updated ${format(new Date(hpUpdatedAt), "HH:mm d MMM")}` : ""}
           </p>
         </div>
         <time className="text-sm font-medium text-muted-foreground tabular-nums animate-slide-in-right stagger-2" data-testid="text-today-date">
@@ -628,25 +678,37 @@ export default function Dashboard() {
         </time>
       </header>
 
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-3" aria-label="Operational focus">
-        <Link href="/execution-board" className="rounded-lg border bg-card p-3 hover:border-blue-200 transition-colors">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Immediate execution risk</p>
-          <p className="text-2xl font-bold text-foreground mt-1">{highPriority?.projectsBehindPlan.length ?? 0}</p>
-          <p className="text-xs text-muted-foreground mt-1">Projects behind plan</p>
-        </Link>
-        <Link href="/revenue-tracker" className="rounded-lg border bg-card p-3 hover:border-amber-200 transition-colors">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Cash protection</p>
-          <p className="text-2xl font-bold text-foreground mt-1">{formatRand(kpis?.revenueOutstanding ?? 0)}</p>
-          <p className="text-xs text-muted-foreground mt-1">Outstanding receivables</p>
-        </Link>
-        <Link href="/cashflow" className="rounded-lg border bg-card p-3 hover:border-red-200 transition-colors">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Payment risk</p>
-          <p className="text-2xl font-bold text-foreground mt-1">{formatRand(kpis?.expenseOverdue ?? 0)}</p>
-          <p className="text-xs text-muted-foreground mt-1">Overdue expenses to clear</p>
-        </Link>
+      <section className="space-y-4" aria-label="Immediate Attention">
+        <SectionHeading
+          title="Immediate Attention"
+          description="Start here first: unresolved execution and cash-risk items that need intervention."
+          accent="bg-red-500"
+        />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Link href="/execution-board" className="rounded-xl border border-red-200 bg-gradient-to-br from-red-50 to-rose-50 p-4 hover:border-red-300 transition-colors shadow-sm">
+            <p className="text-xs uppercase tracking-wide text-red-700 font-semibold">Urgent execution risk</p>
+            <p className="text-3xl font-bold text-red-900 mt-1">{immediateAttentionCount}</p>
+            <p className="text-xs text-red-700/80 mt-1">Overdue expenses, behind-plan projects, overdue tasks</p>
+          </Link>
+          <Link href="/revenue-tracker" className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 p-4 hover:border-amber-300 transition-colors shadow-sm">
+            <p className="text-xs uppercase tracking-wide text-amber-700 font-semibold">Financial intervention</p>
+            <p className="text-3xl font-bold text-amber-900 mt-1">{formatRand(kpis?.revenueOutstanding ?? 0)}</p>
+            <p className="text-xs text-amber-700/80 mt-1">Outstanding receivables requiring follow-up</p>
+          </Link>
+          <Link href="/cashflow" className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4 hover:border-blue-300 transition-colors shadow-sm">
+            <p className="text-xs uppercase tracking-wide text-blue-700 font-semibold">Cash protection</p>
+            <p className="text-3xl font-bold text-blue-900 mt-1">{formatRand(kpis?.expenseOverdue ?? 0)}</p>
+            <p className="text-xs text-blue-700/80 mt-1">Overdue supplier expenses to clear</p>
+          </Link>
+        </div>
       </section>
 
-      <section aria-label="Milestone KPIs" className="animate-float-in stagger-2">
+      <section aria-label="Execution Health" className="space-y-4 animate-float-in stagger-2">
+        <SectionHeading
+          title="Execution Health"
+          description="Forward milestones and completion confidence across active projects."
+          accent="bg-blue-500"
+        />
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
           <span className="w-1 h-4 rounded-full bg-amber-400"></span>
           Milestones
@@ -719,7 +781,12 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <section aria-label="Financial KPIs" className="animate-float-in stagger-4">
+      <section aria-label="Financial Exposure" className="space-y-4 animate-float-in stagger-4">
+        <SectionHeading
+          title="Financial Exposure"
+          description="Cash, COS, and overdue obligations with direct drilldowns into affected projects."
+          accent="bg-emerald-500"
+        />
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
           <span className="w-1 h-4 rounded-full bg-emerald-500"></span>
           Financial
@@ -800,9 +867,9 @@ export default function Dashboard() {
                 <AlertTriangle className="h-5 w-5 text-red-600" />
               </div>
               <div className="min-w-0">
-                <CardTitle className="text-base sm:text-lg font-bold text-foreground">High Priority Actions</CardTitle>
+                <CardTitle className="text-base sm:text-lg font-bold text-foreground">Immediate Intervention Queue</CardTitle>
                 <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 line-clamp-1 sm:line-clamp-none">
-                  {highPriorityTotal} open items · Overdue expenses · Revenue outstanding · Projects behind plan · Upcoming milestones · Overdue tasks
+                  {highPriorityTotal} action items · Overdue expenses · Revenue outstanding · Projects behind plan · Upcoming milestones · Overdue tasks
                 </p>
               </div>
             </div>
@@ -830,6 +897,8 @@ export default function Dashboard() {
               <Loader2 className="h-4 w-4 animate-spin" />
               <span className="text-sm">Loading priority items…</span>
             </div>
+          ) : hpError ? (
+            <div className="py-6 text-center text-sm text-muted-foreground">Could not load immediate intervention items. Retry sync.</div>
           ) : highPriority ? (
             <div className="grid gap-4 lg:grid-cols-2">
               <PrioritySection
@@ -960,7 +1029,13 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-5 animate-fade-in stagger-7">
+      <section className="space-y-4">
+        <SectionHeading
+          title="Execution Health"
+          description="PM capacity and risk-ranked projects to prioritize interventions."
+          accent="bg-violet-500"
+        />
+        <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-5 animate-fade-in stagger-7">
         <Card className="lg:col-span-2 shadow-sm" data-testid="card-pm-summary">
           <CardHeader className="pb-2">
             <CardTitle className="text-base font-bold text-foreground">PM Summary</CardTitle>
@@ -1071,6 +1146,14 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+      </section>
+
+      <section className="space-y-4">
+        <SectionHeading
+          title="Planning / Movement"
+          description="Portfolio distribution, progress movement, and schedule trajectory."
+          accent="bg-cyan-500"
+        />
 
       {projectsByPhase.length > 0 && (
         <Card className="shadow-sm animate-float-in stagger-8" data-testid="card-projects-by-phase">
@@ -1383,6 +1466,8 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       )}
+
+      </section>
 
       <DataSourceDebug
         pageName="Dashboard"
