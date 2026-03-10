@@ -624,6 +624,10 @@ export default function Dashboard() {
     ? highPriority.overdueExpenses.length + highPriority.projectsBehindPlan.length + highPriority.overdueTasks.length
     : 0;
 
+  const immediateAttentionLabel = immediateAttentionCount === 0
+    ? "No urgent interventions"
+    : `${immediateAttentionCount} urgent intervention${immediateAttentionCount === 1 ? "" : "s"}`;
+
   const navigateToProject = (projectName: string) => {
     setActiveDrilldown(null);
     setLocation(`/project/${encodeURIComponent(projectName)}`);
@@ -660,14 +664,14 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-8 max-w-[1400px] mx-auto">
+    <div className="space-y-8 max-w-[1400px] mx-auto pb-4">
       <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 animate-fade-in">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground animate-slide-up-fade" data-testid="text-page-title">
             Execution Command Center
           </h1>
           <p className="text-sm text-muted-foreground mt-1 animate-slide-up-fade stagger-1">
-            Real-time cross-project execution oversight
+            What is happening now, what is unhealthy, and where leadership should intervene first.
           </p>
           <p className="text-xs text-muted-foreground mt-1.5 animate-slide-up-fade stagger-1">
             Prioritized operational snapshot from latest successful sync{hpUpdatedAt ? ` · Priority feed updated ${format(new Date(hpUpdatedAt), "HH:mm d MMM")}` : ""}
@@ -677,6 +681,38 @@ export default function Dashboard() {
           {format(new Date(), "EEEE, d MMMM yyyy")}
         </time>
       </header>
+
+      <Card className="border border-red-100 bg-gradient-to-r from-red-50/80 via-white to-white shadow-sm">
+        <CardContent className="p-4 sm:p-5">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-wider font-semibold text-red-700">Intervention Focus</p>
+              <p className="text-xl sm:text-2xl font-bold text-red-900 mt-1">{immediateAttentionLabel}</p>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                Anchor decisions on immediate risk first, then move into execution health and portfolio movement.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 min-w-full lg:min-w-[500px]">
+              <div className="rounded-lg border border-red-200 bg-white px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wide font-semibold text-red-700">Overdue Expenses</p>
+                <p className="text-lg font-bold text-red-900">{highPriority?.overdueExpenses.length ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-amber-200 bg-white px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wide font-semibold text-amber-700">Revenue Outstanding</p>
+                <p className="text-lg font-bold text-amber-900">{highPriority?.revenueOutstanding.length ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-orange-200 bg-white px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wide font-semibold text-orange-700">Behind Plan</p>
+                <p className="text-lg font-bold text-orange-900">{highPriority?.projectsBehindPlan.length ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-blue-200 bg-white px-3 py-2">
+                <p className="text-[10px] uppercase tracking-wide font-semibold text-blue-700">Overdue Tasks</p>
+                <p className="text-lg font-bold text-blue-900">{highPriority?.overdueTasks.length ?? 0}</p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <section className="space-y-4" aria-label="Immediate Attention">
         <SectionHeading
@@ -701,6 +737,181 @@ export default function Dashboard() {
             <p className="text-xs text-blue-700/80 mt-1">Overdue supplier expenses to clear</p>
           </Link>
         </div>
+
+        <Card className="border-l-4 border-l-red-500 shadow-sm animate-float-in stagger-6" data-testid="card-high-priority">
+          <CardHeader className="pb-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between w-full gap-2">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2 rounded-lg bg-red-100 shrink-0">
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                </div>
+                <div className="min-w-0">
+                  <CardTitle className="text-base sm:text-lg font-bold text-foreground">Immediate Intervention Queue</CardTitle>
+                  <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 line-clamp-1 sm:line-clamp-none">
+                    {highPriorityTotal} action items · Overdue expenses · Revenue outstanding · Projects behind plan · Upcoming milestones · Overdue tasks
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                disabled={hpRefreshing || hpFetching}
+                onClick={async () => {
+                  setHpRefreshing(true);
+                  await queryClient.invalidateQueries({ queryKey: ["/api/dashboard/high-priority"] });
+                  await queryClient.refetchQueries({ queryKey: ["/api/dashboard/high-priority"] });
+                  setHpRefreshing(false);
+                }}
+                data-testid="btn-refresh-high-priority"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${hpRefreshing || hpFetching ? "animate-spin" : ""}`} />
+                {hpRefreshing || hpFetching ? "Syncing…" : "Sync now"}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {hpLoading ? (
+              <div className="flex items-center gap-2 py-6 justify-center text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="text-sm">Loading priority items…</span>
+              </div>
+            ) : hpError ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">Could not load immediate intervention items. Retry sync.</div>
+            ) : highPriority ? (
+              <div className="grid gap-4 lg:grid-cols-2">
+                <PrioritySection
+                  title="Overdue Expenses"
+                  icon={AlertCircle}
+                  iconColor="text-red-600"
+                  accentBorder="border-l-red-400"
+                  items={highPriority.overdueExpenses}
+                  expanded={!!expanded.overdue}
+                  onToggle={() => toggle("overdue")}
+                  renderItem={(item, i) => (
+                    <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=expenditure&highlightId=${item.id}&highlightType=expense`}>
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-red-50/60 cursor-pointer group transition-colors" data-testid={`item-overdue-${i}`}>
+                        <SeverityBadge severity={item.severity} />
+                        <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-red-700 transition-colors font-medium">
+                          {item.projectName.replace("_Tracker", "")}
+                        </span>
+                        {item.hasInvoice !== undefined && (
+                          <Badge variant={item.hasInvoice ? "default" : "destructive"} className="text-[9px] px-1 py-0">
+                            {item.hasInvoice ? "INV" : "No INV"}
+                          </Badge>
+                        )}
+                        <span className="text-xs sm:text-sm font-mono font-semibold text-red-600 whitespace-nowrap">{formatRand(item.amount)}</span>
+                        <span className="text-[10px] sm:text-[11px] text-muted-foreground whitespace-nowrap hidden xs:inline">{item.paymentDate}</span>
+                      </div>
+                    </Link>
+                  )}
+                />
+
+                <PrioritySection
+                  title="Revenue Outstanding"
+                  icon={DollarSign}
+                  iconColor="text-amber-600"
+                  accentBorder="border-l-amber-400"
+                  items={highPriority.revenueOutstanding}
+                  expanded={!!expanded.revenue}
+                  onToggle={() => toggle("revenue")}
+                  renderItem={(item, i) => (
+                    <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=revenue-tracking&highlightId=${item.id}&highlightType=revenue`}>
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-amber-50/60 cursor-pointer group transition-colors" data-testid={`item-revenue-${i}`}>
+                        <SeverityBadge severity={item.severity} />
+                        <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-amber-700 transition-colors font-medium">
+                          {item.projectName.replace("_Tracker", "")}
+                        </span>
+                        <span className="text-xs sm:text-sm font-mono font-semibold text-amber-600 whitespace-nowrap">{formatRand(item.amount)}</span>
+                        {item.invoiceNumber && (
+                          <span className="text-[10px] sm:text-[11px] text-muted-foreground truncate max-w-[80px] hidden xs:inline">{item.invoiceNumber}</span>
+                        )}
+                      </div>
+                    </Link>
+                  )}
+                />
+
+                <PrioritySection
+                  title="Projects Behind Plan"
+                  icon={TrendingDown}
+                  iconColor="text-orange-600"
+                  accentBorder="border-l-orange-400"
+                  items={highPriority.projectsBehindPlan}
+                  expanded={!!expanded.behind}
+                  onToggle={() => toggle("behind")}
+                  renderItem={(item, i) => (
+                    <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=plan`}>
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-orange-50/60 cursor-pointer group transition-colors" data-testid={`item-behind-${i}`}>
+                        <SeverityBadge severity={item.severity} />
+                        <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-orange-700 transition-colors font-medium">
+                          {item.projectName.replace("_Tracker", "")}
+                        </span>
+                        <Badge variant="destructive" className="text-[10px] px-1.5 py-0 font-mono font-bold">{formatPct(item.delta)}</Badge>
+                        {item.pm && <span className="text-[11px] text-muted-foreground whitespace-nowrap hidden sm:inline">{item.pm}</span>}
+                      </div>
+                    </Link>
+                  )}
+                />
+
+                <PrioritySection
+                  title="Upcoming Revenue Milestones (3 Weeks)"
+                  icon={Clock}
+                  iconColor="text-blue-600"
+                  accentBorder="border-l-blue-400"
+                  items={highPriority.upcomingMilestones}
+                  expanded={!!expanded.milestones}
+                  onToggle={() => toggle("milestones")}
+                  renderItem={(item, i) => (
+                    <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=finance`}>
+                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-blue-50/60 cursor-pointer group transition-colors" data-testid={`item-milestone-${i}`}>
+                        <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] font-bold px-1.5" variant="outline">{item.milestoneType}</Badge>
+                        <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-blue-700 transition-colors font-medium">
+                          {item.projectName.replace("_Tracker", "")}
+                        </span>
+                        <span className="text-[10px] sm:text-[11px] font-semibold text-emerald-600 whitespace-nowrap">R {(item.amount / 1000000).toFixed(2)}M</span>
+                        <span className="text-[10px] sm:text-[11px] font-mono text-muted-foreground whitespace-nowrap hidden xs:inline">{item.date}</span>
+                        {item.pm && <span className="text-[11px] text-muted-foreground whitespace-nowrap hidden sm:inline">{item.pm}</span>}
+                      </div>
+                    </Link>
+                  )}
+                />
+
+                {highPriority.overdueTasks && highPriority.overdueTasks.length > 0 && (
+                  <PrioritySection
+                    title="Overdue Plan Tasks"
+                    icon={AlertTriangle}
+                    iconColor="text-orange-600"
+                    accentBorder="border-l-orange-400"
+                    items={highPriority.overdueTasks}
+                    expanded={!!expanded.overdueTasks}
+                    onToggle={() => toggle("overdueTasks")}
+                    renderItem={(item, i) => (
+                      <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=plan&highlightId=${item.id}&highlightType=task`}>
+                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-orange-50/60 cursor-pointer group transition-colors" data-testid={`item-overdue-task-${i}`}>
+                          <Badge className={`text-[9px] px-1 py-0 font-mono font-bold ${item.percentComplete === 0 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`} variant="outline">
+                            {item.percentComplete}%
+                          </Badge>
+                          <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-orange-700 transition-colors font-medium">
+                            {item.taskName}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground truncate max-w-[100px] hidden xs:inline">
+                            {item.projectName.replace(/_Tracker.*/, "")}
+                          </span>
+                          <span className="text-[10px] sm:text-[11px] font-mono text-red-500 whitespace-nowrap">due {item.endDate}</span>
+                        </div>
+                      </Link>
+                    )}
+                  />
+                )}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
+                <p className="text-sm font-medium text-foreground">No immediate intervention items available.</p>
+                <p className="text-xs text-muted-foreground mt-1">The priority feed is reachable but currently empty.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </section>
 
       <section aria-label="Execution Health" className="space-y-4 animate-float-in stagger-2">
@@ -859,176 +1070,6 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <Card className="border-l-4 border-l-red-500 shadow-sm animate-float-in stagger-6" data-testid="card-high-priority">
-        <CardHeader className="pb-2">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between w-full gap-2">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="p-2 rounded-lg bg-red-100 shrink-0">
-                <AlertTriangle className="h-5 w-5 text-red-600" />
-              </div>
-              <div className="min-w-0">
-                <CardTitle className="text-base sm:text-lg font-bold text-foreground">Immediate Intervention Queue</CardTitle>
-                <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 line-clamp-1 sm:line-clamp-none">
-                  {highPriorityTotal} action items · Overdue expenses · Revenue outstanding · Projects behind plan · Upcoming milestones · Overdue tasks
-                </p>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-              disabled={hpRefreshing || hpFetching}
-              onClick={async () => {
-                setHpRefreshing(true);
-                await queryClient.invalidateQueries({ queryKey: ["/api/dashboard/high-priority"] });
-                await queryClient.refetchQueries({ queryKey: ["/api/dashboard/high-priority"] });
-                setHpRefreshing(false);
-              }}
-              data-testid="btn-refresh-high-priority"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${hpRefreshing || hpFetching ? "animate-spin" : ""}`} />
-              {hpRefreshing || hpFetching ? "Syncing…" : "Sync now"}
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {hpLoading ? (
-            <div className="flex items-center gap-2 py-6 justify-center text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-sm">Loading priority items…</span>
-            </div>
-          ) : hpError ? (
-            <div className="py-6 text-center text-sm text-muted-foreground">Could not load immediate intervention items. Retry sync.</div>
-          ) : highPriority ? (
-            <div className="grid gap-4 lg:grid-cols-2">
-              <PrioritySection
-                title="Overdue Expenses"
-                icon={AlertCircle}
-                iconColor="text-red-600"
-                accentBorder="border-l-red-400"
-                items={highPriority.overdueExpenses}
-                expanded={!!expanded.overdue}
-                onToggle={() => toggle("overdue")}
-                renderItem={(item, i) => (
-                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=expenditure&highlightId=${item.id}&highlightType=expense`}>
-                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-red-50/60 cursor-pointer group transition-colors" data-testid={`item-overdue-${i}`}>
-                      <SeverityBadge severity={item.severity} />
-                      <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-red-700 transition-colors font-medium">
-                        {item.projectName.replace("_Tracker", "")}
-                      </span>
-                      {item.hasInvoice !== undefined && (
-                        <Badge variant={item.hasInvoice ? "default" : "destructive"} className="text-[9px] px-1 py-0">
-                          {item.hasInvoice ? "INV" : "No INV"}
-                        </Badge>
-                      )}
-                      <span className="text-xs sm:text-sm font-mono font-semibold text-red-600 whitespace-nowrap">{formatRand(item.amount)}</span>
-                      <span className="text-[10px] sm:text-[11px] text-muted-foreground whitespace-nowrap hidden xs:inline">{item.paymentDate}</span>
-                    </div>
-                  </Link>
-                )}
-              />
-
-              <PrioritySection
-                title="Revenue Outstanding"
-                icon={DollarSign}
-                iconColor="text-amber-600"
-                accentBorder="border-l-amber-400"
-                items={highPriority.revenueOutstanding}
-                expanded={!!expanded.revenue}
-                onToggle={() => toggle("revenue")}
-                renderItem={(item, i) => (
-                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=revenue-tracking&highlightId=${item.id}&highlightType=revenue`}>
-                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-amber-50/60 cursor-pointer group transition-colors" data-testid={`item-revenue-${i}`}>
-                      <SeverityBadge severity={item.severity} />
-                      <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-amber-700 transition-colors font-medium">
-                        {item.projectName.replace("_Tracker", "")}
-                      </span>
-                      <span className="text-xs sm:text-sm font-mono font-semibold text-amber-600 whitespace-nowrap">{formatRand(item.amount)}</span>
-                      {item.invoiceNumber && (
-                        <span className="text-[10px] sm:text-[11px] text-muted-foreground truncate max-w-[80px] hidden xs:inline">{item.invoiceNumber}</span>
-                      )}
-                    </div>
-                  </Link>
-                )}
-              />
-
-              <PrioritySection
-                title="Projects Behind Plan"
-                icon={TrendingDown}
-                iconColor="text-orange-600"
-                accentBorder="border-l-orange-400"
-                items={highPriority.projectsBehindPlan}
-                expanded={!!expanded.behind}
-                onToggle={() => toggle("behind")}
-                renderItem={(item, i) => (
-                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=plan`}>
-                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-orange-50/60 cursor-pointer group transition-colors" data-testid={`item-behind-${i}`}>
-                      <SeverityBadge severity={item.severity} />
-                      <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-orange-700 transition-colors font-medium">
-                        {item.projectName.replace("_Tracker", "")}
-                      </span>
-                      <Badge variant="destructive" className="text-[10px] px-1.5 py-0 font-mono font-bold">{formatPct(item.delta)}</Badge>
-                      {item.pm && <span className="text-[11px] text-muted-foreground whitespace-nowrap hidden sm:inline">{item.pm}</span>}
-                    </div>
-                  </Link>
-                )}
-              />
-
-              <PrioritySection
-                title="Upcoming Revenue Milestones (3 Weeks)"
-                icon={Clock}
-                iconColor="text-blue-600"
-                accentBorder="border-l-blue-400"
-                items={highPriority.upcomingMilestones}
-                expanded={!!expanded.milestones}
-                onToggle={() => toggle("milestones")}
-                renderItem={(item, i) => (
-                  <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=finance`}>
-                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-blue-50/60 cursor-pointer group transition-colors" data-testid={`item-milestone-${i}`}>
-                      <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] font-bold px-1.5" variant="outline">{item.milestoneType}</Badge>
-                      <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-blue-700 transition-colors font-medium">
-                        {item.projectName.replace("_Tracker", "")}
-                      </span>
-                      <span className="text-[10px] sm:text-[11px] font-semibold text-emerald-600 whitespace-nowrap">R {(item.amount / 1000000).toFixed(2)}M</span>
-                      <span className="text-[10px] sm:text-[11px] font-mono text-muted-foreground whitespace-nowrap hidden xs:inline">{item.date}</span>
-                      {item.pm && <span className="text-[11px] text-muted-foreground whitespace-nowrap hidden sm:inline">{item.pm}</span>}
-                    </div>
-                  </Link>
-                )}
-              />
-
-              {highPriority.overdueTasks && highPriority.overdueTasks.length > 0 && (
-                <PrioritySection
-                  title="Overdue Plan Tasks"
-                  icon={AlertTriangle}
-                  iconColor="text-orange-600"
-                  accentBorder="border-l-orange-400"
-                  items={highPriority.overdueTasks}
-                  expanded={!!expanded.overdueTasks}
-                  onToggle={() => toggle("overdueTasks")}
-                  renderItem={(item, i) => (
-                    <Link key={i} href={`/project/${encodeURIComponent(item.projectName)}?tab=plan&highlightId=${item.id}&highlightType=task`}>
-                      <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 py-2 rounded-lg hover:bg-orange-50/60 cursor-pointer group transition-colors" data-testid={`item-overdue-task-${i}`}>
-                        <Badge className={`text-[9px] px-1 py-0 font-mono font-bold ${item.percentComplete === 0 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`} variant="outline">
-                          {item.percentComplete}%
-                        </Badge>
-                        <span className="text-xs sm:text-sm truncate flex-1 min-w-0 text-foreground group-hover:text-orange-700 transition-colors font-medium">
-                          {item.taskName}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground truncate max-w-[100px] hidden xs:inline">
-                          {item.projectName.replace(/_Tracker.*/, "")}
-                        </span>
-                        <span className="text-[10px] sm:text-[11px] font-mono text-red-500 whitespace-nowrap">due {item.endDate}</span>
-                      </div>
-                    </Link>
-                  )}
-                />
-              )}
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-
       <section className="space-y-4">
         <SectionHeading
           title="Execution Health"
@@ -1150,7 +1191,7 @@ export default function Dashboard() {
 
       <section className="space-y-4">
         <SectionHeading
-          title="Planning / Movement"
+          title="Planning / Portfolio Movement"
           description="Portfolio distribution, progress movement, and schedule trajectory."
           accent="bg-cyan-500"
         />
