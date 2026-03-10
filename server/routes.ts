@@ -2258,7 +2258,7 @@ export async function registerRoutes(
       const currentUserId = currentUser?.id || currentUser?.userId;
       const currentUserName = currentUser?.name || "";
       const currentRole = currentUser?.role || "";
-      const FULL_OVERSIGHT_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "ACCOUNTANT"];
+      const FULL_OVERSIGHT_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "ACCOUNTANT", "CONSTRUCTION_MANAGER"];
       const isFullOversight = FULL_OVERSIGHT_ROLES.includes(currentRole);
 
       const userOwnedProjectIds = new Set<number>();
