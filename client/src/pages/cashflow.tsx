@@ -53,8 +53,10 @@ import {
   X,
   Check,
   ChevronsUpDown,
+  Wallet,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 
 interface CashflowWeek {
   weekStart: string;
@@ -756,19 +758,13 @@ export default function CashflowPage() {
   }, [cashflowData]);
 
   return (
-    <div className="min-h-screen bg-background" data-testid="page-cashflow">
-      <div className="bg-card border-b border-border shadow-sm">
-        <div className="px-3 sm:px-6 py-4 sm:py-5">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 sm:gap-4">
-            <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-foreground tracking-tight" data-testid="text-page-title">
-                Cashflow FY26
-              </h1>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-                Weekly cashflow timeline — Sep 2025 to Aug 2026
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
+    <PageShell className="p-4 md:p-6" data-testid="page-cashflow">
+      <SectionHeader
+        icon={<Wallet className="h-5 w-5" />}
+        title="Cashflow FY26"
+        description="Weekly cashflow timeline — Sep 2025 to Aug 2026"
+      />
+      <div className="flex flex-wrap items-center gap-2 -mt-2">
               <Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -882,11 +878,8 @@ export default function CashflowPage() {
                 </Button>
               )}
             </div>
-          </div>
-        </div>
-      </div>
 
-      <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-5">
+      <div className="space-y-4 sm:space-y-5">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
             <Loader2 className="h-8 w-8 animate-spin text-blue-500" data-testid="spinner-main" />
@@ -1534,6 +1527,6 @@ export default function CashflowPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }
