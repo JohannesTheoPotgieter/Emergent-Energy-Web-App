@@ -54,6 +54,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
+import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 
 interface ProjectSummary {
   project_info_id: number | null;
@@ -1876,33 +1877,24 @@ export default function ProjectsSummary() {
     .filter(g => g.colSpan > 0);
 
   return (
-    <div className="space-y-5 p-1">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-sm shrink-0">
-            <BarChart3 className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-lg sm:text-2xl font-bold text-foreground truncate" data-testid="text-page-title">
-              Projects Summary
-            </h2>
-            <p className="text-xs sm:text-sm text-muted-foreground">
-              {sorted.length} of {currentProjects.length} {viewTab === "active" ? "active" : "archived"} projects
-              {(pmFilter !== "all" || phaseFilter !== "all" || searchTerm) && " (filtered)"}
-            </p>
-          </div>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleExport}
-          data-testid="button-export"
-          className="h-8 sm:h-9 gap-1 sm:gap-1.5 text-muted-foreground border-border hover:bg-muted shrink-0"
-        >
-          <Download className="w-4 h-4" />
-          <span className="hidden sm:inline">Export</span>
-        </Button>
-      </div>
+    <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
+      <SectionHeader
+        icon={<BarChart3 className="h-5 w-5" />}
+        title="Projects"
+        description={`${sorted.length} of ${currentProjects.length} ${viewTab === "active" ? "active" : "archived"} projects${(pmFilter !== "all" || phaseFilter !== "all" || searchTerm) ? " (filtered)" : ""}`}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            data-testid="button-export"
+            className="h-8 sm:h-9 gap-1 sm:gap-1.5 text-muted-foreground border-border hover:bg-muted shrink-0"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">Export</span>
+          </Button>
+        }
+      />
 
       <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5 w-fit">
         <button
@@ -2274,6 +2266,6 @@ export default function ProjectsSummary() {
       )}
 
       
-    </div>
+    </PageShell>
   );
 }
