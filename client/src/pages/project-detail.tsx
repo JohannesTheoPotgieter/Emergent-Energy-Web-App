@@ -1154,7 +1154,7 @@ export default function ProjectDetailPage() {
         ) : null;
       })()}
 
-      <div className="flex items-center gap-1.5 py-1 overflow-x-auto scrollbar-hide" data-testid="project-major-tabs">
+      <div className="flex items-center gap-2 rounded-lg bg-muted/50 p-1 overflow-x-auto scrollbar-hide" data-testid="project-major-tabs">
         {[
           { key: "overview", label: "Overview", icon: Eye, visible: true },
           { key: "delivery", label: "Delivery", icon: CalendarDays, visible: canViewTab.overview },
@@ -1169,7 +1169,8 @@ export default function ProjectDetailPage() {
             <button
               key={tab.key}
               onClick={() => navigateToSection(tab.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap shrink-0 transition-all border ${isActive ? "bg-primary text-primary-foreground border-primary shadow-sm" : "bg-white text-muted-foreground border-border hover:bg-muted/50 hover:text-foreground"}`}
+              style={isActive ? { backgroundColor: "#16A34A", color: "#fff", borderColor: "#16A34A", boxShadow: "0 1px 3px rgba(0,0,0,0.12)" } : { backgroundColor: "#fff", color: "#6b7280", borderColor: "#e5e7eb" }}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-md text-xs font-semibold whitespace-nowrap shrink-0 transition-all border hover:opacity-90"
               data-testid={`major-tab-${tab.key}`}
             >
               <Icon className="h-3.5 w-3.5" />
