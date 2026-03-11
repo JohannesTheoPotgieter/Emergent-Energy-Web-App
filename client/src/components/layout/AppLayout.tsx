@@ -602,10 +602,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { label: "From Microsoft", path: "/pd/tickets/create", icon: FileUp, permissionEntity: "project_development" },
   ].filter((action) => hasEntityViewPermission(action.path, activeRole, permissions?.entityPermissions));
 
-  const navGroupsForViewport = navGroups.filter((group) => {
-    if (!isMobileViewport) return true;
-    return ["MY_WORK", "PROJECT_DEVELOPMENT", "PROJECT_MANAGEMENT", "SYSTEM"].includes(group.section);
-  });
+  const navGroupsForViewport = navGroups;
 
   const getRoleDisplayName = (role: string | undefined | null): string => {
     if (!role) return "";
