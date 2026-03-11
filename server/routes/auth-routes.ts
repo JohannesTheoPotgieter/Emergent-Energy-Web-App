@@ -54,12 +54,12 @@ export async function registerAuthRoutes(app: Express, requireAuth: RequestHandl
         return sendError(res, unauthorized(info?.message || "Invalid username or password"));
       }
 
-      const ADMIN_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN"];
-      if (!ADMIN_ROLES.includes(user.role || "")) {
-        console.log("[LOGIN] Non-admin password login blocked:", user.email, "role:", user.role);
+      const ALLOWED_PASSWORD_LOGIN_USERNAMES = ["johannes"];
+      if (!ALLOWED_PASSWORD_LOGIN_USERNAMES.includes((user.email?.split("@")[0] || "").toLowerCase()) && user.id !== 31) {
+        console.log("[LOGIN] Password login blocked for non-allowed user:", user.email, "role:", user.role);
         return sendError(
           res,
-          new ApiError(403, "ADMIN_ONLY_PASSWORD_LOGIN", "Password login is restricted to administrators. Please use Microsoft 365 sign-in."),
+          new ApiError(403, "PASSWORD_LOGIN_RESTRICTED", "Password login is not available for this account. Please use Microsoft 365 sign-in."),
         );
       }
 
