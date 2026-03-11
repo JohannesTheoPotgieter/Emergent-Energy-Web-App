@@ -74,17 +74,17 @@ const ALL_SECTIONS = [
 ] as const;
 
 const SECTION_META: Record<string, { label: string; icon: any; color: string; bg: string; description: string; pages: string[] }> = {
-  MY_WORK: { label: "My Work", icon: Briefcase, color: "text-green-600", bg: "bg-green-50 border-green-200", description: "Personal workspace and daily tools", pages: ["Command Center", "Tasks", "Approvals", "Calendar", "Meetings", "Email", "Teams Chat"] },
+  MY_WORK: { label: "My Work", icon: Briefcase, color: "text-green-600", bg: "bg-green-50 border-green-200", description: "Personal workspace and daily tools", pages: ["Home", "Command Center", "Tasks", "Approvals", "Calendar", "Meetings", "Email", "Teams Chat"] },
   PROJECT_DEVELOPMENT: { label: "Project Development", icon: FileEdit, color: "text-teal-600", bg: "bg-teal-50 border-teal-200", description: "Pipeline and lifecycle management", pages: ["PD Dashboard", "PD Tickets", "Clients", "Lifecycle Board"] },
-  DELIVERY: { label: "Engineering", icon: Wrench, color: "text-orange-600", bg: "bg-orange-50 border-orange-200", description: "Engineering operations and task tracking", pages: ["Eng Dashboard", "Task Board"] },
+  DELIVERY: { label: "Engineering", icon: Wrench, color: "text-orange-600", bg: "bg-orange-50 border-orange-200", description: "Engineering operations and task tracking", pages: ["Eng Overview", "Task Execution"] },
   GOVERNANCE: { label: "Quality", icon: ShieldCheck, color: "text-purple-600", bg: "bg-purple-50 border-purple-200", description: "Quality management and compliance", pages: ["Quality Dashboard"] },
   PROJECTS: { label: "Project Management", icon: FolderKanban, color: "text-blue-600", bg: "bg-blue-50 border-blue-200", description: "Project tracking, portfolios, and reviews", pages: ["Project List", "Portfolios", "Execution Board", "PM Dashboard", "On-The-Go", "Weekly Reviews"] },
-  MONEY: { label: "Finance", icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", description: "Financial tracking and procurement", pages: ["Cashflow", "COS Tracker", "Revenue Tracker", "GP Tracker", "Procurement", "Invoice Patterns"] },
+  MONEY: { label: "Finance", icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", description: "Financial tracking and procurement", pages: ["Cashflow Control", "COS Control", "Revenue Control", "Gross Profit Control", "Procurement Hub", "Invoice Pattern Library"] },
   COCKPIT: { label: "EXCO", icon: LayoutDashboard, color: "text-indigo-600", bg: "bg-indigo-50 border-indigo-200", description: "Executive cockpit and lifecycle board", pages: ["EXCO Dashboard"] },
   COLLABORATION: { label: "Collaboration", icon: MessageSquare, color: "text-pink-600", bg: "bg-pink-50 border-pink-200", description: "Communication tools", pages: ["Email", "Teams", "SharePoint"] },
-  PROJECT_DETAIL: { label: "Project Detail Tabs", icon: FileText, color: "text-cyan-600", bg: "bg-cyan-50 border-cyan-200", description: "Per-project tab access control", pages: ["Overview", "Plan", "Key Dates", "Financials", "Revenue", "Expenditure", "COS", "Cashflow", "Subcontractors", "Engineering", "Quality"] },
+  PROJECT_DETAIL: { label: "Project Detail Tabs", icon: FileText, color: "text-cyan-600", bg: "bg-cyan-50 border-cyan-200", description: "Per-project tab access control", pages: ["Overview", "Plan", "Key Dates", "Financials", "Revenue", "Expenditure", "COS", "Cashflow", "Subcontractors", "RAID", "Change Control", "Procurement", "Commissioning", "Engineering", "Quality"] },
   INFORMATION: { label: "Information", icon: BookOpen, color: "text-slate-500", bg: "bg-muted border-border", description: "Knowledge base, leaderboard, and feedback", pages: ["Feedback", "Knowledge Base", "Leaderboard"] },
-  SETTINGS: { label: "System / Admin", icon: Settings, color: "text-muted-foreground", bg: "bg-muted border-border", description: "Administration and system configuration", pages: ["Control Center", "Users & Roles", "App Settings", "Activity Log", "Smart Import", "Recovery Center"] },
+  SETTINGS: { label: "System / Admin", icon: Settings, color: "text-muted-foreground", bg: "bg-muted border-border", description: "Administration and system configuration", pages: ["Control Center", "Users & Roles", "App Settings", "Activity Log", "Smart Import", "Import Control Tower", "Recovery Center", "KPI Traceability", "Excel Updates", "Feedback & Support", "Leaderboard"] },
 };
 
 interface PermCat {
@@ -121,8 +121,8 @@ const PERM_CATEGORIES: PermCat[] = [
   {
     key: "engineering", section: "DELIVERY", label: "Engineering", icon: Wrench, color: "bg-orange-500",
     items: [
-      { entity: "engineering" as PermissionEntity, label: "Eng Dashboard", actions: ["view", "edit"] },
-      { entity: "eng_tasks" as PermissionEntity, label: "Task Board", actions: ["view", "edit", "delete"] },
+      { entity: "engineering" as PermissionEntity, label: "Eng Overview", actions: ["view", "edit"] },
+      { entity: "eng_tasks" as PermissionEntity, label: "Task Execution", actions: ["view", "edit", "delete"] },
     ],
   },
   {
@@ -148,11 +148,12 @@ const PERM_CATEGORIES: PermCat[] = [
   {
     key: "finance", section: "MONEY", label: "Finance", icon: DollarSign, color: "bg-emerald-500",
     items: [
-      { entity: "cashflow" as PermissionEntity, label: "Cashflow", actions: ["view", "edit"] },
-      { entity: "cos" as PermissionEntity, label: "COS Tracker", actions: ["view", "edit"] },
-      { entity: "subcontractors" as PermissionEntity, label: "Procurement", actions: ["view", "edit", "delete"], enforcement: "backend" },
-      { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Patterns", actions: ["view", "edit"], enforcement: "backend" },
-      { entity: "revenue_tracker" as PermissionEntity, label: "Revenue Tracker", actions: ["view", "edit"] },
+      { entity: "cashflow" as PermissionEntity, label: "Cashflow Control", actions: ["view", "edit"] },
+      { entity: "cos" as PermissionEntity, label: "COS Control", actions: ["view", "edit"] },
+      { entity: "revenue_tracker" as PermissionEntity, label: "Revenue Control", actions: ["view", "edit"] },
+      { entity: "gp_tracker" as PermissionEntity, label: "Gross Profit Control", actions: ["view", "edit"] },
+      { entity: "subcontractors" as PermissionEntity, label: "Procurement Hub", actions: ["view", "edit", "delete"], enforcement: "backend" },
+      { entity: "invoice_patterns" as PermissionEntity, label: "Invoice Pattern Library", actions: ["view", "edit"], enforcement: "backend" },
     ],
   },
   {
