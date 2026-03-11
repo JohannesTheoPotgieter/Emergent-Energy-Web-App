@@ -238,10 +238,17 @@ function getLegacyNavGroups(contextualMsSurfacesEnabled: boolean, cleanedAdminVi
       items: [
         makeNavItem("dashboard", "legacy"),
         makeNavItem("projects", "legacy"),
+      ],
+    },
+    {
+      heading: "COMMERCIAL",
+      section: "FINANCE",
+      items: [
         makeNavItem("cashflow", "legacy"),
-        makeNavItem("cos", "legacy", { className: "rotate-180" }),
         makeNavItem("revenueTracker", "legacy"),
+        makeNavItem("cos", "legacy", { className: "rotate-180" }),
         makeNavItem("gpTracker", "legacy"),
+        makeNavItem("invoicePatterns", "legacy"),
         makeNavItem("subcontractor", "legacy"),
       ],
     },
@@ -312,14 +319,15 @@ function getRedesignedNavGroups(contextualMsSurfacesEnabled: boolean, cleanedAdm
       ],
     },
     {
-      heading: "FINANCE",
+      heading: "COMMERCIAL",
       section: "FINANCE",
       icon: Battery,
       items: [
         makeNavItem("cashflow", "redesigned"),
-        makeNavItem("cos", "redesigned"),
         makeNavItem("revenueTracker", "redesigned"),
+        makeNavItem("cos", "redesigned"),
         makeNavItem("gpTracker", "redesigned"),
+        makeNavItem("invoicePatterns", "redesigned"),
         makeNavItem("subcontractor", "redesigned"),
       ],
     },

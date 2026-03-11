@@ -540,7 +540,7 @@ export default function SubcontractorDashboardPage() {
     <div className="space-y-6" data-testid="subcontractor-dashboard-page">
       <div className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <h2 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Subcontractor Dashboard</h2>
+          <h2 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Procurement Hub</h2>
           <p className="text-muted-foreground text-sm">
             Aggregated view of installer and supplier accounts with spend, usage, and upcoming payments.
           </p>
