@@ -1484,16 +1484,12 @@ export default function ProjectsSummary() {
 
   if (isError) {
     return (
-      <div className="space-y-6 p-1">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-            <BarChart3 className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Projects Summary</h2>
-            <p className="text-sm text-muted-foreground">Portfolio overview</p>
-          </div>
-        </div>
+      <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
+        <SectionHeader
+          icon={<BarChart3 className="h-5 w-5" />}
+          title="Projects Summary"
+          description="Portfolio overview"
+        />
         <Card className="border border-red-200 bg-red-50/40">
           <CardContent className="py-10 px-6 text-center">
             <AlertCircle className="w-8 h-8 mx-auto mb-3 text-red-600" />
@@ -1504,54 +1500,46 @@ export default function ProjectsSummary() {
             </Button>
           </CardContent>
         </Card>
-      </div>
+      </PageShell>
     );
   }
 
   if (isLoading) {
     return (
-      <div className="space-y-6 p-1">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-            <BarChart3 className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Projects Summary</h2>
-            <p className="text-sm text-muted-foreground">Loading portfolio data...</p>
-          </div>
-        </div>
+      <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
+        <SectionHeader
+          icon={<BarChart3 className="h-5 w-5" />}
+          title="Projects Summary"
+          description="Loading portfolio data..."
+        />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
           {[1,2,3,4].map(i => <div key={i} className="h-24 bg-muted animate-pulse rounded-xl" />)}
         </div>
         <div className="h-96 bg-muted animate-pulse rounded-xl" />
-      </div>
+      </PageShell>
     );
   }
 
   if (projects.length === 0) {
     return (
-      <div className="space-y-6 p-1">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-            <BarChart3 className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Projects Summary</h2>
-            <p className="text-sm text-muted-foreground">Portfolio overview</p>
-          </div>
-        </div>
+      <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
+        <SectionHeader
+          icon={<BarChart3 className="h-5 w-5" />}
+          title="Projects Summary"
+          description="Portfolio overview"
+        />
         <Card className="border-2 border-dashed border-border">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
             <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
               <AlertCircle className="w-8 h-8 text-slate-500" />
             </div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">No Projects Available</h3>
+            <h3 className="text-lg font-semibold text-foreground mb-2">No projects available</h3>
             <p className="text-sm text-muted-foreground max-w-md">
               Upload tracker files to populate the Projects Summary dashboard with progress tracking and key dates.
             </p>
           </CardContent>
         </Card>
-      </div>
+      </PageShell>
     );
   }
 
