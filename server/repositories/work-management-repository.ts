@@ -40,7 +40,15 @@ import {
 type DbInstance = typeof db;
 
 export class WorkManagementRepository {
-  constructor(private readonly dbInstance: DbInstance) {}
+  private _dbInstance?: DbInstance;
+
+  constructor(dbInstance?: DbInstance) {
+    this._dbInstance = dbInstance;
+  }
+
+  private get dbInstance(): DbInstance {
+    return this._dbInstance || db;
+  }
 
   async getAllOperationalTasks(): Promise<OperationalTask[]> {
     return safeLegacyQuery(() => this.dbInstance.select().from(operationalTasks).where(isNull(operationalTasks.deletedAt)), []);
