@@ -463,7 +463,7 @@ export default function InvoicePatternsPage() {
   return (
     <div className="space-y-6" data-testid="invoice-patterns-page">
       <div className="flex flex-col gap-2">
-        <h2 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Invoice Pattern Dictionary</h2>
+        <h2 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Commercial Invoice Pattern Library</h2>
         <p className="text-muted-foreground text-sm">
           Manage invoice number pattern rules and counterparties used to auto-classify expenditure lines.
         </p>
