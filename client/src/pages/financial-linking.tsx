@@ -343,7 +343,7 @@ export default function FinancialLinkingPage() {
             Back
           </Button>
           <div>
-            <h1 className="text-xl font-bold" data-testid="text-page-title">Financial Linking</h1>
+            <h1 className="text-xl font-bold" data-testid="text-page-title">Project Commercial Linking</h1>
             <p className="text-sm text-muted-foreground" data-testid="text-project-name">{projectName}</p>
           </div>
         </div>
