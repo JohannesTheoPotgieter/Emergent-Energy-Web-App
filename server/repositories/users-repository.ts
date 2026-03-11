@@ -3,7 +3,15 @@ import { users, type InsertUser, type User } from "@shared/schema";
 import { db } from "../db";
 
 export class UsersRepository {
-  constructor(private readonly dbInstance: typeof db = db) {}
+  private _dbInstance?: typeof db;
+
+  constructor(dbInstance?: typeof db) {
+    this._dbInstance = dbInstance;
+  }
+
+  private get dbInstance(): typeof db {
+    return this._dbInstance || db;
+  }
 
   async getById(id: number): Promise<User | undefined> {
     const [user] = await this.dbInstance.select().from(users).where(eq(users.id, id));
