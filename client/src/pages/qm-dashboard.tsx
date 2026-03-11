@@ -61,6 +61,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ActionBar } from "@/components/guidance/ActionBar";
 import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
 import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
+import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 
 async function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem('auth_token');
@@ -454,27 +455,25 @@ export default function QmDashboardPage() {
   ].reduce((a, b) => a + b, 0);
 
   return (
-    <div className="space-y-6 pb-8" data-testid="qm-dashboard-page">
-      <div className="flex items-center gap-4 flex-wrap">
-        <div className="p-2.5 rounded-xl bg-emerald-50">
-          <ShieldCheck className="h-7 w-7 text-emerald-500" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-lg sm:text-xl md:text-2xl font-heading font-bold tracking-tight" data-testid="text-qm-title">Quality Management</h2>
-          <p className="text-sm text-muted-foreground">Monitor quality checklists, track items, and manage warnings across all projects</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <ReplayWalkthrough screenId="qm-dashboard" />
-          <Button
-            onClick={() => setStartQmOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
-            data-testid="btn-start-quality-process"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            Start Quality Process
-          </Button>
-        </div>
-      </div>
+    <PageShell className="p-4 md:p-6" data-testid="qm-dashboard-page">
+      <SectionHeader
+        icon={<ShieldCheck className="h-5 w-5" />}
+        title="Quality Management"
+        description="Monitor quality checklists, track items, and manage warnings across projects."
+        actions={(
+          <>
+            <ReplayWalkthrough screenId="qm-dashboard" />
+            <Button
+              onClick={() => setStartQmOpen(true)}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+              data-testid="btn-start-quality-process"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Start Quality Process
+            </Button>
+          </>
+        )}
+      />
 
       <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} />
       <ActionBar nextAction={qmNextAction} blockers={qmBlockers} />
@@ -1323,7 +1322,7 @@ export default function QmDashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }
 
