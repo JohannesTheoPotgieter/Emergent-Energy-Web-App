@@ -644,6 +644,31 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
 
   const ganttScrollRef = useRef<HTMLDivElement>(null);
   const bodyScrollRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [splitPct, setSplitPct] = useState(55);
+  const isDraggingSplit = useRef(false);
+
+  const handleSplitMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingSplit.current = true;
+    const onMove = (ev: MouseEvent) => {
+      if (!isDraggingSplit.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
+      setSplitPct(Math.max(20, Math.min(80, pct)));
+    };
+    const onUp = () => {
+      isDraggingSplit.current = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, []);
 
   const { data: planData, isLoading } = useQuery<{ tasks: any[]; unlinkedOperationalCount: number }>({
     queryKey: ["planning-tasks", projectName],
@@ -1709,13 +1734,14 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
           }
           .plan-grid-left-panel { width: 100% !important; }
           .plan-grid-gantt-panel { display: none !important; }
+          .plan-grid-split-handle { display: none !important; }
         }
       `}} />
-      <div className="flex border rounded-md overflow-hidden bg-card" style={{ height: "calc(100vh - 320px)", minHeight: "400px" }} data-testid="plan-grid-container">
+      <div ref={containerRef} className="flex border rounded-md overflow-hidden bg-card" style={{ height: "calc(100vh - 320px)", minHeight: "400px" }} data-testid="plan-grid-container">
         <div
           ref={bodyScrollRef}
-          className="plan-grid-left-panel flex-shrink-0 overflow-y-auto overflow-x-auto border-r"
-          style={{ width: "clamp(280px, 60%, 850px)" }}
+          className="plan-grid-left-panel flex-shrink-0 overflow-y-auto overflow-x-auto"
+          style={{ width: `${splitPct}%` }}
           onScroll={handleBodyScroll}
           data-testid="plan-grid-left"
         >
@@ -2075,6 +2101,15 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
               )}
             </tbody>
           </table>
+        </div>
+
+        <div
+          className="plan-grid-split-handle flex-shrink-0 w-1.5 bg-border hover:bg-primary/30 cursor-col-resize transition-colors relative group"
+          onMouseDown={handleSplitMouseDown}
+          data-testid="plan-split-handle"
+        >
+          <div className="absolute inset-y-0 -left-1 -right-1" />
+          <div className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 w-1 h-8 rounded-full bg-muted-foreground/30 group-hover:bg-primary/50 transition-colors" />
         </div>
 
         <div
