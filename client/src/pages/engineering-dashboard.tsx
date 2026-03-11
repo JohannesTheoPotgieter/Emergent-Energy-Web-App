@@ -1301,38 +1301,39 @@ export default function EngineeringDashboard() {
 
   if (isLoading) {
     return (
-      <div data-testid="eng-dashboard" className="space-y-5">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center">
-            <Wrench className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h2 className="text-xl sm:text-2xl font-heading font-bold">Engineering Overview & Team Ops</h2>
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <Loader2 className="h-3 w-3 animate-spin" /> Loading standup and team ops data...
-            </p>
-          </div>
-        </div>
+      <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
+        <SectionHeader
+          icon={<Wrench className="h-5 w-5" />}
+          title="Engineering Overview & Team Ops"
+          description="Loading standup and team operations data..."
+        />
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
           {[1,2,3,4,5,6,7].map(i => <div key={i} className="h-[72px] bg-muted animate-pulse rounded-xl" />)}
         </div>
         <div className="space-y-3">
           {[1,2,3].map(i => <div key={i} className="h-32 bg-muted animate-pulse rounded-xl" />)}
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   if (error || !data) {
     return (
-      <div data-testid="eng-dashboard" className="flex items-center justify-center py-20">
-        <div className="text-center">
-          <AlertTriangle className="h-10 w-10 text-red-600 mx-auto mb-2" />
-          <p className="font-medium">Failed to load engineering overview data</p>
-          <p className="text-sm text-muted-foreground mt-1">{(error as Error)?.message || "Unknown error"}</p>
-          <p className="text-xs text-muted-foreground mt-1">Try refreshing this page. Core task execution remains available in /engineering/tasks.</p>
-        </div>
-      </div>
+      <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
+        <SectionHeader
+          icon={<Wrench className="h-5 w-5" />}
+          title="Engineering Overview & Team Ops"
+          description="Engineering standup and task coordination"
+        />
+        <Card className="border border-red-200 bg-red-50/40">
+          <CardContent className="py-10 px-6 text-center">
+            <AlertTriangle className="h-10 w-10 text-red-600 mx-auto mb-2" />
+            <p className="font-medium">Failed to load engineering overview data</p>
+            <p className="text-sm text-muted-foreground mt-1">{(error as Error)?.message || "Unknown error"}</p>
+            <p className="text-xs text-muted-foreground mt-1">Try refreshing this page. Core task execution remains available in /engineering/tasks.</p>
+          </CardContent>
+        </Card>
+      </PageShell>
     );
   }
 
