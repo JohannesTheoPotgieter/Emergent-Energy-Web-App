@@ -32,6 +32,7 @@ import {
   workItemAssignments,
   workItemDependencies,
   projectPlanOverrides,
+  planEditNotifications,
   users,
 } from "@shared/schema";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
@@ -1201,6 +1202,44 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requireAdmin, async 
     let projectId = run.projectId;
     const userId = (req as any).user?.id || null;
 
+    // Canonical governance: imported plan promotion is blocked while unresolved
+    // front-end plan edits exist. plan_edit_notifications is the single source
+    // of truth for unresolved plan edit conflicts.
+    if (Array.isArray(norm.planTasks) && norm.planTasks.length > 0) {
+      const unresolvedPlanEdits = await db
+        .select({
+          id: planEditNotifications.id,
+          taskId: planEditNotifications.taskId,
+          taskName: planEditNotifications.taskName,
+          editType: planEditNotifications.editType,
+          fieldName: planEditNotifications.fieldName,
+          oldValue: planEditNotifications.oldValue,
+          newValue: planEditNotifications.newValue,
+          createdAt: planEditNotifications.createdAt,
+        })
+        .from(planEditNotifications)
+        .where(and(
+          eq(planEditNotifications.status, "pending"),
+          projectId
+            ? or(
+                eq(planEditNotifications.projectId, projectId),
+                eq(planEditNotifications.projectName, projectName),
+              )
+            : eq(planEditNotifications.projectName, projectName),
+        ))
+        .orderBy(desc(planEditNotifications.createdAt));
+
+      if (unresolvedPlanEdits.length > 0) {
+        return res.status(409).json({
+          error: "plan_edit_conflict_block",
+          message: "Unresolved front-end project plan edits were found. Resolve plan_edit_notifications before promoting this import.",
+          unresolvedCount: unresolvedPlanEdits.length,
+          conflicts: unresolvedPlanEdits,
+          hint: "Resolve each notification by choosing keep_frontend_update, use_import_value, or merge_manual before re-running commit.",
+        });
+      }
+    }
+
     if (req.body?.projectId && !projectId) {
       const overrideProjectId = parseInt(req.body.projectId);
       if (!isNaN(overrideProjectId)) {
@@ -1468,7 +1507,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requireAdmin, async 
           for (let idx = 0; idx < planValues.length; idx++) {
             const pv = planValues[idx] as any;
             const wbsCode = pv.taskNo || null;
-            const externalRef = `${projectName}::PLAN::${idx}::${wbsCode || ''}`;
+            const rowRef = pv.sourceRow != null ? `ROW-${pv.sourceRow}` : `IDX-${idx}`;
+            const projectRef = projectId ? `PID-${projectId}` : projectName;
+            const externalRef = `${projectRef}::PLAN::${rowRef}::${wbsCode || ''}`;
 
             const [insertedWi] = await tx.insert(workItems).values({
               clientId: null,

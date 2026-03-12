@@ -12148,6 +12148,24 @@ export async function registerRoutes(
         await softDeleteLegacyOperationalTaskByWorkItemId(taskId);
       }
 
+      const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
+      if (!isAdmin) {
+        const projectInfoRow = await storage.getProjectInfo(projectName);
+        await db.insert(planEditNotifications).values({
+          projectName,
+          projectId: projectInfoRow?.id || null,
+          taskId: actualTaskId,
+          taskName: `Task #${actualTaskId}`,
+          editType: "task_deleted",
+          fieldName: null,
+          oldValue: "active",
+          newValue: "deleted",
+          editedByUserId: user.id,
+          editedByName: user.name || user.username,
+          status: "pending",
+        });
+      }
+
       sendExcelSyncNotification({
         projectName,
         changedByUserId: user.id || 0,
