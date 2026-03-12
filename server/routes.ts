@@ -3734,11 +3734,18 @@ export async function registerRoutes(
       const behind = actionRows(projects.filter((p: any) => p.actualProgressPct < p.expectedProgressPct - 5).map((p: any) => ({
         ...p, issueTitle: `Actual ${Number(p.actualProgressPct).toFixed(1)}% vs Expected ${Number(p.expectedProgressPct).toFixed(1)}%`, severity: (p.expectedProgressPct - p.actualProgressPct) > 15 ? 'Critical' : 'High', owner: p.pm
       })));
-      const inflow = actionRows(projects.filter((p: any) => p._inflowRisk > 0).map((p: any) => ({ ...p, issueTitle: 'Inflow at risk (overdue unpaid)', severity: p._inflowRisk > 1000000 ? 'Critical' : 'High', owner: p.pm })));
-      const outflow = actionRows(projects.filter((p: any) => p._outflowRisk > 0).map((p: any) => ({ ...p, issueTitle: 'Expenditure / COS at risk (overdue unpaid)', severity: p._outflowRisk > 1000000 ? 'Critical' : 'High', owner: p.pm })));
-      const eng = actionRows(projects.filter((p: any) => p._engOpen > 0).map((p: any) => ({ ...p, issueTitle: `${p._engOpen} open engineering blockers/actions`, severity: p._engOpen >= 5 ? 'Critical' : 'High', owner: p.pm })));
-      const qual = actionRows(projects.filter((p: any) => p._qualityOpen > 0).map((p: any) => ({ ...p, issueTitle: `${p._qualityOpen} open quality warnings/issues`, severity: p._qualityOpen >= 5 ? 'Critical' : 'High', owner: p.pm })));
-      const pending = actionRows(projects.filter((p: any) => p._approvalsPending > 0).map((p: any) => ({ ...p, issueTitle: `${p._approvalsPending} pending approvals/decisions`, severity: p._approvalsPending >= 3 ? 'Critical' : 'High', owner: p.pm })));
+      const fmtR = (v: number) => `R${Math.round(v).toLocaleString()}`;
+      const inflow = actionRows(projects.filter((p: any) => p._inflowRisk > 0).map((p: any) => {
+        const openPct = p.plannedRevenueFy > 0 ? Math.round((p.openInflowFy / p.plannedRevenueFy) * 100) : 0;
+        return { ...p, issueTitle: `${fmtR(p.openInflowFy)} open of ${fmtR(p.plannedRevenueFy)} planned (${openPct}% outstanding)`, severity: openPct > 60 ? 'Critical' : 'High', owner: p.pm };
+      }));
+      const outflow = actionRows(projects.filter((p: any) => p._outflowRisk > 0).map((p: any) => {
+        const openPct = p.plannedExpenditureFy > 0 ? Math.round((p.openExpenditureFy / p.plannedExpenditureFy) * 100) : 0;
+        return { ...p, issueTitle: `${fmtR(p.openExpenditureFy)} open of ${fmtR(p.plannedExpenditureFy)} planned (${openPct}% outstanding)`, severity: openPct > 60 ? 'Critical' : 'High', owner: p.pm };
+      }));
+      const eng = actionRows(projects.filter((p: any) => p._engOpen > 0).map((p: any) => ({ ...p, issueTitle: `${p._engOpen} open engineering blocker${p._engOpen !== 1 ? 's' : ''}`, severity: p._engOpen >= 5 ? 'Critical' : 'High', owner: p.pm })));
+      const qual = actionRows(projects.filter((p: any) => p._qualityOpen > 0).map((p: any) => ({ ...p, issueTitle: `${p._qualityOpen} open quality issue${p._qualityOpen !== 1 ? 's' : ''}`, severity: p._qualityOpen >= 5 ? 'Critical' : 'High', owner: p.pm })));
+      const pending = actionRows(projects.filter((p: any) => p._approvalsPending > 0).map((p: any) => ({ ...p, issueTitle: `${p._approvalsPending} pending approval${p._approvalsPending !== 1 ? 's' : ''}`, severity: p._approvalsPending >= 3 ? 'Critical' : 'High', owner: p.pm })));
 
       res.json({
         meta: { fyStart, fyEnd },
