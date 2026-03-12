@@ -3523,436 +3523,257 @@ export async function registerRoutes(
 
   app.get("/api/program-dashboard", requireAuth, async (req, res) => {
     try {
-      const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyPlans, allEditableFields, allTaskLinks, allOpTasks, manualEntries, allUsers] = await Promise.all([
+      const now = new Date();
+      const fyStartYear = (now.getMonth() + 1) >= 9 ? now.getFullYear() : now.getFullYear() - 1;
+      const fyStart = `${fyStartYear}-09-01`;
+      const fyEnd = `${fyStartYear + 1}-08-31`;
+      const today = now.toISOString().slice(0, 10);
+
+      const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, planResult, qualityResult, usersResult] = await Promise.all([
         storage.getAllProjectInfo(),
-        storage.getAllProgramExpenses(),
-        storage.getAllProgramInflows(),
-        storage.getAllProjectPlans(),
-        storage.getAllProjectEditableFields(),
-        storage.getAllMilestoneTaskLinks(),
-        storage.getAllOperationalTasks(),
-        storage.getTrackerMonthlyManual('COS'),
-        db.select({ name: users.name }).from(users),
+        db.select().from(normalizedRevenueLines),
+        db.select().from(normalizedCostLines),
+        db.select().from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
+        db.select().from(engineeringTasks),
+        db.execute(sql`SELECT id, project_id, status, title, due_date, assigned_approver FROM approvals`),
+        db.execute(sql`SELECT id, project_id, project_name, task_name, start_date, end_date, actual_start_date, actual_end_date, duration_days, pct_complete, expected_pct_complete FROM normalized_plan_tasks`),
+        db.execute(sql`SELECT id, project_name, severity, status, title, owner_user_id, due_date FROM qc_warning`),
+        db.execute(sql`SELECT id, name FROM users`),
       ]);
-      const allExpenses = legacyExpenses;
-      const allPlans = legacyPlans;
-      const validUserNames = new Set(allUsers.map(u => (u.name || '').toLowerCase().trim()));
-      const allInflows = resolveInflowEffectiveDates(legacyRawInflows, allTaskLinks, allOpTasks, allPlans);
 
-      const today = new Date().toISOString().split("T")[0];
-
-      const staticCosBudget: Record<string, number> = {
-        '2025-09': 8083466.99,
-        '2025-10': 16346971.77,
-        '2025-11': 20803804.86,
-        '2025-12': 12381055.48,
-        '2026-01': 12395435.22,
-        '2026-02': 20724666.08,
-        '2026-03': 30199956.69,
-        '2026-04': 21137178.14,
-        '2026-05': 31405517.81,
-        '2026-06': 41720854.07,
-        '2026-07': 30116780.50,
-        '2026-08': 73983803.91,
+      const userNameById = new Map<number, string>((usersResult.rows as any[]).map((u: any) => [Number(u.id), u.name || `User ${u.id}`]));
+      const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;
+      const toNum = (v: any) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+      const isBlack = (v: any) => { const s = String(v || '').toLowerCase(); return s.includes('000000') || s.includes('black'); };
+      const isInFy = (d: string | null | undefined) => !!(d && /^\d{4}-\d{2}-\d{2}/.test(d) && d >= fyStart && d <= fyEnd);
+      const taskIntersectsFy = (t: any) => {
+        const s = t.actual_start_date || t.start_date;
+        const e = t.actual_end_date || t.end_date || s;
+        if (!s && !e) return false;
+        const start = (s || e || '').slice(0, 10);
+        const end = (e || s || '').slice(0, 10);
+        return !!start && !!end && start <= fyEnd && end >= fyStart;
       };
 
-      const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
-      const cosRealisedByMonth = new Map<string, number>();
-      const cosTotalByMonth = new Map<string, number>();
-
-      const nowDate = new Date();
-      const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
-
-      for (const exp of allExpenses) {
-        if (exp.rowType !== 'item') continue;
-        const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
-        if (isNaN(amount) || amount === 0) continue;
-
-        const invDate = exp.expenseInvoicedDate as string | null;
-        if (!invDate) continue;
-        const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
-        if (!dateMatch) continue;
-        const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
-        cosTotalByMonth.set(monthKey, (cosTotalByMonth.get(monthKey) || 0) + amount);
-
-        if (isCosRealisedCheck(exp) && monthKey <= currentMonthKey) {
-          cosRealisedByMonth.set(monthKey, (cosRealisedByMonth.get(monthKey) || 0) + amount);
-        }
-      }
-      const cosStartMonth = new Date(Date.UTC(2025, 8, 1));
-
-      let cosYtdTarget = 0;
-      let cosYtdRealised = 0;
-      let cosYtdBudget = 0;
-      let cosCurrentMonthRealised = 0;
-      let cosCurrentMonthTarget = 0;
-
-      for (let i = 0; i < 12; i++) {
-        const monthDate = new Date(cosStartMonth);
-        monthDate.setUTCMonth(monthDate.getUTCMonth() + i);
-        const yr = monthDate.getUTCFullYear();
-        const mo = monthDate.getUTCMonth();
-        const mk = `${yr}-${String(mo + 1).padStart(2, '0')}`;
-
-        const monthTotal = cosTotalByMonth.get(mk) || 0;
-        const monthRealised = cosRealisedByMonth.get(mk) || 0;
-        cosYtdTarget += monthTotal;
-        cosYtdRealised += monthRealised;
-
-        const manual = manualMap.get(mk);
-        const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[mk] ?? 0);
-        cosYtdBudget += budget;
-
-        if (mk === currentMonthKey) {
-          cosCurrentMonthRealised = monthRealised;
-          cosCurrentMonthTarget = monthTotal;
-        }
+      const projectById = new Map<number, any>();
+      const projectByName = new Map<string, any>();
+      for (const p of allProjectInfo) {
+        if (p.id) projectById.set(p.id, p);
+        projectByName.set((p.projectName || '').toLowerCase(), p);
       }
 
-      const plansByProject = new Map<string, typeof allPlans>();
-      for (const plan of allPlans) {
-        if (!plansByProject.has(plan.projectName)) plansByProject.set(plan.projectName, []);
-        plansByProject.get(plan.projectName)!.push(plan);
-      }
+      const planRows = planResult.rows as any[];
+      const qualityRows = qualityResult.rows as any[];
+      const approvalRows = approvalsRows.rows as any[];
 
-      const inflowsByProject = new Map<string, typeof allInflows>();
-      for (const inflow of allInflows) {
-        if (!inflowsByProject.has(inflow.projectName)) inflowsByProject.set(inflow.projectName, []);
-        inflowsByProject.get(inflow.projectName)!.push(inflow);
-      }
-
-      const expensesByProject = new Map<string, typeof allExpenses>();
-      for (const expense of allExpenses) {
-        if (!expensesByProject.has(expense.projectName)) expensesByProject.set(expense.projectName, []);
-        expensesByProject.get(expense.projectName)!.push(expense);
-      }
-
-      const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
-
-      const activeProjectInfo = allProjectInfo.filter(info =>
-        info.isActive !== false &&
-        info.archivedStatus !== 'ARCHIVED' &&
-        info.phase?.toLowerCase() !== 'gone'
-      );
-      const activeProjectNames = new Set(activeProjectInfo.map(info => info.projectName));
-
-      const allProjectNames = new Set<string>();
-      for (const info of activeProjectInfo) allProjectNames.add(info.projectName);
-      for (const expense of allExpenses) {
-        if (activeProjectNames.has(expense.projectName)) allProjectNames.add(expense.projectName);
-      }
-      for (const inflow of allInflows) {
-        if (activeProjectNames.has(inflow.projectName)) allProjectNames.add(inflow.projectName);
-      }
-      for (const plan of allPlans) {
-        if (activeProjectNames.has(plan.projectName)) allProjectNames.add(plan.projectName);
-      }
-
-      let siteEstablishmentNext10 = 0;
-      let commissioningNext10 = 0;
-      let omHandoverNext10 = 0;
-      let clientHandoverNext10 = 0;
-      let revenueOutstanding = 0;
-      let expenseOverdue = 0;
-      let inflowsThisWeek = 0;
-      let outflowsThisWeek = 0;
-
-      const siteEstablishmentProjects: Array<{ projectName: string; date: string; pm: string | null }> = [];
-      const commissioningProjects: Array<{ projectName: string; date: string; pm: string | null }> = [];
-      const omHandoverProjects: Array<{ projectName: string; date: string; pm: string | null }> = [];
-      const clientHandoverProjects: Array<{ projectName: string; date: string; pm: string | null }> = [];
-      const revenueOutstandingProjects: Array<{ projectName: string; amount: number; milestone: string | null }> = [];
-      const expenseOverdueProjects: Array<{ projectName: string; amount: number; lineItem: string | null; hasInvoice: boolean }> = [];
-      const inflowProjects: Array<{ projectName: string; amount: number }> = [];
-      const outflowProjects: Array<{ projectName: string; amount: number }> = [];
-
-      const pmStats = new Map<string, { activeProjects: number; commissioningThisMonth: number; clientHandoverThisMonth: number }>();
-
-      for (const projectName of Array.from(allProjectNames)) {
-        const info = projectInfoMap.get(projectName);
-        const projectPlans = plansByProject.get(projectName) || [];
-        const projectInflows = inflowsByProject.get(projectName) || [];
-        const projectExpenses = expensesByProject.get(projectName) || [];
-
-        const constructionStartDate = findMinStartDate(projectPlans, ['site establishment']) || info?.constructionStartDate || null;
-        const commissioningDate = findMaxEndDate(projectPlans, ['commissioning']) || info?.commissioningDate || null;
-        const omHandoverDate = findMaxEndDate(projectPlans, ['handover to matriarch']) || info?.omHandoverDate || null;
-        const clientHandoverDate = findMaxEndDate(projectPlans, ['handover to client']) || info?.clientHandoverDate || null;
-
-        if (isWithinDays(constructionStartDate, 10)) {
-          siteEstablishmentNext10++;
-          siteEstablishmentProjects.push({ projectName, date: constructionStartDate!, pm: info?.pm || null });
-        }
-        if (isWithinDays(commissioningDate, 10)) {
-          commissioningNext10++;
-          commissioningProjects.push({ projectName, date: commissioningDate!, pm: info?.pm || null });
-        }
-        if (isWithinDays(omHandoverDate, 10)) {
-          omHandoverNext10++;
-          omHandoverProjects.push({ projectName, date: omHandoverDate!, pm: info?.pm || null });
-        }
-        if (isWithinDays(clientHandoverDate, 10)) {
-          clientHandoverNext10++;
-          clientHandoverProjects.push({ projectName, date: clientHandoverDate!, pm: info?.pm || null });
-        }
-
-        let projRevOutstanding = 0;
-        for (const inflow of projectInflows) {
-          if (inflow.milestoneAmount) {
-            const amt = parseFloat(inflow.milestoneAmount) || 0;
-            const hasInvoice = !!(inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim());
-            const hasPaidDate = inflow.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inflow.paymentReceivedDate);
-            const paidClr = inflow.paidDateFontColor ?? null;
-            const paidConf = inflow.paidDateConfirmed;
-            const hasColorInfo = (paidConf != null && paidConf !== false) || (paidClr != null && paidClr !== '');
-            const paidBlack = hasPaidDate && (paidConf === true || paidClr === 'black' || !hasColorInfo);
-            const isInBank = hasInvoice && paidBlack;
-            if (hasInvoice && !isInBank && amt > 0) {
-              revenueOutstanding += amt;
-              projRevOutstanding += amt;
-            }
-          }
-          if (isThisWeek(inflow.effectiveDate) && inflow.milestoneAmount) {
-            inflowsThisWeek += parseFloat(inflow.milestoneAmount) || 0;
-          }
-        }
-        if (projRevOutstanding > 0) {
-          revenueOutstandingProjects.push({ projectName, amount: projRevOutstanding, milestone: null });
-        }
-
-        let projInflowsWeek = 0;
-        let projOutflowsWeek = 0;
-        for (const inflow of projectInflows) {
-          if (isThisWeek(inflow.effectiveDate) && inflow.milestoneAmount) {
-            projInflowsWeek += parseFloat(inflow.milestoneAmount) || 0;
-          }
-        }
-        if (projInflowsWeek > 0) {
-          inflowProjects.push({ projectName, amount: projInflowsWeek });
-        }
-
-        let projExpOverdue = 0;
-        let projHasInvoice = false;
-        for (const expense of projectExpenses) {
-          if (expense.expenseActualTotal) {
-            const amt = parseFloat(expense.expenseActualTotal) || 0;
-            const state = expense.computedState || '';
-            const isOverdueState = state === 'Invoiced' || state === 'Committed';
-            const overdueDate = expense.expensePaymentDate || expense.expenseInvoicedDate;
-            const hasPastOverdueDate = overdueDate && /^\d{4}-\d{2}-\d{2}/.test(overdueDate) && overdueDate < today;
-            if (hasPastOverdueDate && amt > 0 && isOverdueState) {
-              expenseOverdue += amt;
-              projExpOverdue += amt;
-              if (expense.expenseInvoiceNumber && expense.expenseInvoiceNumber.trim() !== '') {
-                projHasInvoice = true;
-              }
-            }
-          }
-          if (isThisWeek(expense.expensePaymentDate) && expense.expenseActualTotal) {
-            projOutflowsWeek += parseFloat(expense.expenseActualTotal) || 0;
-          }
-        }
-        if (projExpOverdue > 0) {
-          expenseOverdueProjects.push({ projectName, amount: projExpOverdue, lineItem: null, hasInvoice: projHasInvoice });
-        }
-        outflowsThisWeek += projOutflowsWeek;
-        if (projOutflowsWeek > 0) {
-          outflowProjects.push({ projectName, amount: projOutflowsWeek });
-        }
-
-        const rawPm = info?.pm;
-        const pmKey = rawPm && rawPm.trim() && validUserNames.has(rawPm.trim().toLowerCase()) ? rawPm.trim() : "Unassigned";
-        if (!pmStats.has(pmKey)) pmStats.set(pmKey, { activeProjects: 0, commissioningThisMonth: 0, clientHandoverThisMonth: 0 });
-        const stats = pmStats.get(pmKey)!;
-        stats.activeProjects++;
-        if (isThisMonth(commissioningDate)) {
-          stats.commissioningThisMonth++;
-        }
-        if (isThisMonth(clientHandoverDate)) {
-          stats.clientHandoverThisMonth++;
-        }
-      }
-
-      const pmTable = Array.from(pmStats.entries())
-        .map(([pm, stats]) => ({ pm, ...stats }))
-        .filter(row => row.activeProjects > 0 || row.commissioningThisMonth > 0 || row.clientHandoverThisMonth > 0)
-        .sort((a, b) => {
-          if (a.pm === "Unassigned") return 1;
-          if (b.pm === "Unassigned") return -1;
-          return b.activeProjects - a.activeProjects;
+      const rowsByProject = new Map<number, any>();
+      const ensureRow = (proj: any) => {
+        if (!rowsByProject.has(proj.id)) rowsByProject.set(proj.id, {
+          projectId: proj.id, projectName: proj.projectName, portfolio: proj.portfolio || null, pm: proj.pm || null, pd: proj.pd || null,
+          executionPhase: proj.executionPhase || proj.phase || null, rag: proj.ragStatus || 'UNKNOWN',
+          actualProgressPct: 0, expectedProgressPct: 0, scheduleVariancePct: 0,
+          plannedRevenueFy: 0, receivedInflowFy: 0, openInflowFy: 0,
+          plannedExpenditureFy: 0, paidExpenditureFy: 0, openExpenditureFy: 0, grossMarginPctFy: null,
+          engineeringStatus: 'On Track', qualityStatus: 'On Track', importFreshness: 'Critical', importAgeDays: null,
+          criticalActionCount: 0,
+          _taskWeight: 0, _taskActual: 0, _taskExpected: 0,
+          _engOpen: 0, _qualityOpen: 0, _approvalsPending: 0,
+          _inflowRisk: 0, _outflowRisk: 0,
         });
+        return rowsByProject.get(proj.id);
+      };
 
-      const phaseCountMap = new Map<string, number>();
-      const phaseCanonicalMap = new Map<string, string>();
-      for (const info of activeProjectInfo) {
-        const rawPhase = info.phase && info.phase.trim() !== '' ? info.phase.trim() : '(blank)';
-        const key = rawPhase.toLowerCase();
-        if (!phaseCanonicalMap.has(key)) phaseCanonicalMap.set(key, rawPhase);
-        const canonical = phaseCanonicalMap.get(key)!;
-        phaseCountMap.set(canonical, (phaseCountMap.get(canonical) || 0) + 1);
+      const committedProjectIds = new Set<number>();
+      const committedProjectNames = new Set<string>();
+      const latestImportByProject = new Map<number, string>();
+      for (const r of importRuns) {
+        if (r.projectId) committedProjectIds.add(r.projectId);
+        committedProjectNames.add((r.projectName || '').toLowerCase());
+        const proj = r.projectId ? projectById.get(r.projectId) : projectByName.get((r.projectName || '').toLowerCase());
+        if (!proj) continue;
+        const stamp = ((r.committedAt as any) || (r.uploadedAt as any) || null);
+        if (!stamp) continue;
+        const s = new Date(stamp).toISOString();
+        const prev = latestImportByProject.get(proj.id);
+        if (!prev || s > prev) latestImportByProject.set(proj.id, s);
       }
-      const PHASE_LIFECYCLE_ORDER = [
-        "DLP", "Financial Close", "Planning", "Construction", "QA",
-        "Handover", "Commercial Close Out", "Compliance Handover", "Hold"
-      ];
-      const projectsByPhase = Array.from(phaseCountMap.entries())
-        .map(([phase, count]) => ({ phase, count }))
-        .sort((a, b) => {
-          const normalize = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-          const ai = PHASE_LIFECYCLE_ORDER.findIndex(p => normalize(p) === normalize(a.phase));
-          const bi = PHASE_LIFECYCLE_ORDER.findIndex(p => normalize(p) === normalize(b.phase));
-          const aIdx = ai !== -1 ? ai : PHASE_LIFECYCLE_ORDER.length;
-          const bIdx = bi !== -1 ? bi : PHASE_LIFECYCLE_ORDER.length;
-          if (aIdx !== bIdx) return aIdx - bIdx;
-          return b.count - a.count;
-        });
 
-      const constructionQAPhases = new Set<string>();
-      for (const info of allProjectInfo) {
-        if (info.phase) {
-          const lower = info.phase.toLowerCase();
-          if (lower.includes('construction') || lower.includes('qa') || lower.includes('quality')) {
-            constructionQAPhases.add(info.projectName);
-          }
+      for (const t of planRows) {
+        const proj = t.project_id ? projectById.get(Number(t.project_id)) : projectByName.get(String(t.project_name || '').toLowerCase());
+        if (!proj) continue;
+        const row = ensureRow(proj);
+        if (taskIntersectsFy(t)) row.__hasFyItem = true;
+        const w = Math.max(1, toNum(t.duration_days));
+        const actual = toNum(t.pct_complete);
+        let expected = t.expected_pct_complete == null ? null : toNum(t.expected_pct_complete);
+        if (expected == null) {
+          const s = (t.actual_start_date || t.start_date || '').slice(0,10);
+          const e = (t.actual_end_date || t.end_date || '').slice(0,10);
+          if (s && e && s < e) {
+            expected = today <= s ? 0 : today >= e ? 100 : Math.max(0, Math.min(100, ((new Date(today).getTime()-new Date(s).getTime())/(new Date(e).getTime()-new Date(s).getTime()))*100));
+          } else expected = 0;
         }
+        row._taskWeight += w; row._taskActual += actual * w; row._taskExpected += expected * w;
       }
-      const hasPhaseData = allProjectInfo.some(i => i.phase && i.phase.trim() !== '');
 
-      const completionCompare: Array<{ projectName: string; actualPct: number; expectedPct: number }> = [];
-      for (const [projectName, plans] of Array.from(plansByProject.entries())) {
-        if (!activeProjectNames.has(projectName)) continue;
-        if (hasPhaseData && !constructionQAPhases.has(projectName)) continue;
-        const validPlans = plans.filter((p: any) => {
-          const act = p.actualPctComplete ?? p.percentComplete;
-          return act != null;
-        });
-        if (validPlans.length === 0) continue;
-        let totalWeight = 0, weightedActual = 0, weightedExpected = 0;
-        const todayStr = today;
-        for (const p of validPlans as any[]) {
-          const dur = (p.durationDays && p.durationDays > 0) ? p.durationDays : 1;
-          const act = p.actualPctComplete ?? p.percentComplete ?? 0;
-          weightedActual += (parseFloat(act) || 0) * dur;
-          let exp = p.expectedPctComplete ?? p.expectedProgress ?? null;
-          if (exp == null) {
-            const tStart = p.actualStart?.substring(0, 10);
-            const tEnd = p.actualEnd?.substring(0, 10);
-            if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
-              if (todayStr >= tEnd) exp = 1.0;
-              else if (todayStr <= tStart) exp = 0.0;
-              else {
-                const totalDays = Math.max(1, (new Date(tEnd).getTime() - new Date(tStart).getTime()) / 86400000);
-                const elapsedDays = (new Date(todayStr).getTime() - new Date(tStart).getTime()) / 86400000;
-                exp = Math.min(elapsedDays / totalDays, 1.0);
-              }
-            } else {
-              exp = 0;
-            }
-          }
-          weightedExpected += (parseFloat(exp) || 0) * dur;
-          totalWeight += dur;
+      for (const r of revenueRows) {
+        const proj = r.projectId ? projectById.get(r.projectId) : projectByName.get((r.projectName || '').toLowerCase());
+        if (!proj) continue;
+        const dateKey = (r.expectedPaymentDate || r.invoiceDate || r.paidDate || '').slice(0,10);
+        if (!isInFy(dateKey)) continue;
+        const row = ensureRow(proj); row.__hasFyItem = true;
+        const amt = toNum(r.amountExVat);
+        row.plannedRevenueFy += amt;
+        const received = hasText(r.invoiceNumber) && hasText(r.paidDate) && isBlack(r.paidDateFontColor);
+        if (received) row.receivedInflowFy += amt;
+        if (!received && dateKey && dateKey < today) row._inflowRisk += amt;
+      }
+
+      for (const c of costRows) {
+        const proj = c.projectId ? projectById.get(c.projectId) : projectByName.get((c.projectName || '').toLowerCase());
+        if (!proj) continue;
+        const dateKey = (c.approvedDate || c.invoiceDate || c.paidDate || '').slice(0,10);
+        if (!isInFy(dateKey)) continue;
+        const row = ensureRow(proj); row.__hasFyItem = true;
+        const amt = toNum(c.amountExVat);
+        row.plannedExpenditureFy += amt;
+        const paid = hasText(c.invoiceNumber) && hasText(c.paidDate) && isBlack(c.paidDateFontColor);
+        if (paid) row.paidExpenditureFy += amt;
+        if (!paid && dateKey && dateKey < today) row._outflowRisk += amt;
+      }
+
+      for (const e of engRows) {
+        const proj = e.projectId ? projectById.get(e.projectId) : projectByName.get((e.projectName || '').toLowerCase());
+        if (!proj) continue;
+        const row = ensureRow(proj);
+        if (String(e.status || '').toUpperCase() !== 'COMPLETE' && !e.softDeletedAt) row._engOpen += 1;
+      }
+
+      for (const q of qualityRows) {
+        const proj = q.project_name ? projectByName.get(String(q.project_name).toLowerCase()) : null;
+        if (!proj) continue;
+        const row = ensureRow(proj);
+        if (String(q.status || '').toLowerCase() === 'open') row._qualityOpen += 1;
+      }
+
+      for (const a of approvalRows) {
+        const proj = a.project_id ? projectById.get(Number(a.project_id)) : null;
+        if (!proj) continue;
+        const row = ensureRow(proj);
+        if (String(a.status || '').toLowerCase() === 'pending') row._approvalsPending += 1;
+      }
+
+      let projects = Array.from(rowsByProject.values()).filter((row: any) => {
+        const info = projectById.get(row.projectId);
+        if (!info) return false;
+        const isActive = info.archivedStatus === 'ACTIVE' && info.isActive !== false;
+        const hasImport = committedProjectIds.has(row.projectId) || committedProjectNames.has((row.projectName || '').toLowerCase());
+        return isActive && hasImport && !!row.__hasFyItem;
+      });
+
+      projects.forEach((row: any) => {
+        row.actualProgressPct = row._taskWeight > 0 ? row._taskActual / row._taskWeight : 0;
+        row.expectedProgressPct = row._taskWeight > 0 ? row._taskExpected / row._taskWeight : 0;
+        row.scheduleVariancePct = row.actualProgressPct - row.expectedProgressPct;
+        row.openInflowFy = row.plannedRevenueFy - row.receivedInflowFy;
+        row.openExpenditureFy = row.plannedExpenditureFy - row.paidExpenditureFy;
+        row.grossMarginPctFy = row.plannedRevenueFy > 0 ? (row.plannedRevenueFy - row.plannedExpenditureFy) / row.plannedRevenueFy : null;
+        row.engineeringStatus = row._engOpen >= 5 ? 'Blocked' : row._engOpen > 0 ? 'At Risk' : 'On Track';
+        row.qualityStatus = row._qualityOpen >= 5 ? 'Blocked' : row._qualityOpen > 0 ? 'At Risk' : 'On Track';
+        const latest = latestImportByProject.get(row.projectId);
+        if (latest) {
+          const age = Math.floor((Date.now() - new Date(latest).getTime()) / 86400000);
+          row.importAgeDays = age;
+          row.importFreshness = age >= 14 ? 'Critical' : age >= 7 ? 'Warning' : 'Fresh';
         }
-        if (totalWeight > 0) {
-          const rawActual = weightedActual / totalWeight;
-          const rawExpected = weightedExpected / totalWeight;
-          completionCompare.push({
-            projectName,
-            actualPct: rawActual <= 1.0 ? rawActual * 100 : rawActual,
-            expectedPct: rawExpected <= 1.0 ? rawExpected * 100 : rawExpected,
-          });
+        const behind = row.actualProgressPct < row.expectedProgressPct - 5 ? 1 : 0;
+        row.criticalActionCount = behind + (row._inflowRisk > 0 ? 1 : 0) + (row._outflowRisk > 0 ? 1 : 0) + (row._engOpen > 0 ? 1 : 0) + (row._qualityOpen > 0 ? 1 : 0) + (row._approvalsPending > 0 ? 1 : 0);
+      });
+
+      const q = req.query as Record<string, string | undefined>;
+      const toggle = (name: string) => (q[name] || '').toLowerCase() === 'true';
+      const includes = (a: any, v: string | undefined) => !v || String(a || '').toLowerCase() === v.toLowerCase();
+      projects = projects.filter((p: any) => {
+        if (q.search && !String(p.projectName || '').toLowerCase().includes(q.search.toLowerCase())) return false;
+        if (!includes(p.portfolio, q.portfolio)) return false;
+        if (!includes(p.pm, q.pm)) return false;
+        if (!includes(p.pd, q.pd)) return false;
+        if (!includes(p.executionPhase, q.executionPhase)) return false;
+        if (!includes(p.rag, q.rag)) return false;
+        if (toggle('exceptionOnly') && p.criticalActionCount === 0) return false;
+        if (toggle('behindPlanOnly') && !(p.actualProgressPct < p.expectedProgressPct - 5)) return false;
+        if (toggle('inflowRiskOnly') && !(p._inflowRisk > 0)) return false;
+        if (toggle('outflowRiskOnly') && !(p._outflowRisk > 0)) return false;
+        if (toggle('engineeringBlockersOnly') && !(p._engOpen > 0)) return false;
+        if (toggle('qualityIssuesOnly') && !(p._qualityOpen > 0)) return false;
+        if (toggle('pendingApprovalsOnly') && !(p._approvalsPending > 0)) return false;
+        if (toggle('staleImportsOnly') && p.importFreshness === 'Fresh') return false;
+        return true;
+      });
+
+      const sum = (f: string) => projects.reduce((a: number, p: any) => a + toNum(p[f]), 0);
+      const avg = (f: string) => projects.length ? sum(f) / projects.length : 0;
+
+      const actionRows = (items: any[]) => items.map((x: any) => ({
+        projectId: x.projectId,
+        project: x.projectName,
+        issueTitle: x.issueTitle,
+        severity: x.severity,
+        owner: x.owner || null,
+        dueDate: x.dueDate || null,
+        links: {
+          project: `/project/${encodeURIComponent(x.projectName)}`,
+          plan: `/project/${encodeURIComponent(x.projectName)}?tab=plan`,
+          revenue: `/project/${encodeURIComponent(x.projectName)}?tab=revenue-tracking`,
+          expenditure: `/project/${encodeURIComponent(x.projectName)}?tab=expenditure`,
         }
-      }
-      completionCompare.sort((a, b) => b.actualPct - a.actualPct);
+      }));
 
-      const completionMap = new Map<string, { actualPct: number; expectedPct: number }>();
-      for (const c of completionCompare) {
-        completionMap.set(c.projectName, { actualPct: c.actualPct, expectedPct: c.expectedPct });
-      }
-
-      const portfolioTimeline: Array<{
-        projectName: string; startDate: string | null; endDate: string | null; phase: string | null;
-        actualPct: number; expectedPct: number; delta: number;
-        pm: string | null; sizeKwp: number | null;
-        commissioningDate: string | null;
-      }> = [];
-      for (const projectName of Array.from(allProjectNames)) {
-        const info = projectInfoMap.get(projectName);
-        const projectPlans = plansByProject.get(projectName) || [];
-        const projectExps = expensesByProject.get(projectName) || [];
-
-        const csFromPlan = findMinStartDate(projectPlans, ['site establishment']);
-        const planMinStart = projectPlans.reduce((min: string | null, p: any) => {
-          const d = p.actualStart?.substring(0, 10);
-          if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d) || d < '1950-01-01') return min;
-          return !min || d < min ? d : min;
-        }, null as string | null);
-        const planMaxEnd = projectPlans.reduce((max: string | null, p: any) => {
-          const d = p.actualEnd?.substring(0, 10);
-          if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d) || d < '1950-01-01') return max;
-          return !max || d > max ? d : max;
-        }, null as string | null);
-
-        const startDate = csFromPlan || info?.constructionStartDate || planMinStart || null;
-        if (!startDate || startDate < '1950-01-01') continue;
-
-        const commFromPlan = findMaxEndDate(projectPlans, ['commissioning']);
-        const chFromPlan = findMaxEndDate(projectPlans, ['handover to client']);
-        const endDate = chFromPlan || info?.clientHandoverDate || commFromPlan || info?.commissioningDate || planMaxEnd || null;
-
-        const comp = completionMap.get(projectName);
-        const actualPct = comp?.actualPct ?? 0;
-        const expectedPct = comp?.expectedPct ?? 0;
-        const commDate = commFromPlan || info?.commissioningDate || null;
-
-        portfolioTimeline.push({
-          projectName,
-          startDate,
-          endDate: endDate && endDate >= startDate ? endDate : startDate,
-          phase: info?.phase || null,
-          actualPct: Math.round(actualPct * 10) / 10,
-          expectedPct: Math.round(expectedPct * 10) / 10,
-          delta: Math.round((actualPct - expectedPct) * 10) / 10,
-          pm: info?.pm || null,
-          sizeKwp: info?.sizeKwp ?? null,
-          commissioningDate: commDate && commDate >= '1950-01-01' ? commDate : null,
-        });
-      }
-      portfolioTimeline.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+      const behind = actionRows(projects.filter((p: any) => p.actualProgressPct < p.expectedProgressPct - 5).map((p: any) => ({
+        ...p, issueTitle: `Behind plan by ${(p.expectedProgressPct - p.actualProgressPct).toFixed(1)}pp`, severity: (p.expectedProgressPct - p.actualProgressPct) > 15 ? 'Critical' : 'High', owner: p.pm
+      })));
+      const inflow = actionRows(projects.filter((p: any) => p._inflowRisk > 0).map((p: any) => ({ ...p, issueTitle: 'Inflow at risk (overdue unpaid)', severity: p._inflowRisk > 1000000 ? 'Critical' : 'High', owner: p.pm })));
+      const outflow = actionRows(projects.filter((p: any) => p._outflowRisk > 0).map((p: any) => ({ ...p, issueTitle: 'Expenditure / COS at risk (overdue unpaid)', severity: p._outflowRisk > 1000000 ? 'Critical' : 'High', owner: p.pm })));
+      const eng = actionRows(projects.filter((p: any) => p._engOpen > 0).map((p: any) => ({ ...p, issueTitle: `${p._engOpen} open engineering blockers/actions`, severity: p._engOpen >= 5 ? 'Critical' : 'High', owner: p.pm })));
+      const qual = actionRows(projects.filter((p: any) => p._qualityOpen > 0).map((p: any) => ({ ...p, issueTitle: `${p._qualityOpen} open quality warnings/issues`, severity: p._qualityOpen >= 5 ? 'Critical' : 'High', owner: p.pm })));
+      const pending = actionRows(projects.filter((p: any) => p._approvalsPending > 0).map((p: any) => ({ ...p, issueTitle: `${p._approvalsPending} pending approvals/decisions`, severity: p._approvalsPending >= 3 ? 'Critical' : 'High', owner: p.pm })));
 
       res.json({
+        meta: { fyStart, fyEnd },
         kpis: {
-          siteEstablishmentNext10,
-          commissioningNext10,
-          omHandoverNext10,
-          clientHandoverNext10,
-          revenueOutstanding,
-          expenseOverdue,
-          inflowsThisWeek,
-          outflowsThisWeek,
+          activeDashboardProjects: projects.length,
+          averageActualProgressPct: avg('actualProgressPct'),
+          averageExpectedProgressPct: avg('expectedProgressPct'),
+          projectsBehindPlan: projects.filter((p: any) => p.actualProgressPct < p.expectedProgressPct - 5).length,
+          plannedRevenueFy: sum('plannedRevenueFy'),
+          receivedInflowFy: sum('receivedInflowFy'),
+          openInflowFy: sum('openInflowFy'),
+          plannedExpenditureFy: sum('plannedExpenditureFy'),
+          paidExpenditureFy: sum('paidExpenditureFy'),
+          openExpenditureFy: sum('openExpenditureFy'),
+          grossProfitFy: sum('plannedRevenueFy') - sum('plannedExpenditureFy'),
+          grossMarginPctFy: sum('plannedRevenueFy') > 0 ? (sum('plannedRevenueFy') - sum('plannedExpenditureFy')) / sum('plannedRevenueFy') : null,
+          openEngineeringBlockers: sum('_engOpen'),
+          openQualityWarnings: sum('_qualityOpen'),
+          pendingApprovals: sum('_approvalsPending'),
+          staleImports: projects.filter((p: any) => p.importFreshness !== 'Fresh').length,
         },
-        cosKpis: {
-          currentMonthRealised: cosCurrentMonthRealised,
-          currentMonthTarget: cosCurrentMonthTarget,
-          currentMonthRealisedPct: cosCurrentMonthTarget !== 0 ? cosCurrentMonthRealised / cosCurrentMonthTarget : 0,
-          ytdRealised: cosYtdRealised,
-          ytdTarget: cosYtdTarget,
-          ytdRealisedPct: cosYtdTarget !== 0 ? cosYtdRealised / cosYtdTarget : 0,
-          ytdBudget: cosYtdBudget,
+        actionCenter: {
+          projectsBehindPlan: behind,
+          inflowAtRisk: inflow,
+          expenditureAtRisk: outflow,
+          engineeringBottlenecks: eng,
+          qualityIssues: qual,
+          pendingApprovalsDecisions: pending,
         },
-        kpiDetails: {
-          siteEstablishmentProjects,
-          commissioningProjects,
-          omHandoverProjects,
-          clientHandoverProjects,
-          revenueOutstandingProjects: revenueOutstandingProjects.sort((a, b) => b.amount - a.amount),
-          expenseOverdueProjects: expenseOverdueProjects.sort((a, b) => b.amount - a.amount),
-          inflowProjects: inflowProjects.sort((a, b) => b.amount - a.amount),
-          outflowProjects: outflowProjects.sort((a, b) => b.amount - a.amount),
-        },
-        pmTable,
-        projectsByPhase,
-        completionCompare,
-        portfolioTimeline,
+        projects,
+        options: {
+          portfolios: Array.from(new Set(projects.map((p: any) => p.portfolio).filter(Boolean))).sort(),
+          pms: Array.from(new Set(projects.map((p: any) => p.pm).filter(Boolean))).sort(),
+          pds: Array.from(new Set(projects.map((p: any) => p.pd).filter(Boolean))).sort(),
+          executionPhases: Array.from(new Set(projects.map((p: any) => p.executionPhase).filter(Boolean))).sort(),
+          rags: Array.from(new Set(projects.map((p: any) => p.rag).filter(Boolean))).sort(),
+        }
       });
     } catch (error) {
       console.error("Program dashboard error:", error);
