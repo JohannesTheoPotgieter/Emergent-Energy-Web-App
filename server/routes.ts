@@ -3730,7 +3730,7 @@ export async function registerRoutes(
       }));
 
       const behind = actionRows(projects.filter((p: any) => p.actualProgressPct < p.expectedProgressPct - 5).map((p: any) => ({
-        ...p, issueTitle: `Behind plan by ${(p.expectedProgressPct - p.actualProgressPct).toFixed(1)}pp`, severity: (p.expectedProgressPct - p.actualProgressPct) > 15 ? 'Critical' : 'High', owner: p.pm
+        ...p, issueTitle: `Actual ${Number(p.actualProgressPct).toFixed(1)}% vs Expected ${Number(p.expectedProgressPct).toFixed(1)}%`, severity: (p.expectedProgressPct - p.actualProgressPct) > 15 ? 'Critical' : 'High', owner: p.pm
       })));
       const inflow = actionRows(projects.filter((p: any) => p._inflowRisk > 0).map((p: any) => ({ ...p, issueTitle: 'Inflow at risk (overdue unpaid)', severity: p._inflowRisk > 1000000 ? 'Critical' : 'High', owner: p.pm })));
       const outflow = actionRows(projects.filter((p: any) => p._outflowRisk > 0).map((p: any) => ({ ...p, issueTitle: 'Expenditure / COS at risk (overdue unpaid)', severity: p._outflowRisk > 1000000 ? 'Critical' : 'High', owner: p.pm })));
