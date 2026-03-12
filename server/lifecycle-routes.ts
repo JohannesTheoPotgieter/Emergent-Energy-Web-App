@@ -353,25 +353,45 @@ export function registerLifecycleRoutes(app: Express) {
         paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
       }).from(normalizedCostLines);
 
-      const finByNorm = new Map<string, { totalRevenue: number; invoicedRevenue: number; receivedRevenue: number; totalCost: number; invoicedCost: number; paidCost: number }>();
+      // Canonical reporting preference: aggregate finance by projectId first,
+      // then use normalized projectName only as compatibility fallback.
+      const emptyFin = () => ({ totalRevenue: 0, invoicedRevenue: 0, receivedRevenue: 0, totalCost: 0, invoicedCost: 0, paidCost: 0 });
+      const finByProjectId = new Map<number, ReturnType<typeof emptyFin>>();
+      const finByNorm = new Map<string, ReturnType<typeof emptyFin>>();
       for (const r of allRevLines) {
+        const amt = parseFloat(r.amountExVat || "0") || 0;
+        if (r.projectId) {
+          if (!finByProjectId.has(r.projectId)) finByProjectId.set(r.projectId, emptyFin());
+          const entry = finByProjectId.get(r.projectId)!;
+          entry.totalRevenue += amt;
+          if (r.invoiceNumber) entry.invoicedRevenue += amt;
+          if (r.paidDateConfirmed) entry.receivedRevenue += amt;
+          continue;
+        }
         const name = r.projectName;
         if (!name) continue;
         const norm = normalizeName(name);
-        if (!finByNorm.has(norm)) finByNorm.set(norm, { totalRevenue: 0, invoicedRevenue: 0, receivedRevenue: 0, totalCost: 0, invoicedCost: 0, paidCost: 0 });
+        if (!finByNorm.has(norm)) finByNorm.set(norm, emptyFin());
         const entry = finByNorm.get(norm)!;
-        const amt = parseFloat(r.amountExVat || "0") || 0;
         entry.totalRevenue += amt;
         if (r.invoiceNumber) entry.invoicedRevenue += amt;
         if (r.paidDateConfirmed) entry.receivedRevenue += amt;
       }
       for (const c of allCostLines) {
+        const amt = parseFloat(c.amountExVat || "0") || 0;
+        if (c.projectId) {
+          if (!finByProjectId.has(c.projectId)) finByProjectId.set(c.projectId, emptyFin());
+          const entry = finByProjectId.get(c.projectId)!;
+          entry.totalCost += amt;
+          if (c.invoiceNumber) entry.invoicedCost += amt;
+          if (c.paidDateConfirmed) entry.paidCost += amt;
+          continue;
+        }
         const name = c.projectName;
         if (!name) continue;
         const norm = normalizeName(name);
-        if (!finByNorm.has(norm)) finByNorm.set(norm, { totalRevenue: 0, invoicedRevenue: 0, receivedRevenue: 0, totalCost: 0, invoicedCost: 0, paidCost: 0 });
+        if (!finByNorm.has(norm)) finByNorm.set(norm, emptyFin());
         const entry = finByNorm.get(norm)!;
-        const amt = parseFloat(c.amountExVat || "0") || 0;
         entry.totalCost += amt;
         if (c.invoiceNumber) entry.invoicedCost += amt;
         if (c.paidDateConfirmed) entry.paidCost += amt;
@@ -536,7 +556,7 @@ export function registerLifecycleRoutes(app: Express) {
         const plan = planByNorm.get(norm) || { total: 0, weightedPct: 0, totalWeight: 0, weightedExpPct: 0, totalExpWeight: 0 };
         const eng = engByNorm.get(norm) || { total: 0, done: 0, overdue: 0, highPriority: 0, assignees: new Set<string>(), rawName: "" };
         const qm = qmByNorm.get(norm) || { total: 0, approved: 0 };
-        const fin = finByNorm.get(norm) || { totalRevenue: 0, invoicedRevenue: 0, receivedRevenue: 0, totalCost: 0, invoicedCost: 0, paidCost: 0 };
+        const fin = finByProjectId.get(proj.id) || finByNorm.get(norm) || { totalRevenue: 0, invoicedRevenue: 0, receivedRevenue: 0, totalCost: 0, invoicedCost: 0, paidCost: 0 };
 
         const hasTracker = trackerProjectNames.has(norm);
         let source: "excel" | "engineering" | "both" = hasTracker ? "excel" : "none" as any;
