@@ -8,7 +8,12 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
 import { EnergyLoader } from "@/components/ui/energy-loader";
-import { Activity, AlertCircle, AlertTriangle, ChevronDown, ChevronUp, ExternalLink, RefreshCw } from "lucide-react";
+import {
+  Activity, AlertCircle, AlertTriangle, ChevronDown, ChevronUp,
+  ExternalLink, RefreshCw, TrendingUp, TrendingDown, DollarSign,
+  BarChart3, Shield, FileWarning, Clock, Users, FolderOpen,
+  ArrowRight, Filter, RotateCcw
+} from "lucide-react";
 import {
   ExecutionDashboardProject,
   ExecutionDashboardResponse,
@@ -38,12 +43,49 @@ const defaultFilters: ExecutionFilters = {
   staleImportsOnly: false,
 };
 
-function ragClass(rag: string) {
-  if (rag === "Red") return "bg-red-50 text-red-700 border-red-200";
-  if (rag === "Amber") return "bg-amber-50 text-amber-700 border-amber-200";
-  if (rag === "Green") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  return "bg-muted text-muted-foreground border-border";
+function ragBadge(rag: string) {
+  if (rag === "Red") return "bg-red-100 text-red-700 border-red-200";
+  if (rag === "Amber") return "bg-amber-100 text-amber-700 border-amber-200";
+  if (rag === "Green") return "bg-emerald-100 text-emerald-700 border-emerald-200";
+  return "bg-slate-100 text-slate-500 border-slate-200";
 }
+
+function severityBadge(severity: string) {
+  const s = severity?.toLowerCase();
+  if (s === "critical") return { bg: "bg-red-50 border-red-200", text: "text-red-700", dot: "bg-red-500" };
+  if (s === "high") return { bg: "bg-orange-50 border-orange-200", text: "text-orange-700", dot: "bg-orange-500" };
+  if (s === "medium") return { bg: "bg-amber-50 border-amber-200", text: "text-amber-700", dot: "bg-amber-500" };
+  return { bg: "bg-slate-50 border-slate-200", text: "text-slate-600", dot: "bg-slate-400" };
+}
+
+function queueIcon(queue: string) {
+  const q = queue?.toLowerCase();
+  if (q.includes("inflow")) return <DollarSign className="w-4 h-4 text-blue-500" />;
+  if (q.includes("expenditure") || q.includes("cos")) return <TrendingDown className="w-4 h-4 text-orange-500" />;
+  if (q.includes("behind") || q.includes("plan")) return <Clock className="w-4 h-4 text-red-500" />;
+  if (q.includes("engineering")) return <Shield className="w-4 h-4 text-violet-500" />;
+  if (q.includes("quality")) return <FileWarning className="w-4 h-4 text-amber-500" />;
+  if (q.includes("approval")) return <Users className="w-4 h-4 text-emerald-500" />;
+  return <AlertCircle className="w-4 h-4 text-slate-500" />;
+}
+
+function queueColor(queue: string) {
+  const q = queue?.toLowerCase();
+  if (q.includes("inflow")) return "border-l-blue-500 bg-blue-50/30";
+  if (q.includes("expenditure") || q.includes("cos")) return "border-l-orange-500 bg-orange-50/30";
+  if (q.includes("behind") || q.includes("plan")) return "border-l-red-500 bg-red-50/30";
+  if (q.includes("engineering")) return "border-l-violet-500 bg-violet-50/30";
+  if (q.includes("quality")) return "border-l-amber-500 bg-amber-50/30";
+  if (q.includes("approval")) return "border-l-emerald-500 bg-emerald-50/30";
+  return "border-l-slate-400 bg-slate-50/30";
+}
+
+const ROLE_VIEW_LABELS: Record<RoleView, string> = {
+  coo: "COO Overview",
+  program: "Program View",
+  finance: "Finance View",
+  construction: "Construction View",
+};
 
 export default function ExecutionBoard() {
   const { allowed: canView } = usePermission("execution_board", "view");
@@ -55,6 +97,7 @@ export default function ExecutionBoard() {
   const [activeView, setActiveView] = useState<RoleView>("coo");
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
 
   const loadData = useCallback(async () => {
     try {
@@ -118,139 +161,424 @@ export default function ExecutionBoard() {
     return dashboard.actionCenter.rows.filter((r) => visibleIds.has(r.projectId));
   }, [dashboard, filteredProjects]);
 
+  const groupedActions = useMemo(() => {
+    const groups: Record<string, typeof actionRows> = {};
+    for (const row of actionRows) {
+      const key = row.queue || "Other";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(row);
+    }
+    return groups;
+  }, [actionRows]);
+
   const openProject = (project: ExecutionDashboardProject, tab?: string) => {
     setLocation(tab ? `/projects/${project.projectId}?tab=${tab}` : `/projects/${project.projectId}`);
+  };
+
+  const toggleQueue = (queue: string) => {
+    setCollapsedQueues(prev => {
+      const next = new Set(prev);
+      if (next.has(queue)) next.delete(queue); else next.add(queue);
+      return next;
+    });
   };
 
   if (loading) return <div className="flex flex-col items-center justify-center py-24 gap-3"><EnergyLoader size="lg" label="Loading execution dashboard..." /></div>;
   if (error) return <div className="flex flex-col items-center justify-center py-24 gap-4"><AlertCircle className="w-8 h-8 text-red-500" /><p>{error}</p><Button onClick={loadData}><RefreshCw className="w-3.5 h-3.5 mr-1" />Retry</Button></div>;
   if (!canView) return <div className="flex items-center justify-center min-h-[60vh]"><Card><CardContent className="py-8 text-center"><AlertTriangle className="mx-auto mb-2" /><p>Access Denied</p></CardContent></Card></div>;
 
+  const hasActiveFilters = filters.search || filters.portfolio !== "all" || filters.pm !== "all" || filters.pd !== "all" || filters.executionPhase !== "all" || filters.rag !== "all" || filters.exceptionOnly || filters.behindPlanOnly || filters.inflowRiskOnly || filters.outflowRiskOnly || filters.engineeringBlockersOnly || filters.qualityIssuesOnly || filters.pendingApprovalsOnly || filters.staleImportsOnly;
+
   return (
-    <div className="space-y-4 max-w-[1800px] mx-auto pb-6" data-testid="execution-board-page">
+    <div className="space-y-5 max-w-[1800px] mx-auto pb-8" data-testid="execution-board-page">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2"><Activity className="w-6 h-6 text-blue-600" />Execution Dashboard</h1>
-          <p className="text-muted-foreground text-sm mt-1">Import-backed operational view for {fyLabel} ({dashboard?.financialYear.start} to {dashboard?.financialYear.end})</p>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center">
+              <Activity className="w-5 h-5 text-emerald-600" />
+            </div>
+            Execution Dashboard
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1.5 ml-[46px]">
+            Operational view for <span className="font-medium text-foreground">{fyLabel}</span> ({dashboard?.financialYear.start} to {dashboard?.financialYear.end})
+          </p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={loadData}><RefreshCw className="w-3.5 h-3.5 mr-1" />Refresh</Button>
-          <Button variant="outline" size="sm" onClick={() => setFilters(defaultFilters)}>Reset filters</Button>
+          <Button variant="outline" size="sm" onClick={loadData} className="gap-1.5">
+            <RefreshCw className="w-3.5 h-3.5" />Refresh
+          </Button>
+          {hasActiveFilters && (
+            <Button variant="outline" size="sm" onClick={() => setFilters(defaultFilters)} className="gap-1.5 text-muted-foreground">
+              <RotateCcw className="w-3.5 h-3.5" />Clear filters
+            </Button>
+          )}
         </div>
       </div>
 
-      <Card>
-        <CardContent className="p-3 space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-2">
-            <Input placeholder="Search" value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} />
-            <SearchableSelect value={filters.portfolio} onValueChange={(v) => setFilters((f) => ({ ...f, portfolio: v }))} placeholder="Portfolio" options={[{ value: "all", label: "All" }, ...portfolios.map((v) => ({ value: v, label: v }))]} />
-            <SearchableSelect value={filters.pm} onValueChange={(v) => setFilters((f) => ({ ...f, pm: v }))} placeholder="PM" options={[{ value: "all", label: "All" }, ...pms.map((v) => ({ value: v, label: v }))]} />
-            <SearchableSelect value={filters.pd} onValueChange={(v) => setFilters((f) => ({ ...f, pd: v }))} placeholder="PD" options={[{ value: "all", label: "All" }, ...pds.map((v) => ({ value: v, label: v }))]} />
-            <SearchableSelect value={filters.executionPhase} onValueChange={(v) => setFilters((f) => ({ ...f, executionPhase: v }))} placeholder="Execution Phase" options={[{ value: "all", label: "All" }, ...phases.map((v) => ({ value: v, label: v }))]} />
-            <SearchableSelect value={filters.rag} onValueChange={(v) => setFilters((f) => ({ ...f, rag: v }))} placeholder="RAG" options={[{ value: "all", label: "All" }, { value: "Red", label: "Red" }, { value: "Amber", label: "Amber" }, { value: "Green", label: "Green" }, { value: "Unknown", label: "Unknown" }]} />
-            <div className="text-xs text-muted-foreground flex items-center">Showing {filteredProjects.length} of {allProjects.length} projects</div>
+      <Card className="border-border/60">
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Filter className="w-4 h-4 text-muted-foreground" />
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Filters</span>
+            <span className="text-xs text-muted-foreground ml-auto">{filteredProjects.length} of {allProjects.length} projects</span>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {[
-              ["exceptionOnly", "Exception only"], ["behindPlanOnly", "Behind plan only"], ["inflowRiskOnly", "Inflow risk only"], ["outflowRiskOnly", "Outflow risk only"], ["engineeringBlockersOnly", "Engineering blockers only"], ["qualityIssuesOnly", "Quality issues only"], ["pendingApprovalsOnly", "Pending approvals only"], ["staleImportsOnly", "Stale imports only"],
-            ].map(([key, label]) => {
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">
+            <Input placeholder="Search projects..." value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} className="h-9" data-testid="input-filter-search" />
+            <SearchableSelect value={filters.portfolio} onValueChange={(v) => setFilters((f) => ({ ...f, portfolio: v }))} placeholder="Portfolio" options={[{ value: "all", label: "All Portfolios" }, ...portfolios.map((v) => ({ value: v, label: v }))]} />
+            <SearchableSelect value={filters.pm} onValueChange={(v) => setFilters((f) => ({ ...f, pm: v }))} placeholder="Project Manager" options={[{ value: "all", label: "All PMs" }, ...pms.map((v) => ({ value: v, label: v }))]} />
+            <SearchableSelect value={filters.pd} onValueChange={(v) => setFilters((f) => ({ ...f, pd: v }))} placeholder="Project Developer" options={[{ value: "all", label: "All PDs" }, ...pds.map((v) => ({ value: v, label: v }))]} />
+            <SearchableSelect value={filters.executionPhase} onValueChange={(v) => setFilters((f) => ({ ...f, executionPhase: v }))} placeholder="Execution Phase" options={[{ value: "all", label: "All Phases" }, ...phases.map((v) => ({ value: v, label: v }))]} />
+            <SearchableSelect value={filters.rag} onValueChange={(v) => setFilters((f) => ({ ...f, rag: v }))} placeholder="RAG Status" options={[{ value: "all", label: "All RAG" }, { value: "Red", label: "Red" }, { value: "Amber", label: "Amber" }, { value: "Green", label: "Green" }, { value: "Unknown", label: "Unknown" }]} />
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {([
+              ["exceptionOnly", "Exceptions"],
+              ["behindPlanOnly", "Behind plan"],
+              ["inflowRiskOnly", "Inflow risk"],
+              ["outflowRiskOnly", "Outflow risk"],
+              ["engineeringBlockersOnly", "Eng. blockers"],
+              ["qualityIssuesOnly", "Quality issues"],
+              ["pendingApprovalsOnly", "Pending approvals"],
+              ["staleImportsOnly", "Stale imports"],
+            ] as const).map(([key, label]) => {
               const active = Boolean(filters[key as keyof ExecutionFilters]);
-              return <Button key={key} size="sm" variant={active ? "default" : "outline"} onClick={() => setFilters((f) => ({ ...f, [key]: !active }))}>{label}</Button>;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setFilters((f) => ({ ...f, [key]: !active }))}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+                    active
+                      ? "bg-emerald-50 border-emerald-300 text-emerald-700 shadow-sm"
+                      : "bg-white border-border text-muted-foreground hover:bg-muted/50 hover:border-border"
+                  }`}
+                  data-testid={`filter-toggle-${key}`}
+                >
+                  {label}
+                </button>
+              );
             })}
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
-        {[
-          ["Active Dashboard Projects", kpis.activeDashboardProjects],
-          ["Average Actual Progress %", kpis.averageActualProgressPct === null ? "—" : `${kpis.averageActualProgressPct}%`],
-          ["Average Expected Progress %", kpis.averageExpectedProgressPct === null ? "—" : `${kpis.averageExpectedProgressPct}%`],
-          ["Projects Behind Plan", kpis.projectsBehindPlan],
-          [`Planned Revenue (${fyLabel})`, formatCurrencyCompact(kpis.plannedRevenueFy)],
-          [`Received Inflow (${fyLabel})`, formatCurrencyCompact(kpis.receivedInflowFy)],
-          [`Open Inflow (${fyLabel})`, formatCurrencyCompact(kpis.openInflowFy)],
-          [`Planned Expenditure (${fyLabel})`, formatCurrencyCompact(kpis.plannedExpenditureFy)],
-          [`Paid Expenditure (${fyLabel})`, formatCurrencyCompact(kpis.paidExpenditureFy)],
-          [`Open Expenditure (${fyLabel})`, formatCurrencyCompact(kpis.openExpenditureFy)],
-          [`Gross Profit (${fyLabel})`, formatCurrencyCompact(kpis.grossProfitFy)],
-          [`Gross Margin % (${fyLabel})`, kpis.grossMarginPctFy === null ? "—" : `${kpis.grossMarginPctFy}%`],
-          ["Open Engineering Blockers", kpis.openEngineeringBlockers],
-          ["Open Quality Warnings", kpis.openQualityWarnings],
-          ["Pending Approvals", kpis.pendingApprovals],
-          ["Stale Imports", kpis.staleImports],
-        ].map(([title, value]) => <Card key={String(title)}><CardContent className="p-3"><p className="text-[11px] text-muted-foreground">{title}</p><p className="text-lg font-bold mt-1">{value as any}</p></CardContent></Card>)}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-3">
+        <Card className="border-border/60">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                <FolderOpen className="w-4 h-4 text-blue-600" />
+              </div>
+              <span className="text-xs text-muted-foreground font-medium">Portfolio</span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+              <div><p className="text-[10px] text-muted-foreground">Active Projects</p><p className="text-lg font-bold">{kpis.activeDashboardProjects}</p></div>
+              <div><p className="text-[10px] text-muted-foreground">Behind Plan</p><p className="text-lg font-bold text-red-600">{kpis.projectsBehindPlan}</p></div>
+              <div><p className="text-[10px] text-muted-foreground">Avg. Actual</p><p className="text-sm font-semibold">{kpis.averageActualProgressPct ?? "—"}%</p></div>
+              <div><p className="text-[10px] text-muted-foreground">Avg. Expected</p><p className="text-sm font-semibold">{kpis.averageExpectedProgressPct ?? "—"}%</p></div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/60">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+                <TrendingUp className="w-4 h-4 text-emerald-600" />
+              </div>
+              <span className="text-xs text-muted-foreground font-medium">Revenue & Inflow</span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+              <div><p className="text-[10px] text-muted-foreground">Planned Revenue</p><p className="text-sm font-semibold">{formatCurrencyCompact(kpis.plannedRevenueFy)}</p></div>
+              <div><p className="text-[10px] text-muted-foreground">Received</p><p className="text-sm font-semibold text-emerald-600">{formatCurrencyCompact(kpis.receivedInflowFy)}</p></div>
+              <div className="col-span-2"><p className="text-[10px] text-muted-foreground">Open Inflow</p><p className="text-lg font-bold text-amber-600">{formatCurrencyCompact(kpis.openInflowFy)}</p></div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/60">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
+                <TrendingDown className="w-4 h-4 text-orange-600" />
+              </div>
+              <span className="text-xs text-muted-foreground font-medium">Expenditure</span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+              <div><p className="text-[10px] text-muted-foreground">Planned</p><p className="text-sm font-semibold">{formatCurrencyCompact(kpis.plannedExpenditureFy)}</p></div>
+              <div><p className="text-[10px] text-muted-foreground">Paid</p><p className="text-sm font-semibold text-emerald-600">{formatCurrencyCompact(kpis.paidExpenditureFy)}</p></div>
+              <div><p className="text-[10px] text-muted-foreground">Open</p><p className="text-sm font-semibold text-amber-600">{formatCurrencyCompact(kpis.openExpenditureFy)}</p></div>
+              <div><p className="text-[10px] text-muted-foreground">GP Margin</p><p className="text-sm font-semibold">{kpis.grossMarginPctFy === null ? "—" : `${kpis.grossMarginPctFy}%`}</p></div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/60">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
+                <AlertTriangle className="w-4 h-4 text-red-600" />
+              </div>
+              <span className="text-xs text-muted-foreground font-medium">Risks & Actions</span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+              <div><p className="text-[10px] text-muted-foreground">Eng. Blockers</p><p className="text-sm font-semibold">{kpis.openEngineeringBlockers}</p></div>
+              <div><p className="text-[10px] text-muted-foreground">Quality Issues</p><p className="text-sm font-semibold">{kpis.openQualityWarnings}</p></div>
+              <div><p className="text-[10px] text-muted-foreground">Pending Approvals</p><p className="text-sm font-semibold">{kpis.pendingApprovals}</p></div>
+              <div><p className="text-[10px] text-muted-foreground">Stale Imports</p><p className="text-sm font-semibold">{kpis.staleImports}</p></div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="flex gap-2 border-b pb-2">
+      <div className="flex gap-1 border-b pb-0">
         {(["coo", "program", "finance", "construction"] as RoleView[]).map((view) => (
-          <Button key={view} variant={activeView === view ? "default" : "ghost"} onClick={() => setActiveView(view)}>{view.toUpperCase()}</Button>
+          <button
+            key={view}
+            onClick={() => setActiveView(view)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeView === view
+                ? "border-emerald-600 text-emerald-700"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+            }`}
+            data-testid={`tab-view-${view}`}
+          >
+            {ROLE_VIEW_LABELS[view]}
+          </button>
         ))}
       </div>
 
-      <Card>
-        <CardContent className="p-3">
-          <h2 className="text-lg font-semibold mb-2">Action Center</h2>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-muted-foreground">
-                  <th className="py-2">Queue</th><th>Project</th><th>Issue title</th><th>Severity</th><th>Owner</th><th>Due date</th><th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {actionRows.map((r, idx) => (
-                  <tr key={`${r.projectId}-${idx}`} className="border-t">
-                    <td className="py-2">{r.queue}</td><td>{r.projectName}</td><td>{r.issueTitle}</td><td>{r.severity}</td><td>{r.owner}</td><td>{formatDate(r.dueDate)}</td>
-                    <td><Button size="sm" variant="outline" onClick={() => setLocation(r.link)}><ExternalLink className="w-3.5 h-3.5" /></Button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {actionRows.length === 0 && <div className="text-sm text-muted-foreground py-4">No action items for current filters.</div>}
+      <Card className="border-border/60">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-red-500" />
+              <h2 className="text-base font-semibold">Action Center</h2>
+              <Badge variant="outline" className="text-xs ml-1">{actionRows.length} items</Badge>
+            </div>
           </div>
+
+          {actionRows.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-3">
+                <Activity className="w-6 h-6 text-emerald-500" />
+              </div>
+              <p className="text-sm text-muted-foreground">No action items for current filters</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {Object.entries(groupedActions).map(([queue, rows]) => {
+                const isCollapsed = collapsedQueues.has(queue);
+                const criticalCount = rows.filter(r => r.severity?.toLowerCase() === "critical").length;
+                return (
+                  <div key={queue} className={`rounded-lg border border-l-4 overflow-hidden ${queueColor(queue)}`}>
+                    <button
+                      onClick={() => toggleQueue(queue)}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/40 transition-colors"
+                      data-testid={`queue-toggle-${queue}`}
+                    >
+                      {queueIcon(queue)}
+                      <span className="text-sm font-semibold flex-1">{queue}</span>
+                      <Badge variant="outline" className="text-[10px] font-medium">{rows.length} {rows.length === 1 ? "issue" : "issues"}</Badge>
+                      {criticalCount > 0 && (
+                        <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">{criticalCount} critical</Badge>
+                      )}
+                      {isCollapsed ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronUp className="w-4 h-4 text-muted-foreground" />}
+                    </button>
+
+                    {!isCollapsed && (
+                      <div className="bg-white/60 border-t">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                              <th className="text-left py-2 px-4 font-medium">Project</th>
+                              <th className="text-left py-2 px-4 font-medium">Issue</th>
+                              <th className="text-left py-2 px-4 font-medium">Severity</th>
+                              <th className="text-left py-2 px-4 font-medium">Owner</th>
+                              <th className="text-left py-2 px-4 font-medium">Due</th>
+                              <th className="text-right py-2 px-4 font-medium w-16"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map((r, idx) => {
+                              const sev = severityBadge(r.severity);
+                              return (
+                                <tr key={`${r.projectId}-${idx}`} className="border-t border-border/40 hover:bg-white/80 transition-colors">
+                                  <td className="py-2.5 px-4 font-medium text-foreground">{r.projectName}</td>
+                                  <td className="py-2.5 px-4 text-muted-foreground max-w-[300px] truncate">{r.issueTitle}</td>
+                                  <td className="py-2.5 px-4">
+                                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium border ${sev.bg} ${sev.text}`}>
+                                      <span className={`w-1.5 h-1.5 rounded-full ${sev.dot}`} />
+                                      {r.severity}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-4 text-muted-foreground">{r.owner}</td>
+                                  <td className="py-2.5 px-4 text-muted-foreground tabular-nums">{formatDate(r.dueDate)}</td>
+                                  <td className="py-2.5 px-4 text-right">
+                                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600" onClick={() => setLocation(r.link)} data-testid={`btn-open-action-${r.projectId}-${idx}`}>
+                                      <ArrowRight className="w-4 h-4" />
+                                    </Button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="p-3 overflow-x-auto">
-          <table className="min-w-[2000px] w-full text-sm">
-            <thead>
-              <tr className="text-left text-muted-foreground">
-                <th className="py-2">Project Name</th><th>Portfolio</th><th>PM</th><th>PD</th><th>Execution Phase</th><th>RAG</th><th>Actual Progress %</th><th>Expected Progress %</th><th>Schedule Variance %</th><th>Planned Revenue (FY)</th><th>Received Inflow (FY)</th><th>Open Inflow (FY)</th><th>Planned Expenditure (FY)</th><th>Paid Expenditure (FY)</th><th>Open Expenditure (FY)</th><th>Gross Margin % (FY)</th><th>Engineering Status</th><th>Quality Status</th><th>Import Freshness</th><th>Critical Action Count</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredProjects.map((p) => {
-                const expanded = expandedId === p.projectId;
-                return (
-                  <React.Fragment key={p.projectId}>
-                    <tr className="border-t hover:bg-muted/30 cursor-pointer" onClick={() => setExpandedId(expanded ? null : p.projectId)}>
-                      <td className="py-2 font-medium">{p.projectName}</td><td>{p.portfolio}</td><td>{p.pm || "Unassigned"}</td><td>{p.pd || "Unassigned"}</td><td>{p.executionPhase || "—"}</td><td><Badge className={ragClass(p.rag)}>{p.rag}</Badge></td><td>{p.actualProgressPct ?? "—"}%</td><td>{p.expectedProgressPct ?? "—"}%</td><td className={(p.scheduleVariancePct || 0) < 0 ? "text-red-600" : "text-emerald-600"}>{p.scheduleVariancePct ?? "—"}%</td>
-                      <td>{formatCurrencyCompact(p.plannedRevenueFy)}</td><td>{formatCurrencyCompact(p.receivedInflowFy)}</td><td>{formatCurrencyCompact(p.openInflowFy)}</td><td>{formatCurrencyCompact(p.plannedExpenditureFy)}</td><td>{formatCurrencyCompact(p.paidExpenditureFy)}</td><td>{formatCurrencyCompact(p.openExpenditureFy)}</td><td>{p.grossMarginPctFy === null ? "—" : `${p.grossMarginPctFy}%`}</td><td>{p.engineeringStatus}</td><td>{p.qualityStatus}</td><td>{p.importFreshness}</td><td>{p.criticalActionCount}</td><td>{expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</td>
-                    </tr>
-                    {expanded && (
-                      <tr className="bg-muted/20"><td colSpan={21} className="p-3">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-                          <div className="border rounded p-2"><p className="font-semibold mb-1">Project Summary</p><p>{p.projectName}</p><p>PM: {p.pm || "Unassigned"}</p><p>PD: {p.pd || "Unassigned"}</p><p>Phase: {p.executionPhase || "—"}</p></div>
-                          <div className="border rounded p-2"><p className="font-semibold mb-1">Progress Summary</p><p>Actual: {p.actualProgressPct ?? "—"}%</p><p>Expected: {p.expectedProgressPct ?? "—"}%</p><p>Variance: {p.scheduleVariancePct ?? "—"}%</p></div>
-                          <div className="border rounded p-2"><p className="font-semibold mb-1">Financial Summary ({fyLabel})</p><p>Planned Revenue: {formatCurrencyFull(p.plannedRevenueFy)}</p><p>Received Inflow: {formatCurrencyFull(p.receivedInflowFy)}</p><p>Open Inflow: {formatCurrencyFull(p.openInflowFy)}</p><p>Planned Expenditure: {formatCurrencyFull(p.plannedExpenditureFy)}</p><p>Paid Expenditure: {formatCurrencyFull(p.paidExpenditureFy)}</p><p>Open Expenditure: {formatCurrencyFull(p.openExpenditureFy)}</p><p>Gross Margin: {p.grossMarginPctFy === null ? "—" : `${p.grossMarginPctFy}%`}</p></div>
-                          <div className="border rounded p-2"><p className="font-semibold mb-1">Active Issues / Exceptions</p><p>Critical actions: {p.criticalActionCount}</p><p>Engineering blockers: {p.engineeringBlockerCount}</p><p>Quality issues: {p.openQualityWarningCount}</p><p>Pending approvals: {p.pendingApprovalCount}</p><p>Import freshness: {p.importFreshness}</p></div>
-                        </div>
-                        <div className="flex gap-2 mt-3 flex-wrap">
-                          <Button size="sm" onClick={() => openProject(p)}><ExternalLink className="w-3.5 h-3.5 mr-1" />Project</Button>
-                          <Button size="sm" variant="outline" onClick={() => openProject(p, "plan")}>Plan</Button>
-                          <Button size="sm" variant="outline" onClick={() => openProject(p, "revenue")}>Revenue</Button>
-                          <Button size="sm" variant="outline" onClick={() => openProject(p, "expenditure")}>Expenditure</Button>
-                        </div>
-                      </td></tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-          {filteredProjects.length === 0 && <div className="text-center text-sm text-muted-foreground py-10">No projects match current filters.</div>}
+      <Card className="border-border/60">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-2 mb-4">
+            <BarChart3 className="w-5 h-5 text-blue-500" />
+            <h2 className="text-base font-semibold">Project Portfolio</h2>
+            <Badge variant="outline" className="text-xs ml-1">{filteredProjects.length} projects</Badge>
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-border/60">
+            <table className="min-w-[2000px] w-full text-sm">
+              <thead>
+                <tr className="bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+                  <th className="text-left py-2.5 px-3 font-medium sticky left-0 bg-muted/40 z-10">Project</th>
+                  <th className="text-left py-2.5 px-3 font-medium">Portfolio</th>
+                  <th className="text-left py-2.5 px-3 font-medium">PM</th>
+                  <th className="text-left py-2.5 px-3 font-medium">PD</th>
+                  <th className="text-left py-2.5 px-3 font-medium">Phase</th>
+                  <th className="text-center py-2.5 px-3 font-medium">RAG</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Actual %</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Expected %</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Variance</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Revenue</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Inflow</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Open Inflow</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Expenditure</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Paid</th>
+                  <th className="text-right py-2.5 px-3 font-medium">Open Exp.</th>
+                  <th className="text-right py-2.5 px-3 font-medium">GP %</th>
+                  <th className="text-center py-2.5 px-3 font-medium">Eng.</th>
+                  <th className="text-center py-2.5 px-3 font-medium">Quality</th>
+                  <th className="text-center py-2.5 px-3 font-medium">Import</th>
+                  <th className="text-center py-2.5 px-3 font-medium">Actions</th>
+                  <th className="w-8 py-2.5 px-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProjects.map((p) => {
+                  const expanded = expandedId === p.projectId;
+                  const variance = p.scheduleVariancePct || 0;
+                  return (
+                    <React.Fragment key={p.projectId}>
+                      <tr
+                        className={`border-t border-border/40 cursor-pointer transition-colors ${expanded ? "bg-emerald-50/40" : "hover:bg-muted/30"}`}
+                        onClick={() => setExpandedId(expanded ? null : p.projectId)}
+                        data-testid={`project-row-${p.projectId}`}
+                      >
+                        <td className="py-2.5 px-3 font-medium text-foreground sticky left-0 bg-white z-10">{p.projectName}</td>
+                        <td className="py-2.5 px-3 text-muted-foreground">{p.portfolio}</td>
+                        <td className="py-2.5 px-3 text-muted-foreground">{p.pm || "—"}</td>
+                        <td className="py-2.5 px-3 text-muted-foreground">{p.pd || "—"}</td>
+                        <td className="py-2.5 px-3 text-muted-foreground">{p.executionPhase || "—"}</td>
+                        <td className="py-2.5 px-3 text-center">
+                          <Badge className={`text-[10px] ${ragBadge(p.rag)}`}>{p.rag}</Badge>
+                        </td>
+                        <td className="py-2.5 px-3 text-right tabular-nums font-medium">{p.actualProgressPct ?? "—"}%</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">{p.expectedProgressPct ?? "—"}%</td>
+                        <td className={`py-2.5 px-3 text-right tabular-nums font-medium ${variance < 0 ? "text-red-600" : variance > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
+                          {p.scheduleVariancePct != null ? `${variance > 0 ? "+" : ""}${variance}%` : "—"}
+                        </td>
+                        <td className="py-2.5 px-3 text-right tabular-nums">{formatCurrencyCompact(p.plannedRevenueFy)}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyCompact(p.receivedInflowFy)}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums text-amber-600">{formatCurrencyCompact(p.openInflowFy)}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums">{formatCurrencyCompact(p.plannedExpenditureFy)}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600">{formatCurrencyCompact(p.paidExpenditureFy)}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums text-amber-600">{formatCurrencyCompact(p.openExpenditureFy)}</td>
+                        <td className="py-2.5 px-3 text-right tabular-nums font-medium">{p.grossMarginPctFy === null ? "—" : `${p.grossMarginPctFy}%`}</td>
+                        <td className="py-2.5 px-3 text-center text-xs text-muted-foreground">{p.engineeringStatus}</td>
+                        <td className="py-2.5 px-3 text-center text-xs text-muted-foreground">{p.qualityStatus}</td>
+                        <td className="py-2.5 px-3 text-center text-xs text-muted-foreground">{p.importFreshness}</td>
+                        <td className="py-2.5 px-3 text-center">
+                          {p.criticalActionCount > 0 ? (
+                            <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">{p.criticalActionCount}</Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">0</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-2 text-center">
+                          {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                        </td>
+                      </tr>
+                      {expanded && (
+                        <tr className="bg-muted/20 border-t border-border/40">
+                          <td colSpan={21} className="p-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                              <div className="bg-white rounded-lg border p-3">
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Project Summary</p>
+                                <div className="space-y-1.5 text-sm">
+                                  <p><span className="text-muted-foreground">Name:</span> <span className="font-medium">{p.projectName}</span></p>
+                                  <p><span className="text-muted-foreground">PM:</span> {p.pm || "Unassigned"}</p>
+                                  <p><span className="text-muted-foreground">PD:</span> {p.pd || "Unassigned"}</p>
+                                  <p><span className="text-muted-foreground">Phase:</span> {p.executionPhase || "—"}</p>
+                                </div>
+                              </div>
+                              <div className="bg-white rounded-lg border p-3">
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Progress</p>
+                                <div className="space-y-1.5 text-sm">
+                                  <p><span className="text-muted-foreground">Actual:</span> <span className="font-medium">{p.actualProgressPct ?? "—"}%</span></p>
+                                  <p><span className="text-muted-foreground">Expected:</span> {p.expectedProgressPct ?? "—"}%</p>
+                                  <p><span className="text-muted-foreground">Variance:</span> <span className={variance < 0 ? "text-red-600 font-medium" : "text-emerald-600 font-medium"}>{p.scheduleVariancePct ?? "—"}%</span></p>
+                                </div>
+                              </div>
+                              <div className="bg-white rounded-lg border p-3">
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Financials ({fyLabel})</p>
+                                <div className="space-y-1.5 text-sm">
+                                  <p><span className="text-muted-foreground">Revenue:</span> {formatCurrencyFull(p.plannedRevenueFy)}</p>
+                                  <p><span className="text-muted-foreground">Inflow:</span> <span className="text-emerald-600">{formatCurrencyFull(p.receivedInflowFy)}</span></p>
+                                  <p><span className="text-muted-foreground">Open Inflow:</span> <span className="text-amber-600">{formatCurrencyFull(p.openInflowFy)}</span></p>
+                                  <p><span className="text-muted-foreground">Expenditure:</span> {formatCurrencyFull(p.plannedExpenditureFy)}</p>
+                                  <p><span className="text-muted-foreground">GP Margin:</span> <span className="font-medium">{p.grossMarginPctFy === null ? "—" : `${p.grossMarginPctFy}%`}</span></p>
+                                </div>
+                              </div>
+                              <div className="bg-white rounded-lg border p-3">
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Issues & Exceptions</p>
+                                <div className="space-y-1.5 text-sm">
+                                  <p><span className="text-muted-foreground">Critical actions:</span> <span className="font-medium">{p.criticalActionCount}</span></p>
+                                  <p><span className="text-muted-foreground">Eng. blockers:</span> {p.engineeringBlockerCount}</p>
+                                  <p><span className="text-muted-foreground">Quality issues:</span> {p.openQualityWarningCount}</p>
+                                  <p><span className="text-muted-foreground">Pending approvals:</span> {p.pendingApprovalCount}</p>
+                                  <p><span className="text-muted-foreground">Import status:</span> {p.importFreshness}</p>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex gap-2 mt-3 flex-wrap">
+                              <Button size="sm" onClick={() => openProject(p)} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700" data-testid={`btn-open-project-${p.projectId}`}>
+                                <ExternalLink className="w-3.5 h-3.5" />Open Project
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => openProject(p, "plan")}>Plan</Button>
+                              <Button size="sm" variant="outline" onClick={() => openProject(p, "revenue")}>Revenue</Button>
+                              <Button size="sm" variant="outline" onClick={() => openProject(p, "expenditure")}>Expenditure</Button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+            {filteredProjects.length === 0 && (
+              <div className="text-center py-12">
+                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
+                  <FolderOpen className="w-6 h-6 text-muted-foreground" />
+                </div>
+                <p className="text-sm text-muted-foreground">No projects match current filters</p>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
