@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import { projectInfo } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { getCanonicalFinanceByProjectIds, getCanonicalTaskSummaryByProjectIds } from "./services/canonical-dashboard-kpi-service";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -98,10 +99,10 @@ export function registerPmRoutes(app: Express) {
   app.get("/api/pm/dashboard", requireAuth, requirePmRole, async (req: Request, res: Response) => {
     try {
       const targetUserId = resolveTargetPmUserId(req);
-      const { projects, pgArray } = await getPmProjectNames(targetUserId);
-      const projectNames = projects.map(p => p.projectName);
+      const { projects } = await getPmProjectNames(targetUserId);
+      const projectIds = projects.map(p => p.id);
 
-      if (projectNames.length === 0) {
+      if (projectIds.length === 0) {
         return res.json({
           projects: [],
           summary: {
@@ -112,71 +113,21 @@ export function registerPmRoutes(app: Express) {
         });
       }
 
-      const financialsResult = await db.execute(
-        sql`
-          SELECT
-            project_name,
-            COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) AS total_budget,
-            COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) AS total_actual,
-            COUNT(*) FILTER (WHERE invoice_number IS NOT NULL AND invoice_number != '' AND invoice_date IS NOT NULL AND TRIM(CAST(invoice_date AS TEXT)) != '') AS cos_realised,
-            COUNT(*) FILTER (WHERE (po_number IS NOT NULL AND po_number != '' OR invoice_number IS NOT NULL AND invoice_number != '') AND (invoice_date IS NULL OR TRIM(CAST(invoice_date AS TEXT)) = '')) AS cos_committed,
-            COUNT(*) AS total_lines
-          FROM normalized_cost_lines
-          WHERE project_name = ANY(${pgArray}::text[])
-          GROUP BY project_name
-        `
-      );
-
-      const financialsByProject: Record<string, any> = {};
-      for (const row of financialsResult.rows as any[]) {
-        financialsByProject[row.project_name] = {
-          totalBudget: parseFloat(row.total_budget) || 0,
-          totalActual: parseFloat(row.total_actual) || 0,
-          cosRealised: parseInt(row.cos_realised) || 0,
-          cosCommitted: parseInt(row.cos_committed) || 0,
-          totalLines: parseInt(row.total_lines) || 0,
-        };
-      }
-
-      const tasksResult = await db.execute(
-        sql`
-          SELECT
-            project_name,
-            COUNT(*) AS total,
-            COUNT(*) FILTER (WHERE status = 'IN PROGRESS') AS in_progress,
-            COUNT(*) FILTER (WHERE status = 'COMPLETE') AS completed,
-            COUNT(*) FILTER (WHERE status = 'HOLD') AS on_hold,
-            COUNT(*) FILTER (WHERE status = 'NEEDS APPROVAL') AS needs_approval,
-            COUNT(*) FILTER (WHERE due_date IS NOT NULL AND due_date < CURRENT_DATE::text AND status NOT IN ('COMPLETE', 'QC APPROVED')) AS overdue,
-            COUNT(*) FILTER (WHERE status NOT IN ('COMPLETE', 'QC APPROVED')) AS active
-          FROM operational_tasks
-          WHERE project_name = ANY(${pgArray}::text[])
-            AND parent_task_id IS NULL
-          GROUP BY project_name
-        `
-      );
-
-      const tasksByProject: Record<string, any> = {};
-      for (const row of tasksResult.rows as any[]) {
-        tasksByProject[row.project_name] = {
-          total: parseInt(row.total) || 0,
-          inProgress: parseInt(row.in_progress) || 0,
-          completed: parseInt(row.completed) || 0,
-          onHold: parseInt(row.on_hold) || 0,
-          needsApproval: parseInt(row.needs_approval) || 0,
-          overdue: parseInt(row.overdue) || 0,
-          active: parseInt(row.active) || 0,
-        };
-      }
+      // Classification: CANONICAL_READ
+      // PM dashboard rollups are keyed by project_id and sourced from canonical structures only.
+      const [financialsByProject, tasksByProject] = await Promise.all([
+        getCanonicalFinanceByProjectIds(projectIds),
+        getCanonicalTaskSummaryByProjectIds(projectIds),
+      ]);
 
       const enrichedProjects = projects.map((p) => {
-        const fin = financialsByProject[p.projectName] || {
-          totalBudget: 0, totalActual: 0, cosRealised: 0, cosCommitted: 0, totalLines: 0,
+        const fin = financialsByProject.get(p.id) || {
+          totalCost: 0, paidCost: 0, outstandingCost: 0,
         };
-        const tasks = tasksByProject[p.projectName] || {
+        const tasks = tasksByProject.get(p.id) || {
           total: 0, inProgress: 0, completed: 0, onHold: 0, needsApproval: 0, overdue: 0, active: 0,
         };
-        const cosPlanned = Math.max(0, fin.totalLines - fin.cosRealised - fin.cosCommitted);
+        const cosPlanned = 0;
 
         return {
           id: p.id,
@@ -199,11 +150,11 @@ export function registerPmRoutes(app: Express) {
             omHandover: p.omHandoverDate,
           },
           financials: {
-            totalBudget: fin.totalBudget,
-            totalActual: fin.totalActual,
-            spendPercent: fin.totalBudget > 0 ? Math.round((fin.totalActual / fin.totalBudget) * 100) : 0,
-            cosRealised: fin.cosRealised,
-            cosCommitted: fin.cosCommitted,
+            totalBudget: fin.totalCost,
+            totalActual: fin.paidCost,
+            spendPercent: fin.totalCost > 0 ? Math.round((fin.paidCost / fin.totalCost) * 100) : 0,
+            cosRealised: fin.paidCost,
+            cosCommitted: fin.outstandingCost,
             cosPlanned,
           },
           tasks: {
@@ -247,6 +198,8 @@ export function registerPmRoutes(app: Express) {
     }
   });
 
+  // Classification: COMPATIBILITY_READ_TO_BE_REROUTED
+  // Uses legacy operational_tasks for continuity; canonical target is work_items-based priority feed.
   app.get("/api/pm/priority-items", requireAuth, requirePmRole, async (req: Request, res: Response) => {
     try {
       const targetUserId = resolveTargetPmUserId(req);
@@ -388,6 +341,8 @@ export function registerPmRoutes(app: Express) {
     }
   });
 
+  // Classification: COMPATIBILITY_READ_TO_BE_REROUTED
+  // Uses legacy operational_tasks milestone/event scan for continuity; canonical target is work_items schedule feed.
   app.get("/api/pm/calendar-events", requireAuth, requirePmRole, async (req: Request, res: Response) => {
     try {
       const targetUserId = resolveTargetPmUserId(req);
