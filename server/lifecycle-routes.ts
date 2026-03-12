@@ -71,6 +71,15 @@ function isDateInRange(dateValue: string | null | undefined, start: string, end:
   return date >= startDate && date <= endDate;
 }
 
+function pickFirstPopulatedDate(source: Record<string, any>, fields: string[]): string | null {
+  for (const field of fields) {
+    const value = source[field];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  }
+  return null;
+}
+
 function formatDateKey(y: number, m: number, d: number): string {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
@@ -699,7 +708,15 @@ export function registerLifecycleRoutes(app: Express) {
           entry.weightedExpPct += Number(wi.expectedPctComplete) * weight;
           entry.totalExpWeight += weight;
         }
-        if (isDateInRange(wi.actualStart, fy.start, fy.end) || isDateInRange(wi.actualEnd, fy.start, fy.end)) {
+        const planMembershipDate = pickFirstPopulatedDate(wi, [
+          "plannedStart",
+          "plannedEnd",
+          "expectedStart",
+          "expectedEnd",
+          "actualStart",
+          "actualEnd",
+        ]);
+        if (isDateInRange(planMembershipDate, fy.start, fy.end)) {
           entry.fyItems += 1;
         }
       }
@@ -733,7 +750,7 @@ export function registerLifecycleRoutes(app: Express) {
 
       for (const row of revenueLines) {
         const amount = parseFloat(row.amountExVat || "0") || 0;
-        const lineDate = row.invoiceDate || row.expectedPaymentDate || row.paidDate || row.inBankDate;
+        const lineDate = pickFirstPopulatedDate(row as any, ["invoiceDate", "expectedPaymentDate", "paidDate", "inBankDate"]);
         if (!isDateInRange(lineDate, fy.start, fy.end)) continue;
         const received = Boolean(row.invoiceNumber) && (Boolean(row.paidDateConfirmed) || Boolean(row.inBankDate));
         if (row.projectId) {
@@ -754,7 +771,7 @@ export function registerLifecycleRoutes(app: Express) {
 
       for (const row of costLines) {
         const amount = parseFloat(row.amountExVat || "0") || 0;
-        const lineDate = row.invoiceDate || row.approvedDate || row.paidDate;
+        const lineDate = pickFirstPopulatedDate(row as any, ["invoiceDate", "approvedDate", "paidDate"]);
         if (!isDateInRange(lineDate, fy.start, fy.end)) continue;
         const paid = Boolean(row.invoiceNumber) && Boolean(row.paidDateConfirmed);
         if (row.projectId) {
