@@ -487,18 +487,27 @@ export default function MyWorkTasksPage() {
         const trStatus = newStatus === "complete" ? "Completed" : "Active";
         const endpoint = newStatus === "complete" ? `/api/tr-register/${task._rawId}/complete` : `/api/tr-register/${task._rawId}`;
         const res = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify(newStatus === "complete" ? {} : { status: trStatus }) });
-        if (!res.ok) throw new Error("Failed to update");
+        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       } else if (task._source === "operational") {
         const res = await fetch(`/api/operational-tasks/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ status: newStatus }) });
-        if (!res.ok) throw new Error("Failed to update");
+        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       } else if (task._source === "engineering_task") {
         const engStatus = newStatus === "complete" ? "DONE" : newStatus === "in_progress" ? "IN PROGRESS" : newStatus === "blocked" ? "BLOCKED" : "TO DO";
         const res = await fetch(`/api/task-checklist-items/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ status: engStatus }) });
-        if (!res.ok) throw new Error("Failed to update");
+        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
+      } else if (task._source === "quality_task") {
+        const qmStatus = newStatus === "complete" ? "pass" : newStatus === "blocked" ? "fail" : newStatus === "in_progress" ? "in_progress" : "review";
+        const res = await fetch(`/api/quality/project/${encodeURIComponent(task.projectName || "unknown")}/item/${task._rawId}`, { method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ qmStatus }) });
+        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
+      } else if (task._source === "plan") {
+        const planStatus = newStatus === "complete" ? "Done" : newStatus === "in_progress" ? "In Progress" : newStatus === "blocked" ? "Blocked" : "Not Started";
+        const pct = newStatus === "complete" ? 100 : undefined;
+        const res = await fetch(`/api/planning-tasks/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ projectName: task.projectName || "", status: planStatus, ...(pct !== undefined ? { percentComplete: pct } : {}) }) });
+        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       }
     },
     onSuccess: () => { invalidateAll(); toast({ title: "Status updated" }); },
-    onError: () => { toast({ title: "Failed to update status", variant: "destructive" }); },
+    onError: (err: any) => { toast({ title: err.message || "Failed to update status", variant: "destructive" }); },
   });
 
   const dismissNotifMutation = useMutation({
@@ -1135,7 +1144,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
 
   const statusDot = task.status === "complete" || task.status === "done" ? "bg-emerald-500" : task.status === "in_progress" ? "bg-blue-500" : task.status === "blocked" ? "bg-red-500" : task.status === "review" ? "bg-amber-500" : task.status === "cancelled" ? "bg-slate-300" : "bg-slate-300";
 
-  const canQuickStatus = ["personal", "operational", "engineering_task", "tr_register"].includes(task._source);
+  const canQuickStatus = ["personal", "operational", "engineering_task", "tr_register", "quality_task", "plan"].includes(task._source);
 
   const due = smartDueLabel(task.dueAt);
   const dueStyle = DUE_URGENCY_STYLES[due.urgency] || "";
@@ -1368,22 +1377,31 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
         const trStatus = newStatus === "complete" ? "Completed" : "Active";
         const endpoint = newStatus === "complete" ? `/api/tr-register/${task._rawId}/complete` : `/api/tr-register/${task._rawId}`;
         const res = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify(newStatus === "complete" ? {} : { status: trStatus }) });
-        if (!res.ok) throw new Error("Failed to update");
+        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       } else if (task._source === "operational") {
         const res = await fetch(`/api/operational-tasks/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ status: newStatus }) });
-        if (!res.ok) throw new Error("Failed to update");
+        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       } else if (task._source === "approvals" && task._key.startsWith("approval-qc-")) {
         const qmStatus = newStatus === "complete" ? "pass" : newStatus === "blocked" ? "fail" : newStatus === "in_progress" ? "in_progress" : "review";
         const res = await fetch(`/api/quality/project/${encodeURIComponent(task.projectName || "unknown")}/item/${task._rawId}`, { method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ qmStatus }) });
-        if (!res.ok) throw new Error("Failed to update QC status");
+        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update QC status"); }
       } else if (task._source === "engineering_task") {
         const engStatus = newStatus === "complete" ? "DONE" : newStatus === "in_progress" ? "IN PROGRESS" : newStatus === "blocked" ? "BLOCKED" : "TO DO";
         const res = await fetch(`/api/task-checklist-items/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ status: engStatus }) });
-        if (!res.ok) throw new Error("Failed to update");
+        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
+      } else if (task._source === "quality_task") {
+        const qmStatus = newStatus === "complete" ? "pass" : newStatus === "blocked" ? "fail" : newStatus === "in_progress" ? "in_progress" : "review";
+        const res = await fetch(`/api/quality/project/${encodeURIComponent(task.projectName || "unknown")}/item/${task._rawId}`, { method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ qmStatus }) });
+        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
+      } else if (task._source === "plan") {
+        const planStatus = newStatus === "complete" ? "Done" : newStatus === "in_progress" ? "In Progress" : newStatus === "blocked" ? "Blocked" : "Not Started";
+        const pct = newStatus === "complete" ? 100 : undefined;
+        const res = await fetch(`/api/planning-tasks/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ projectName: task.projectName || "", status: planStatus, ...(pct !== undefined ? { percentComplete: pct } : {}) }) });
+        if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       }
     },
     onSuccess: () => { onInvalidate(); toast({ title: "Status updated" }); },
-    onError: () => { toast({ title: "Failed to update status", variant: "destructive" }); },
+    onError: (err: any) => { toast({ title: err.message || "Failed to update status", variant: "destructive" }); },
   });
 
   const dismissMutation = useMutation({
@@ -1412,8 +1430,8 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
     onError: () => { toast({ title: "Failed to update", variant: "destructive" }); },
   });
 
-  const canChangeStatus = ["operational", "approvals", "engineering_task", "quality_task", "tr_register"].includes(task._source);
-  const canEditInline = task._source === "tr_register";
+  const canChangeStatus = ["operational", "approvals", "engineering_task", "quality_task", "tr_register", "plan"].includes(task._source);
+  const canEditInline = task._source === "tr_register" || task._source === "plan";
 
   const detailDue = smartDueLabel(task.dueAt);
   const detailDueStyle = DUE_URGENCY_STYLES[detailDue.urgency] || "";
@@ -1509,7 +1527,13 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
                       <Textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} className="min-h-[60px] text-xs" />
                       <div className="flex gap-1.5">
                         <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => setEditingField(null)}>Cancel</Button>
-                        <Button size="sm" className="h-6 text-xs" onClick={() => updateTrFieldMutation.mutate({ outcomeComments: editNotes })} disabled={updateTrFieldMutation.isPending}>Save</Button>
+                        <Button size="sm" className="h-6 text-xs" onClick={() => {
+                          if (task._source === "plan") {
+                            fetch(`/api/planning-tasks/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ projectName: task.projectName || "", comment: editNotes }) }).then(r => { if (r.ok) { onInvalidate(); toast({ title: "Updated" }); setEditingField(null); } else { toast({ title: "Failed to update", variant: "destructive" }); } });
+                          } else {
+                            updateTrFieldMutation.mutate({ outcomeComments: editNotes });
+                          }
+                        }} disabled={updateTrFieldMutation.isPending}>Save</Button>
                       </div>
                     </div>
                   ) : (
