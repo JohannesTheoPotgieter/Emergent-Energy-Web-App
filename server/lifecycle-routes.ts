@@ -2,7 +2,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users } from "@shared/schema";
+import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns } from "@shared/schema";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
@@ -41,6 +41,34 @@ function normalizeName(name: string): string {
     .replace(/_/g, " ")
     .toLowerCase()
     .trim();
+}
+
+function getCurrentFinancialYearBounds(today = new Date()) {
+  const year = today.getUTCFullYear();
+  const month = today.getUTCMonth() + 1;
+  const fyStartYear = month >= 9 ? year : year - 1;
+  const fyEndYear = fyStartYear + 1;
+  return {
+    start: `${fyStartYear}-09-01`,
+    end: `${fyEndYear}-08-31`,
+    label: `FY${String(fyEndYear).slice(-2)}`,
+  };
+}
+
+function parseIsoDateOnly(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  const normalized = /^\d{4}-\d{2}-\d{2}/.test(trimmed) ? trimmed.slice(0, 10) : trimmed;
+  const date = new Date(`${normalized}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isDateInRange(dateValue: string | null | undefined, start: string, end: string): boolean {
+  const date = parseIsoDateOnly(dateValue);
+  if (!date) return false;
+  const startDate = parseIsoDateOnly(start)!;
+  const endDate = parseIsoDateOnly(end)!;
+  return date >= startDate && date <= endDate;
 }
 
 function formatDateKey(y: number, m: number, d: number): string {
@@ -637,6 +665,273 @@ export function registerLifecycleRoutes(app: Express) {
       res.json(results);
     } catch (err: any) {
       console.error("[lifecycle-board] GET projects error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/lifecycle-board/execution-dashboard", async (_req: Request, res: Response) => {
+    try {
+      const fy = getCurrentFinancialYearBounds();
+      const activeProjects = await db.select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        pm: projectInfo.pm,
+        pd: projectInfo.pd,
+        executionPhase: projectInfo.executionPhase,
+        ragStatus: projectInfo.ragStatus,
+        archivedStatus: projectInfo.archivedStatus,
+      }).from(projectInfo).where(eq(projectInfo.archivedStatus, "ACTIVE"));
+
+      const rawPlanTasks = await getAllPMWorkItemsAsProjectPlan();
+      const planByNorm = new Map<string, { weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number; fyItems: number }>();
+      for (const wi of rawPlanTasks as any[]) {
+        if (!wi.projectName) continue;
+        const norm = normalizeName(wi.projectName);
+        if (!planByNorm.has(norm)) planByNorm.set(norm, { weightedPct: 0, totalWeight: 0, weightedExpPct: 0, totalExpWeight: 0, fyItems: 0 });
+        const entry = planByNorm.get(norm)!;
+        const duration = Number(wi.durationDays || 1);
+        const weight = Number.isFinite(duration) && duration > 0 ? duration : 1;
+        if (wi.actualPctComplete !== null && wi.actualPctComplete !== undefined) {
+          entry.weightedPct += Number(wi.actualPctComplete) * weight;
+          entry.totalWeight += weight;
+        }
+        if (wi.expectedPctComplete !== null && wi.expectedPctComplete !== undefined) {
+          entry.weightedExpPct += Number(wi.expectedPctComplete) * weight;
+          entry.totalExpWeight += weight;
+        }
+        if (isDateInRange(wi.actualStart, fy.start, fy.end) || isDateInRange(wi.actualEnd, fy.start, fy.end)) {
+          entry.fyItems += 1;
+        }
+      }
+
+      const revenueLines = await db.select({
+        projectId: normalizedRevenueLines.projectId,
+        projectName: normalizedRevenueLines.projectName,
+        amountExVat: normalizedRevenueLines.amountExVat,
+        invoiceNumber: normalizedRevenueLines.invoiceNumber,
+        paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
+        paidDate: normalizedRevenueLines.paidDate,
+        inBankDate: normalizedRevenueLines.inBankDate,
+        invoiceDate: normalizedRevenueLines.invoiceDate,
+        expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
+      }).from(normalizedRevenueLines);
+
+      const costLines = await db.select({
+        projectId: normalizedCostLines.projectId,
+        projectName: normalizedCostLines.projectName,
+        amountExVat: normalizedCostLines.amountExVat,
+        invoiceNumber: normalizedCostLines.invoiceNumber,
+        paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
+        paidDate: normalizedCostLines.paidDate,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        approvedDate: normalizedCostLines.approvedDate,
+      }).from(normalizedCostLines);
+
+      const finByProjectId = new Map<number, { plannedRevenue: number; receivedInflow: number; plannedExpenditure: number; paidExpenditure: number; fyRevenueItems: number; fyCostItems: number }>();
+      const finByNorm = new Map<string, { plannedRevenue: number; receivedInflow: number; plannedExpenditure: number; paidExpenditure: number; fyRevenueItems: number; fyCostItems: number }>();
+      const emptyFin = () => ({ plannedRevenue: 0, receivedInflow: 0, plannedExpenditure: 0, paidExpenditure: 0, fyRevenueItems: 0, fyCostItems: 0 });
+
+      for (const row of revenueLines) {
+        const amount = parseFloat(row.amountExVat || "0") || 0;
+        const lineDate = row.invoiceDate || row.expectedPaymentDate || row.paidDate || row.inBankDate;
+        if (!isDateInRange(lineDate, fy.start, fy.end)) continue;
+        const received = Boolean(row.invoiceNumber) && (Boolean(row.paidDateConfirmed) || Boolean(row.inBankDate));
+        if (row.projectId) {
+          if (!finByProjectId.has(row.projectId)) finByProjectId.set(row.projectId, emptyFin());
+          const entry = finByProjectId.get(row.projectId)!;
+          entry.plannedRevenue += amount;
+          if (received) entry.receivedInflow += amount;
+          entry.fyRevenueItems += 1;
+        } else if (row.projectName) {
+          const norm = normalizeName(row.projectName);
+          if (!finByNorm.has(norm)) finByNorm.set(norm, emptyFin());
+          const entry = finByNorm.get(norm)!;
+          entry.plannedRevenue += amount;
+          if (received) entry.receivedInflow += amount;
+          entry.fyRevenueItems += 1;
+        }
+      }
+
+      for (const row of costLines) {
+        const amount = parseFloat(row.amountExVat || "0") || 0;
+        const lineDate = row.invoiceDate || row.approvedDate || row.paidDate;
+        if (!isDateInRange(lineDate, fy.start, fy.end)) continue;
+        const paid = Boolean(row.invoiceNumber) && Boolean(row.paidDateConfirmed);
+        if (row.projectId) {
+          if (!finByProjectId.has(row.projectId)) finByProjectId.set(row.projectId, emptyFin());
+          const entry = finByProjectId.get(row.projectId)!;
+          entry.plannedExpenditure += amount;
+          if (paid) entry.paidExpenditure += amount;
+          entry.fyCostItems += 1;
+        } else if (row.projectName) {
+          const norm = normalizeName(row.projectName);
+          if (!finByNorm.has(norm)) finByNorm.set(norm, emptyFin());
+          const entry = finByNorm.get(norm)!;
+          entry.plannedExpenditure += amount;
+          if (paid) entry.paidExpenditure += amount;
+          entry.fyCostItems += 1;
+        }
+      }
+
+      const engTasks = await db.select({ projectId: operationalTasks.projectId, projectName: operationalTasks.projectName, status: operationalTasks.status, dueDate: operationalTasks.dueDate, blockerReason: operationalTasks.blockerReason, priority: operationalTasks.priority, ownerUserId: operationalTasks.ownerUserId, title: operationalTasks.title }).from(operationalTasks).where(isNull(operationalTasks.deletedAt));
+      const qualityRows = await db.select({ projectName: qcWarning.projectName, status: qcWarning.status, severity: qcWarning.severity, title: qcWarning.title, dueDate: qcWarning.dueDate, ownerUserId: qcWarning.ownerUserId }).from(qcWarning);
+      const approvalRows = await db.select({ projectId: approvals.projectId, status: approvals.status, title: approvals.title, dueDate: approvals.dueDate, assignedApprover: approvals.assignedApprover }).from(approvals);
+      const importRuns = await db.select({ projectId: smartImportRuns.projectId, projectName: smartImportRuns.projectName, uploadedAt: smartImportRuns.uploadedAt }).from(smartImportRuns);
+
+      const latestImportByProjectId = new Map<number, Date>();
+      const latestImportByNorm = new Map<string, Date>();
+      for (const run of importRuns) {
+        const dt = run.uploadedAt ? new Date(run.uploadedAt) : null;
+        if (!dt || Number.isNaN(dt.getTime())) continue;
+        if (run.projectId) {
+          const current = latestImportByProjectId.get(run.projectId);
+          if (!current || dt > current) latestImportByProjectId.set(run.projectId, dt);
+        }
+        if (run.projectName) {
+          const norm = normalizeName(run.projectName);
+          const current = latestImportByNorm.get(norm);
+          if (!current || dt > current) latestImportByNorm.set(norm, dt);
+        }
+      }
+
+      const usersById = new Map<number, string>();
+      const ownerIds = new Set<number>();
+      for (const t of engTasks) if (t.ownerUserId) ownerIds.add(t.ownerUserId);
+      for (const q of qualityRows) if (q.ownerUserId) ownerIds.add(q.ownerUserId);
+      for (const a of approvalRows) if (a.assignedApprover) ownerIds.add(a.assignedApprover);
+      if (ownerIds.size > 0) {
+        const owners = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, Array.from(ownerIds)));
+        for (const o of owners) usersById.set(o.id, o.name);
+      }
+
+      const actionRows: any[] = [];
+      const projectRows: any[] = [];
+      const today = new Date();
+
+      for (const project of activeProjects) {
+        const norm = normalizeName(project.projectName);
+        const plan = planByNorm.get(norm) || { weightedPct: 0, totalWeight: 0, weightedExpPct: 0, totalExpWeight: 0, fyItems: 0 };
+        const fin = finByProjectId.get(project.id) || finByNorm.get(norm) || emptyFin();
+        const hasCanonicalData = planByNorm.has(norm) || finByProjectId.has(project.id) || finByNorm.has(norm);
+        const hasCurrentFyItem = plan.fyItems > 0 || fin.fyRevenueItems > 0 || fin.fyCostItems > 0;
+        if (!hasCanonicalData || !hasCurrentFyItem) continue;
+
+        const actualProgressPct = plan.totalWeight > 0 ? Number(((plan.weightedPct / plan.totalWeight) * 100).toFixed(1)) : null;
+        const expectedProgressPct = plan.totalExpWeight > 0 ? Number(((plan.weightedExpPct / plan.totalExpWeight) * 100).toFixed(1)) : null;
+        const scheduleVariancePct = actualProgressPct !== null && expectedProgressPct !== null ? Number((actualProgressPct - expectedProgressPct).toFixed(1)) : null;
+        const behindPlan = actualProgressPct !== null && expectedProgressPct !== null && actualProgressPct < expectedProgressPct - 5;
+
+        const plannedRevenueFy = fin.plannedRevenue;
+        const receivedInflowFy = fin.receivedInflow;
+        const openInflowFy = plannedRevenueFy - receivedInflowFy;
+        const plannedExpenditureFy = fin.plannedExpenditure;
+        const paidExpenditureFy = fin.paidExpenditure;
+        const openExpenditureFy = plannedExpenditureFy - paidExpenditureFy;
+        const grossProfitFy = plannedRevenueFy - plannedExpenditureFy;
+        const grossMarginPctFy = plannedRevenueFy > 0 ? Number((((plannedRevenueFy - plannedExpenditureFy) / plannedRevenueFy) * 100).toFixed(1)) : null;
+
+        const projectEng = engTasks.filter((t) => (t.projectId && t.projectId === project.id) || (!t.projectId && normalizeName(t.projectName || "") === norm));
+        const openEng = projectEng.filter((t) => !["done", "completed", "qc approved", "cancelled", "canceled"].includes((t.status || "").toLowerCase()));
+        const engBlockers = openEng.filter((t) => Boolean(t.blockerReason) || ["high", "urgent", "highest", "critical"].includes((t.priority || "").toLowerCase()) || ((t.status || "").toLowerCase().includes("block")));
+
+        const projectQuality = qualityRows.filter((q) => normalizeName(q.projectName || "") === norm);
+        const openQuality = projectQuality.filter((q) => (q.status || "open").toLowerCase() !== "closed");
+        const criticalQuality = openQuality.filter((q) => ["high", "critical"].includes((q.severity || "").toLowerCase()));
+
+        const projectApprovals = approvalRows.filter((a) => a.projectId === project.id && a.status === "pending");
+
+        const latestImport = latestImportByProjectId.get(project.id) || latestImportByNorm.get(norm) || null;
+        const staleDays = latestImport ? Math.floor((today.getTime() - latestImport.getTime()) / (1000 * 60 * 60 * 24)) : null;
+        const importFreshness = staleDays === null ? "Critical" : staleDays >= 14 ? "Critical" : staleDays >= 7 ? "Warning" : "Fresh";
+
+        const engineeringStatus = engBlockers.length > 0 ? "Blocked" : openEng.some((t) => t.dueDate && t.dueDate < today.toISOString().slice(0, 10)) ? "At Risk" : "On Track";
+        const qualityStatus = criticalQuality.length > 0 ? "Blocked" : openQuality.length > 0 ? "At Risk" : "On Track";
+        const inflowRisk = openInflowFy > 0 && plannedRevenueFy > 0 && (openInflowFy / plannedRevenueFy) > 0.35;
+        const outflowRisk = openExpenditureFy > 0 && plannedExpenditureFy > 0 && (openExpenditureFy / plannedExpenditureFy) > 0.35;
+        const criticalActionCount = [behindPlan, inflowRisk, outflowRisk, engBlockers.length > 0, criticalQuality.length > 0, projectApprovals.length > 0].filter(Boolean).length;
+
+        if (behindPlan) actionRows.push({ projectId: project.id, projectName: project.projectName, queue: "Projects Behind Plan", issueTitle: "Actual progress is >5pp behind expected", severity: "High", owner: project.pm || project.pd || "Unassigned", dueDate: null, link: `/projects/${project.id}?tab=plan` });
+        if (inflowRisk) actionRows.push({ projectId: project.id, projectName: project.projectName, queue: "Inflow at Risk", issueTitle: "Open inflow exposure is elevated", severity: "Medium", owner: project.pm || "Unassigned", dueDate: null, link: `/projects/${project.id}?tab=revenue` });
+        if (outflowRisk) actionRows.push({ projectId: project.id, projectName: project.projectName, queue: "Expenditure / COS at Risk", issueTitle: "Open expenditure exposure is elevated", severity: "Medium", owner: project.pm || "Unassigned", dueDate: null, link: `/projects/${project.id}?tab=expenditure` });
+        for (const t of engBlockers.slice(0, 5)) actionRows.push({ projectId: project.id, projectName: project.projectName, queue: "Engineering Bottlenecks", issueTitle: t.title || "Engineering blocker", severity: "High", owner: t.ownerUserId ? (usersById.get(t.ownerUserId) || "Owner") : "Unassigned", dueDate: t.dueDate || null, link: `/projects/${project.id}?tab=plan` });
+        for (const q of openQuality.slice(0, 5)) actionRows.push({ projectId: project.id, projectName: project.projectName, queue: "Quality Issues", issueTitle: q.title, severity: q.severity || "Medium", owner: q.ownerUserId ? (usersById.get(q.ownerUserId) || "Owner") : "Unassigned", dueDate: q.dueDate || null, link: `/projects/${project.id}` });
+        for (const a of projectApprovals.slice(0, 5)) actionRows.push({ projectId: project.id, projectName: project.projectName, queue: "Pending Approvals / Decisions", issueTitle: a.title || "Pending approval", severity: "Medium", owner: a.assignedApprover ? (usersById.get(a.assignedApprover) || "Approver") : "Unassigned", dueDate: a.dueDate ? new Date(a.dueDate).toISOString().slice(0, 10) : null, link: `/projects/${project.id}` });
+
+        projectRows.push({
+          projectId: project.id,
+          projectName: project.projectName,
+          portfolio: "—",
+          pm: project.pm,
+          pd: project.pd,
+          executionPhase: project.executionPhase,
+          rag: project.ragStatus || "Unknown",
+          actualProgressPct,
+          expectedProgressPct,
+          scheduleVariancePct,
+          plannedRevenueFy,
+          receivedInflowFy,
+          openInflowFy,
+          plannedExpenditureFy,
+          paidExpenditureFy,
+          openExpenditureFy,
+          grossProfitFy,
+          grossMarginPctFy,
+          engineeringStatus,
+          qualityStatus,
+          importFreshness,
+          importAgeDays: staleDays,
+          behindPlan,
+          inflowRisk,
+          outflowRisk,
+          engineeringBlockerCount: engBlockers.length,
+          openQualityWarningCount: openQuality.length,
+          pendingApprovalCount: projectApprovals.length,
+          criticalActionCount,
+        });
+      }
+
+      const avgActual = projectRows.length ? Number((projectRows.reduce((s, p) => s + (p.actualProgressPct || 0), 0) / projectRows.length).toFixed(1)) : null;
+      const avgExpected = projectRows.length ? Number((projectRows.reduce((s, p) => s + (p.expectedProgressPct || 0), 0) / projectRows.length).toFixed(1)) : null;
+      const plannedRevenue = projectRows.reduce((s, p) => s + p.plannedRevenueFy, 0);
+      const receivedInflow = projectRows.reduce((s, p) => s + p.receivedInflowFy, 0);
+      const plannedExpenditure = projectRows.reduce((s, p) => s + p.plannedExpenditureFy, 0);
+      const paidExpenditure = projectRows.reduce((s, p) => s + p.paidExpenditureFy, 0);
+
+      res.json({
+        financialYear: fy,
+        projects: projectRows,
+        kpis: {
+          activeDashboardProjects: projectRows.length,
+          averageActualProgressPct: avgActual,
+          averageExpectedProgressPct: avgExpected,
+          projectsBehindPlan: projectRows.filter((p) => p.behindPlan).length,
+          plannedRevenueFy: plannedRevenue,
+          receivedInflowFy: receivedInflow,
+          openInflowFy: plannedRevenue - receivedInflow,
+          plannedExpenditureFy: plannedExpenditure,
+          paidExpenditureFy: paidExpenditure,
+          openExpenditureFy: plannedExpenditure - paidExpenditure,
+          grossProfitFy: plannedRevenue - plannedExpenditure,
+          grossMarginPctFy: plannedRevenue > 0 ? Number((((plannedRevenue - plannedExpenditure) / plannedRevenue) * 100).toFixed(1)) : null,
+          openEngineeringBlockers: projectRows.reduce((s, p) => s + p.engineeringBlockerCount, 0),
+          openQualityWarnings: projectRows.reduce((s, p) => s + p.openQualityWarningCount, 0),
+          pendingApprovals: projectRows.reduce((s, p) => s + p.pendingApprovalCount, 0),
+          staleImports: projectRows.filter((p) => p.importFreshness !== "Fresh").length,
+        },
+        actionCenter: {
+          queues: [
+            "Projects Behind Plan",
+            "Inflow at Risk",
+            "Expenditure / COS at Risk",
+            "Engineering Bottlenecks",
+            "Quality Issues",
+            "Pending Approvals / Decisions",
+          ],
+          rows: actionRows,
+        },
+      });
+    } catch (err: any) {
+      console.error("[lifecycle-board] GET execution-dashboard error:", err);
       res.status(500).json({ error: err.message });
     }
   });
