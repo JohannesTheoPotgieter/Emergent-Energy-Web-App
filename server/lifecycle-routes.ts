@@ -564,6 +564,13 @@ export function registerLifecycleRoutes(app: Express) {
         else if (eng.total > 0) source = "engineering";
         else if (hasTracker) source = "excel";
 
+        const isEligible = proj.signedStatus !== 'NONE' && proj.signedDate != null && proj.signedDocumentLink != null && proj.signedDocumentLink.trim() !== '';
+        const computedGateStatus = proj.executionEnabled ? 'ENABLED' : (isEligible ? 'ELIGIBLE' : 'NOT_ELIGIBLE');
+        const executionEligibilityReasons: string[] = [];
+        if (proj.signedStatus === 'NONE') executionEligibilityReasons.push('No signed status set');
+        if (!proj.signedDate) executionEligibilityReasons.push('No signed date');
+        if (!proj.signedDocumentLink?.trim()) executionEligibilityReasons.push('No signed document link');
+
         const projectPctComplete = plan.totalWeight > 0 ? plan.weightedPct / plan.totalWeight : null;
         const expectedPctComplete = plan.totalExpWeight > 0 ? plan.weightedExpPct / plan.totalExpWeight : null;
         const gpPct = fin.totalRevenue > 0 ? Math.round(((fin.totalRevenue - fin.totalCost) / fin.totalRevenue) * 100) : null;
@@ -589,7 +596,7 @@ export function registerLifecycleRoutes(app: Express) {
           ragUpdatedByUserId: proj.ragUpdatedByUserId,
           ragUpdatedByName: proj.ragUpdatedByUserId ? ragUserMap.get(proj.ragUpdatedByUserId) || null : null,
           executionEnabled: proj.executionEnabled,
-          executionGateStatus: proj.executionGateStatus,
+          executionGateStatus: computedGateStatus,
           signedStatus: proj.signedStatus,
           executionPhase: proj.executionPhase,
           archivedStatus: proj.archivedStatus,
@@ -623,6 +630,7 @@ export function registerLifecycleRoutes(app: Express) {
           engPercent: engPct,
           qmPercent: qmPct,
           pmPercent: pmPct,
+          executionEligibilityReasons,
         });
       }
 
