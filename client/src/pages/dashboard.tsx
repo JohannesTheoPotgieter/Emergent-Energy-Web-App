@@ -383,31 +383,20 @@ export default function DashboardPage() {
           {isLoading ? (
             <div className="text-center py-10 text-sm text-muted-foreground">Loading projects...</div>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-border/60">
-              <table className="min-w-[2000px] w-full text-sm" data-testid="execution-dashboard-table">
+            <div className="rounded-lg border border-border/60">
+              <table className="w-full text-sm" data-testid="execution-dashboard-table">
                 <thead>
                   <tr className="bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
-                    <th className="text-left py-2.5 px-3 font-medium sticky left-0 bg-muted/40 z-10">Project</th>
-                    <th className="text-left py-2.5 px-3 font-medium">Portfolio</th>
-                    <th className="text-left py-2.5 px-3 font-medium">PM</th>
-                    <th className="text-left py-2.5 px-3 font-medium">PD</th>
-                    <th className="text-left py-2.5 px-3 font-medium">Phase</th>
-                    <th className="text-center py-2.5 px-3 font-medium">RAG</th>
-                    <th className="text-right py-2.5 px-3 font-medium">Actual %</th>
-                    <th className="text-right py-2.5 px-3 font-medium">Expected %</th>
-                    <th className="text-right py-2.5 px-3 font-medium">Variance</th>
-                    <th className="text-right py-2.5 px-3 font-medium">Revenue</th>
-                    <th className="text-right py-2.5 px-3 font-medium">Inflow</th>
-                    <th className="text-right py-2.5 px-3 font-medium">Open Inflow</th>
-                    <th className="text-right py-2.5 px-3 font-medium">Expenditure</th>
-                    <th className="text-right py-2.5 px-3 font-medium">Paid</th>
-                    <th className="text-right py-2.5 px-3 font-medium">Open Exp.</th>
-                    <th className="text-right py-2.5 px-3 font-medium">GP %</th>
-                    <th className="text-center py-2.5 px-3 font-medium">Eng.</th>
-                    <th className="text-center py-2.5 px-3 font-medium">Quality</th>
-                    <th className="text-center py-2.5 px-3 font-medium">Import</th>
-                    <th className="text-center py-2.5 px-3 font-medium">Actions</th>
-                    <th className="w-8 py-2.5 px-3"></th>
+                    <th className="text-left py-2.5 px-3 font-medium">Project</th>
+                    <th className="text-left py-2.5 px-2 font-medium hidden lg:table-cell">PM</th>
+                    <th className="text-center py-2.5 px-2 font-medium">RAG</th>
+                    <th className="text-right py-2.5 px-2 font-medium">Progress</th>
+                    <th className="text-right py-2.5 px-2 font-medium hidden md:table-cell">Variance</th>
+                    <th className="text-right py-2.5 px-2 font-medium hidden lg:table-cell">Open Inflow</th>
+                    <th className="text-right py-2.5 px-2 font-medium hidden lg:table-cell">Open Exp.</th>
+                    <th className="text-right py-2.5 px-2 font-medium hidden md:table-cell">GP %</th>
+                    <th className="text-center py-2.5 px-2 font-medium">Issues</th>
+                    <th className="w-8 py-2.5 px-1"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -421,48 +410,43 @@ export default function DashboardPage() {
                           onClick={() => setExpanded(isExpanded ? null : p.projectId)}
                           data-testid={`project-row-${p.projectId}`}
                         >
-                          <td className="py-2.5 px-3 font-medium text-foreground sticky left-0 bg-white z-10">{p.projectName}</td>
-                          <td className="py-2.5 px-3 text-muted-foreground">{p.portfolio || "—"}</td>
-                          <td className="py-2.5 px-3 text-muted-foreground">{p.pm || "—"}</td>
-                          <td className="py-2.5 px-3 text-muted-foreground">{p.pd || "—"}</td>
-                          <td className="py-2.5 px-3 text-muted-foreground">{p.executionPhase || "—"}</td>
-                          <td className="py-2.5 px-3 text-center">
+                          <td className="py-2.5 px-3">
+                            <div className="font-medium text-foreground truncate max-w-[200px]">{p.projectName}</div>
+                            <div className="text-[11px] text-muted-foreground lg:hidden">{p.pm || "—"}</div>
+                          </td>
+                          <td className="py-2.5 px-2 text-muted-foreground text-xs hidden lg:table-cell">{p.pm || "—"}</td>
+                          <td className="py-2.5 px-2 text-center">
                             <Badge className={`text-[10px] ${ragBadge(p.rag || "Unknown")}`}>{p.rag || "—"}</Badge>
                           </td>
-                          <td className="py-2.5 px-3 text-right tabular-nums font-medium">{pct(p.actualProgressPct)}</td>
-                          <td className="py-2.5 px-3 text-right tabular-nums text-muted-foreground">{pct(p.expectedProgressPct)}</td>
-                          <td className={`py-2.5 px-3 text-right tabular-nums font-medium ${variance < 0 ? "text-red-600" : variance > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
+                          <td className="py-2.5 px-2 text-right">
+                            <span className="tabular-nums font-medium text-sm">{pct(p.actualProgressPct)}</span>
+                            <div className="text-[10px] text-muted-foreground tabular-nums">of {pct(p.expectedProgressPct)}</div>
+                          </td>
+                          <td className={`py-2.5 px-2 text-right tabular-nums text-sm font-medium hidden md:table-cell ${variance < 0 ? "text-red-600" : variance > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
                             {pct(p.scheduleVariancePct)}
                           </td>
-                          <td className="py-2.5 px-3 text-right tabular-nums">{money(p.plannedRevenueFy)}</td>
-                          <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600">{money(p.receivedInflowFy)}</td>
-                          <td className="py-2.5 px-3 text-right tabular-nums text-amber-600">{money(p.openInflowFy)}</td>
-                          <td className="py-2.5 px-3 text-right tabular-nums">{money(p.plannedExpenditureFy)}</td>
-                          <td className="py-2.5 px-3 text-right tabular-nums text-emerald-600">{money(p.paidExpenditureFy)}</td>
-                          <td className="py-2.5 px-3 text-right tabular-nums text-amber-600">{money(p.openExpenditureFy)}</td>
-                          <td className="py-2.5 px-3 text-right tabular-nums font-medium">{pct((p.grossMarginPctFy || 0) * 100)}</td>
-                          <td className="py-2.5 px-3 text-center text-xs text-muted-foreground">{p.engineeringStatus}</td>
-                          <td className="py-2.5 px-3 text-center text-xs text-muted-foreground">{p.qualityStatus}</td>
-                          <td className="py-2.5 px-3 text-center text-xs text-muted-foreground">{p.importFreshness}</td>
-                          <td className="py-2.5 px-3 text-center">
+                          <td className="py-2.5 px-2 text-right tabular-nums text-sm text-amber-600 hidden lg:table-cell">{money(p.openInflowFy)}</td>
+                          <td className="py-2.5 px-2 text-right tabular-nums text-sm text-amber-600 hidden lg:table-cell">{money(p.openExpenditureFy)}</td>
+                          <td className="py-2.5 px-2 text-right tabular-nums text-sm font-medium hidden md:table-cell">{pct((p.grossMarginPctFy || 0) * 100)}</td>
+                          <td className="py-2.5 px-2 text-center">
                             {p.criticalActionCount > 0 ? (
                               <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">{p.criticalActionCount}</Badge>
                             ) : (
                               <span className="text-xs text-muted-foreground">0</span>
                             )}
                           </td>
-                          <td className="py-2.5 px-2 text-center">
+                          <td className="py-2.5 px-1 text-center">
                             {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
                           </td>
                         </tr>
                         {isExpanded && (
                           <tr className="bg-muted/20 border-t border-border/40">
-                            <td colSpan={21} className="p-4">
+                            <td colSpan={10} className="p-4">
                               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                                 <div className="bg-white rounded-lg border p-3">
-                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Project Summary</p>
+                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Project Details</p>
                                   <div className="space-y-1.5 text-sm">
-                                    <p><span className="text-muted-foreground">Name:</span> <span className="font-medium">{p.projectName}</span></p>
+                                    <p><span className="text-muted-foreground">Portfolio:</span> <span className="font-medium">{p.portfolio || "—"}</span></p>
                                     <p><span className="text-muted-foreground">PM:</span> {p.pm || "—"}</p>
                                     <p><span className="text-muted-foreground">PD:</span> {p.pd || "—"}</p>
                                     <p><span className="text-muted-foreground">Phase:</span> {p.executionPhase || "—"}</p>
@@ -481,15 +465,18 @@ export default function DashboardPage() {
                                   <div className="space-y-1.5 text-sm">
                                     <p><span className="text-muted-foreground">Revenue:</span> {money(p.plannedRevenueFy)}</p>
                                     <p><span className="text-muted-foreground">Inflow:</span> <span className="text-emerald-600">{money(p.receivedInflowFy)}</span></p>
+                                    <p><span className="text-muted-foreground">Open Inflow:</span> <span className="text-amber-600">{money(p.openInflowFy)}</span></p>
                                     <p><span className="text-muted-foreground">Expenditure:</span> {money(p.plannedExpenditureFy)}</p>
+                                    <p><span className="text-muted-foreground">Paid:</span> <span className="text-emerald-600">{money(p.paidExpenditureFy)}</span></p>
+                                    <p><span className="text-muted-foreground">Open Exp:</span> <span className="text-amber-600">{money(p.openExpenditureFy)}</span></p>
                                     <p><span className="text-muted-foreground">GP Margin:</span> <span className="font-medium">{pct((p.grossMarginPctFy || 0) * 100)}</span></p>
                                   </div>
                                 </div>
                                 <div className="bg-white rounded-lg border p-3">
-                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Issues & Exceptions</p>
+                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Issues & Status</p>
                                   <div className="space-y-1.5 text-sm">
                                     <p><span className="text-muted-foreground">Critical actions:</span> <span className="font-medium">{p.criticalActionCount}</span></p>
-                                    <p><span className="text-muted-foreground">Eng. status:</span> {p.engineeringStatus}</p>
+                                    <p><span className="text-muted-foreground">Engineering:</span> {p.engineeringStatus}</p>
                                     <p><span className="text-muted-foreground">Quality:</span> {p.qualityStatus}</p>
                                     <p><span className="text-muted-foreground">Import:</span> {p.importFreshness}</p>
                                   </div>
