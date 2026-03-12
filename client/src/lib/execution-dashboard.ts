@@ -29,6 +29,7 @@ export interface BaseExecutionProject {
   constructionStartDate: string | null;
   commissioningDate: string | null;
   clientHandoverDate: string | null;
+  executionEligibilityReasons?: string[];
 }
 
 export interface DerivedExecutionProject extends BaseExecutionProject {
@@ -62,6 +63,7 @@ export interface ExecutionFilters {
   executionPhase: string;
   pm: string;
   rag: string;
+  gateStatus: string;
   exceptionOnly: boolean;
   behindScheduleOnly: boolean;
   marginRiskOnly: boolean;
@@ -210,6 +212,7 @@ export function filterExecutionProjects(projects: DerivedExecutionProject[], fil
     }
     if (filters.pm !== "all" && (project.pm || "Unassigned") !== filters.pm) return false;
     if (filters.rag !== "all" && (project.ragStatus || "Unknown") !== filters.rag) return false;
+    if (filters.gateStatus !== "all" && (project.executionGateStatus || "NOT_ELIGIBLE") !== filters.gateStatus) return false;
     if (filters.exceptionOnly && project.exceptions.length === 0) return false;
     if (filters.behindScheduleOnly && !project.isBehindSchedule) return false;
     if (filters.marginRiskOnly && !project.isMarginRisk) return false;
@@ -254,6 +257,9 @@ export function aggregateExecutionStats(projects: DerivedExecutionProject[]) {
     acc.costInvoicedUnpaid += project.costInvoicedUnpaid;
     if (project.isRed) acc.redProjects += 1;
     if (project.hasEscalation) acc.escalations += 1;
+    if (project.executionGateStatus === "ENABLED") acc.enabled += 1;
+    if (project.executionGateStatus === "ELIGIBLE") acc.eligible += 1;
+    if (project.executionGateStatus === "NOT_ELIGIBLE") acc.notEligible += 1;
     if (project.isBehindSchedule) acc.behind += 1;
     if (project.isMarginRisk) acc.marginRisk += 1;
     if (project.isCashRisk) acc.cashRisk += 1;
@@ -269,6 +275,9 @@ export function aggregateExecutionStats(projects: DerivedExecutionProject[]) {
     costInvoicedUnpaid: 0,
     redProjects: 0,
     escalations: 0,
+    enabled: 0,
+    eligible: 0,
+    notEligible: 0,
     behind: 0,
     marginRisk: 0,
     cashRisk: 0,
