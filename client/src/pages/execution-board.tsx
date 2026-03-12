@@ -1,144 +1,86 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
-import {
-  Search, Zap, AlertCircle, CheckCircle2, AlertTriangle,
-  TrendingUp, TrendingDown, DollarSign, BarChart3,
-  Calendar, ChevronDown, ChevronUp, ExternalLink, Target,
-  Building2, ArrowRight, ClipboardList, Receipt, Activity,
-} from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
+import {
+  Activity, AlertCircle, AlertTriangle, CalendarClock, ChevronDown, ChevronUp,
+  DollarSign, ExternalLink, RefreshCw,
+} from "lucide-react";
+import {
+  BaseExecutionProject,
+  DerivedExecutionProject,
+  ExecutionFilters,
+  aggregateExecutionStats,
+  deriveExecutionProjectMetrics,
+  filterExecutionProjects,
+  formatCurrencyCompact,
+  formatCurrencyFull,
+  formatDate,
+  getProjectExceptionFlags,
+  groupProjectsByExecutionPhase,
+  groupProjectsByPm,
+} from "@/lib/execution-dashboard";
 
-interface ProjectInfo {
-  id: number | null;
-  projectName: string;
-  sizeKwp: string | null;
-  pd: string | null;
-  pm: string | null;
-  contractValue: string | null;
-  phase: string | null;
-  isActive: boolean;
-  escalationLevel: string | null;
-  ragStatus: string | null;
-  executionEnabled: boolean;
-  executionGateStatus: string;
-  signedStatus: string;
-  executionPhase: string | null;
-  archivedStatus: string;
-  hasTracker: boolean;
-  planTotal: number;
-  planAvgPct: number;
-  projectPctComplete: number | null;
-  expectedPctComplete: number | null;
-  totalRevenue: number;
-  invoicedRevenue: number;
-  receivedRevenue: number;
-  totalCost: number;
-  invoicedCost: number;
-  paidCost: number;
-  gpPct: number | null;
-  constructionStartDate: string | null;
-  commissioningDate: string | null;
-  clientHandoverDate: string | null;
+type RoleView = "coo" | "program" | "finance" | "construction";
+type SortKey = "project" | "pm" | "actual" | "expected" | "variance" | "revenueRemaining" | "invoicedUnpaid" | "costRemaining" | "gp";
+
+const defaultFilters: ExecutionFilters = {
+  search: "",
+  executionPhase: "all",
+  pm: "all",
+  rag: "all",
+  exceptionOnly: false,
+  behindScheduleOnly: false,
+  marginRiskOnly: false,
+  cashRiskOnly: false,
+  commissioningDueOnly: false,
+  handoverDueOnly: false,
+};
+
+function ragClass(rag: string | null) {
+  if (rag === "Red") return "bg-red-50 text-red-700 border-red-200";
+  if (rag === "Amber") return "bg-amber-50 text-amber-700 border-amber-200";
+  if (rag === "Green") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  return "bg-muted text-muted-foreground border-border";
 }
 
-function cleanProjectName(name: string): string {
-  return name.replace(/_Tracker$/i, "").replace(/_/g, " ");
+function riskClass(level: "High" | "Medium" | "Low") {
+  if (level === "High") return "bg-red-50 text-red-700 border-red-200";
+  if (level === "Medium") return "bg-amber-50 text-amber-700 border-amber-200";
+  return "bg-emerald-50 text-emerald-700 border-emerald-200";
 }
 
-function formatCurrency(value: number): string {
-  if (value >= 1_000_000) return `R${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `R${(value / 1_000).toFixed(0)}K`;
-  return `R${value.toFixed(0)}`;
-}
-
-function formatCurrencyFull(value: number): string {
-  return `R${value.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-}
-
-function ragColor(rag: string | null): string {
-  if (!rag) return "bg-muted text-muted-foreground border-border";
-  const colors: Record<string, string> = {
-    Green: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    Amber: "bg-amber-50 text-amber-700 border-amber-200",
-    Red: "bg-red-50 text-red-700 border-red-200",
-  };
-  return colors[rag] || "bg-muted text-muted-foreground border-border";
-}
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "2-digit" });
-}
-
-function ScheduleHealthBadge({ actual, expected }: { actual: number | null; expected: number | null }) {
-  if (actual === null) return <Badge variant="outline" className="text-[10px] text-slate-500 border-border">No plan</Badge>;
-  const diff = expected !== null ? Math.round((actual - expected) * 100) : null;
-  if (diff === null) return <Badge variant="outline" className="text-[10px]">{Math.round(actual * 100)}%</Badge>;
-  if (diff >= 0) {
-    return (
-      <Badge className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 gap-0.5 font-medium">
-        <TrendingUp className="w-3 h-3" />+{diff}%
-      </Badge>
-    );
-  }
-  return (
-    <Badge className="text-[10px] bg-red-50 text-red-700 border-red-200 gap-0.5 font-medium">
-      <TrendingDown className="w-3 h-3" />{diff}%
-    </Badge>
-  );
-}
-
-function DualProgressBar({ actual, expected, height = "h-2.5" }: {
-  actual: number; expected: number | null; height?: string;
+function SortHeader({ label, keyName, sortKey, sortDir, onSort }: {
+  label: string;
+  keyName: SortKey;
+  sortKey: SortKey;
+  sortDir: "asc" | "desc";
+  onSort: (key: SortKey) => void;
 }) {
-  const actualPct = Math.min(100, Math.max(0, actual));
-  const expectedPct = expected !== null ? Math.min(100, Math.max(0, expected)) : null;
-  const isAhead = expectedPct !== null && actualPct >= expectedPct;
-  const isBehind = expectedPct !== null && actualPct < expectedPct - 5;
-  const barColor = isBehind ? "bg-red-500" : isAhead ? "bg-emerald-500" : "bg-blue-500";
-
   return (
-    <div className={`w-full ${height} bg-muted rounded-full overflow-hidden relative`}>
-      {expectedPct !== null && (
-        <div
-          className="absolute top-0 h-full rounded-full border-r-2 border-dashed border-slate-400/60 bg-slate-200/50"
-          style={{ width: `${expectedPct}%` }}
-        />
-      )}
-      <div
-        className={`relative h-full rounded-full transition-all duration-700 ease-out ${barColor}`}
-        style={{ width: `${actualPct}%` }}
-      />
-    </div>
-  );
-}
-
-function FinanceBar({ value, max, color, height = "h-2" }: {
-  value: number; max: number; color: string; height?: string;
-}) {
-  const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
-  return (
-    <div className={`w-full ${height} bg-muted rounded-full overflow-hidden`}>
-      <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
-    </div>
+    <button onClick={() => onSort(keyName)} className="font-semibold text-left inline-flex items-center gap-1 hover:text-foreground">
+      {label}
+      {sortKey === keyName && <span className="text-[10px]">{sortDir === "asc" ? "▲" : "▼"}</span>}
+    </button>
   );
 }
 
 export default function ExecutionBoard() {
-  const { allowed: canView } = usePermission('execution_board', 'view');
-  const [allProjects, setAllProjects] = useState<ProjectInfo[]>([]);
+  const { allowed: canView } = usePermission("execution_board", "view");
+  const [allProjects, setAllProjects] = useState<BaseExecutionProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [phaseFilter, setPhaseFilter] = useState("all");
+  const [filters, setFilters] = useState<ExecutionFilters>(defaultFilters);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [activeView, setActiveView] = useState<RoleView>("coo");
+  const [sortKey, setSortKey] = useState<SortKey>("project");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
@@ -147,10 +89,10 @@ export default function ExecutionBoard() {
       setError(null);
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
+      if (token) headers.Authorization = `Bearer ${token}`;
       const res = await fetch("/api/lifecycle-board/projects", { headers });
       if (!res.ok) throw new Error(`Failed to load projects (${res.status})`);
-      const data: ProjectInfo[] = await res.json();
+      const data: BaseExecutionProject[] = await res.json();
       setAllProjects(data);
     } catch (err: any) {
       setError(err.message || "Failed to load projects");
@@ -163,532 +105,333 @@ export default function ExecutionBoard() {
   useEffect(() => { loadData(); }, [loadData]);
 
   const executionProjects = useMemo(
-    () => allProjects.filter(p => p.executionEnabled === true && p.archivedStatus === "ACTIVE"),
-    [allProjects]
+    () => allProjects.filter((p) => p.executionEnabled && p.archivedStatus === "ACTIVE").map(deriveExecutionProjectMetrics),
+    [allProjects],
   );
 
-  const executionPhases = useMemo(() => {
-    const phases = new Set<string>();
-    executionProjects.forEach(p => { if (p.executionPhase) phases.add(p.executionPhase); });
-    return Array.from(phases).sort();
-  }, [executionProjects]);
+  const phases = useMemo(() => Array.from(new Set(executionProjects.map((p) => p.executionPhase).filter(Boolean) as string[])).sort(), [executionProjects]);
+  const pms = useMemo(() => Array.from(new Set(executionProjects.map((p) => p.pm || "Unassigned"))).sort(), [executionProjects]);
 
-  const filtered = useMemo(() => {
-    return executionProjects.filter(p => {
-      if (searchTerm) {
-        const clean = cleanProjectName(p.projectName).toLowerCase();
-        if (!clean.includes(searchTerm.toLowerCase())) return false;
-      }
-      if (phaseFilter !== "all") {
-        if (phaseFilter === "awaiting") { if (p.executionPhase !== null) return false; }
-        else { if (p.executionPhase !== phaseFilter) return false; }
-      }
-      return true;
+  const filteredProjects = useMemo(() => filterExecutionProjects(executionProjects, filters), [executionProjects, filters]);
+  const stats = useMemo(() => aggregateExecutionStats(filteredProjects), [filteredProjects]);
+  const allStats = useMemo(() => aggregateExecutionStats(executionProjects), [executionProjects]);
+
+  const sortedProjects = useMemo(() => {
+    const sorted = [...filteredProjects];
+    sorted.sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+      const read = (project: DerivedExecutionProject): number | string => {
+        if (sortKey === "project") return project.cleanName;
+        if (sortKey === "pm") return project.pm || "Unassigned";
+        if (sortKey === "actual") return project.actualPct ?? -1;
+        if (sortKey === "expected") return project.expectedPct ?? -1;
+        if (sortKey === "variance") return project.scheduleVariancePct ?? -999;
+        if (sortKey === "revenueRemaining") return project.revenueRemainingToCollect;
+        if (sortKey === "invoicedUnpaid") return project.revenueInvoicedUnpaid;
+        if (sortKey === "costRemaining") return project.costRemainingToPay;
+        return project.gpPct ?? -999;
+      };
+      const av = read(a);
+      const bv = read(b);
+      if (typeof av === "string" && typeof bv === "string") return av.localeCompare(bv) * dir;
+      return ((av as number) - (bv as number)) * dir;
     });
-  }, [executionProjects, searchTerm, phaseFilter]);
+    return sorted;
+  }, [filteredProjects, sortKey, sortDir]);
 
-  const stats = useMemo(() => {
-    const projects = executionProjects;
-    const withPct = projects.filter(p => p.projectPctComplete !== null);
-    const avgCompletion = withPct.length > 0
-      ? Math.round(withPct.reduce((s, p) => s + (p.projectPctComplete || 0) * 100, 0) / withPct.length)
-      : 0;
+  const groupedPhase = useMemo(() => groupProjectsByExecutionPhase(filteredProjects), [filteredProjects]);
+  const groupedPm = useMemo(() => groupProjectsByPm(filteredProjects), [filteredProjects]);
 
-    const totalContractValue = projects.reduce((s, p) => s + (parseFloat(p.contractValue || "0") || 0), 0);
-    const totalRevenue = projects.reduce((s, p) => s + (p.totalRevenue || 0), 0);
-    const totalReceived = projects.reduce((s, p) => s + (p.receivedRevenue || 0), 0);
-    const totalCost = projects.reduce((s, p) => s + (p.totalCost || 0), 0);
-    const totalPaid = projects.reduce((s, p) => s + (p.paidCost || 0), 0);
-    const overallGP = totalRevenue > 0 ? Math.round(((totalRevenue - totalCost) / totalRevenue) * 100) : null;
+  const cooAttention = useMemo(() => [...filteredProjects].sort((a, b) => {
+    const score = (p: DerivedExecutionProject) =>
+      (p.isRed ? 5 : 0) + (p.isBehindSchedule ? 3 : 0) + (p.isMarginRisk ? 3 : 0) + (p.isCashRisk ? 2 : 0) + (p.hasEscalation ? 4 : 0);
+    return score(b) - score(a);
+  }).slice(0, 8), [filteredProjects]);
 
-    const behindSchedule = projects.filter(p => {
-      if (p.projectPctComplete === null || p.expectedPctComplete === null) return false;
-      return p.projectPctComplete < p.expectedPctComplete - 0.05;
-    }).length;
+  const financeTotals = useMemo(() => filteredProjects.reduce((acc, p) => {
+    acc.totalRevenue += p.totalRevenue;
+    acc.totalCost += p.totalCost;
+    acc.received += p.receivedRevenue;
+    acc.invoicedRevenue += p.invoicedRevenue;
+    acc.paid += p.paidCost;
+    acc.invoicedCost += p.invoicedCost;
+    acc.revNotInv += p.revenueNotYetInvoiced;
+    acc.revInvUnpaid += p.revenueInvoicedUnpaid;
+    acc.costNotInv += p.costNotYetInvoiced;
+    acc.costInvUnpaid += p.costInvoicedUnpaid;
+    return acc;
+  }, { totalRevenue: 0, totalCost: 0, received: 0, invoicedRevenue: 0, paid: 0, invoicedCost: 0, revNotInv: 0, revInvUnpaid: 0, costNotInv: 0, costInvUnpaid: 0 }), [filteredProjects]);
 
-    return { avgCompletion, totalContractValue, totalRevenue, totalReceived, totalCost, totalPaid, overallGP, behindSchedule, total: projects.length };
-  }, [executionProjects]);
+  const applyQuickFilter = (type: string) => {
+    setFilters((prev) => {
+      if (type === "all") return { ...defaultFilters };
+      if (type === "red") return { ...prev, rag: "Red" };
+      if (type === "behind") return { ...prev, behindScheduleOnly: true };
+      if (type === "cash") return { ...prev, cashRiskOnly: true };
+      if (type === "margin") return { ...prev, marginRiskOnly: true };
+      if (type === "commissioning") return { ...prev, commissioningDueOnly: true };
+      return { ...prev, handoverDueOnly: true };
+    });
+  };
+
+  const handleSort = (key: SortKey) => {
+    setSortKey((prev) => {
+      if (prev === key) {
+        setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
+        return prev;
+      }
+      setSortDir("asc");
+      return key;
+    });
+  };
+
+  const openProject = (project: DerivedExecutionProject, tab?: string) => {
+    if (!project.id) return;
+    setLocation(tab ? `/projects/${project.id}?tab=${tab}` : `/projects/${project.id}`);
+  };
+
+  // Backend currently only supplies generic lifecycle payload; no dedicated domain RAG fields yet.
+  const domainStatus = (project: DerivedExecutionProject) => {
+    const schedule = project.isBehindSchedule ? "Red" : project.actualPct === null || project.expectedPct === null ? "Amber" : "Green";
+    const finance = project.isMarginRisk && project.isCashRisk ? "Red" : project.isMarginRisk || project.isCashRisk ? "Amber" : "Green";
+    const construction = project.isConstructionDateMissing || project.isExecutionDateRisk ? "Red" : (project.isCommissioningDueSoon || project.isHandoverDueSoon) && (project.actualPct ?? 100) < 80 ? "Amber" : "Green";
+    const dates = (project.isCommissioningDueSoon || project.isHandoverDueSoon) && (project.actualPct ?? 100) < 85 ? "Red" : "Green";
+    return { schedule, finance, construction, dates };
+  };
+
+  const constructionRisk = (project: DerivedExecutionProject): "High" | "Medium" | "Low" => {
+    if (project.isConstructionDateMissing || (project.isBehindSchedule && (project.isCommissioningDueSoon || project.isHandoverDueSoon))) return "High";
+    if ((project.isCommissioningDueSoon || project.isHandoverDueSoon) && (project.actualPct ?? 100) < 80) return "Medium";
+    return "Low";
+  };
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-24 gap-3" data-testid="execution-board-loading">
-        <EnergyLoader size="lg" label="Loading execution data..." />
-      </div>
-    );
+    return <div className="flex flex-col items-center justify-center py-24 gap-3" data-testid="execution-board-loading"><EnergyLoader size="lg" label="Loading execution data..." /></div>;
   }
 
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center py-24 gap-4" data-testid="execution-board-error">
-        <div className="rounded-full bg-red-50 p-4">
-          <AlertCircle className="w-8 h-8 text-red-500" />
-        </div>
-        <div className="text-center">
-          <p className="text-sm font-medium text-red-700 mb-1">Failed to load data</p>
-          <p className="text-xs text-muted-foreground max-w-xs">{error}</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={loadData} data-testid="btn-retry" className="gap-1.5">
-          <Activity className="w-3.5 h-3.5" /> Retry
-        </Button>
+        <div className="rounded-full bg-red-50 p-4"><AlertCircle className="w-8 h-8 text-red-500" /></div>
+        <div className="text-center"><p className="text-sm font-medium text-red-700 mb-1">Failed to load data</p><p className="text-xs text-muted-foreground max-w-xs">{error}</p></div>
+        <Button variant="outline" size="sm" onClick={loadData}><RefreshCw className="w-3.5 h-3.5 mr-1" /> Retry</Button>
       </div>
     );
   }
 
   if (!canView) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]" data-testid="access-denied-container">
-        <Card className="max-w-md w-full shadow-lg">
-          <CardContent className="py-12 text-center">
-            <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-            <h2 className="text-xl font-semibold mb-2" data-testid="text-access-denied">Access Denied</h2>
-            <p className="text-muted-foreground text-sm">You don't have permission to view the Execution Board.</p>
-          </CardContent>
-        </Card>
-      </div>
-    );
+    return <div className="flex items-center justify-center min-h-[60vh]" data-testid="access-denied-container"><Card className="max-w-md w-full shadow-lg"><CardContent className="py-12 text-center"><AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" /><h2 className="text-xl font-semibold mb-2" data-testid="text-access-denied">Access Denied</h2><p className="text-muted-foreground text-sm">You don't have permission to view the Execution Board.</p></CardContent></Card></div>;
   }
 
   return (
-    <div className="space-y-5 max-w-[1440px] mx-auto" data-testid="execution-board-page">
-      <div className="flex items-start sm:items-center justify-between flex-wrap gap-3">
+    <div className="space-y-4 max-w-[1600px] mx-auto pb-6" data-testid="execution-board-page">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="text-execution-title">
-            <Activity className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
-            Execution Board
-          </h1>
-          <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">Plan progress & financial health across active projects</p>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2"><Activity className="w-6 h-6 text-blue-600" />Execution Command Center</h1>
+          <p className="text-muted-foreground text-sm mt-1">Live portfolio control across delivery, finance, and site execution</p>
         </div>
-        <Badge className="text-xs font-semibold px-3 py-1.5 bg-blue-50 text-blue-700 border-blue-200">
-          {stats.total} active project{stats.total !== 1 ? "s" : ""}
-        </Badge>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        <Card className="border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-shadow" data-testid="stat-avg-completion">
-          <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center gap-1.5 mb-2">
-              <Target className="w-4 h-4 text-blue-600" />
-              <span className="text-[10px] sm:text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Avg Completion</span>
-            </div>
-            <div className="text-2xl sm:text-3xl font-bold text-blue-700">{stats.avgCompletion}%</div>
-            <div className="mt-2">
-              <FinanceBar value={stats.avgCompletion} max={100} color="bg-blue-500" height="h-1.5" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className={`border-l-4 shadow-sm hover:shadow-md transition-shadow ${stats.behindSchedule > 0 ? "border-l-red-500" : "border-l-emerald-500"}`} data-testid="stat-schedule-health">
-          <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center gap-1.5 mb-2">
-              <BarChart3 className={`w-4 h-4 ${stats.behindSchedule > 0 ? "text-red-600" : "text-emerald-600"}`} />
-              <span className="text-[10px] sm:text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Schedule</span>
-            </div>
-            <div className={`text-2xl sm:text-3xl font-bold ${stats.behindSchedule > 0 ? "text-red-600" : "text-emerald-600"}`}>
-              {stats.behindSchedule > 0 ? `${stats.behindSchedule} behind` : "On track"}
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-1">
-              {stats.total - stats.behindSchedule} of {stats.total} on schedule
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-l-4 border-l-emerald-500 shadow-sm hover:shadow-md transition-shadow" data-testid="stat-revenue">
-          <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center gap-1.5 mb-2">
-              <DollarSign className="w-4 h-4 text-emerald-600" />
-              <span className="text-[10px] sm:text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Revenue</span>
-            </div>
-            <div className="text-2xl sm:text-3xl font-bold text-emerald-700">{formatCurrency(stats.totalRevenue)}</div>
-            <div className="flex items-center gap-2 mt-2">
-              <div className="flex-1">
-                <FinanceBar value={stats.totalReceived} max={stats.totalRevenue} color="bg-emerald-500" height="h-1.5" />
-              </div>
-              <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">{formatCurrency(stats.totalReceived)} in</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-l-4 border-l-orange-500 shadow-sm hover:shadow-md transition-shadow" data-testid="stat-costs">
-          <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center gap-1.5 mb-2">
-              <Receipt className="w-4 h-4 text-orange-600" />
-              <span className="text-[10px] sm:text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Costs</span>
-            </div>
-            <div className="text-2xl sm:text-3xl font-bold text-orange-700">{formatCurrency(stats.totalCost)}</div>
-            <div className="flex items-center gap-2 mt-2">
-              <div className="flex-1">
-                <FinanceBar value={stats.totalPaid} max={stats.totalCost} color="bg-orange-500" height="h-1.5" />
-              </div>
-              <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">{formatCurrency(stats.totalPaid)} paid</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className={`border-l-4 col-span-2 md:col-span-1 shadow-sm hover:shadow-md transition-shadow ${(stats.overallGP ?? 0) >= 20 ? "border-l-emerald-500" : (stats.overallGP ?? 0) >= 0 ? "border-l-amber-500" : "border-l-red-500"}`} data-testid="stat-gp">
-          <CardContent className="p-3 sm:p-4">
-            <div className="flex items-center gap-1.5 mb-2">
-              <TrendingUp className={`w-4 h-4 ${(stats.overallGP ?? 0) >= 20 ? "text-emerald-600" : (stats.overallGP ?? 0) >= 0 ? "text-amber-600" : "text-red-600"}`} />
-              <span className="text-[10px] sm:text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Overall GP%</span>
-            </div>
-            <div className={`text-2xl sm:text-3xl font-bold ${(stats.overallGP ?? 0) >= 20 ? "text-emerald-600" : (stats.overallGP ?? 0) >= 0 ? "text-amber-600" : "text-red-600"}`}>
-              {stats.overallGP !== null ? `${stats.overallGP}%` : "—"}
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-1">Contract: {formatCurrency(stats.totalContractValue)}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[180px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search projects..."
-            className="pl-9 h-9 text-sm"
-            data-testid="input-search-execution"
-          />
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={loadData}><RefreshCw className="w-3.5 h-3.5 mr-1" />Refresh</Button>
+          <Button variant="outline" size="sm" onClick={() => setFilters(defaultFilters)}>Reset filters</Button>
+          <Button variant="outline" size="sm" disabled>Export</Button>
+          <Button variant="outline" size="sm" disabled>Save view</Button>
         </div>
-        <SearchableSelect
-          value={phaseFilter}
-          onValueChange={setPhaseFilter}
-          placeholder="All phases"
-          triggerClassName="w-[170px] h-9 text-xs"
-          data-testid="select-trigger-phase-filter"
-          options={[
-            { value: "all", label: "All Phases" },
-            { value: "awaiting", label: "Awaiting Import" },
-            ...executionPhases.map(phase => ({ value: phase, label: phase })),
-          ]}
-        />
-        <span className="ml-auto text-[11px] text-muted-foreground font-medium" data-testid="text-filtered-count">
-          {filtered.length} of {executionProjects.length} shown
-        </span>
       </div>
 
-      {executionProjects.length === 0 ? (
-        <Card className="shadow-sm" data-testid="empty-state">
-          <CardContent className="flex flex-col items-center justify-center py-20 gap-4">
-            <div className="rounded-full bg-muted p-5">
-              <Building2 className="w-10 h-10 text-slate-600" />
-            </div>
-            <div className="text-center max-w-md">
-              <p className="text-sm font-medium text-muted-foreground mb-1">No projects in execution yet</p>
-              <p className="text-xs text-muted-foreground">
-                Projects require signed evidence and admin approval to enter execution.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : filtered.length === 0 ? (
-        <Card className="shadow-sm">
-          <CardContent className="flex flex-col items-center justify-center py-16 gap-3">
-            <Search className="w-8 h-8 text-slate-600" />
-            <p className="text-sm text-muted-foreground">No projects match your filters</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-2.5" data-testid="execution-projects-list">
-          {filtered.map((p) => {
-            const actualPct = p.projectPctComplete !== null ? Math.round(p.projectPctComplete * 100) : null;
-            const expectedPct = p.expectedPctComplete !== null ? Math.round(p.expectedPctComplete * 100) : null;
-            const isExpanded = expandedId === p.id;
-            const contractVal = parseFloat(p.contractValue || "0") || 0;
-            const revenueCollectedPct = p.totalRevenue > 0 ? Math.round((p.receivedRevenue / p.totalRevenue) * 100) : 0;
-            const costPaidPct = p.totalCost > 0 ? Math.round((p.paidCost / p.totalCost) * 100) : 0;
-            const scheduleDiff = (actualPct !== null && expectedPct !== null) ? actualPct - expectedPct : null;
-            const projectGP = p.gpPct;
+      <Card className="sticky top-0 z-20 shadow-sm">
+        <CardContent className="p-3 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+            <Input placeholder="Search project / site / client" value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} />
+            <SearchableSelect value={filters.executionPhase} onValueChange={(v) => setFilters((f) => ({ ...f, executionPhase: v }))} placeholder="Execution phase" options={[{ value: "all", label: "All phases" }, { value: "Awaiting Phase", label: "Awaiting Phase" }, ...phases.map((phase) => ({ value: phase, label: phase }))]} />
+            <SearchableSelect value={filters.pm} onValueChange={(v) => setFilters((f) => ({ ...f, pm: v }))} placeholder="PM" options={[{ value: "all", label: "All PMs" }, ...pms.map((pm) => ({ value: pm, label: pm }))]} />
+            <SearchableSelect value={filters.rag} onValueChange={(v) => setFilters((f) => ({ ...f, rag: v }))} placeholder="RAG" options={[{ value: "all", label: "All RAG" }, { value: "Red", label: "Red" }, { value: "Amber", label: "Amber" }, { value: "Green", label: "Green" }, { value: "Unknown", label: "Unknown" }]} />
+            <div className="text-xs text-muted-foreground flex items-center">Showing {filteredProjects.length} of {allStats.totalProjects} active execution projects</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              ["exceptionOnly", "Exception only"], ["behindScheduleOnly", "Behind schedule only"], ["marginRiskOnly", "Margin risk only"], ["cashRiskOnly", "Cash risk only"], ["commissioningDueOnly", "Commissioning due soon"], ["handoverDueOnly", "Handover due soon"],
+            ].map(([key, label]) => {
+              const active = Boolean(filters[key as keyof ExecutionFilters]);
+              return <Button key={key} size="sm" variant={active ? "default" : "outline"} onClick={() => setFilters((f) => ({ ...f, [key]: !active }))}>{label}</Button>;
+            })}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge className="cursor-pointer" onClick={() => applyQuickFilter("all")}>All Active</Badge>
+            <Badge className="cursor-pointer bg-red-50 text-red-700 border-red-200" onClick={() => applyQuickFilter("red")}>Red Only</Badge>
+            <Badge className="cursor-pointer" onClick={() => applyQuickFilter("behind")}>Behind Schedule</Badge>
+            <Badge className="cursor-pointer" onClick={() => applyQuickFilter("cash")}>Cash Stuck</Badge>
+            <Badge className="cursor-pointer" onClick={() => applyQuickFilter("margin")}>Margin Risk</Badge>
+            <Badge className="cursor-pointer" onClick={() => applyQuickFilter("commissioning")}>Commissioning Due 14d</Badge>
+            <Badge className="cursor-pointer" onClick={() => applyQuickFilter("handover")}>Handover Due 30d</Badge>
+          </div>
+        </CardContent>
+      </Card>
 
-            return (
-              <Card
-                key={p.id ?? p.projectName}
-                className={`overflow-hidden transition-all duration-200 shadow-sm ${isExpanded ? "ring-2 ring-blue-200 shadow-md" : "hover:shadow-md hover:border-blue-100"}`}
-                data-testid={`card-project-${p.id}`}
-              >
-                <div
-                  className="flex items-center gap-2 sm:gap-4 px-3 sm:px-5 py-3 sm:py-4 cursor-pointer select-none"
-                  onClick={() => setExpandedId(isExpanded ? null : p.id)}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <button
-                        className="font-semibold text-sm sm:text-[15px] truncate hover:text-blue-600 transition-colors text-left leading-tight"
-                        onClick={(e) => { e.stopPropagation(); if (p.id) setLocation(`/projects/${p.id}`); }}
-                        data-testid={`link-name-${p.id}`}
-                      >
-                        {cleanProjectName(p.projectName)}
-                      </button>
-                      <Badge className={`text-[9px] px-1.5 py-0 shrink-0 border ${ragColor(p.ragStatus)}`}>
-                        {p.ragStatus || "—"}
-                      </Badge>
-                      {p.executionPhase && (
-                        <Badge variant="secondary" className="text-[9px] px-1.5 py-0 shrink-0 hidden sm:inline-flex">
-                          {p.executionPhase}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                      {p.pm && <span className="truncate max-w-[120px]">{p.pm}</span>}
-                      {p.sizeKwp && <span className="font-medium">{p.sizeKwp} kWp</span>}
-                      {contractVal > 0 && <span className="hidden sm:inline font-medium">{formatCurrency(contractVal)}</span>}
-                    </div>
-                  </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
+        {[
+          { title: "Active Execution Projects", value: stats.totalProjects, action: () => setFilters(defaultFilters) },
+          { title: "Total Contract Value", value: formatCurrencyCompact(stats.contractValue), action: () => setActiveView("coo") },
+          { title: "Portfolio Completion %", value: `${stats.weightedCompletion}%`, action: () => setActiveView("program") },
+          { title: "Revenue Remaining to Collect", value: formatCurrencyCompact(stats.revenueRemaining), action: () => { setActiveView("finance"); setFilters((f) => ({ ...f, cashRiskOnly: true })); } },
+          { title: "Cost Remaining to Pay", value: formatCurrencyCompact(stats.costRemaining), action: () => setActiveView("finance") },
+          { title: "Red Projects", value: stats.redProjects, action: () => setFilters((f) => ({ ...f, rag: "Red" })) },
+          { title: "Escalation Projects", value: stats.escalations, action: () => { setActiveView("coo"); setFilters((f) => ({ ...f, exceptionOnly: true })); } },
+          { title: "Key Dates Due in 14 Days", value: stats.keyDatesDue, action: () => { setActiveView("construction"); setFilters((f) => ({ ...f, commissioningDueOnly: true })); } },
+        ].map((kpi) => (
+          <Card key={kpi.title} className="cursor-pointer hover:shadow-md" onClick={kpi.action}><CardContent className="p-3"><p className="text-[11px] text-muted-foreground">{kpi.title}</p><p className="text-lg font-bold mt-1">{kpi.value}</p></CardContent></Card>
+        ))}
+      </div>
 
-                  <div className="hidden md:flex items-center gap-4 shrink-0">
-                    {actualPct !== null && (
-                      <div className="flex items-center gap-2 w-[160px]">
-                        <div className="flex-1">
-                          <DualProgressBar actual={actualPct} expected={expectedPct} height="h-2.5" />
-                        </div>
-                        <span className="text-sm font-bold tabular-nums w-[36px] text-right">{actualPct}%</span>
-                      </div>
-                    )}
-                    <ScheduleHealthBadge actual={p.projectPctComplete} expected={p.expectedPctComplete} />
-                  </div>
+      <div className="flex gap-2 border-b pb-2">
+        {(["coo", "program", "finance", "construction"] as RoleView[]).map((view) => (
+          <Button key={view} variant={activeView === view ? "default" : "ghost"} onClick={() => setActiveView(view)}>{view.toUpperCase()}</Button>
+        ))}
+      </div>
 
-                  <div className="hidden lg:flex items-center gap-4 shrink-0">
-                    {p.totalRevenue > 0 && (
-                      <div className="flex items-center gap-1 text-[11px] text-emerald-600">
-                        <DollarSign className="w-3.5 h-3.5" />
-                        <span className="font-semibold">{formatCurrency(p.receivedRevenue)}/{formatCurrency(p.totalRevenue)}</span>
-                      </div>
-                    )}
-                    {projectGP !== null && (
-                      <span className={`text-[11px] font-bold ${projectGP >= 20 ? "text-emerald-600" : projectGP >= 0 ? "text-amber-600" : "text-red-600"}`}>
-                        GP {projectGP}%
-                      </span>
-                    )}
-                  </div>
-
-                  <div className={`flex items-center justify-center w-7 h-7 rounded-full transition-colors ${isExpanded ? "bg-blue-50 text-blue-600" : "text-muted-foreground hover:bg-muted"}`}>
-                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  </div>
-                </div>
-
-                {/* Mobile summary bar */}
-                <div className="md:hidden px-3 pb-2 flex items-center gap-2">
-                  {actualPct !== null && (
-                    <div className="flex items-center gap-2 flex-1">
-                      <div className="flex-1">
-                        <DualProgressBar actual={actualPct} expected={expectedPct} height="h-2" />
-                      </div>
-                      <span className="text-xs font-bold tabular-nums">{actualPct}%</span>
-                      <ScheduleHealthBadge actual={p.projectPctComplete} expected={p.expectedPctComplete} />
-                    </div>
-                  )}
-                </div>
-
-                {isExpanded && (
-                  <div className="border-t bg-muted/60 px-3 sm:px-5 py-4 sm:py-5">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-                      <div className="rounded-xl bg-card border shadow-sm p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                            <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Plan Progress</span>
-                          </div>
-                          {p.id && (
-                            <button
-                              className="text-[11px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-0.5 hover:underline"
-                              onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}?tab=plan`); }}
-                              data-testid={`btn-view-plan-${p.id}`}
-                            >
-                              View <ArrowRight className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                        {actualPct !== null ? (
-                          <>
-                            <div className="flex items-baseline gap-1.5">
-                              <span className="text-3xl font-bold">{actualPct}%</span>
-                              {expectedPct !== null && (
-                                <span className="text-[11px] text-muted-foreground">/ {expectedPct}% expected</span>
-                              )}
-                            </div>
-                            <DualProgressBar actual={actualPct} expected={expectedPct} height="h-3" />
-                            <div className="flex items-center justify-between">
-                              {scheduleDiff !== null && (
-                                <div className={`text-[11px] font-semibold flex items-center gap-0.5 ${scheduleDiff >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                                  {scheduleDiff >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                                  {scheduleDiff >= 0 ? `${scheduleDiff}% ahead` : `${Math.abs(scheduleDiff)}% behind`}
-                                </div>
-                              )}
-                              <span className="text-[11px] text-muted-foreground">{p.planTotal} tasks</span>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="py-3 text-center">
-                            <p className="text-xs text-slate-500 italic">No plan imported</p>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="rounded-xl bg-card border shadow-sm p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Revenue</span>
-                          </div>
-                          {p.id && (
-                            <button
-                              className="text-[11px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-0.5 hover:underline"
-                              onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}?tab=revenue`); }}
-                              data-testid={`btn-view-revenue-${p.id}`}
-                            >
-                              View <ArrowRight className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                        {p.totalRevenue > 0 ? (
-                          <>
-                            <div className="flex items-baseline gap-1.5">
-                              <span className="text-3xl font-bold text-emerald-700">{formatCurrency(p.totalRevenue)}</span>
-                              <span className="text-[11px] text-muted-foreground">costed</span>
-                            </div>
-                            <FinanceBar value={p.receivedRevenue} max={p.totalRevenue} color="bg-emerald-500" height="h-3" />
-                            <div className="flex justify-between text-[11px]">
-                              <span className="text-muted-foreground">Invoiced: {formatCurrency(p.invoicedRevenue)}</span>
-                              <span className="font-semibold text-emerald-600">{revenueCollectedPct}% in bank</span>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="py-3 text-center">
-                            <p className="text-xs text-slate-500 italic">No revenue data</p>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="rounded-xl bg-card border shadow-sm p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-                            <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Expenditure</span>
-                          </div>
-                          {p.id && (
-                            <button
-                              className="text-[11px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-0.5 hover:underline"
-                              onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}?tab=expenditure`); }}
-                              data-testid={`btn-view-costs-${p.id}`}
-                            >
-                              View <ArrowRight className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                        {p.totalCost > 0 ? (
-                          <>
-                            <div className="flex items-baseline gap-1.5">
-                              <span className="text-3xl font-bold text-orange-700">{formatCurrency(p.totalCost)}</span>
-                              <span className="text-[11px] text-muted-foreground">costed</span>
-                            </div>
-                            <FinanceBar value={p.paidCost} max={p.totalCost} color="bg-orange-500" height="h-3" />
-                            <div className="flex justify-between text-[11px]">
-                              <span className="text-muted-foreground">Invoiced: {formatCurrency(p.invoicedCost)}</span>
-                              <span className="font-semibold text-orange-600">{costPaidPct}% paid</span>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="py-3 text-center">
-                            <p className="text-xs text-slate-500 italic">No cost data</p>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="rounded-xl bg-card border shadow-sm p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <div className={`w-1.5 h-1.5 rounded-full ${(projectGP ?? 0) >= 20 ? "bg-emerald-500" : (projectGP ?? 0) >= 0 ? "bg-amber-500" : "bg-red-500"}`} />
-                            <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">GP% & Dates</span>
-                          </div>
-                          {p.id && (
-                            <button
-                              className="text-[11px] text-blue-600 hover:text-blue-800 font-medium flex items-center gap-0.5 hover:underline"
-                              onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}`); }}
-                              data-testid={`btn-view-project-${p.id}`}
-                            >
-                              Detail <ArrowRight className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                        {projectGP !== null ? (
-                          <div className="flex items-baseline gap-1.5">
-                            <span className={`text-3xl font-bold ${projectGP >= 20 ? "text-emerald-600" : projectGP >= 0 ? "text-amber-600" : "text-red-600"}`}>
-                              {projectGP}%
-                            </span>
-                            {contractVal > 0 && <span className="text-[11px] text-muted-foreground">of {formatCurrencyFull(contractVal)}</span>}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-slate-500 italic py-1">No financial data</p>
-                        )}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2 text-[11px]">
-                            <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                            <span className="text-muted-foreground">Construction</span>
-                            <span className="ml-auto font-medium">{formatDate(p.constructionStartDate)}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-[11px]">
-                            <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                            <span className="text-muted-foreground">Commissioning</span>
-                            <span className="ml-auto font-medium">{formatDate(p.commissioningDate)}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-[11px]">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                            <span className="text-muted-foreground">Handover</span>
-                            <span className="ml-auto font-medium">{formatDate(p.clientHandoverDate)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {p.id && (
-                      <div className="flex items-center gap-2 mt-4 pt-3 border-t flex-wrap">
-                        <Button
-                          size="sm"
-                          className="h-8 text-xs gap-1.5 shadow-sm"
-                          onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}`); }}
-                          data-testid={`btn-open-project-${p.id}`}
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          Open Project
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 text-xs gap-1.5"
-                          onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}?tab=plan`); }}
-                          data-testid={`btn-goto-plan-${p.id}`}
-                        >
-                          <ClipboardList className="w-3.5 h-3.5" />
-                          Plan Tasks
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 text-xs gap-1.5"
-                          onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}?tab=revenue`); }}
-                          data-testid={`btn-goto-revenue-${p.id}`}
-                        >
-                          <DollarSign className="w-3.5 h-3.5" />
-                          Revenue
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 text-xs gap-1.5"
-                          onClick={(e) => { e.stopPropagation(); setLocation(`/projects/${p.id}?tab=expenditure`); }}
-                          data-testid={`btn-goto-expenditure-${p.id}`}
-                        >
-                          <Receipt className="w-3.5 h-3.5" />
-                          Expenditure
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </Card>
-            );
-          })}
+      {activeView === "coo" && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Portfolio Contract Value</p><p className="text-xl font-bold">{formatCurrencyCompact(stats.contractValue)}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Weighted Completion</p><p className="text-xl font-bold">{stats.weightedCompletion}%</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Revenue Remaining to Collect</p><p className="text-xl font-bold">{formatCurrencyCompact(stats.revenueRemaining)}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Invoiced but Unpaid</p><p className="text-xl font-bold">{formatCurrencyCompact(stats.invoicedUnpaid)}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Overall GP %</p><p className="text-xl font-bold">{stats.overallGpPct?.toFixed(1) ?? "—"}%</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Escalation Projects</p><p className="text-xl font-bold">{stats.escalations}</p></CardContent></Card>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <Card><CardHeader><CardTitle className="text-base">Needs COO Attention</CardTitle></CardHeader><CardContent className="space-y-2">{cooAttention.map((p) => <div key={p.projectName} className="text-sm border rounded p-2 cursor-pointer" onClick={() => setExpandedId(p.id ?? null)}><div className="flex justify-between gap-2"><p className="font-medium truncate">{p.cleanName}</p><Badge className={ragClass(p.ragStatus)}>{p.ragStatus || "Unknown"}</Badge></div><p className="text-xs text-muted-foreground">{p.pm || "Unassigned"} · GP {p.gpPct?.toFixed(1) ?? "—"}% · Var {p.scheduleVariancePct ?? "—"}%</p></div>)}</CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-base">Portfolio Health Matrix</CardTitle></CardHeader><CardContent className="space-y-2">{filteredProjects.slice(0, 8).map((p) => { const ds = domainStatus(p); return <div key={p.projectName} className="text-xs grid grid-cols-6 gap-1 items-center"><span className="col-span-2 truncate">{p.cleanName}</span><Badge className={ragClass(p.ragStatus)}>{p.ragStatus || "N/A"}</Badge><Badge className={ragClass(ds.schedule)}>{ds.schedule}</Badge><Badge className={ragClass(ds.finance)}>{ds.finance}</Badge><Badge className={ragClass(ds.construction)}>{ds.construction}</Badge></div>; })}</CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-base">Decision Queue</CardTitle></CardHeader><CardContent className="space-y-2">{filteredProjects.filter((p) => p.hasEscalation || p.isRed || p.isMarginRisk || p.isExecutionDateRisk).slice(0, 10).map((p) => <div key={p.projectName} className="text-sm border rounded p-2"><p className="font-medium">{p.cleanName}</p><p className="text-xs text-muted-foreground truncate">{getProjectExceptionFlags(p).join(" · ")}</p></div>)}</CardContent></Card>
+          </div>
         </div>
       )}
+
+      {activeView === "program" && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+            <Card><CardContent className="p-3"><p className="text-xs">Projects in Execution</p><p className="text-xl font-bold">{stats.totalProjects}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">On Track</p><p className="text-xl font-bold">{stats.totalProjects - stats.behind}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">Behind Schedule</p><p className="text-xl font-bold text-red-600">{stats.behind}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">Avg Variance</p><p className="text-xl font-bold">{Math.round(filteredProjects.reduce((s, p) => s + (p.scheduleVariancePct || 0), 0) / (filteredProjects.length || 1))}%</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">Commissioning Due 14d</p><p className="text-xl font-bold">{filteredProjects.filter((p) => p.isCommissioningDueSoon).length}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">Handover Due 30d</p><p className="text-xl font-bold">{filteredProjects.filter((p) => p.isHandoverDueSoon).length}</p></CardContent></Card>
+          </div>
+          <Card><CardHeader><CardTitle className="text-base">Execution Phase Flow Board</CardTitle></CardHeader><CardContent><div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-2">{Object.entries(groupedPhase).map(([phase, projects]) => <div key={phase} className="rounded border p-2 bg-muted/30"><p className="text-xs font-semibold mb-2">{phase} ({projects.length})</p><div className="space-y-1">{projects.slice(0, 5).map((p) => <div key={p.projectName} className="rounded bg-card border p-1.5 text-xs cursor-pointer" onClick={() => setExpandedId(p.id ?? null)}><p className="font-medium truncate">{p.cleanName}</p><p className="text-muted-foreground">{p.pm || "Unassigned"} · {p.actualPct ?? "—"}%/{p.expectedPct ?? "—"}%</p><div className="flex gap-1 mt-1 flex-wrap">{p.isBehindSchedule && <Badge variant="outline">behind</Badge>}{p.isCashRisk && <Badge variant="outline">cash</Badge>}{p.isMarginRisk && <Badge variant="outline">margin</Badge>}{(p.isCommissioningDueSoon || p.isHandoverDueSoon) && <Badge variant="outline">due soon</Badge>}</div></div>)}</div></div>)}</div></CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-base">PM Load Matrix</CardTitle></CardHeader><CardContent><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-xs text-muted-foreground"><tr><th>PM</th><th>Active</th><th>Red</th><th>Behind</th><th>Avg completion</th><th>Cash risks</th><th>Margin risks</th></tr></thead><tbody>{Object.entries(groupedPm).map(([pm, projects]) => <tr key={pm} className="border-t"><td className="py-2">{pm}</td><td>{projects.length}</td><td>{projects.filter((p) => p.isRed).length}</td><td>{projects.filter((p) => p.isBehindSchedule).length}</td><td>{Math.round(projects.reduce((s, p) => s + (p.actualPct || 0), 0) / (projects.length || 1))}%</td><td>{projects.filter((p) => p.isCashRisk).length}</td><td>{projects.filter((p) => p.isMarginRisk).length}</td></tr>)}</tbody></table></div></CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-base">Program Exception Table</CardTitle></CardHeader><CardContent><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-xs text-muted-foreground"><tr><th>Project</th><th>PM</th><th>Phase</th><th>Exception</th><th>Severity</th><th>Actual</th><th>Expected</th><th>Next date</th><th>RAG</th></tr></thead><tbody>{filteredProjects.filter((p) => p.exceptions.length).map((p) => <tr key={p.projectName} className="border-t"><td>{p.cleanName}</td><td>{p.pm || "Unassigned"}</td><td>{p.executionPhase || "Awaiting"}</td><td>{p.exceptions[0]}</td><td>{constructionRisk(p)}</td><td>{p.actualPct ?? "—"}%</td><td>{p.expectedPct ?? "—"}%</td><td>{formatDate(p.commissioningDate || p.clientHandoverDate)}</td><td><Badge className={ragClass(p.ragStatus)}>{p.ragStatus || "Unknown"}</Badge></td></tr>)}</tbody></table></div></CardContent></Card>
+        </div>
+      )}
+
+      {activeView === "finance" && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+            <Card><CardContent className="p-3"><p className="text-xs">Revenue Remaining to Collect</p><p className="text-xl font-bold">{formatCurrencyCompact(stats.revenueRemaining)}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">Invoiced but Unpaid</p><p className="text-xl font-bold">{formatCurrencyCompact(stats.invoicedUnpaid)}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">Cost Remaining to Pay</p><p className="text-xl font-bold">{formatCurrencyCompact(stats.costRemaining)}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">Cost Invoiced Unpaid</p><p className="text-xl font-bold">{formatCurrencyCompact(stats.costInvoicedUnpaid)}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">Overall GP %</p><p className="text-xl font-bold">{stats.overallGpPct?.toFixed(1) ?? "—"}%</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">Cash Risk Projects</p><p className="text-xl font-bold">{stats.cashRisk}</p></CardContent></Card>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <Card><CardHeader><CardTitle className="text-base">Revenue Summary</CardTitle></CardHeader><CardContent className="text-sm space-y-2"><div className="flex justify-between"><span>Total Revenue</span><span>{formatCurrencyFull(financeTotals.totalRevenue)}</span></div><div className="flex justify-between"><span>Not Yet Invoiced</span><span>{formatCurrencyFull(financeTotals.revNotInv)}</span></div><div className="flex justify-between"><span>Invoiced Unpaid</span><span>{formatCurrencyFull(financeTotals.revInvUnpaid)}</span></div><div className="flex justify-between"><span>Received</span><span>{formatCurrencyFull(financeTotals.received)}</span></div></CardContent></Card>
+            <Card><CardHeader><CardTitle className="text-base">Cost Summary</CardTitle></CardHeader><CardContent className="text-sm space-y-2"><div className="flex justify-between"><span>Total Cost</span><span>{formatCurrencyFull(financeTotals.totalCost)}</span></div><div className="flex justify-between"><span>Not Yet Invoiced</span><span>{formatCurrencyFull(financeTotals.costNotInv)}</span></div><div className="flex justify-between"><span>Invoiced Unpaid</span><span>{formatCurrencyFull(financeTotals.costInvUnpaid)}</span></div><div className="flex justify-between"><span>Paid</span><span>{formatCurrencyFull(financeTotals.paid)}</span></div></CardContent></Card>
+          </div>
+          <Card><CardHeader><CardTitle className="text-base">Debtors Risk Table</CardTitle></CardHeader><CardContent><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-xs text-muted-foreground"><tr><th>Project</th><th>PM</th><th>Total Revenue</th><th>Invoiced Revenue</th><th>Received Revenue</th><th>Invoiced Unpaid</th><th>Revenue Remaining</th><th>GP%</th><th>Finance risk</th></tr></thead><tbody>{sortedProjects.map((p) => <tr key={p.projectName} className="border-t"><td>{p.cleanName}</td><td>{p.pm || "Unassigned"}</td><td>{formatCurrencyCompact(p.totalRevenue)}</td><td>{formatCurrencyCompact(p.invoicedRevenue)}</td><td>{formatCurrencyCompact(p.receivedRevenue)}</td><td>{formatCurrencyCompact(p.revenueInvoicedUnpaid)}</td><td>{formatCurrencyCompact(p.revenueRemainingToCollect)}</td><td>{p.gpPct?.toFixed(1) ?? "—"}%</td><td>{p.isCashRisk || p.isMarginRisk ? <Badge className="bg-amber-50 text-amber-700 border-amber-200">Risk</Badge> : <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">Stable</Badge>}</td></tr>)}</tbody></table></div></CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-base">Margin Watchlist</CardTitle></CardHeader><CardContent><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-xs text-muted-foreground"><tr><th>Project</th><th>PM</th><th>Revenue</th><th>Cost</th><th>GP%</th><th>Margin Risk</th><th>Cash Risk</th><th>RAG</th></tr></thead><tbody>{sortedProjects.filter((p) => p.isMarginRisk || p.isCashRisk).map((p) => <tr key={p.projectName} className="border-t"><td>{p.cleanName}</td><td>{p.pm || "Unassigned"}</td><td>{formatCurrencyCompact(p.totalRevenue)}</td><td>{formatCurrencyCompact(p.totalCost)}</td><td>{p.gpPct?.toFixed(1) ?? "—"}%</td><td>{p.isMarginRisk ? "Yes" : "No"}</td><td>{p.isCashRisk ? "Yes" : "No"}</td><td><Badge className={ragClass(p.ragStatus)}>{p.ragStatus || "Unknown"}</Badge></td></tr>)}</tbody></table></div></CardContent></Card>
+        </div>
+      )}
+
+      {activeView === "construction" && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+            <Card><CardContent className="p-3"><p className="text-xs">Sites in Construction</p><p className="text-xl font-bold">{filteredProjects.filter((p) => (p.executionPhase || "").toLowerCase().includes("construction")).length}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">Delayed / Missing Starts</p><p className="text-xl font-bold">{filteredProjects.filter((p) => p.isConstructionDateMissing).length}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">Commissioning Due 14d</p><p className="text-xl font-bold">{filteredProjects.filter((p) => p.isCommissioningDueSoon).length}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">Handover Due 30d</p><p className="text-xl font-bold">{filteredProjects.filter((p) => p.isHandoverDueSoon).length}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">Behind Schedule Projects</p><p className="text-xl font-bold">{filteredProjects.filter((p) => p.isBehindSchedule).length}</p></CardContent></Card>
+            <Card><CardContent className="p-3"><p className="text-xs">Construction Risk Projects</p><p className="text-xl font-bold">{filteredProjects.filter((p) => constructionRisk(p) !== "Low").length}</p></CardContent></Card>
+          </div>
+          <Card><CardHeader><CardTitle className="text-base">Site Status Board</CardTitle></CardHeader><CardContent><div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-xs text-muted-foreground"><tr><th>Project</th><th>PM</th><th>Execution Phase</th><th>Construction Start</th><th>Commissioning</th><th>Handover</th><th>Actual</th><th>Expected</th><th>Variance</th><th>RAG</th><th>Construction Risk</th></tr></thead><tbody>{sortedProjects.map((p) => <tr key={p.projectName} className="border-t"><td>{p.cleanName}</td><td>{p.pm || "Unassigned"}</td><td>{p.executionPhase || "Awaiting"}</td><td>{formatDate(p.constructionStartDate)}</td><td>{formatDate(p.commissioningDate)}</td><td>{formatDate(p.clientHandoverDate)}</td><td>{p.actualPct ?? "—"}%</td><td>{p.expectedPct ?? "—"}%</td><td>{p.scheduleVariancePct ?? "—"}%</td><td><Badge className={ragClass(p.ragStatus)}>{p.ragStatus || "Unknown"}</Badge></td><td><Badge className={riskClass(constructionRisk(p))}>{constructionRisk(p)}</Badge></td></tr>)}</tbody></table></div></CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-base">Date Readiness Signals</CardTitle></CardHeader><CardContent><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">{filteredProjects.slice(0, 12).map((p) => <div className="border rounded p-2 text-xs" key={p.projectName}><p className="font-medium mb-1">{p.cleanName}</p><p>Construction date: {p.constructionStartDate ? "Yes" : "No"}</p><p>Commissioning date: {p.commissioningDate ? "Yes" : "No"}</p><p>Handover date: {p.clientHandoverDate ? "Yes" : "No"}</p><p>Behind schedule: {p.isBehindSchedule ? "Yes" : "No"}</p><p>In construction phase: {(p.executionPhase || "").toLowerCase().includes("construction") ? "Yes" : "No"}</p><p>Date pressure: {p.isExecutionDateRisk ? "Yes" : "No"}</p></div>)}</div></CardContent></Card>
+          <Card><CardHeader><CardTitle className="text-base">Construction Exceptions</CardTitle></CardHeader><CardContent className="space-y-2">{filteredProjects.filter((p) => p.isConstructionDateMissing || p.isExecutionDateRisk || (p.isHandoverDueSoon && (p.actualPct ?? 100) < 80)).map((p) => <div className="border rounded p-2" key={p.projectName}><div className="flex justify-between"><p className="font-medium text-sm">{p.cleanName}</p><Badge className={riskClass(constructionRisk(p))}>{constructionRisk(p)}</Badge></div><p className="text-xs text-muted-foreground">{p.exceptions.join(" · ")}</p></div>)}</CardContent></Card>
+        </div>
+      )}
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Full Drilldown Table</CardTitle></CardHeader>
+        <CardContent className="overflow-x-auto">
+          <table className="w-full min-w-[1300px] text-sm">
+            <thead className="sticky top-0 bg-background text-xs text-muted-foreground">
+              <tr>
+                <th className="py-2"><SortHeader label="Project" keyName="project" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} /></th>
+                <th><SortHeader label="PM" keyName="pm" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} /></th>
+                <th>Phase</th>
+                <th><SortHeader label="Actual %" keyName="actual" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} /></th>
+                <th><SortHeader label="Expected %" keyName="expected" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} /></th>
+                <th><SortHeader label="Variance" keyName="variance" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} /></th>
+                <th><SortHeader label="Revenue Remaining" keyName="revenueRemaining" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} /></th>
+                <th><SortHeader label="Invoiced Unpaid" keyName="invoicedUnpaid" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} /></th>
+                <th><SortHeader label="Cost Remaining" keyName="costRemaining" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} /></th>
+                <th><SortHeader label="GP %" keyName="gp" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} /></th>
+                <th>RAG</th>
+                <th>Escalation</th>
+                <th>Construction</th>
+                <th>Commissioning</th>
+                <th>Handover</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedProjects.map((p) => {
+                const expanded = expandedId === p.id;
+                return (
+                  <React.Fragment key={`row-${p.id ?? p.projectName}`}>
+                    <tr className="border-t hover:bg-muted/30 cursor-pointer" onClick={() => setExpandedId(expanded ? null : p.id)}>
+                      <td className="py-2 font-medium">{p.cleanName}</td>
+                      <td>{p.pm || "Unassigned"}</td>
+                      <td>{p.executionPhase || "Awaiting"}</td>
+                      <td>{p.actualPct ?? "—"}%</td>
+                      <td>{p.expectedPct ?? "—"}%</td>
+                      <td className={(p.scheduleVariancePct ?? 0) < 0 ? "text-red-600" : "text-emerald-600"}>{p.scheduleVariancePct ?? "—"}%</td>
+                      <td>{formatCurrencyCompact(p.revenueRemainingToCollect)}</td>
+                      <td>{formatCurrencyCompact(p.revenueInvoicedUnpaid)}</td>
+                      <td>{formatCurrencyCompact(p.costRemainingToPay)}</td>
+                      <td>{p.gpPct?.toFixed(1) ?? "—"}%</td>
+                      <td><Badge className={ragClass(p.ragStatus)}>{p.ragStatus || "Unknown"}</Badge></td>
+                      <td>{p.escalationLevel || "—"}</td>
+                      <td>{formatDate(p.constructionStartDate)}</td>
+                      <td>{formatDate(p.commissioningDate)}</td>
+                      <td>{formatDate(p.clientHandoverDate)}</td>
+                      <td>{expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</td>
+                    </tr>
+                    {expanded && (
+                      <tr className="bg-muted/30">
+                        <td colSpan={16} className="p-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+                            <div className="border rounded p-2"><p className="font-semibold mb-1">Summary</p><p>Project: {p.cleanName}</p><p>PM: {p.pm || "Unassigned"}</p><p>Phase: {p.executionPhase || "Awaiting"}</p><p>RAG: {p.ragStatus || "Unknown"}</p><p>Escalation: {p.escalationLevel || "—"}</p><p>Size: {p.sizeKwp || "—"}</p><p>Contract: {formatCurrencyFull(p.contractValueNum)}</p></div>
+                            <div className="border rounded p-2"><p className="font-semibold mb-1">Progress</p><p>Actual: {p.actualPct ?? "—"}%</p><p>Expected: {p.expectedPct ?? "—"}%</p><p>Variance: {p.scheduleVariancePct ?? "—"}%</p><p>Plan tasks: {p.planTotal || 0}</p><p className="font-semibold mt-2 mb-1">Dates</p><p>Construction: {formatDate(p.constructionStartDate)}</p><p>Commissioning: {formatDate(p.commissioningDate)}</p><p>Handover: {formatDate(p.clientHandoverDate)}</p></div>
+                            <div className="border rounded p-2"><p className="font-semibold mb-1">Finance</p><p>Total revenue: {formatCurrencyFull(p.totalRevenue)}</p><p>Invoiced revenue: {formatCurrencyFull(p.invoicedRevenue)}</p><p>Received revenue: {formatCurrencyFull(p.receivedRevenue)}</p><p>Revenue remaining: {formatCurrencyFull(p.revenueRemainingToCollect)}</p><p>Total cost: {formatCurrencyFull(p.totalCost)}</p><p>Invoiced cost: {formatCurrencyFull(p.invoicedCost)}</p><p>Paid cost: {formatCurrencyFull(p.paidCost)}</p><p>Cost remaining: {formatCurrencyFull(p.costRemainingToPay)}</p><p>GP%: {p.gpPct?.toFixed(1) ?? "—"}%</p></div>
+                          </div>
+                          <div className="mt-2"><p className="font-semibold text-sm">Exceptions</p><div className="flex flex-wrap gap-1 mt-1">{p.exceptions.length ? p.exceptions.map((ex) => <Badge key={ex} variant="outline">{ex}</Badge>) : <span className="text-xs text-muted-foreground">No active exceptions</span>}</div></div>
+                          <div className="flex gap-2 mt-3 flex-wrap">
+                            <Button size="sm" onClick={() => openProject(p)}><ExternalLink className="w-3.5 h-3.5 mr-1" />Open Project</Button>
+                            <Button size="sm" variant="outline" onClick={() => openProject(p, "plan")}>Plan</Button>
+                            <Button size="sm" variant="outline" onClick={() => openProject(p, "revenue")}>Revenue</Button>
+                            <Button size="sm" variant="outline" onClick={() => openProject(p, "expenditure")}>Expenditure</Button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+          {sortedProjects.length === 0 && <div className="text-center text-sm text-muted-foreground py-10">No projects match current filters.</div>}
+        </CardContent>
+      </Card>
+
+      <div className="text-xs text-muted-foreground flex items-center gap-1"><CalendarClock className="w-3 h-3" /> Placeholder controls (Export / Save view) are UI scaffolds pending backend support.</div>
     </div>
   );
 }
