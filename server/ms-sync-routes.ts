@@ -411,7 +411,7 @@ export function registerMsSyncRoutes(app: Express) {
         db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)).orderBy(desc(mytoolTasks.createdAt)),
 
         db.select().from(operationalTasks).where(
-          sql`(${operationalTasks.ownerUserId} = ${userId} OR ${userName} = ANY(${operationalTasks.assignees}) OR ${userId} = ANY(${operationalTasks.assigneeUserIds}) OR ${operationalTasks.createdBy} = ${userId})`
+          sql`(${operationalTasks.ownerUserId} = ${userId} OR ${userName} = ANY(${operationalTasks.assignees}) OR ${userId} = ANY(${operationalTasks.assigneeUserIds}))`
         ).orderBy(asc(operationalTasks.sortOrder)),
 
         isAdmin
