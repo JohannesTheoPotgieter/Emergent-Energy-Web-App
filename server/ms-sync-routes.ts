@@ -300,7 +300,8 @@ export function registerMsSyncRoutes(app: Express) {
           }
           await db.execute(sql`
             UPDATE work_items SET owner_user_id = ${assignUserId || null}
-            WHERE (legacy_table = 'normalized_plan_tasks' AND legacy_id = ${taskId})
+            WHERE id = ${taskId}
+               OR (legacy_table = 'normalized_plan_tasks' AND legacy_id = ${taskId})
                OR (legacy_table = 'project_plan' AND legacy_id = ${taskId})
           `);
           break;

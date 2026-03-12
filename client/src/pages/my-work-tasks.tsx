@@ -413,6 +413,15 @@ export default function MyWorkTasksPage() {
     return result;
   }, [allTaskData, unreadNotifs, msActionItems]);
 
+  useEffect(() => {
+    if (unifiedDetailOpen && unifiedDetailTask) {
+      const fresh = unifiedTasks.find(t => t._key === unifiedDetailTask._key);
+      if (fresh && fresh !== unifiedDetailTask) {
+        setUnifiedDetailTask(fresh);
+      }
+    }
+  }, [unifiedTasks, unifiedDetailOpen, unifiedDetailTask]);
+
   const invalidateAll = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
     queryClient.invalidateQueries({ queryKey: ["/api/mytool/tasks"] });
