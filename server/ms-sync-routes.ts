@@ -415,11 +415,9 @@ export function registerMsSyncRoutes(app: Express) {
           sql`(${operationalTasks.ownerUserId} = ${userId} OR ${userName} = ANY(${operationalTasks.assignees}) OR ${userId} = ANY(${operationalTasks.assigneeUserIds}))`
         ).orderBy(asc(operationalTasks.sortOrder)),
 
-        isAdmin
-          ? db.select().from(trItems).orderBy(desc(trItems.createdAt))
-          : db.select().from(trItems).where(
-              sql`(${userName} = ANY(${trItems.owners}) OR ${trItems.createdBy} = ${userEmail} OR ${trItems.createdBy} = ${userName})`
-            ).orderBy(desc(trItems.createdAt)),
+        db.select().from(trItems).where(
+            sql`(${userName} = ANY(${trItems.owners}) OR ${userId} = ANY(${trItems.ownerUserIds}))`
+          ).orderBy(desc(trItems.createdAt)),
 
         (async () => {
           const engApprovals = await db.select({
@@ -477,8 +475,7 @@ export function registerMsSyncRoutes(app: Express) {
         ).orderBy(desc(deliverables.updatedAt)),
 
         db.execute(
-          isAdmin
-            ? sql`
+          sql`
               SELECT wi.id, wi.title as task_name, wi.wbs_code as task_no, wi.status,
                      wi.percent_complete as pct_complete, wi.start_date, wi.end_date,
                      wi.duration as duration_days, wi.actual_start as actual_start_date,
@@ -492,28 +489,6 @@ export function registerMsSyncRoutes(app: Express) {
                      wi.wbs_code as parent_task_no,
                      wi.workstream,
                      (SELECT wia.role::text FROM work_item_assignments wia
-                      WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}
-                      LIMIT 1) as assignment_role
-              FROM work_items wi
-              LEFT JOIN project_info pi ON wi.project_id = pi.id
-              WHERE wi.deleted_at IS NULL
-              ORDER BY wi.updated_at DESC NULLS LAST
-              LIMIT 500
-            `
-            : sql`
-              SELECT wi.id, wi.title as task_name, wi.wbs_code as task_no, wi.status,
-                     wi.percent_complete as pct_complete, wi.start_date, wi.end_date,
-                     wi.duration as duration_days, wi.actual_start as actual_start_date,
-                     wi.actual_end as actual_end_date, wi.actual_duration as actual_duration_days,
-                     wi.owner_user_id as assignee_user_id, wi.description as comment,
-                     CASE WHEN wi.type = 'milestone' THEN true ELSE false END as is_milestone,
-                     wi.project_id as project_id,
-                     pi.project_name as project_name,
-                     wi.legacy_id as import_run_id,
-                     wi.external_ref,
-                     wi.wbs_code as parent_task_no,
-                     wi.workstream,
-                     (SELECT wia.role FROM work_item_assignments wia
                       WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}
                       LIMIT 1) as assignment_role
               FROM work_items wi
