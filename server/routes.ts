@@ -26,7 +26,7 @@ import { requirePermission } from "./permission-middleware";
 import { createNameResolver, mapCostToExpenseInput } from "./lib/data-merge";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
-import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getAllWorkItemsForPlanTab, getWorkItemsAsOperationalTasks, getWorkItemsAsMytoolTasks } from "./work-items-adapter";
+import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getAllWorkItemsForPlanTab, getWorkItemsAsOperationalTasks, getWorkItemsAsMytoolTasks, getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError, logApiError } from "./lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "./lib/task-validation";
 import { normalizeStatus, normalizePriority } from "./lib/canonical-task-engine";
@@ -3529,14 +3529,14 @@ export async function registerRoutes(
       const fyEnd = `${fyStartYear + 1}-08-31`;
       const today = now.toISOString().slice(0, 10);
 
-      const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, planResult, qualityResult, usersResult] = await Promise.all([
+      const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, canonicalPlanTasks, qualityResult, usersResult] = await Promise.all([
         storage.getAllProjectInfo(),
         db.select().from(normalizedRevenueLines),
         db.select().from(normalizedCostLines),
         db.select().from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
         db.select().from(engineeringTasks),
         db.execute(sql`SELECT id, project_id, status, title, due_date, assigned_approver FROM approvals`),
-        db.execute(sql`SELECT id, project_id, project_name, task_name, start_date, end_date, actual_start_date, actual_end_date, duration_days, pct_complete, expected_pct_complete FROM normalized_plan_tasks`),
+        getAllPMWorkItemsAsProjectPlan(),
         db.execute(sql`SELECT id, project_name, severity, status, title, owner_user_id, due_date FROM qc_warning`),
         db.execute(sql`SELECT id, name FROM users`),
       ]);
@@ -3562,7 +3562,7 @@ export async function registerRoutes(
         projectByName.set((p.projectName || '').toLowerCase(), p);
       }
 
-      const planRows = planResult.rows as any[];
+      const planRows = canonicalPlanTasks as any[];
       const qualityRows = qualityResult.rows as any[];
       const approvalRows = approvalsRows.rows as any[];
 
@@ -3599,16 +3599,18 @@ export async function registerRoutes(
       }
 
       for (const t of planRows) {
-        const proj = t.project_id ? projectById.get(Number(t.project_id)) : projectByName.get(String(t.project_name || '').toLowerCase());
+        const proj = t.projectId ? projectById.get(Number(t.projectId)) : projectByName.get(String(t.projectName || '').toLowerCase());
         if (!proj) continue;
         const row = ensureRow(proj);
-        if (taskIntersectsFy(t)) row.__hasFyItem = true;
-        const w = Math.max(1, toNum(t.duration_days));
-        const actual = toNum(t.pct_complete);
-        let expected = t.expected_pct_complete == null ? null : toNum(t.expected_pct_complete);
+        const wiStart = (t.actualStart || t.startDate || '').slice(0,10);
+        const wiEnd = (t.actualEnd || t.endDate || '').slice(0,10);
+        if (wiStart && wiEnd && wiStart <= fyEnd && wiEnd >= fyStart) row.__hasFyItem = true;
+        const w = Math.max(1, toNum(t.durationDays));
+        const actual = toNum(t.actualPctComplete) * 100;
+        let expected = t.expectedPctComplete == null ? null : toNum(t.expectedPctComplete) * 100;
         if (expected == null) {
-          const s = (t.actual_start_date || t.start_date || '').slice(0,10);
-          const e = (t.actual_end_date || t.end_date || '').slice(0,10);
+          const s = wiStart;
+          const e = wiEnd;
           if (s && e && s < e) {
             expected = today <= s ? 0 : today >= e ? 100 : Math.max(0, Math.min(100, ((new Date(today).getTime()-new Date(s).getTime())/(new Date(e).getTime()-new Date(s).getTime()))*100));
           } else expected = 0;
