@@ -35,6 +35,7 @@ const defaultFilters: ExecutionFilters = {
   executionPhase: "all",
   pm: "all",
   rag: "all",
+  gateStatus: "ENABLED",
   exceptionOnly: false,
   behindScheduleOnly: false,
   marginRiskOnly: false,
@@ -104,17 +105,17 @@ export default function ExecutionBoard() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const executionProjects = useMemo(
-    () => allProjects.filter((p) => p.executionEnabled && p.archivedStatus === "ACTIVE").map(deriveExecutionProjectMetrics),
+  const activeProjects = useMemo(
+    () => allProjects.filter((p) => p.archivedStatus === "ACTIVE").map(deriveExecutionProjectMetrics),
     [allProjects],
   );
 
-  const phases = useMemo(() => Array.from(new Set(executionProjects.map((p) => p.executionPhase).filter(Boolean) as string[])).sort(), [executionProjects]);
-  const pms = useMemo(() => Array.from(new Set(executionProjects.map((p) => p.pm || "Unassigned"))).sort(), [executionProjects]);
+  const phases = useMemo(() => Array.from(new Set(activeProjects.map((p) => p.executionPhase).filter(Boolean) as string[])).sort(), [activeProjects]);
+  const pms = useMemo(() => Array.from(new Set(activeProjects.map((p) => p.pm || "Unassigned"))).sort(), [activeProjects]);
 
-  const filteredProjects = useMemo(() => filterExecutionProjects(executionProjects, filters), [executionProjects, filters]);
+  const filteredProjects = useMemo(() => filterExecutionProjects(activeProjects, filters), [activeProjects, filters]);
   const stats = useMemo(() => aggregateExecutionStats(filteredProjects), [filteredProjects]);
-  const allStats = useMemo(() => aggregateExecutionStats(executionProjects), [executionProjects]);
+  const allStats = useMemo(() => aggregateExecutionStats(activeProjects), [activeProjects]);
 
   const sortedProjects = useMemo(() => {
     const sorted = [...filteredProjects];
@@ -245,6 +246,17 @@ export default function ExecutionBoard() {
             <SearchableSelect value={filters.executionPhase} onValueChange={(v) => setFilters((f) => ({ ...f, executionPhase: v }))} placeholder="Execution phase" options={[{ value: "all", label: "All phases" }, { value: "Awaiting Phase", label: "Awaiting Phase" }, ...phases.map((phase) => ({ value: phase, label: phase }))]} />
             <SearchableSelect value={filters.pm} onValueChange={(v) => setFilters((f) => ({ ...f, pm: v }))} placeholder="PM" options={[{ value: "all", label: "All PMs" }, ...pms.map((pm) => ({ value: pm, label: pm }))]} />
             <SearchableSelect value={filters.rag} onValueChange={(v) => setFilters((f) => ({ ...f, rag: v }))} placeholder="RAG" options={[{ value: "all", label: "All RAG" }, { value: "Red", label: "Red" }, { value: "Amber", label: "Amber" }, { value: "Green", label: "Green" }, { value: "Unknown", label: "Unknown" }]} />
+            <SearchableSelect
+              value={filters.gateStatus}
+              onValueChange={(v) => setFilters((f) => ({ ...f, gateStatus: v }))}
+              placeholder="Execution eligibility"
+              options={[
+                { value: "all", label: "All eligibility states" },
+                { value: "ENABLED", label: "Enabled" },
+                { value: "ELIGIBLE", label: "Eligible (not enabled)" },
+                { value: "NOT_ELIGIBLE", label: "Not eligible" },
+              ]}
+            />
             <div className="text-xs text-muted-foreground flex items-center">Showing {filteredProjects.length} of {allStats.totalProjects} active execution projects</div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -270,6 +282,9 @@ export default function ExecutionBoard() {
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
         {[
           { title: "Active Execution Projects", value: stats.totalProjects, action: () => setFilters(defaultFilters) },
+          { title: "Execution Enabled", value: allStats.enabled, action: () => setFilters((f) => ({ ...f, gateStatus: "ENABLED" })) },
+          { title: "Eligible (Not Enabled)", value: allStats.eligible, action: () => setFilters((f) => ({ ...f, gateStatus: "ELIGIBLE" })) },
+          { title: "Not Eligible", value: allStats.notEligible, action: () => setFilters((f) => ({ ...f, gateStatus: "NOT_ELIGIBLE" })) },
           { title: "Total Contract Value", value: formatCurrencyCompact(stats.contractValue), action: () => setActiveView("coo") },
           { title: "Portfolio Completion %", value: `${stats.weightedCompletion}%`, action: () => setActiveView("program") },
           { title: "Revenue Remaining to Collect", value: formatCurrencyCompact(stats.revenueRemaining), action: () => { setActiveView("finance"); setFilters((f) => ({ ...f, cashRiskOnly: true })); } },
@@ -281,6 +296,18 @@ export default function ExecutionBoard() {
           <Card key={kpi.title} className="cursor-pointer hover:shadow-md" onClick={kpi.action}><CardContent className="p-3"><p className="text-[11px] text-muted-foreground">{kpi.title}</p><p className="text-lg font-bold mt-1">{kpi.value}</p></CardContent></Card>
         ))}
       </div>
+
+
+      <Card className="border-blue-200 bg-blue-50/50">
+        <CardContent className="p-3 text-xs md:text-sm text-blue-900">
+          <p className="font-semibold">Canonical execution gate is now visible</p>
+          <p className="mt-1">
+            Eligibility is backend-driven from signed status, signed date, and signed document link.
+            The board shows ACTIVE projects and defaults to Enabled via the eligibility filter.
+            Each project row now exposes its gate state so users can reconcile enabled vs eligible vs not eligible.
+          </p>
+        </CardContent>
+      </Card>
 
       <div className="flex gap-2 border-b pb-2">
         {(["coo", "program", "finance", "construction"] as RoleView[]).map((view) => (
@@ -374,6 +401,7 @@ export default function ExecutionBoard() {
                 <th><SortHeader label="Cost Remaining" keyName="costRemaining" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} /></th>
                 <th><SortHeader label="GP %" keyName="gp" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} /></th>
                 <th>RAG</th>
+                <th>Eligibility</th>
                 <th>Escalation</th>
                 <th>Construction</th>
                 <th>Commissioning</th>
@@ -398,6 +426,7 @@ export default function ExecutionBoard() {
                       <td>{formatCurrencyCompact(p.costRemainingToPay)}</td>
                       <td>{p.gpPct?.toFixed(1) ?? "—"}%</td>
                       <td><Badge className={ragClass(p.ragStatus)}>{p.ragStatus || "Unknown"}</Badge></td>
+                      <td><Badge variant="outline">{p.executionGateStatus || "NOT_ELIGIBLE"}</Badge></td>
                       <td>{p.escalationLevel || "—"}</td>
                       <td>{formatDate(p.constructionStartDate)}</td>
                       <td>{formatDate(p.commissioningDate)}</td>
@@ -406,13 +435,21 @@ export default function ExecutionBoard() {
                     </tr>
                     {expanded && (
                       <tr className="bg-muted/30">
-                        <td colSpan={16} className="p-3">
+                        <td colSpan={17} className="p-3">
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-                            <div className="border rounded p-2"><p className="font-semibold mb-1">Summary</p><p>Project: {p.cleanName}</p><p>PM: {p.pm || "Unassigned"}</p><p>Phase: {p.executionPhase || "Awaiting"}</p><p>RAG: {p.ragStatus || "Unknown"}</p><p>Escalation: {p.escalationLevel || "—"}</p><p>Size: {p.sizeKwp || "—"}</p><p>Contract: {formatCurrencyFull(p.contractValueNum)}</p></div>
+                            <div className="border rounded p-2"><p className="font-semibold mb-1">Summary</p><p>Project: {p.cleanName}</p><p>PM: {p.pm || "Unassigned"}</p><p>Phase: {p.executionPhase || "Awaiting"}</p><p>RAG: {p.ragStatus || "Unknown"}</p><p>Eligibility: {p.executionGateStatus || "NOT_ELIGIBLE"}</p><p>Escalation: {p.escalationLevel || "—"}</p><p>Size: {p.sizeKwp || "—"}</p><p>Contract: {formatCurrencyFull(p.contractValueNum)}</p></div>
                             <div className="border rounded p-2"><p className="font-semibold mb-1">Progress</p><p>Actual: {p.actualPct ?? "—"}%</p><p>Expected: {p.expectedPct ?? "—"}%</p><p>Variance: {p.scheduleVariancePct ?? "—"}%</p><p>Plan tasks: {p.planTotal || 0}</p><p className="font-semibold mt-2 mb-1">Dates</p><p>Construction: {formatDate(p.constructionStartDate)}</p><p>Commissioning: {formatDate(p.commissioningDate)}</p><p>Handover: {formatDate(p.clientHandoverDate)}</p></div>
                             <div className="border rounded p-2"><p className="font-semibold mb-1">Finance</p><p>Total revenue: {formatCurrencyFull(p.totalRevenue)}</p><p>Invoiced revenue: {formatCurrencyFull(p.invoicedRevenue)}</p><p>Received revenue: {formatCurrencyFull(p.receivedRevenue)}</p><p>Revenue remaining: {formatCurrencyFull(p.revenueRemainingToCollect)}</p><p>Total cost: {formatCurrencyFull(p.totalCost)}</p><p>Invoiced cost: {formatCurrencyFull(p.invoicedCost)}</p><p>Paid cost: {formatCurrencyFull(p.paidCost)}</p><p>Cost remaining: {formatCurrencyFull(p.costRemainingToPay)}</p><p>GP%: {p.gpPct?.toFixed(1) ?? "—"}%</p></div>
                           </div>
                           <div className="mt-2"><p className="font-semibold text-sm">Exceptions</p><div className="flex flex-wrap gap-1 mt-1">{p.exceptions.length ? p.exceptions.map((ex) => <Badge key={ex} variant="outline">{ex}</Badge>) : <span className="text-xs text-muted-foreground">No active exceptions</span>}</div></div>
+                          {p.executionGateStatus !== "ENABLED" && p.executionEligibilityReasons && p.executionEligibilityReasons.length > 0 && (
+                            <div className="mt-2">
+                              <p className="font-semibold text-sm">Execution eligibility blockers</p>
+                              <ul className="list-disc pl-5 text-xs text-muted-foreground mt-1">
+                                {p.executionEligibilityReasons.map((reason) => <li key={`${p.projectName}-${reason}`}>{reason}</li>)}
+                              </ul>
+                            </div>
+                          )}
                           <div className="flex gap-2 mt-3 flex-wrap">
                             <Button size="sm" onClick={() => openProject(p)}><ExternalLink className="w-3.5 h-3.5 mr-1" />Open Project</Button>
                             <Button size="sm" variant="outline" onClick={() => openProject(p, "plan")}>Plan</Button>
