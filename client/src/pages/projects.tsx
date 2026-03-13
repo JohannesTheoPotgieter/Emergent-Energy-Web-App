@@ -112,6 +112,8 @@ interface ProjectSummary {
   phase_updated_at: string | null;
   has_tracker_import: boolean;
   is_active: boolean;
+  pd_pm_handover_status?: string;
+  pd_pm_handover_rejection_reason?: string | null;
 }
 
 type SortDir = "asc" | "desc";
@@ -1680,6 +1682,20 @@ export default function ProjectsSummary() {
             {achieved ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
             {achieved ? "Done" : "Open"}
           </span>
+        );
+      },
+    },
+    {
+      key: "pd_pm_handover_status",
+      header: "PD→PM Handover",
+      render: (p) => {
+        const st = p.pd_pm_handover_status || "DRAFT";
+        const tone = st === "ACCEPTED" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : st === "REJECTED" ? "bg-red-100 text-red-700 border-red-200" : st === "SUBMITTED_FOR_PM_REVIEW" ? "bg-amber-100 text-amber-700 border-amber-200" : "bg-slate-100 text-slate-700 border-slate-200";
+        return (
+          <div className="space-y-1">
+            <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${tone}`}>{st === "SUBMITTED_FOR_PM_REVIEW" ? "Submitted" : st.charAt(0) + st.slice(1).toLowerCase()}</span>
+            {st === "REJECTED" && p.pd_pm_handover_rejection_reason ? <p className="text-[10px] text-red-600 max-w-[150px] truncate" title={p.pd_pm_handover_rejection_reason}>Reason: {p.pd_pm_handover_rejection_reason}</p> : null}
+          </div>
         );
       },
     },
