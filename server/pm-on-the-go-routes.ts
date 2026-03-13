@@ -65,7 +65,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "Authentication required" });
 }
 
-const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
+const ADMIN_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
 
 function requireProjectManagerOrAdmin(req: Request, res: Response, next: NextFunction) {
   const user = (req as any).user || req.user;
