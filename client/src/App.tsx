@@ -76,6 +76,7 @@ import AdminControlCenterPage from "@/pages/admin-control-center";
 import ActionLaunchpadPage from "@/pages/action-launchpad";
 import PdPmHandoverPage from "@/pages/pd-pm-handover";
 import PmHandoverReviewPage from "@/pages/pm-handover-review";
+import HandoverControlPage from "@/pages/handover-control";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { checkPermission } from "@shared/schema";
@@ -85,6 +86,7 @@ import { PAGE_REGISTRY, ROLE_LANDING_PAGE, getPermissionEntityForPath } from "@/
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { logRoleAwareInteraction } from "@/lib/role-aware-audit";
 import { pickRoleAwareLandingPage } from "@/config/role-aware-ux";
+import { isSuperAdmin } from "@/lib/access-control";
 
 const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
 const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
@@ -161,6 +163,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   ActionLaunchpadPage,
   PdPmHandoverPage,
   PmHandoverReviewPage,
+  HandoverControlPage,
 };
 
 const APP_ROUTES: RouteConfig[] = PAGE_REGISTRY.filter((page) => page.routeComponentKey || page.redirectTo).flatMap((page) => {
@@ -204,8 +207,6 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
 
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const effectiveRole = user?.role || companyRole;
-  const cLevelRoles = ["COO_ADMIN", "CEO_ADMIN", "admin", "ADMIN"];
-  const hasCommandCenterAccess = !!effectiveRole && cLevelRoles.includes(effectiveRole);
 
   if (process.env.NODE_ENV !== "production") {
     (window as any).__navMode = navMode;
@@ -253,14 +254,9 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const ADMIN_COMPANY_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
-  const hasAdminAccess = user?.role === "admin" || (effectiveRole ? ADMIN_COMPANY_ROLES.includes(effectiveRole) : false);
+  const hasAdminAccess = isSuperAdmin(user?.role, effectiveRole);
   if (!hasAdminAccess && location.startsWith("/admin")) {
     return <Redirect to="/" />;
-  }
-
-  if (!hasCommandCenterAccess && location.startsWith("/command-center")) {
-    return <AccessDenied />;
   }
 
   const entity = getPermissionEntityForPath(location);
