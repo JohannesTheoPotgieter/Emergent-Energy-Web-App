@@ -88,6 +88,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminControlCenter", path: "/admin/control-center", label: "Control Center", iconKey: "Gauge", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminControlCenterPage" },
   { id: "commandCenter", path: "/command-center", label: "Command Center", iconKey: "Zap", navGroup: "MY_WORK", permissionEntity: "home", showInSidebar: true, routeComponentKey: "CommandCenterPage" },
   { id: "clients", path: "/clients", label: "Clients", iconKey: "Users", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_clients", showInSidebar: true, routeComponentKey: "ClientsPage", aliases: ["/pd/clients"] },
+  { id: "actionLaunchpad", path: "/actions/launchpad", label: "Quick Create", routeComponentKey: "ActionLaunchpadPage" },
 ];
 
 export const ROLE_LANDING_PAGE: Record<string, string> = PAGE_REGISTRY

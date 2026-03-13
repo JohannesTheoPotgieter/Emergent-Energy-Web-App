@@ -28,26 +28,29 @@ export default function Home() {
   const { user } = useAuth();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  const { data: tasks = [] } = useQuery<Task[]>({
+  const { data: tasks = [], error: tasksError } = useQuery<Task[]>({
     queryKey: ["home-tasks"],
     queryFn: async () => {
       const res = await fetch("/api/tasks", { credentials: "include" });
+      if (!res.ok) throw new Error("Could not load tasks. Refresh and retry. If this continues, contact your admin.");
       return res.json();
     },
   });
 
-  const { data: highPriority } = useQuery<PriorityData>({
+  const { data: highPriority, error: highPriorityError } = useQuery<PriorityData>({
     queryKey: ["home-high-priority"],
     queryFn: async () => {
       const res = await fetch("/api/dashboard/high-priority", { credentials: "include" });
+      if (!res.ok) throw new Error("Could not load high-priority dashboard data. Refresh and retry, then contact admin if it persists.");
       return res.json();
     },
   });
 
-  const { data: projects = [] } = useQuery<ProjectSummary[]>({
+  const { data: projects = [], error: projectsError } = useQuery<ProjectSummary[]>({
     queryKey: ["home-projects-summary"],
     queryFn: async () => {
       const res = await fetch("/api/projects-summary", { credentials: "include" });
+      if (!res.ok) throw new Error("Could not load project summaries. Refresh and retry. If this keeps failing, contact your admin.");
       return res.json();
     },
   });
@@ -73,9 +76,11 @@ export default function Home() {
       icon: CheckCircle2,
       body: <div className="flex flex-wrap gap-2">
         <Button asChild size="sm" className="bg-emerald-600 hover:bg-emerald-700"><Link href="/pd/tickets/create">New PD Ticket</Link></Button>
-        <Button size="sm" variant="outline" disabled>Create Engineering Request</Button>
-        <Button size="sm" variant="outline" disabled>Create Task</Button>
-        <Button size="sm" variant="outline" disabled>Start Handover</Button>
+        <Button asChild size="sm" variant="outline"><Link href="/actions/launchpad?action=engineering-request">Create Engineering Request</Link></Button>
+        <Button asChild size="sm" variant="outline"><Link href="/actions/launchpad?action=task">Create Task</Link></Button>
+        <Button asChild size="sm" variant="outline"><Link href="/actions/launchpad?action=handover">Start Handover</Link></Button>
+        <Button asChild size="sm" variant="outline"><Link href="/actions/launchpad?action=create-po">Create PO</Link></Button>
+        <Button asChild size="sm" variant="outline"><Link href="/actions/launchpad?action=link-invoice">Link Invoice</Link></Button>
       </div>,
     },
     {
@@ -122,6 +127,8 @@ export default function Home() {
         <h1 className="text-2xl font-semibold">Home</h1>
         <p className="text-sm text-slate-600">Operational command center for {user?.username || "your"} day.</p>
       </div>
+
+      {(tasksError || highPriorityError || projectsError) ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">Some home data could not load. Likely reason: temporary server or network issue. How to fix: refresh this page and retry. If it persists, contact your admin.</div> : null}
 
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="space-y-3">
