@@ -7,7 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageShell, SectionHeader, KPIStrip } from "@/components/layout/page-shell";
+import { deriveProjectOperationalStatus } from "@/lib/project-operational-status";
 import {
   AlertTriangle, ArrowRight, BarChart3, Calendar, CheckCircle2,
   CircleDot, Clock, DollarSign, FileCheck, FolderOpen, Gauge,
@@ -182,6 +184,10 @@ export default function CommandCenterPage() {
 
   const { data: financialData, dataUpdatedAt: financialUpdatedAt } = useQuery<any>({
     queryKey: ["/api/financial-headline"],
+  });
+
+  const { data: handoverControlData } = useQuery<{ items: any[] }>({
+    queryKey: ["/api/pd-pm-handover/control"],
   });
 
   const taskSummary = useMemo<TaskSummary>(() => {
@@ -439,6 +445,33 @@ export default function CommandCenterPage() {
     ];
   }, []);
 
+  const operationalProjects = useMemo(() => (projectsData || []).map((p: any) => ({ ...p, ...deriveProjectOperationalStatus(p) })), [projectsData]);
+
+  const exceptionStrip = useMemo(() => {
+    const handovers = handoverControlData?.items || [];
+    return [
+      { label: "Overdue PD→PM handovers", count: handovers.filter((h) => h.handover_status === "SUBMITTED_FOR_PM_REVIEW" && (h.days_in_status || 0) > 5).length, owner: "PM", action: "Review handovers", link: "/handover-control" },
+      { label: "Accepted with no tracker", count: handovers.filter((h) => h.handover_status === "ACCEPTED" && !h.tracker_linked).length, owner: "PM", action: "Link tracker", link: "/handover-control" },
+      { label: "Projects with no PM", count: operationalProjects.filter((p: any) => !p.pm).length, owner: "Operations", action: "Assign PM", link: "/projects" },
+      { label: "Overdue approvals", count: approvalQueue.overdue, owner: "Approvers", action: "Process approvals", link: "/my-work/approvals" },
+      { label: "Blocked engineering", count: riskHotspots.engineeringBlocked, owner: "Engineering", action: "Remove blockers", link: "/engineering/tasks" },
+      { label: "Blocked quality", count: riskHotspots.qualityBlocked, owner: "Quality", action: "Resolve QC blockers", link: "/quality" },
+      { label: "Procurement blockers", count: (allTaskData?.operational || []).filter((t: any) => String(t.department || '').toLowerCase().includes('procurement') && normalizeTaskStatus(t.status) === 'blocked').length, owner: "Procurement", action: "Unblock procurement", link: "/subcontractor-dashboard" },
+    ].filter((x) => x.count > 0);
+  }, [handoverControlData, operationalProjects, approvalQueue.overdue, riskHotspots, allTaskData]);
+
+  const departmentCards = useMemo(() => {
+    const handovers = handoverControlData?.items || [];
+    return {
+      executive: { active: operationalProjects.length, blocked: taskSummary.blocked, overdue: taskSummary.overdue, waiting: approvalQueue.totalPending, queue: "Resolve exception strip first" },
+      pd: { active: handovers.length, blocked: handovers.filter((h) => h.handover_status === 'REJECTED').length, overdue: handovers.filter((h) => h.handover_status === 'SUBMITTED_FOR_PM_REVIEW' && (h.days_in_status || 0) > 5).length, waiting: handovers.filter((h) => h.handover_status === 'SUBMITTED_FOR_PM_REVIEW').length, queue: "Submit complete handovers" },
+      engineering: { active: (allTaskData?.engineeringTasks || []).length, blocked: riskHotspots.engineeringBlocked, overdue: (allTaskData?.engineeringTasks || []).filter((t: any) => normalizeTaskStatus(t.status) !== 'complete' && t.dueDate && new Date(t.dueDate) < new Date()).length, waiting: (allTaskData?.engineeringTasks || []).filter((t: any) => normalizeTaskStatus(t.status) === 'review').length, queue: "Clear blocked and review queue" },
+      quality: { active: (allTaskData?.qualityTasks || []).length, blocked: riskHotspots.qualityBlocked, overdue: 0, waiting: (allTaskData?.approvals?.quality || []).length, queue: "Process pending inspections" },
+      pm: { active: (allTaskData?.operational || []).length, blocked: riskHotspots.operationalBlocked, overdue: taskSummary.overdue, waiting: handovers.filter((h) => h.handover_status === 'ACCEPTED' && !h.tracker_linked).length, queue: "Enable tracker-linked execution" },
+      finance: { active: Number(financialData?.projectCount || 0), blocked: 0, overdue: approvalQueue.overdue, waiting: Number(financialData?.pendingInvoices || 0), queue: "Close overdue approvals and procurement constraints" },
+    } as Record<string, any>;
+  }, [handoverControlData, operationalProjects, taskSummary, approvalQueue, allTaskData, riskHotspots, financialData]);
+
   const isLoading = tasksLoading || projectsLoading;
 
   const primaryActions = useMemo(() => {
@@ -508,6 +541,28 @@ export default function CommandCenterPage() {
         <CircleDot className="h-3.5 w-3.5 text-emerald-600" />
         <p className="text-xs text-muted-foreground" data-testid="command-center-data-freshness">{freshnessLabel}</p>
       </div>
+
+      <Card className="mb-4" data-testid="exception-first-strip">
+        <CardHeader className="pb-2"><CardTitle className="text-base">Exception First</CardTitle></CardHeader>
+        <CardContent>
+          {exceptionStrip.length === 0 ? <p className="text-sm text-muted-foreground">No cross-department exceptions right now.</p> : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+              {exceptionStrip.map((item) => (
+                <Link key={item.label} href={item.link}><div className="rounded border border-red-200 bg-red-50 p-2"><p className="text-xs font-semibold">{item.label}: {item.count}</p><p className="text-[11px] text-muted-foreground">Owner: {item.owner} · Next: {item.action}</p></div></Link>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Tabs defaultValue="executive" className="mb-4" data-testid="department-command-tabs">
+        <TabsList className="flex flex-wrap h-auto">
+          <TabsTrigger value="executive">Company / Executive</TabsTrigger><TabsTrigger value="pd">Project Development</TabsTrigger><TabsTrigger value="engineering">Engineering</TabsTrigger><TabsTrigger value="quality">Quality</TabsTrigger><TabsTrigger value="pm">Project Management</TabsTrigger><TabsTrigger value="finance">Finance / Procurement</TabsTrigger>
+        </TabsList>
+        {Object.entries(departmentCards).map(([key, v]) => (
+          <TabsContent key={key} value={key}><Card><CardContent className="p-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-xs"><div><p className="text-muted-foreground">Active</p><p className="font-semibold">{(v as any).active}</p></div><div><p className="text-muted-foreground">Blocked</p><p className="font-semibold">{(v as any).blocked}</p></div><div><p className="text-muted-foreground">Overdue</p><p className="font-semibold">{(v as any).overdue}</p></div><div><p className="text-muted-foreground">Waiting on dept</p><p className="font-semibold">{(v as any).waiting}</p></div><div><p className="text-muted-foreground">Next action queue</p><p className="font-semibold">{(v as any).queue}</p></div></CardContent></Card></TabsContent>
+        ))}
+      </Tabs>
 
       {isLoading ? (
         <div className="space-y-4">

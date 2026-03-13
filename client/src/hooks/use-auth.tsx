@@ -3,6 +3,7 @@ import { authApi, User, setAuthToken } from "../lib/api";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/errors";
+import { isSuperAdmin } from "@/lib/access-control";
 
 interface AuthContextType {
   user: User | null;
@@ -103,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user, 
       isLoading, 
       isAuthenticated: !!user,
-      isAdmin: ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || ''),
+      isAdmin: isSuperAdmin(user?.role, localStorage.getItem("company_role")),
       isQm: ['quality_manager', 'QUALITY_MANAGER'].includes(user?.role || ''),
       login, 
       logout 
