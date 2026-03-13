@@ -10,7 +10,10 @@
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc -p tsconfig.check.json",
     "db:push": "drizzle-kit push",
-    "migrate:clickup-engineering": "tsx scripts/migrate-clickup-engineering.ts"
+    "migrate:clickup-engineering": "tsx scripts/migrate-clickup-engineering.ts",
+    "test": "vitest run -c qa/vitest.config.ts",
+    "test:api": "vitest run -c qa/vitest.config.ts qa/tests/api",
+    "test:smoke": "playwright test qa/tests/e2e/smoke.spec.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^5.0.5",
