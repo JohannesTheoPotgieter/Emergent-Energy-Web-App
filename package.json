@@ -15,7 +15,9 @@
     "test:api": "vitest run -c qa/vitest.config.ts qa/tests/api",
     "test:smoke": "playwright test qa/tests/e2e/smoke.spec.ts",
     "test:routes": "tsx script/test-routes.ts",
-    "qa:report": "tsx script/qa-report.ts"
+    "qa:report": "tsx script/qa-report.ts",
+    "test:route-proof": "vitest run -c qa/vitest.config.ts qa/tests/unit/route-proof.test.ts",
+    "qa:route-smoke-report": "tsx script/route-smoke-report.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^5.0.5",
