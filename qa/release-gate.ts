@@ -1,145 +1,171 @@
 import fs from "fs";
 import path from "path";
+import { spawnSync } from "child_process";
 
-const REPORTS_DIR = path.join(process.cwd(), "qa/reports");
-const REQUIRED_REPORTS = [
-  "foundation-cascade-covered.md",
-  "routes-covered.md",
-  "actions-covered.md",
-  "permissions-covered.md",
-];
+type GateStatus = "pass" | "warning" | "fail";
 
-const REQUIRED_MAPS = [
-  "qa/app-map.json",
-  "qa/entity-map.json",
-  "qa/permission-map.json",
-  "qa/kpi-map.json",
-];
+type GateCheck = {
+  name: string;
+  command?: string;
+  status: GateStatus;
+  details: string;
+  required: boolean;
+};
 
-function checkFile(filePath: string): { exists: boolean; size: number } {
+type ReconciliationEvidence = {
+  status?: GateStatus;
+  generated_at?: string;
+  [key: string]: unknown;
+};
+
+const REPORTS_DIR = path.join(process.cwd(), "qa", "reports");
+const RECONCILIATION_FILE = process.env.RELEASE_RECONCILIATION_FILE || path.join(REPORTS_DIR, "reconciliation-status.json");
+const CRITICAL_DEFECT_FILE = process.env.CRITICAL_DEFECT_FILE || path.join(process.cwd(), "FINAL_DEFECT_REGISTER.md");
+const WORKFLOW_TEST_COMMAND = process.env.WORKFLOW_TEST_COMMAND || "npm run test:routes";
+
+function runCommand(command: string): { ok: boolean; output: string } {
+  const result = spawnSync(command, { shell: true, encoding: "utf8", cwd: process.cwd() });
+  const output = `${result.stdout || ""}${result.stderr || ""}`.trim();
+  return { ok: result.status === 0, output };
+}
+
+function fileExists(filePath: string): boolean {
   try {
-    const stat = fs.statSync(filePath);
-    return { exists: true, size: stat.size };
+    return fs.statSync(filePath).isFile();
   } catch {
-    return { exists: false, size: 0 };
+    return false;
   }
+}
+
+function readReconciliationEvidence(filePath: string): ReconciliationEvidence | null {
+  if (!fileExists(filePath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function evaluateCriticalDefects(filePath: string): { status: GateStatus; details: string } {
+  if (!fileExists(filePath)) {
+    return { status: "fail", details: `Critical defect file missing: ${filePath}` };
+  }
+
+  const content = fs.readFileSync(filePath, "utf8");
+  const rows = content.split("\n").filter((line) => line.trim().startsWith("|"));
+  const criticalOrHighOpen = rows.filter((line) => {
+    const normalized = line.toLowerCase();
+    const isCritical = normalized.includes("| critical ") || normalized.includes("| high ") || normalized.includes("| severity 1 ");
+    const isClosed = normalized.includes("**fixed**") || normalized.includes("**closed") || normalized.includes("| fixed") || normalized.includes("| closed") || normalized.includes("| resolved");
+    return isCritical && !isClosed;
+  });
+
+  if (criticalOrHighOpen.length > 0) {
+    return {
+      status: "fail",
+      details: `Open critical/high defects found (${criticalOrHighOpen.length}) in ${path.basename(filePath)}.`,
+    };
+  }
+
+  return { status: "pass", details: `No open critical/high defects in ${path.basename(filePath)}.` };
+}
+
+function collapseStatus(checks: GateCheck[]): GateStatus {
+  if (checks.some((check) => check.required && check.status === "fail")) return "fail";
+  if (checks.some((check) => check.required && check.status === "warning")) return "warning";
+  return "pass";
 }
 
 function main() {
   console.log("╔══════════════════════════════════════════╗");
-  console.log("║       QA RELEASE GATE CHECK              ║");
+  console.log("║         RELEASE GATE ENFORCEMENT        ║");
   console.log("╚══════════════════════════════════════════╝\n");
 
-  let allPassed = true;
-  const results: string[] = [];
+  const checks: GateCheck[] = [];
 
-  console.log("1. Discovery Maps");
-  console.log("─".repeat(40));
-  for (const mapFile of REQUIRED_MAPS) {
-    const fullPath = path.join(process.cwd(), mapFile);
-    const check = checkFile(fullPath);
-    const status = check.exists ? `✅ FOUND (${(check.size / 1024).toFixed(1)}KB)` : "❌ MISSING";
-    if (!check.exists) allPassed = false;
-    console.log(`  ${mapFile}: ${status}`);
-    results.push(`${mapFile}: ${status}`);
+  const apiTestCommand = "npm run test:api";
+  const apiResult = runCommand(apiTestCommand);
+  checks.push({
+    name: "API tests",
+    command: apiTestCommand,
+    required: true,
+    status: apiResult.ok ? "pass" : "fail",
+    details: apiResult.ok ? "API test suite passed." : "API test suite failed.",
+  });
+
+  const smokeTestCommand = "npm run test:smoke";
+  const smokeResult = runCommand(smokeTestCommand);
+  checks.push({
+    name: "Smoke tests",
+    command: smokeTestCommand,
+    required: true,
+    status: smokeResult.ok ? "pass" : "fail",
+    details: smokeResult.ok ? "Smoke test suite passed." : "Smoke test suite failed.",
+  });
+
+  const workflowResult = runCommand(WORKFLOW_TEST_COMMAND);
+  checks.push({
+    name: "Workflow tests",
+    command: WORKFLOW_TEST_COMMAND,
+    required: true,
+    status: workflowResult.ok ? "pass" : "fail",
+    details: workflowResult.ok ? "Workflow test command passed." : "Workflow test command failed.",
+  });
+
+  const reconciliation = readReconciliationEvidence(RECONCILIATION_FILE);
+  if (!reconciliation) {
+    checks.push({
+      name: "Reconciliation status",
+      required: true,
+      status: "fail",
+      details: `Missing or invalid reconciliation evidence: ${RECONCILIATION_FILE}`,
+    });
+  } else {
+    const reconStatus = reconciliation.status || "fail";
+    const status: GateStatus = reconStatus === "pass" ? "pass" : reconStatus === "warning" ? "warning" : "fail";
+    checks.push({
+      name: "Reconciliation status",
+      required: true,
+      status,
+      details: `Reconciliation status=${reconStatus}${reconciliation.generated_at ? ` (generated ${reconciliation.generated_at})` : ""}.`,
+    });
   }
 
-  console.log("\n2. QA Reports");
-  console.log("─".repeat(40));
-  for (const report of REQUIRED_REPORTS) {
-    const fullPath = path.join(REPORTS_DIR, report);
-    const check = checkFile(fullPath);
-    const status = check.exists ? `✅ FOUND (${(check.size / 1024).toFixed(1)}KB)` : "❌ MISSING";
-    if (!check.exists) allPassed = false;
-    console.log(`  ${report}: ${status}`);
-    results.push(`${report}: ${status}`);
+  const defectCheck = evaluateCriticalDefects(CRITICAL_DEFECT_FILE);
+  checks.push({
+    name: "Critical defects",
+    required: true,
+    status: defectCheck.status,
+    details: defectCheck.details,
+  });
+
+  const overall = collapseStatus(checks);
+
+  for (const check of checks) {
+    const icon = check.status === "pass" ? "✅" : check.status === "warning" ? "⚠️" : "❌";
+    const command = check.command ? ` [${check.command}]` : "";
+    console.log(`${icon} ${check.name}${command} — ${check.details}`);
   }
 
-  console.log("\n3. Test Configuration");
-  console.log("─".repeat(40));
-  const vitestConfig = checkFile(path.join(process.cwd(), "qa/vitest.config.ts"));
-  const playwrightConfig = checkFile(path.join(process.cwd(), "qa/playwright.config.ts"));
-  console.log(`  vitest.config.ts: ${vitestConfig.exists ? "✅" : "❌"}`);
-  console.log(`  playwright.config.ts: ${playwrightConfig.exists ? "✅" : "❌"}`);
-  if (!vitestConfig.exists || !playwrightConfig.exists) allPassed = false;
+  const output = {
+    generated_at: new Date().toISOString(),
+    status: overall,
+    checks,
+    required_evidence: {
+      reconciliation_file: RECONCILIATION_FILE,
+      critical_defect_file: CRITICAL_DEFECT_FILE,
+    },
+    manual_signoff_required: checks.some((check) => check.status === "warning"),
+  };
 
-  console.log("\n4. Test Files");
-  console.log("─".repeat(40));
-  const testDirs = ["qa/tests/unit", "qa/tests/api", "qa/tests/e2e"];
-  for (const dir of testDirs) {
-    const fullDir = path.join(process.cwd(), dir);
-    try {
-      const files = fs.readdirSync(fullDir).filter(f => f.endsWith(".test.ts") || f.endsWith(".spec.ts"));
-      console.log(`  ${dir}: ${files.length} test file(s) — ${files.join(", ")}`);
-    } catch {
-      console.log(`  ${dir}: ❌ MISSING`);
-      allPassed = false;
-    }
-  }
+  const outputFile = path.join(REPORTS_DIR, "release-gate-result.json");
+  fs.mkdirSync(REPORTS_DIR, { recursive: true });
+  fs.writeFileSync(outputFile, `${JSON.stringify(output, null, 2)}\n`, "utf8");
 
-  console.log("\n5. Permissions Matrix");
-  console.log("─".repeat(40));
-  const permMatrix = checkFile(path.join(process.cwd(), "qa/permissions-matrix.md"));
-  console.log(`  permissions-matrix.md: ${permMatrix.exists ? "✅" : "❌"}`);
-  if (!permMatrix.exists) allPassed = false;
+  console.log(`\nRelease gate result written to ${outputFile}`);
+  console.log(`Overall release gate status: ${overall.toUpperCase()}`);
 
-  console.log("\n6. UX Audit");
-  console.log("─".repeat(40));
-  const uxAudit = checkFile(path.join(process.cwd(), "ux/productivity-audit.md"));
-  console.log(`  productivity-audit.md: ${uxAudit.exists ? "✅" : "❌"}`);
-  if (!uxAudit.exists) allPassed = false;
-
-  const summaryPath = path.join(REPORTS_DIR, "summary.md");
-  const summaryContent = `# QA Release Gate Summary
-
-**Date:** ${new Date().toISOString()}
-**Status:** ${allPassed ? "✅ PASS" : "⚠️ PARTIAL — Review required"}
-
-## Artifact Checklist
-
-### Discovery Maps
-${REQUIRED_MAPS.map(m => `- [${checkFile(path.join(process.cwd(), m)).exists ? "x" : " "}] ${m}`).join("\n")}
-
-### QA Reports
-${REQUIRED_REPORTS.map(r => `- [${checkFile(path.join(REPORTS_DIR, r)).exists ? "x" : " "}] ${r}`).join("\n")}
-
-### Test Infrastructure
-- [${vitestConfig.exists ? "x" : " "}] Vitest configuration
-- [${playwrightConfig.exists ? "x" : " "}] Playwright configuration
-- [x] Unit tests (KPI calculations)
-- [x] API tests (auth + permissions)
-- [x] E2E tests (smoke + route access)
-
-### Permissions
-- [${permMatrix.exists ? "x" : " "}] Permissions matrix document
-
-### UX Audit
-- [${uxAudit.exists ? "x" : " "}] Productivity audit document
-
-## Test Coverage Summary
-- **Unit tests:** 20+ assertions covering KPI calculations, COS aggregation, FY boundaries
-- **API tests:** 13 endpoints covering auth, permission enforcement, data access
-- **E2E tests:** 17+ route load tests, login flows, role-based access
-- **Permission enforcement:** 6 admin endpoints, 3 auth endpoints, PM route restrictions
-- **KPI cascade:** 10 golden assertions from foundation data through to calculation output
-
-## Known Gaps
-- Smart Import requires manual testing with Excel fixtures
-- Quality/Engineering challenge-gated endpoints require manual flow
-- PD ticket mutations lack ownership enforcement
-- /api/program/cos endpoint lacks auth requirement
-`;
-
-  fs.writeFileSync(summaryPath, summaryContent);
-  console.log(`\nSummary written to: ${summaryPath}`);
-
-  console.log("\n" + "═".repeat(42));
-  console.log(allPassed
-    ? "  ✅ RELEASE GATE: PASS"
-    : "  ⚠️  RELEASE GATE: PARTIAL — Review gaps");
-  console.log("═".repeat(42));
-
-  process.exit(allPassed ? 0 : 1);
+  process.exit(overall === "pass" ? 0 : 1);
 }
 
 main();

@@ -1,55 +1,63 @@
 # Release Gate Checklist (Stability Proof)
 
-Use this checklist as the mandatory go/no-go gate for every production release.
+This release gate is **enforced** and must be run before every production release.
 
-## 1) Source-of-truth checks
+## Commands (run in order)
 
-- [ ] Every changed domain is mapped in `docs/architecture/source-of-truth-matrix.md`.
-- [ ] No unmanaged dual-write introduced.
-- [ ] Any compatibility reads are documented with owner + sunset plan.
-- [ ] Reconciliation path exists for all import-to-canonical promotions.
+1. Generate reconciliation evidence (fails on reconciliation `fail`):
 
-## 2) API test gate
+```bash
+npm run reconciliation:report
+```
 
-- [ ] `npm run test:api` executed successfully.
-- [ ] Changed endpoints have request/response contract coverage.
-- [ ] Error paths (4xx/5xx) validated for changed endpoints.
-- [ ] Auth + permission middleware exercised in API tests.
+2. Execute the release gate (runs required tests + evidence checks):
 
-## 3) Smoke test gate
+```bash
+npm run release:gate
+```
 
-- [ ] `npm run test:smoke` executed successfully.
-- [ ] Core route navigation validated (home, projects, project detail, finance, quality, engineering, admin).
-- [ ] Redirect/alias routes verified.
-- [ ] Critical create/update flows complete without runtime errors.
+The gate writes `qa/reports/release-gate-result.json` and exits non-zero for `warning` or `fail`.
 
-## 4) Workflow test gate
+## What the gate enforces
 
-- [ ] At least one full workflow per impacted domain recorded (example: Smart Import preview → issue resolution → commit).
-- [ ] Workflow evidence stored in `docs/qa/results/latest/` using template files.
-- [ ] Blocking workflow defects linked to defect log entries.
+The script `qa/release-gate.ts` blocks release when any required proof is missing or failing:
 
-## 5) Permission checks
+1. **API test gate**
+   - Runs `npm run test:api`
+   - Must pass
 
-- [ ] Route permissions verified against role matrix for impacted routes.
-- [ ] API permission checks verified for impacted endpoints.
-- [ ] Unauthorized role attempts validated (expected 403/redirect/access denied).
-- [ ] Admin-only actions confirmed inaccessible for non-admin roles.
+2. **Smoke test gate**
+   - Runs `npm run test:smoke`
+   - Must pass
 
-## 6) Defect severity closure rules
+3. **Workflow test gate**
+   - Runs `npm run test:routes` by default (override with `WORKFLOW_TEST_COMMAND`)
+   - Must pass
 
-- [ ] All `Severity 1` defects closed before release.
-- [ ] All `Severity 2` defects either closed or approved with explicit rollback-safe waiver.
-- [ ] `Severity 3+` defects triaged with owner + target date.
-- [ ] Waivers documented in release notes and linked in QA results.
+4. **Reconciliation gate**
+   - Requires `qa/reports/reconciliation-status.json` (override with `RELEASE_RECONCILIATION_FILE`)
+   - Uses reconciliation status (`pass` | `warning` | `fail`)
+   - `warning` requires manual signoff and still blocks automatic release
+   - `fail` blocks release
 
-## 7) Reconciliation checks
+5. **Critical defect gate**
+   - Requires `FINAL_DEFECT_REGISTER.md` by default (override with `CRITICAL_DEFECT_FILE`)
+   - Blocks release if open `Critical` / `High` / `Severity 1` defects are present
 
-- [ ] Canonical totals reconcile with compatibility/legacy views for impacted domains.
-- [ ] Import reconciliation complete for any pending plan-edit notifications.
-- [ ] KPI traceability reports reviewed for material variance.
-- [ ] Audit/event logs confirm expected write paths were used.
+## Configurable environment variables
 
-## Exit criteria
+- `WORKFLOW_TEST_COMMAND` (default: `npm run test:routes`)
+- `RELEASE_RECONCILIATION_FILE` (default: `qa/reports/reconciliation-status.json`)
+- `CRITICAL_DEFECT_FILE` (default: `FINAL_DEFECT_REGISTER.md`)
 
-Release is **approved** only when all boxes above are checked, evidence is archived, and sign-off includes Engineering, QA, and Domain Owner confirmation.
+## Manual signoff expectations
+
+Manual signoff is still required for:
+
+- Any gate result that includes `warning`
+- Workflow evidence quality (content review in addition to command success)
+- Business owner confirmation that changed domains have updated source-of-truth mapping
+
+## Non-negotiable rule
+
+A release must not be marked passing when required proof is missing, warning, or failing.
