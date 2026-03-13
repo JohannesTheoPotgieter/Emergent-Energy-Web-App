@@ -19,6 +19,11 @@ function parseChangeDetails(raw: string | null | undefined) {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
+async function getErrorMessage(res: Response, fallback: string) {
+  const data = await res.json().catch(() => null);
+  return data?.error || data?.message || fallback;
+}
+
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -29,48 +34,60 @@ export function NotificationBell() {
     queryKey: ["notifications-unread-count"],
     queryFn: async () => {
       const res = await fetch("/api/notifications/unread-count", { headers: authHeaders(), credentials: "include" });
+      if (!res.ok) throw new Error("Could not load notifications. Refresh the page and try again. If this keeps happening, contact your admin.");
       return res.json();
     },
     refetchInterval: 30000,
+    onError: () => toast({ title: "Notifications unavailable", description: "Could not load notifications. Refresh the page and try again. If this keeps happening, contact your admin.", variant: "destructive" }),
   });
 
   const { data: notifsData } = useQuery({
     queryKey: ["notifications-list"],
     queryFn: async () => {
       const res = await fetch("/api/notifications?unreadOnly=false&limit=50", { headers: authHeaders(), credentials: "include" });
+      if (!res.ok) throw new Error("Could not load notifications. Refresh the page and try again. If this keeps happening, contact your admin.");
       return res.json();
     },
     enabled: open,
     refetchOnMount: "always" as const,
+    onError: () => toast({ title: "Could not load notifications", description: "Refresh and retry. If this keeps happening, contact your admin.", variant: "destructive" }),
   });
-  const notifs = notifsData?.items ?? (Array.isArray(notifsData) ? notifsData : []);
+  const notifs = Array.isArray(notifsData?.items) ? notifsData.items : (Array.isArray(notifsData) ? notifsData : []);
 
   const markReadMutation = useMutation({
     mutationFn: async (ids: number[]) => {
-      await fetch("/api/notifications/mark-read", {
+      const res = await fetch("/api/notifications/mark-read", {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ notificationIds: ids }),
       });
+      if (!res.ok) throw new Error(await getErrorMessage(res, "Could not mark notification as read."));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["notifications-unread-count"] });
       qc.invalidateQueries({ queryKey: ["notifications-list"] });
+    },
+    onError: () => {
+      toast({ title: "Update failed", description: "Could not mark notification as read. Check your connection and retry.", variant: "destructive" });
     },
   });
 
   const markAllReadMutation = useMutation({
     mutationFn: async () => {
-      await fetch("/api/notifications/mark-all-read", {
+      const res = await fetch("/api/notifications/mark-all-read", {
         method: "POST",
         headers: authHeaders(),
         credentials: "include",
       });
+      if (!res.ok) throw new Error(await getErrorMessage(res, "Could not mark all notifications as read."));
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["notifications-unread-count"] });
       qc.invalidateQueries({ queryKey: ["notifications-list"] });
+    },
+    onError: () => {
+      toast({ title: "Update failed", description: "Could not mark all notifications as read. Check your connection and retry.", variant: "destructive" });
     },
   });
 
@@ -93,7 +110,7 @@ export function NotificationBell() {
       toast({ title: "Confirmed", description: `Tracker update confirmed by ${data.confirmedBy}.` });
     },
     onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: "Confirmation failed", description: `Could not confirm tracker update. Likely reason: ${err.message || "server validation"}. How to fix: make sure you still have tracker access and try again.`, variant: "destructive" });
     },
   });
 
@@ -129,6 +146,7 @@ export function NotificationBell() {
           ) : (
             <div className="divide-y">
               {notifs.map((n: any) => {
+                if (!n || typeof n.id !== "number") return null;
                 const details = parseChangeDetails(n.changeDetails);
                 const isConfirmation = n.requiresConfirmation;
                 const isConfirmed = !!n.confirmedAt;
