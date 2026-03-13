@@ -89,6 +89,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "commandCenter", path: "/command-center", label: "Command Center", iconKey: "Zap", navGroup: "MY_WORK", permissionEntity: "home", showInSidebar: true, routeComponentKey: "CommandCenterPage" },
   { id: "clients", path: "/clients", label: "Clients", iconKey: "Users", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_clients", showInSidebar: true, routeComponentKey: "ClientsPage", aliases: ["/pd/clients"] },
   { id: "actionLaunchpad", path: "/actions/launchpad", label: "Quick Create", routeComponentKey: "ActionLaunchpadPage" },
+  { id: "pdPmHandover", path: "/pd/handover/:projectId", label: "PD to PM Handover", routeComponentKey: "PdPmHandoverPage" },
+  { id: "pmHandoverReview", path: "/pm/handover-review", label: "PM Handover Review", routeComponentKey: "PmHandoverReviewPage" },
 ];
 
 export const ROLE_LANDING_PAGE: Record<string, string> = PAGE_REGISTRY

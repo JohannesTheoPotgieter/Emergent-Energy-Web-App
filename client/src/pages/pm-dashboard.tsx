@@ -841,21 +841,24 @@ export default function PMDashboard() {
         icon={<Briefcase className="h-5 w-5" />}
         title={isCooView ? "PM Dashboard" : "My Projects"}
         description={`${isCooView && selectedPmName ? `${selectedPmName} — ` : user?.name ? `${user.name} — ` : ""}${summary.totalProjects} project${summary.totalProjects !== 1 ? "s" : ""} assigned`}
-        actions={isCooView ? (
-          <div className="w-56">
-            <SearchableSelect
-              value={selectedPmId}
-              onValueChange={setSelectedPmId}
-              placeholder="Select PM"
-              triggerClassName="h-9"
-              data-testid="pm-selector-trigger"
-              options={pmUsers.map(u => ({
-                value: String(u.id),
-                label: `${u.name || u.username} (${u.project_count})`,
-              }))}
-            />
-          </div>
-        ) : null}
+        actions={<div className="flex items-center gap-2">
+          {isCooView ? (
+            <div className="w-56">
+              <SearchableSelect
+                value={selectedPmId}
+                onValueChange={setSelectedPmId}
+                placeholder="Select PM"
+                triggerClassName="h-9"
+                data-testid="pm-selector-trigger"
+                options={pmUsers.map(u => ({
+                  value: String(u.id),
+                  label: `${u.name || u.username} (${u.project_count})`,
+                }))}
+              />
+            </div>
+          ) : null}
+          <Button variant="outline" size="sm" onClick={() => navigate('/pm/handover-review')}>PM Handover Review</Button>
+        </div>}
       />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} data-testid="pm-tabs">
