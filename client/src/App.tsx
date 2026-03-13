@@ -43,6 +43,9 @@ import AdminRolesPage from "@/pages/admin-roles";
 import LeaderboardPage from "@/pages/leaderboard";
 import FeedbackPage from "@/pages/feedback";
 import EeInfoPage from "@/pages/ee-info";
+import KnowledgeGamePage from "@/pages/knowledge-game";
+import DepartmentScoresPage from "@/pages/department-scores";
+import TrainingPage from "@/pages/training";
 import PMDashboard from "@/pages/pm-dashboard";
 import ExcelUpdatesPage from "@/pages/excel-updates";
 import PortfoliosPage from "@/pages/portfolios";
@@ -124,6 +127,9 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   LeaderboardPage,
   FeedbackPage,
   EeInfoPage,
+  TrainingPage,
+  KnowledgeGamePage,
+  DepartmentScoresPage,
   PMDashboard,
   ExcelUpdatesPage,
   PortfoliosPage,
