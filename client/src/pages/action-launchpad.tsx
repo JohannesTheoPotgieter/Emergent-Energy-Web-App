@@ -98,8 +98,8 @@ export default function ActionLaunchpadPage() {
 
       if (activeAction === "handover") {
         if (!selectedProject) throw new Error("What failed: Start Handover. Likely reason: No project selected. How to fix: choose a project and retry.");
-        navigate(`/project/${encodeURIComponent(selectedProject.projectName)}?tab=overview`);
-        toast({ title: "Handover started", description: "Opened project handover panel. Complete any required gate checklist items before final handover." });
+        navigate(`/pd/handover/${selectedProject.id}`);
+        toast({ title: "Handover started", description: "Opened the PD to PM handover workflow for this project." });
       }
 
       if (activeAction === "create-po") {
@@ -196,7 +196,7 @@ export default function ActionLaunchpadPage() {
               </>
             )}
 
-            {activeAction === "handover" && <p className="text-sm text-slate-600">This opens the selected project with handover controls and checklist gates ready for completion.</p>}
+            {activeAction === "handover" && <p className="text-sm text-slate-600">This launches the formal PD to PM handover workflow with mandatory validation and PM review.</p>}
 
             <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={submitting || projectsLoading}>{submitting ? "Submitting..." : ACTION_LABELS[activeAction]}</Button>
           </form>
