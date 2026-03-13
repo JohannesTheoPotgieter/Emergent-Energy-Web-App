@@ -75,10 +75,10 @@ const ALL_SECTIONS = [
 
 const SECTION_META: Record<string, { label: string; icon: any; color: string; bg: string; description: string; pages: string[] }> = {
   MY_WORK: { label: "My Work", icon: Briefcase, color: "text-green-600", bg: "bg-green-50 border-green-200", description: "Personal workspace and daily tools", pages: ["Home", "Command Center", "Tasks", "Approvals", "Calendar", "Meetings", "Email", "Teams Chat"] },
-  PROJECT_DEVELOPMENT: { label: "Project Development", icon: FileEdit, color: "text-teal-600", bg: "bg-teal-50 border-teal-200", description: "Pipeline and lifecycle management", pages: ["PD Dashboard", "PD Tickets", "Clients", "Lifecycle Board"] },
+  PROJECT_DEVELOPMENT: { label: "Project Development", icon: FileEdit, color: "text-teal-600", bg: "bg-teal-50 border-teal-200", description: "Pipeline and lifecycle management", pages: ["Lifecycle Board", "Clients"] },
   DELIVERY: { label: "Engineering", icon: Wrench, color: "text-orange-600", bg: "bg-orange-50 border-orange-200", description: "Engineering operations and task tracking", pages: ["Eng Overview", "Task Execution"] },
   GOVERNANCE: { label: "Quality", icon: ShieldCheck, color: "text-purple-600", bg: "bg-purple-50 border-purple-200", description: "Quality management and compliance", pages: ["Quality Dashboard"] },
-  PROJECTS: { label: "Project Management", icon: FolderKanban, color: "text-blue-600", bg: "bg-blue-50 border-blue-200", description: "Project tracking, portfolios, and reviews", pages: ["Project List", "Portfolios", "Execution Board", "PM Dashboard", "On-The-Go", "Weekly Reviews"] },
+  PROJECTS: { label: "Project Management", icon: FolderKanban, color: "text-blue-600", bg: "bg-blue-50 border-blue-200", description: "Project tracking, portfolios, and reviews", pages: ["Project List", "Portfolios", "PM Dashboard", "Execution Board", "PM On-The-Go", "Weekly Reviews", "PM Handover Review"] },
   MONEY: { label: "Commercial", icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", description: "Financial tracking and procurement", pages: ["Cashflow Control", "COS Control", "Revenue Control", "Gross Profit Control", "Procurement Hub", "Invoice Pattern Library"] },
   COCKPIT: { label: "EXCO", icon: LayoutDashboard, color: "text-indigo-600", bg: "bg-indigo-50 border-indigo-200", description: "Executive cockpit and lifecycle board", pages: ["EXCO Dashboard"] },
   COLLABORATION: { label: "Collaboration", icon: MessageSquare, color: "text-pink-600", bg: "bg-pink-50 border-pink-200", description: "Communication tools", pages: ["Email", "Teams", "SharePoint"] },
@@ -100,7 +100,8 @@ const PERM_CATEGORIES: PermCat[] = [
   {
     key: "my_work", section: "MY_WORK", label: "My Work", icon: Briefcase, color: "bg-green-500",
     items: [
-      { entity: "home" as PermissionEntity, label: "Home / Command Center", actions: ["view"] },
+      { entity: "home" as PermissionEntity, label: "Home", actions: ["view", "edit"] },
+      { entity: "admin" as PermissionEntity, label: "Command Center", actions: ["view"] },
       { entity: "my_tool" as PermissionEntity, label: "Tasks", actions: ["view", "edit"] },
       { entity: "my_work" as PermissionEntity, label: "Approvals / Calendar", actions: ["view", "edit"] },
       { entity: "meetings" as PermissionEntity, label: "Meetings", actions: ["view", "edit"] },
@@ -213,7 +214,7 @@ const ACTION_META: Record<PermissionAction, { label: string; short: string; icon
 
 const SECTION_GROUPS: Record<string, string[]> = {
   MY_WORK: ["MY_WORK", "COLLABORATION"],
-  PROJECT_DEVELOPMENT: ["PROJECT_DEVELOPMENT", "COCKPIT"],
+  PROJECT_DEVELOPMENT: ["PROJECT_DEVELOPMENT"],
 };
 
 const NAV_DISPLAY_SECTIONS = ["MY_WORK", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "PROJECTS", "MONEY", "SETTINGS"] as const;
