@@ -56,6 +56,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { isSuperAdmin } from "@/lib/access-control";
 
 interface ProjectSummary {
   project_info_id: number | null;
@@ -293,7 +294,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
   return (
     <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEdits({}); setEditingRow(null); setSearchQ(""); } }}>
       <PopoverTrigger asChild>
-        <button className="flex items-center gap-1 min-w-[60px] w-full cursor-pointer hover:opacity-80 transition-opacity" data-testid={`btn-act-pct-${projectName}`}>
+        <button data-interactive="true" onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 min-w-[60px] w-full cursor-pointer hover:opacity-80 transition-opacity" data-testid={`btn-act-pct-${projectName}`}>
           <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all duration-500 ${progressColor(currentPct)}`}
@@ -302,8 +303,9 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
           </div>
           <span className="font-mono text-[10px] w-8 text-right font-medium text-foreground">{currentPct.toFixed(0)}%</span>
         </button>
+      </button>
       </PopoverTrigger>
-      <PopoverContent className="w-[90vw] sm:w-[520px] max-w-[520px] p-0 max-h-[500px] overflow-hidden" align="start" side="bottom" data-testid={`popover-tasks-${projectName}`}>
+      <PopoverContent onClick={(e) => e.stopPropagation()} className="w-[90vw] sm:w-[520px] max-w-[520px] p-0 max-h-[500px] overflow-hidden" align="start" side="bottom" data-testid={`popover-tasks-${projectName}`}>
         <div className="p-3 border-b bg-muted">
           <div className="flex items-center justify-between mb-2">
             <div>
@@ -581,7 +583,7 @@ function FinancialCloseCell({
 
   if (type === "link") {
     badge = (
-      <div className="flex items-center gap-1" data-testid={`fclose-${fieldPrefix}-${projectName}`}>
+      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()} data-testid={`fclose-${fieldPrefix}-${projectName}`}>
         <a
           href={link || "#"}
           target="_blank"
@@ -603,7 +605,7 @@ function FinancialCloseCell({
     );
   } else if (type === "na") {
     badge = (
-      <div className="flex items-center gap-1" data-testid={`fclose-${fieldPrefix}-${projectName}`}>
+      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()} data-testid={`fclose-${fieldPrefix}-${projectName}`}>
         <span
           className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground border border-border text-[10px] font-medium cursor-help"
           title={`N/A: ${naReason || "No reason provided"}`}
@@ -621,7 +623,7 @@ function FinancialCloseCell({
     );
   } else {
     badge = (
-      <div className="flex items-center gap-1" data-testid={`fclose-${fieldPrefix}-${projectName}`}>
+      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()} data-testid={`fclose-${fieldPrefix}-${projectName}`}>
         {isAdmin ? (
           <button
             onClick={openDialog}
@@ -839,7 +841,8 @@ const COLUMN_WIDTHS: Record<string, string> = {
   project_pct_complete: "72px",
   expected_pct_complete: "42px",
   delta_vs_expected: "56px",
-  latest_update: "140px",
+  latest_update: "120px",
+  comments: "130px",
   financial_summary: "84px",
   next_key_date: "80px",
   actions: "32px",
@@ -851,7 +854,7 @@ const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; sticky
   { label: "Phase & Schedule", keys: ["phase", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
   { label: "Financials", keys: ["actual_revenue", "actual_expenses", "gp_percent", "revenue_outstanding", "expenses_due", "financial_summary"], color: "bg-green-50 text-green-700" },
-  { label: "Updates", keys: ["latest_update", "next_key_date"], color: "bg-amber-50 text-amber-700" },
+  { label: "Updates", keys: ["latest_update", "comments", "next_key_date"], color: "bg-amber-50 text-amber-700" },
 ];
 
 const ALL_COLUMN_KEYS_STATIC = COLUMN_GROUPS_META.flatMap(g => g.keys);
@@ -865,6 +868,7 @@ const DEFAULT_DIRECTORY_COLUMNS = [
   "financial_close",
   "financial_summary",
   "project_pct_complete",
+  "comments",
   "next_key_date",
 ];
 
@@ -1154,7 +1158,9 @@ export default function ProjectsSummary() {
   const [phaseFilter, setPhaseFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("phase");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const canSuperAdmin = isSuperAdmin(user?.role, companyRole);
   const [editProject, setEditProject] = useState<ProjectSummary | null>(null);
   const [viewTab, setViewTab] = useState<"active" | "archived">("active");
   const [writebackPromptProject, setWritebackPromptProject] = useState<string | null>(null);
@@ -1546,11 +1552,16 @@ export default function ProjectsSummary() {
       key: "pm",
       header: "PM",
       render: (p) => isAdmin && p.project_info_id ? (
-        <SearchableSelect
+        <div onClick={(e) => e.stopPropagation()}><SearchableSelect
           value={p.pm || "__unassigned"}
           placeholder={!p.pm ? "No PM" : undefined}
           onValueChange={(val) => {
-            if (val === "__unassigned" || !p.project_info_id) return;
+            if (!p.project_info_id) return;
+            if (val === "__unassigned") {
+              if (!canSuperAdmin) return;
+              pmAssignMutation.mutate({ projectInfoId: p.project_info_id, pm: "", pmUserId: null });
+              return;
+            }
             const matchedUser = pmUsers.find(u => u.name === val);
             pmAssignMutation.mutate({
               projectInfoId: p.project_info_id,
@@ -1561,10 +1572,10 @@ export default function ProjectsSummary() {
           triggerClassName={`h-7 w-[120px] text-xs border-0 bg-transparent hover:bg-muted px-1 shadow-none focus:ring-0 ${!p.pm ? "text-red-500 font-medium" : ""}`}
           data-testid={`select-pm-${p.project_name}`}
           options={[
-            { value: "__unassigned", label: "Unassigned", disabled: true },
+            { value: "__unassigned", label: canSuperAdmin ? "Unassign PM" : "Unassigned", disabled: !canSuperAdmin },
             ...pmUsers.map((u) => ({ value: u.name, label: u.name })),
           ]}
-        />
+        /></div>
       ) : (
         <span className="text-muted-foreground truncate max-w-[80px] block" title={p.pm || ""}>{truncateName(p.pm, 12)}</span>
       ),
@@ -1684,6 +1695,7 @@ export default function ProjectsSummary() {
         }
         return (
           <select
+            onClick={(e) => e.stopPropagation()}
             data-testid={`select-escalation-${p.project_name}`}
             className={`text-[10px] font-semibold rounded-md border px-1 py-0.5 cursor-pointer outline-none ${style.bg} ${style.text} ${style.border}`}
             value={level}
@@ -1844,6 +1856,13 @@ export default function ProjectsSummary() {
       ),
     },
     {
+      key: "comments",
+      header: "Comments",
+      render: (p: ProjectSummary) => (
+        <span className="block truncate text-[10px] text-muted-foreground max-w-[180px]" title={p.comments || "No comment"}>{p.comments || "—"}</span>
+      ),
+    },
+    {
       key: "financial_summary",
       header: "Financial",
       render: (p) => {
@@ -1875,10 +1894,10 @@ export default function ProjectsSummary() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}?tab=task-grid`)}>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setLocation(`/project/${encodeURIComponent(p.project_name)}?tab=task-grid`); }}>
                     Open project detail
                   </DropdownMenuItem>
-                  <DropdownMenuItem disabled={!p.project_info_id} onClick={() => setEditProject(p)}>
+                  <DropdownMenuItem disabled={!p.project_info_id} onClick={(e) => { e.stopPropagation(); setEditProject(p); }}>
                     Edit project info
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -2040,7 +2059,7 @@ export default function ProjectsSummary() {
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm border-border" data-testid="btn-column-toggle">
+            <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm border-border" data-interactive="true" onClick={(e) => e.stopPropagation()} data-testid="btn-column-toggle">
               {isDefaultView ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
               <span className="hidden sm:inline">Columns</span>
               {!isDefaultView && (
@@ -2243,7 +2262,11 @@ export default function ProjectsSummary() {
                     idx % 2 === 0 ? "bg-card" : "bg-muted/30"
                   }`}
                   data-testid={`row-project-${idx}`}
-                  onClick={() => setLocation(`/project/${encodeURIComponent(project.project_name)}?tab=task-grid`)}
+                  onClick={(e) => {
+                    const target = e.target as HTMLElement;
+                    if (target.closest('button, a, input, select, textarea, [role="button"], [data-interactive="true"]')) return;
+                    setLocation(`/project/${encodeURIComponent(project.project_name)}?tab=task-grid`);
+                  }}
                 >
                   {filteredColumns.map((col) => (
                     <td

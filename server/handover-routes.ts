@@ -369,6 +369,70 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
+  app.get("/api/pd-pm-handover/control", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const rows: any[] = await db.execute(sql.raw(`
+        SELECT
+          p.id AS project_id,
+          p.project_name,
+          p.client_name,
+          p.pd,
+          p.pm,
+          p.excel_tracker_link,
+          p.execution_enabled,
+          h.status AS handover_status,
+          h.pd_owner,
+          h.pm_owner,
+          h.submitted_at AS submitted_date,
+          h.updated_at,
+          h.rejection_reason,
+          h.deliverables
+        FROM project_info p
+        LEFT JOIN project_pd_pm_handover h ON h.project_id = p.id
+        WHERE p.is_active = true
+        ORDER BY COALESCE(h.updated_at, p.updated_at) DESC NULLS LAST, p.project_name ASC
+      `)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+
+      const now = Date.now();
+      const items = rows.map((row) => {
+        const status = row.handover_status || "DRAFT";
+        const deliverables = typeof row.deliverables === "string" ? JSON.parse(row.deliverables) : (row.deliverables || {});
+        const deliverablesComplete = ["handoverCharter", "siteVisitReport", "signedCostProposal"].every((key) => Boolean(deliverables?.[key]));
+        const trackerLinked = Boolean(row.excel_tracker_link);
+        const executionEnabled = row.execution_enabled === true;
+        const daysInStatus = row.updated_at ? Math.max(0, Math.floor((now - new Date(row.updated_at).getTime()) / (1000 * 60 * 60 * 24))) : 0;
+
+        let nextAction = "Continue lifecycle progression";
+        let actionOwner = row.pm || row.pm_owner || "Operations";
+        if (status !== "ACCEPTED") {
+          nextAction = status === "SUBMITTED_FOR_PM_REVIEW" ? "PM decision required" : "PD to complete and submit handover";
+          actionOwner = status === "SUBMITTED_FOR_PM_REVIEW" ? (row.pm || row.pm_owner || "PM") : (row.pd || row.pd_owner || "PD");
+        } else if (!trackerLinked) {
+          nextAction = "Link tracker import";
+        } else if (!row.pm && !row.pm_owner) {
+          nextAction = "Assign PM owner";
+          actionOwner = "Operations";
+        }
+
+        return {
+          ...row,
+          handover_status: status,
+          deliverables_complete: deliverablesComplete,
+          tracker_linked: trackerLinked,
+          execution_enabled: executionEnabled,
+          days_in_status: daysInStatus,
+          next_action: nextAction,
+          action_owner: actionOwner,
+        };
+      });
+
+      res.json({ items });
+    } catch (err: any) {
+      console.error("[handover] GET control error:", err);
+      res.status(500).json({ error: "Could not load handover control view. Refresh and retry." });
+    }
+  });
+
   app.get("/api/pd-pm-handover/:projectId", requireAuth, async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
