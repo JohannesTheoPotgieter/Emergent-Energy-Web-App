@@ -125,13 +125,13 @@ const TOP_SECTIONS: TopSection[] = [
   },
 ];
 
-const QUICK_CREATE_ACTIONS: Array<{ label: string; path?: string; disabledNote?: string }> = [
+const QUICK_CREATE_ACTIONS: Array<{ label: string; path: string }> = [
   { label: "New PD Ticket", path: "/pd/tickets/create" },
-  { label: "Create Engineering Request", disabledNote: "Needs a dedicated create flow" },
-  { label: "Create Task", disabledNote: "Needs a dedicated create flow" },
-  { label: "Start Handover", disabledNote: "Needs a dedicated create flow" },
-  { label: "Create PO", disabledNote: "Needs a dedicated create flow" },
-  { label: "Link Invoice", disabledNote: "Needs a dedicated create flow" },
+  { label: "Create Engineering Request", path: "/actions/launchpad?action=engineering-request" },
+  { label: "Create Task", path: "/actions/launchpad?action=task" },
+  { label: "Start Handover", path: "/actions/launchpad?action=handover" },
+  { label: "Create PO", path: "/actions/launchpad?action=create-po" },
+  { label: "Link Invoice", path: "/actions/launchpad?action=link-invoice" },
 ];
 
 function linkIsActive(current: string, target: string) {
@@ -167,6 +167,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loadingSearch, setLoadingSearch] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const activeSection = useMemo(() => TOP_SECTIONS.find((section) => section.match(location)) ?? TOP_SECTIONS[0], [location]);
 
@@ -179,12 +180,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     const timer = setTimeout(async () => {
       setLoadingSearch(true);
+      setSearchError(null);
       try {
         const res = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}&limit=12`, { credentials: "include" });
+        if (!res.ok) {
+          throw new Error("Could not load search results. Try typing again or refresh this page. If this keeps happening, contact your admin.");
+        }
         const data = await res.json();
         setResults(Array.isArray(data?.results) ? data.results : []);
       } catch {
         setResults([]);
+        setSearchError("Search could not load. Try typing again or refresh this page. If this keeps happening, contact your admin.");
       } finally {
         setLoadingSearch(false);
       }
@@ -262,7 +268,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search projects, work items, finance, documents, people" className="pl-9 border-slate-200 focus-visible:ring-emerald-600" />
             {searchTerm.trim().length >= 2 && (
               <div className="absolute left-0 right-0 top-[105%] rounded-xl border border-slate-200 bg-white shadow-xl p-2 max-h-96 overflow-auto">
-                {loadingSearch ? <p className="text-xs text-slate-500 p-2">Searching…</p> : Object.entries(groupedResults).map(([group, items]) => items.length > 0 ? (
+                {loadingSearch ? <p className="text-xs text-slate-500 p-2">Searching…</p> : searchError ? <p className="text-xs text-red-600 p-2">{searchError}</p> : Object.entries(groupedResults).map(([group, items]) => items.length > 0 ? (
                   <div key={group} className="mb-2">
                     <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-slate-500">{group}</p>
                     {items.map((item) => {
@@ -297,14 +303,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72">
               <DropdownMenuLabel>Create</DropdownMenuLabel>
-              {QUICK_CREATE_ACTIONS.map((action) => action.path ? (
+              {QUICK_CREATE_ACTIONS.map((action) => (
                 <DropdownMenuItem key={action.label} asChild>
                   <Link href={action.path}>{action.label}</Link>
-                </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem key={action.label} disabled className="cursor-not-allowed flex-col items-start gap-0.5 opacity-70">
-                  <span>{action.label}</span>
-                  <span className="text-[11px] text-slate-500">{action.disabledNote}</span>
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
