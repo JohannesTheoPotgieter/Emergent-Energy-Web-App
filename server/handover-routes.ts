@@ -5,6 +5,40 @@ import { verifyToken } from "./jwt";
 import { projectInfo, users } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
 
+const PM_REVIEW_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"];
+
+function requiresQualityStatus(engineeringStatus: string): boolean {
+  const normalized = engineeringStatus.trim().toLowerCase();
+  if (!normalized) return true;
+  return ["na", "n/a", "not applicable", "not started"].every((token) => !normalized.includes(token));
+}
+
+function computeSubmitBlockers(project: any, handover: any): string[] {
+  const deliverables = handover?.deliverables || {};
+  const engineeringStatus = String(handover?.engineering_status || "").trim();
+  const qualityStatus = String(handover?.quality_status || "").trim();
+
+  const missingItems: string[] = [];
+  const need = (ok: boolean, label: string) => {
+    if (!ok) missingItems.push(label);
+  };
+
+  need(!!deliverables?.handoverCharter?.reference, "Handover Charter");
+  need(!!deliverables?.siteVisitReport?.reference, "Site Visit Report");
+  need(!!deliverables?.signedCostProposal?.reference, "Signed Cost Proposal");
+  need(!!project.pm, "PM assignment");
+  need(!!handover?.summary, "Scope summary");
+  need(!!project.clientId, "Linked master project/client");
+  need(!!(handover?.pd_owner || project.pd), "PD owner");
+  need(!!engineeringStatus, "Engineering status");
+  need(!!handover?.risks, "Risks");
+  need(!!handover?.assumptions, "Assumptions");
+  if (requiresQualityStatus(engineeringStatus)) {
+    need(!!qualityStatus, "Quality status");
+  }
+  return missingItems;
+}
+
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
   if (req.isAuthenticated?.()) return next();
@@ -350,15 +384,7 @@ export function registerHandoverRoutes(app: Express) {
         signedCostProposal: null,
       };
 
-      const missingItems: string[] = [];
-      const need = (ok: boolean, label: string) => { if (!ok) missingItems.push(label); };
-      need(!!deliverables?.handoverCharter?.reference, "Handover Charter");
-      need(!!deliverables?.siteVisitReport?.reference, "Site Visit Report");
-      need(!!deliverables?.signedCostProposal?.reference, "Signed Cost Proposal");
-      need(!!project.pm, "PM assignment");
-      need(!!handover?.summary, "Scope summary");
-      need(!!project.clientId, "Linked master project/client");
-      need(!!project.pd, "PD owner");
+      const missingItems = computeSubmitBlockers(project, handover);
 
       res.json({
         project,
@@ -435,18 +461,10 @@ export function registerHandoverRoutes(app: Express) {
       const handover = rows[0];
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       if (!project || !handover) return res.status(400).json({ error: "Could not submit handover. Likely reason: no draft exists. Save a draft and retry." });
-      const d = handover.deliverables || {};
-      const missing = [
-        !d?.handoverCharter?.reference ? "Handover Charter" : null,
-        !d?.siteVisitReport?.reference ? "Site Visit Report" : null,
-        !d?.signedCostProposal?.reference ? "Signed Cost Proposal" : null,
-        !project.pm ? "PM assignment" : null,
-        !handover.summary ? "scope summary" : null,
-        !project.clientId ? "linked master project/client" : null,
-      ].filter(Boolean);
+      const missing = computeSubmitBlockers(project, handover);
       if (missing.length > 0) {
         return res.status(400).json({
-          error: `Cannot submit handover. Missing items: ${missing.join(", ")}. Upload/complete missing items, then retry.`,
+          error: `Cannot submit handover. Missing items: ${missing.join(", ")}. Complete these fields/documents, then retry.`,
           missingItems: missing,
         });
       }
@@ -464,8 +482,7 @@ export function registerHandoverRoutes(app: Express) {
       const projectId = parseInt(req.params.projectId, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
       const user = (req as any).user as any;
-      const PM_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"];
-      if (!PM_ROLES.includes(user?.role)) {
+      if (!PM_REVIEW_ROLES.includes(user?.role)) {
         return res.status(403).json({ error: "Could not accept handover. Likely reason: your PM permission is missing or the handover is incomplete. Refresh, verify access, and retry." });
       }
       const rows: any[] = await db.execute(sql.raw(`SELECT * FROM project_pd_pm_handover WHERE project_id = ${projectId} LIMIT 1`)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
@@ -489,12 +506,49 @@ export function registerHandoverRoutes(app: Express) {
       const reason = String(req.body?.reason || "").trim();
       if (!reason) return res.status(400).json({ error: "Rejection reason is required." });
       const user = (req as any).user as any;
+      if (!PM_REVIEW_ROLES.includes(user?.role)) {
+        return res.status(403).json({ error: "Could not reject handover. Likely reason: your PM permission is missing. Refresh, verify PM access, and retry." });
+      }
       await db.execute(sql.raw(`UPDATE project_pd_pm_handover SET status = 'REJECTED', handover_status_text = 'Rejected', rejected_by = '${(user?.name || 'Unknown').replace(/'/g, "''")}', rejected_at = NOW(), rejection_reason = '${reason.replace(/'/g, "''")}', updated_at = NOW() WHERE project_id = ${projectId}`));
       await db.update(projectInfo).set({ executionEnabled: false, executionGateStatus: "NOT_ELIGIBLE", updatedAt: new Date() }).where(eq(projectInfo.id, projectId));
       res.json({ success: true, status: "REJECTED" });
     } catch (err: any) {
       console.error("[handover] reject error:", err);
       res.status(500).json({ error: "Could not reject handover. Check reason and retry." });
+    }
+  });
+
+  app.put("/api/pd-pm-handover/:projectId/excel-tracker", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.projectId, 10);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+
+      const user = (req as any).user as any;
+      if (!PM_REVIEW_ROLES.includes(user?.role)) {
+        return res.status(403).json({ error: "Could not update Excel tracker link. Likely reason: PM/admin access is required." });
+      }
+
+      const trackerLink = String(req.body?.excelTrackerLink || "").trim();
+      if (!trackerLink) {
+        return res.status(400).json({ error: "PM Excel Tracker Link is required." });
+      }
+      if (!/^https?:\/\//i.test(trackerLink)) {
+        return res.status(400).json({ error: "PM Excel Tracker Link must start with http:// or https://" });
+      }
+
+      const rows: any[] = await db.execute(sql.raw(`SELECT status FROM project_pd_pm_handover WHERE project_id = ${projectId} LIMIT 1`)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      const handover = rows[0];
+      if (!handover || handover.status !== "ACCEPTED") {
+        return res.status(400).json({ error: "Excel tracker link can only be updated after handover is accepted." });
+      }
+
+      await db.update(projectInfo).set({ excelTrackerLink: trackerLink, updatedAt: new Date() }).where(eq(projectInfo.id, projectId));
+      logAuditFromReq(req, { entityType: "pd_pm_handover", entityId: String(projectId), action: "excel_tracker.updated", changesJson: { updatedBy: user?.name || "Unknown" } });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[handover] excel tracker update error:", err);
+      res.status(500).json({ error: "Could not update Excel tracker link. Refresh and retry. If it persists, contact your admin." });
     }
   });
 }

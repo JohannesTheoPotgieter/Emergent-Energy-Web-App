@@ -203,6 +203,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   const navMode = isMobile ? NAVIGATION_MODE.mobile : NAVIGATION_MODE.desktop;
 
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const effectiveRole = user?.role || companyRole;
 
   if (process.env.NODE_ENV !== "production") {
     (window as any).__navMode = navMode;
@@ -222,7 +223,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
     staleTime: 60_000,
   });
 
-  if (companyRole === "PROJECT_MANAGER_SITE") {
+  if (effectiveRole === "PROJECT_MANAGER_SITE") {
     const allowed = PM_ALLOWED_PATHS.some(p =>
       p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/pm/on-the-go" && location.startsWith("/pm/on-the-go"))
     );
@@ -251,7 +252,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   }
 
   const ADMIN_COMPANY_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
-  const hasAdminAccess = user?.role === "admin" || (companyRole && ADMIN_COMPANY_ROLES.includes(companyRole));
+  const hasAdminAccess = user?.role === "admin" || (effectiveRole ? ADMIN_COMPANY_ROLES.includes(effectiveRole) : false);
   if (!hasAdminAccess && location.startsWith("/admin")) {
     return <Redirect to="/" />;
   }
