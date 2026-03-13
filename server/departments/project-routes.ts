@@ -678,7 +678,7 @@ router.post("/api/home/notes", requireAuth, requireAdmin, async (req, res) => {
 
 router.get("/api/projects-summary", async (req, res) => {
   try {
-    const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, allPlanOverrides, workItemsResult] = await Promise.all([
+    const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, allPlanOverrides, workItemsResult, handoverRows] = await Promise.all([
       storage.getAllProjectInfo(),
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
@@ -689,7 +689,14 @@ router.get("/api/projects-summary", async (req, res) => {
       db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`),
       storage.getAllProjectPlanOverrides(),
       db.execute(sql`SELECT wi.project_id, pi.project_name, wi.percent_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.title, wi.type FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL`),
+      db.execute(sql`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`),
     ]);
+
+    const handoverMap = new Map<number, any>();
+    for (const row of (handoverRows.rows || [])) {
+      const r = row as any;
+      handoverMap.set(r.project_id, r);
+    }
 
     const workItemsByProject = new Map<string, any[]>();
     for (const row of workItemsResult.rows) {
@@ -773,6 +780,7 @@ router.get("/api/projects-summary", async (req, res) => {
       const projectInflows = inflowsByProject.get(projectName) || [];
       const projectPlans = plansByProject.get(projectName) || [];
       const editable = editableMap.get(projectName);
+      const handover = info?.id ? handoverMap.get(info.id) : null;
 
       const projectWorkItems = workItemsByProject.get(projectName) || [];
 
@@ -1026,6 +1034,8 @@ router.get("/api/projects-summary", async (req, res) => {
         phase_updated_at: info?.phaseUpdatedAt || null,
         has_tracker_import: importedProjectNames.has(projectName) || importedProjectNames.has(projectName.replace(/_/g, ' ')),
         is_active: info?.isActive !== false && info?.phase?.toLowerCase() !== "gone",
+        pd_pm_handover_status: handover?.status || "DRAFT",
+        pd_pm_handover_rejection_reason: handover?.rejection_reason || null,
       };
     });
 

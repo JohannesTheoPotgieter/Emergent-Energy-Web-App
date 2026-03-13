@@ -74,6 +74,8 @@ import AdminRecoveryPage from "@/pages/admin-recovery";
 import CommandCenterPage from "@/pages/command-center";
 import AdminControlCenterPage from "@/pages/admin-control-center";
 import ActionLaunchpadPage from "@/pages/action-launchpad";
+import PdPmHandoverPage from "@/pages/pd-pm-handover";
+import PmHandoverReviewPage from "@/pages/pm-handover-review";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { checkPermission } from "@shared/schema";
@@ -157,6 +159,8 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   CommandCenterPage,
   ClientsPage,
   ActionLaunchpadPage,
+  PdPmHandoverPage,
+  PmHandoverReviewPage,
 };
 
 const APP_ROUTES: RouteConfig[] = PAGE_REGISTRY.filter((page) => page.routeComponentKey || page.redirectTo).flatMap((page) => {
