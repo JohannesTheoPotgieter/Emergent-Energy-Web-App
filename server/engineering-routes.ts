@@ -24,6 +24,7 @@ import { applyTemplate } from "./template-routes";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { listEngineeringWorkItems, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject } from "./work-items-adapter";
+import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 
 const approvalUploadsDir = path.join(process.cwd(), "uploads", "approvals");
 if (!fs.existsSync(approvalUploadsDir)) fs.mkdirSync(approvalUploadsDir, { recursive: true });
@@ -2998,45 +2999,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/admin/reconciliation/work-items/engineering", requireAuth, requireAdmin, async (_req, res) => {
     try {
-      const rows = await db.execute(sql`
-        WITH legacy AS (
-          SELECT project_id, COUNT(*)::int AS count, ARRAY_AGG(id ORDER BY id) AS ids
-          FROM operational_tasks
-          GROUP BY project_id
-        ), canonical AS (
-          SELECT project_id, COUNT(*)::int AS count, ARRAY_AGG(id ORDER BY id) AS ids
-          FROM work_items
-          WHERE workstream = 'ENG' AND deleted_at IS NULL
-          GROUP BY project_id
-        )
-        SELECT
-          COALESCE(pi.id, legacy.project_id, canonical.project_id) AS project_id,
-          COALESCE(pi.project_name, 'Unknown') AS project_name,
-          COALESCE(legacy.count, 0) AS legacy_count,
-          COALESCE(canonical.count, 0) AS canonical_count,
-          COALESCE(legacy.ids, ARRAY[]::int[]) AS legacy_ids,
-          COALESCE(canonical.ids, ARRAY[]::int[]) AS canonical_ids
-        FROM legacy
-        FULL OUTER JOIN canonical ON canonical.project_id = legacy.project_id
-        FULL OUTER JOIN project_info pi ON pi.id = COALESCE(legacy.project_id, canonical.project_id)
-        ORDER BY 2
-      ` as any);
-
-      const report = (rows as any).rows.map((r: any) => {
-        const legacyIds: number[] = r.legacy_ids || [];
-        const canonicalIds: number[] = r.canonical_ids || [];
-        const duplicateCandidates = canonicalIds.filter((id, idx) => canonicalIds.indexOf(id) !== idx);
-        return {
-          project_id: r.project_id,
-          project_name: r.project_name,
-          legacy_count: Number(r.legacy_count || 0),
-          canonical_count: Number(r.canonical_count || 0),
-          unmatched_legacy_ids: legacyIds.filter((id) => !canonicalIds.includes(id)),
-          unmatched_canonical_ids: canonicalIds.filter((id) => !legacyIds.includes(id)),
-          duplicate_candidates: duplicateCandidates,
-          status: Number(r.legacy_count || 0) === Number(r.canonical_count || 0) ? "pass" : "fail",
-        };
-      });
+      const report = await generateWorkItemReconciliationReport("ENG");
       res.json(report);
     } catch (err: any) {
       console.error("[Reconciliation] engineering error:", err);
@@ -3046,45 +3009,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/admin/reconciliation/work-items/projects", requireAuth, requireAdmin, async (_req, res) => {
     try {
-      const rows = await db.execute(sql`
-        SELECT
-          pi.id AS project_id,
-          pi.project_name,
-          COALESCE(legacy.count, 0) AS legacy_count,
-          COALESCE(canonical.count, 0) AS canonical_count,
-          COALESCE(legacy.ids, ARRAY[]::int[]) AS legacy_ids,
-          COALESCE(canonical.ids, ARRAY[]::int[]) AS canonical_ids
-        FROM project_info pi
-        LEFT JOIN (
-          SELECT project_id, COUNT(*)::int AS count, ARRAY_AGG(id ORDER BY id) AS ids
-          FROM operational_tasks
-          GROUP BY project_id
-        ) legacy ON legacy.project_id = pi.id
-        LEFT JOIN (
-          SELECT project_id, COUNT(*)::int AS count, ARRAY_AGG(id ORDER BY id) AS ids
-          FROM work_items
-          WHERE deleted_at IS NULL
-          GROUP BY project_id
-        ) canonical ON canonical.project_id = pi.id
-        ORDER BY pi.project_name
-      ` as any);
-
-      const report = (rows as any).rows.map((r: any) => {
-        const legacyIds: number[] = r.legacy_ids || [];
-        const canonicalIds: number[] = r.canonical_ids || [];
-        const duplicateCandidates = canonicalIds.filter((id, idx) => canonicalIds.indexOf(id) !== idx);
-        return {
-          project_id: r.project_id,
-          project_name: r.project_name,
-          legacy_count: Number(r.legacy_count || 0),
-          canonical_count: Number(r.canonical_count || 0),
-          unmatched_legacy_ids: legacyIds.filter((id) => !canonicalIds.includes(id)),
-          unmatched_canonical_ids: canonicalIds.filter((id) => !legacyIds.includes(id)),
-          duplicate_candidates: duplicateCandidates,
-          status: Number(r.canonical_count || 0) >= Number(r.legacy_count || 0) ? "pass" : "fail",
-        };
-      });
-
+      const report = await generateWorkItemReconciliationReport();
       res.json(report);
     } catch (err: any) {
       console.error("[Reconciliation] projects error:", err);
@@ -3094,19 +3019,25 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/admin/reconciliation/work-items/summary", requireAuth, requireAdmin, async (_req, res) => {
     try {
-      const [legacyCountRow] = await db.select({ count: sql<number>`count(*)::int` }).from(operationalTasks);
-      const [canonicalCountRow] = await db.select({ count: sql<number>`count(*)::int` }).from(workItems).where(isNull(workItems.deletedAt));
-      const [engCanonicalCountRow] = await db.select({ count: sql<number>`count(*)::int` }).from(workItems).where(and(eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
-
-      const legacyCount = Number(legacyCountRow?.count || 0);
-      const canonicalCount = Number(canonicalCountRow?.count || 0);
-      const engineeringCanonicalCount = Number(engCanonicalCountRow?.count || 0);
-
+      const [allWorkItems, engineeringWorkItems] = await Promise.all([
+        generateWorkItemReconciliationReport(),
+        generateWorkItemReconciliationReport("ENG"),
+      ]);
       res.json({
-        legacy_count: legacyCount,
-        canonical_count: canonicalCount,
-        engineering_canonical_count: engineeringCanonicalCount,
-        status: engineeringCanonicalCount >= 0 ? "pass" : "fail",
+        generated_at: new Date().toISOString(),
+        status: [allWorkItems.status, engineeringWorkItems.status].includes("fail")
+          ? "fail"
+          : [allWorkItems.status, engineeringWorkItems.status].includes("warning")
+            ? "warning"
+            : "pass",
+        all_work_items: {
+          status: allWorkItems.status,
+          ...allWorkItems.totals,
+        },
+        engineering: {
+          status: engineeringWorkItems.status,
+          ...engineeringWorkItems.totals,
+        },
       });
     } catch (err: any) {
       console.error("[Reconciliation] summary error:", err);

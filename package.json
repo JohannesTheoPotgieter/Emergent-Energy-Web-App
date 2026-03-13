@@ -17,7 +17,9 @@
     "test:routes": "tsx script/test-routes.ts",
     "qa:report": "tsx script/qa-report.ts",
     "test:route-proof": "vitest run -c qa/vitest.config.ts qa/tests/unit/route-proof.test.ts",
-    "qa:route-smoke-report": "tsx script/route-smoke-report.ts"
+    "qa:route-smoke-report": "tsx script/route-smoke-report.ts",
+    "release:gate": "tsx qa/release-gate.ts",
+    "reconciliation:report": "tsx qa/generate-reconciliation-evidence.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^5.0.5",
