@@ -348,7 +348,7 @@ export async function getAllPMWorkItemsAsProjectPlan(): Promise<any[]> {
       )
     );
 
-  const projectIds = [...new Set(items.filter(i => i.projectId).map(i => i.projectId!))];
+  const projectIds: number[] = [...new Set(items.filter(i => i.projectId != null).map(i => i.projectId as number))];
   let projectNameMap = new Map<number, string>();
   if (projectIds.length > 0) {
     const projects = await db
@@ -556,6 +556,241 @@ export async function getWorkItemsForProject(projectId: number): Promise<any[]> 
       updatedAt: wi.updatedAt,
     };
   });
+}
+
+type EngineeringListOptions = {
+  projectName?: string;
+  status?: string;
+  workstream?: string;
+  phase?: string;
+  ownerUserId?: number;
+  projectId?: number;
+};
+
+export async function listEngineeringWorkItems(options: EngineeringListOptions = {}): Promise<any[]> {
+  const conditions = [
+    eq(workItems.workstream, "ENG"),
+    isNull(workItems.deletedAt),
+  ];
+
+  if (options.status) conditions.push(eq(workItems.status, mapFromOpsStatus(options.status)));
+  if (options.phase) conditions.push(eq(workItems.phase, options.phase));
+  if (options.ownerUserId) conditions.push(eq(workItems.ownerUserId, options.ownerUserId));
+  if (options.projectId) conditions.push(eq(workItems.projectId, options.projectId));
+  if (options.projectName) {
+    conditions.push(sql`EXISTS (
+      SELECT 1 FROM project_info pi
+      WHERE pi.id = ${workItems.projectId}
+      AND pi.project_name = ${options.projectName}
+    )` as any);
+  }
+
+  const items = await db.select().from(workItems).where(and(...conditions)).orderBy(asc(workItems.sortOrder), asc(workItems.id));
+
+  const itemIds = items.map((i) => i.id);
+  const assignments = itemIds.length > 0
+    ? await db.select().from(workItemAssignments).where(sql`${workItemAssignments.workItemId} IN (${sql.join(itemIds.map((id) => sql`${id}`), sql`, `)})`)
+    : [];
+
+  const assigneeMap = new Map<number, number[]>();
+  for (const row of assignments) {
+    const list = assigneeMap.get(row.workItemId) || [];
+    if (row.role === "ASSIGNEE" || row.role === "OWNER") list.push(row.userId);
+    assigneeMap.set(row.workItemId, list);
+  }
+
+  const projectRows = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
+  const projectMap = new Map(projectRows.map((row) => [row.id, row.projectName]));
+
+  return items.map((wi) => ({
+    id: wi.id,
+    projectId: wi.projectId,
+    projectName: wi.projectId ? projectMap.get(wi.projectId) || null : null,
+    importedTaskId: null,
+    taskNumber: wi.wbsCode,
+    parentTaskId: wi.parentId,
+    title: wi.title,
+    description: wi.description,
+    status: mapToOpsStatus(wi.status),
+    priority: wi.priority || "Med",
+    phase: wi.phase,
+    primaryWorkstream: "Engineering",
+    ownerUserId: wi.ownerUserId,
+    requesterUserId: null,
+    approverUserId: null,
+    holdReason: null,
+    blockedType: null,
+    approvalRequired: false,
+    startDate: wi.startDate,
+    dueDate: wi.endDate,
+    durationDays: wi.duration,
+    actualStartDate: wi.actualStart,
+    actualEndDate: wi.actualEnd,
+    actualDurationDays: wi.actualDuration,
+    completedAt: wi.status === "Complete" ? wi.updatedAt : null,
+    percentComplete: wi.percentComplete != null ? Math.round(wi.percentComplete) : 0,
+    expectedPercentComplete: null,
+    comment: wi.description,
+    assignees: null,
+    assigneeUserIds: assigneeMap.get(wi.id) || [],
+    watchers: null,
+    tags: null,
+    blockerReason: null,
+    plannedHours: null,
+    actualHours: null,
+    escalationLevel: null,
+    sortOrder: wi.sortOrder ?? 0,
+    isBaseline: false,
+    linkedPlanItemId: null,
+    linkedDeliverableId: null,
+    linkedQualityItemInstanceId: null,
+    externalSource: null,
+    externalTaskId: wi.externalRef,
+    externalSubtaskIds: null,
+    externalSubtaskUrls: null,
+    trackingRag: null,
+    summaryText: null,
+    importedCommentCount: null,
+    taskTypeTag: null,
+    domain: "BOTH",
+    pdTicketId: null,
+    createdBy: wi.createdBy,
+    scheduledDate: wi.scheduledDate,
+    scheduledStartTime: wi.scheduledStartTime,
+    scheduledEndTime: wi.scheduledEndTime,
+    createdAt: wi.createdAt,
+    updatedAt: wi.updatedAt,
+    workItemId: wi.id,
+    legacyId: wi.legacyId,
+    legacyTable: wi.legacyTable,
+    canonical: true,
+  }));
+}
+
+export async function createEngineeringWorkItem(data: {
+  projectId?: number | null;
+  title: string;
+  description?: string | null;
+  status?: string;
+  priority?: string | null;
+  phase?: string | null;
+  startDate?: string | null;
+  dueDate?: string | null;
+  ownerUserId?: number | null;
+  createdBy?: number | null;
+}): Promise<WorkItem> {
+  return createWorkItem({
+    projectId: data.projectId ?? null,
+    title: data.title,
+    description: data.description ?? null,
+    status: mapFromOpsStatus(data.status || "TO DO"),
+    priority: data.priority || null,
+    workstream: "ENG",
+    type: "task",
+    phase: data.phase || null,
+    startDate: data.startDate ?? null,
+    endDate: data.dueDate ?? null,
+    ownerUserId: data.ownerUserId ?? null,
+    createdBy: data.createdBy ?? null,
+  });
+}
+
+export async function updateEngineeringWorkItem(workItemId: number, updates: {
+  title?: string;
+  description?: string | null;
+  status?: string;
+  priority?: string | null;
+  phase?: string | null;
+  startDate?: string | null;
+  dueDate?: string | null;
+  percentComplete?: number | null;
+  ownerUserId?: number | null;
+}): Promise<WorkItem | null> {
+  const setData: any = { updatedAt: new Date() };
+  if (updates.title !== undefined) setData.title = updates.title;
+  if (updates.description !== undefined) setData.description = updates.description;
+  if (updates.status !== undefined) setData.status = mapFromOpsStatus(updates.status);
+  if (updates.priority !== undefined) setData.priority = updates.priority;
+  if (updates.phase !== undefined) setData.phase = updates.phase;
+  if (updates.startDate !== undefined) setData.startDate = updates.startDate;
+  if (updates.dueDate !== undefined) setData.endDate = updates.dueDate;
+  if (updates.percentComplete !== undefined) setData.percentComplete = updates.percentComplete;
+  if (updates.ownerUserId !== undefined) setData.ownerUserId = updates.ownerUserId;
+
+  const [updated] = await db.update(workItems)
+    .set(setData)
+    .where(and(eq(workItems.id, workItemId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)))
+    .returning();
+
+  if (!updated) return null;
+
+  if (updates.ownerUserId !== undefined && updates.ownerUserId) {
+    await db.insert(workItemAssignments).values({
+      workItemId,
+      userId: updates.ownerUserId,
+      role: "OWNER" as any,
+    }).onConflictDoNothing();
+  }
+
+  return updated;
+}
+
+export async function deleteEngineeringWorkItem(workItemId: number): Promise<boolean> {
+  const [updated] = await db.update(workItems)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(workItems.id, workItemId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)))
+    .returning({ id: workItems.id });
+  return !!updated;
+}
+
+const DEFAULT_ENG_WORK_ITEMS = [
+  { title: "PD/PM Handover", priority: "High", phase: "P2_PD_PM_HANDOVER" },
+  { title: "Detailed Design Package", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+  { title: "Structural Design Review", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+  { title: "Electrical Design Review", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+  { title: "Equipment Procurement Release", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+  { title: "BOM Finalisation", priority: "Med", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+  { title: "Construction Method Statement", priority: "Med", phase: "P4_CONSTRUCTION_INSTALLATION" },
+  { title: "H&S File Preparation", priority: "Med", phase: "P4_CONSTRUCTION_INSTALLATION" },
+  { title: "Site Mobilisation Checklist", priority: "High", phase: "P4_CONSTRUCTION_INSTALLATION" },
+  { title: "Installation & Construction", priority: "High", phase: "P4_CONSTRUCTION_INSTALLATION" },
+  { title: "QC Inspections", priority: "High", phase: "P5_COMMISSIONING_TESTING" },
+  { title: "Commissioning & Testing", priority: "High", phase: "P5_COMMISSIONING_TESTING" },
+  { title: "Performance Verification", priority: "Med", phase: "P5_COMMISSIONING_TESTING" },
+  { title: "Client Handover Documentation", priority: "High", phase: "P6_HANDOVER_CLIENT_MATRIARCH" },
+  { title: "O&M Handover", priority: "Med", phase: "P6_HANDOVER_CLIENT_MATRIARCH" },
+  { title: "Close-out Report", priority: "Med", phase: "P7_CLOSEOUT_POSTMORTEM" },
+];
+
+export async function generateDefaultEngineeringWorkItemsForProject(projectId: number, createdBy: number): Promise<WorkItem[]> {
+  const existing = await db.select({ id: workItems.id })
+    .from(workItems)
+    .where(and(eq(workItems.projectId, projectId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)))
+    .limit(1);
+
+  if (existing.length > 0) {
+    return [];
+  }
+
+  const created: WorkItem[] = [];
+  for (let i = 0; i < DEFAULT_ENG_WORK_ITEMS.length; i++) {
+    const t = DEFAULT_ENG_WORK_ITEMS[i];
+    const [item] = await db.insert(workItems).values({
+      projectId,
+      workstream: "ENG",
+      type: "task",
+      source: "SYSTEM",
+      title: t.title,
+      status: "Not Started",
+      priority: t.priority,
+      phase: t.phase,
+      createdBy,
+      sortOrder: (i + 1) * 10,
+    }).returning();
+    created.push(item);
+  }
+
+  return created;
 }
 
 function mapToEngStatus(status: string): string {
