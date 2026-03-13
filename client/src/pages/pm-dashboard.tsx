@@ -65,7 +65,10 @@ async function pmFetch(url: string) {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const msg = await res.text();
+    throw new Error(msg || "Could not load PM dashboard data. Likely reason: server/network issue or permission mismatch. Refresh and retry. If it persists, contact your admin.");
+  }
   return res.json();
 }
 
@@ -820,7 +823,7 @@ export default function PMDashboard() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] text-destructive" data-testid="pm-error">
         <AlertTriangle className="h-5 w-5 mr-2" />
-        Failed to load dashboard
+        Could not load PM dashboard. Likely reason: server/network issue or PM access mismatch. Refresh and retry. If it persists, contact your admin.
       </div>
     );
   }

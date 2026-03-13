@@ -22,7 +22,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "Authentication required" });
 }
 
-const PM_ALLOWED_ROLES = ["PROJECT_MANAGER_SITE", "PROJECT_DEVELOPER", "COO_ADMIN", "CEO_ADMIN", "admin"];
+const PM_ALLOWED_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"];
 
 function requirePmRole(req: Request, res: Response, next: NextFunction) {
   const user = (req as any).user;
@@ -40,10 +40,11 @@ const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
 
 function resolveTargetPmUserId(req: Request): number {
   const user = getUser(req);
+  const currentUserId = Number(user.userId || (user as any).id);
   if (COO_ROLES.includes(user.role) && req.query.pmUserId) {
-    return parseInt(req.query.pmUserId as string);
+    return parseInt(req.query.pmUserId as string, 10);
   }
-  return user.userId;
+  return currentUserId;
 }
 
 async function getPmProjectNames(userId: number): Promise<{ projects: any[]; pgArray: string }> {
