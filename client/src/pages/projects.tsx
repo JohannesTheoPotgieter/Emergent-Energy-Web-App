@@ -54,6 +54,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 
 interface ProjectSummary {
@@ -839,6 +840,8 @@ const COLUMN_WIDTHS: Record<string, string> = {
   expected_pct_complete: "42px",
   delta_vs_expected: "56px",
   latest_update: "140px",
+  financial_summary: "84px",
+  next_key_date: "80px",
   actions: "32px",
 };
 
@@ -847,8 +850,8 @@ const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; sticky
   { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
   { label: "Phase & Schedule", keys: ["phase", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
-  { label: "Financials", keys: ["actual_revenue", "actual_expenses", "gp_percent", "revenue_outstanding", "expenses_due"], color: "bg-green-50 text-green-700" },
-  { label: "Updates", keys: ["latest_update"], color: "bg-amber-50 text-amber-700" },
+  { label: "Financials", keys: ["actual_revenue", "actual_expenses", "gp_percent", "revenue_outstanding", "expenses_due", "financial_summary"], color: "bg-green-50 text-green-700" },
+  { label: "Updates", keys: ["latest_update", "next_key_date"], color: "bg-amber-50 text-amber-700" },
 ];
 
 const ALL_COLUMN_KEYS_STATIC = COLUMN_GROUPS_META.flatMap(g => g.keys);
@@ -858,10 +861,11 @@ const DEFAULT_DIRECTORY_COLUMNS = [
   "phase",
   "pm",
   "pd",
+  "pd_pm_handover_status",
   "financial_close",
+  "financial_summary",
   "project_pct_complete",
-  "delta_vs_expected",
-  "latest_update",
+  "next_key_date",
 ];
 
 function loadSavedViews(): SavedView[] {
@@ -885,73 +889,15 @@ function persistActiveView(name: string | null) {
 }
 
 function LatestUpdateCell({ project }: { project: ProjectSummary }) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(project.latest_update || "");
-  const qc = useQueryClient();
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (!editing) setValue(project.latest_update || "");
-  }, [project.latest_update, editing]);
-
-  const save = async () => {
-    try {
-      await apiRequest("PATCH", `/api/projects-summary/${encodeURIComponent(project.project_name)}/latest-update`, { latestUpdate: value.trim() || null });
-      qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
-      setEditing(false);
-    } catch (e) {
-      console.error("Failed to save update:", e);
-    }
-  };
-
-  if (editing) {
-    return (
-      <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
-        <textarea
-          ref={inputRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); } if (e.key === "Escape") setEditing(false); }}
-          className="w-full text-[10px] border rounded px-1 py-0.5 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
-          rows={2}
-          autoFocus
-          data-testid={`textarea-update-${project.project_name}`}
-        />
-        <div className="flex gap-1">
-          <button onClick={save} className="text-[9px] px-1.5 py-0.5 bg-blue-500 text-white rounded hover:bg-blue-600" data-testid={`btn-save-update-${project.project_name}`}>Save</button>
-          <button onClick={() => { setEditing(false); setValue(project.latest_update || ""); }} className="text-[9px] px-1.5 py-0.5 bg-muted rounded hover:bg-gray-200">Cancel</button>
-        </div>
-      </div>
-    );
-  }
-
-  const timeAgo = project.latest_update_at ? (() => {
-    const diff = Date.now() - new Date(project.latest_update_at).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    const days = Math.floor(hrs / 24);
-    return `${days}d ago`;
-  })() : null;
-
   return (
-    <div
-      className="cursor-pointer group min-w-[100px]"
-      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
-      title={project.latest_update ? `${project.latest_update}\n\nBy: ${project.latest_update_by || "Unknown"}\n${timeAgo || ""}` : "Click to add update"}
-      data-testid={`cell-update-${project.project_name}`}
-    >
-      {project.latest_update ? (
-        <div className="text-[10px] leading-tight">
-          <span className="text-foreground line-clamp-2">{project.latest_update}</span>
-          {timeAgo && <span className="text-[9px] text-slate-500 block">{project.latest_update_by?.split(" ")[0]} · {timeAgo}</span>}
-        </div>
-      ) : (
-        <span className="text-[10px] text-slate-600 group-hover:text-slate-500 italic">+ Add update</span>
-      )}
-    </div>
+    <span className="block truncate text-[10px] text-muted-foreground" title={project.latest_update || "No update"}>
+      {project.latest_update || "—"}
+    </span>
   );
+}
+
+function getNextKeyDate(project: ProjectSummary): string | null {
+  return project.client_handover_date || project.om_handover_date || project.commissioning_date || project.construction_start_date || project.pd_handover_date || null;
 }
 
 function EditProjectInfoModal({
@@ -1599,7 +1545,7 @@ export default function ProjectsSummary() {
     {
       key: "pm",
       header: "PM",
-      render: (p) => p.project_info_id ? (
+      render: (p) => isAdmin && p.project_info_id ? (
         <SearchableSelect
           value={p.pm || "__unassigned"}
           placeholder={!p.pm ? "No PM" : undefined}
@@ -1897,21 +1843,46 @@ export default function ProjectsSummary() {
         <LatestUpdateCell project={p} />
       ),
     },
+    {
+      key: "financial_summary",
+      header: "Financial",
+      render: (p) => {
+        const revenue = p.actual_revenue ?? 0;
+        const expenses = p.actual_expenses ?? 0;
+        const net = revenue - expenses;
+        return (
+          <span className={`font-mono text-[10px] ${net >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+            R{(net / 1_000_000).toFixed(1)}m
+          </span>
+        );
+      },
+    },
+    {
+      key: "next_key_date",
+      header: "Next Key Date",
+      render: (p) => <span className="text-[10px] text-muted-foreground">{formatDate(getNextKeyDate(p))}</span>,
+    },
     ...(isAdmin
       ? [
           {
             key: "actions",
             header: "Actions",
             render: (p: ProjectSummary) => (
-              <button
-                onClick={() => setEditProject(p)}
-                className="p-1 hover:bg-muted rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                title={p.project_info_id ? "Edit project info" : "No project info record"}
-                disabled={!p.project_info_id}
-                data-testid={`btn-edit-project-${p.project_name}`}
-              >
-                <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button onClick={(e) => e.stopPropagation()} className="p-1 hover:bg-muted rounded transition-colors" data-testid={`btn-edit-project-${p.project_name}`}>
+                    <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}?tab=task-grid`)}>
+                    Open project detail
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={!p.project_info_id} onClick={() => setEditProject(p)}>
+                    Edit project info
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ),
           },
         ]
@@ -1936,7 +1907,7 @@ export default function ProjectsSummary() {
     <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
       <SectionHeader
         icon={<BarChart3 className="h-5 w-5" />}
-        title="Projects"
+        title="Project List"
         description={`${sorted.length} of ${currentProjects.length} ${viewTab === "active" ? "active" : "archived"} projects${(pmFilter !== "all" || phaseFilter !== "all" || searchTerm) ? " (filtered)" : ""}`}
         actions={
           <Button
@@ -2272,6 +2243,7 @@ export default function ProjectsSummary() {
                     idx % 2 === 0 ? "bg-card" : "bg-muted/30"
                   }`}
                   data-testid={`row-project-${idx}`}
+                  onClick={() => setLocation(`/project/${encodeURIComponent(project.project_name)}?tab=task-grid`)}
                 >
                   {filteredColumns.map((col) => (
                     <td

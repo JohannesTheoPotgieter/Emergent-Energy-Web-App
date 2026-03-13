@@ -36,7 +36,7 @@ const ROLE_SECTION_PRIORITIES: Record<string, RoleAwareSection[]> = {
 };
 
 const ROLE_LANDING_CANDIDATES: Record<string, string[]> = {
-  LEADERSHIP: ["commandCenter", "dashboard", "projects", "myWork"],
+  LEADERSHIP: ["dashboard", "projects", "myWork", "commandCenter"],
   DELIVERY: ["pmDashboard", "projects", "pmOnTheGo", "myWorkTasks", "myWork"],
   ENGINEERING: ["engineering", "engineeringTasks", "myWorkTasks", "myWork"],
   QUALITY: ["quality", "myWorkApprovals", "myWorkTasks", "myWork"],
