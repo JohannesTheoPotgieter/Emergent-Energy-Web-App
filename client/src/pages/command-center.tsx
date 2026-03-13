@@ -164,7 +164,7 @@ function StatusBreakdownBar({ summary }: { summary: TaskSummary }) {
 
 export default function CommandCenterPage() {
   const { user } = useAuth();
-  const roleGroup = getRoleGroup(user?.role || "");
+  const roleGroup: RoleGroup = "coo_admin";
   const isMobile = useIsMobile();
 
   const { data: allTaskData, isLoading: tasksLoading, dataUpdatedAt: tasksUpdatedAt } = useQuery<any>({
@@ -428,60 +428,16 @@ export default function CommandCenterPage() {
   }, [taskSummary, myProjects, financialData, roleGroup, allTaskData]);
 
   const quickLinks = useMemo(() => {
-    const links: { label: string; path: string; icon: any }[] = [];
-    links.push({ label: "My Tasks", path: "/my-work/tasks", icon: ListTodo });
-
-    switch (roleGroup) {
-      case "coo_admin":
-        links.push({ label: "Lifecycle Board", path: "/lifecycle-board", icon: Layers });
-        links.push({ label: "Execution Board", path: "/execution-board", icon: Gauge });
-        links.push({ label: "Cashflow", path: "/cashflow", icon: Wallet });
-        links.push({ label: "Approvals", path: "/my-work/approvals", icon: CheckCircle2 });
-        links.push({ label: "Admin Control Center", path: "/admin", icon: Target });
-        break;
-      case "program_manager":
-        links.push({ label: "Execution Board", path: "/execution-board", icon: Gauge });
-        links.push({ label: "Projects", path: "/projects", icon: FolderOpen });
-        links.push({ label: "Portfolios", path: "/portfolios", icon: Layers });
-        links.push({ label: "Weekly Reviews", path: "/weekly-reviews", icon: Calendar });
-        break;
-      case "pm":
-        links.push({ label: "PM Dashboard", path: "/pm-dashboard", icon: Gauge });
-        links.push({ label: "PM On-the-Go", path: "/pm/on-the-go", icon: Zap });
-        links.push({ label: "Projects", path: "/projects", icon: FolderOpen });
-        links.push({ label: "Quality", path: "/quality", icon: ShieldCheck });
-        break;
-      case "engineer":
-        links.push({ label: "Engineering", path: "/engineering", icon: Wrench });
-        links.push({ label: "Eng Tasks", path: "/engineering/tasks", icon: ClipboardList });
-        links.push({ label: "Quality", path: "/quality", icon: ShieldCheck });
-        links.push({ label: "Projects", path: "/projects", icon: FolderOpen });
-        break;
-      case "qm":
-        links.push({ label: "Quality Dashboard", path: "/quality", icon: ShieldCheck });
-        links.push({ label: "Approvals", path: "/my-work/approvals", icon: CheckCircle2 });
-        links.push({ label: "Projects", path: "/projects", icon: FolderOpen });
-        break;
-      case "finance":
-        links.push({ label: "Cashflow", path: "/cashflow", icon: Wallet });
-        links.push({ label: "COS Tracker", path: "/cos", icon: TrendingUp });
-        links.push({ label: "Revenue", path: "/revenue-tracker", icon: DollarSign });
-        links.push({ label: "GP Tracker", path: "/gp-tracker", icon: BarChart3 });
-        break;
-      case "pd":
-        links.push({ label: "PD Dashboard", path: "/pd", icon: Gauge });
-        links.push({ label: "PD Tickets", path: "/pd/tickets", icon: ClipboardList });
-        links.push({ label: "Clients", path: "/clients", icon: Users });
-        links.push({ label: "Projects", path: "/projects", icon: FolderOpen });
-        break;
-      default:
-        links.push({ label: "Projects", path: "/projects", icon: FolderOpen });
-        links.push({ label: "Calendar", path: "/my-work/calendar", icon: Calendar });
-        links.push({ label: "Approvals", path: "/my-work/approvals", icon: CheckCircle2 });
-        break;
-    }
-    return links;
-  }, [roleGroup]);
+    return [
+      { label: "Lifecycle Board", path: "/lifecycle-board", icon: Layers },
+      { label: "Project Management", path: "/projects", icon: FolderOpen },
+      { label: "Finance", path: "/cashflow", icon: Wallet },
+      { label: "Admin", path: "/admin/control-center", icon: Target },
+      { label: "Approvals", path: "/my-work/approvals", icon: CheckCircle2 },
+      { label: "Imports", path: "/smart-import", icon: FileCheck },
+      { label: "Knowledge", path: "/training", icon: Users },
+    ];
+  }, []);
 
   const isLoading = tasksLoading || projectsLoading;
 

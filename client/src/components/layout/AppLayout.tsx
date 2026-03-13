@@ -43,33 +43,34 @@ const TOP_SECTIONS: TopSection[] = [
   },
   {
     label: "Projects",
-    path: "/projects",
-    match: (p) => matchesPathPrefix(p, "/projects") || matchesPathPrefix(p, "/project") || matchesPathPrefix(p, "/portfolios"),
+    path: "/lifecycle-board",
+    match: (p) => startsWithAny(p, ["/lifecycle-board", "/clients"]),
     secondary: [
-      { label: "All Projects", path: "/projects" },
-      { label: "Portfolios", path: "/portfolios" },
+      { label: "Lifecycle Board", path: "/lifecycle-board" },
+      { label: "Clients", path: "/clients" },
     ],
   },
   {
     label: "Project Development",
     path: "/pd",
-    match: (p) => startsWithAny(p, ["/pd", "/clients", "/lifecycle-board"]),
+    match: (p) => startsWithAny(p, ["/pd"]),
     secondary: [
       { label: "PD Dashboard", path: "/pd" },
       { label: "PD Tickets", path: "/pd/tickets" },
-      { label: "Clients", path: "/clients" },
-      { label: "Lifecycle", path: "/lifecycle-board" },
     ],
   },
   {
     label: "Project Management",
-    path: "/pm-dashboard",
-    match: (p) => p === "/pm-dashboard" || startsWithAny(p, ["/pm/on-the-go", "/execution-board", "/weekly-reviews"]),
+    path: "/projects",
+    match: (p) => startsWithAny(p, ["/projects", "/project", "/pm-dashboard", "/pm/on-the-go", "/execution-board", "/weekly-reviews", "/pm/handover-review", "/portfolios"]),
     secondary: [
+      { label: "Project List", path: "/projects" },
+      { label: "Portfolios", path: "/portfolios" },
       { label: "PM Dashboard", path: "/pm-dashboard" },
-      { label: "Execution", path: "/execution-board" },
-      { label: "On-The-Go", path: "/pm/on-the-go" },
+      { label: "Execution Board", path: "/execution-board" },
+      { label: "PM On-The-Go", path: "/pm/on-the-go" },
       { label: "Weekly Reviews", path: "/weekly-reviews" },
+      { label: "PM Handover Review", path: "/pm/handover-review" },
     ],
   },
   {
@@ -143,10 +144,10 @@ function getBreadcrumbs(pathname: string, activeSection: TopSection) {
   if (pathname === "/") return ["Home"];
 
   const projectMatch = pathname.match(/^\/project\/([^/]+)/);
-  if (projectMatch) return ["Projects", decodeURIComponent(projectMatch[1])];
+  if (projectMatch) return ["Project Management", decodeURIComponent(projectMatch[1])];
 
   const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)/);
-  if (portfolioMatch) return ["Projects", "Portfolios", decodeURIComponent(portfolioMatch[1])];
+  if (portfolioMatch) return ["Project Management", "Portfolios", decodeURIComponent(portfolioMatch[1])];
 
   if (pathname === "/pd/tickets/create") return ["Project Development", "PD Tickets", "Create"];
 
@@ -168,8 +169,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const role = (companyRole || user?.role || "").toUpperCase();
+  const canSeeCommandCenter = role === "ADMIN" || role === "COO_ADMIN" || role === "CEO_ADMIN";
 
-  const activeSection = useMemo(() => TOP_SECTIONS.find((section) => section.match(location)) ?? TOP_SECTIONS[0], [location]);
+  const visibleSections = useMemo(() => {
+    return TOP_SECTIONS.map((section) => {
+      if (section.label !== "Home") return section;
+      return {
+        ...section,
+        secondary: section.secondary.filter((item) => canSeeCommandCenter || item.path !== "/command-center"),
+      };
+    });
+  }, [canSeeCommandCenter]);
+
+  const activeSection = useMemo(() => visibleSections.find((section) => section.match(location)) ?? visibleSections[0], [location, visibleSections]);
 
   useEffect(() => {
     const trimmed = searchTerm.trim();
@@ -232,7 +246,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <SheetContent side="left" className="w-[300px]">
               <SheetHeader><SheetTitle>Emergent Energy</SheetTitle></SheetHeader>
               <div className="mt-6 space-y-2">
-                {TOP_SECTIONS.map((section) => {
+                {visibleSections.map((section) => {
                   const isActive = section.label === activeSection.label;
                   return (
                     <div key={section.label} className="space-y-1">
@@ -345,7 +359,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="hidden lg:flex px-6 border-t border-slate-200 overflow-x-auto scrollbar-thin">
-          {TOP_SECTIONS.map((section) => {
+          {visibleSections.map((section) => {
             const active = section.label === activeSection.label;
             return (
               <Link
