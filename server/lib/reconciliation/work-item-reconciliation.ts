@@ -4,9 +4,38 @@ import { operationalTasks, projectInfo, users, workItems } from "@shared/schema"
 
 type ReconciliationStatus = "pass" | "warning" | "fail";
 type TaskRecord = { id: number; projectId: number | null; projectName: string; title: string; dueDate: string | null; owner: string | null; legacyTable: string | null; legacyId: number | null; externalRef: string | null; };
-type ProjectReport = { project_id: number | null; project_name: string; legacy_count: number; canonical_count: number; matched_by_linkage: number; matched_by_business_identity: number; unmatched_legacy_ids: number[]; unmatched_canonical_ids: number[]; duplicate_business_identity_keys: string[]; status: ReconciliationStatus; reasons: string[]; };
+type ProjectReport = {
+  project_id: number | null;
+  project_name: string;
+  legacy_count: number;
+  canonical_count: number;
+  matched_by_linkage: number;
+  matched_by_business_identity: number;
+  unmatched_legacy_ids: number[];
+  unmatched_canonical_ids: number[];
+  duplicate_business_identity_keys: string[];
+  status: ReconciliationStatus;
+  explanation: string;
+  findings: Array<{ status: ReconciliationStatus; explanation: string }>;
+};
 
-export type WorkItemReconciliationReport = { generated_at: string; scope: "engineering" | "all-work-items"; totals: { projects: number; pass: number; warning: number; fail: number; legacy_count: number; canonical_count: number; matched_by_linkage: number; matched_by_business_identity: number; }; status: ReconciliationStatus; projects: ProjectReport[]; };
+export type WorkItemReconciliationReport = {
+  generated_at: string;
+  scope: "engineering" | "all-work-items";
+  totals: {
+    projects: number;
+    pass: number;
+    warning: number;
+    fail: number;
+    legacy_count: number;
+    canonical_count: number;
+    matched_by_linkage: number;
+    matched_by_business_identity: number;
+  };
+  status: ReconciliationStatus;
+  explanation: string;
+  projects: ProjectReport[];
+};
 
 const normalizeText = (value: string | null | undefined) => (value || "").trim().toLowerCase().replace(/\s+/g, " ");
 function normalizeDate(value: string | null | undefined): string {
@@ -20,6 +49,20 @@ function normalizeDate(value: string | null | undefined): string {
 function buildBusinessIdentityKey(item: TaskRecord): string {
   return [item.projectId ?? "", normalizeText(item.title), normalizeDate(item.dueDate), normalizeText(item.owner), normalizeText(item.externalRef), normalizeText(item.legacyTable), item.legacyId ?? ""].join("|");
 }
+function buildProjectExplanation(project: ProjectReport): string {
+  const summary = `${project.project_name} (legacy=${project.legacy_count}, canonical=${project.canonical_count}, linkage=${project.matched_by_linkage}, business_identity=${project.matched_by_business_identity})`;
+  return `${summary}: ${project.findings.map((f) => `${f.status.toUpperCase()}: ${f.explanation}`).join("; ")}`;
+}
+
+function buildReportExplanation(report: Omit<WorkItemReconciliationReport, "explanation">): string {
+  const header = `scope=${report.scope}, status=${report.status}, projects=${report.totals.projects}, pass=${report.totals.pass}, warning=${report.totals.warning}, fail=${report.totals.fail}`;
+  const failed = report.projects.filter((p) => p.status === "fail").slice(0, 3).map((project) => project.explanation);
+  if (failed.length > 0) return `${header}. Failing projects: ${failed.join(" | ")}`;
+  const warnings = report.projects.filter((p) => p.status === "warning").slice(0, 3).map((project) => project.explanation);
+  if (warnings.length > 0) return `${header}. Warning projects: ${warnings.join(" | ")}`;
+  return `${header}. All projects reconciled through strict linkage without stability findings.`;
+}
+
 const worstStatus = (statuses: ReconciliationStatus[]): ReconciliationStatus => statuses.some((s) => s === "fail") ? "fail" : statuses.some((s) => s === "warning") ? "warning" : "pass";
 const statusRank = (status: ReconciliationStatus) => (status === "fail" ? 2 : status === "warning" ? 1 : 0);
 
@@ -132,27 +175,44 @@ export async function generateWorkItemReconciliationReport(workstream?: "ENG"): 
     }
     const duplicateBusinessIdentityKeys = [...duplicateCounter.entries()].filter(([, count]) => count > 1).map(([key]) => key);
 
-    const reasons: string[] = [];
+    const findings: Array<{ status: ReconciliationStatus; explanation: string }> = [];
     let status: ReconciliationStatus = "pass";
     if (unmatchedLegacy.length > 0) {
       status = "fail";
-      reasons.push(`Missing canonical counterparts for ${unmatchedLegacy.length} legacy tasks.`);
+      findings.push({
+        status: "fail",
+        explanation: `Missing canonical counterparts for ${unmatchedLegacy.length} legacy task(s) when comparing project/title/due/owner/linkage identity.`,
+      });
     }
     if (duplicateBusinessIdentityKeys.length > 0) {
       status = "fail";
-      reasons.push(`Duplicate canonical business identities detected (${duplicateBusinessIdentityKeys.length}).`);
+      findings.push({
+        status: "fail",
+        explanation: `Duplicate canonical business identities detected (${duplicateBusinessIdentityKeys.length}); project/title/due/owner/legacy linkage should uniquely identify task-like records.`,
+      });
     }
     if (status !== "fail" && unmatchedCanonical.length > 0) {
       status = "warning";
-      reasons.push(`Canonical contains ${unmatchedCanonical.length} extra task(s) not linked to legacy.`);
+      findings.push({
+        status: "warning",
+        explanation: `Canonical contains ${unmatchedCanonical.length} extra task(s) not linked to legacy lineage.`,
+      });
     }
     if (status !== "fail" && matchedByBusinessIdentity > 0) {
       status = "warning";
-      reasons.push(`Matched ${matchedByBusinessIdentity} task(s) by business identity without strict linkage proof.`);
+      findings.push({
+        status: "warning",
+        explanation: `Matched ${matchedByBusinessIdentity} task(s) only by business identity (project/title/due/owner/linkage fields), without strict legacy linkage.`,
+      });
     }
-    if (reasons.length === 0) reasons.push("All tasks reconciled with strict legacy linkage.");
+    if (findings.length === 0) {
+      findings.push({
+        status: "pass",
+        explanation: "All tasks reconciled with strict legacy linkage via legacy_table/legacy_id or external_ref lineage.",
+      });
+    }
 
-    projects.push({
+    const projectReport: ProjectReport = {
       project_id: projectId as number | null,
       project_name: legacy[0]?.projectName || canonical[0]?.projectName || "Unknown",
       legacy_count: legacy.length,
@@ -163,8 +223,11 @@ export async function generateWorkItemReconciliationReport(workstream?: "ENG"): 
       unmatched_canonical_ids: unmatchedCanonical.map((item) => item.id).sort((a, b) => a - b),
       duplicate_business_identity_keys: duplicateBusinessIdentityKeys,
       status,
-      reasons,
-    });
+      explanation: "",
+      findings,
+    };
+    projectReport.explanation = buildProjectExplanation(projectReport);
+    projects.push(projectReport);
   }
 
   projects.sort((a, b) => {
@@ -172,7 +235,7 @@ export async function generateWorkItemReconciliationReport(workstream?: "ENG"): 
     return severity !== 0 ? severity : a.project_name.localeCompare(b.project_name);
   });
 
-  return {
+  const baseReport = {
     generated_at: new Date().toISOString(),
     scope: workstream ? "engineering" : "all-work-items",
     totals: {
@@ -187,5 +250,10 @@ export async function generateWorkItemReconciliationReport(workstream?: "ENG"): 
     },
     status: worstStatus(projects.map((project) => project.status)),
     projects,
+  };
+
+  return {
+    ...baseReport,
+    explanation: buildReportExplanation(baseReport),
   };
 }
