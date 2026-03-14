@@ -108,6 +108,19 @@ export async function registerAuthRoutes(app: Express, requireAuth: RequestHandl
     return sendError(res, unauthorized("Not authenticated"));
   });
 
+  if (process.env.NODE_ENV === "development") {
+    app.get("/api/auth/dev-login", async (_req, res) => {
+      try {
+        const [adminUser] = await db.select().from(users).where(eq(users.username, "johannes"));
+        if (!adminUser) return res.status(404).send("Dev user not found");
+        const token = generateToken({ userId: adminUser.id, email: adminUser.email || "", name: adminUser.name || "", role: adminUser.role || "" });
+        res.send(`<!DOCTYPE html><html><body><script>localStorage.setItem('auth_token','${token}');window.location.href='/dashboard';</script></body></html>`);
+      } catch (e) {
+        res.status(500).send("Dev login failed");
+      }
+    });
+  }
+
   const msAuth = await import("../microsoft-auth");
 
   app.get("/api/auth/microsoft/config", (_req, res) => {
