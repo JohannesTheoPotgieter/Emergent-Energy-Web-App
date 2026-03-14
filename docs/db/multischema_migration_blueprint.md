@@ -151,6 +151,27 @@ Implemented SQL artifacts:
    - `docs/db/table_usage_matrix.csv`
    - Full table reference matrix generated from current repository usage.
 
+4. **PR 86 hardening migration (additive)**
+   - `migrations/20260315_multischema_hardening.sql`
+   - Adds:
+     - lineage hardening for `core.projects.legacy_projects_id` using canonical and unique-name fallback mapping
+     - blind-spot backfill for `public.work_item_comments`, `public.work_item_attachments`, and `public.work_item_status_history`
+     - soft-typed validation views (`core.v_work_items_soft_type_issues`, `finance.v_revenue_lines_soft_type_issues`, `finance.v_cost_lines_soft_type_issues`)
+     - additive indexes for reconciliation/traceability hot paths (`project_id`, legacy lineage columns, `source_table`, `linked_work_item_id`, `document_id`, `import_run_id`, `project_name_snapshot`, `source_update_request_id`, `conflict_id`)
+
+5. **PR 86 reconciliation expansion**
+   - `migrations/20260315_multischema_reconciliation_hardening.sql`
+   - Adds diagnostics for:
+     - duplicate finance facts by practical business key and source lineage
+     - operational-task parent/child merge integrity
+     - watcher migration parity + missing watcher rows
+     - work-item/comment/attachment/activity/watcher orphan references
+     - legacy `work_item_*` blind-spot backfill parity
+     - document/version ambiguity and per-document count deltas
+     - project linkage gaps caused by project-name joins
+     - user-reference integrity for promoted entities
+     - soft-typed/cast-risk visibility in source finance text fields
+
 ---
 
 ## 5) Risk register
@@ -176,6 +197,12 @@ Implemented SQL artifacts:
 - This phase is additive: if validation fails, keep legacy reads/writes unchanged.
 - Disable promoted read paths; rerun backfill after fixes (idempotent `ON CONFLICT`).
 - Reconciliation scripts provide failure localization per domain.
+
+### Remaining risks after PR 86 hardening
+- Finance promotion still intentionally retains parallel source ingestion (`program_*` + `normalized_*`): duplicate risk is now measurable, but not auto-resolved.
+- Soft-typed date fields are intentionally preserved for compatibility; validation views surface invalid values, but no destructive type migration is done in this phase.
+- Project-name join gaps can still occur when source names drift; checks now explicitly surface unresolved linkage rows.
+- Legacy read/write code paths are still active across `project_info`, `operational_tasks`, `work_items`, and deliverable-family routes; this PR improves observability without broad cutover.
 
 ---
 
