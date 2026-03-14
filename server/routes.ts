@@ -30,7 +30,13 @@ import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getAllWorkItemsF
 import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError, logApiError } from "./lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "./lib/task-validation";
 import { normalizeStatus, normalizePriority } from "./lib/canonical-task-engine";
+import { getFeatureFlag } from "./lib/feature-flags";
 import { registerAuthRoutes } from "./routes/auth-routes";
+import {
+  compareCoreClientsReadiness,
+  getCoreMasterDataReadinessReport,
+  listClientsFromPromotedCoreCompat,
+} from "./services/promoted-read-compat";
 import {
   mirrorWorkItemToOperationalTask,
   softDeleteCanonicalWorkItemByLegacyTaskId,
@@ -4849,9 +4855,34 @@ export async function registerRoutes(
 
   // ==================== CLIENTS ROUTES ====================
 
+  app.get("/api/readiness/core-master-data", requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      const report = await getCoreMasterDataReadinessReport();
+      res.json(report);
+    } catch (error) {
+      console.error("Core master data readiness report error:", error);
+      res.status(500).json({ error: "Failed to generate core master data readiness report" });
+    }
+  });
+
   app.get("/api/clients", requireAuth, async (req, res) => {
     try {
-      const allClients = await db.select().from(clients).orderBy(asc(clients.name));
+      const usePromotedRead = await getFeatureFlag("promoted_core_clients_read");
+      const compareMode = req.query.compare === "1" || req.query.compare === "true";
+
+      const allClients = usePromotedRead
+        ? await listClientsFromPromotedCoreCompat()
+        : await db.select().from(clients).orderBy(asc(clients.name));
+
+      if (compareMode || usePromotedRead) {
+        const comparison = await compareCoreClientsReadiness();
+        if (comparison.status !== "ready") {
+          console.warn("[promoted-read][clients] mismatch detected", comparison);
+        }
+        res.setHeader("X-Promoted-Clients-Read", usePromotedRead ? "enabled" : "disabled");
+        res.setHeader("X-Promoted-Clients-Comparison-Status", comparison.status);
+      }
+
       res.json(allClients);
     } catch (error) {
       console.error("Clients fetch error:", error);

@@ -4,6 +4,7 @@ export const FEATURE_FLAG_KEYS = [
   "ms_create_action",
   "local_synced_save_flow",
   "cleaned_admin_visibility",
+  "promoted_core_clients_read",
 ] as const;
 
 export type RolloutFeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -44,6 +45,13 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "cleaned_admin_visibility",
     label: "Cleaned admin visibility",
     description: "Controls progressive visibility cleanup in admin/settings areas.",
+    defaultValue: false,
+  },
+
+  {
+    key: "promoted_core_clients_read",
+    label: "Promoted core clients read",
+    description: "Controls additive read-only adoption of clients from core.clients with comparison support.",
     defaultValue: false,
   },
 ];
