@@ -28,7 +28,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
         stepNumber: 1,
         title: "Navigate to Smart Import",
         description: "Open the sidebar and click 'Smart Import' under the PROJECT MANAGEMENT section. This opens the import wizard.",
-        targetPage: "/smart-import",
+        targetPage: "/admin/smart-import",
         tip: "Smart Import is the only way to create or update project data. You cannot manually add projects — they come from Excel tracker files.",
         tryIt: "Open the sidebar now and find the 'Smart Import' link. Click it to see the upload page.",
       },
