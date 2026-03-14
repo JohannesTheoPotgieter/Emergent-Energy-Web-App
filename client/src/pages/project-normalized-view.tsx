@@ -298,7 +298,7 @@ export default function ProjectNormalizedView() {
               No normalized data available yet. Import an Excel tracker to see unified project views.
             </p>
             <Button
-              onClick={() => navigate("/smart-import")}
+              onClick={() => navigate("/admin/smart-import")}
               data-testid="btn-start-import"
             >
               <Upload className="w-4 h-4 mr-2" />
@@ -344,7 +344,7 @@ export default function ProjectNormalizedView() {
               }))}
             />
           )}
-          <Button variant="outline" size="sm" onClick={() => navigate("/smart-import")} data-testid="btn-import-new">
+          <Button variant="outline" size="sm" onClick={() => navigate("/admin/smart-import")} data-testid="btn-import-new">
             <Upload className="w-4 h-4 mr-1" />
             Import New Tracker
           </Button>
