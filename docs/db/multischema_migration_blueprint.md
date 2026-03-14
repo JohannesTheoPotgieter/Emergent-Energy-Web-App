@@ -227,3 +227,58 @@ Implemented SQL artifacts:
 - No legacy table is dropped in this phase.
 - Preserve actor/source/legacy lineage fields on every promoted fact table.
 - Reconciliation script should be run before and after each scoped cutover.
+
+
+---
+
+## 7) PR 87 staged promoted-read preparation (bridge to next-phase adoption)
+
+### What PR 87 enables (additive, reversible)
+- Added **compatibility read surfaces** for promoted core master data:
+  - `core.v_clients_legacy_compat`
+  - `core.v_portfolios_legacy_compat`
+  - `core.v_project_portfolio_assignments_legacy_compat`
+- Added **side-by-side promoted-vs-legacy comparison views**:
+  - `core.v_projects_promoted_vs_legacy`
+  - `core.v_clients_promoted_vs_legacy`
+  - `core.v_portfolios_promoted_vs_legacy`
+  - `core.v_project_portfolio_assignments_promoted_vs_legacy`
+  - `core.v_work_item_counts_promoted_vs_legacy`
+- Added **cutover blocker visibility** view:
+  - `core.v_promoted_read_cutover_blockers`
+- Added a narrow server compatibility service (`server/services/promoted-read-compat.ts`) to expose:
+  - consistent comparison summaries
+  - mismatch categories and sample IDs
+  - readiness status (`ready` / `partial` / `blocked`)
+- Added admin readiness API:
+  - `GET /api/readiness/core-master-data`
+- Added low-risk **feature-flagged promoted read path** for clients only:
+  - `GET /api/clients` reads from `core.clients` **only when** `promoted_core_clients_read = true`
+  - optional `?compare=true` emits comparison headers without changing behavior
+
+### Readiness matrix after PR 87
+
+| Candidate read area | Legacy source | Promoted source | Current readiness state | Blockers / notes | Next action |
+|---|---|---|---|---|---|
+| Projects master list/detail fields | `public.project_info` | `core.projects` | Partial/Blocked (depends on reconciliation output) | Any missing promoted rows blocks cutover; field mismatches must be explicit | Keep legacy primary, run comparison API + SQL views until blocker count reaches zero |
+| Clients list (read-only) | `public.clients` | `core.clients` | Candidate for controlled rollout | Must pass parity checks continuously; flag default is off | Enable `promoted_core_clients_read` for admin/internal cohort only |
+| Portfolios summary fields | `public.portfolios` | `core.portfolios` | Partial | Ownership/project composition still served via legacy-linked route logic | Keep legacy primary; adopt via wrapper in a focused follow-up PR |
+| Project-portfolio assignments | `public.project_portfolio_assignments` | `core.project_portfolio_assignments` | Partial | Pairwise link diffs must be zero for safe rollout | Keep comparison-first; do not switch mutation routes yet |
+| Work-item counts by project (reporting only) | `public.work_items` | `core.work_items` | Partial (report-only candidate) | Operational writes and mixed lineage are still active | Limit to read-only dashboard/reporting diagnostics |
+
+### Exact recommended next PR order after PR 87
+1. **PR 88: Expand promoted reads for core master data only**
+   - Keep writes legacy.
+   - Add feature-flagged promoted read for project list/detail summary endpoints.
+   - Keep side-by-side comparison headers + logs.
+2. **PR 89: Portfolio read-path hardening**
+   - Isolate portfolio read endpoints into compatibility wrappers.
+   - Adopt promoted read for summary/list only when assignment parity is stable.
+3. **PR 90: First department schema rollout (recommended: `project_management`)**
+   - One bounded rollout with explicit dual-read/compare and no broad write switch.
+
+### Explicitly deferred by PR 87
+- Broad PM/engineering/quality/procurement/finance read or write cutover.
+- Legacy table deprecation/drop planning actions.
+- Auto-resolution of duplicate finance rows or project-name linkage gaps.
+- Any hidden business semantic change under promoted reads.
