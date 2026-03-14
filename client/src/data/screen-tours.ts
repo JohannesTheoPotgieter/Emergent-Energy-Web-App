@@ -255,7 +255,7 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
     ],
   },
 
-  "/smart-import": {
+  "/admin/smart-import": {
     id: "smart-import",
     title: "Smart Import",
     steps: [
