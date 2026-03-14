@@ -3030,12 +3030,15 @@ export function registerEngineeringRoutes(app: Express) {
           : [allWorkItems.status, engineeringWorkItems.status].includes("warning")
             ? "warning"
             : "pass",
+        explanation: [allWorkItems.explanation, engineeringWorkItems.explanation].filter(Boolean).join(" | "),
         all_work_items: {
           status: allWorkItems.status,
+          explanation: allWorkItems.explanation,
           ...allWorkItems.totals,
         },
         engineering: {
           status: engineeringWorkItems.status,
+          explanation: engineeringWorkItems.explanation,
           ...engineeringWorkItems.totals,
         },
       });
