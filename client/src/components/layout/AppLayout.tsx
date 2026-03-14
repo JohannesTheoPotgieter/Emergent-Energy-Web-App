@@ -119,6 +119,8 @@ const TOP_SECTIONS: TopSection[] = [
     match: (p) => startsWithAny(p, ["/admin", "/settings"]),
     secondary: [
       { label: "Control Center", path: "/admin/control-center" },
+      { label: "Smart Import", path: "/admin/smart-import" },
+      { label: "Excel Updates", path: "/admin/excel-updates" },
       { label: "Roles & Permissions", path: "/admin/roles" },
       { label: "System Settings", path: "/admin/settings" },
       { label: "Audit Log", path: "/admin/activity-log" },
