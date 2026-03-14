@@ -1,4 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterAll } from "vitest";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 const BASE_URL = process.env.API_URL || "http://localhost:5000";
 
@@ -10,6 +12,18 @@ type WorkflowLogger = {
   fail: (point: string, err: unknown) => never;
 };
 
+type WorkflowEvidence = {
+  workflow: string;
+  stepsRun: string[];
+  result: "PASS" | "FAIL";
+  failurePoint: string | null;
+  details?: Record<string, unknown> | null;
+  reason?: string | null;
+};
+
+const workflowEvidence: WorkflowEvidence[] = [];
+const EVIDENCE_PATH = resolve(process.cwd(), "qa/reports/workflow-evidence.json");
+
 function createWorkflowLogger(name: string): WorkflowLogger {
   const steps: string[] = [];
   return {
@@ -18,14 +32,37 @@ function createWorkflowLogger(name: string): WorkflowLogger {
       console.info(`[Workflow:${name}] STEP`, JSON.stringify({ step: stepName, details: details || null }));
     },
     pass(details?: Record<string, unknown>) {
+      workflowEvidence.push({
+        workflow: name,
+        stepsRun: [...steps],
+        result: "PASS",
+        failurePoint: null,
+        details: details || null,
+      });
       console.info(`[Workflow:${name}] RESULT`, JSON.stringify({ result: "PASS", steps, details: details || null }));
     },
     fail(point: string, err: unknown): never {
       const reason = err instanceof Error ? err.message : String(err);
+      workflowEvidence.push({
+        workflow: name,
+        stepsRun: [...steps],
+        result: "FAIL",
+        failurePoint: point,
+        reason,
+      });
       console.error(`[Workflow:${name}] RESULT`, JSON.stringify({ result: "FAIL", steps, failurePoint: point, reason }));
       throw err;
     },
   };
+}
+
+function writeWorkflowEvidenceReport() {
+  mkdirSync(dirname(EVIDENCE_PATH), { recursive: true });
+  writeFileSync(
+    EVIDENCE_PATH,
+    `${JSON.stringify({ generatedAt: new Date().toISOString(), workflows: workflowEvidence }, null, 2)}\n`,
+    "utf8",
+  );
 }
 
 async function apiRequest(method: string, path: string, body?: any, token?: string): Promise<ApiResponse> {
@@ -81,6 +118,9 @@ async function getProjectIdWithNoEngTasks(token: string): Promise<number | null>
 }
 
 describe("API: Critical workflow test pack", () => {
+  afterAll(() => {
+    writeWorkflowEvidenceReport();
+  });
   it("Engineering task create -> update -> view -> delete, with invalid update guard", async () => {
     const log = createWorkflowLogger("Engineering CRUD");
     try {
@@ -325,6 +365,92 @@ describe("API: Critical workflow test pack", () => {
       log.pass();
     } catch (err) {
       log.fail("mywork_flow", err);
+    }
+  });
+
+  it("Procurement item create -> update -> delete persists and prevents invalid transitions", async () => {
+    const log = createWorkflowLogger("Procurement CRUD and transition guard");
+    try {
+      const token = await loginAdmin();
+      const projects = await apiRequest("GET", "/api/projects", undefined, token);
+      const projectId = projects.data[0]?.project_info_id || projects.data[0]?.id;
+      expect(projectId).toBeTruthy();
+      log.step("select_project", { projectId });
+
+      const title = `WF Procurement ${Date.now()}`;
+      const created = await apiRequest("POST", "/api/procurement", { projectId, title, category: "service", expectedCost: 12500 }, token);
+      expect(created.status).toBe(201);
+      const itemId = created.data?.id;
+      expect(itemId).toBeTruthy();
+      log.step("create_procurement_item", { itemId });
+
+      const patched = await apiRequest("PATCH", `/api/procurement/${itemId}`, { status: "approved", notes: "approved from workflow test" }, token);
+      expect(patched.status).toBe(200);
+      expect(patched.data?.status).toBe("approved");
+      log.step("approve_procurement_item");
+
+      const staleMutation = await apiRequest("PATCH", `/api/procurement/${itemId}`, { status: "quoted" }, token);
+      expect(staleMutation.status).toBe(400);
+      log.step("stale_state_transition_rejected", { status: staleMutation.status });
+
+      const readAfterMutation = await apiRequest("GET", `/api/procurement/${itemId}`, undefined, token);
+      expect(readAfterMutation.status).toBe(200);
+      expect(readAfterMutation.data?.status).toBe("approved");
+      log.step("re_read_reflects_persisted_status");
+
+      const duplicatePatch = await apiRequest("PATCH", `/api/procurement/${itemId}`, { status: "approved" }, token);
+      expect(duplicatePatch.status).toBe(200);
+      const listing = await apiRequest("GET", `/api/procurement/project/${projectId}`, undefined, token);
+      const matches = (listing.data || []).filter((row: any) => row.id === itemId);
+      expect(matches.length).toBe(1);
+      log.step("duplicate_submit_no_duplicate_record", { listedMatches: matches.length });
+
+      const deleted = await apiRequest("DELETE", `/api/procurement/${itemId}`, undefined, token);
+      expect(deleted.status).toBe(200);
+      log.step("delete_procurement_item");
+
+      const postDelete = await apiRequest("GET", `/api/procurement/project/${projectId}`, undefined, token);
+      const deletedMatches = (postDelete.data || []).filter((row: any) => row.id === itemId);
+      expect(deletedMatches.length).toBe(0);
+      log.step("reload_confirms_deleted");
+
+      log.pass();
+    } catch (err) {
+      log.fail("procurement_flow", err);
+    }
+  });
+
+  it("Permission mismatch defense: non-admin is blocked from admin-only actions while admin succeeds", async () => {
+    const log = createWorkflowLogger("Permission mismatch between UI intent and API guard");
+    try {
+      const adminToken = await loginAdmin();
+      const pmLogin = await apiRequest("POST", "/api/auth/login", { username: "eon", password: "2035" });
+      expect(pmLogin.status).toBe(200);
+      const pmToken = pmLogin.data?.token as string;
+      expect(pmToken).toBeTruthy();
+      log.step("login_admin_and_non_admin");
+
+      const nonAdminCreate = await apiRequest("POST", "/api/mytool/tasks", { title: `WF Perm ${Date.now()}`, status: "todo", priority: "normal" }, pmToken);
+      expect([401, 403]).toContain(nonAdminCreate.status);
+      log.step("non_admin_mutation_rejected", { status: nonAdminCreate.status });
+
+      const adminCreate = await apiRequest("POST", "/api/mytool/tasks", { title: `WF Admin ${Date.now()}`, status: "todo", priority: "normal" }, adminToken);
+      expect(adminCreate.status).toBe(200);
+      const taskId = adminCreate.data?.id;
+      expect(taskId).toBeTruthy();
+      log.step("admin_mutation_allowed", { taskId });
+
+      const nonAdminDelete = await apiRequest("DELETE", `/api/mytool/tasks/${taskId}`, undefined, pmToken);
+      expect([401, 403]).toContain(nonAdminDelete.status);
+      log.step("non_admin_delete_rejected", { status: nonAdminDelete.status });
+
+      const adminDelete = await apiRequest("DELETE", `/api/mytool/tasks/${taskId}`, undefined, adminToken);
+      expect(adminDelete.status).toBe(200);
+      log.step("admin_cleanup_delete");
+
+      log.pass();
+    } catch (err) {
+      log.fail("permission_mismatch", err);
     }
   });
 });
