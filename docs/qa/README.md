@@ -1,31 +1,40 @@
 # QA Stability Proof System
 
-This folder is the repeatable framework for proving release stability.
+This folder defines the minimum evidence required to prove release readiness.
 
-## What is included
+## Proof artifacts
 
-1. `docs/architecture/source-of-truth-matrix.md`
-   - Declares canonical data ownership and migration status by domain.
-2. `docs/qa/app-route-inventory.md`
-   - Route/view/action inventory used by smoke and permission testing.
-3. `docs/qa/release-gate.md`
-   - Mandatory release checklist and defect closure rules.
-4. `docs/qa/templates/`
-   - Standard templates for defect logging, route coverage, workflow evidence, and role audits.
-5. `docs/qa/results/latest/` and `docs/qa/results/archive/`
-   - Storage for current-cycle and historical QA evidence.
+- `docs/architecture/source-of-truth-matrix.md` — canonical domain ownership and migration status.
+- `docs/qa/app-route-inventory.md` — route/component/permission/api/action inventory seeded from route registry.
+- `docs/qa/release-gate.md` — exact release blocking policy.
+- `docs/qa/templates/` — reusable templates for evidence capture.
+- `docs/qa/results/latest/` — current release evidence.
+- `docs/qa/results/archive/` — historical release evidence.
 
-## How to use this in each release
+## Commands
 
-1. Update source-of-truth matrix for any changed domain.
+```bash
+npm run test
+npm run test:api
+npm run test:smoke
+npm run test:routes
+npm run test:workflows
+npm run qa:report
+npm run reconciliation:report
+npm run release:gate
+```
+
+## Standard release flow
+
+1. Update source-of-truth matrix for changed domains.
 2. Update route inventory when routes/components/permissions change.
-3. Run QA scripts (`test`, `test:api`, `test:smoke`, `test:routes`, `qa:report`).
-4. Store evidence using templates under `docs/qa/results/latest/`.
-5. Complete the release gate checklist before sign-off.
-6. Move finalized evidence to `docs/qa/results/archive/<release-tag>/`.
+3. Run test suites and collect logs.
+4. Capture evidence in `docs/qa/results/latest/` using templates.
+5. Run reconciliation + release gate.
+6. Archive release evidence into `docs/qa/results/archive/<release-tag>/`.
 
-## Ground rules
+## Evidence integrity rules
 
-- Never mark checks as passed without executed evidence.
-- Keep evidence links durable (files/paths in-repo when possible).
-- Treat unresolved severity 1 defects as release blockers.
+- Never record a pass without executable evidence.
+- Keep links durable and stored in-repo where possible.
+- Treat open P0/P1 defects and missing critical-page role validation as blockers.
