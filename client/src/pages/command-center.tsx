@@ -440,7 +440,7 @@ export default function CommandCenterPage() {
       { label: "Finance", path: "/cashflow", icon: Wallet },
       { label: "Admin", path: "/admin/control-center", icon: Target },
       { label: "Approvals", path: "/my-work/approvals", icon: CheckCircle2 },
-      { label: "Imports", path: "/smart-import", icon: FileCheck },
+      { label: "Imports", path: "/admin/smart-import", icon: FileCheck },
       { label: "Knowledge", path: "/training", icon: Users },
     ];
   }, []);
@@ -524,7 +524,7 @@ export default function CommandCenterPage() {
   const mobilePrimaryActions = [
     { label: "Approvals", path: "/my-work/approvals", icon: CheckCircle2 },
     { label: "Update Tasks", path: "/my-work/tasks", icon: ListTodo },
-    { label: "Upload / Send", path: "/smart-import", icon: FolderOpen },
+    { label: "Upload / Send", path: "/admin/smart-import", icon: FolderOpen },
     { label: "Escalate", path: "/feedback", icon: AlertTriangle },
     { label: "Create from Microsoft", path: "/pd/tickets/create", icon: ClipboardList },
   ];

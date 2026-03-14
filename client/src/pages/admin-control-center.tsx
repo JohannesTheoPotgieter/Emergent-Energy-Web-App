@@ -325,7 +325,7 @@ export default function AdminControlCenterPage() {
   const secondaryUtilityLinks = [
     { label: "Legacy Admin Utilities", path: "/admin/legacy-utilities", icon: FolderOpen },
     { label: "Database Migration", path: "/admin/database-migration", icon: Database },
-    { label: "Smart Import", path: "/smart-import", icon: FileUp },
+    { label: "Smart Import", path: "/admin/smart-import", icon: FileUp },
   ];
 
   return (

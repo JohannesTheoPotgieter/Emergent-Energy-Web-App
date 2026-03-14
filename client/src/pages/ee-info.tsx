@@ -1316,7 +1316,7 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
     dashboards: [
       { label: "Execution Board", path: "/dashboard" },
       { label: "Projects", path: "/projects" },
-      { label: "Smart Import", path: "/smart-import" },
+      { label: "Smart Import", path: "/admin/smart-import" },
       { label: "PM Dashboard", path: "/pm-dashboard" },
       { label: "Cashflow", path: "/cashflow" },
       { label: "Subcontractor Dashboard", path: "/subcontractor-dashboard" },
