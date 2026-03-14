@@ -303,7 +303,6 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
           </div>
           <span className="font-mono text-[10px] w-8 text-right font-medium text-foreground">{currentPct.toFixed(0)}%</span>
         </button>
-      </button>
       </PopoverTrigger>
       <PopoverContent onClick={(e) => e.stopPropagation()} className="w-[90vw] sm:w-[520px] max-w-[520px] p-0 max-h-[500px] overflow-hidden" align="start" side="bottom" data-testid={`popover-tasks-${projectName}`}>
         <div className="p-3 border-b bg-muted">
