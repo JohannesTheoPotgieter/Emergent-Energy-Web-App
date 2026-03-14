@@ -1,49 +1,83 @@
-# App Route / View / Action Inventory
+# App Route Inventory (Stability Proof Baseline)
 
-Seeded from `client/src/config/page-registry.ts` and `client/src/App.tsx` route wiring. This is the baseline QA route manifest for smoke + role checks.
+Seeded from `client/src/config/page-registry.ts` and route component wiring in `client/src/App.tsx`.
+API dependencies are inferred from `/api/...` calls in each page component and should be refined as hooks/services evolve.
 
-## Inventory
-
-| Route | Page/component | Permission entity | Major API dependencies (inferred) | Main user actions/buttons expected |
-|---|---|---|---|---|
-| `/` | `Home` | `home` (via path resolver) | `/api/home/action-hub`, `/api/home/company-priorities` | Open action hub cards, navigate to role landing modules |
-| `/dashboard` | `Dashboard` | `execution_board` | `/api/overview`, `/api/projects-summary` | Filter board, open project tile, drill into execution detail |
-| `/projects` | `ProjectsSummary` | `projects` | `/api/projects-summary` | Search/filter projects, open project detail |
-| `/project/:projectName` | `ProjectDetailPage` | `projects` (resolved) | `/api/project/:name/info`, `/api/project/:name/plan`, `/api/project/:name/expenses`, `/api/project/:name/inflows` | Edit/inspect tabs, save overrides, open linked finance views |
-| `/project/:projectName/financial-linking` | `FinancialLinkingPage` | none explicit | financial linking endpoints + project data APIs | Link/unlink finance lines, confirm mappings |
-| `/cashflow` | `CashflowPage` | `cashflow` | `/api/cashflow-2026`, `/api/cashflow-2026/detail` | Change filters, inspect weekly values, export/refresh |
-| `/cos` | `CostTracker` | `cos` | `/api/program/cos` | Filter categories, inspect cost line states |
-| `/revenue-tracker` | `RevenueTrackerPage` | `revenue_tracker` | revenue tracker endpoints + project finance reads | Filter milestones, inspect invoice/payment states |
-| `/gp-tracker` | `GpTrackerPage` | `gp_tracker` | KPI/finance rollup APIs | Compare margin values, drill to project rows |
-| `/quality` | `QmDashboardPage` | `quality` | `/api/quality/dashboard`, `/api/quality/templates`, `/api/quality/checklists` | Open checklist, review warnings, capture evidence |
-| `/engineering` | `EngineeringDashboardPage` | `engineering` | `/api/engineering/dashboard`, `/api/eng/standup` | Review standup metrics, open tasks |
-| `/engineering/tasks` | `EngineeringTasksPage` | `eng_tasks` | `/api/eng/tasks`, `/api/eng/tasks/:id` | Update task status, assign owner, open details/comments |
-| `/lifecycle-board` | `LifecycleBoardPage` | `lifecycle` | `/api/lifecycle-board/projects` | Move stage, review lifecycle blockers |
-| `/execution-board` | `ExecutionBoardPage` | `execution_board` | execution board/project workflow APIs | Update execution state, open task/work item actions |
-| `/smart-import` | `SmartImportPage` | `smart_import` | `/api/smart-import/upload`, `/api/smart-import/:runId`, `/api/smart-import/:runId/commit` | Upload file, resolve issues, commit run |
-| `/invoice-patterns` | `InvoicePatternsPage` | `invoice_patterns` | invoice pattern APIs | Create/edit patterns, validate match rules |
-| `/subcontractor-dashboard` | `SubcontractorDashboardPage` | `subcontractors` | subcontractor summary/detail APIs | Filter supplier view, inspect commitment pipeline |
-| `/weekly-reviews` | `WeeklyReviewsPage` | `weekly_reviews` | weekly review APIs | Create review, close checklist items |
-| `/feedback` | `FeedbackPage` | `feedback` | feedback endpoints | Submit feedback, triage status |
-| `/teams/chats` | `TeamsChatsPage` | `teams_chat` | Teams integration/chat APIs | Open threads, post/update notes |
-| `/collaboration` | `CollaborationPage` | `collaboration_hub` | collaboration hub APIs | Navigate to email/teams workspaces |
-| `/my-work` | `MyWorkHomePage` | `home` | `/api/home/action-hub`, my-work task APIs | Open daily focus widgets, launch quick actions |
-| `/my-work/tasks` | `MyWorkTasksPage` | `my_tool` | task APIs (`/api/mytool/*`, `/api/eng/tasks`) | Update personal tasks, reprioritize items |
-| `/my-work/calendar` | `MyWorkCalendarPage` | `my_work` | `/api/pm/calendar-events`, outlook/calendar integrations | View schedule, open day details |
-| `/my-work/approvals` | `ApprovalsPage` | `my_work` | approval workflow APIs | Approve/reject requests, leave notes |
-| `/pm-dashboard` | `PMDashboard` | `pm_dashboard` | `/api/pm/dashboard`, `/api/pm/priority-items`, `/api/pm/calendar-events` | Review project health, open priority items |
-| `/pm/on-the-go` | `PMOnTheGoHome` | `pm_on_the_go` | on-the-go APIs | Quick capture/update/escalate workflows |
-| `/clients` | `ClientsPage` | `pd_clients` | `/api/pd/clients` | Create/edit client, link to tickets/projects |
-| `/pd/tickets` | `PdTicketsPage` | `pd_tickets` | `/api/pd/tickets` | Create ticket, update stage/status |
-| `/admin/control-center` | `AdminControlCenterPage` | `admin` | admin control endpoints, auth/role APIs | Manage settings, trigger admin actions |
-| `/admin/roles` | `AdminRolesPage` | `admin` | `/api/roles`, `/api/admin/users`, `/api/admin/users/:userId/role` | Edit permissions, assign user roles |
-| `/admin/activity-log` | `SystemActivityLogPage` | `admin` | `/api/audit/activity-log` | Filter/export logs, inspect actor history |
-| `/admin/recovery` | `AdminRecoveryPage` | `admin` | recovery/admin APIs | Run recovery flow, validate safeguards |
-| `/admin/database-migration` | `DatabaseMigrationPage` | `database_migration` | migration/admin endpoints | Execute migration tasks, verify status |
-| `/admin/kpi-traceability` | `KpiTraceabilityPage` | `admin` | KPI traceability APIs | Inspect KPI lineage, reconcile mismatches |
-| `/admin/import-control-tower` | `ImportControlTowerPage` | `admin` | smart import governance APIs | Review runs, resolve blocked imports |
-
-## Notes
-
-- Redirect and alias paths (for example `/execution-dashboard`, `/settings/integrations`, `/pd/clients`) should be included in smoke coverage as navigation checks even when they do not render a distinct component.
-- Dynamic routes (`:projectName`, `:projectId`) require fixture-driven smoke data for deterministic QA runs.
+| Route | Component/page | Permission entity | Expected main API dependencies | Expected main user actions/buttons | Source |
+|---|---|---|---|---|---|
+| `/actions/launchpad` | ActionLaunchpadPage | `none` | `/api/eng/tasks`, `/api/pm-otg/projects/`, `/api/projects-summary` | Create, Save, Reject, Export | `actionLaunchpad` |
+| `/admin` | — | `admin` | redirect only | Redirect to `/admin/control-center` and validate access control. | `admin` |
+| `/admin/activity-log` | SystemActivityLogPage | `activity_log` | `/api/audit/activity-log`, `/api/audit/activity-log/export`, `/api/audit/changeset/` | Create, Export, Import, Filter | `adminActivity` |
+| `/admin/control-center` | AdminControlCenterPage | `admin` | `/api/admin/control-center/active-sessions`, `/api/admin/control-center/dangerous/clear-audit-log`, `/api/admin/control-center/dangerous/clear-sessions` | Create, Save, Upload, Export | `adminControlCenter` |
+| `/admin/database-migration` | DatabaseMigrationPage | `database_migration` | `/api/admin/migration/archive`, `/api/admin/migration/check-references`, `/api/admin/migration/drop-archived` | Create, Export, Import, Delete | `adminDatabaseMigration` |
+| `/admin/import-control-tower` | ImportControlTowerPage | `admin` | `/api/import-control-tower/history`, `/api/import-control-tower/retry/`, `/api/import-control-tower/run` | Upload, Export, Import, Filter | `adminImportControlTower` |
+| `/admin/kpi-traceability` | KpiTraceabilityPage | `admin` | `/api/admin/kpi-traceability` | Export, Import, Filter, Search | `adminKpiTraceability` |
+| `/admin/legacy-utilities` | AdminPage | `admin` | `/api/admin/clear-all-data`, `/api/admin/folder-config`, `/api/admin/mark-active` | Save, Upload, Export, Import | `adminLegacyUtilities` |
+| `/admin/ms-integration` | — | `none` | redirect only | Redirect to `/admin/settings` and validate access control. | `adminMsIntegration` |
+| `/admin/ms-mapping` | — | `none` | redirect only | Redirect to `/admin/settings` and validate access control. | `adminMsMapping` |
+| `/admin/my-tool-settings` | MyToolAdminSettingsPage | `admin` | `/api/mytool/company-priorities`, `/api/mytool/company-priorities/`, `/api/mytool/settings` | Create, Save, Export, Import | `adminMyTool` |
+| `/admin/recovery` | AdminRecoveryPage | `admin` | `/api/admin/recovery/deleted`, `/api/admin/recovery/imports`, `/api/admin/recovery/project/` | Save, Upload, Export, Import | `adminRecovery` |
+| `/admin/roles` | AdminRolesPage | `admin_roles` | `/api/admin/control-center/permission-enforcement`, `/api/admin/users`, `/api/admin/users/` | Create, Save, Approve, Export | `adminRoles` |
+| `/admin/settings` | RoleSettingsPage | `admin` | `/api/admin/ms-integration`, `/api/admin/ms-integration/`, `/api/admin/users/` | Create, Save, Export, Import | `adminSettings` |
+| `/cashflow` | CashflowPage | `cashflow` | `/api/cashflow-2026`, `/api/cashflow-2026/available-payment`, `/api/cashflow-2026/available-payment-history` | Save, Upload, Export, Import | `cashflow` |
+| `/clients` | ClientsPage | `pd_clients` | `/api/pd/clients`, `/api/pd/clients/`, `/api/pd/clients/project-counts` | Create, Save, Export, Import | `clients` |
+| `/collaboration` | CollaborationPage | `collaboration_hub` | `/api/admin/sp-settings`, `/api/ms-objects/`, `/api/ms-objects/mine` | Create, Save, Approve, Export | `collaboration` |
+| `/collaboration/email` | CollabEmailPage | `collaboration_hub` | `/api/ms-objects/mine`, `/api/ms-sync/trigger` | Export, Import, Filter, Search | `collabEmail` |
+| `/collaboration/teams` | CollabTeamsPage | `teams_chat` | `/api/chat-groups/mine`, `/api/ms-objects/mine`, `/api/ms-sync/trigger` | Export, Import | `collabTeams` |
+| `/command-center` | CommandCenterPage | `my_work` | `/api/financial-headline`, `/api/my-work/all-tasks`, `/api/pd-pm-handover/control` | Create, Approve, Reject, Upload | `commandCenter` |
+| `/company-priorities` | MyToolPrioritiesPage | `company_priorities` | `/api/mytool/company-priorities`, `/api/mytool/company-priorities/`, `/api/mytool/priority-links/` | Create, Save, Export, Import | `companyPriorities` |
+| `/cos` | CostTracker | `cos` | `/api/cos-tracker`, `/api/cos-tracker/month-detail`, `/api/cos-tracker/toggle-realised/` | Export, Import, Filter, Search | `cos` |
+| `/dashboard` | Dashboard | `execution_board` | `/api/program-dashboard` | Export, Import, Filter, Search | `dashboard` |
+| `/department-scores` | DepartmentScoresPage | `department_scores` | `/api/gamification/leaderboard` | Export, Import | `departmentScores` |
+| `/ee-info` | EeInfoPage | `ee_info` | `/api/ee-info/os/departments`, `/api/ee-info/os/departments/`, `/api/ee-info/os/lifecycle` | Create, Save, Approve, Reject | `eeInfo` |
+| `/engineering` | EngineeringDashboardPage | `engineering` | `/api/eng/dashboard/standup`, `/api/eng/tasks`, `/api/eng/tasks/` | Create, Approve, Export, Import | `engineering` |
+| `/engineering/tasks` | EngineeringTasksPage | `eng_tasks` | No direct fetch in page component (uses shared hooks/services). | Export | `engineeringTasks` |
+| `/excel-updates` | ExcelUpdatesPage | `excel_updates` | `/api/excel-updates`, `/api/excel-updates/bulk-confirm`, `/api/notifications/` | Create, Export, Import, Filter | `excelUpdates` |
+| `/execution-board` | ExecutionBoardPage | `execution_board` | `/api/lifecycle-board/execution-dashboard` | Export, Import, Filter, Search | `executionBoard` |
+| `/execution-dashboard` | Alias → `/execution-board` | `execution_board` | redirect only | Navigate alias and confirm redirect to `/execution-board`. | alias of `executionBoard` |
+| `/feedback` | FeedbackPage | `feedback` | `/api/feedback`, `/api/feedback/` | Create, Save, Export, Import | `feedback` |
+| `/gp-tracker` | GpTrackerPage | `gp_tracker` | `/api/gp-tracker` | Export, Import, Filter, Search | `gpTracker` |
+| `/handover-control` | HandoverControlPage | `projects` | `/api/pd-pm-handover/control` | Reject, Export, Import, Filter | `handoverControl` |
+| `/invoice-patterns` | InvoicePatternsPage | `invoice_patterns` | `/api/counterparties`, `/api/counterparties/`, `/api/invoice-patterns` | Create, Save, Export, Import | `invoicePatterns` |
+| `/knowledge-game` | KnowledgeGamePage | `knowledge_game` | `/api/gamification/leaderboard` | Export, Import | `knowledgeGame` |
+| `/leaderboard` | LeaderboardPage | `leaderboard` | `/api/gamification/leaderboard`, `/api/gamification/user/` | Reject, Upload, Export, Import | `leaderboard` |
+| `/lifecycle-board` | LifecycleBoardPage | `lifecycle` | `/api/lifecycle-board/projects`, `/api/lifecycle-board/projects/`, `/api/lifecycle-board/projects/link-engineering` | Create, Save, Approve, Export | `lifecycle` |
+| `/my-tool` | MyToolTodayPage | `my_tool` | `/api/meetings/webhook-status`, `/api/mytool/company-priorities`, `/api/mytool/company-priorities/` | Create, Save, Export, Import | `myTool` |
+| `/my-tool/backlog` | MyToolBacklogPage | `none` | `/api/mytool/tasks`, `/api/mytool/tasks/`, `/api/outlook/email-to-task` | Create, Export, Import, Filter | `myToolBacklog` |
+| `/my-tool/help` | MyToolHelpPage | `none` | `/api/mytool/support-ticket` | Create, Save, Export, Import | `myToolHelp` |
+| `/my-tool/meetings` | MyToolMeetingsPage | `none` | `/api/meetings`, `/api/meetings/`, `/api/meetings/action-items/` | Create, Save, Export, Import | `myToolMeetings` |
+| `/my-tool/settings` | MyToolSettingsPage | `none` | `/api/mytool/dod-templates`, `/api/mytool/dod-templates/`, `/api/mytool/preferences` | Create, Save, Export, Import | `myToolSettings` |
+| `/my-tool/week` | MyToolWeekPage | `none` | `/api/mytool/tasks`, `/api/mytool/tasks/`, `/api/outlook/calendar-events` | Create, Export, Import, Filter | `myToolWeek` |
+| `/my-work` | MyWorkHomePage | `home` | `/api/ms-objects/mine`, `/api/ms-sync/trigger`, `/api/ms-teams/chats` | Create, Approve, Export, Import | `myWork` |
+| `/my-work/approvals` | ApprovalsPage | `my_work` | `/api/approvals/pending`, `/api/deliverables/`, `/api/eng-stages/approvals/` | Create, Approve, Reject, Export | `myWorkApprovals` |
+| `/my-work/calendar` | MyWorkCalendarPage | `my_work` | `/api/calendar/schedule-task`, `/api/ms-objects/mine`, `/api/ms-sync/trigger` | Approve, Export, Import, Filter | `myWorkCalendar` |
+| `/my-work/email` | CollabEmailPage | `collaboration_hub` | `/api/ms-objects/mine`, `/api/ms-sync/trigger` | Export, Import, Filter, Search | `myWorkEmail` |
+| `/my-work/meetings` | MyToolMeetingsPage | `meetings` | `/api/meetings`, `/api/meetings/`, `/api/meetings/action-items/` | Create, Save, Export, Import | `myWorkMeetings` |
+| `/my-work/tasks` | MyWorkTasksPage | `my_tool` | `/api/eng/tasks/`, `/api/ms-objects/`, `/api/ms-objects/mine` | Create, Save, Export, Import | `myWorkTasks` |
+| `/my-work/teams` | TeamsChatsPage | `teams_chat` | `/api/ms-sync/trigger`, `/api/ms-teams/channels/`, `/api/ms-teams/chats` | Create, Export, Import, Filter | `myWorkTeams` |
+| `/pd` | PdDashboardPage | `pd_dashboard` | `/api/pd/dashboard`, `/api/pd/tickets` | Create, Export, Import, Edit | `pdDashboard` |
+| `/pd/clients` | Alias → `/clients` | `pd_clients` | redirect only | Navigate alias and confirm redirect to `/clients`. | alias of `clients` |
+| `/pd/dashboard` | Alias → `/pd` | `pd_dashboard` | redirect only | Navigate alias and confirm redirect to `/pd`. | alias of `pdDashboard` |
+| `/pd/handover/:projectId` | PdPmHandoverPage | `none` | `/api/pd-pm-handover/` | Save, Reject, Upload, Export | `pdPmHandover` |
+| `/pd/tickets` | PdTicketsPage | `pd_tickets` | `/api/pd/tickets` | Create, Export, Import, Filter | `pdTickets` |
+| `/pd/tickets/:id` | PdTicketDetailPage | `none` | `/api/pd/tickets`, `/api/pd/tickets/`, `/api/projects` | Create, Save, Export, Import | `pdTicketDetail` |
+| `/pd/tickets/create` | PdTicketCreatePage | `none` | `/api/pd/clients`, `/api/pd/dashboard`, `/api/pd/projects/search` | Create, Save, Export, Import | `pdTicketCreate` |
+| `/pm-dashboard` | PMDashboard | `pm_dashboard` | `/api/pm/calendar-events`, `/api/pm/dashboard`, `/api/pm/priority-items` | Export, Import, Filter, Search | `pmDashboard` |
+| `/pm/handover-review` | PmHandoverReviewPage | `none` | `/api/pd-pm-handover/submitted` | Reject, Export, Import | `pmHandoverReview` |
+| `/pm/on-the-go` | PMOnTheGoHome | `pm_on_the_go` | `/api/pm-otg/projects` | Export, Import | `pmOnTheGo` |
+| `/pm/on-the-go/project/:projectId` | PMOnTheGoProject | `none` | `/api/approvals/general/`, `/api/approvals/pending`, `/api/commissioning/` | Save, Approve, Reject, Upload | `pmOnTheGoProject` |
+| `/portfolios` | PortfoliosPage | `portfolios` | `/api/eng/team-members`, `/api/portfolio-dashboard`, `/api/portfolios` | Create, Approve, Reject, Export | `portfolios` |
+| `/portfolios/:id` | PortfolioDetailPage | `none` | `/api/eng/team-members`, `/api/portfolios`, `/api/portfolios/` | Create, Save, Approve, Reject | `portfolioDetail` |
+| `/project/:projectName` | ProjectDetailPage | `none` | `/api/cashflow`, `/api/eng/tasks`, `/api/eng/tasks/` | Create, Save, Approve, Export | `projectDetail` |
+| `/project/:projectName/financial-linking` | FinancialLinkingPage | `none` | `/api/expense-task-links/`, `/api/financial-integration/rules`, `/api/financial-integration/suggested-rules/` | Reject, Export, Import, Filter | `projectFinancialLinking` |
+| `/projects` | ProjectsSummary | `projects` | `/api/export/projects-summary`, `/api/financial-close/files/`, `/api/financial-close/upload` | Save, Reject, Upload, Export | `projects` |
+| `/quality` | QmDashboardPage | `quality` | `/api/projects-summary`, `/api/quality/all-items`, `/api/quality/checklists` | Create, Approve, Export, Import | `quality` |
+| `/revenue` | RevenueTracker | `none` | `/api/rev-tracker`, `/api/tracker-monthly` | Export, Import, Edit | `revenue` |
+| `/revenue-tracker` | RevenueTrackerPage | `revenue_tracker` | `/api/revenue-tracker`, `/api/revenue-tracker/month-detail`, `/api/tracker-monthly` | Export, Import, Filter, Search | `revenueTracker` |
+| `/settings/integrations` | — | `none` | redirect only | Redirect to `/admin/settings` and validate access control. | `settingsIntegrations` |
+| `/smart-import` | SmartImportPage | `smart_import` | `/api/counterparties`, `/api/smart-import/`, `/api/smart-import/pending-runs` | Create, Save, Approve, Upload | `smartImport` |
+| `/subcontractor-dashboard` | SubcontractorDashboardPage | `subcontractors` | `/api/invoice-patterns`, `/api/procurement-analysis/pattern-stats`, `/api/subcontractor-dashboard/counterparty/` | Create, Save, Approve, Export | `subcontractor` |
+| `/teams/chats` | TeamsChatsPage | `teams_chat` | `/api/ms-sync/trigger`, `/api/ms-teams/channels/`, `/api/ms-teams/chats` | Create, Export, Import, Filter | `teamsChats` |
+| `/tr-register` | — | `none` | redirect only | Redirect to `/my-work/tasks` and validate access control. | `trRegister` |
+| `/training` | TrainingPage | `training` | No direct fetch in page component (uses shared hooks/services). | Save, Export, Import, Filter | `training` |
+| `/weekly-reviews` | WeeklyReviewsPage | `weekly_review_wizard` | `/api/weekly-reviews-all` | Create, Export, Import, Filter | `weeklyReviews` |

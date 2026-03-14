@@ -1,23 +1,23 @@
 # Source-of-Truth Matrix
 
-This matrix defines the current **authoritative write/read paths** by domain so teams can verify that changes do not reintroduce dual-write drift.
+This matrix is the release-readiness source for data ownership and migration state.
 
 > Status legend: `CANONICAL`, `MIGRATING`, `LEGACY`, `COMPATIBILITY_ONLY`.
 
-| Domain | Canonical table/model | Legacy tables/models | Canonical write APIs | Canonical read APIs | Compatibility layer | Owner | Migration status |
+| Domain | Canonical model/table | Legacy model/table | Canonical read APIs | Canonical write APIs | Compatibility layers | Migration status | Owner |
 |---|---|---|---|---|---|---|---|
-| Work execution tasks | `work_items` | `project_plan`, `operational_tasks`, `engineering_tasks`, `mytool_tasks`, `normalized_plan_tasks` | `POST /api/smart-import/:runId/commit` (plan promotion), work-item sync/adapters in server task engine | Lifecycle/Execution board endpoints and work-item-backed task services | Mapping + promotion from `normalized_plan_tasks` into `work_items`; legacy mirror for UX continuity | Engineering + PM platform | `MIGRATING` |
-| Revenue tracking | `normalized_revenue_lines` | `program_inflows`, `finance_revenue_monthly`, `project_revenue_summary`, `revenue_tracking_overrides` | `POST /api/smart-import/:runId/commit` (revenue lines) | `GET /api/program/cos` (merged finance views), project finance endpoints | Name/project resolver merges legacy + normalized rows where needed | Finance + Data platform | `MIGRATING` |
-| Cost / COS tracking | `normalized_cost_lines` | `program_expense`, `finance_cos_monthly`, `expenditure_overrides`, `cos_status_overrides` | `POST /api/smart-import/:runId/commit` (cost lines) | `GET /api/program/cos`, cashflow rollups, subcontractor summaries | `mergeExpensesOnly` and override application on legacy reads | Finance + Data platform | `MIGRATING` |
-| Import governance | `smart_import_runs`, `import_issues` | legacy `/api/upload` ingestion records | `POST /api/smart-import/upload`, `POST /api/smart-import/:runId/commit`, run-level issue resolution actions | `GET /api/smart-import/pending-runs`, run detail APIs | Legacy Excel upload remains available for older workflows | Data platform | `MIGRATING` |
-| Project master data | `project_info` (+ canonical project id linkage) | project-name-only joins across `program_*` and plan/cashflow tables | Smart import commit upserts linked project metadata; admin/project management APIs | `/api/projects-summary`, `/api/project/:name/*`, dashboard/home summary APIs | Name resolver + fallback matching when projectId absent | PM platform | `MIGRATING` |
-| Portfolio KPI cache | `derived_project_kpis`, `derived_portfolio_kpis` | on-the-fly KPI aggregation from raw legacy tables | KPI refresh/recompute jobs and KPI traceability tooling | Portfolio dashboard + KPI endpoints | Rebuild from legacy and normalized foundations while transition completes | Analytics | `MIGRATING` |
-| Quality evidence | `qc_*` checklist/evidence tables | ad-hoc QA docs and spreadsheet trackers | Quality management APIs (`/api/quality/*`) | Quality dashboard and warning/checklist endpoints | Limited; mostly direct domain ownership | Quality management | `CANONICAL` |
-| Permission and role control | Role/entity permission maps in auth + policy tables | local-storage role hints and historical role mappings | `/api/roles`, `/api/admin/users/:userId/role`, auth/permission update paths | `/api/auth/permissions` and guarded route checks | Route-level guard fallback by role allowlists in app shell | Platform security | `MIGRATING` |
+| Project master data | `project_info`, `project_phase_history` (`shared/schema.ts`) | `projects` and project-name-only joins in imported finance tables | `GET /api/projects-summary`, `GET /api/project/:name/info`, `GET /api/home/action-hub` | Smart import commit + project admin/update endpoints | Name→ID resolution and fallback by project name when canonical id is absent | `MIGRATING` | PM platform |
+| Revenue lines and receipts | `normalized_revenue_lines`, `revenue_milestone_manual` | `program_inflows`, `project_revenue_summary`, `finance_revenue_monthly` | `GET /api/revenue-tracker/*`, `GET /api/program/cos`, project finance views | `POST /api/smart-import/:runId/commit` (revenue section), revenue override endpoints | Merge adapters and override application over imported line data | `MIGRATING` | Finance + Data platform |
+| Cost / COS lines | `normalized_cost_lines` | `program_expense`, `finance_cos_monthly`, `expenditure_overrides`, `cos_status_overrides` | `GET /api/program/cos`, cashflow rollups, project cost drilldowns | `POST /api/smart-import/:runId/commit` (expenditure/cost section), cost override endpoints | Legacy rollup helpers (`mergeExpensesOnly` and related mappers) until all consumers are canonicalized | `MIGRATING` | Finance + Data platform |
+| Execution tasks and workflow state | `work_items`, execution gate fields on `project_info` | `project_plan`, `operational_tasks`, `engineering_tasks`, `mytool_tasks`, `normalized_plan_tasks` | Lifecycle/execution board APIs, engineering task APIs, my-work task APIs | Task workflow endpoints, smart import plan promotion, execution gate mutations | Task adapters that keep legacy UX tables readable while canonical work-item model expands | `MIGRATING` | Engineering + PM platform |
+| Import governance | `smart_import_runs`, `import_issues` | Legacy upload/import bookkeeping in older upload flows | `GET /api/smart-import/pending-runs`, `GET /api/smart-import/runs/:runId`, import issue APIs | `POST /api/smart-import/upload`, `POST /api/smart-import/:runId/commit`, issue resolution endpoints | Legacy `/api/upload` workflows retained for older operational paths | `MIGRATING` | Data platform |
+| Portfolio/KPI derived evidence | `derived_project_kpis`, `derived_portfolio_kpis` | On-demand KPI calculations from mixed legacy financial/task tables | Portfolio APIs, KPI traceability APIs, dashboard KPI reads | KPI rebuild/recompute jobs and admin traceability actions | Rebuild path that can source from legacy + normalized data while migration is in-flight | `MIGRATING` | Analytics |
+| Quality evidence and checklist control | `qc_*` checklist/evidence domain tables | Spreadsheet/manual trackers | `GET /api/quality/*` dashboard/checklist/warnings APIs | `POST /api/quality/*` checklist and evidence updates | Minimal (domain already near-canonical) | `CANONICAL` | Quality management |
+| Access control and permissions | Role/entity permission records + auth permission map responses | Local-storage role hints and historical hard-coded role allowlists | `GET /api/auth/permissions`, role listing endpoints | `POST /api/admin/users/:userId/role`, role/permission update endpoints | Route-level guard fallback logic in app shell for transitional roles | `MIGRATING` | Platform security |
 
-## Operating rules
+## Release usage rules
 
-1. New feature work must declare which row in this matrix it extends.
-2. Any new write path must point to one canonical table/model per domain.
-3. If a temporary dual-write is unavoidable, add an explicit compatibility rule and sunset date in this file.
-4. Release gate cannot pass if a changed endpoint has no mapped canonical source.
+1. Every release-affecting domain change must update this matrix row first.
+2. New writes must target one canonical table/model for the domain.
+3. Temporary dual-write behavior must document explicit compatibility layer + sunset criteria here.
+4. Release gate evidence is incomplete if changed APIs/routes are not represented in this matrix.

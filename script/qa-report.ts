@@ -8,6 +8,7 @@ const requiredFiles = [
   "docs/qa/templates/defect-log-template.md",
   "docs/qa/templates/route-coverage-matrix-template.md",
   "docs/qa/templates/workflow-test-evidence-template.md",
+  "docs/qa/templates/workflow-evidence-log-template.md",
   "docs/qa/templates/role-permission-audit-template.md",
 ];
 
@@ -30,3 +31,4 @@ console.log("QA stability framework precheck: PASS");
 console.log(`- Required framework docs present: ${requiredFiles.length}`);
 console.log(`- Latest evidence files: ${latestEntries.length}`);
 console.log("TODO: Extend qa:report to aggregate automated test outputs and release-gate completion state.");
+console.log("- Recommended next step: publish docs/qa/results/latest/{defect-log,route-coverage-matrix,workflow-evidence-log,role-permission-audit}.md");
