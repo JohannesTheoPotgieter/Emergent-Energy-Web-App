@@ -8,6 +8,11 @@ export const FEATURE_FLAG_KEYS = [
   "promoted_core_projects_read",
   "promoted_core_portfolios_read",
   "promoted_core_portfolio_assignments_read",
+  "promoted_core_project_detail_read",
+  "promoted_core_work_item_summary_read",
+  "promoted_core_clients_dual_write",
+  "promoted_core_project_master_dual_write",
+  "imports_source_update_governance_preview",
 ] as const;
 
 export type RolloutFeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -73,6 +78,36 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "promoted_core_portfolio_assignments_read",
     label: "Promoted core portfolio assignments read",
     description: "Controls additive read-only adoption of project-portfolio assignment reads from core.project_portfolio_assignments.",
+    defaultValue: false,
+  },
+  {
+    key: "promoted_core_project_detail_read",
+    label: "Promoted core project detail read",
+    description: "Controls additive promoted-read expansion for project identity/client/phase/rag master sections with legacy fallback.",
+    defaultValue: false,
+  },
+  {
+    key: "promoted_core_work_item_summary_read",
+    label: "Promoted core work-item summary diagnostics",
+    description: "Controls read-only diagnostics comparing public.work_items vs core.work_items summary metrics by project.",
+    defaultValue: false,
+  },
+  {
+    key: "promoted_core_clients_dual_write",
+    label: "Promoted core clients dual-write",
+    description: "Controls optional mirrored writes from public.clients into core.clients while keeping legacy as primary.",
+    defaultValue: false,
+  },
+  {
+    key: "promoted_core_project_master_dual_write",
+    label: "Promoted core project master dual-write",
+    description: "Controls optional mirrored writes from public.project_info master metadata into core.projects while keeping legacy as primary.",
+    defaultValue: false,
+  },
+  {
+    key: "imports_source_update_governance_preview",
+    label: "Imports source-update governance preview",
+    description: "Controls non-blocking preview hooks for imports source update requests/acknowledgements/conflict readiness reporting.",
     defaultValue: false,
   },
 ];
