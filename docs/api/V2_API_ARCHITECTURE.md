@@ -8,6 +8,7 @@ server/api/v2/
     v2-controller.ts
   policies/
     access-policy.ts
+    permission-catalog.ts
   repositories/
     project-v2-repository.ts
   routes/
@@ -25,7 +26,7 @@ server/api/v2/
 - **Controllers are thin**: no direct DB calls remain in `v2-controller.ts`; all reads/writes go through service/repository layers.
 - **Service layer owns orchestration**: workflow transitions, role-aware dashboard shaping, and domain-level output contracts live in `project-v2-service.ts`.
 - **Repository layer owns DB access**: procurement, PO, invoices, finance read models, engineering designs, quality checks, milestones and lifecycle transitions are all explicit repository methods.
-- **Policy is centralized in code** via `access-policy.ts` (`ROLE_PERMISSIONS` + `assertPermission`) and applied consistently on mutation routes.
+- **Policy is centralized in code** via `permission-catalog.ts` (authoritative grants) + `access-policy.ts` (`assertPermission`) and applied consistently on mutation routes.
 - **Validation is explicit per domain mutation** with dedicated schemas for milestones, quality checks, engineering designs, procurement patch/PO, invoices, and finance variations.
 - **Audit service remains the single persistence entrypoint** for mutation event capture.
 

@@ -20,7 +20,8 @@
     "qa:route-smoke-report": "tsx script/route-smoke-report.ts",
     "release:gate": "tsx qa/release-gate.ts",
     "reconciliation:report": "tsx qa/generate-reconciliation-evidence.ts",
-    "test:workflows": "tsx script/test-workflows.ts"
+    "test:workflows": "tsx script/test-workflows.ts",
+    "test:db-api-readiness": "vitest run -c qa/vitest.config.ts qa/tests/unit/api-v2-business-flows.test.ts qa/tests/unit/api-v2-policy-and-validation.test.ts"
   },
   "dependencies": {
     "@azure/msal-node": "^5.0.5",
