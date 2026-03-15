@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { clients, pdTickets, operationalTasks, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES } from "@shared/schema";
 import { eq, ilike, sql, and, desc, asc, or, count } from "drizzle-orm";
+import { getFeatureFlag } from "./lib/feature-flags";
 import { requirePermission } from "./permission-middleware";
 
 function requireAuth(req: Request, res: Response, next: () => void) {
@@ -67,7 +68,31 @@ export function registerPdRoutes(app: Express) {
         createdBy: user?.id || null,
       }).returning();
 
-      res.status(201).json(created);
+      const dualWriteEnabled = await getFeatureFlag("promoted_core_clients_dual_write");
+      const promotedMirror = { attempted: false, success: false, error: null as string | null };
+      if (dualWriteEnabled) {
+        promotedMirror.attempted = true;
+        try {
+          await db.execute(sql`
+            INSERT INTO core.clients (id, legacy_id, client_code, name, created_by, updated_by, created_at, updated_at, source_table)
+            VALUES (${created.id}, ${created.id}, ${clientId}, ${created.name}, ${user?.id ?? null}, ${user?.id ?? null}, NOW(), NOW(), 'public.clients')
+            ON CONFLICT (id) DO UPDATE
+            SET name = EXCLUDED.name,
+                client_code = EXCLUDED.client_code,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = NOW()
+          `);
+          promotedMirror.success = true;
+        } catch (mirrorError: any) {
+          promotedMirror.error = mirrorError?.message || "unknown_error";
+          console.error("[dual-write][pd-clients] promoted mirror write failed", mirrorError);
+        }
+      }
+
+      if (promotedMirror.attempted) {
+        res.setHeader("X-Promoted-Clients-Dual-Write", promotedMirror.success ? "mirrored" : "mirror_failed");
+      }
+      res.status(201).json({ ...created, _promotedMirror: promotedMirror });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

@@ -38,6 +38,10 @@ import {
   getCoreMasterDataReadinessReport,
   listProjectInfoFromPromotedCoreCompat,
   listClientsFromPromotedCoreCompat,
+  listProjectDetailFromPromotedCoreCompat,
+  buildWorkItemSummaryDiagnostics,
+  compareProjectDetailMasterReadiness,
+  compareImportsGovernanceReadiness,
 } from "./services/promoted-read-compat";
 import {
   mirrorWorkItemToOperationalTask,
@@ -1746,8 +1750,13 @@ export async function registerRoutes(
   app.get("/api/projects-summary", requireAuth, async (req, res) => {
     try {
       const useCanonicalPs = await isWorkItemsEnabled();
+      const rolloutFlags = await getFeatureFlags([
+        "promoted_core_project_detail_read",
+      ]);
+      const usePromotedProjectDetail = rolloutFlags.promoted_core_project_detail_read;
+
       const [allProjectInfo, allExpenses, rawInflows, rawPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans, allPlanOverrides, lastImportRows, allClientsData] = await Promise.all([
-        storage.getAllProjectInfo(),
+        usePromotedProjectDetail ? listProjectInfoFromPromotedCoreCompat() : storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
@@ -1833,7 +1842,7 @@ export async function registerRoutes(
             })(),
         storage.getAllProjectPlanOverrides(),
         db.execute(sql`SELECT project_name, MAX(COALESCE(committed_at, uploaded_at)) as last_import FROM smart_import_runs WHERE status = 'COMMITTED' GROUP BY project_name`),
-        db.select().from(clients),
+        usePromotedProjectDetail ? listClientsFromPromotedCoreCompat() : db.select().from(clients),
       ]);
       const allPlans = applyProjectPlanOverrides(rawPlans, allPlanOverrides);
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
@@ -2365,6 +2374,15 @@ export async function registerRoutes(
       let finalResult = projectsSummary;
       if (scopeParam === "owned" && !isFullOversight) {
         finalResult = projectsSummary.filter((p: any) => p._user_scope === "owned" || p._user_scope === "assigned");
+      }
+
+      if (usePromotedProjectDetail || req.query.compare === "1" || req.query.compare === "true") {
+        const projectDetailComparison = await compareProjectDetailMasterReadiness();
+        if (projectDetailComparison.status !== "ready") {
+          console.warn("[promoted-read][project-detail] mismatch detected", projectDetailComparison);
+        }
+        res.setHeader("X-Promoted-Project-Detail-Read", usePromotedProjectDetail ? "enabled" : "disabled");
+        res.setHeader("X-Promoted-Project-Detail-Comparison-Status", projectDetailComparison.status);
       }
 
       res.json(finalResult);
@@ -4826,6 +4844,62 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/project-detail-master", requireAuth, async (req, res) => {
+    try {
+      const usePromotedRead = await getFeatureFlag("promoted_core_project_detail_read");
+      const compareMode = req.query.compare === "1" || req.query.compare === "true";
+
+      const detailRows = usePromotedRead
+        ? await listProjectDetailFromPromotedCoreCompat()
+        : (await storage.getAllProjectInfo()).map((row: any) => ({
+            id: row.id,
+            projectName: row.projectName,
+            phase: row.phase ?? null,
+            ragStatus: row.ragStatus ?? null,
+            ragComment: row.ragComment ?? null,
+            clientId: row.clientId ?? null,
+            clientName: null,
+            portfolioMembership: [],
+            teamMembers: [],
+          }));
+
+      if (compareMode || usePromotedRead) {
+        const comparison = await compareProjectDetailMasterReadiness();
+        if (comparison.status !== "ready") {
+          console.warn("[promoted-read][project-detail-master] mismatch detected", comparison);
+        }
+        res.setHeader("X-Promoted-Project-Detail-Read", usePromotedRead ? "enabled" : "disabled");
+        res.setHeader("X-Promoted-Project-Detail-Comparison-Status", comparison.status);
+      }
+
+      res.json(detailRows);
+    } catch (error) {
+      console.error("Project detail master fetch error:", error);
+      res.status(500).json({ error: "Failed to fetch project detail master" });
+    }
+  });
+
+  app.get("/api/admin/work-item-summary-diagnostics", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const flags = await getFeatureFlags(["promoted_core_work_item_summary_read"]);
+      const compareMode = req.query.compare === "1" || req.query.compare === "true";
+
+      if (!flags.promoted_core_work_item_summary_read && !compareMode) {
+        return res.status(403).json({
+          error: "feature_flag_disabled",
+          message: "Work-item summary diagnostics are disabled. Enable promoted_core_work_item_summary_read or use compare mode.",
+        });
+      }
+
+      const diagnostics = await buildWorkItemSummaryDiagnostics();
+      res.setHeader("X-Promoted-Work-Item-Summary-Read", flags.promoted_core_work_item_summary_read ? "enabled" : "disabled");
+      res.json(diagnostics);
+    } catch (error) {
+      console.error("Work-item summary diagnostics error:", error);
+      res.status(500).json({ error: "Failed to generate work-item summary diagnostics" });
+    }
+  });
+
   app.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -4859,8 +4933,91 @@ export async function registerRoutes(
         details: parsed,
       }).catch(() => {});
 
-      logAuditFromReq(req, { entityType: "project_info", action: "update", entityId: String(id), projectName: updated.projectName, changesJson: { description: "Project info updated", ...parsed } });
-      res.json(updated);
+      const [projectDualWriteEnabled, importsGovernancePreview] = await Promise.all([
+        getFeatureFlag("promoted_core_project_master_dual_write"),
+        getFeatureFlag("imports_source_update_governance_preview"),
+      ]);
+
+      let projectMirror: { attempted: boolean; success: boolean; error: string | null } = { attempted: false, success: false, error: null };
+      if (projectDualWriteEnabled) {
+        projectMirror.attempted = true;
+        try {
+          await db.execute(sql`
+            INSERT INTO core.projects (
+              id, legacy_project_info_id, project_name, client_id, phase, rag_status, execution_gate_status, execution_gate_reason, updated_at, source_table
+            ) VALUES (
+              ${updated.id}, ${updated.id}, ${updated.projectName}, ${updated.clientId ?? null}, ${updated.phase ?? null}, ${updated.ragStatus ?? null}, ${updated.executionGateStatus ?? null}, ${updated.executionGateReason ?? null}, NOW(), 'public.project_info'
+            )
+            ON CONFLICT (id) DO UPDATE
+            SET
+              project_name = EXCLUDED.project_name,
+              client_id = EXCLUDED.client_id,
+              phase = EXCLUDED.phase,
+              rag_status = EXCLUDED.rag_status,
+              execution_gate_status = EXCLUDED.execution_gate_status,
+              execution_gate_reason = EXCLUDED.execution_gate_reason,
+              updated_at = NOW()
+          `);
+          projectMirror.success = true;
+        } catch (mirrorError: any) {
+          projectMirror.error = mirrorError?.message || "unknown_error";
+          console.error("[dual-write][project-master] promoted mirror write failed", { projectId: updated.id, error: mirrorError });
+        }
+      }
+
+      let importsGovernancePreviewRecord: { attempted: boolean; requestId: number | null; error: string | null } = { attempted: false, requestId: null, error: null };
+      if (importsGovernancePreview) {
+        importsGovernancePreviewRecord.attempted = true;
+        try {
+          const governanceInsert = await db.execute(sql`
+            INSERT INTO imports.source_update_requests (
+              project_id,
+              source_system,
+              source_artifact_ref,
+              requested_by_user_id,
+              status,
+              notes
+            ) VALUES (
+              ${updated.id},
+              'project_info_update',
+              ${`project_info:${updated.id}`},
+              ${req.user?.id ?? null},
+              'pending',
+              ${'Preview hook only: non-blocking source update request created during project master update.'}
+            )
+            RETURNING id
+          `);
+          const requestId = Number((governanceInsert as any)?.rows?.[0]?.id ?? (governanceInsert as any)?.[0]?.id ?? 0);
+          if (requestId) {
+            importsGovernancePreviewRecord.requestId = requestId;
+            await db.execute(sql`
+              INSERT INTO imports.source_update_acknowledgements (
+                source_update_request_id,
+                acknowledged_by_user_id,
+                acknowledged_role,
+                acknowledgement_status,
+                comments
+              ) VALUES (
+                ${requestId},
+                ${req.user?.id ?? null},
+                ${req.user?.role || 'SYSTEM_PREVIEW'},
+                'preview_logged',
+                'Preview acknowledgement captured automatically; enforcement disabled.'
+              )
+              ON CONFLICT DO NOTHING
+            `);
+          }
+        } catch (previewError: any) {
+          importsGovernancePreviewRecord.error = previewError?.message || 'unknown_error';
+          console.error('[imports-governance][preview] failed to record preview request', previewError);
+        }
+      }
+
+      logAuditFromReq(req, { entityType: "project_info", action: "update", entityId: String(id), projectName: updated.projectName, changesJson: { description: "Project info updated", ...parsed, projectMirror, importsGovernancePreview: importsGovernancePreviewRecord } });
+      if (projectMirror.attempted) {
+        res.setHeader("X-Promoted-Project-Master-Dual-Write", projectMirror.success ? "mirrored" : "mirror_failed");
+      }
+      res.json({ ...updated, _promotedMirror: projectMirror, _importsGovernancePreview: importsGovernancePreviewRecord });
     } catch (error) {
       console.error("Project info update error:", error);
       if (error instanceof z.ZodError) {
@@ -4875,13 +5032,37 @@ export async function registerRoutes(
   app.get("/api/readiness/core-master-data", requireAuth, requireAdmin, async (_req, res) => {
     try {
       const report = await getCoreMasterDataReadinessReport();
+      const [workDiagnostics, importsGovernance] = await Promise.all([
+        buildWorkItemSummaryDiagnostics(50),
+        compareImportsGovernanceReadiness(),
+      ]);
       const rolloutFlags = await getFeatureFlags([
         "promoted_core_clients_read",
         "promoted_core_projects_read",
         "promoted_core_portfolios_read",
         "promoted_core_portfolio_assignments_read",
+        "promoted_core_project_detail_read",
+        "promoted_core_work_item_summary_read",
+        "promoted_core_clients_dual_write",
+        "promoted_core_project_master_dual_write",
+        "imports_source_update_governance_preview",
       ]);
-      res.json({ ...report, rolloutFlags });
+      res.json({
+        ...report,
+        rolloutFlags,
+        writeReadiness: {
+          firstCandidates: [
+            { domain: "clients", flag: "promoted_core_clients_dual_write", readiness: rolloutFlags.promoted_core_clients_dual_write ? "preview_enabled" : "preview_disabled" },
+            { domain: "project_master", flag: "promoted_core_project_master_dual_write", readiness: rolloutFlags.promoted_core_project_master_dual_write ? "preview_enabled" : "preview_disabled" },
+          ],
+          importsGovernance,
+        },
+        workItemSummaryDiagnostics: {
+          totals: workDiagnostics.totals,
+          mismatchCategories: workDiagnostics.mismatchCategories,
+          sampleProjectIds: workDiagnostics.sampleProjectIds,
+        },
+      });
     } catch (error) {
       console.error("Core master data readiness report error:", error);
       res.status(500).json({ error: "Failed to generate core master data readiness report" });
@@ -4929,8 +5110,36 @@ export async function registerRoutes(
         createdBy: req.user?.id,
         updatedBy: req.user?.id,
       }).returning();
-      logAuditFromReq(req, { entityType: "client", entityId: String(created.id), action: "create", changesJson: { name: parsed.name, clientId: generatedClientId } });
-      res.json(created);
+
+      const dualWriteEnabled = await getFeatureFlag("promoted_core_clients_dual_write");
+      let promotedMirror: { attempted: boolean; success: boolean; error: string | null } = { attempted: false, success: false, error: null };
+      if (dualWriteEnabled) {
+        promotedMirror.attempted = true;
+        try {
+          await db.execute(sql`
+            INSERT INTO core.clients (id, legacy_id, client_code, name, created_by, updated_by, created_at, updated_at, source_table)
+            VALUES (${created.id}, ${created.id}, ${generatedClientId}, ${parsed.name}, ${req.user?.id ?? null}, ${req.user?.id ?? null}, NOW(), NOW(), 'public.clients')
+            ON CONFLICT (id) DO UPDATE
+            SET name = EXCLUDED.name,
+                client_code = EXCLUDED.client_code,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = NOW()
+          `);
+          promotedMirror.success = true;
+        } catch (mirrorError: any) {
+          promotedMirror.error = mirrorError?.message || "unknown_error";
+          console.error("[dual-write][clients] promoted mirror write failed", {
+            clientId: created.id,
+            error: mirrorError,
+          });
+        }
+      }
+
+      logAuditFromReq(req, { entityType: "client", entityId: String(created.id), action: "create", changesJson: { name: parsed.name, clientId: generatedClientId, promotedMirror } });
+      if (promotedMirror.attempted) {
+        res.setHeader("X-Promoted-Clients-Dual-Write", promotedMirror.success ? "mirrored" : "mirror_failed");
+      }
+      res.json({ ...created, _promotedMirror: promotedMirror });
     } catch (error) {
       console.error("Client create error:", error);
       res.status(500).json({ error: "Failed to create client" });

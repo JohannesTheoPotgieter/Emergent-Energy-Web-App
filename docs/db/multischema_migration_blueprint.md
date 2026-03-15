@@ -320,3 +320,71 @@ Implemented SQL artifacts:
 1. Proceed to **PR 89** for bounded project-detail master read adoption (identity/client/phase/rag + portfolio membership summaries only).
 2. Add read-only work-summary diagnostics as reporting/admin evidence only.
 3. Keep all project execution writes and operational task behavior unchanged until later convergence phases.
+
+---
+
+## 9) PR 89 + PR 90 combined bounded step (implemented as one controlled migration increment)
+
+### Scope guardrails honored
+- No drops/deletes of legacy tables.
+- No broad read cutover; legacy behavior remains primary by default.
+- No finance/operational/procurement/quality write migration.
+- All new promoted-read and write-prep behavior is behind feature flags and remains reversible.
+
+### PR89 additions in this combined step
+- Added project-detail promoted-read expansion (master sections only):
+  - identity (`id`, `project_name`)
+  - client link (`client_id` + `client_name`)
+  - phase
+  - RAG status/comment
+  - portfolio membership summary (`core.project_portfolio_assignments` + `core.portfolios`)
+  - team-membership summary remains legacy-sourced (`public.project_team_members`) and is explicitly tracked as a blocker for full promotion.
+- Added project-detail readiness comparison domain:
+  - `project_detail_master` now reports missing/extra rows and field mismatch categories for `project_name/client_id/phase/rag_status`.
+- Added read-only work summary diagnostics:
+  - per-project legacy vs promoted counts
+  - status distributions
+  - owner distributions
+  - workstream/source-domain distributions
+  - mismatch categories + sample project IDs
+  - surfaced in admin diagnostics and readiness payloads.
+
+### PR90 additions in this combined step
+- Added first controlled dual-write scaffolding flags (default OFF):
+  - `promoted_core_clients_dual_write`
+  - `promoted_core_project_master_dual_write`
+- Implemented narrow mirrored-write scaffolding (legacy primary, promoted optional):
+  - client create endpoints now optionally mirror to `core.clients`
+  - project master patch endpoint now optionally mirrors to `core.projects`
+  - mirror outcomes are explicit via response metadata, headers, and audit payloads
+  - mirror failures are logged and not silently swallowed; legacy success semantics are preserved.
+- Added imports governance preview hooks (non-blocking):
+  - `imports_source_update_governance_preview` flag controls preview recording
+  - project master update path can create `imports.source_update_requests` preview events and preview acknowledgements
+  - no blocking enforcement in this step.
+
+### Updated readiness matrix (read + write readiness)
+
+| Domain | Current posture | Evidence path | Blocking notes |
+|---|---|---|---|
+| Project detail master read | Partial/Blocked | `/api/readiness/core-master-data` candidate `project_detail_master` | team summary remains legacy-sourced; parity must stay visible |
+| Work-item summary diagnostics | Partial (diagnostic-only) | `/api/admin/work-item-summary-diagnostics`, readiness `workItemSummaryDiagnostics` | count/distribution mismatches are expected until broader work-item convergence |
+| Clients dual-write prep | Preview-ready (flagged off by default) | `promoted_core_clients_dual_write`, audit + response mirror metadata | enable only for controlled cohort after mirror failure rate is near-zero |
+| Project master dual-write prep | Preview-ready (flagged off by default) | `promoted_core_project_master_dual_write`, audit + response mirror metadata | project_detail parity and mirror telemetry should stabilize before broader write scope |
+| Imports governance preview | Partial (non-blocking) | readiness `writeReadiness.importsGovernance` | unresolved ack gaps/open conflicts remain explicit blockers for enforcement phase |
+
+### Explicit blockers after this combined step
+- Team membership and workflow-rich project detail metadata still depend on legacy structures.
+- Work-item ownership/workstream parity differs between legacy and promoted representations.
+- Imports governance remains preview-only; unresolved requests/conflicts are not yet enforced.
+
+### Exact recommended next PR order after PR89+PR90
+1. **PR91**: Project-detail enrichment parity hardening
+   - close team-membership mapping gaps
+   - add explicit parity checks for ownership/workflow metadata used in detail views.
+2. **PR92**: Dual-write observability hardening
+   - add mirror-failure dashboards/alerts and retry-safe operator tooling for clients/project-master write mirrors.
+3. **PR93**: Imports governance enforcement pilot
+   - enforce acknowledgements for a bounded cohort only, keeping rollback switch and diagnostics-first posture.
+4. **PR94**: Broader promoted work-item read pilot (still read-only)
+   - expand from diagnostics to selected admin/reporting reads with strict compare headers and rollback.
