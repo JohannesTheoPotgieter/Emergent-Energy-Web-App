@@ -6,32 +6,7 @@ import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 import { verifyToken } from "./jwt";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
-import { getStartupModes } from "./startup-modes";
-const { startupSchemaRepairEnabled } = getStartupModes();
-
 const router = Router();
-
-async function ensureSupplierColumns() {
-  const cols = [
-    { name: "vat_number", type: "TEXT" },
-    { name: "registration_number", type: "TEXT" },
-    { name: "address", type: "TEXT" },
-    { name: "contact_person", type: "TEXT" },
-    { name: "contact_phone", type: "TEXT" },
-    { name: "contact_email", type: "TEXT" },
-    { name: "bank_name", type: "TEXT" },
-    { name: "bank_account_number", type: "TEXT" },
-    { name: "bank_branch_code", type: "TEXT" },
-    { name: "payment_terms", type: "TEXT" },
-    { name: "notes", type: "TEXT" },
-  ];
-  for (const col of cols) {
-    try {
-      await db.execute(sql.raw(`ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`));
-    } catch {}
-  }
-  console.log("[Procurement] Supplier detail columns ensured");
-}
 
 function jwtAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -1032,29 +1007,6 @@ router.get("/api/subcontractor-dashboard/supplier-list", requireAuth, async (_re
   }
 });
 
-async function ensureSubcontractorAssignmentTables() {
-  try {
-    await db.execute(sql.raw(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'subcontractor_assignment_status') THEN CREATE TYPE subcontractor_assignment_status AS ENUM ('active','completed','suspended','terminated'); END IF; END $$`));
-    await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS project_subcontractor_assignments (
-      id SERIAL PRIMARY KEY,
-      project_id INTEGER NOT NULL REFERENCES project_info(id),
-      counterparty_id INTEGER NOT NULL REFERENCES counterparties(id),
-      work_package TEXT,
-      scope_description TEXT,
-      owner_user_id INTEGER REFERENCES users(id),
-      status subcontractor_assignment_status NOT NULL DEFAULT 'active',
-      key_dates JSONB,
-      performance_notes TEXT,
-      linked_approval_id INTEGER,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )`));
-    console.log("[SubcontractorAssignments] Tables ensured");
-  } catch (err: any) {
-    console.error("[SubcontractorAssignments] Table error:", err.message);
-  }
-}
-
 router.get("/api/subcontractor-assignments/project/:projectId", requireAuth, async (req: Request, res: Response) => {
   try {
     const projectId = parseInt(req.params.projectId);
@@ -1165,10 +1117,6 @@ router.delete("/api/subcontractor-assignments/:id", requireAuth, requirePermissi
 });
 
 export function registerSubcontractorRoutes(app: any) {
-  if (startupSchemaRepairEnabled) {
-    ensureSupplierColumns().catch(err => console.error("[Procurement] Column migration error:", err.message));
-    ensureSubcontractorAssignmentTables().catch(err => console.error("[SubcontractorAssignments] Error:", err.message));
-  }
   app.use(router);
 }
 

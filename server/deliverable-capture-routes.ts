@@ -45,22 +45,6 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "auth_required" });
 }
 
-export async function ensureDeliverableCaptureColumns() {
-  try {
-    await db.execute(sql.raw(`
-      ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS linked_work_item_id INTEGER REFERENCES work_items(id);
-      ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS linked_cost_line_id INTEGER REFERENCES normalized_cost_lines(id);
-      ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS linked_revenue_line_id INTEGER REFERENCES normalized_revenue_lines(id);
-      ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS file_path TEXT;
-      ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS file_size INTEGER;
-      ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS mime_type TEXT;
-      ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS original_file_name TEXT;
-    `));
-    console.log("[Deliverable Capture] Columns ensured");
-  } catch (err: any) {
-    console.log("[Deliverable Capture] Columns may already exist:", err.message?.slice(0, 80));
-  }
-}
 
 export function registerDeliverableCaptureRoutes(app: Express) {
   app.get("/api/deliverable-capture/linkable-items/:projectId", jwtAuth, requireAuth, async (req, res) => {
