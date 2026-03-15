@@ -282,3 +282,41 @@ Implemented SQL artifacts:
 - Legacy table deprecation/drop planning actions.
 - Auto-resolution of duplicate finance rows or project-name linkage gaps.
 - Any hidden business semantic change under promoted reads.
+
+---
+
+## 8) PR 88 expanded promoted reads for core master data (controlled + reversible)
+
+### What changed in PR 88
+- Expanded promoted-read rollout flags (default off):
+  - `promoted_core_projects_read`
+  - `promoted_core_portfolios_read`
+  - `promoted_core_portfolio_assignments_read`
+- Extended safe promoted read usage:
+  - `GET /api/project-info` can read from `core.projects` when `promoted_core_projects_read=true`
+  - `GET /api/portfolios` can independently source portfolios/assignments/projects from promoted core tables when corresponding flags are enabled
+- Preserved legacy fallback behavior as default across all user-facing routes.
+- Kept writes unchanged (legacy-primary, no dual-write in this PR).
+- Extended readiness endpoint payload:
+  - `GET /api/readiness/core-master-data` now includes `rolloutFlags` for projects/clients/portfolios/assignments promoted-read toggles.
+- Preserved side-by-side comparison and mismatch visibility:
+  - compare mode (`?compare=true`) and promoted-read execution paths both emit comparison headers
+  - comparison mismatches are still logged; no silent conflict suppression.
+
+### PR 88 readiness and known blockers (do not hide)
+
+| Domain | PR 88 read posture | Current blocker posture | Evidence path | Go-forward note |
+|---|---|---|---|---|
+| Projects master read (`project_info` compatibility) | Feature-flagged promoted read added | **Blocked/Partial** until zero missing promoted rows and stable field parity | `/api/readiness/core-master-data`, `core.v_projects_promoted_vs_legacy` | Keep fallback default OFF outside controlled cohorts |
+| Portfolios list summary | Feature-flagged promoted read added | **Partial** because legacy portfolio metadata (owner/status/clientName semantics) remains richer than promoted baseline | `/api/readiness/core-master-data`, `core.v_portfolios_promoted_vs_legacy` | Safe for controlled read cohorts only; keep legacy default |
+| Project-portfolio assignment linkage | Feature-flagged promoted read added | **Partial/Blocked** whenever pairwise link parity is non-zero | `/api/readiness/core-master-data`, `core.v_project_portfolio_assignments_promoted_vs_legacy` | Must hit zero missing assignment links before wider adoption |
+
+### What remains blocked before broader project-detail adoption
+- Project detail reads still rely on legacy-only fields not fully represented in `core.projects` (`size_kwp`, PM/PD ownership, signed-document metadata, execution-enabled settings, and related operational enrichments).
+- Portfolio ownership and workflow metadata are still primarily anchored in legacy tables and joins.
+- Project-name linkage risks remain in non-master flows and must be addressed before broad project-detail promoted reads.
+
+### Exact next PR recommendation
+1. Proceed to **PR 89** for bounded project-detail master read adoption (identity/client/phase/rag + portfolio membership summaries only).
+2. Add read-only work-summary diagnostics as reporting/admin evidence only.
+3. Keep all project execution writes and operational task behavior unchanged until later convergence phases.

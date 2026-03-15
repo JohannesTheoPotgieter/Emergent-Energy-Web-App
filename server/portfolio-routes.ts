@@ -10,6 +10,12 @@ import {
 import { logAuditFromReq } from "./audit-logger";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { computeProjectCompletion, summarizeEngineeringStatuses, summarizeQualityStatuses, summarizeSchedule, calculateGrossMarginPercent } from "./services/kpi-service";
+import { getFeatureFlags } from "./lib/feature-flags";
+import {
+  compareCorePortfoliosReadiness,
+  compareCoreProjectPortfolioAssignmentsReadiness,
+  compareCoreProjectsReadiness,
+} from "./services/promoted-read-compat";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -46,18 +52,66 @@ function requireCooRole(req: Request, res: Response, next: NextFunction) {
 }
 
 export function registerPortfolioRoutes(app: Express) {
-  app.get("/api/portfolios", jwtAuth, requireAuth, async (_req, res) => {
+  app.get("/api/portfolios", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const allPortfolios = await db.select().from(portfolios).orderBy(desc(portfolios.createdAt));
-      const assignments = await db.select().from(projectPortfolioAssignments);
-      const allProjects = await db.select({
-        id: projectInfo.id,
-        projectName: projectInfo.projectName,
-        phase: projectInfo.phase,
-        sizeKwp: projectInfo.sizeKwp,
-        pm: projectInfo.pm,
-        isActive: projectInfo.isActive,
-      }).from(projectInfo);
+      const compareMode = req.query.compare === "1" || req.query.compare === "true";
+      const flags = await getFeatureFlags([
+        "promoted_core_projects_read",
+        "promoted_core_portfolios_read",
+        "promoted_core_portfolio_assignments_read",
+      ]);
+
+      const [allPortfolios, assignments, allProjects] = await Promise.all([
+        flags.promoted_core_portfolios_read
+          ? db.execute(sql`
+              SELECT
+                p.id,
+                p.name,
+                NULL::TEXT AS "clientName",
+                'Active'::TEXT AS status,
+                p.description,
+                NULL::INTEGER AS "ownerUserId",
+                p.created_by AS "createdBy",
+                NULL::INTEGER AS "updatedBy",
+                p.created_at AS "createdAt",
+                p.updated_at AS "updatedAt"
+              FROM core.portfolios p
+              ORDER BY p.created_at DESC
+            `).then((r: any) => r.rows ?? r)
+          : db.select().from(portfolios).orderBy(desc(portfolios.createdAt)),
+        flags.promoted_core_portfolio_assignments_read
+          ? db.execute(sql`
+              SELECT
+                id,
+                project_id AS "projectId",
+                portfolio_id AS "portfolioId",
+                assigned_by AS "assignedBy",
+                assigned_at AS "assignedAt",
+                NULL::INTEGER AS "movedBy",
+                NULL::TIMESTAMP AS "movedAt"
+              FROM core.project_portfolio_assignments
+            `).then((r: any) => r.rows ?? r)
+          : db.select().from(projectPortfolioAssignments),
+        flags.promoted_core_projects_read
+          ? db.execute(sql`
+              SELECT
+                id,
+                project_name AS "projectName",
+                phase,
+                NULL::DECIMAL AS "sizeKwp",
+                NULL::TEXT AS pm,
+                TRUE AS "isActive"
+              FROM core.projects
+            `).then((r: any) => r.rows ?? r)
+          : db.select({
+              id: projectInfo.id,
+              projectName: projectInfo.projectName,
+              phase: projectInfo.phase,
+              sizeKwp: projectInfo.sizeKwp,
+              pm: projectInfo.pm,
+              isActive: projectInfo.isActive,
+            }).from(projectInfo),
+      ]);
 
       const ownerIds = allPortfolios.map(p => p.ownerUserId).filter(Boolean) as number[];
       const allUsers = ownerIds.length > 0 ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ownerIds)) : [];
@@ -78,12 +132,35 @@ export function registerPortfolioRoutes(app: Express) {
         const projs = portfolioProjects.get(p.id) || [];
         return {
           ...p,
+          ownerUserId: p.ownerUserId ?? null,
           ownerName: p.ownerUserId ? userMap.get(p.ownerUserId) || null : null,
           projectCount: projs.length,
           totalKwp: projs.reduce((sum, pr) => sum + (parseFloat(String(pr.sizeKwp || "0")) || 0), 0),
           projects: projs.map(pr => ({ id: pr.id, projectName: pr.projectName, phase: pr.phase, sizeKwp: pr.sizeKwp, pm: pr.pm })),
         };
       });
+
+      if (compareMode || flags.promoted_core_portfolios_read || flags.promoted_core_portfolio_assignments_read || flags.promoted_core_projects_read) {
+        const [portfolioComparison, assignmentComparison, projectComparison] = await Promise.all([
+          compareCorePortfoliosReadiness(),
+          compareCoreProjectPortfolioAssignmentsReadiness(),
+          compareCoreProjectsReadiness(),
+        ]);
+        if (portfolioComparison.status !== "ready") {
+          console.warn("[promoted-read][portfolios] mismatch detected", portfolioComparison);
+        }
+        if (assignmentComparison.status !== "ready") {
+          console.warn("[promoted-read][portfolio-assignments] mismatch detected", assignmentComparison);
+        }
+        if (projectComparison.status !== "ready") {
+          console.warn("[promoted-read][projects] mismatch detected for portfolio summary", projectComparison);
+        }
+        res.setHeader("X-Promoted-Portfolios-Read", flags.promoted_core_portfolios_read ? "enabled" : "disabled");
+        res.setHeader("X-Promoted-Portfolio-Assignments-Read", flags.promoted_core_portfolio_assignments_read ? "enabled" : "disabled");
+        res.setHeader("X-Promoted-Portfolio-Projects-Read", flags.promoted_core_projects_read ? "enabled" : "disabled");
+        res.setHeader("X-Promoted-Portfolios-Comparison-Status", portfolioComparison.status);
+        res.setHeader("X-Promoted-Portfolio-Assignments-Comparison-Status", assignmentComparison.status);
+      }
 
       res.json(result);
     } catch (err: any) {
