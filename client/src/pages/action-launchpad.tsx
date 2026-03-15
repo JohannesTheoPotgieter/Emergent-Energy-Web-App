@@ -36,10 +36,23 @@ export default function ActionLaunchpadPage() {
   const { data: projects = [], isLoading: projectsLoading, error: projectsError, refetch: refetchProjects, isFetching: projectsFetching } = useQuery<Project[]>({
     queryKey: ["action-launchpad-projects"],
     queryFn: async () => {
-      const res = await fetch("/api/projects-summary", { credentials: "include" });
-      if (!res.ok) throw new Error(`Could not load projects. ${guidance}`);
-      const data = await res.json();
-      return Array.isArray(data) ? data.map((p: any) => ({ id: p.id || p.project_info_id, projectName: p.projectName || p.project_name })).filter((p: Project) => p.id && p.projectName) : [];
+      const normalize = (data: any): Project[] => Array.isArray(data)
+        ? data.map((p: any) => ({ id: p.id || p.project_info_id, projectName: p.projectName || p.project_name || p.name }))
+            .filter((p: Project) => p.id && p.projectName)
+        : [];
+
+      const primary = await fetch("/api/projects-summary", { credentials: "include" });
+      if (primary.ok) {
+        return normalize(await primary.json());
+      }
+
+      const fallback = await fetch("/api/pm-otg/projects", { credentials: "include" });
+      if (fallback.ok) {
+        const payload = await fallback.json();
+        return normalize(payload?.projects || payload);
+      }
+
+      throw new Error(`Could not load projects. ${guidance}`);
     },
     retry: 1,
   });
@@ -207,6 +220,7 @@ export default function ActionLaunchpadPage() {
 
             {activeAction === "handover" && <p className="text-sm text-slate-600">This launches the formal PD to PM handover workflow with mandatory validation and PM review.</p>}
 
+            {!projectId ? <p className="text-xs text-amber-700">Select a project to continue.</p> : null}
             <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={submitting || projectsLoading || !!projectsError || !projectId}>{submitting ? "Submitting..." : ACTION_LABELS[activeAction]}</Button>
           </form>
         </CardContent>

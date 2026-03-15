@@ -82,7 +82,7 @@ export default function PdTicketCreatePage() {
     designerUserId: "",
   });
 
-  const { data: clientResults = [] } = useQuery<any[]>({
+  const { data: clientResults = [], isLoading: clientsLoading, isError: clientsError, error: clientsQueryError, refetch: refetchClients } = useQuery<any[]>({
     queryKey: ["/api/pd/clients", clientSearch],
     queryFn: () => pdFetch(`/api/pd/clients?search=${encodeURIComponent(clientSearch)}`),
     enabled: step === 1,
@@ -220,7 +220,14 @@ export default function PdTicketCreatePage() {
                     data-testid="input-client-search"
                   />
                 </div>
-                {filteredClients.length > 0 ? (
+                {clientsLoading ? (
+                  <div className="border rounded-lg p-4 text-center text-sm text-muted-foreground">Loading clients…</div>
+                ) : clientsError ? (
+                  <div className="border rounded-lg p-4 text-center bg-red-50 border-red-200" data-testid="clients-load-error">
+                    <p className="text-sm text-red-700">Could not load client list. {(clientsQueryError as Error)?.message || "Please retry."}</p>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => refetchClients()} data-testid="btn-retry-clients">Retry</Button>
+                  </div>
+                ) : filteredClients.length > 0 ? (
                   <div className="border rounded-lg max-h-48 overflow-y-auto">
                     {filteredClients.map((c: any) => (
                       <button
@@ -239,7 +246,11 @@ export default function PdTicketCreatePage() {
                     <p className="text-sm text-muted-foreground">No clients found matching "<span className="font-medium">{clientSearch}</span>"</p>
                     <p className="text-xs text-muted-foreground mt-1">Try a different search or create a new client below</p>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="border rounded-lg p-4 text-center bg-muted/10" data-testid="empty-clients-list">
+                    <p className="text-sm text-muted-foreground">No clients available yet.</p>
+                  </div>
+                )}
 
                 <Separator />
                 {!creatingClient ? (
@@ -256,6 +267,7 @@ export default function PdTicketCreatePage() {
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => setCreatingClient(false)}>Cancel</Button>
                     </div>
+                    {createClientMutation.isError ? <p className="text-xs text-red-600">{(createClientMutation.error as Error)?.message || "Failed to create client."}</p> : null}
                   </div>
                 )}
               </>
