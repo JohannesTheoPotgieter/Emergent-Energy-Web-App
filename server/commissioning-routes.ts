@@ -32,32 +32,6 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   closed: [],
 };
 
-export async function ensureCommissioningTables() {
-  try {
-    await db.execute(sql.raw(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'commissioning_status') THEN CREATE TYPE commissioning_status AS ENUM ('not_started','in_progress','ready_for_review','approved','closed'); END IF; END $$`));
-    await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS commissioning_items (
-      id SERIAL PRIMARY KEY,
-      project_id INTEGER NOT NULL REFERENCES project_info(id),
-      item_type TEXT NOT NULL DEFAULT 'commissioning',
-      title TEXT NOT NULL,
-      description TEXT,
-      owner_user_id INTEGER REFERENCES users(id),
-      due_date TEXT,
-      status commissioning_status NOT NULL DEFAULT 'not_started',
-      evidence_notes TEXT,
-      approval_id INTEGER,
-      gate_id TEXT,
-      category TEXT,
-      sort_order INTEGER DEFAULT 0,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      completed_at TIMESTAMP
-    )`));
-    console.log("[Commissioning] Tables ensured");
-  } catch (err: any) {
-    console.error("[Commissioning] Table error:", err.message);
-  }
-}
 
 export function registerCommissioningRoutes(app: Express) {
   app.get("/api/commissioning/project/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
