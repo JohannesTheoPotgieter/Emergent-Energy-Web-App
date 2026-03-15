@@ -30,11 +30,13 @@ import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getAllWorkItemsF
 import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError, logApiError } from "./lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "./lib/task-validation";
 import { normalizeStatus, normalizePriority } from "./lib/canonical-task-engine";
-import { getFeatureFlag } from "./lib/feature-flags";
+import { getFeatureFlag, getFeatureFlags } from "./lib/feature-flags";
 import { registerAuthRoutes } from "./routes/auth-routes";
 import {
   compareCoreClientsReadiness,
+  compareCoreProjectsReadiness,
   getCoreMasterDataReadinessReport,
+  listProjectInfoFromPromotedCoreCompat,
   listClientsFromPromotedCoreCompat,
 } from "./services/promoted-read-compat";
 import {
@@ -4802,7 +4804,22 @@ export async function registerRoutes(
 
   app.get("/api/project-info", requireAuth, async (req, res) => {
     try {
-      const info = await storage.getAllProjectInfo();
+      const usePromotedRead = await getFeatureFlag("promoted_core_projects_read");
+      const compareMode = req.query.compare === "1" || req.query.compare === "true";
+
+      const info = usePromotedRead
+        ? await listProjectInfoFromPromotedCoreCompat()
+        : await storage.getAllProjectInfo();
+
+      if (compareMode || usePromotedRead) {
+        const comparison = await compareCoreProjectsReadiness();
+        if (comparison.status !== "ready") {
+          console.warn("[promoted-read][projects] mismatch detected", comparison);
+        }
+        res.setHeader("X-Promoted-Projects-Read", usePromotedRead ? "enabled" : "disabled");
+        res.setHeader("X-Promoted-Projects-Comparison-Status", comparison.status);
+      }
+
       res.json(info);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch project info", message: "Failed to fetch project info" });
@@ -4858,7 +4875,13 @@ export async function registerRoutes(
   app.get("/api/readiness/core-master-data", requireAuth, requireAdmin, async (_req, res) => {
     try {
       const report = await getCoreMasterDataReadinessReport();
-      res.json(report);
+      const rolloutFlags = await getFeatureFlags([
+        "promoted_core_clients_read",
+        "promoted_core_projects_read",
+        "promoted_core_portfolios_read",
+        "promoted_core_portfolio_assignments_read",
+      ]);
+      res.json({ ...report, rolloutFlags });
     } catch (error) {
       console.error("Core master data readiness report error:", error);
       res.status(500).json({ error: "Failed to generate core master data readiness report" });
