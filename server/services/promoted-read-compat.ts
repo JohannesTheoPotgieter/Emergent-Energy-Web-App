@@ -20,6 +20,50 @@ export interface DomainComparisonSummary {
 
 
 
+
+export interface DomainRolloutReadiness {
+  domain: string;
+  readiness: ComparisonStatus;
+  blockerCount: number;
+  mismatchCount: number;
+  mismatchCategories: string[];
+  sampleIds: number[];
+  safeReadOnlyPromotedUse: boolean;
+  safeDualWritePreview: boolean;
+  safeFullCutoverLater: boolean;
+  blockerSummary: string;
+}
+
+export async function getDomainRolloutReadinessReport(): Promise<DomainRolloutReadiness[]> {
+  const rows = await db.execute(sql`
+    SELECT domain,
+           readiness,
+           blocker_count,
+           mismatch_count,
+           mismatch_categories,
+           sample_ids,
+           safe_read_only_promoted_use,
+           safe_dual_write_preview,
+           safe_full_cutover_later,
+           blocker_summary
+    FROM core.v_domain_rollout_readiness
+    ORDER BY domain
+  `).then((r: any) => r.rows ?? r);
+
+  return rows.map((row: any) => ({
+    domain: String(row.domain),
+    readiness: row.readiness as ComparisonStatus,
+    blockerCount: Number(row.blocker_count ?? 0),
+    mismatchCount: Number(row.mismatch_count ?? 0),
+    mismatchCategories: Array.isArray(row.mismatch_categories) ? row.mismatch_categories : [],
+    sampleIds: Array.isArray(row.sample_ids) ? row.sample_ids.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v)) : [],
+    safeReadOnlyPromotedUse: Boolean(row.safe_read_only_promoted_use),
+    safeDualWritePreview: Boolean(row.safe_dual_write_preview),
+    safeFullCutoverLater: Boolean(row.safe_full_cutover_later),
+    blockerSummary: String(row.blocker_summary ?? ''),
+  }));
+}
+
 export interface ProjectDetailCompatRow {
   id: number;
   projectName: string;
@@ -633,12 +677,8 @@ export async function compareImportsGovernanceReadiness(): Promise<DomainCompari
     db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM imports.source_update_requests WHERE status IN ('pending', 'open')`).then((r: any) => r.rows ?? r),
     db.execute(sql`
       SELECT COUNT(*)::INTEGER AS cnt
-      FROM imports.source_update_requests r
-      LEFT JOIN imports.source_update_acknowledgements a
-        ON a.source_update_request_id = r.id
-      WHERE r.status IN ('pending', 'open')
-      GROUP BY r.id
-      HAVING COUNT(a.id) = 0
+      FROM imports.v_source_update_ack_gaps g
+      WHERE CARDINALITY(g.missing_roles) > 0
     `).then((r: any) => r.rows ?? r),
     db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM imports.data_conflicts WHERE status = 'open'`).then((r: any) => r.rows ?? r),
   ]);
@@ -659,7 +699,7 @@ export async function compareImportsGovernanceReadiness(): Promise<DomainCompari
     missingInPromotedCount: 0,
     extraInPromotedCount: 0,
     fieldMismatchCount: pendingRequests + unresolvedAcknowledgements + openConflicts,
-    status: pendingRequests === 0 && unresolvedAcknowledgements === 0 && openConflicts === 0 ? 'ready' : 'partial',
+    status: pendingRequests === 0 && unresolvedAcknowledgements === 0 && openConflicts === 0 ? 'ready' : (openConflicts > 0 ? 'blocked' : 'partial'),
     mismatchCategories,
     sampleMissingInPromotedIds: [],
     sampleExtraInPromotedIds: [],
