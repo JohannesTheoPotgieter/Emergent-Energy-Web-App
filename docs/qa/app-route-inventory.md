@@ -19,6 +19,8 @@ API dependencies are inferred from `/api/...` calls in each page component and s
 | `/admin/recovery` | AdminRecoveryPage | `admin` | `/api/admin/recovery/deleted`, `/api/admin/recovery/imports`, `/api/admin/recovery/project/` | Save, Upload, Export, Import | `adminRecovery` |
 | `/admin/roles` | AdminRolesPage | `admin_roles` | `/api/admin/control-center/permission-enforcement`, `/api/admin/users`, `/api/admin/users/` | Create, Save, Approve, Export | `adminRoles` |
 | `/admin/settings` | RoleSettingsPage | `admin` | `/api/admin/ms-integration`, `/api/admin/ms-integration/`, `/api/admin/users/` | Create, Save, Export, Import | `adminSettings` |
+| `/admin/smart-import` | SmartImportPage | `admin` | `/api/import/preview`, `/api/import/commit/`, `/api/import/history` | Upload, Approve, Rollback, Export | `adminSmartImport` |
+| `/admin/excel-updates` | AdminExcelUpdatePage | `admin` | `/api/weekly-updates`, `/api/weekly-updates/`, `/api/weekly-updates/by-project/` | Create, Save, Filter, Export | `adminExcelUpdates` |
 | `/cashflow` | CashflowPage | `cashflow` | `/api/cashflow-2026`, `/api/cashflow-2026/available-payment`, `/api/cashflow-2026/available-payment-history` | Save, Upload, Export, Import | `cashflow` |
 | `/clients` | ClientsPage | `pd_clients` | `/api/pd/clients`, `/api/pd/clients/`, `/api/pd/clients/project-counts` | Create, Save, Export, Import | `clients` |
 | `/collaboration` | CollaborationPage | `collaboration_hub` | `/api/admin/sp-settings`, `/api/ms-objects/`, `/api/ms-objects/mine` | Create, Save, Approve, Export | `collaboration` |
