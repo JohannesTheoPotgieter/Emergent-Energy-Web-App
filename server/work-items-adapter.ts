@@ -348,7 +348,7 @@ export async function getAllPMWorkItemsAsProjectPlan(): Promise<any[]> {
       )
     );
 
-  const projectIds: number[] = [...new Set(items.filter(i => i.projectId != null).map(i => i.projectId as number))];
+  const projectIds: number[] = Array.from(new Set(items.map((i) => i.projectId).filter((id): id is number => typeof id === "number")));
   let projectNameMap = new Map<number, string>();
   if (projectIds.length > 0) {
     const projects = await db
@@ -687,7 +687,6 @@ export async function createEngineeringWorkItem(data: {
     priority: data.priority || null,
     workstream: "ENG",
     type: "task",
-    phase: data.phase || null,
     startDate: data.startDate ?? null,
     endDate: data.dueDate ?? null,
     ownerUserId: data.ownerUserId ?? null,
