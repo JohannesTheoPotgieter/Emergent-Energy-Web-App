@@ -87,6 +87,7 @@ import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { logRoleAwareInteraction } from "@/lib/role-aware-audit";
 import { pickRoleAwareLandingPage } from "@/config/role-aware-ux";
 import { isSuperAdmin } from "@/lib/access-control";
+import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 
 const EPM_ALLOWED_PATHS = ["/", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
 const PM_ALLOWED_PATHS = ["/", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
@@ -201,7 +202,6 @@ function AccessDenied() {
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  const [location] = useLocation();
   const isMobile = useIsMobile();
   const navMode = isMobile ? NAVIGATION_MODE.mobile : NAVIGATION_MODE.desktop;
 
@@ -277,8 +277,10 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
 }
 
 function ProtectedPages() {
-  const { user } = useAuth();
   const [location] = useLocation();
+  useScrollRestoration(location);
+
+  const { user } = useAuth();
 
   const { data: permissions } = useQuery<{ entityPermissions?: Record<string, Record<string, boolean>> | null }>({
     queryKey: ["auth-permissions-landing", user?.role],

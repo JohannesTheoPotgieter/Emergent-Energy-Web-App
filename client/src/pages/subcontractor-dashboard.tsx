@@ -479,7 +479,7 @@ export default function SubcontractorDashboardPage() {
     refetchInterval: 30000,
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["/api/subcontractor-dashboard/summary", typeFilter, projectFilter, coreOnly],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -820,7 +820,7 @@ export default function SubcontractorDashboardPage() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <Input placeholder="Search counterparties..." value={search} onChange={e => setSearch(e.target.value)}
+          <Input placeholder="Search counterparties by name (min 2 characters recommended)" value={search} onChange={e => setSearch(e.target.value)}
             className="pl-9" data-testid="input-search" />
         </div>
         <SearchableSelect
@@ -938,12 +938,50 @@ export default function SubcontractorDashboardPage() {
       )}
 
       {isLoading ? (
-        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-slate-500" /></div>
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground">
+            <Loader2 className="w-6 h-6 animate-spin text-slate-500 mx-auto mb-3" />
+            <p className="text-sm font-medium">Loading procurement counterparties…</p>
+            <p className="text-xs mt-1">We are fetching supplier and installer summaries.</p>
+          </CardContent>
+        </Card>
+      ) : isError ? (
+        <Card className="border-red-200 bg-red-50/40">
+          <CardContent className="py-10 text-center text-red-700">
+            <AlertCircle className="w-8 h-8 mx-auto mb-2" />
+            <p className="text-sm font-semibold">Procurement data could not be loaded.</p>
+            <p className="text-xs mt-1 text-red-600/90">{(error as Error)?.message || "Please retry."}</p>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => refetch()} data-testid="btn-retry-procurement-summary">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
       ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <AlertCircle className="w-8 h-8 mx-auto mb-2 text-slate-600" />
-            No counterparty data available. Import expenditure data via Smart Import first.
+            {counterpartiesList.length === 0 ? (
+              <>
+                <p className="text-sm font-semibold text-foreground">No procurement counterparties yet</p>
+                <p className="text-xs mt-1">Import expenditure lines in Smart Import to generate supplier and installer visibility.</p>
+                <div className="mt-4 flex items-center justify-center gap-2">
+                  <Button asChild size="sm" data-testid="btn-procurement-empty-smart-import">
+                    <a href="/admin/smart-import">Open Smart Import</a>
+                  </Button>
+                  <Button asChild variant="outline" size="sm" data-testid="btn-procurement-empty-import-runs">
+                    <a href="/admin/import-control-tower">View import runs</a>
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-foreground">No counterparties match these filters</p>
+                <p className="text-xs mt-1">Adjust search, type, project, or core-only filters to continue.</p>
+                <Button variant="outline" size="sm" className="mt-4" onClick={() => { setSearch(""); setTypeFilter("all"); setProjectFilter("all"); setCoreOnly(false); }} data-testid="btn-clear-procurement-filters">
+                  Clear filters
+                </Button>
+              </>
+            )}
           </CardContent>
         </Card>
       ) : (
