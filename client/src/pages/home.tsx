@@ -1,11 +1,12 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Calendar, CheckCircle2, ClipboardCheck, Clock3, FolderKanban, ListTodo, Mail, MessageSquare, Pin, TrendingUp } from "lucide-react";
+import { Calendar, CheckCircle2, Mail, MessageSquare } from "lucide-react";
+import { getRoleQuickActions, normalizeRoleLabel } from "@/config/home-brief";
 
 type Task = { id: number; title?: string; status?: string; dueDate?: string; projectName?: string; assignees?: string };
 type PriorityData = {
@@ -14,19 +15,62 @@ type PriorityData = {
   upcomingMilestones?: Array<{ projectName: string; milestoneType: string; date: string }>;
 };
 
-type ProjectSummary = { id: number; projectName: string; executionPhase?: string; pm?: string; pd?: string; rag?: string };
+type CompanyPriorityLink = {
+  id: number;
+  linkType: string;
+  projectName: string | null;
+  taskId: number | null;
+  taskType: string | null;
+};
 
-function statusTone(status?: string) {
-  const s = (status || "").toLowerCase();
-  if (["done", "complete", "completed", "closed"].includes(s)) return "bg-emerald-100 text-emerald-700";
-  if (["overdue", "blocked", "critical"].includes(s)) return "bg-red-100 text-red-700";
-  if (["pending", "in progress", "at risk", "warning"].includes(s)) return "bg-amber-100 text-amber-700";
-  return "bg-slate-100 text-slate-700";
+type CompanyPriority = {
+  id: number;
+  title: string;
+  description: string | null;
+  department: string | null;
+  ownerRole: string | null;
+  status: string;
+  priorityRank: number | null;
+  links?: CompanyPriorityLink[];
+};
+
+function normalizeText(value?: string | null) {
+  return (value || "").trim().toLowerCase();
+}
+
+function isDueToday(dateValue?: string) {
+  if (!dateValue) return false;
+  const today = new Date();
+  const due = new Date(dateValue);
+  if (Number.isNaN(due.getTime())) return false;
+  return due.toISOString().slice(0, 10) === today.toISOString().slice(0, 10);
+}
+
+function isOverdue(dateValue?: string) {
+  if (!dateValue) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dateValue);
+  if (Number.isNaN(due.getTime())) return false;
+  due.setHours(0, 0, 0, 0);
+  return due < today;
+}
+
+function getPriorityDestination(priority: CompanyPriority) {
+  const firstLink = priority.links?.[0];
+  if (!firstLink) return "/company-priorities";
+  if (firstLink.linkType === "project" && firstLink.projectName) {
+    return `/project/${encodeURIComponent(firstLink.projectName)}`;
+  }
+  if (firstLink.linkType === "task" && firstLink.taskType === "operational" && firstLink.taskId) {
+    return `/my-work/tasks?taskId=${firstLink.taskId}`;
+  }
+  return "/company-priorities";
 }
 
 export default function Home() {
   const { user } = useAuth();
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const role = normalizeRoleLabel(user?.role);
 
   const { data: tasks = [], error: tasksError, refetch: refetchTasks, isFetching: tasksFetching } = useQuery<Task[]>({
     queryKey: ["home-tasks"],
@@ -46,150 +90,164 @@ export default function Home() {
     },
   });
 
-  const { data: projects = [], error: projectsError, refetch: refetchProjects, isFetching: projectsFetching } = useQuery<ProjectSummary[]>({
-    queryKey: ["home-projects-summary"],
+  const { data: companyPriorities = [], error: companyPrioritiesError, refetch: refetchCompanyPriorities, isFetching: prioritiesFetching } = useQuery<CompanyPriority[]>({
+    queryKey: ["/api/mytool/company-priorities?horizon=week"],
     queryFn: async () => {
-      const res = await fetch("/api/projects-summary", { credentials: "include" });
-      if (!res.ok) throw new Error("Could not load project summaries. Refresh and retry. If this keeps failing, contact your admin.");
+      const res = await fetch("/api/mytool/company-priorities?horizon=week", { credentials: "include" });
+      if (!res.ok) throw new Error("Could not load company priorities.");
       return res.json();
     },
   });
 
-  const recentTasks = useMemo(() => tasks.slice(0, 8), [tasks]);
-  const overdueItems = useMemo(() => (highPriority?.overdueTasks || []).slice(0, 6), [highPriority]);
-  const atRisk = useMemo(() => (highPriority?.projectsBehindPlan || []).slice(0, 6), [highPriority]);
-  const recentProjects = useMemo(() => projects.slice(0, 6), [projects]);
+  const dueToday = useMemo(() => tasks.filter((task) => isDueToday(task.dueDate)).slice(0, 4), [tasks]);
+  const waitingApproval = useMemo(() => tasks.filter((task) => normalizeText(task.status).includes("approval")).slice(0, 4), [tasks]);
+  const blocked = useMemo(() => tasks.filter((task) => normalizeText(task.status).includes("blocked")).slice(0, 4), [tasks]);
+  const overdue = useMemo(() => {
+    const direct = tasks.filter((task) => isOverdue(task.dueDate) && !["done", "closed", "completed"].includes(normalizeText(task.status)));
+    if (direct.length > 0) return direct.slice(0, 4);
+    return (highPriority?.overdueTasks || []).slice(0, 4).map((item) => ({
+      id: item.id,
+      title: item.taskName,
+      dueDate: item.endDate,
+      projectName: item.projectName,
+      status: "Overdue",
+    }));
+  }, [highPriority, tasks]);
 
-  const approvalsNeeded = tasks.filter((t) => (t.status || "").toLowerCase().includes("approval")).slice(0, 5);
+  const roleActions = useMemo(() => getRoleQuickActions(role).slice(0, 5), [role]);
+
+  const filteredPriorities = useMemo(() => {
+    const userDepartment = normalizeText((user as any)?.department || (user as any)?.businessUnit || (user as any)?.team);
+    return companyPriorities
+      .filter((priority) => !["closed", "complete"].includes(normalizeText(priority.status)))
+      .filter((priority) => {
+        const roleTarget = normalizeText(priority.ownerRole);
+        const departmentTarget = normalizeText(priority.department);
+        const roleMatch = !roleTarget || roleTarget === role || roleTarget === "company-wide" || roleTarget === "all";
+        const departmentMatch = !departmentTarget || departmentTarget === "company-wide" || departmentTarget === "all" || (userDepartment && departmentTarget === userDepartment);
+        return roleMatch && departmentMatch;
+      })
+      .sort((a, b) => (a.priorityRank ?? 999) - (b.priorityRank ?? 999))
+      .slice(0, 5);
+  }, [companyPriorities, role, user]);
 
   const roleKpis = {
-    "Open Tasks": tasks.filter((t) => !["done", "completed", "closed"].includes((t.status || "").toLowerCase())).length,
-    "Overdue Work": overdueItems.length,
-    "At-Risk Projects": atRisk.length,
-    "Upcoming Milestones": highPriority?.upcomingMilestones?.length || 0,
+    "Open Tasks": tasks.filter((task) => !["done", "completed", "closed"].includes(normalizeText(task.status))).length,
+    "Overdue Work": overdue.length,
+    "Waiting Approval": waitingApproval.length,
+    "Blocked": blocked.length,
   };
 
-  const sections = [
-    {
-      key: "actions",
-      title: "Actions",
-      icon: CheckCircle2,
-      body: <div className="flex flex-wrap gap-2">
-        <Button asChild size="sm" className="bg-emerald-600 hover:bg-emerald-700"><Link href="/pd/tickets/create">New PD Ticket</Link></Button>
-        <Button asChild size="sm" variant="outline"><Link href="/actions/launchpad?action=engineering-request">Create Engineering Request</Link></Button>
-        <Button asChild size="sm" variant="outline"><Link href="/actions/launchpad?action=task">Create Task</Link></Button>
-        <Button asChild size="sm" variant="outline"><Link href="/actions/launchpad?action=handover">Start Handover</Link></Button>
-        <Button asChild size="sm" variant="outline"><Link href="/actions/launchpad?action=create-po">Create PO</Link></Button>
-        <Button asChild size="sm" variant="outline"><Link href="/actions/launchpad?action=link-invoice">Link Invoice</Link></Button>
-      </div>,
-    },
-    {
-      key: "tasks",
-      title: "Recent Tasks",
-      icon: ListTodo,
-      body: <div className="space-y-2">{recentTasks.length ? recentTasks.map((task) => <Link key={task.id} href="/my-work/tasks" className="block rounded-lg border border-slate-200 p-2.5 transition-colors hover:bg-slate-50"><div className="flex items-center justify-between gap-2"><p className="text-sm font-medium truncate">{task.title || `Task #${task.id}`}</p><Badge className={statusTone(task.status)}>{task.status || "Open"}</Badge></div><p className="text-xs text-slate-500">{task.projectName || "General"}</p></Link>) : <p className="text-sm text-slate-500">No tasks available.</p>}</div>,
-    },
-    {
-      key: "overdue",
-      title: "Overdue Items",
-      icon: AlertTriangle,
-      body: <div className="space-y-2">{overdueItems.length ? overdueItems.map((item) => <Link key={item.id} href={`/project/${encodeURIComponent(item.projectName)}?tab=plan`} className="block rounded-lg border border-slate-200 p-2.5 transition-colors hover:bg-slate-50"><p className="text-sm font-medium">{item.taskName}</p><p className="text-xs text-slate-500">{item.projectName} · Due {item.endDate}</p></Link>) : <p className="text-sm text-slate-500">No overdue work.</p>}</div>,
-    },
-    {
-      key: "approvals",
-      title: "Awaiting Approvals",
-      icon: ClipboardCheck,
-      body: <div className="space-y-2">{approvalsNeeded.length ? approvalsNeeded.map((item) => <Link key={item.id} href="/my-work/approvals" className="block rounded-lg border border-slate-200 p-2.5 transition-colors hover:bg-slate-50"><p className="text-sm font-medium">{item.title || `Task #${item.id}`}</p><p className="text-xs text-slate-500">{item.projectName || "General"}</p></Link>) : <p className="text-sm text-slate-500">No approvals waiting.</p>}</div>,
-    },
-    {
-      key: "risk",
-      title: "At-Risk Items",
-      icon: TrendingUp,
-      body: <div className="space-y-2">{atRisk.length ? atRisk.map((item) => <Link key={item.projectName} href={`/project/${encodeURIComponent(item.projectName)}`} className="block rounded-lg border border-slate-200 p-2.5 transition-colors hover:bg-slate-50"><p className="text-sm font-medium">{item.projectName}</p><p className="text-xs text-slate-500">{item.pm || "Unassigned"} · {item.severity}</p></Link>) : <p className="text-sm text-slate-500">No at-risk projects.</p>}</div>,
-    },
-    {
-      key: "projects",
-      title: "Recent Projects",
-      icon: Pin,
-      body: <div className="space-y-2">{recentProjects.length ? recentProjects.map((p) => <Link key={p.id} href={`/project/${encodeURIComponent(p.projectName)}`} className="block rounded-lg border border-slate-200 p-2.5 transition-colors hover:bg-slate-50"><div className="flex items-center justify-between"><p className="text-sm font-medium">{p.projectName}</p><Badge className={statusTone(p.rag)}>{p.rag || "Info"}</Badge></div><p className="text-xs text-slate-500">Owner: {p.pm || p.pd || "Unassigned"}</p></Link>) : <p className="text-sm text-slate-500">No projects available.</p>}</div>,
-    },
-    {
-      key: "alerts",
-      title: "Operational Alerts",
-      icon: Clock3,
-      body: <div className="space-y-2">{(highPriority?.upcomingMilestones || []).slice(0, 5).map((m, idx) => <Link key={idx} href={`/project/${encodeURIComponent(m.projectName)}?tab=revenue`} className="block rounded-lg border border-slate-200 p-2.5 transition-colors hover:bg-slate-50"><p className="text-sm font-medium">{m.projectName}</p><p className="text-xs text-slate-500">{m.milestoneType} · {m.date}</p></Link>)}</div>,
-    },
-  ];
+  const hasErrors = tasksError || highPriorityError || companyPrioritiesError;
+  const isRetrying = tasksFetching || priorityFetching || prioritiesFetching;
 
   return (
-    <div className="space-y-4 lg:space-y-5">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Home</h1>
-        <p className="text-sm text-slate-600">Operational command center for {user?.username || "your"} day.</p>
+        <p className="text-sm text-slate-600">Daily operating brief for {user?.username || "your"} day.</p>
       </div>
 
-      {(tasksError || highPriorityError || projectsError) ? (
+      {hasErrors ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 space-y-2">
-          <p>Some home data could not load. Likely reason: temporary server or network issue. How to fix: refresh this page and retry. If it persists, contact your admin.</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => { refetchTasks(); refetchHighPriority(); refetchProjects(); }}
-            disabled={tasksFetching || priorityFetching || projectsFetching}
-            data-testid="btn-retry-home-data"
-          >
-            {(tasksFetching || priorityFetching || projectsFetching) ? "Retrying..." : "Retry home data"}
+          <p>Some home data could not load. Please refresh or retry.</p>
+          <Button variant="outline" size="sm" onClick={() => { refetchTasks(); refetchHighPriority(); refetchCompanyPriorities(); }} disabled={isRetrying}>
+            {isRetrying ? "Retrying..." : "Retry home data"}
           </Button>
         </div>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
-        <div className="space-y-3">
-          {sections.map((section) => (
-            <Card key={section.key} className="border-slate-200 shadow-sm">
-              <CardHeader className="py-3">
-                <button className="w-full flex items-center justify-between" onClick={() => setCollapsed((prev) => ({ ...prev, [section.key]: !prev[section.key] }))}>
-                  <CardTitle className="text-base flex items-center gap-2"><section.icon className="h-4 w-4 text-emerald-600" />{section.title}</CardTitle>
-                  <span className="text-xs text-slate-500">{collapsed[section.key] ? "Show" : "Hide"}</span>
-                </button>
-              </CardHeader>
-              {!collapsed[section.key] ? <CardContent>{section.body}</CardContent> : null}
-            </Card>
-          ))}
-        </div>
-
-        <div className="space-y-3">
-          <Card className="border-slate-200 shadow-sm">
-            <CardHeader><CardTitle className="text-base">Microsoft Integration</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
-              <Link href="/my-work/calendar" className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><Calendar className="h-4 w-4" />Calendar</span><span className="text-xs text-slate-500">Open</span></Link>
-              <Link href="/my-work/email" className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><Mail className="h-4 w-4" />Email</span><span className="text-xs text-slate-500">Open</span></Link>
-              <Link href="/my-work/meetings" className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><Calendar className="h-4 w-4" />Meetings</span><span className="text-xs text-slate-500">Today</span></Link>
-              <Link href="/my-work/teams" className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><MessageSquare className="h-4 w-4" />Teams</span><span className="text-xs text-slate-500">Open</span></Link>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200 shadow-sm">
-            <CardHeader><CardTitle className="text-base">KPI Snapshot</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-2 gap-2">
-              {Object.entries(roleKpis).map(([label, value]) => (
-                <div key={label} className="rounded-lg border border-slate-200 p-2.5 bg-white">
-                  <p className="text-xs text-slate-500">{label}</p>
-                  <p className="text-lg font-semibold">{value}</p>
+      <Card className="border-emerald-200 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-lg">Company Priorities</CardTitle>
+          <p className="text-sm text-slate-600">What matters most for Emergent Energy today.</p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {filteredPriorities.length ? filteredPriorities.map((priority) => (
+            <div key={priority.id} className="rounded-lg border border-slate-200 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-medium text-sm">{priority.title}</p>
+                <div className="flex items-center gap-2">
+                  {priority.department ? <Badge variant="outline">{priority.department}</Badge> : null}
+                  {priority.ownerRole ? <Badge className="bg-slate-100 text-slate-700">{priority.ownerRole}</Badge> : <Badge className="bg-emerald-100 text-emerald-700">Company-wide</Badge>}
                 </div>
-              ))}
-            </CardContent>
-          </Card>
+              </div>
+              {priority.description ? <p className="mt-1 text-sm text-slate-600">{priority.description}</p> : null}
+              <div className="mt-2">
+                <Button asChild size="sm" variant="outline">
+                  <Link href={getPriorityDestination(priority)}>Open priority</Link>
+                </Button>
+              </div>
+            </div>
+          )) : <p className="text-sm text-slate-500">No active priorities are published for your scope. Visit Company Priorities for full context.</p>}
+        </CardContent>
+      </Card>
 
-          <Card className="border-slate-200 shadow-sm">
-            <CardHeader><CardTitle className="text-base">Lifecycle Visibility</CardTitle></CardHeader>
-            <CardContent className="space-y-2">
-              <Link href="/projects" className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><FolderKanban className="h-4 w-4" />Cross-Functional Projects</span><span>Open</span></Link>
-              <Link href="/pd" className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-sm"><span>Pre-Handover (PD)</span><span>Open</span></Link>
-              <Link href="/pm-dashboard" className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-sm"><span>Post-Handover (PM)</span><span>Open</span></Link>
-            </CardContent>
-          </Card>
-        </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg">My Morning Focus</CardTitle>
+            <p className="text-sm text-slate-600">What you need to do first.</p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {[{ label: "Due today", count: dueToday.length, items: dueToday }, { label: "Waiting for my approval", count: waitingApproval.length, items: waitingApproval }, { label: "Overdue", count: overdue.length, items: overdue }, { label: "Blocked / needs escalation", count: blocked.length, items: blocked }].map((bucket) => (
+              <div key={bucket.label} className="rounded-lg border border-slate-200 p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">{bucket.label}</p>
+                  <Badge className="bg-slate-100 text-slate-700">{bucket.count}</Badge>
+                </div>
+                {bucket.items.length ? (
+                  <div className="mt-2 space-y-1">
+                    {bucket.items.slice(0, 2).map((item) => (
+                      <p key={item.id} className="text-xs text-slate-600 truncate">• {item.title || `Task #${item.id}`} {item.projectName ? `· ${item.projectName}` : ""}</p>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg">Role Quick Actions</CardTitle>
+            <p className="text-sm text-slate-600">Where to go next as {role || "your"}.</p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {roleActions.map((action) => (
+              <Link key={action.label} href={action.path} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 hover:bg-slate-50">
+                <div>
+                  <p className="text-sm font-medium">{action.label}</p>
+                  <p className="text-xs text-slate-500">{action.description}</p>
+                </div>
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="border-slate-200/80 shadow-sm bg-slate-50/40">
+          <CardHeader><CardTitle className="text-base text-slate-700">Microsoft Integration</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            <Link href="/my-work/calendar" className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><Calendar className="h-4 w-4" />Calendar</span><span className="text-xs text-slate-500">Open</span></Link>
+            <Link href="/my-work/email" className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><Mail className="h-4 w-4" />Email</span><span className="text-xs text-slate-500">Open</span></Link>
+            <Link href="/my-work/teams" className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><MessageSquare className="h-4 w-4" />Teams</span><span className="text-xs text-slate-500">Open</span></Link>
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200/80 shadow-sm bg-slate-50/40">
+          <CardHeader><CardTitle className="text-base text-slate-700">KPI Snapshot</CardTitle></CardHeader>
+          <CardContent className="grid grid-cols-2 gap-2">
+            {Object.entries(roleKpis).map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-slate-200 p-2.5 bg-white">
+                <p className="text-xs text-slate-500">{label}</p>
+                <p className="text-lg font-semibold">{value}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
