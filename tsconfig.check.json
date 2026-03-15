@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "include": [
+    "server/types/**/*.d.ts",
     "server/startup-modes.ts",
     "server/health-diagnostics.ts",
     "server/lib/api-error.ts",
