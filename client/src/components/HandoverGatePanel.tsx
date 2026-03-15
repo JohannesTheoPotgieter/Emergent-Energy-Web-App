@@ -51,7 +51,8 @@ function GateCard({ gate, projectId, isAdmin }: { gate: GateData; projectId: num
   const qc = useQueryClient();
 
   const isComplete = gate.status === "COMPLETE";
-  const allChecked = gate.checklist.every(item => checkedItems.includes(item));
+  const requiredItems = gate.checklist.filter(Boolean);
+  const allChecked = requiredItems.length > 0 && requiredItems.every(item => checkedItems.includes(item));
 
   const updateChecklistMutation = useMutation({
     mutationFn: async (items: string[]) => {
@@ -181,8 +182,14 @@ function GateCard({ gate, projectId, isAdmin }: { gate: GateData; projectId: num
               <Button
                 size="sm"
                 className="w-full gap-1.5"
-                disabled={!allChecked || completeMutation.isPending}
-                onClick={() => completeMutation.mutate()}
+                disabled={!allChecked || completeMutation.isPending || updateChecklistMutation.isPending}
+                onClick={() => {
+                  if (!allChecked) {
+                    toast({ title: "Checklist incomplete", description: "Complete all required checklist items before completing this gate.", variant: "destructive" });
+                    return;
+                  }
+                  completeMutation.mutate();
+                }}
                 data-testid={`button-complete-gate-${gate.gateId}`}
               >
                 {completeMutation.isPending ? (

@@ -33,7 +33,7 @@ export default function ActionLaunchpadPage() {
   const requested = (search.get("action") || "") as LaunchAction;
   const [activeAction, setActiveAction] = useState<LaunchAction>(Object.keys(ACTION_LABELS).includes(requested) ? requested : "task");
 
-  const { data: projects = [], isLoading: projectsLoading, error: projectsError } = useQuery<Project[]>({
+  const { data: projects = [], isLoading: projectsLoading, error: projectsError, refetch: refetchProjects, isFetching: projectsFetching } = useQuery<Project[]>({
     queryKey: ["action-launchpad-projects"],
     queryFn: async () => {
       const res = await fetch("/api/projects-summary", { credentials: "include" });
@@ -41,6 +41,7 @@ export default function ActionLaunchpadPage() {
       const data = await res.json();
       return Array.isArray(data) ? data.map((p: any) => ({ id: p.id || p.project_info_id, projectName: p.projectName || p.project_name })).filter((p: Project) => p.id && p.projectName) : [];
     },
+    retry: 1,
   });
 
   const [projectId, setProjectId] = useState<string>("");
@@ -161,11 +162,19 @@ export default function ActionLaunchpadPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {projectsError ? <p className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">Could not load projects. Likely reason: server/network issue. How to fix: refresh the page and retry. If it persists, contact your admin.</p> : null}
+          {projectsError ? (
+            <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 space-y-2">
+              <p>Could not load projects. Likely reason: server/network issue. How to fix: refresh the page and retry. If it persists, contact your admin.</p>
+              <Button type="button" size="sm" variant="outline" onClick={() => refetchProjects()} disabled={projectsFetching} data-testid="btn-retry-projects">
+                {projectsFetching ? "Retrying..." : "Retry projects"}
+              </Button>
+              <p className="text-xs text-amber-700">Project data is unavailable, so this action cannot be submitted yet.</p>
+            </div>
+          ) : null}
           <form className="space-y-4" onSubmit={onSubmit}>
             <div className="space-y-1.5">
               <Label htmlFor="project">Project</Label>
-              <select id="project" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={projectId} onChange={(e) => setProjectId(e.target.value)} disabled={projectsLoading || submitting}>
+              <select id="project" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={projectId} onChange={(e) => setProjectId(e.target.value)} disabled={projectsLoading || submitting || !!projectsError}>
                 <option value="">Select project</option>
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
               </select>
@@ -198,7 +207,7 @@ export default function ActionLaunchpadPage() {
 
             {activeAction === "handover" && <p className="text-sm text-slate-600">This launches the formal PD to PM handover workflow with mandatory validation and PM review.</p>}
 
-            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={submitting || projectsLoading}>{submitting ? "Submitting..." : ACTION_LABELS[activeAction]}</Button>
+            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={submitting || projectsLoading || !!projectsError || !projectId}>{submitting ? "Submitting..." : ACTION_LABELS[activeAction]}</Button>
           </form>
         </CardContent>
       </Card>
