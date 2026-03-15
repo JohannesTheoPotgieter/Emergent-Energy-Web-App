@@ -310,3 +310,52 @@ export async function listClientsFromPromotedCoreCompat() {
 
   return rows;
 }
+
+export async function listProjectInfoFromPromotedCoreCompat() {
+  const rows = await db.execute(sql`
+    SELECT
+      p.id,
+      p.project_name AS "projectName",
+      NULL::DECIMAL AS "sizeKwp",
+      NULL::TEXT AS pd,
+      NULL::TEXT AS pm,
+      NULL::DECIMAL AS "contractValue",
+      p.phase,
+      NULL::TIMESTAMP AS "phaseUpdatedAt",
+      NULL::INTEGER AS "phaseUpdatedByUserId",
+      NULL::TEXT AS "phaseNotes",
+      NULL::TEXT AS "pdHandoverDate",
+      NULL::TEXT AS "constructionStartDate",
+      NULL::TEXT AS "commissioningDate",
+      NULL::TEXT AS "omHandoverDate",
+      NULL::TEXT AS "clientHandoverDate",
+      NULL::TEXT AS "escalationLevel",
+      NULL::TEXT AS "constructionStartActual",
+      NULL::TEXT AS "pdHandoverActual",
+      NULL::TEXT AS "commissioningActual",
+      NULL::TEXT AS "clientHandoverActual",
+      p.rag_status AS "ragStatus",
+      p.rag_comment AS "ragComment",
+      NULL::TIMESTAMP AS "ragUpdatedAt",
+      NULL::INTEGER AS "ragUpdatedByUserId",
+      TRUE AS "isActive",
+      FALSE AS "executionEnabled",
+      p.execution_gate_status AS "executionGateStatus",
+      p.execution_gate_reason AS "executionGateReason",
+      'NONE'::TEXT AS "signedStatus",
+      NULL::TEXT AS "signedDate",
+      NULL::TEXT AS "signedDocumentLink",
+      NULL::TEXT AS "executionPhase",
+      NULL::TEXT AS "excelTrackerLink",
+      NULL::INTEGER AS "canonicalProjectId",
+      p.client_id AS "clientId",
+      'ACTIVE'::TEXT AS "archivedStatus",
+      NULL::INTEGER AS "pmUserId",
+      NULL::INTEGER AS "pdUserId",
+      p.updated_at AS "updatedAt"
+    FROM core.projects p
+    ORDER BY p.project_name ASC
+  `).then((r: any) => r.rows ?? r);
+
+  return rows;
+}

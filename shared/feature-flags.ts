@@ -5,6 +5,9 @@ export const FEATURE_FLAG_KEYS = [
   "local_synced_save_flow",
   "cleaned_admin_visibility",
   "promoted_core_clients_read",
+  "promoted_core_projects_read",
+  "promoted_core_portfolios_read",
+  "promoted_core_portfolio_assignments_read",
 ] as const;
 
 export type RolloutFeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -52,6 +55,24 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "promoted_core_clients_read",
     label: "Promoted core clients read",
     description: "Controls additive read-only adoption of clients from core.clients with comparison support.",
+    defaultValue: false,
+  },
+  {
+    key: "promoted_core_projects_read",
+    label: "Promoted core projects read",
+    description: "Controls additive read-only adoption of project master reads from core.projects with comparison support.",
+    defaultValue: false,
+  },
+  {
+    key: "promoted_core_portfolios_read",
+    label: "Promoted core portfolios read",
+    description: "Controls additive read-only adoption of portfolio summary reads from core.portfolios with comparison support.",
+    defaultValue: false,
+  },
+  {
+    key: "promoted_core_portfolio_assignments_read",
+    label: "Promoted core portfolio assignments read",
+    description: "Controls additive read-only adoption of project-portfolio assignment reads from core.project_portfolio_assignments.",
     defaultValue: false,
   },
 ];
