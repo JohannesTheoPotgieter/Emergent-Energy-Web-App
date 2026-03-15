@@ -51,6 +51,8 @@ import {
   softDeleteLegacyOperationalTaskByWorkItemId,
   syncOperationalTaskFromWorkItemUpdate,
 } from "./canonical-boundaries";
+import { listImportSyncState } from "./services/imports-governance-service";
+import { classifyProjectInfoPayload } from "./services/source-of-truth-policy";
 
 function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
   if (fontColor === 'red') return false;
@@ -4924,6 +4926,7 @@ export async function registerRoutes(
       });
 
       const parsed = editSchema.parse(req.body);
+      const sourceOfTruth = classifyProjectInfoPayload(parsed as Record<string, unknown>);
       const updated = await storage.updateProjectInfoById(id, parsed as any);
       if (!updated) return res.status(404).json({ error: "Project not found" });
 
@@ -4968,7 +4971,7 @@ export async function registerRoutes(
       }
 
       let importsGovernancePreviewRecord: { attempted: boolean; requestId: number | null; error: string | null } = { attempted: false, requestId: null, error: null };
-      if (importsGovernancePreview) {
+      if (importsGovernancePreview && sourceOfTruth.requiresSourceUpdateGovernance) {
         importsGovernancePreviewRecord.attempted = true;
         try {
           const governanceInsert = await db.execute(sql`
@@ -5015,7 +5018,19 @@ export async function registerRoutes(
         }
       }
 
-      logAuditFromReq(req, { entityType: "project_info", action: "update", entityId: String(id), projectName: updated.projectName, changesJson: { description: "Project info updated", ...parsed, projectMirror, importsGovernancePreview: importsGovernancePreviewRecord } });
+      logAuditFromReq(req, {
+        entityType: "project_info",
+        action: "update",
+        entityId: String(id),
+        projectName: updated.projectName,
+        changesJson: {
+          description: "Project info updated",
+          ...parsed,
+          projectMirror,
+          importsGovernancePreview: importsGovernancePreviewRecord,
+          sourceOfTruth,
+        },
+      });
       if (projectMirror.attempted) {
         res.setHeader("X-Promoted-Project-Master-Dual-Write", projectMirror.success ? "mirrored" : "mirror_failed");
       }
@@ -5047,6 +5062,25 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Cutover post-validation report error:", error);
       res.status(500).json({ error: "Failed to generate cutover post-validation report" });
+    }
+  });
+
+  app.get("/api/imports/sync-state", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const projectIdParam = req.query.projectId;
+      const projectId = typeof projectIdParam === "string" && projectIdParam.trim().length > 0 ? Number(projectIdParam) : undefined;
+      if (projectIdParam !== undefined && (!Number.isFinite(projectId) || (projectId as number) <= 0)) {
+        return res.status(400).json({ error: "Invalid projectId query parameter" });
+      }
+
+      const rows = await listImportSyncState(projectId);
+      res.json({
+        generatedAt: new Date().toISOString(),
+        rows,
+      });
+    } catch (error) {
+      console.error("Imports sync-state fetch error:", error);
+      res.status(500).json({ error: "Failed to fetch imports sync-state" });
     }
   });
 
