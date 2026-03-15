@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -954,21 +954,19 @@ function AssigneeGroup({ name, tasks, onUpdate, defaultOpen, onOpenTask }: { nam
 }
 
 function StandupBucket({
-  title, icon, tasks, color, defaultOpen, testId, onUpdate, onOpenTask,
+  title, icon, tasks, color, open, onToggle, testId, onUpdate, onOpenTask,
 }: {
   title: string;
   icon: React.ReactNode;
   tasks: FullTask[];
   color: string;
-  defaultOpen: boolean;
+  open: boolean;
+  onToggle: () => void;
   testId: string;
   onUpdate: (id: number, updates: Record<string, any>) => void;
   onOpenTask?: (task: FullTask) => void;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   const grouped = groupByAssignee(tasks);
-
-  if (tasks.length === 0) return null;
 
   const countBg = color.includes("red") ? "bg-red-100 text-red-700" :
     color.includes("amber") ? "bg-amber-100 text-amber-700" :
@@ -980,7 +978,7 @@ function StandupBucket({
     <Card className="overflow-hidden shadow-sm" data-testid={testId}>
       <button
         className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-muted/30 transition-all"
-        onClick={() => setOpen(!open)}
+        onClick={onToggle}
         data-testid={`toggle-${testId}`}
       >
         <div className={`transition-transform duration-200 ${open ? "rotate-90" : ""}`}>
@@ -992,17 +990,21 @@ function StandupBucket({
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${countBg}`}>{tasks.length}</span>
       </button>
       {open && (
-        <div className="border-t">
-          {[...grouped.entries()].map(([name, assigneeTasks]) => (
-            <AssigneeGroup
-              key={name}
-              name={name}
-              tasks={assigneeTasks}
-              onUpdate={onUpdate}
-              onOpenTask={onOpenTask}
-              defaultOpen={grouped.size <= 5}
-            />
-          ))}
+        <div className="border-t min-h-14">
+          {tasks.length === 0 ? (
+            <p className="text-xs text-muted-foreground p-4">No standup items in this group</p>
+          ) : (
+            [...grouped.entries()].map(([name, assigneeTasks]) => (
+              <AssigneeGroup
+                key={name}
+                name={name}
+                tasks={assigneeTasks}
+                onUpdate={onUpdate}
+                onOpenTask={onOpenTask}
+                defaultOpen={grouped.size <= 5}
+              />
+            ))
+          )}
         </div>
       )}
     </Card>
@@ -1015,12 +1017,14 @@ function StandupModeView() {
   const blockersRef = useRef<HTMLDivElement>(null);
   const [selectedTask, setSelectedTask] = useState<FullTask | null>(null);
 
-  const { data: allTasks = [], isLoading } = useQuery<FullTask[]>({
+  const { data: allTasks = [], isLoading, isError, error, refetch, isFetching } = useQuery<FullTask[]>({
     queryKey: ["eng-standup-all-tasks"],
     queryFn: () => engFetch("/api/eng/tasks"),
     refetchOnMount: "always",
     staleTime: 0,
   });
+
+  const [openBuckets, setOpenBuckets] = useState<Record<string, boolean>>({});
 
   const updateMutation = useMutation({
     mutationFn: ({ id, updates }: { id: number; updates: Record<string, any> }) =>
@@ -1047,14 +1051,6 @@ function StandupModeView() {
   const handleOpenTask = useCallback((task: FullTask) => {
     setSelectedTask(task);
   }, []);
-
-  if (isLoading) {
-    return (
-      <div className="space-y-3">
-        {[1, 2, 3, 4].map(i => <div key={i} className="h-32 bg-muted animate-pulse rounded-xl" />)}
-      </div>
-    );
-  }
 
   const today = new Date().toISOString().split("T")[0];
   const sevenDays = new Date();
@@ -1085,11 +1081,68 @@ function StandupModeView() {
 
   const blockerCount = overdueTasks.length + holdTasks.length;
 
+  const groups = useMemo(() => ([
+    { key: "overdue", title: "Overdue", icon: <AlertTriangle className="h-4 w-4" />, tasks: overdueTasks, color: "text-red-600", defaultOpen: true, testId: "standup-bucket-overdue" },
+    { key: "dueSoon", title: "Due Soon (7 days)", icon: <Timer className="h-4 w-4" />, tasks: dueSoonTasks, color: "text-indigo-600", defaultOpen: true, testId: "standup-bucket-due-soon" },
+    { key: "hold", title: "On Hold", icon: <PauseCircle className="h-4 w-4" />, tasks: holdTasks, color: "text-amber-600", defaultOpen: true, testId: "standup-bucket-hold" },
+    { key: "inProgress", title: "In Progress", icon: <Zap className="h-4 w-4" />, tasks: inProgressTasks, color: "text-blue-600", defaultOpen: false, testId: "standup-bucket-in-progress" },
+    { key: "everythingElse", title: "Everything Else", icon: <ListTodo className="h-4 w-4" />, tasks: everythingElse, color: "text-muted-foreground", defaultOpen: false, testId: "standup-bucket-everything-else" },
+  ]), [dueSoonTasks, everythingElse, holdTasks, inProgressTasks, overdueTasks]);
+
+  useEffect(() => {
+    if (Object.keys(openBuckets).length > 0) return;
+    const firstNonEmpty = groups.find((group) => group.tasks.length > 0)?.key;
+    const nextState: Record<string, boolean> = {};
+    for (const group of groups) {
+      nextState[group.key] = firstNonEmpty ? group.key === firstNonEmpty : group.defaultOpen;
+    }
+    setOpenBuckets(nextState);
+  }, [groups, openBuckets]);
+
   const scrollToBlockers = () => {
     blockersRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const currentTask = selectedTask ? allTasks.find(t => t.id === selectedTask.id) || selectedTask : null;
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3" data-testid="standup-body-loading">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Loading standup task groups...
+        </div>
+        {[1, 2, 3, 4].map(i => <div key={i} className="h-32 bg-muted animate-pulse rounded-xl" />)}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="border-red-200" data-testid="standup-body-error">
+        <CardContent className="py-8 px-4 space-y-3 text-center">
+          <AlertTriangle className="h-8 w-8 text-red-600 mx-auto" />
+          <p className="text-sm font-semibold">Could not load standup task details</p>
+          <p className="text-xs text-muted-foreground">{(error as Error)?.message || "Unknown error"}</p>
+          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => refetch()} data-testid="retry-standup-body">
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (nonComplete.length === 0) {
+    return (
+      <Card data-testid="standup-body-empty">
+        <CardContent className="py-8 text-center">
+          <CheckCircle2 className="h-8 w-8 text-emerald-600 mx-auto mb-2" />
+          <p className="text-sm font-semibold">No open standup tasks</p>
+          <p className="text-xs text-muted-foreground">All engineering tasks are complete.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -1107,62 +1160,35 @@ function StandupModeView() {
         </button>
       )}
 
-      <div ref={blockersRef}>
-        <StandupBucket
-          title="Overdue"
-          icon={<AlertTriangle className="h-4 w-4" />}
-          tasks={overdueTasks}
-          color="text-red-600"
-          defaultOpen={true}
-          testId="standup-bucket-overdue"
-          onUpdate={handleUpdate}
-          onOpenTask={handleOpenTask}
-        />
+      <div className="space-y-4" data-testid="standup-body-groups">
+        {groups.map((group, index) => {
+          const bucket = (
+            <StandupBucket
+              key={group.key}
+              title={group.title}
+              icon={group.icon}
+              tasks={group.tasks}
+              color={group.color}
+              open={!!openBuckets[group.key]}
+              onToggle={() => setOpenBuckets((prev) => ({ ...prev, [group.key]: !prev[group.key] }))}
+              testId={group.testId}
+              onUpdate={handleUpdate}
+              onOpenTask={handleOpenTask}
+            />
+          );
+          if (index === 0) {
+            return <div key={group.key} ref={blockersRef}>{bucket}</div>;
+          }
+          return bucket;
+        })}
       </div>
 
-      <StandupBucket
-        title="Due Soon (7 days)"
-        icon={<Timer className="h-4 w-4" />}
-        tasks={dueSoonTasks}
-        color="text-indigo-600"
-        defaultOpen={true}
-        testId="standup-bucket-due-soon"
-        onUpdate={handleUpdate}
-        onOpenTask={handleOpenTask}
-      />
-
-      <StandupBucket
-        title="On Hold"
-        icon={<PauseCircle className="h-4 w-4" />}
-        tasks={holdTasks}
-        color="text-amber-600"
-        defaultOpen={true}
-        testId="standup-bucket-hold"
-        onUpdate={handleUpdate}
-        onOpenTask={handleOpenTask}
-      />
-
-      <StandupBucket
-        title="In Progress"
-        icon={<Zap className="h-4 w-4" />}
-        tasks={inProgressTasks}
-        color="text-blue-600"
-        defaultOpen={false}
-        testId="standup-bucket-in-progress"
-        onUpdate={handleUpdate}
-        onOpenTask={handleOpenTask}
-      />
-
-      <StandupBucket
-        title="Everything Else"
-        icon={<ListTodo className="h-4 w-4" />}
-        tasks={everythingElse}
-        color="text-muted-foreground"
-        defaultOpen={false}
-        testId="standup-bucket-everything-else"
-        onUpdate={handleUpdate}
-        onOpenTask={handleOpenTask}
-      />
+      {isFetching && (
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground px-1">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Refreshing standup task details...
+        </div>
+      )}
 
       <Sheet open={!!selectedTask} onOpenChange={(open) => { if (!open) setSelectedTask(null); }}>
         <SheetContent side="right" className="w-full sm:max-w-lg p-6" data-testid="standup-sheet-drawer">
@@ -1346,11 +1372,13 @@ export default function EngineeringDashboard() {
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
-      <SectionHeader
-        icon={<Wrench className="h-5 w-5" />}
-        title={standupMode ? "Engineering Standup & Team Triage" : showAllTasks ? "Engineering Overview & Team Ops" : `${firstName}'s Dashboard`}
-        description={todayFormatted}
-      />
+      {!standupMode && (
+        <SectionHeader
+          icon={<Wrench className="h-5 w-5" />}
+          title={showAllTasks ? "Engineering Overview & Team Ops" : `${firstName}'s Dashboard`}
+          description={todayFormatted}
+        />
+      )}
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
