@@ -21,24 +21,31 @@ server/api/v2/
     project-v2-validators.ts
 ```
 
-## Design principles implemented
-- Routes/controllers are thin and delegate data logic to services/repositories.
-- New endpoints only use project-linked core/new-schema entities (`project_info`, `work_items`, `procurement_items`, `invoice_captures`, `normalized_*`, `project_eng_*`, `qc_*`).
-- Request validation is Zod-based for params/query/body.
-- Response envelope is consistent (`success`, `data`, `meta`, `error`).
-- Structured typed errors (`ApiV2Error`) with explicit HTTP status and error codes.
-- Permission checks centralized in policy guards.
-- Audit write hooks for create/update/workflow transition actions.
-- Pagination and reduced payload list endpoints to improve dashboard/list performance.
+## Current architecture direction (post-PR95 completion hardening)
+- **Controllers are thin**: no direct DB calls remain in `v2-controller.ts`; all reads/writes go through service/repository layers.
+- **Service layer owns orchestration**: workflow transitions, role-aware dashboard shaping, and domain-level output contracts live in `project-v2-service.ts`.
+- **Repository layer owns DB access**: procurement, PO, invoices, finance read models, engineering designs, quality checks, milestones and lifecycle transitions are all explicit repository methods.
+- **Policy is centralized in code** via `access-policy.ts` (`ROLE_PERMISSIONS` + `assertPermission`) and applied consistently on mutation routes.
+- **Validation is explicit per domain mutation** with dedicated schemas for milestones, quality checks, engineering designs, procurement patch/PO, invoices, and finance variations.
+- **Audit service remains the single persistence entrypoint** for mutation event capture.
 
-## Performance notes
-- Removed legacy table fan-out for v2 project and dashboard endpoints.
-- Added aggregate SQL read models for dashboard and finance summary.
-- Added pagination defaults/max page size to bound payload size.
-- Grouped fetches with `Promise.all` for project overview.
-- Repository methods enforce filtered queries and sort order; avoids client-side filtering where possible.
+## Schema and contract alignment
+- v2 uses only project-linked new schema entities (`project_info`, `project_phase_history`, `work_items`, `procurement_items`, `invoice_captures`, `project_eng_*`, `qc_*`, `normalized_*`, `audit_events`).
+- Aliases/placeholders were replaced by real domain handlers:
+  - `engineering/designs` now has dedicated list/create/patch behavior.
+  - `quality/checks` now has dedicated list/create/patch behavior.
+  - `milestones` now maps to milestone-specific work item flows (`isMilestone=true`).
+  - `procurement/pos` now maps to PO-specific list/create/patch behavior (distinct from generic procurement item routes).
+  - finance detail routes return differentiated payloads (`cashflow`, `cos`, `revenue`, `expenditure`, `variations`).
 
-## Legacy endpoint deprecation strategy
-- Keep existing `/api/*` endpoints in place while frontend callers migrate.
-- Use `docs/api/API_MIGRATION_MATRIX.md` and `docs/api/V2_API_MIGRATION_TRACKER.md` to control cutover.
-- Mark old handlers as deprecated during phased migration; remove only post-approval.
+## Workflow/source-of-truth rigor
+- Development handover now executes as a DB transaction that writes phase history **and** updates the current `project_info.phase` and phase metadata.
+
+## Performance discipline
+- Paginated project listing retained.
+- Finance detail endpoints return scoped fields and capped line payloads (limit 100 lines).
+- Repository methods avoid controller-driven fan-out and preserve grouped SQL execution for core overview reads.
+
+## Remaining <8/10 risks
+- Finance variations currently leverage `work_items` with `workstream=FINANCE` + `type=VARIATION`; this is production-usable but a dedicated variations table could improve long-term domain clarity.
+- POs currently leverage `procurement_items` with required `poId`; this is now a distinct API flow but still backed by shared storage.

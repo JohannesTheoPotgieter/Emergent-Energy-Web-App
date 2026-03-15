@@ -40,17 +40,19 @@ export function registerApiV2Routes(app: Express) {
   app.patch("/api/v2/projects/:projectId/procurement/items/:id", requireAuth, c.patchProcurementItem);
 
   app.get("/api/v2/projects/:projectId/procurement/pos", requireAuth, c.procurementPos);
-  app.post("/api/v2/projects/:projectId/procurement/pos", requireAuth, c.createProcurementItem);
+  app.post("/api/v2/projects/:projectId/procurement/pos", requireAuth, c.procurementPos);
+  app.patch("/api/v2/projects/:projectId/procurement/pos/:id", requireAuth, c.procurementPos);
 
   app.get("/api/v2/projects/:projectId/procurement/invoices", requireAuth, c.procurementInvoices);
   app.post("/api/v2/projects/:projectId/procurement/invoices", requireAuth, c.procurementInvoices);
 
   app.get("/api/v2/projects/:projectId/finance", requireAuth, c.projectFinance);
   app.get("/api/v2/projects/:projectId/finance/summary", requireAuth, c.financeSummary);
-  app.get("/api/v2/projects/:projectId/finance/cashflow", requireAuth, c.financeSimpleView);
-  app.get("/api/v2/projects/:projectId/finance/cos", requireAuth, c.financeSimpleView);
-  app.get("/api/v2/projects/:projectId/finance/revenue", requireAuth, c.financeSimpleView);
-  app.get("/api/v2/projects/:projectId/finance/expenditure", requireAuth, c.financeSimpleView);
+  app.get("/api/v2/projects/:projectId/finance/cashflow", requireAuth, c.financeCashflow);
+  app.get("/api/v2/projects/:projectId/finance/cos", requireAuth, c.financeCos);
+  app.get("/api/v2/projects/:projectId/finance/revenue", requireAuth, c.financeRevenue);
+  app.get("/api/v2/projects/:projectId/finance/expenditure", requireAuth, c.financeExpenditure);
+  app.get("/api/v2/projects/:projectId/finance/variations", requireAuth, c.financeVariations);
   app.post("/api/v2/projects/:projectId/finance/variations", requireAuth, c.financeVariations);
   app.patch("/api/v2/projects/:projectId/finance/variations", requireAuth, c.financeVariations);
 
