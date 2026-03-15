@@ -5,8 +5,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
 import { dbMode, initializeDatabase, db } from "./db";
-import { sql, eq } from "drizzle-orm";
-import { appSettings } from "@shared/schema";
+import { sql } from "drizzle-orm";
 import { runBackfill } from "./lib/backfill";
 import { startScheduler, getSchedulerStatus } from "./importPipeline";
 import { startMilestoneChecker } from "./milestone-notifications";
@@ -19,9 +18,10 @@ import { configurePassportAuth } from "./bootstrap/auth";
 import { enforceRuntimeEnvironmentGuards } from "./bootstrap/env-guard";
 import { applyRequestLogging } from "./bootstrap/http-observability";
 import { registerGlobalErrorHandler } from "./bootstrap/error-handling";
-import { shouldRunRuntimeStartupMigrations } from "./bootstrap/maintenance-guard";
 import { getEnvironmentStatus } from "./bootstrap/environment-status";
 import { getRuntimeMutationPolicy } from "./bootstrap/runtime-mutation-policy";
+import { backfillPmUserIds } from "./bootstrap/backfill";
+import { runGuardedStartupMaintenance } from "./bootstrap/maintenance";
 
 const app = express();
 const httpServer = createServer(app);
@@ -99,55 +99,6 @@ app.get("/api/environment/status", async (_req, res) => {
   return res.status(200).json(getEnvironmentStatus());
 });
 
-async function backfillPmUserIds() {
-  try {
-    if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) await db.execute(sql.raw(`ALTER TABLE project_info ADD COLUMN IF NOT EXISTS pm_user_id INTEGER REFERENCES users(id)`));
-
-    const mappings: [string, string[]][] = [
-      ["eon", ["Eon Van Rensburg", "Eon Van Rensberg"]],
-      ["jt", ["JT Moorosi", "JT"]],
-      ["lloyd", ["Lloyd Brown", "Lloyd"]],
-      ["justin", ["Justin Franke"]],
-    ];
-
-    let totalUpdated = 0;
-    for (const [username, pmNames] of mappings) {
-      const pmList = pmNames.map(n => `'${n.replace(/'/g, "''")}'`).join(",");
-      const result = await db.execute(sql.raw(
-        `UPDATE project_info SET pm_user_id = (SELECT id FROM users WHERE username = '${username}') WHERE pm = ANY(ARRAY[${pmList}])`
-      ));
-      const count = (result as any).rowCount || 0;
-      totalUpdated += count;
-    }
-    log(`Backfill pm_user_id: ${totalUpdated} rows updated`);
-
-    const unassignResult = await db.execute(sql.raw(`
-      UPDATE operational_tasks ot
-      SET owner_user_id = NULL
-      FROM project_info pi
-      WHERE ot.project_name = pi.project_name
-        AND pi.phase IN ('Compliance Handover', 'Commercial Close Out')
-        AND ot.owner_user_id IS NOT NULL
-    `));
-    const unassignCount = (unassignResult as any).rowCount || 0;
-    log(`Unassign tasks for Compliance Handover / Commercial Close Out: ${unassignCount} tasks cleared`);
-
-    const taskResult = await db.execute(sql.raw(`
-      UPDATE operational_tasks ot
-      SET owner_user_id = pi.pm_user_id
-      FROM project_info pi
-      WHERE ot.project_name = pi.project_name
-        AND pi.pm_user_id IS NOT NULL
-        AND pi.phase NOT IN ('Compliance Handover', 'Commercial Close Out')
-        AND (ot.owner_user_id IS NULL OR ot.owner_user_id != pi.pm_user_id)
-    `));
-    const taskCount = (taskResult as any).rowCount || 0;
-    log(`Backfill task owner_user_id to PM: ${taskCount} tasks updated`);
-  } catch (error) {
-    log(`Backfill pm_user_id error: ${error}`);
-  }
-}
-
 (async () => {
   // Initialize database FIRST before any storage operations
   // initializeDatabase() only establishes DB connectivity/mode and SQLite baseline schema when needed.
@@ -159,40 +110,23 @@ async function backfillPmUserIds() {
   // Runtime user seeding removed for trustability; use explicit migration/seed scripts instead.
 
   const runtimeMutationPolicy = getRuntimeMutationPolicy(startupModes);
-  const startupMigrationsEnabled = runtimeMutationPolicy.runtimeMaintenanceEnabled && shouldRunRuntimeStartupMigrations(startupSchemaRepairEnabled, log);
-  if (startupMigrationsEnabled) {
-  try {
-    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
-    await db.execute(sql.raw(`ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS no_revenue_linked BOOLEAN DEFAULT FALSE`));
-    await db.execute(sql.raw(`ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS has_deliverable BOOLEAN NOT NULL DEFAULT FALSE`));
-    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS project_eng_task_id INTEGER REFERENCES project_eng_tasks(id) ON DELETE SET NULL`));
-    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'pending'`));
-    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES users(id)`));
-    await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP`));
-    } catch (e) {}
-  }
 
   log(`[Startup] maintenance=${startupMaintenanceEnabled} schemaRepair=${startupSchemaRepairEnabled} dataSeed=${startupDataSeedEnabled} backfill=${startupBackfillEnabled} sessionReset=${startupSessionResetEnabled}`);
+  await runGuardedStartupMaintenance({
+    enabled: runtimeMutationPolicy.runtimeMaintenanceEnabled,
+    schemaRepairEnabled: startupSchemaRepairEnabled,
+    log,
+  });
 
   if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupDataSeedEnabled) {
     log("[Startup] ENABLE_STARTUP_DATA_SEED is set, but user seeding is intentionally disabled at runtime. Use explicit seed scripts.");
   }
 
   if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupBackfillEnabled) {
-    await backfillPmUserIds();
+    await backfillPmUserIds(log, runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled);
   }
 
   if (runtimeMutationPolicy.runtimeMaintenanceEnabled && startupSchemaRepairEnabled) {
-    try {
-      await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS sharepoint_folder_path TEXT`));
-      await db.execute(sql.raw(`ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS no_revenue_linked BOOLEAN DEFAULT FALSE`));
-      await db.execute(sql.raw(`ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS has_deliverable BOOLEAN NOT NULL DEFAULT FALSE`));
-      await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS project_eng_task_id INTEGER REFERENCES project_eng_tasks(id) ON DELETE SET NULL`));
-      await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'pending'`));
-      await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES users(id)`));
-      await db.execute(sql.raw(`ALTER TABLE project_eng_deliverables ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP`));
-    } catch (e) {}
-
     try {
       await db.execute(sql.raw(`ALTER TABLE operational_tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`));
       await db.execute(sql.raw(`ALTER TABLE mytool_tasks ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`));
