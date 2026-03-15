@@ -9,18 +9,18 @@
 ## Domain status
 | Domain | v2 status | Notes |
 |---|---|---|
-| auth / me / permissions | introduced | `/api/v2/me`, `/api/v2/me/permissions` added. |
-| dashboard read models | introduced | `/api/v2/dashboard/:role` optimized aggregate counts. |
-| projects hub | introduced | `/api/v2/projects`, `/api/v2/projects/:projectId/*` baseline endpoints added. |
-| project development | introduced | development view + explicit handover transition endpoint. |
-| engineering | introduced | engineering summary and designs endpoints. |
-| quality | introduced | quality summary + checks endpoints. |
-| project management | introduced | work items + milestones endpoints via `work_items`. |
-| procurement | introduced | project procurement/items/PO/invoice endpoints consolidated. |
-| project finance | introduced | summary/cashflow/cos/revenue/expenditure read models from normalized tables. |
-| imports / sync | introduced | `/api/v2/imports/:domain` scaffolded to smart import runs. |
-| lookups / reference data | introduced | `/api/v2/lookups/:type` with users/counterparties. |
-| audit/activity | introduced | `/api/v2/audit/activity` and write-action audit hooks. |
+| auth / me / permissions | introduced | `/api/v2/me`, `/api/v2/me/permissions` added; permission payload now policy-source aligned. |
+| dashboard read models | introduced | `/api/v2/dashboard/:role` now returns differentiated role-aware payload shapes. |
+| projects hub | introduced | `/api/v2/projects`, `/api/v2/projects/:projectId/*` with service/repository flow. |
+| project development | introduced | handover now updates both phase history and current project phase in one transaction. |
+| engineering | introduced | engineering summary + dedicated design list/create/patch handlers. |
+| quality | introduced | quality summary + check list/create/patch handlers; supports multi-checklist project reads. |
+| project management | introduced | work items + milestone-specific endpoints with separate validation/permissions/audit. |
+| procurement | introduced | procurement items, PO-specific flow, and invoice capture flow split and audited. |
+| project finance | introduced | summary/cashflow/cos/revenue/expenditure are distinct contracts; variations create/patch/list implemented. |
+| imports / sync | introduced | `/api/v2/imports/:domain` via smart import runs repository read. |
+| lookups / reference data | introduced | `/api/v2/lookups/:type` with users/counterparties repository reads. |
+| audit/activity | introduced | `/api/v2/audit/activity` and expanded write-action audit hooks. |
 
 ## Legacy compatibility policy
 1. Old `/api/*` endpoints remain active for now and are not deleted.
@@ -31,10 +31,6 @@
    - user approval,
    - migration matrix marks endpoint as `deprecate-ready`.
 
-## Remaining frontend migration TODOs
-- Update project list/detail pages to consume `/api/v2/projects*` contracts.
-- Update dashboard role pages to consume `/api/v2/dashboard/:role`.
-- Update procurement PO/invoice capture screens to consume `/api/v2/projects/:projectId/procurement/*`.
-- Update finance tabs to consume `/api/v2/projects/:projectId/finance/*`.
-- Update quality and engineering screens to use `/api/v2/projects/:projectId/quality*` and `/engineering*`.
-- Keep compatibility adapters isolated while callers are switched.
+## Remaining migration TODOs
+- Frontend cutover still pending for some pages that call legacy procurement/finance routes.
+- Consider introducing dedicated physical tables for purchase orders and finance variations after v2 traffic stabilizes.
