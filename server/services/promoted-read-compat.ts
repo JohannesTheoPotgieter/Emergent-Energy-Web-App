@@ -34,6 +34,24 @@ export interface DomainRolloutReadiness {
   blockerSummary: string;
 }
 
+export interface CutoverPostValidationRow {
+  domain: string;
+  cutoverState: string;
+  promotedReadPrimary: boolean;
+  dualWriteEnabled: boolean;
+  legacyFallbackAvailable: boolean;
+  rollbackFlagKey: string | null;
+  readinessEvidenceSource: string | null;
+  readiness: ComparisonStatus;
+  blockerCount: number;
+  mismatchCount: number;
+  mismatchCategories: string[];
+  sampleIds: number[];
+  blockerSummary: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
 export async function getDomainRolloutReadinessReport(): Promise<DomainRolloutReadiness[]> {
   const rows = await db.execute(sql`
     SELECT domain,
@@ -61,6 +79,46 @@ export async function getDomainRolloutReadinessReport(): Promise<DomainRolloutRe
     safeDualWritePreview: Boolean(row.safe_dual_write_preview),
     safeFullCutoverLater: Boolean(row.safe_full_cutover_later),
     blockerSummary: String(row.blocker_summary ?? ''),
+  }));
+}
+
+export async function getCutoverPostValidationReport(): Promise<CutoverPostValidationRow[]> {
+  const rows = await db.execute(sql`
+    SELECT domain,
+           cutover_state,
+           promoted_read_primary,
+           dual_write_enabled,
+           legacy_fallback_available,
+           rollback_flag_key,
+           readiness_evidence_source,
+           readiness,
+           blocker_count,
+           mismatch_count,
+           mismatch_categories,
+           sample_ids,
+           blocker_summary,
+           updated_at,
+           updated_by
+    FROM core.v_cutover_post_validation
+    ORDER BY domain
+  `).then((r: any) => r.rows ?? r);
+
+  return rows.map((row: any) => ({
+    domain: String(row.domain),
+    cutoverState: String(row.cutover_state),
+    promotedReadPrimary: Boolean(row.promoted_read_primary),
+    dualWriteEnabled: Boolean(row.dual_write_enabled),
+    legacyFallbackAvailable: Boolean(row.legacy_fallback_available),
+    rollbackFlagKey: row.rollback_flag_key ? String(row.rollback_flag_key) : null,
+    readinessEvidenceSource: row.readiness_evidence_source ? String(row.readiness_evidence_source) : null,
+    readiness: row.readiness as ComparisonStatus,
+    blockerCount: Number(row.blocker_count ?? 0),
+    mismatchCount: Number(row.mismatch_count ?? 0),
+    mismatchCategories: Array.isArray(row.mismatch_categories) ? row.mismatch_categories : [],
+    sampleIds: Array.isArray(row.sample_ids) ? row.sample_ids.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v)) : [],
+    blockerSummary: String(row.blocker_summary ?? ""),
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : new Date(0).toISOString(),
+    updatedBy: String(row.updated_by ?? "system"),
   }));
 }
 

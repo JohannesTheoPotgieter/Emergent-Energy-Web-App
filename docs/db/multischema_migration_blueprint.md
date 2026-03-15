@@ -474,3 +474,50 @@ Implemented SQL artifacts:
 ### Exact next PR recommendation
 - **Next PR should be `hard cutover readiness + deprecation plan` (not immediate hard cutover execution).**
 - Reason: this PR materially completes schema rollout and readiness instrumentation, but readiness still exposes active blockers and compatibility dependencies that must be closed and signed off before irreversible cutover/API flush.
+
+---
+
+## 11) PR 92 complete cutover execution (this PR)
+
+### Cutover decisions from live repo evidence
+- **CUTOVER_READY_WITH_COMPAT**
+  - core master data (`clients`, `projects`, `portfolios`, `project_portfolio_assignments`): active promoted-read paths already existed and were guarded by comparison/readiness checks; this PR makes promoted reads default while preserving rollback flags and compatibility fallback.
+  - project detail master sections (identity/client/phase/rag/portfolio membership): promoted compatibility reads existed with explicit comparison service; this PR enables those promoted reads by default with fallback retained.
+  - imports governance: readiness and governance history structures already exist; enforcement remains compat-guarded, no destructive behavior added.
+- **BLOCKED**
+  - project_management, project_development, engineering, quality: readiness is still domain-view dependent and operational routes are still materially legacy-path heavy; no unsafe forced write cutover in this PR.
+  - documentation lifecycle and finance write-side behavior: remains high-risk for full writes; readiness and collision/integrity views stay authoritative and legacy compatibility stays available.
+  - work-item full convergence: `core.work_items` convergence is not fully complete while `operational_tasks` remains active in multiple operational routes.
+
+### Production-safe cutover controls added
+- Added migration `migrations/20260318_cutover_execution_controls.sql` with:
+  - `internal.cutover_backup_references` for pre-cutover backup registration evidence.
+  - `internal.cutover_execution_log` for auditable per-domain cutover action logging.
+  - `internal.cutover_domain_state` for explicit domain state (`cutover_ready_with_compat` / `blocked`) and rollback metadata.
+  - `core.v_cutover_post_validation` to combine domain state with readiness blockers/mismatches.
+- Added explicit default-on app settings for the safe cutover set:
+  - `promoted_core_clients_read`
+  - `promoted_core_projects_read`
+  - `promoted_core_portfolios_read`
+  - `promoted_core_portfolio_assignments_read`
+  - `promoted_core_project_detail_read`
+  - `promoted_core_clients_dual_write`
+  - `promoted_core_project_master_dual_write`
+
+### API/readiness execution artifact additions
+- Added server post-cutover validation fetch in `server/services/promoted-read-compat.ts`:
+  - `getCutoverPostValidationReport()` reads `core.v_cutover_post_validation`.
+- Added admin API:
+  - `GET /api/readiness/cutover-post-validation`
+  - returns both `domainRolloutReadiness` and `cutoverPostValidation` for explicit go/no-go and rollback posture checks.
+
+### Explicit compatibility posture after this PR
+- Core master + project-detail master are now promoted-read-primary with compatibility fallback retained.
+- Legacy write paths remain active where required; dual-write preview stays enabled for master entities to preserve lineage and rollback confidence.
+- Blocked domains remain blocked and are not force-cut over.
+- No legacy table drops are executed as part of this cutover PR.
+
+### Next phase after this PR (API flush)
+- Move endpoint-by-endpoint API contract primary models to promoted schemas for blocked domains only after blocker counts and mismatch categories are driven to accepted thresholds.
+- Retire compatibility wrappers in bounded slices with explicit rollback drills and operational sign-off.
+- Keep finance and imports conflict/governance semantics explicit and non-destructive until operator playbooks and sustained parity evidence are complete.
