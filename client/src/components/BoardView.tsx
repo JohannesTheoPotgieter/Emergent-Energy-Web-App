@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
@@ -42,6 +42,8 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
   const [addingToColumn, setAddingToColumn] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
+  const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  const dragStartedRef = useRef(false);
 
   const { data: tasks = [], isLoading } = useQuery<any[]>({
     queryKey: ["operational-tasks", projectName],
@@ -80,6 +82,7 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
   });
 
   const handleDragStart = (e: React.DragEvent, taskId: number) => {
+    dragStartedRef.current = true;
     setDraggedTaskId(taskId);
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", String(taskId));
@@ -100,12 +103,27 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
       }
     }
     setDraggedTaskId(null);
+    dragStartedRef.current = false;
   };
 
   const handleQuickAdd = (status: string) => {
     if (newTaskTitle.trim()) {
       createTaskMutation.mutate({ title: newTaskTitle.trim(), status });
     }
+  };
+
+  const openTaskIfNotDragging = (taskId: number) => {
+    if (!dragStartedRef.current) {
+      onTaskClick(taskId);
+    }
+    setTimeout(() => {
+      dragStartedRef.current = false;
+    }, 0);
+  };
+
+  const openGlobalQuickAdd = () => {
+    setAddingToColumn("Not Started");
+    setNewTaskTitle("");
   };
 
   if (isLoading) {
@@ -117,7 +135,14 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
   }
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4 min-h-[500px]" data-testid="board-view">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">Delivery board for {projectName}</p>
+        <Button size="sm" className="gap-1.5" onClick={openGlobalQuickAdd} data-testid="btn-add-task-board-header">
+          <Plus className="h-4 w-4" /> Add Task
+        </Button>
+      </div>
+      <div className="flex gap-4 overflow-x-auto pb-4 min-h-[500px]" data-testid="board-view">
       {COLUMNS.map((col) => {
         const columnTasks = tasks.filter((t: any) => {
           if (col.status === "Done") return t.status === "Done" || t.status === "Complete";
@@ -145,8 +170,11 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
             <ScrollArea className="flex-1 max-h-[calc(100vh-280px)]">
               <div className="p-2 space-y-2">
                 {columnTasks.length === 0 && (
-                  <div className="text-center text-muted-foreground text-xs py-8" data-testid={`empty-column-${col.status.toLowerCase().replace(/\s+/g, "-")}`}>
-                    No tasks
+                  <div className="text-center text-muted-foreground text-xs py-8 space-y-2" data-testid={`empty-column-${col.status.toLowerCase().replace(/\s+/g, "-")}`}>
+                    <p>No tasks</p>
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setAddingToColumn(col.status); setNewTaskTitle(""); }} data-testid={`empty-add-task-${col.status.toLowerCase().replace(/\s+/g, "-")}`}>
+                      <Plus className="h-3 w-3 mr-1" /> Add Task
+                    </Button>
                   </div>
                 )}
 
@@ -155,7 +183,14 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
                     key={task.id}
                     draggable
                     onDragStart={(e) => handleDragStart(e, task.id)}
-                    onClick={() => onTaskClick(task.id)}
+                    onClick={() => openTaskIfNotDragging(task.id)}
+                    onMouseDown={(e) => { pointerDownRef.current = { x: e.clientX, y: e.clientY }; dragStartedRef.current = false; }}
+                    onMouseMove={(e) => {
+                      if (!pointerDownRef.current) return;
+                      if (Math.abs(e.clientX - pointerDownRef.current.x) + Math.abs(e.clientY - pointerDownRef.current.y) > 6) dragStartedRef.current = true;
+                    }}
+                    onMouseUp={() => { pointerDownRef.current = null; }}
+                    onDragEnd={() => { dragStartedRef.current = false; pointerDownRef.current = null; setDraggedTaskId(null); }}
                     className={`cursor-pointer border-l-4 ${PRIORITY_BORDER[task.priority] || PRIORITY_BORDER.Normal} hover:shadow-md transition-shadow ${
                       draggedTaskId === task.id ? "opacity-50" : ""
                     }`}
@@ -272,6 +307,7 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
