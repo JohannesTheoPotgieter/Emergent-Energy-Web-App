@@ -306,31 +306,42 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search projects, work items, finance, documents, people" className="pl-9 border-slate-200 focus-visible:ring-emerald-600" />
             {searchTerm.trim().length >= 2 && (
               <div className="absolute left-0 right-0 top-[105%] rounded-xl border border-slate-200 bg-white shadow-xl p-2 max-h-96 overflow-auto">
-                {loadingSearch ? <p className="text-xs text-slate-500 p-2">Searching…</p> : searchError ? <div className="p-2 space-y-2"><p className="text-xs text-red-600">{searchError}</p><Button size="sm" variant="outline" className="h-7 text-xs" onClick={retrySearch} data-testid="btn-retry-global-search">Retry</Button></div> : Object.entries(groupedResults).map(([group, items]) => items.length > 0 ? (
-                  <div key={group} className="mb-2">
-                    <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-slate-500">{group}</p>
-                    {items.map((item) => {
-                      const hasLink = isDirectResultUrl(item.url);
-                      if (!hasLink) {
-                        return (
-                          <div key={item.id} className="rounded px-2 py-2 text-slate-400 cursor-not-allowed">
-                            <p className="text-sm">{item.title}</p>
-                            {item.subtitle ? <p className="text-xs truncate">{item.subtitle}</p> : null}
-                            <p className="text-[11px] mt-1">No direct link available yet</p>
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <Link key={item.id} href={item.url!} onClick={() => setSearchTerm("")} className="block rounded px-2 py-2 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
-                          <p className="text-sm">{item.title}</p>
-                          {item.subtitle ? <p className="text-xs text-slate-500 truncate">{item.subtitle}</p> : null}
-                        </Link>
-                      );
-                    })}
+                {loadingSearch ? (
+                  <p className="text-xs text-slate-500 p-2">Searching across projects, work items, and finance…</p>
+                ) : searchError ? (
+                  <div className="p-2 space-y-2">
+                    <p className="text-xs text-red-600">{searchError}</p>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={retrySearch} data-testid="btn-retry-global-search">Retry</Button>
                   </div>
-                ) : null)}
-                {!loadingSearch && results.length === 0 ? <p className="text-xs text-slate-500 p-2">No matches found.</p> : null}
+                ) : (
+                  <>
+                    {Object.entries(groupedResults).map(([group, items]) => items.length > 0 ? (
+                      <div key={group} className="mb-2">
+                        <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-slate-500">{group}</p>
+                        {items.map((item) => {
+                          const hasLink = isDirectResultUrl(item.url);
+                          if (!hasLink) {
+                            return (
+                              <div key={item.id} className="rounded px-2 py-2 text-slate-400 cursor-not-allowed">
+                                <p className="text-sm">{item.title}</p>
+                                {item.subtitle ? <p className="text-xs truncate">{item.subtitle}</p> : null}
+                                <p className="text-[11px] mt-1">No direct link available yet</p>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <Link key={item.id} href={item.url!} onClick={() => setSearchTerm("")} className="block rounded px-2 py-2 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
+                              <p className="text-sm">{item.title}</p>
+                              {item.subtitle ? <p className="text-xs text-slate-500 truncate">{item.subtitle}</p> : null}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    ) : null)}
+                    {results.length === 0 ? <p className="text-xs text-slate-500 p-2">No matches found. Try a project name, invoice number, or task keyword.</p> : null}
+                  </>
+                )}
               </div>
             )}
           </div>
