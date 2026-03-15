@@ -1783,7 +1783,26 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
                     <div className="flex flex-col items-center gap-2">
                       <Circle className="h-8 w-8 text-slate-600" />
                       <span className="text-emerald-600 font-medium">No tasks found</span>
-                      <span className="text-[10px]">Add a task below to get started</span>
+                      <span className="text-[10px]">Create your first delivery task to start planning.</span>
+                      {isAdmin ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            if (createMutation.isPending) return;
+                            const title = newTaskTitle.trim() || "New Task";
+                            setNewTaskTitle(title);
+                            createMutation.mutate(title);
+                          }}
+                          data-testid="button-empty-add-task"
+                        >
+                          <Plus className="h-3.5 w-3.5 mr-1" /> Add Task
+                        </Button>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground">Ask a project admin to add a task.</span>
+                      )}
                     </div>
                   </td>
                 </tr>

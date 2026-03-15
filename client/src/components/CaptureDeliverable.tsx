@@ -237,13 +237,23 @@ export default function CaptureDeliverable({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto w-[95vw] sm:w-auto" data-testid="capture-deliverable-dialog">
+      <DialogContent
+        className="max-w-2xl max-h-[85vh] overflow-y-auto w-[95vw] sm:w-auto"
+        data-testid="capture-deliverable-dialog"
+        onEscapeKeyDown={() => setOpen(false)}
+        onPointerDownOutside={() => setOpen(false)}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
             Capture Deliverable
           </DialogTitle>
         </DialogHeader>
+        <div className="flex justify-end -mt-2">
+          <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)} data-testid="btn-close-capture-deliverable">
+            <X className="h-4 w-4 mr-1" /> Close
+          </Button>
+        </div>
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground mb-4">
           <span className={step === "project" ? "font-bold text-foreground" : selectedProjectId ? "text-emerald-600" : ""}>

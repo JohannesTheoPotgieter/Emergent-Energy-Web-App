@@ -171,6 +171,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const [microsoftMenuOpen, setMicrosoftMenuOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const role = (companyRole || user?.role || "").toUpperCase();
   const canSeeCommandCenter = role === "ADMIN" || role === "COO_ADMIN" || role === "CEO_ADMIN";
@@ -216,6 +219,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [searchTerm]);
 
   const breadcrumbs = useMemo(() => getBreadcrumbs(location, activeSection), [activeSection, location]);
+
+
+  const retrySearch = async () => {
+    const trimmed = searchTerm.trim();
+    if (trimmed.length < 2) return;
+    setLoadingSearch(true);
+    setSearchError(null);
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}&limit=12`, { credentials: "include" });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setResults(Array.isArray(data?.results) ? data.results : []);
+    } catch {
+      setResults([]);
+      setSearchError("Search could not load. Try again or refresh this page. If this keeps happening, contact your admin.");
+    } finally {
+      setLoadingSearch(false);
+    }
+  };
 
   const groupedResults = useMemo(() => {
     const map: Record<string, SearchResult[]> = {
@@ -284,7 +306,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search projects, work items, finance, documents, people" className="pl-9 border-slate-200 focus-visible:ring-emerald-600" />
             {searchTerm.trim().length >= 2 && (
               <div className="absolute left-0 right-0 top-[105%] rounded-xl border border-slate-200 bg-white shadow-xl p-2 max-h-96 overflow-auto">
-                {loadingSearch ? <p className="text-xs text-slate-500 p-2">Searching…</p> : searchError ? <p className="text-xs text-red-600 p-2">{searchError}</p> : Object.entries(groupedResults).map(([group, items]) => items.length > 0 ? (
+                {loadingSearch ? <p className="text-xs text-slate-500 p-2">Searching…</p> : searchError ? <div className="p-2 space-y-2"><p className="text-xs text-red-600">{searchError}</p><Button size="sm" variant="outline" className="h-7 text-xs" onClick={retrySearch} data-testid="btn-retry-global-search">Retry</Button></div> : Object.entries(groupedResults).map(([group, items]) => items.length > 0 ? (
                   <div key={group} className="mb-2">
                     <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-slate-500">{group}</p>
                     {items.map((item) => {
@@ -313,9 +335,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
-          <DropdownMenu>
+          <DropdownMenu open={quickCreateOpen} onOpenChange={setQuickCreateOpen}>
             <DropdownMenuTrigger asChild>
-              <Button className="bg-emerald-600 hover:bg-emerald-700"><Plus className="h-4 w-4 mr-1" />Quick Create</Button>
+              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => setQuickCreateOpen((prev) => !prev)} onMouseEnter={() => setQuickCreateOpen(true)}><Plus className="h-4 w-4 mr-1" />Quick Create</Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72">
               <DropdownMenuLabel>Create</DropdownMenuLabel>
@@ -327,9 +349,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <DropdownMenu>
+          <DropdownMenu open={microsoftMenuOpen} onOpenChange={setMicrosoftMenuOpen}>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon"><CalendarClock className="h-4 w-4" /></Button>
+              <Button variant="outline" size="icon" onClick={() => setMicrosoftMenuOpen((prev) => !prev)}><CalendarClock className="h-4 w-4" /></Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Microsoft Shortcuts</DropdownMenuLabel>
@@ -342,9 +364,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
           <NotificationBell />
 
-          <DropdownMenu>
+          <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="gap-2">
+              <Button variant="ghost" className="gap-2" onClick={() => setUserMenuOpen((prev) => !prev)} data-testid="button-user-menu">
                 <Avatar className="h-7 w-7"><AvatarFallback>{user?.username?.slice(0, 2)?.toUpperCase() || "EE"}</AvatarFallback></Avatar>
                 <span className="hidden md:inline text-sm">{user?.username || "User"}</span>
               </Button>

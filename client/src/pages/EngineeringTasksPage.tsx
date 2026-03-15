@@ -256,6 +256,15 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
 }) {
   const [quickEditOpen, setQuickEditOpen] = useState(false);
   const { user } = useAuth();
+  const dragStartedRef = useRef(false);
+
+  const handleCardClick = () => {
+    if (dragStartedRef.current) {
+      dragStartedRef.current = false;
+      return;
+    }
+    onClick();
+  };
   const overdue = isOverdue(task.dueDate, task.status);
   const dueSoon = isDueThisWeek(task.dueDate, task.status);
   const projectDisplay = task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
@@ -267,8 +276,9 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
     return (
       <div
         draggable
-        onDragStart={(e) => { e.dataTransfer.setData("taskId", String(task.id)); e.dataTransfer.effectAllowed = "move"; }}
-        onClick={onClick}
+        onDragStart={(e) => { dragStartedRef.current = true; e.dataTransfer.setData("taskId", String(task.id)); e.dataTransfer.effectAllowed = "move"; }}
+        onDragEnd={() => { setTimeout(() => { dragStartedRef.current = false; }, 0); }}
+        onClick={handleCardClick}
         className={`bg-card border-l-[3px] border border-b-border border-r-border border-t-border rounded px-2 py-1.5 cursor-pointer hover:shadow-sm transition-all group relative
           ${priorityBorderColors[task.priority] || "border-l-gray-300"}
           ${overdue ? "bg-red-50/60" : ""}
@@ -298,10 +308,12 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
     <div
       draggable
       onDragStart={(e) => {
+        dragStartedRef.current = true;
         e.dataTransfer.setData("taskId", String(task.id));
         e.dataTransfer.effectAllowed = "move";
       }}
-      onClick={onClick}
+      onDragEnd={() => { setTimeout(() => { dragStartedRef.current = false; }, 0); }}
+      onClick={handleCardClick}
       className={`bg-card border-l-[3px] border border-b-border border-r-border border-t-border rounded-md px-2.5 py-2 cursor-pointer hover:shadow-md hover:translate-y-[-1px] transition-all duration-150 group relative
         ${priorityBorderColors[task.priority] || "border-l-gray-300"}
         ${overdue ? "bg-red-50/60 border-r-red-200 border-t-red-200 border-b-red-200" : ""}
