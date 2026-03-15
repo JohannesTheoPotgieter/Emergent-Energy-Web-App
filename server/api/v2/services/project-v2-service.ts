@@ -34,10 +34,14 @@ export const listProcurementItemsService = repo.listProcurementItems;
 export const listPurchaseOrdersService = repo.listPurchaseOrders;
 export const listInvoicesService = repo.listInvoices;
 export const listFinanceVariationsService = repo.listFinanceVariations;
+export const projectProcurementService = repo.getProjectProcurement;
 
 export async function developmentHandoverService(projectId: number, userId: number, reason: string) {
   const updated = await repo.transitionProjectToConstruction(projectId, userId, reason);
   if (!updated) throw new ApiV2Error("NOT_FOUND", 404, "Project not found");
+  if ((updated as any).invalidTransition) {
+    throw new ApiV2Error("VALIDATION_ERROR", 400, `Invalid lifecycle transition from ${(updated as any).currentPhase} to Construction`);
+  }
   return updated;
 }
 
@@ -116,7 +120,9 @@ export async function patchFinanceVariationService(projectId: number, id: number
 
 export const listEngineeringDesignsService = repo.listEngineeringDesigns;
 export async function createEngineeringDesignService(_projectId: number, payload: any, userId: number) {
-  return repo.createEngineeringDesign(payload, userId);
+  const created = await repo.createEngineeringDesign(payload, userId);
+  if (!created) throw new ApiV2Error("VALIDATION_ERROR", 400, "Engineering stage does not exist");
+  return created;
 }
 export async function patchEngineeringDesignService(_projectId: number, id: number, payload: any, userId: number) {
   const updated = await repo.patchEngineeringDesign(id, payload, userId);
@@ -125,7 +131,11 @@ export async function patchEngineeringDesignService(_projectId: number, id: numb
 }
 
 export const listQualityChecksService = repo.listQualityChecks;
-export const createQualityCheckService = repo.createQualityCheck;
+export async function createQualityCheckService(projectId: number, payload: any) {
+  const checklist = await repo.getChecklistByProject(projectId, payload.checklistId);
+  if (!checklist) throw new ApiV2Error("VALIDATION_ERROR", 400, "Checklist does not belong to project");
+  return repo.createQualityCheck(payload);
+}
 export async function patchQualityCheckService(_projectId: number, id: number, payload: any) {
   const updated = await repo.patchQualityCheck(id, payload);
   if (!updated) throw new ApiV2Error("NOT_FOUND", 404, "Quality check not found");
@@ -143,10 +153,20 @@ export async function lookupByTypeService(type: string) {
 
 export async function dashboardByRoleService(role: string) {
   const totals = await repo.dashboardCoreTotals();
-  if (["CFO", "ACCOUNTANT"].includes(role)) return { role, cashflow: totals.pendingInvoices, cosAtRisk: totals.openProcurement, forecastRiskProjects: totals.projects };
-  if (["PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"].includes(role)) return { role, milestonesAtRisk: totals.openWorkItems, procurementBlockers: totals.openProcurement, siteReadinessRisk: Math.max(0, totals.openWorkItems - totals.openProcurement) };
-  if (role === "ENGINEER") return { role, designQueue: totals.openWorkItems, reviewBacklog: totals.openProcurement };
-  if (role === "QUALITY_MANAGER") return { role, inspectionsQueue: totals.openWorkItems, signOffBacklog: totals.pendingInvoices };
-  if (role === "PROJECT_DEVELOPER") return { role, handoverReadinessRisk: totals.openWorkItems, outstandingDevelopmentActions: totals.openProcurement };
-  return { role, crossFunctionalRisk: totals.openWorkItems + totals.openProcurement, blockedProjects: totals.projects, marginRiskSignals: totals.pendingInvoices, totals };
+  if (["CFO", "ACCOUNTANT"].includes(role)) {
+    return { role, cashflow: totals.pendingInvoices, cos: totals.openProcurement, overdueInvoices: totals.pendingInvoices, forecastRisk: totals.projects };
+  }
+  if (["PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"].includes(role)) {
+    return { role, milestones: totals.openWorkItems, blockers: totals.openWorkItems, procurementBlockers: totals.openProcurement, readinessRisk: Math.max(0, totals.openWorkItems - totals.openProcurement) };
+  }
+  if (["ENGINEER", "ENGINEERING_MANAGER"].includes(role)) {
+    return { role, designQueue: totals.openWorkItems, returnedItems: totals.openProcurement, pendingApprovals: totals.pendingInvoices };
+  }
+  if (role === "QUALITY_MANAGER") {
+    return { role, inspections: totals.openWorkItems, warnings: totals.openProcurement, signoffQueue: totals.pendingInvoices };
+  }
+  if (role === "PROJECT_DEVELOPER") {
+    return { role, handoverReadiness: totals.openWorkItems, outstandingDevelopmentActions: totals.openProcurement };
+  }
+  return { role, crossFunctionalRisk: totals.openWorkItems + totals.openProcurement, blockedProjects: totals.projects, overdueActions: totals.openWorkItems, marginRisk: totals.pendingInvoices, totals };
 }

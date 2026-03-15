@@ -22,6 +22,9 @@ export async function transitionProjectToConstruction(projectId: number, userId:
   return db.transaction(async (tx) => {
     const [current] = await tx.select().from(projectInfo).where(eq(projectInfo.id, projectId)).limit(1);
     if (!current) return null;
+    if ((current.phase ?? "Development") !== "Development") {
+      return { invalidTransition: true as const, currentPhase: current.phase ?? "Development" };
+    }
     const fromPhase = current.phase ?? "Development";
 
     await tx.insert(projectPhaseHistory).values({ projectId, fromPhase, toPhase: "Construction", changedByUserId: userId, reason });
@@ -45,6 +48,21 @@ export async function getProjectWorkItems(projectId: number, isMilestone?: boole
 }
 
 export async function createWorkItem(projectId: number, payload: any, userId: number) {
+  const [existing] = await db
+    .select()
+    .from(workItems)
+    .where(
+      and(
+        eq(workItems.projectId, projectId),
+        eq(workItems.title, payload.title),
+        eq(workItems.workstream, payload.workstream),
+        eq(workItems.isMilestone, Boolean(payload.isMilestone)),
+        isNull(workItems.deletedAt),
+      ),
+    )
+    .orderBy(desc(workItems.updatedAt))
+    .limit(1);
+  if (existing) return existing;
   const [created] = await db.insert(workItems).values({ ...payload, projectId, createdBy: userId }).returning();
   return created;
 }
@@ -63,7 +81,14 @@ export async function getProjectProcurement(projectId: number) {
     db.select().from(procurementItems).where(eq(procurementItems.projectId, projectId)).orderBy(desc(procurementItems.updatedAt)),
     db.select().from(invoiceCaptures).where(eq(invoiceCaptures.projectId, projectId)).orderBy(desc(invoiceCaptures.updatedAt)),
   ]);
-  return { items, invoices };
+  return {
+    items,
+    invoices,
+    summary: {
+      openItems: items.filter((item) => !["closed", "received"].includes(String(item.status ?? ""))).length,
+      pendingInvoices: invoices.filter((invoice) => ["captured", "submitted", "verified"].includes(String(invoice.status ?? ""))).length,
+    },
+  };
 }
 
 export async function listProcurementItems(projectId: number) {
@@ -168,6 +193,8 @@ export async function listEngineeringDesigns(projectId: number) {
 }
 
 export async function createEngineeringDesign(payload: any, userId: number) {
+  const [stage] = await db.select({ id: projectEngStages.id }).from(projectEngStages).where(eq(projectEngStages.id, payload.projectEngStageId)).limit(1);
+  if (!stage) return null;
   const [created] = await db.insert(projectEngDeliverables).values({ ...payload, uploadedBy: userId }).returning();
   return created;
 }
@@ -193,13 +220,22 @@ export async function createQualityCheck(payload: any) {
   return created;
 }
 
+export async function getChecklistByProject(projectId: number, checklistId: number) {
+  const [checklist] = await db
+    .select({ id: qcChecklist.id })
+    .from(qcChecklist)
+    .where(and(eq(qcChecklist.projectId, projectId), eq(qcChecklist.id, checklistId)))
+    .limit(1);
+  return checklist ?? null;
+}
+
 export async function patchQualityCheck(id: number, payload: any) {
   const [updated] = await db.update(qcItemInstance).set({ ...payload, lastUpdatedAt: new Date(), approvedAt: payload.approved ? new Date() : undefined }).where(eq(qcItemInstance.id, id)).returning();
   return updated ?? null;
 }
 
 export async function listImportsByDomain(domain: string) {
-  return db.select().from(smartImportRuns).where(eq(smartImportRuns.importType, domain)).orderBy(desc(smartImportRuns.startedAt)).limit(50);
+  return db.select().from(smartImportRuns).where(eq(smartImportRuns.importType, domain)).orderBy(desc(smartImportRuns.uploadedAt)).limit(50);
 }
 
 export async function listLookupUsers() {

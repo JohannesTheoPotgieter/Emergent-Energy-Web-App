@@ -116,7 +116,7 @@ export const qualityChecks = asyncHandler(async (req, res) => {
   if (req.method === "POST") {
     assertPermission((req.user as any).role, "quality.write");
     const payload = validate(qualityCheckCreateSchema, req.body, "Invalid quality check payload");
-    const row = await service.createQualityCheckService(payload);
+    const row = await service.createQualityCheckService(projectId, payload);
     await recordAudit({ ...actor(req), entityType: "quality_check", entityId: String(row.id), action: "CREATE" });
     return created(res, row);
   }
@@ -180,7 +180,7 @@ export const patchMilestone = asyncHandler(async (req, res) => {
 
 export const projectProcurement = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  ok(res, await service.getProjectOverviewService(projectId));
+  ok(res, await service.projectProcurementService(projectId));
 });
 
 export const procurementItemsList = asyncHandler(async (req, res) => {
