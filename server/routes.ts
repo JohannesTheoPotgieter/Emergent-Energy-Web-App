@@ -43,6 +43,7 @@ import {
   compareProjectDetailMasterReadiness,
   compareImportsGovernanceReadiness,
   getDomainRolloutReadinessReport,
+  getCutoverPostValidationReport,
 } from "./services/promoted-read-compat";
 import {
   mirrorWorkItemToOperationalTask,
@@ -5029,6 +5030,25 @@ export async function registerRoutes(
   });
 
   // ==================== CLIENTS ROUTES ====================
+
+
+  app.get("/api/readiness/cutover-post-validation", requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      const [domainRolloutReadiness, cutoverPostValidation] = await Promise.all([
+        getDomainRolloutReadinessReport(),
+        getCutoverPostValidationReport(),
+      ]);
+
+      res.json({
+        generatedAt: new Date().toISOString(),
+        domainRolloutReadiness,
+        cutoverPostValidation,
+      });
+    } catch (error) {
+      console.error("Cutover post-validation report error:", error);
+      res.status(500).json({ error: "Failed to generate cutover post-validation report" });
+    }
+  });
 
   app.get("/api/readiness/core-master-data", requireAuth, requireAdmin, async (_req, res) => {
     try {
