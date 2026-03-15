@@ -18,6 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
 import { Link } from "wouter";
 import {
@@ -3265,29 +3266,47 @@ export default function EngineeringTasksPage() {
             )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              className={`h-7 text-[10px] px-2 gap-1 ${boardCompact ? "bg-primary text-primary-foreground" : ""}`}
-              onClick={() => setBoardCompact(!boardCompact)}
-              title={boardCompact ? "Expand cards" : "Compact cards"}
-              data-testid="btn-board-compact"
-            >
-              {boardCompact ? <Maximize2 className="h-3 w-3" /> : <Minimize2 className="h-3 w-3" />}
-              {boardCompact ? "Expand" : "Compact"}
-            </Button>
-            {collapsedColumns.size > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-[10px] px-2 gap-1"
-                onClick={() => setCollapsedColumns(new Set())}
-                data-testid="btn-expand-all-cols"
-              >
-                <Eye className="h-3 w-3" />
-                Show all
-              </Button>
-            )}
+            <TooltipProvider delayDuration={150}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={`h-7 text-[10px] px-2 gap-1 ${boardCompact ? "bg-primary text-primary-foreground" : ""}`}
+                      onClick={() => setBoardCompact(!boardCompact)}
+                      data-testid="btn-board-compact"
+                    >
+                      {boardCompact ? <Maximize2 className="h-3 w-3" /> : <Minimize2 className="h-3 w-3" />}
+                      {boardCompact ? "Expand" : "Compact"}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  {boardCompact ? "Expand cards for full details" : "Compact cards to fit more work on screen"}
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-[10px] px-2 gap-1"
+                      onClick={() => setCollapsedColumns(new Set())}
+                      disabled={collapsedColumns.size === 0}
+                      data-testid="btn-expand-all-cols"
+                    >
+                      <Eye className="h-3 w-3" />
+                      Show all
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="text-xs">
+                  {collapsedColumns.size > 0 ? "Expand all collapsed status columns" : "All status columns are already visible"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <span className="text-[10px] text-muted-foreground">{filtered.length} tasks</span>
           </div>
         </div>

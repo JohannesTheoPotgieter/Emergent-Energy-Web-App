@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -78,7 +79,7 @@ export default function GpTrackerPage() {
   const [showYtd, setShowYtd] = useState(true);
   const [showProjects, setShowProjects] = useState(true);
 
-  const { data, isLoading } = useQuery<any>({
+  const { data, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ["gp-tracker-portfolio"],
     queryFn: async () => {
       const res = await fetch("/api/gp-tracker", { headers: authHeaders(), credentials: "include" });
@@ -109,6 +110,20 @@ export default function GpTrackerPage() {
     return (
       <div className="flex items-center justify-center h-[60vh]" data-testid="gp-tracker-page">
         <EnergyLoader size="lg" label="Loading GP tracker..." />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6 max-w-[1200px] mx-auto" data-testid="gp-tracker-error-state">
+        <Card className="border-red-200 bg-red-50/40">
+          <CardContent className="py-10 text-center space-y-2">
+            <p className="text-sm font-semibold text-red-700">GP tracker data failed to load.</p>
+            <p className="text-xs text-red-600/90">{(error as Error)?.message || "Please retry."}</p>
+            <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-gp-tracker">Retry</Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -147,7 +162,7 @@ export default function GpTrackerPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">GP Tracker</h1>
-          <p className="text-sm text-muted-foreground">Portfolio-level Gross Profit — Budget vs Actual (Sep 2025 – Aug 2026)</p>
+          <p className="text-sm text-muted-foreground">Portfolio-level Gross Profit — Budget vs Actual (Sep 2025 – Aug 2026). Monthly grid cells are summary values (no line-item drill-down yet).</p>
         </div>
       </div>
 
@@ -286,7 +301,7 @@ export default function GpTrackerPage() {
               <div className="relative w-60 mb-3">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
-                  placeholder="Search projects..."
+                  placeholder="Search projects by name..."
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   className="h-8 pl-8 text-xs"
@@ -324,7 +339,7 @@ export default function GpTrackerPage() {
                       </tr>
                     ))}
                     {filteredProjects.length === 0 && (
-                      <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">No projects found</td></tr>
+                      <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">No projects match this search. Try different keywords.</td></tr>
                     )}
                   </tbody>
                 </table>
