@@ -13,4 +13,6 @@ export async function registerCoreRoutes(app: Express) {
   registerReportRoutes(app);
   const { registerTemplateRoutes } = await import("../template-routes");
   registerTemplateRoutes(app);
+  const { registerApiV2Routes } = await import("../api/v2/routes/v2-routes");
+  registerApiV2Routes(app);
 }
