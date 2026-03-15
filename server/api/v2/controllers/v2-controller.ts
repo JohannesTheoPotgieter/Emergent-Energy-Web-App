@@ -1,12 +1,29 @@
 import type { Request, Response } from "express";
-import { db } from "../../../db";
-import { counterparties, users, rolePermissions, procurementItems, invoiceCaptures, smartImportRuns, auditEvents, workItems, projectInfo } from "@shared/schema";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
-import { assertPermission } from "../policies/access-policy";
+import { assertPermission, permissionsForRole } from "../policies/access-policy";
 import { recordAudit } from "../services/audit-service";
 import * as service from "../services/project-v2-service";
 import { asyncHandler, created, ok, paginationQuerySchema, validate } from "../utils/http";
-import { invoiceCreateSchema, procurementItemCreateSchema, projectIdParamSchema, workItemCreateSchema, workItemPatchSchema } from "../validators/project-v2-validators";
+import {
+  engineeringDesignCreateSchema,
+  engineeringDesignPatchSchema,
+  financeVariationCreateSchema,
+  financeVariationPatchSchema,
+  idParamSchema,
+  invoiceCreateSchema,
+  milestoneCreateSchema,
+  milestonePatchSchema,
+  procurementItemCreateSchema,
+  procurementItemPatchSchema,
+  procurementPoCreateSchema,
+  procurementPoPatchSchema,
+  projectIdParamSchema,
+  qualityCheckCreateSchema,
+  qualityCheckPatchSchema,
+  workItemCreateSchema,
+  workItemPatchSchema,
+} from "../validators/project-v2-validators";
+
+const actor = (req: Request) => ({ actorRole: (req.user as any).role, userId: (req.user as any).id, userName: (req.user as any).name });
 
 export const me = asyncHandler(async (req: Request, res: Response) => {
   const user = req.user as any;
@@ -14,28 +31,13 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const mePermissions = asyncHandler(async (req: Request, res: Response) => {
-  const user = req.user as any;
-  const permissions = await db.select().from(rolePermissions).where(eq(rolePermissions.role, user.role));
-  ok(res, { role: user.role, permissions });
+  const role = (req.user as any).role;
+  ok(res, { role, permissions: permissionsForRole(role) });
 });
 
 export const dashboardByRole = asyncHandler(async (req: Request, res: Response) => {
   const role = String(req.params.role || (req.user as any).role);
-  const [projects, openWork, openProcurement, invoices] = await Promise.all([
-    db.select({ total: sql<number>`count(*)` }).from(projectInfo).where(eq(projectInfo.isActive, true)),
-    db.select({ total: sql<number>`count(*)` }).from(workItems).where(and(isNull(workItems.deletedAt), sql`${workItems.status} != 'Complete'`)),
-    db.select({ total: sql<number>`count(*)` }).from(procurementItems).where(sql`${procurementItems.status} not in ('closed','received')`),
-    db.select({ total: sql<number>`count(*)` }).from(invoiceCaptures).where(sql`${invoiceCaptures.status} in ('captured','submitted','verified')`),
-  ]);
-  ok(res, {
-    role,
-    totals: {
-      projects: Number(projects[0]?.total ?? 0),
-      openWorkItems: Number(openWork[0]?.total ?? 0),
-      openProcurement: Number(openProcurement[0]?.total ?? 0),
-      pendingInvoices: Number(invoices[0]?.total ?? 0),
-    },
-  });
+  ok(res, await service.dashboardByRoleService(role));
 });
 
 export const listProjects = asyncHandler(async (req, res) => {
@@ -69,21 +71,15 @@ export const projectHealth = asyncHandler(async (req, res) => {
 export const projectDevelopment = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   const detail = await service.getProjectOverviewService(projectId);
-  ok(res, {
-    pd: detail.project.pd,
-    pdUserId: detail.project.pdUserId,
-    phase: detail.project.phase,
-    pdHandoverDate: detail.project.pdHandoverDate,
-    signedStatus: detail.project.signedStatus,
-  });
+  ok(res, { pd: detail.project.pd, pdUserId: detail.project.pdUserId, phase: detail.project.phase, pdHandoverDate: detail.project.pdHandoverDate, signedStatus: detail.project.signedStatus });
 });
 
 export const developmentHandover = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   assertPermission((req.user as any).role, "development.write");
-  await service.developmentHandoverService(projectId, (req.user as any).id, String(req.body?.reason || "handover"));
-  await recordAudit({ actorRole: (req.user as any).role, userId: (req.user as any).id, userName: (req.user as any).name, entityType: "project", entityId: String(projectId), action: "DEVELOPMENT_HANDOVER", requestPath: req.path, requestMethod: req.method });
-  created(res, { projectId, transitionedTo: "Construction" });
+  const updated = await service.developmentHandoverService(projectId, (req.user as any).id, String(req.body?.reason || "handover"));
+  await recordAudit({ ...actor(req), entityType: "project", entityId: String(projectId), action: "DEVELOPMENT_HANDOVER", requestPath: req.path, requestMethod: req.method, changesJson: { phase: updated.phase } });
+  created(res, { projectId, transitionedTo: updated.phase });
 });
 
 export const projectEngineering = asyncHandler(async (req, res) => {
@@ -91,41 +87,96 @@ export const projectEngineering = asyncHandler(async (req, res) => {
   ok(res, await service.getProjectEngineeringService(projectId));
 });
 
-export const engineeringDesigns = projectEngineering;
+export const engineeringDesigns = asyncHandler(async (req, res) => {
+  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
+  if (req.method === "POST") {
+    assertPermission((req.user as any).role, "engineering.write");
+    const payload = validate(engineeringDesignCreateSchema, req.body, "Invalid engineering design payload");
+    const row = await service.createEngineeringDesignService(projectId, payload, (req.user as any).id);
+    await recordAudit({ ...actor(req), entityType: "engineering_design", entityId: String(row.id), action: "CREATE" });
+    return created(res, row);
+  }
+  if (req.method === "PATCH") {
+    assertPermission((req.user as any).role, "engineering.write");
+    const payload = validate(engineeringDesignPatchSchema, req.body, "Invalid engineering design patch payload");
+    const row = await service.patchEngineeringDesignService(projectId, payload.id, payload, (req.user as any).id);
+    await recordAudit({ ...actor(req), entityType: "engineering_design", entityId: String(row.id), action: "PATCH" });
+    return ok(res, row);
+  }
+  ok(res, await service.listEngineeringDesignsService(projectId));
+});
 
 export const projectQuality = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   ok(res, await service.getProjectQualityService(projectId));
 });
 
-export const qualityChecks = projectQuality;
+export const qualityChecks = asyncHandler(async (req, res) => {
+  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
+  if (req.method === "POST") {
+    assertPermission((req.user as any).role, "quality.write");
+    const payload = validate(qualityCheckCreateSchema, req.body, "Invalid quality check payload");
+    const row = await service.createQualityCheckService(payload);
+    await recordAudit({ ...actor(req), entityType: "quality_check", entityId: String(row.id), action: "CREATE" });
+    return created(res, row);
+  }
+  if (req.method === "PATCH") {
+    assertPermission((req.user as any).role, "quality.write");
+    const payload = validate(qualityCheckPatchSchema, req.body, "Invalid quality check patch payload");
+    const row = await service.patchQualityCheckService(projectId, payload.id, payload);
+    await recordAudit({ ...actor(req), entityType: "quality_check", entityId: String(row.id), action: "PATCH" });
+    return ok(res, row);
+  }
+  ok(res, await service.listQualityChecksService(projectId));
+});
 
 export const projectWorkItems = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  ok(res, await db.select().from(workItems).where(and(eq(workItems.projectId, projectId), isNull(workItems.deletedAt))).orderBy(desc(workItems.updatedAt)));
+  ok(res, await service.listWorkItemsService(projectId));
 });
 
 export const createWorkItem = asyncHandler(async (req, res) => {
+  assertPermission((req.user as any).role, "work_items.write");
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   const payload = validate(workItemCreateSchema, req.body, "Invalid work item payload");
   const createdRow = await service.createWorkItemService(projectId, payload, (req.user as any).id);
-  await recordAudit({ actorRole: (req.user as any).role, userId: (req.user as any).id, entityType: "work_item", entityId: String(createdRow.id), action: "CREATE" });
+  await recordAudit({ ...actor(req), entityType: "work_item", entityId: String(createdRow.id), action: "CREATE" });
   created(res, createdRow);
 });
 
 export const patchWorkItem = asyncHandler(async (req, res) => {
+  assertPermission((req.user as any).role, "work_items.write");
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  const id = Number(req.params.id);
+  const { id } = validate(idParamSchema, req.params, "Invalid id");
   const payload = validate(workItemPatchSchema, req.body, "Invalid work item patch payload");
-  ok(res, await service.patchWorkItemService(projectId, id, payload));
+  const row = await service.patchWorkItemService(projectId, id, payload);
+  await recordAudit({ ...actor(req), entityType: "work_item", entityId: String(row.id), action: "PATCH" });
+  ok(res, row);
 });
 
 export const projectMilestones = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  ok(res, await service.getProjectLifecycleService(projectId));
+  ok(res, await service.listMilestonesService(projectId));
 });
-export const createMilestone = createWorkItem;
-export const patchMilestone = patchWorkItem;
+
+export const createMilestone = asyncHandler(async (req, res) => {
+  assertPermission((req.user as any).role, "milestones.write");
+  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
+  const payload = validate(milestoneCreateSchema, req.body, "Invalid milestone payload");
+  const row = await service.createMilestoneService(projectId, payload, (req.user as any).id);
+  await recordAudit({ ...actor(req), entityType: "milestone", entityId: String(row.id), action: "CREATE" });
+  created(res, row);
+});
+
+export const patchMilestone = asyncHandler(async (req, res) => {
+  assertPermission((req.user as any).role, "milestones.write");
+  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
+  const { id } = validate(idParamSchema, req.params, "Invalid id");
+  const payload = validate(milestonePatchSchema, req.body, "Invalid milestone patch payload");
+  const row = await service.patchMilestoneService(projectId, id, payload);
+  await recordAudit({ ...actor(req), entityType: "milestone", entityId: String(row.id), action: "PATCH" });
+  ok(res, row);
+});
 
 export const projectProcurement = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
@@ -134,29 +185,58 @@ export const projectProcurement = asyncHandler(async (req, res) => {
 
 export const procurementItemsList = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  ok(res, await db.select().from(procurementItems).where(eq(procurementItems.projectId, projectId)).orderBy(desc(procurementItems.updatedAt)));
+  ok(res, await service.listProcurementItemsService(projectId));
 });
 
 export const createProcurementItem = asyncHandler(async (req, res) => {
+  assertPermission((req.user as any).role, "procurement.write");
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   const payload = validate(procurementItemCreateSchema, req.body, "Invalid procurement item payload");
-  created(res, await service.createProcurementItemService(projectId, payload));
+  const row = await service.createProcurementItemService(projectId, payload);
+  await recordAudit({ ...actor(req), entityType: "procurement_item", entityId: String(row.id), action: "CREATE" });
+  created(res, row);
 });
 
 export const patchProcurementItem = asyncHandler(async (req, res) => {
+  assertPermission((req.user as any).role, "procurement.write");
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  ok(res, await service.patchProcurementItemService(projectId, Number(req.params.id), req.body));
+  const { id } = validate(idParamSchema, req.params, "Invalid id");
+  const payload = validate(procurementItemPatchSchema, req.body, "Invalid procurement patch payload");
+  const row = await service.patchProcurementItemService(projectId, id, payload);
+  await recordAudit({ ...actor(req), entityType: "procurement_item", entityId: String(row.id), action: "PATCH" });
+  ok(res, row);
 });
 
-export const procurementPos = procurementItemsList;
+export const procurementPos = asyncHandler(async (req, res) => {
+  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
+  if (req.method === "POST") {
+    assertPermission((req.user as any).role, "procurement.write");
+    const payload = validate(procurementPoCreateSchema, req.body, "Invalid purchase order payload");
+    const row = await service.createPurchaseOrderService(projectId, payload);
+    await recordAudit({ ...actor(req), entityType: "purchase_order", entityId: String(row.id), action: "CREATE" });
+    return created(res, row);
+  }
+  if (req.method === "PATCH") {
+    assertPermission((req.user as any).role, "procurement.write");
+    const { id } = validate(idParamSchema, req.params, "Invalid id");
+    const payload = validate(procurementPoPatchSchema, req.body, "Invalid purchase order patch payload");
+    const row = await service.patchPurchaseOrderService(projectId, id, payload);
+    await recordAudit({ ...actor(req), entityType: "purchase_order", entityId: String(row.id), action: "PATCH" });
+    return ok(res, row);
+  }
+  ok(res, await service.listPurchaseOrdersService(projectId));
+});
 
 export const procurementInvoices = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   if (req.method === "POST") {
+    assertPermission((req.user as any).role, "invoice.write");
     const payload = validate(invoiceCreateSchema, req.body, "Invalid invoice payload");
-    return created(res, await service.createInvoiceService(projectId, payload, (req.user as any).id));
+    const row = await service.createInvoiceService(projectId, payload, (req.user as any).id);
+    await recordAudit({ ...actor(req), entityType: "invoice", entityId: String(row.id), action: "CREATE" });
+    return created(res, row);
   }
-  ok(res, await db.select().from(invoiceCaptures).where(eq(invoiceCaptures.projectId, projectId)).orderBy(desc(invoiceCaptures.updatedAt)));
+  ok(res, await service.listInvoicesService(projectId));
 });
 
 export const projectFinance = asyncHandler(async (req, res) => {
@@ -166,27 +246,56 @@ export const projectFinance = asyncHandler(async (req, res) => {
 
 export const financeSummary = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  ok(res, await service.getProjectOverviewService(projectId));
+  ok(res, await service.financeSummaryService(projectId));
 });
 
-export const financeSimpleView = asyncHandler(async (req, res) => {
+export const financeCashflow = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  const summary = await service.getProjectOverviewService(projectId);
-  ok(res, summary.finance);
+  ok(res, await service.financeCashflowService(projectId));
 });
 
-export const financeVariations = asyncHandler(async (_req, res) => ok(res, { status: "planned" }));
+export const financeCos = asyncHandler(async (req, res) => {
+  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
+  ok(res, await service.financeCosService(projectId));
+});
+
+export const financeRevenue = asyncHandler(async (req, res) => {
+  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
+  ok(res, await service.financeRevenueService(projectId));
+});
+
+export const financeExpenditure = asyncHandler(async (req, res) => {
+  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
+  ok(res, await service.financeExpenditureService(projectId));
+});
+
+export const financeVariations = asyncHandler(async (req, res) => {
+  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
+  if (req.method === "POST") {
+    assertPermission((req.user as any).role, "finance.write");
+    const payload = validate(financeVariationCreateSchema, req.body, "Invalid finance variation payload");
+    const row = await service.createFinanceVariationService(projectId, payload, (req.user as any).id);
+    await recordAudit({ ...actor(req), entityType: "finance_variation", entityId: String(row.id), action: "CREATE" });
+    return created(res, row);
+  }
+  if (req.method === "PATCH") {
+    assertPermission((req.user as any).role, "finance.write");
+    const payload = validate(financeVariationPatchSchema, req.body, "Invalid finance variation patch payload");
+    const row = await service.patchFinanceVariationService(projectId, payload.id, payload);
+    await recordAudit({ ...actor(req), entityType: "finance_variation", entityId: String(row.id), action: "PATCH" });
+    return ok(res, row);
+  }
+  ok(res, await service.listFinanceVariationsService(projectId));
+});
 
 export const importsByDomain = asyncHandler(async (req, res) => {
   const domain = String(req.params.domain || "general");
-  ok(res, await db.select().from(smartImportRuns).where(eq(smartImportRuns.importType, domain)).orderBy(desc(smartImportRuns.startedAt)).limit(50));
+  ok(res, await service.importsByDomainService(domain));
 });
 
 export const lookupsByType = asyncHandler(async (req, res) => {
   const type = String(req.params.type || "");
-  if (type === "users") return ok(res, await db.select({ id: users.id, name: users.name, role: users.role }).from(users).orderBy(asc(users.name)));
-  if (type === "counterparties") return ok(res, await db.select().from(counterparties).orderBy(asc(counterparties.nameCanonical)));
-  ok(res, []);
+  ok(res, await service.lookupByTypeService(type));
 });
 
-export const auditActivity = asyncHandler(async (_req, res) => ok(res, await db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(200)));
+export const auditActivity = asyncHandler(async (_req, res) => ok(res, await service.auditActivityService()));
