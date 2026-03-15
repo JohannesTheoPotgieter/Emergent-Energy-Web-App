@@ -13,6 +13,14 @@ export const FEATURE_FLAG_KEYS = [
   "promoted_core_clients_dual_write",
   "promoted_core_project_master_dual_write",
   "imports_source_update_governance_preview",
+
+  "promoted_project_management_read",
+  "promoted_project_development_read",
+  "promoted_documentation_read",
+  "promoted_finance_read",
+  "imports_governance_enforcement_preview",
+  "promoted_engineering_read",
+  "promoted_quality_read",
 ] as const;
 
 export type RolloutFeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -108,6 +116,49 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "imports_source_update_governance_preview",
     label: "Imports source-update governance preview",
     description: "Controls non-blocking preview hooks for imports source update requests/acknowledgements/conflict readiness reporting.",
+    defaultValue: false,
+  },
+
+  {
+    key: "promoted_project_management_read",
+    label: "Promoted project management read",
+    description: "Controls compatibility-backed promoted reads for project_management schema while legacy PM routes remain primary.",
+    defaultValue: false,
+  },
+  {
+    key: "promoted_project_development_read",
+    label: "Promoted project development read",
+    description: "Controls compatibility-backed promoted reads for PD intake/tickets while legacy sync paths remain primary.",
+    defaultValue: false,
+  },
+  {
+    key: "promoted_documentation_read",
+    label: "Promoted documentation lifecycle read",
+    description: "Controls promoted documentation lifecycle reads with legacy deliverable fallback.",
+    defaultValue: false,
+  },
+  {
+    key: "promoted_finance_read",
+    label: "Promoted finance read",
+    description: "Controls promoted finance reporting reads with duplicate/collision diagnostics.",
+    defaultValue: false,
+  },
+  {
+    key: "imports_governance_enforcement_preview",
+    label: "Imports governance enforcement preview",
+    description: "Controls bounded imports governance enforcement preview checks; blocking behavior remains disabled by default.",
+    defaultValue: false,
+  },
+  {
+    key: "promoted_engineering_read",
+    label: "Promoted engineering read",
+    description: "Controls compatibility-backed promoted engineering metadata reads while core.work_items remains shared execution engine.",
+    defaultValue: false,
+  },
+  {
+    key: "promoted_quality_read",
+    label: "Promoted quality read",
+    description: "Controls compatibility-backed promoted quality reads while legacy QC endpoints remain default.",
     defaultValue: false,
   },
 ];

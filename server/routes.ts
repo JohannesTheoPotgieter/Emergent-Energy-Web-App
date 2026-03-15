@@ -42,6 +42,7 @@ import {
   buildWorkItemSummaryDiagnostics,
   compareProjectDetailMasterReadiness,
   compareImportsGovernanceReadiness,
+  getDomainRolloutReadinessReport,
 } from "./services/promoted-read-compat";
 import {
   mirrorWorkItemToOperationalTask,
@@ -5032,9 +5033,10 @@ export async function registerRoutes(
   app.get("/api/readiness/core-master-data", requireAuth, requireAdmin, async (_req, res) => {
     try {
       const report = await getCoreMasterDataReadinessReport();
-      const [workDiagnostics, importsGovernance] = await Promise.all([
+      const [workDiagnostics, importsGovernance, domainRolloutReadiness] = await Promise.all([
         buildWorkItemSummaryDiagnostics(50),
         compareImportsGovernanceReadiness(),
+        getDomainRolloutReadinessReport(),
       ]);
       const rolloutFlags = await getFeatureFlags([
         "promoted_core_clients_read",
@@ -5046,6 +5048,13 @@ export async function registerRoutes(
         "promoted_core_clients_dual_write",
         "promoted_core_project_master_dual_write",
         "imports_source_update_governance_preview",
+        "promoted_project_management_read",
+        "promoted_project_development_read",
+        "promoted_documentation_read",
+        "promoted_finance_read",
+        "imports_governance_enforcement_preview",
+        "promoted_engineering_read",
+        "promoted_quality_read",
       ]);
       res.json({
         ...report,
@@ -5062,6 +5071,7 @@ export async function registerRoutes(
           mismatchCategories: workDiagnostics.mismatchCategories,
           sampleProjectIds: workDiagnostics.sampleProjectIds,
         },
+        domainRolloutReadiness,
       });
     } catch (error) {
       console.error("Core master data readiness report error:", error);
