@@ -388,3 +388,89 @@ Implemented SQL artifacts:
    - enforce acknowledgements for a bounded cohort only, keeping rollback switch and diagnostics-first posture.
 4. **PR94**: Broader promoted work-item read pilot (still read-only)
    - expand from diagnostics to selected admin/reporting reads with strict compare headers and rollback.
+
+---
+
+## 10) PR 91 final major schema-rollout increment (this PR)
+
+### Scope completed (additive, compatibility-first)
+- Added a single additive migration: `migrations/20260317_multischema_domain_rollout.sql`.
+- Rolled out remaining promoted schema surfaces and backfills for:
+  - `project_management`
+  - `project_development`
+  - `engineering`
+  - `quality`
+- Hardened existing promoted domains:
+  - `documentation` lifecycle integrity view (`documentation.v_document_lifecycle_integrity`)
+  - `finance` duplicate/collision classification (`finance.v_line_collision_classification`)
+  - `imports` governance acknowledgement visibility (`imports.v_source_update_ack_gaps`)
+- Added unified domain readiness view:
+  - `core.v_domain_rollout_readiness` with `ready/partial/blocked`, blocker summaries, mismatch categories, sample IDs, and safety posture flags.
+
+### Explicit ownership decision: PD SharePoint/sync tables
+- Ownership remains in **project_development** for rollout scope:
+  - `project_development.intake_requests`
+  - `project_development.intake_task_templates`
+  - `project_development.intake_tasks`
+  - `project_development.pd_tickets`
+- Why:
+  - operational usage centers on PD intake lifecycle orchestration and task spawning
+  - imports governance receives integration hooks and visibility, but not domain ownership transfer in this step.
+- Safety posture:
+  - legacy PD/sync pathways remain active as compatibility fallback.
+
+### Imports governance progression (still controlled)
+- Added enforcement-shaping structure without hard blocking by default:
+  - `imports.source_update_requests.obligation_source`
+  - `imports.source_update_requests.enforcement_stage`
+  - `imports.source_update_acknowledgements.role_scope`
+- Required acknowledgement visibility explicitly tracks:
+  - `CONSTRUCTION_MANAGER`
+  - `PROGRAM_MANAGER`
+  - `PROGRAM_FINANCE_MANAGER`
+- Unresolved conflicts and acknowledgement gaps remain explicit blockers in readiness; no auto-resolution introduced.
+
+### PM ↔ imports governance integration
+- `project_management.pm_on_the_go_actions` includes `source_update_request_id` linkage.
+- Backfill links PM actions to nearby source update requests by project/time-window to keep obligations auditable.
+- Any unresolved links remain visible as mismatch categories in readiness (`imports_governance_link_gaps`).
+
+### Engineering and quality rollout constraints honored
+- Engineering promoted metadata is rolled out under `engineering.*`, with optional linkage to `core.work_items` (`linked_work_item_id`) for shared execution traceability.
+- Quality lifecycle rolled out under `quality.*` with evidence/document linkage support (`document_version_id` on `quality.qc_item_evidence`).
+- No second universal task engine introduced; shared execution remains `core.work_items`.
+
+### Documentation and finance hardening in this step
+- Documentation lifecycle integrity now reports version/event/transmission/view/download/approval coverage per document.
+- Finance collision view classifies:
+  - duplicate business keys
+  - dual-lineage overlaps
+  - orphan records
+- Finance write cutover remains blocked; reporting/readiness use is the safe path.
+
+### Feature flags and readiness API updates
+- Added rollout flags (all default OFF):
+  - `promoted_project_management_read`
+  - `promoted_project_development_read`
+  - `promoted_documentation_read`
+  - `promoted_finance_read`
+  - `imports_governance_enforcement_preview`
+  - `promoted_engineering_read`
+  - `promoted_quality_read`
+- `/api/readiness/core-master-data` now includes `domainRolloutReadiness` generated from `core.v_domain_rollout_readiness`.
+
+### Current readiness posture after this PR
+- **Ready for controlled promoted read pilots (domain-by-domain):** documentation, project_management, project_development, engineering, quality, finance (reporting only).
+- **Partial/blocked for final cutover:** all domains where blocker/mismatch counts remain non-zero in `core.v_domain_rollout_readiness`.
+- **Not final cutover yet:** legacy paths remain primary for risky operational writes, finance writes, and imports enforcement.
+
+### Remaining blockers before hard cutover/API flush
+1. Domain-specific blocker counts in `core.v_domain_rollout_readiness` must be driven to zero (or explicitly accepted by policy).
+2. PD + PM legacy fallbacks still serve live flows and require cohort-based promoted-read soak period.
+3. Finance duplicate/collision governance requires explicit operator playbooks before write-side cutover.
+4. Imports governance enforcement remains feature-flagged until acknowledgement/conflict handling is operationally proven.
+5. Broad endpoint switching still pending parity evidence and staged rollback drills.
+
+### Exact next PR recommendation
+- **Next PR should be `hard cutover readiness + deprecation plan` (not immediate hard cutover execution).**
+- Reason: this PR materially completes schema rollout and readiness instrumentation, but readiness still exposes active blockers and compatibility dependencies that must be closed and signed off before irreversible cutover/API flush.
