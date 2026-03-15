@@ -263,7 +263,10 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(next) => {
+      setOpen(next);
+      if (!next) setShowForm(false);
+    }}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" data-testid="btn-open-po-generator">
           <Package className="h-4 w-4 mr-1.5" />
@@ -284,7 +287,7 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
               <p className="text-sm text-muted-foreground">
                 {poList.length} purchase order{poList.length !== 1 ? "s" : ""}
               </p>
-              <Button size="sm" onClick={() => setShowForm(true)} data-testid="btn-new-po">
+              <Button type="button" size="sm" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowForm(true); }} data-testid="btn-new-po">
                 <Plus className="h-4 w-4 mr-1" /> New PO
               </Button>
             </div>
