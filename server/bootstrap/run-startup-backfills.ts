@@ -7,14 +7,13 @@ import { runAssigneeUserIdsBackfill } from "./backfills/assignee-user-ids-backfi
 
 export async function runStartupBackfills(options: {
   startupBackfillEnabled: boolean;
-  runtimeSchemaRepairEnabled: boolean;
   allowStartupMutations: boolean;
   log: (message: string, source?: string) => void;
 }) {
-  const { startupBackfillEnabled, runtimeSchemaRepairEnabled, allowStartupMutations, log } = options;
+  const { startupBackfillEnabled, allowStartupMutations, log } = options;
   if (!startupBackfillEnabled) return;
 
-  await runPmUserBackfill(log, runtimeSchemaRepairEnabled).catch((err) => log(`[Backfill] PM user sync error: ${err}`, "Startup:Backfill"));
+  await runPmUserBackfill(log).catch((err) => log(`[Backfill] PM user sync error: ${err}`, "Startup:Backfill"));
   await runProjectIdsBackfill().catch((err) => log(`[Backfill] Project IDs error: ${err}`, "Startup:Backfill"));
   await runUserAssignmentBackfill(log).catch((err) => log(`[Backfill] User ID sync error: ${err}`, "Startup:Backfill"));
   await runMsAssignmentCleanup(log).catch((err) => log(`[MS-Filter] Assignment cleanup error: ${err}`, "Startup:Backfill"));

@@ -12,16 +12,15 @@ import { registerSupportRoutes } from "./register-support-routes";
 export async function registerAllRoutes(options: {
   app: Express;
   httpServer: Server;
-  runtimeSchemaRepairEnabled: boolean;
   log: (message: string, source?: string) => void;
 }) {
-  const { app, httpServer, runtimeSchemaRepairEnabled, log } = options;
+  const { app, httpServer, log } = options;
 
   await registerCoreRoutes(app);
   await registerIntegrationRoutes(app);
   await registerInfoRoutes(app);
-  await registerProjectRoutes(app, runtimeSchemaRepairEnabled);
-  await registerSupportRoutes(app, runtimeSchemaRepairEnabled);
+  await registerProjectRoutes(app);
+  await registerSupportRoutes(app);
   await registerDepartmentRoutes(app);
   await registerAdminSupportRoutes(app);
   await registerRoutes(httpServer, app);

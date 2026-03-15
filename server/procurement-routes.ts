@@ -35,38 +35,6 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   closed: [],
 };
 
-export async function ensureProcurementTables() {
-  try {
-    await db.execute(sql.raw(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'procurement_category') THEN CREATE TYPE procurement_category AS ENUM ('material','equipment','service','subcontract','other'); END IF; END $$`));
-    await db.execute(sql.raw(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'procurement_status') THEN CREATE TYPE procurement_status AS ENUM ('requested','quoted','approved','ordered','partially_received','received','invoiced','closed'); END IF; END $$`));
-    await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS procurement_items (
-      id SERIAL PRIMARY KEY,
-      project_id INTEGER NOT NULL REFERENCES project_info(id),
-      title TEXT NOT NULL,
-      description TEXT,
-      category procurement_category NOT NULL DEFAULT 'other',
-      quantity REAL,
-      unit TEXT,
-      expected_cost REAL,
-      actual_cost REAL,
-      supplier_id INTEGER REFERENCES counterparties(id),
-      requested_by_user_id INTEGER REFERENCES users(id),
-      owner_user_id INTEGER REFERENCES users(id),
-      status procurement_status NOT NULL DEFAULT 'requested',
-      required_date TEXT,
-      po_id INTEGER,
-      invoice_ref TEXT,
-      linked_task_id INTEGER,
-      approval_id INTEGER,
-      notes TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )`));
-    console.log("[Procurement] Tables ensured");
-  } catch (err: any) {
-    console.error("[Procurement] Table error:", err.message);
-  }
-}
 
 export function registerProcurementRoutes(app: Express) {
   app.get("/api/procurement/project/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {

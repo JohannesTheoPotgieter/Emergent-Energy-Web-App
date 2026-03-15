@@ -1,6 +1,6 @@
 import type { Express } from "express";
 
-export async function registerSupportRoutes(app: Express, ensureSchema: boolean) {
+export async function registerSupportRoutes(app: Express) {
   const { registerSubcontractorRoutes } = await import("../subcontractor-routes");
   registerSubcontractorRoutes(app);
   const { registerMeetingRoutes } = await import("../meeting-routes");
@@ -9,8 +9,7 @@ export async function registerSupportRoutes(app: Express, ensureSchema: boolean)
   registerAuditRoutes(app);
   const { registerApprovalsRoutes } = await import("../approvals-routes");
   registerApprovalsRoutes(app);
-  const { registerGamificationRoutes, ensureGamificationTables } = await import("../gamification-routes");
-  if (ensureSchema) await ensureGamificationTables();
+  const { registerGamificationRoutes } = await import("../gamification-routes");
   registerGamificationRoutes(app);
 
   const { registerRoleAuthRoutes } = await import("../role-auth-routes");
@@ -18,31 +17,24 @@ export async function registerSupportRoutes(app: Express, ensureSchema: boolean)
   const { registerRoleManagementRoutes } = await import("../role-management");
   registerRoleManagementRoutes(app);
 
-  const { registerHandoverRoutes, ensureHandoverTables } = await import("../handover-routes");
-  if (ensureSchema) await ensureHandoverTables();
+  const { registerHandoverRoutes } = await import("../handover-routes");
   registerHandoverRoutes(app);
 
-  const { registerDependencyRoutes, ensureDependencyTables } = await import("../dependency-routes");
-  if (ensureSchema) await ensureDependencyTables();
+  const { registerDependencyRoutes } = await import("../dependency-routes");
   registerDependencyRoutes(app);
 
-  const { registerRaidRoutes, ensureRaidTables } = await import("../raid-routes");
-  if (ensureSchema) await ensureRaidTables();
+  const { registerRaidRoutes } = await import("../raid-routes");
   registerRaidRoutes(app);
 
-  const { registerChangeControlRoutes, ensureChangeControlTables } = await import("../change-control-routes");
-  if (ensureSchema) await ensureChangeControlTables();
+  const { registerChangeControlRoutes } = await import("../change-control-routes");
   registerChangeControlRoutes(app);
 
-  const { registerProcurementRoutes, ensureProcurementTables } = await import("../procurement-routes");
-  if (ensureSchema) await ensureProcurementTables();
+  const { registerProcurementRoutes } = await import("../procurement-routes");
   registerProcurementRoutes(app);
 
-  const { registerCommissioningRoutes, ensureCommissioningTables } = await import("../commissioning-routes");
-  if (ensureSchema) await ensureCommissioningTables();
+  const { registerCommissioningRoutes } = await import("../commissioning-routes");
   registerCommissioningRoutes(app);
 
-  const { registerInvoiceCaptureRoutes, ensureInvoiceCaptureTables } = await import("../invoice-capture-routes");
-  if (ensureSchema) await ensureInvoiceCaptureTables();
+  const { registerInvoiceCaptureRoutes } = await import("../invoice-capture-routes");
   registerInvoiceCaptureRoutes(app);
 }

@@ -40,7 +40,6 @@ export async function runStartupOrchestrator(options: {
 
   await runStartupBackfills({
     startupBackfillEnabled,
-    runtimeSchemaRepairEnabled: runtimeMaintenanceEnabled && startupSchemaRepairEnabled,
     allowStartupMutations,
     log,
   });
@@ -49,7 +48,6 @@ export async function runStartupOrchestrator(options: {
   await registerAllRoutes({
     app,
     httpServer,
-    runtimeSchemaRepairEnabled: runtimeMaintenanceEnabled && startupSchemaRepairEnabled,
     log,
   });
   report.routes.push("registered");
