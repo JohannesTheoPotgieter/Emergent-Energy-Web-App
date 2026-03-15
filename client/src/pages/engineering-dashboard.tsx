@@ -486,6 +486,24 @@ interface FullTask {
   taskTypeTag: string | null;
   primaryWorkstream: string | null;
   description: string | null;
+  ownerUserId?: number | null;
+  assigneeUserIds?: number[] | null;
+  resolvedOwner?: { id: number; name: string } | null;
+  resolvedAssignees?: Array<{ id: number; name: string }> | null;
+}
+
+function getTaskAssigneeLabel(task: FullTask): string {
+  const resolvedAssigneeName = task.resolvedAssignees?.find((u) => !!u?.name)?.name?.trim();
+  if (resolvedAssigneeName) return resolvedAssigneeName;
+
+  const textAssignee = task.assignees?.find((name) => !!name?.trim())?.trim();
+  if (textAssignee) return textAssignee;
+
+  const resolvedOwnerName = task.resolvedOwner?.name?.trim();
+  if (resolvedOwnerName) return resolvedOwnerName;
+
+  if ((task.assigneeUserIds?.length || 0) > 0 || !!task.ownerUserId) return "Assigned (unknown user)";
+  return "Unassigned";
 }
 
 interface TaskComment {
@@ -741,15 +759,15 @@ function sortByPriorityThenDue(a: FullTask, b: FullTask) {
 function groupByAssignee(tasks: FullTask[]): Map<string, FullTask[]> {
   const map = new Map<string, FullTask[]>();
   for (const t of tasks) {
-    const names = t.assignees && t.assignees.length > 0 ? t.assignees.filter(Boolean) : ["Unassigned"];
-    for (const name of names) {
-      if (!map.has(name)) map.set(name, []);
-      map.get(name)!.push(t);
-    }
+    const assigneeLabel = getTaskAssigneeLabel(t);
+    if (!map.has(assigneeLabel)) map.set(assigneeLabel, []);
+    map.get(assigneeLabel)!.push(t);
   }
   const sorted = new Map([...map.entries()].sort(([a], [b]) => {
     if (a === "Unassigned") return 1;
     if (b === "Unassigned") return -1;
+    if (a === "Assigned (unknown user)") return 1;
+    if (b === "Assigned (unknown user)") return -1;
     return a.localeCompare(b);
   }));
   return sorted;
@@ -765,7 +783,7 @@ function InlineTaskRow({ task, onUpdate, onOpenTask }: { task: FullTask; onUpdat
     return diff <= 2;
   })();
   const { toast } = useToast();
-  const assignee = task.assignees?.[0];
+  const assignee = getTaskAssigneeLabel(task);
 
   const handleQuickNote = async () => {
     if (!quickNote.trim()) return;
@@ -785,7 +803,7 @@ function InlineTaskRow({ task, onUpdate, onOpenTask }: { task: FullTask; onUpdat
       data-testid={`standup-inline-task-${task.id}`}
     >
       <div className="flex items-center gap-2 px-3 py-2.5">
-        {assignee && (
+        {assignee && assignee !== "Unassigned" && assignee !== "Assigned (unknown user)" && (
           <div className={`w-6 h-6 rounded-full ${getAvatarColor(assignee)} flex items-center justify-center shrink-0`} title={assignee}>
             <span className="text-[8px] font-bold text-white leading-none">{getInitials(assignee)}</span>
           </div>
