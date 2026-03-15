@@ -202,6 +202,7 @@ function AccessDenied() {
 
 function RoleGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
+  const [location] = useLocation();
   const isMobile = useIsMobile();
   const navMode = isMobile ? NAVIGATION_MODE.mobile : NAVIGATION_MODE.desktop;
 
