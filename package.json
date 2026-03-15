@@ -12,16 +12,17 @@
     "db:push": "drizzle-kit push",
     "migrate:clickup-engineering": "tsx scripts/migrate-clickup-engineering.ts",
     "test": "vitest run -c qa/vitest.config.ts",
-    "test:api": "vitest run -c qa/vitest.config.ts qa/tests/api",
-    "test:smoke": "playwright test qa/tests/e2e/smoke.spec.ts",
+    "test:api": "tsx script/run-with-app.ts \"vitest run -c qa/vitest.config.ts qa/tests/api\"",
+    "test:smoke": "tsx script/run-with-app.ts \"playwright test qa/tests/e2e/smoke.spec.ts\"",
     "test:routes": "tsx script/test-routes.ts",
     "qa:report": "tsx script/qa-report.ts",
     "test:route-proof": "vitest run -c qa/vitest.config.ts qa/tests/unit/route-proof.test.ts",
     "qa:route-smoke-report": "tsx script/route-smoke-report.ts",
     "release:gate": "tsx qa/release-gate.ts",
     "reconciliation:report": "tsx qa/generate-reconciliation-evidence.ts",
-    "test:workflows": "tsx script/test-workflows.ts",
-    "test:db-api-readiness": "vitest run -c qa/vitest.config.ts qa/tests/unit/api-v2-business-flows.test.ts qa/tests/unit/api-v2-policy-and-validation.test.ts"
+    "test:workflows": "tsx script/run-with-app.ts \"tsx script/test-workflows.ts\"",
+    "test:db-api-readiness": "vitest run -c qa/vitest.config.ts qa/tests/unit/api-v2-business-flows.test.ts qa/tests/unit/api-v2-policy-and-validation.test.ts",
+    "qa:full-proof": "npm run check && npm run test:api && npm run test:smoke && npm run test:routes && npm run test:workflows && npm run reconciliation:report && npm run release:gate"
   },
   "dependencies": {
     "@azure/msal-node": "^5.0.5",
