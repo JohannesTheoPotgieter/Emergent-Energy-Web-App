@@ -25,9 +25,10 @@ export default function PdTicketsPage() {
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
 
-  const { data: tickets = [], isLoading } = useQuery<any[]>({
+  const { data: tickets = [], isLoading, isError, refetch, error } = useQuery<any[]>({
     queryKey: ["/api/pd/tickets"],
     queryFn: () => pdFetch("/api/pd/tickets"),
+    retry: 1,
   });
 
   const filtered = tickets.filter((row: any) => {
@@ -122,6 +123,15 @@ export default function PdTicketsPage() {
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
+      ) : isError ? (
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground space-y-2">
+            <AlertTriangle className="h-10 w-10 mx-auto text-amber-500" />
+            <p className="font-medium text-foreground">Could not load PD tickets</p>
+            <p className="text-xs">{error instanceof Error ? error.message : "Try again."}</p>
+            <Button size="sm" variant="outline" onClick={() => refetch()} data-testid="btn-retry-pd-tickets">Retry</Button>
+          </CardContent>
+        </Card>
       ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground">

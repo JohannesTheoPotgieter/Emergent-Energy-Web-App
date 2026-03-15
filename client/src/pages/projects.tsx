@@ -1524,10 +1524,15 @@ export default function ProjectsSummary() {
           >
             {cleanName(p.project_name)}
           </button>
-          <span className="inline-flex items-center text-[9px] text-muted-foreground gap-0.5">
+          <button
+            type="button"
+            className="inline-flex items-center text-[9px] text-blue-700 hover:text-blue-900 hover:underline gap-0.5"
+            onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}?tab=task-grid`)}
+            data-testid={`button-open-details-${p.project_name}`}
+          >
             <ExternalLink className="w-2.5 h-2.5" />
             Open details
-          </span>
+          </button>
         </div>
       ),
     },
