@@ -589,33 +589,3 @@ export function registerGamificationRoutes(app: Express) {
   });
 }
 
-export async function ensureGamificationTables() {
-  try {
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS user_badges (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        badge_key TEXT NOT NULL,
-        awarded_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        meta JSONB,
-        UNIQUE(user_id, badge_key)
-      )
-    `);
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS user_points (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        points INTEGER NOT NULL DEFAULT 0,
-        category TEXT NOT NULL,
-        description TEXT,
-        awarded_at TIMESTAMP NOT NULL DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_user_badges_unique ON user_badges(user_id, badge_key)
-    `).catch(() => {});
-    console.log("[Gamification] Tables ensured");
-  } catch (err: any) {
-    console.error("[Gamification] Table creation error:", err.message);
-  }
-}

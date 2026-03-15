@@ -35,31 +35,6 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   closed: [],
 };
 
-export async function ensureChangeControlTables() {
-  try {
-    await db.execute(sql.raw(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'change_request_type') THEN CREATE TYPE change_request_type AS ENUM ('scope','cost','schedule','technical','commercial'); END IF; END $$`));
-    await db.execute(sql.raw(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'change_request_status') THEN CREATE TYPE change_request_status AS ENUM ('draft','submitted','under_review','approved','rejected','implemented','closed'); END IF; END $$`));
-    await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS change_requests (
-      id SERIAL PRIMARY KEY,
-      project_id INTEGER NOT NULL REFERENCES project_info(id),
-      title TEXT NOT NULL,
-      description TEXT,
-      change_type change_request_type NOT NULL,
-      requested_by_user_id INTEGER REFERENCES users(id),
-      owner_user_id INTEGER REFERENCES users(id),
-      impact_summary TEXT,
-      cost_impact REAL,
-      schedule_impact_days INTEGER,
-      status change_request_status NOT NULL DEFAULT 'draft',
-      approval_id INTEGER,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )`));
-    console.log("[ChangeControl] Tables ensured");
-  } catch (err: any) {
-    console.error("[ChangeControl] Table error:", err.message);
-  }
-}
 
 export function registerChangeControlRoutes(app: Express) {
   app.get("/api/change-requests/project/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {

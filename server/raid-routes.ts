@@ -203,28 +203,3 @@ export function registerRaidRoutes(app: Express) {
   });
 }
 
-export async function ensureRaidTables() {
-  try {
-    await db.execute(sql.raw("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'raid_type') THEN CREATE TYPE raid_type AS ENUM ('risk','assumption','issue','decision'); END IF; END $$"));
-    await db.execute(sql.raw("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'raid_status') THEN CREATE TYPE raid_status AS ENUM ('open','mitigating','resolved','closed','accepted'); END IF; END $$"));
-    await db.execute(sql.raw("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'raid_priority') THEN CREATE TYPE raid_priority AS ENUM ('low','medium','high','critical'); END IF; END $$"));
-    await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS raid_items (
-      id SERIAL PRIMARY KEY,
-      project_id INTEGER NOT NULL REFERENCES project_info(id),
-      type raid_type NOT NULL,
-      title TEXT NOT NULL,
-      description TEXT,
-      owner_user_id INTEGER REFERENCES users(id),
-      status raid_status NOT NULL DEFAULT 'open',
-      priority raid_priority NOT NULL DEFAULT 'medium',
-      due_date TEXT,
-      mitigation_response TEXT,
-      linked_task_id INTEGER,
-      created_by_user_id INTEGER REFERENCES users(id),
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      closed_at TIMESTAMP
-    )`));
-    console.log("[RAID] Tables ensured");
-  } catch (err: any) { console.error("[RAID] Table error:", err.message); }
-}

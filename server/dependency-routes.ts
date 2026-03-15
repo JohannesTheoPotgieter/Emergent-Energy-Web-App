@@ -272,19 +272,3 @@ export function registerDependencyRoutes(app: Express) {
   });
 }
 
-export async function ensureDependencyTables() {
-  try {
-    await db.execute(sql.raw(`
-      CREATE TABLE IF NOT EXISTS work_item_dependencies (
-        id SERIAL PRIMARY KEY,
-        predecessor_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
-        successor_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
-        dep_type work_item_dep_type NOT NULL DEFAULT 'FS',
-        lag_days INTEGER DEFAULT 0
-      )
-    `));
-    console.log("[Dependencies] Tables ensured");
-  } catch (err: any) {
-    console.error("[Dependencies] Table error:", err.message);
-  }
-}

@@ -38,31 +38,6 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "auth_required" });
 }
 
-export async function ensureInvoiceCaptureTables() {
-  try {
-    await db.execute(sql.raw(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'invoice_capture_status') THEN CREATE TYPE invoice_capture_status AS ENUM ('captured','submitted','verified','approved','rejected'); END IF; END $$`));
-    await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS invoice_captures (
-      id SERIAL PRIMARY KEY,
-      project_id INTEGER NOT NULL REFERENCES project_info(id),
-      supplier_id INTEGER REFERENCES counterparties(id),
-      invoice_number TEXT,
-      invoice_date TEXT,
-      amount REAL,
-      vat_amount REAL,
-      linked_po_id INTEGER,
-      linked_procurement_item_id INTEGER,
-      status invoice_capture_status NOT NULL DEFAULT 'captured',
-      captured_by_user_id INTEGER REFERENCES users(id),
-      document_path TEXT,
-      notes TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )`));
-    console.log("[InvoiceCapture] Tables ensured");
-  } catch (err: any) {
-    console.error("[InvoiceCapture] Table error:", err.message);
-  }
-}
 
 export function registerInvoiceCaptureRoutes(app: Express) {
   app.get("/api/invoice-captures/project/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {

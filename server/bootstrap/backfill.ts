@@ -1,12 +1,8 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
-export async function backfillPmUserIds(log: (message: string, source?: string) => void, allowRuntimeSchemaRepair: boolean) {
+export async function backfillPmUserIds(log: (message: string, source?: string) => void) {
   try {
-    if (allowRuntimeSchemaRepair) {
-      await db.execute(sql.raw(`ALTER TABLE project_info ADD COLUMN IF NOT EXISTS pm_user_id INTEGER REFERENCES users(id)`));
-    }
-
     const mappings: [string, string[]][] = [
       ["eon", ["Eon Van Rensburg", "Eon Van Rensberg"]],
       ["jt", ["JT Moorosi", "JT"]],
