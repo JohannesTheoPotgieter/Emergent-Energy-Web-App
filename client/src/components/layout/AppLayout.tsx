@@ -293,10 +293,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </SheetContent>
           </Sheet>
 
-          <Link href="/" className="flex items-center gap-2 min-w-fit">
-            <div className="h-8 w-8 rounded bg-emerald-600 text-white grid place-items-center text-xs font-bold">EE</div>
-            <div className="hidden md:block">
-              <p className="text-sm font-semibold leading-none">Emergent Energy OS</p>
+          <Link href="/" className="flex items-center gap-3 min-w-fit">
+            <img src="/emergent-logo.png" alt="Emergent Energy" className="h-8 w-auto object-contain" />
+            <div className="hidden lg:block">
               <p className="text-xs text-slate-500">{activeSection.label}</p>
             </div>
           </Link>
