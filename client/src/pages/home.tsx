@@ -28,7 +28,7 @@ export default function Home() {
   const { user } = useAuth();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  const { data: tasks = [], error: tasksError } = useQuery<Task[]>({
+  const { data: tasks = [], error: tasksError, refetch: refetchTasks, isFetching: tasksFetching } = useQuery<Task[]>({
     queryKey: ["home-tasks"],
     queryFn: async () => {
       const res = await fetch("/api/tasks", { credentials: "include" });
@@ -37,7 +37,7 @@ export default function Home() {
     },
   });
 
-  const { data: highPriority, error: highPriorityError } = useQuery<PriorityData>({
+  const { data: highPriority, error: highPriorityError, refetch: refetchHighPriority, isFetching: priorityFetching } = useQuery<PriorityData>({
     queryKey: ["home-high-priority"],
     queryFn: async () => {
       const res = await fetch("/api/dashboard/high-priority", { credentials: "include" });
@@ -46,7 +46,7 @@ export default function Home() {
     },
   });
 
-  const { data: projects = [], error: projectsError } = useQuery<ProjectSummary[]>({
+  const { data: projects = [], error: projectsError, refetch: refetchProjects, isFetching: projectsFetching } = useQuery<ProjectSummary[]>({
     queryKey: ["home-projects-summary"],
     queryFn: async () => {
       const res = await fetch("/api/projects-summary", { credentials: "include" });
@@ -128,7 +128,20 @@ export default function Home() {
         <p className="text-sm text-slate-600">Operational command center for {user?.username || "your"} day.</p>
       </div>
 
-      {(tasksError || highPriorityError || projectsError) ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">Some home data could not load. Likely reason: temporary server or network issue. How to fix: refresh this page and retry. If it persists, contact your admin.</div> : null}
+      {(tasksError || highPriorityError || projectsError) ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 space-y-2">
+          <p>Some home data could not load. Likely reason: temporary server or network issue. How to fix: refresh this page and retry. If it persists, contact your admin.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => { refetchTasks(); refetchHighPriority(); refetchProjects(); }}
+            disabled={tasksFetching || priorityFetching || projectsFetching}
+            data-testid="btn-retry-home-data"
+          >
+            {(tasksFetching || priorityFetching || projectsFetching) ? "Retrying..." : "Retry home data"}
+          </Button>
+        </div>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div className="space-y-3">
