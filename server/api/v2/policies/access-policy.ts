@@ -1,19 +1,28 @@
 import { ApiV2Error } from "../utils/http";
+import { catalogPermissionsForRole } from "./permission-catalog";
 
-export const ROLE_PERMISSIONS: Record<string, string[]> = {
-  CEO_ADMIN: ["*"],
-  COO_ADMIN: ["*"],
-  CFO: ["dashboard.read", "projects.read", "finance.read", "finance.write", "procurement.read", "procurement.write", "invoice.write"],
-  PROGRAM_MANAGER: ["dashboard.read", "projects.read", "projects.write", "pm.read", "pm.write", "engineering.read", "quality.read", "work_items.write", "milestones.write", "procurement.read"],
-  PROJECT_DEVELOPER: ["dashboard.read", "projects.read", "development.read", "development.write", "work_items.write"],
-  ENGINEER: ["dashboard.read", "projects.read", "engineering.read", "engineering.write", "work_items.write"],
-  QUALITY_MANAGER: ["dashboard.read", "projects.read", "quality.read", "quality.write", "work_items.read"],
-  CONSTRUCTION_MANAGER: ["dashboard.read", "projects.read", "pm.read", "pm.write", "procurement.read", "milestones.write", "work_items.write"],
-  ACCOUNTANT: ["dashboard.read", "projects.read", "finance.read", "finance.write", "procurement.read", "procurement.write", "invoice.write"],
+const ROLE_ALIASES: Record<string, string> = {
+  admin: "COO_ADMIN",
+  quality_manager: "QUALITY_MANAGER",
+  eng_program_manager: "ENGINEERING_MANAGER",
+  member: "PROGRAM_MANAGER",
 };
 
+export const ROLE_PERMISSIONS: Record<string, string[]> = {
+  COO_ADMIN: ["*"],
+  CEO_ADMIN: ["*"],
+};
+
+function normalizeRole(role: string | undefined): string | undefined {
+  if (!role) return role;
+  return ROLE_ALIASES[role] ?? role;
+}
+
 export function permissionsForRole(role: string | undefined) {
-  return role ? ROLE_PERMISSIONS[role] ?? [] : [];
+  const normalizedRole = normalizeRole(role);
+  const dynamicPerms = catalogPermissionsForRole(normalizedRole);
+  if (dynamicPerms.length) return dynamicPerms;
+  return normalizedRole ? ROLE_PERMISSIONS[normalizedRole] ?? [] : [];
 }
 
 export function assertPermission(role: string | undefined, permission: string) {

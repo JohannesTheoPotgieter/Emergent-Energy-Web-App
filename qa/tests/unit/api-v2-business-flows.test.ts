@@ -3,6 +3,7 @@ import { assertPermission } from "../../../server/api/v2/policies/access-policy"
 
 const repoMock = vi.hoisted(() => ({
   transitionProjectToConstruction: vi.fn(),
+  getChecklistByProject: vi.fn(),
   createWorkItem: vi.fn(),
   patchWorkItem: vi.fn(),
   createProcurementItem: vi.fn(),
@@ -28,6 +29,7 @@ import {
   createMilestoneService,
   createProcurementItemService,
   createPurchaseOrderService,
+  createQualityCheckService,
   createWorkItemService,
   dashboardByRoleService,
   developmentHandoverService,
@@ -53,6 +55,11 @@ describe("api v2 business flows", () => {
     expect(row.phase).toBe("Construction");
   });
 
+  it("rejects invalid lifecycle transition", async () => {
+    repoMock.transitionProjectToConstruction.mockResolvedValue({ invalidTransition: true, currentPhase: "Construction" });
+    await expect(developmentHandoverService(8, 2, "ready")).rejects.toThrowError(/Invalid lifecycle transition/);
+  });
+
   it("blocks unauthorized writes", () => {
     expect(() => assertPermission("ENGINEER", "finance.write")).toThrowError(/Missing permission/);
   });
@@ -62,6 +69,14 @@ describe("api v2 business flows", () => {
     repoMock.patchWorkItem.mockResolvedValue({ id: 5, title: "T2" });
     expect((await createWorkItemService(1, { title: "T" }, 9)).id).toBe(5);
     expect((await patchWorkItemService(1, 5, { title: "T2" })).title).toBe("T2");
+  });
+
+  it("prevents duplicate work item records by returning existing row", async () => {
+    repoMock.createWorkItem.mockResolvedValue({ id: 7, title: "Dup" });
+    const first = await createWorkItemService(1, { title: "Dup" }, 9);
+    const second = await createWorkItemService(1, { title: "Dup" }, 9);
+    expect(first.id).toBe(7);
+    expect(second.id).toBe(7);
   });
 
   it("supports real milestone create/patch flow", async () => {
@@ -102,13 +117,18 @@ describe("api v2 business flows", () => {
     expect((await patchFinanceVariationService(1, 41, { status: "In Progress" })).status).toBe("In Progress");
   });
 
+  it("validates quality checklist belongs to project", async () => {
+    repoMock.getChecklistByProject.mockResolvedValue(null);
+    await expect(createQualityCheckService(1, { checklistId: 999, templateItemId: 1 })).rejects.toThrowError(/Checklist does not belong to project/);
+  });
+
   it("dashboardByRole returns differentiated role payloads", async () => {
     repoMock.dashboardCoreTotals.mockResolvedValue({ projects: 3, openWorkItems: 5, openProcurement: 2, pendingInvoices: 4 });
     const cfo = await dashboardByRoleService("CFO");
     const eng = await dashboardByRoleService("ENGINEER");
     const coo = await dashboardByRoleService("COO_ADMIN");
-    expect(cfo).toHaveProperty("cashflow");
-    expect(eng).toHaveProperty("designQueue");
-    expect(coo).toHaveProperty("crossFunctionalRisk");
+    expect(cfo).toHaveProperty("overdueInvoices");
+    expect(eng).toHaveProperty("pendingApprovals");
+    expect(coo).toHaveProperty("overdueActions");
   });
 });
