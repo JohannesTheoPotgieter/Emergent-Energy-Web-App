@@ -29,6 +29,7 @@ const ROLE_AUDIT_FILE = process.env.ROLE_AUDIT_FILE || path.join(process.cwd(), 
 const CRITICAL_ROUTES = ["/projects", "/project/:projectName", "/cashflow", "/quality", "/engineering/tasks", "/pm-dashboard", "/admin/control-center", "/handover-control"];
 
 const REQUIRED_COMMAND_CHECKS = [
+  { name: "Type check", command: "npm run check" },
   { name: "API tests", command: "npm run test:api" },
   { name: "Smoke tests", command: "npm run test:smoke" },
   { name: "Routes tests", command: "npm run test:routes" },

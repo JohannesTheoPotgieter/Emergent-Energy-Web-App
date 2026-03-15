@@ -23,11 +23,12 @@ console.log(`Registered routes discovered: ${routes.size}`);
 console.log(`Routes explicitly documented in inventory table: ${routes.size - missing.length}`);
 
 if (missing.length > 0) {
-  console.log("TODO: add the remaining registered routes to docs/qa/app-route-inventory.md");
-  console.log("Missing routes:");
+  console.error("Route inventory is missing registered routes. Update docs/qa/app-route-inventory.md before release.");
+  console.error("Missing routes:");
   for (const route of missing) {
-    console.log(`- ${route}`);
+    console.error(`- ${route}`);
   }
+  process.exit(1);
 }
 
-console.log("Route inventory script completed.");
+console.log("Route inventory script completed with full coverage.");
