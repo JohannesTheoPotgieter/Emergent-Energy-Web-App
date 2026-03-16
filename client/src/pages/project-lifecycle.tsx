@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   Activity,
@@ -26,6 +26,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permissions";
+import { useToast } from "@/hooks/use-toast";
 import {
   buildMicrosoftBreakdownItems,
   filterProjectLifecycleClients,
@@ -223,7 +225,7 @@ function ClientOverviewRow({ client }: { client: ProjectLifecycleWorkspaceClient
   return (
     <button
       type="button"
-      onClick={() => setLocation("/clients")}
+      onClick={() => setLocation("/project-lifecycle/client-overview")}
       className="w-full rounded-2xl border border-border bg-card p-4 text-left transition-colors hover:border-cyan-200 hover:bg-cyan-50/40"
       data-testid={`project-lifecycle-client-${client.clientId}`}
     >
@@ -264,6 +266,412 @@ function ClientOverviewRow({ client }: { client: ProjectLifecycleWorkspaceClient
         </div>
       </div>
     </button>
+  );
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("en-ZA", {
+    style: "currency",
+    currency: "ZAR",
+    maximumFractionDigits: 0,
+  }).format(value || 0);
+}
+
+function normalizeClientName(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function signalToneClasses(tone: "slate" | "emerald" | "amber" | "rose" | "cyan") {
+  if (tone === "emerald") return "border-emerald-100 bg-emerald-50 text-emerald-900";
+  if (tone === "amber") return "border-amber-100 bg-amber-50 text-amber-900";
+  if (tone === "rose") return "border-rose-100 bg-rose-50 text-rose-900";
+  if (tone === "cyan") return "border-cyan-100 bg-cyan-50 text-cyan-900";
+  return "border-slate-200 bg-slate-50 text-slate-900";
+}
+
+function ClientSignalPanel({
+  title,
+  summary,
+  helper,
+  tone = "slate",
+}: {
+  title: string;
+  summary: string;
+  helper: string;
+  tone?: "slate" | "emerald" | "amber" | "rose" | "cyan";
+}) {
+  return (
+    <div className={`rounded-2xl border p-4 ${signalToneClasses(tone)}`}>
+      <p className="text-xs font-semibold uppercase tracking-wide">{title}</p>
+      <p className="mt-2 text-lg font-semibold">{summary}</p>
+      <p className="mt-1 text-sm opacity-80">{helper}</p>
+    </div>
+  );
+}
+
+function ClientWorkspaceListItem({
+  client,
+  isSelected,
+  onSelect,
+}: {
+  client: ProjectLifecycleWorkspaceClient;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`w-full rounded-2xl border p-4 text-left transition-colors ${
+        isSelected
+          ? "border-cyan-300 bg-cyan-50/80 shadow-sm"
+          : "border-border bg-card hover:border-cyan-200 hover:bg-cyan-50/40"
+      }`}
+      data-testid={`client-workspace-select-${client.clientId}`}
+    >
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground">{client.clientName}</p>
+            <p className="text-xs text-muted-foreground">{client.clientCode}</p>
+          </div>
+          <Badge variant="outline" className="shrink-0 bg-slate-50 text-slate-700 border-slate-200">
+            {client.projectCount} project{client.projectCount === 1 ? "" : "s"}
+          </Badge>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {client.lifecycleDistribution.length > 0 ? (
+            client.lifecycleDistribution.slice(0, 3).map((item) => (
+              <Badge key={`${client.clientId}-${item.stage}`} variant="outline" className="border-emerald-100 bg-emerald-50 text-emerald-700">
+                {item.stage} ({item.count})
+              </Badge>
+            ))
+          ) : (
+            <Badge variant="outline">No linked projects yet</Badge>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Latest activity: {client.latestUpdateProjectName || "No canonical update yet"}
+        </p>
+      </div>
+    </button>
+  );
+}
+
+function ClientLinkedProjectRow({
+  project,
+}: {
+  project: ProjectLifecycleWorkspaceClient["linkedProjects"][number];
+}) {
+  const [, setLocation] = useLocation();
+  const gateVariant = project.executionEnabled
+    ? "enabled"
+    : ((project.executionGateStatus || "").toUpperCase() === "ELIGIBLE" ? "eligible" : "blocked");
+
+  return (
+    <button
+      type="button"
+      onClick={() => setLocation(`/project/${encodeURIComponent(project.projectName)}`)}
+      className="w-full rounded-2xl border border-border bg-card p-4 text-left transition-colors hover:border-cyan-200 hover:bg-cyan-50/40"
+      data-testid={`client-linked-project-${project.projectInfoId}`}
+    >
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-foreground">{project.projectName}</span>
+            {project.lifecycleStageLabel ? <Badge variant="outline">{project.lifecycleStageLabel}</Badge> : null}
+            <Badge variant="outline" className={gateVariantClasses(gateVariant)}>
+              {project.executionEnabled
+                ? "Execution Enabled"
+                : formatExecutionGateStatus(project.executionGateStatus)}
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {project.latestUpdateText || "No canonical latest update captured yet."}
+          </p>
+          <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+            <span>Revenue: <span className="font-medium text-foreground">{formatCurrency(project.totalRevenue)}</span></span>
+            <span>Cost: <span className="font-medium text-foreground">{formatCurrency(project.totalCost)}</span></span>
+            <span>Pending approvals: <span className="font-medium text-foreground">{project.pendingApprovals}</span></span>
+            <span>Overdue work: <span className="font-medium text-foreground">{project.overdueWorkItems}</span></span>
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 lg:items-end">
+          <div className="flex flex-wrap gap-1">
+            {project.ragStatus ? (
+              <Badge variant="outline" className="border-amber-100 bg-amber-50 text-amber-700">
+                RAG {project.ragStatus}
+              </Badge>
+            ) : null}
+            {project.escalationLevel ? (
+              <Badge variant="outline" className="border-rose-100 bg-rose-50 text-rose-700">
+                {project.escalationLevel}
+              </Badge>
+            ) : null}
+            {project.microsoftLinkedItems > 0 ? (
+              <Badge variant="outline" className="border-cyan-100 bg-cyan-50 text-cyan-700">
+                {project.microsoftLinkedItems} Microsoft
+              </Badge>
+            ) : null}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Latest update: {formatDateTime(project.latestUpdateAt)}
+          </p>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function ClientOverviewDetail({ client }: { client: ProjectLifecycleWorkspaceClient }) {
+  const [, setLocation] = useLocation();
+  const maxLifecycleCount = Math.max(...(client.lifecycleDistribution.map((item) => item.count) || [1]), 1);
+  const microsoftItems = buildMicrosoftBreakdownItems(client.microsoft.byType);
+  const riskSummary = `${client.signals.risk.blockedProjects} blocked, ${client.signals.risk.escalatedProjects} escalated`;
+  const qualitySummary = `${client.signals.quality.pendingApprovals} approvals pending, ${client.signals.quality.inReviewDeliverables} in review`;
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-border shadow-sm">
+        <CardContent className="space-y-4 p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-2xl font-semibold text-foreground">{client.clientName}</h2>
+                <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200">
+                  {client.clientCode}
+                </Badge>
+              </div>
+              <p className="max-w-3xl text-sm text-muted-foreground">
+                Leadership view across linked projects, lifecycle spread, current delivery signals, and Microsoft-linked context.
+                Project-client linkage remains authoritative through the shared project spine.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline" className="border-cyan-100 bg-cyan-50 text-cyan-700">
+                  {client.projectCount} linked projects
+                </Badge>
+                <Badge variant="outline" className="border-emerald-100 bg-emerald-50 text-emerald-700">
+                  {client.activeProjectCount} active
+                </Badge>
+                <Badge variant="outline" className="border-slate-200 bg-slate-50 text-slate-700">
+                  Latest activity {formatDateTime(client.latestUpdateAt)}
+                </Badge>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => setLocation("/project-create")} data-testid="button-client-overview-create-project">
+                <Plus className="mr-1 h-4 w-4" />
+                New Project
+              </Button>
+              <Button variant="outline" onClick={() => setLocation("/clients")} data-testid="button-client-overview-open-clients">
+                Manage Linkages
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              title="Linked Projects"
+              value={String(client.projectCount)}
+              helper={`${client.activeProjectCount} active delivery tracks`}
+              icon={<FolderKanban className="h-5 w-5" />}
+            />
+            <MetricCard
+              title="Gross Margin"
+              value={formatCurrency(client.signals.financial.grossMargin)}
+              helper={`${formatCurrency(client.signals.financial.totalRevenue)} revenue against ${formatCurrency(client.signals.financial.totalCost)} cost`}
+              icon={<Activity className="h-5 w-5" />}
+            />
+            <MetricCard
+              title="Quality Load"
+              value={String(client.signals.quality.pendingApprovals + client.signals.quality.inReviewDeliverables)}
+              helper={qualitySummary}
+              icon={<CheckCircle2 className="h-5 w-5" />}
+            />
+            <MetricCard
+              title="Microsoft Context"
+              value={String(client.microsoft.totalLinkedItems)}
+              helper={`${client.microsoft.linkedProjectCount} linked projects with activity`}
+              icon={<Link2 className="h-5 w-5" />}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <Card className="border-border shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Layers3 className="h-4 w-4 text-cyan-700" />
+              Lifecycle Distribution
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {client.lifecycleDistribution.length > 0 ? (
+              client.lifecycleDistribution.map((item) => (
+                <div key={`${client.clientId}-${item.stage}`} className="space-y-1">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-foreground">{item.stage}</span>
+                    <span className="text-muted-foreground">{item.count}</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted">
+                    <div
+                      className="h-2 rounded-full bg-cyan-600"
+                      style={{ width: stageBarWidth(item.count, maxLifecycleCount) }}
+                    />
+                  </div>
+                </div>
+              ))
+            ) : (
+              <EmptyPanel
+                icon={<Layers3 className="h-5 w-5" />}
+                title="No lifecycle spread yet"
+                description="Link a project to this client to start surfacing lifecycle distribution."
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-border shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CircleAlert className="h-4 w-4 text-cyan-700" />
+              Signal Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-3">
+            <ClientSignalPanel
+              title="Financial"
+              summary={formatCurrency(client.signals.financial.grossMargin)}
+              helper={`${client.signals.financial.projectsWithFinancialData} project(s) with financial signal coverage`}
+              tone="cyan"
+            />
+            <ClientSignalPanel
+              title="Quality"
+              summary={String(client.signals.quality.completedDeliverables)}
+              helper={`${client.signals.quality.completedDeliverables} deliverables completed`}
+              tone="emerald"
+            />
+            <ClientSignalPanel
+              title="Risk"
+              summary={riskSummary}
+              helper={`${client.signals.risk.overdueWorkItems} overdue tasks, ${client.signals.risk.projectsMissingLatestUpdate} missing updates`}
+              tone={client.signals.risk.blockedProjects > 0 || client.signals.risk.escalatedProjects > 0 ? "rose" : "amber"}
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
+        <Card className="border-border shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <MessagesSquare className="h-4 w-4 text-cyan-700" />
+              Latest Important Updates
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {client.latestUpdates.length > 0 ? (
+              client.latestUpdates.map((update) => (
+                <div key={update.projectInfoId} className="rounded-2xl border border-border p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold text-foreground">{update.projectName}</p>
+                      {update.lifecycleStageLabel ? <Badge variant="outline">{update.lifecycleStageLabel}</Badge> : null}
+                      {update.ragStatus ? (
+                        <Badge variant="outline" className="border-amber-100 bg-amber-50 text-amber-700">
+                          RAG {update.ragStatus}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{formatDateTime(update.updatedAt)}</p>
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">{update.text}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {update.updatedBy || "No owner recorded"}
+                    {update.microsoftLinkedItems > 0 ? ` - ${update.microsoftLinkedItems} Microsoft-linked items` : ""}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <EmptyPanel
+                icon={<MessagesSquare className="h-5 w-5" />}
+                title="No latest updates captured"
+                description="Canonical latest updates will appear here once linked projects report delivery progress."
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-border shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Link2 className="h-4 w-4 text-cyan-700" />
+              Microsoft Context
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4 text-cyan-900">
+              <p className="text-xs font-semibold uppercase tracking-wide">Cross-project activity</p>
+              <p className="mt-1 text-sm">
+                {client.microsoft.totalLinkedItems} linked Microsoft items across {client.microsoft.linkedProjectCount} project(s).
+              </p>
+              <p className="mt-1 text-xs opacity-80">
+                Latest activity: {formatDateTime(client.microsoft.latestActivityAt)}
+              </p>
+            </div>
+            {microsoftItems.length > 0 ? (
+              microsoftItems.map((item) => (
+                <div key={`${client.clientId}-${item.key}`} className="flex items-center justify-between rounded-xl border border-border px-3 py-2">
+                  <span className="text-sm font-medium text-foreground">{item.label}</span>
+                  <Badge variant="outline">{item.count}</Badge>
+                </div>
+              ))
+            ) : (
+              <EmptyPanel
+                icon={<Link2 className="h-5 w-5" />}
+                title="No Microsoft-linked context yet"
+                description="Email, meetings, Teams, and files will surface here when linked through the canonical project spine."
+              />
+            )}
+            {client.departmentCoverage.length > 0 ? (
+              <div className="pt-1">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Department coverage</p>
+                <div className="flex flex-wrap gap-1">
+                  {client.departmentCoverage.map((department) => (
+                    <Badge key={`${client.clientId}-${department}`} variant="outline" className="border-slate-200 bg-slate-50 text-slate-700">
+                      {department.replace(/_/g, " ")}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="border-border shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <FolderKanban className="h-4 w-4 text-cyan-700" />
+            Linked Projects
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {client.linkedProjects.length > 0 ? (
+            client.linkedProjects.map((project) => (
+              <ClientLinkedProjectRow key={project.projectInfoId} project={project} />
+            ))
+          ) : (
+            <EmptyPanel
+              icon={<FolderKanban className="h-5 w-5" />}
+              title="No linked projects"
+              description="Use the existing Clients workspace to assign an unlinked project to this client without creating a second client system."
+            />
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -339,7 +747,12 @@ const EMPTY_MICROSOFT_BREAKDOWN = {
 export function ProjectLifecyclePage() {
   const [location, setLocation] = useLocation();
   const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { allowed: canCreateClient, loading: clientPermissionLoading } = usePermission("pd_clients", "create");
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+  const [newClientName, setNewClientName] = useState("");
 
   const currentSection = getCurrentSection(location);
   const { data, isLoading, isError, isFetching, refetch } = useQuery<ProjectLifecycleWorkspacePayload>({
@@ -368,6 +781,82 @@ export function ProjectLifecyclePage() {
     () => filterProjectLifecycleClients(clients, searchTerm),
     [clients, searchTerm],
   );
+  const selectedClient = useMemo(
+    () =>
+      filteredClients.find((client) => client.clientId === selectedClientId) ||
+      clients.find((client) => client.clientId === selectedClientId) ||
+      null,
+    [clients, filteredClients, selectedClientId],
+  );
+
+  useEffect(() => {
+    if (filteredClients.length === 0) {
+      setSelectedClientId(null);
+      return;
+    }
+    if (selectedClientId && filteredClients.some((client) => client.clientId === selectedClientId)) {
+      return;
+    }
+    setSelectedClientId(filteredClients[0].clientId);
+  }, [filteredClients, selectedClientId]);
+
+  const createClientMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const trimmedName = name.trim();
+      const existingClient = clients.find(
+        (client) => normalizeClientName(client.clientName) === normalizeClientName(trimmedName),
+      );
+      if (existingClient) {
+        return {
+          existing: true,
+          clientId: existingClient.clientId,
+          clientCode: existingClient.clientCode,
+          clientName: existingClient.clientName,
+        };
+      }
+
+      const response = await fetch("/api/pd/clients", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders(),
+        },
+        body: JSON.stringify({ name: trimmedName }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to create client");
+      }
+
+      return {
+        existing: false,
+        clientId: payload.id,
+        clientCode: payload.clientId,
+        clientName: payload.name,
+      };
+    },
+    onSuccess: (result) => {
+      setSelectedClientId(result.clientId);
+      setNewClientName("");
+      queryClient.invalidateQueries({ queryKey: ["/api/project-lifecycle/workspace"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pd/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["clients-project-counts"] });
+      toast({
+        title: result.existing ? "Existing client opened" : "Client created",
+        description: `${result.clientName} (${result.clientCode})`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Client creation failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const latestProjects = useMemo(
     () => sortProjectsByLatestUpdate(filteredProjects),
@@ -431,7 +920,7 @@ export function ProjectLifecyclePage() {
       : currentSection === "latest-updates"
         ? "Search project updates, owners, clients, or departments..."
         : currentSection === "client-overview"
-          ? "Search clients, lifecycle spread, or departments..."
+          ? "Search clients, linked projects, updates, or departments..."
           : "Search the lifecycle workspace...";
 
   if (isLoading) {
@@ -589,7 +1078,7 @@ export function ProjectLifecyclePage() {
               title="Client Workspace"
               description="Create clients, manage linkages, and open the client overview."
               icon={<Building2 className="h-5 w-5" />}
-              onClick={() => setLocation("/clients")}
+              onClick={() => setLocation("/project-lifecycle/client-overview")}
               testId="project-lifecycle-quick-clients"
             />
           </div>
@@ -907,30 +1396,108 @@ export function ProjectLifecyclePage() {
           <Card className="border-border shadow-sm">
             <CardContent className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="space-y-1">
-                <p className="text-sm font-semibold text-foreground">Client creation stays under the existing Clients workspace.</p>
+                <p className="text-sm font-semibold text-foreground">Client creation and leadership overview now sit inside Project Lifecycle.</p>
                 <p className="text-sm text-muted-foreground">
-                  This overview is a lifecycle summary. Use Clients to create, edit, and link project-client relationships.
+                  The existing Clients page remains the operational registry for editing and bulk linkage work, but this is now the action-first client home for lifecycle planning.
                 </p>
               </div>
-              <Button onClick={() => setLocation("/clients")} data-testid="button-open-client-workspace">
-                Open Clients
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => setLocation("/project-create")} data-testid="button-open-project-create-from-client-workspace">
+                  <Plus className="mr-1 h-4 w-4" />
+                  New Project
+                </Button>
+                <Button onClick={() => setLocation("/clients")} data-testid="button-open-client-workspace">
+                  Open Clients
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
-          {filteredClients.length > 0 ? (
-            <div className="space-y-3">
-              {filteredClients.map((client) => (
-                <ClientOverviewRow key={client.clientId} client={client} />
-              ))}
+          <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+            <div className="space-y-4">
+              <Card className="border-border shadow-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Building2 className="h-4 w-4 text-cyan-700" />
+                    Create Client
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Input
+                    value={newClientName}
+                    onChange={(event) => setNewClientName(event.target.value)}
+                    placeholder="Enter client name"
+                    data-testid="input-project-lifecycle-new-client-name"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    New clients are created against the shared client master. Exact name matches open the existing client instead of creating a duplicate.
+                  </p>
+                  <Button
+                    className="w-full"
+                    onClick={() => createClientMutation.mutate(newClientName)}
+                    disabled={
+                      clientPermissionLoading ||
+                      !canCreateClient ||
+                      !newClientName.trim() ||
+                      createClientMutation.isPending
+                    }
+                    data-testid="button-project-lifecycle-create-client"
+                  >
+                    {createClientMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="mr-2 h-4 w-4" />
+                    )}
+                    Create Client
+                  </Button>
+                  {!canCreateClient && !clientPermissionLoading ? (
+                    <p className="text-xs text-muted-foreground">
+                      You have read access to the client overview, but client creation is limited by role.
+                    </p>
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card className="border-border shadow-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Search className="h-4 w-4 text-cyan-700" />
+                    Client Directory
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {filteredClients.length > 0 ? (
+                    filteredClients.map((client) => (
+                      <ClientWorkspaceListItem
+                        key={client.clientId}
+                        client={client}
+                        isSelected={client.clientId === selectedClient?.clientId}
+                        onSelect={() => setSelectedClientId(client.clientId)}
+                      />
+                    ))
+                  ) : (
+                    <EmptyPanel
+                      icon={<Building2 className="h-5 w-5" />}
+                      title="No clients found"
+                      description="Try a broader search, or create a client here if your role allows it."
+                    />
+                  )}
+                </CardContent>
+              </Card>
             </div>
-          ) : (
-            <EmptyPanel
-              icon={<Building2 className="h-5 w-5" />}
-              title="No clients found"
-              description="Try a broader search or open Clients to create and link a new client."
-            />
-          )}
+
+            <div>
+              {selectedClient ? (
+                <ClientOverviewDetail client={selectedClient} />
+              ) : (
+                <EmptyPanel
+                  icon={<Building2 className="h-5 w-5" />}
+                  title="Select a client"
+                  description="Choose a client from the directory to review linked projects, delivery signals, latest updates, and Microsoft context."
+                />
+              )}
+            </div>
+          </div>
         </div>
       ) : null}
     </PageShell>

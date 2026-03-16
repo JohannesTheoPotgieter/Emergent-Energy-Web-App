@@ -50,6 +50,14 @@ export interface ProjectLifecycleWorkspaceProject {
     byType: Record<MicrosoftTypeKey, number>;
     latestLinkedAt: string | null;
   };
+  ragStatus: string | null;
+  escalationLevel: string | null;
+  metrics: {
+    totalRevenue: number;
+    totalCost: number;
+    activeWorkItems: number;
+    overdueWorkItems: number;
+  };
 }
 
 export interface ProjectLifecycleWorkspaceClient {
@@ -59,10 +67,68 @@ export interface ProjectLifecycleWorkspaceClient {
   projectCount: number;
   activeProjectCount: number;
   lifecycleStages: string[];
+  lifecycleDistribution: Array<{ stage: string; count: number }>;
   departmentCoverage: string[];
   latestUpdateAt: string | null;
   latestUpdateProjectName: string | null;
   microsoftLinkedItems: number;
+  latestUpdates: Array<{
+    projectInfoId: number;
+    projectName: string;
+    lifecycleStageLabel: string | null;
+    text: string;
+    updatedAt: string;
+    updatedBy: string | null;
+    ragStatus: string | null;
+    microsoftLinkedItems: number;
+  }>;
+  linkedProjects: Array<{
+    projectInfoId: number;
+    projectName: string;
+    lifecycleStageLabel: string | null;
+    isActive: boolean;
+    executionGateStatus: string | null;
+    executionEnabled: boolean;
+    latestUpdateText: string | null;
+    latestUpdateAt: string | null;
+    latestUpdateBy: string | null;
+    totalRevenue: number;
+    totalCost: number;
+    pendingApprovals: number;
+    inReviewDeliverables: number;
+    completedDeliverables: number;
+    overdueWorkItems: number;
+    microsoftLinkedItems: number;
+    ragStatus: string | null;
+    escalationLevel: string | null;
+  }>;
+  signals: {
+    financial: {
+      totalRevenue: number;
+      totalCost: number;
+      grossMargin: number;
+      projectsWithFinancialData: number;
+    };
+    quality: {
+      pendingApprovals: number;
+      inReviewDeliverables: number;
+      completedDeliverables: number;
+    };
+    risk: {
+      blockedProjects: number;
+      projectsMissingLatestUpdate: number;
+      overdueWorkItems: number;
+      escalatedProjects: number;
+      ragRedProjects: number;
+      ragAmberProjects: number;
+    };
+  };
+  microsoft: {
+    totalLinkedItems: number;
+    linkedProjectCount: number;
+    latestActivityAt: string | null;
+    byType: Record<MicrosoftTypeKey, number>;
+  };
 }
 
 export interface ProjectLifecycleWorkspacePayload {
@@ -137,6 +203,8 @@ export function filterProjectLifecycleClients(
       client.latestUpdateProjectName,
       ...client.lifecycleStages,
       ...client.departmentCoverage,
+      ...client.latestUpdates.map((update) => update.text),
+      ...client.linkedProjects.flatMap((project) => [project.projectName, project.latestUpdateText]),
     ]
       .map((value) => toSearchKey(value))
       .join(" ");

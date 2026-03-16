@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, trItems, deliverables, uploadMetadata } from "@shared/schema";
+import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata } from "@shared/schema";
 import { db } from "./db";
 import { safeLegacyQuery } from "./legacy-table-guard";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -5027,19 +5027,42 @@ export async function registerRoutes(
         clientHandoverDate: z.string().nullable().optional(),
         pdHandoverDate: z.string().nullable().optional(),
         clientId: z.number().nullable().optional(),
+        clientLinkReason: z.string().trim().nullable().optional(),
       });
 
       const parsed = editSchema.parse(req.body);
-      const sourceOfTruth = classifyProjectInfoPayload(parsed as Record<string, unknown>);
-      const updated = await storage.updateProjectInfoById(id, parsed as any);
+      const { clientLinkReason, ...projectInfoPatch } = parsed;
+      const existing = await storage.getProjectInfoById(id);
+      if (!existing) return res.status(404).json({ error: "Project not found" });
+
+      const sourceOfTruth = classifyProjectInfoPayload(projectInfoPatch as Record<string, unknown>);
+      const updated = await storage.updateProjectInfoById(id, projectInfoPatch as any);
       if (!updated) return res.status(404).json({ error: "Project not found" });
+
+      if (
+        Object.prototype.hasOwnProperty.call(projectInfoPatch, "clientId")
+        && existing.clientId !== updated.clientId
+        && req.user?.id
+      ) {
+        try {
+          await db.insert(projectClientHistory).values({
+            projectId: updated.id,
+            oldClientId: existing.clientId ?? null,
+            newClientId: updated.clientId ?? null,
+            movedByUserId: req.user.id,
+            reason: clientLinkReason || "Project client linkage updated",
+          });
+        } catch (historyError) {
+          console.error("[project-info] failed to record client linkage history", historyError);
+        }
+      }
 
       sendExcelSyncNotification({
         projectName: updated.projectName,
         changedByUserId: req.user?.id || 0,
         changeType: "project_info_update",
         changeDescription: "Project info was updated.",
-        details: parsed,
+        details: projectInfoPatch,
       }).catch(() => {});
 
       const [projectDualWriteEnabled, importsGovernancePreview] = await Promise.all([

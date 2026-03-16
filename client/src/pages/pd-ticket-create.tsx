@@ -127,7 +127,15 @@ export default function PdTicketCreatePage() {
   });
 
   const createProjectMutation = useMutation({
-    mutationFn: (name: string) => pdFetch("/api/projects", { method: "POST", body: JSON.stringify({ projectName: name, clientName: selectedClient?.name || "" }) }),
+    mutationFn: (name: string) =>
+      pdFetch("/api/projects", {
+        method: "POST",
+        body: JSON.stringify({
+          projectName: name,
+          clientId: selectedClient?.id || null,
+          clientName: selectedClient?.name || null,
+        }),
+      }),
     onSuccess: (data) => {
       setSelectedProject({ id: data.id, projectName: data.projectName });
       setCreateNewProject(false);

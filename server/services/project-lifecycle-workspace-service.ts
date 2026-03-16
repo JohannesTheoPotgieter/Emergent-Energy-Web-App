@@ -1,4 +1,5 @@
 import { desc, sql } from "drizzle-orm";
+import type { PlatformProjectSummaryContract } from "@shared/platform-contracts";
 import { clients, msObjects, projectInfo, projectPhaseHistory } from "@shared/schema";
 import { db } from "../db";
 import { getPlatformProjectSummaryMap } from "./project-platform-summary-service";
@@ -60,6 +61,114 @@ function makeEmptyPhaseHistorySummary(): PhaseHistorySummary {
   };
 }
 
+interface ProjectLifecycleWorkspaceMetrics {
+  totalRevenue: number;
+  totalCost: number;
+  activeWorkItems: number;
+  overdueWorkItems: number;
+}
+
+interface ProjectLifecycleWorkspaceClientUpdate {
+  projectInfoId: number;
+  projectName: string;
+  lifecycleStageLabel: string | null;
+  text: string;
+  updatedAt: string;
+  updatedBy: string | null;
+  ragStatus: string | null;
+  microsoftLinkedItems: number;
+}
+
+interface ProjectLifecycleWorkspaceClientLinkedProject {
+  projectInfoId: number;
+  projectName: string;
+  lifecycleStageLabel: string | null;
+  isActive: boolean;
+  executionGateStatus: string | null;
+  executionEnabled: boolean;
+  latestUpdateText: string | null;
+  latestUpdateAt: string | null;
+  latestUpdateBy: string | null;
+  totalRevenue: number;
+  totalCost: number;
+  pendingApprovals: number;
+  inReviewDeliverables: number;
+  completedDeliverables: number;
+  overdueWorkItems: number;
+  microsoftLinkedItems: number;
+  ragStatus: string | null;
+  escalationLevel: string | null;
+}
+
+interface ProjectLifecycleWorkspaceClientSignals {
+  financial: {
+    totalRevenue: number;
+    totalCost: number;
+    grossMargin: number;
+    projectsWithFinancialData: number;
+  };
+  quality: {
+    pendingApprovals: number;
+    inReviewDeliverables: number;
+    completedDeliverables: number;
+  };
+  risk: {
+    blockedProjects: number;
+    projectsMissingLatestUpdate: number;
+    overdueWorkItems: number;
+    escalatedProjects: number;
+    ragRedProjects: number;
+    ragAmberProjects: number;
+  };
+}
+
+interface ProjectLifecycleWorkspaceClientMicrosoftSummary {
+  totalLinkedItems: number;
+  linkedProjectCount: number;
+  latestActivityAt: string | null;
+  byType: Record<MicrosoftTypeKey, number>;
+}
+
+function getKpiValue(summary: PlatformProjectSummaryContract | undefined, kpiId: string): number {
+  return summary?.kpis.find((kpi) => kpi.id === kpiId)?.value ?? 0;
+}
+
+function isEscalated(escalationLevel: string | null): boolean {
+  const normalized = String(escalationLevel || "").trim().toUpperCase();
+  return normalized !== "" && normalized !== "NONE" && normalized !== "LOW";
+}
+
+function isBlockedByStageGate(project: Pick<ProjectLifecycleWorkspaceProject, "stageGate">): boolean {
+  if (project.stageGate.executionEnabled) return false;
+  if ((project.stageGate.executionGateStatus || "").toUpperCase() === "ELIGIBLE") return false;
+  if (project.stageGate.signedStatus && project.stageGate.signedStatus !== "NONE") return false;
+  return true;
+}
+
+function buildEmptyClientSignals(): ProjectLifecycleWorkspaceClientSignals {
+  return {
+    financial: {
+      totalRevenue: 0,
+      totalCost: 0,
+      grossMargin: 0,
+      projectsWithFinancialData: 0,
+    },
+    quality: {
+      pendingApprovals: 0,
+      inReviewDeliverables: 0,
+      completedDeliverables: 0,
+    },
+    risk: {
+      blockedProjects: 0,
+      projectsMissingLatestUpdate: 0,
+      overdueWorkItems: 0,
+      escalatedProjects: 0,
+      ragRedProjects: 0,
+      ragAmberProjects: 0,
+    },
+  };
+}
+
 export interface ProjectLifecycleWorkspaceProject {
   projectInfoId: number;
   canonicalProjectId: number;
@@ -103,6 +212,9 @@ export interface ProjectLifecycleWorkspaceProject {
   };
   departments: string[];
   microsoft: ProjectMicrosoftSummary;
+  ragStatus: string | null;
+  escalationLevel: string | null;
+  metrics: ProjectLifecycleWorkspaceMetrics;
 }
 
 export interface ProjectLifecycleWorkspaceClient {
@@ -112,10 +224,15 @@ export interface ProjectLifecycleWorkspaceClient {
   projectCount: number;
   activeProjectCount: number;
   lifecycleStages: string[];
+  lifecycleDistribution: Array<{ stage: string; count: number }>;
   departmentCoverage: string[];
   latestUpdateAt: string | null;
   latestUpdateProjectName: string | null;
   microsoftLinkedItems: number;
+  latestUpdates: ProjectLifecycleWorkspaceClientUpdate[];
+  linkedProjects: ProjectLifecycleWorkspaceClientLinkedProject[];
+  signals: ProjectLifecycleWorkspaceClientSignals;
+  microsoft: ProjectLifecycleWorkspaceClientMicrosoftSummary;
 }
 
 export interface ProjectLifecycleWorkspacePayload {
@@ -141,54 +258,51 @@ export interface ProjectLifecycleWorkspacePayload {
   clients: ProjectLifecycleWorkspaceClient[];
 }
 
-export async function buildProjectLifecycleWorkspace(): Promise<ProjectLifecycleWorkspacePayload> {
-  const [projectRows, phaseHistoryRows, microsoftRows, clientRows, summaryMap] = await Promise.all([
-    db
-      .select({
-        id: projectInfo.id,
-        canonicalProjectId: projectInfo.canonicalProjectId,
-        projectName: projectInfo.projectName,
-        clientId: projectInfo.clientId,
-        phase: projectInfo.phase,
-        executionPhase: projectInfo.executionPhase,
-        pm: projectInfo.pm,
-        pd: projectInfo.pd,
-        isActive: projectInfo.isActive,
-        archivedStatus: projectInfo.archivedStatus,
-        phaseUpdatedAt: projectInfo.phaseUpdatedAt,
-        executionGateStatus: projectInfo.executionGateStatus,
-        executionEnabled: projectInfo.executionEnabled,
-        signedStatus: projectInfo.signedStatus,
-        signedDate: projectInfo.signedDate,
-      })
-      .from(projectInfo)
-      .orderBy(projectInfo.projectName),
-    db
-      .select({
-        projectId: projectPhaseHistory.projectId,
-        changedAt: projectPhaseHistory.changedAt,
-      })
-      .from(projectPhaseHistory)
-      .orderBy(desc(projectPhaseHistory.changedAt)),
-    db
-      .select({
-        projectId: msObjects.linkedProjectId,
-        type: msObjects.type,
-        linkedAt: msObjects.receivedOrStartDatetime,
-      })
-      .from(msObjects)
-      .where(sql`${msObjects.linkedProjectId} is not null`)
-      .orderBy(desc(msObjects.receivedOrStartDatetime)),
-    db
-      .select({
-        id: clients.id,
-        clientId: clients.clientId,
-        name: clients.name,
-      })
-      .from(clients)
-      .orderBy(clients.name),
-    getPlatformProjectSummaryMap(),
-  ]);
+type WorkspaceProjectRow = {
+  id: number;
+  canonicalProjectId: number | null;
+  projectName: string;
+  clientId: number | null;
+  phase: string | null;
+  executionPhase: string | null;
+  pm: string | null;
+  pd: string | null;
+  isActive: boolean | null;
+  archivedStatus: string | null;
+  phaseUpdatedAt: unknown;
+  executionGateStatus: string | null;
+  executionEnabled: boolean | null;
+  signedStatus: string | null;
+  signedDate: string | null;
+  ragStatus: string | null;
+  escalationLevel: string | null;
+};
+
+type WorkspacePhaseHistoryRow = {
+  projectId: number;
+  changedAt: unknown;
+};
+
+type WorkspaceMicrosoftRow = {
+  projectId: number | null;
+  type: string | null;
+  linkedAt: unknown;
+};
+
+type WorkspaceClientRow = {
+  id: number;
+  clientId: string;
+  name: string;
+};
+
+export function buildProjectLifecycleWorkspaceFromSources(params: {
+  projectRows: WorkspaceProjectRow[];
+  phaseHistoryRows: WorkspacePhaseHistoryRow[];
+  microsoftRows: WorkspaceMicrosoftRow[];
+  clientRows: WorkspaceClientRow[];
+  summaryMap: Map<number, PlatformProjectSummaryContract>;
+}): ProjectLifecycleWorkspacePayload {
+  const { projectRows, phaseHistoryRows, microsoftRows, clientRows, summaryMap } = params;
 
   const phaseHistoryByProject = new Map<number, PhaseHistorySummary>();
   for (const row of phaseHistoryRows) {
@@ -207,8 +321,9 @@ export async function buildProjectLifecycleWorkspace(): Promise<ProjectLifecycle
     const existing = microsoftByProject.get(projectId) || makeEmptyMicrosoftSummary();
     existing.totalLinkedItems += 1;
     existing.byType[normalizeMicrosoftType(row.type)] += 1;
-    if (!existing.latestLinkedAt) {
-      existing.latestLinkedAt = toIsoString(row.linkedAt);
+    const linkedAt = toIsoString(row.linkedAt);
+    if (timestampOf(linkedAt) > timestampOf(existing.latestLinkedAt)) {
+      existing.latestLinkedAt = linkedAt;
     }
     microsoftByProject.set(projectId, existing);
   }
@@ -266,6 +381,14 @@ export async function buildProjectLifecycleWorkspace(): Promise<ProjectLifecycle
       },
       departments,
       microsoft,
+      ragStatus: row.ragStatus || null,
+      escalationLevel: row.escalationLevel || null,
+      metrics: {
+        totalRevenue: getKpiValue(sharedSummary, "finance_total_revenue"),
+        totalCost: getKpiValue(sharedSummary, "finance_total_cost"),
+        activeWorkItems: getKpiValue(sharedSummary, "tasks_active"),
+        overdueWorkItems: getKpiValue(sharedSummary, "tasks_overdue"),
+      },
     };
   });
 
@@ -323,9 +446,97 @@ export async function buildProjectLifecycleWorkspace(): Promise<ProjectLifecycle
     const departmentCoverage = Array.from(
       new Set(clientProjects.flatMap((project) => project.departments)),
     ).sort();
-    const lifecycleStages = Array.from(
-      new Set(clientProjects.map((project) => project.lifecycleStageLabel).filter(Boolean) as string[]),
-    ).sort();
+
+    const lifecycleDistributionMap = new Map<string, number>();
+    const lifecycleStages = new Set<string>();
+    const latestUpdates: ProjectLifecycleWorkspaceClientUpdate[] = [];
+    const linkedProjects: ProjectLifecycleWorkspaceClientLinkedProject[] = [];
+    const signals = buildEmptyClientSignals();
+    const microsoft = {
+      totalLinkedItems: 0,
+      linkedProjectCount: 0,
+      latestActivityAt: null,
+      byType: makeEmptyMicrosoftSummary().byType,
+    };
+
+    for (const project of clientProjects) {
+      const stageLabel = project.lifecycleStageLabel || "Unassigned";
+      lifecycleDistributionMap.set(stageLabel, (lifecycleDistributionMap.get(stageLabel) || 0) + 1);
+      lifecycleStages.add(stageLabel);
+
+      signals.financial.totalRevenue += project.metrics.totalRevenue;
+      signals.financial.totalCost += project.metrics.totalCost;
+      if (project.metrics.totalRevenue > 0 || project.metrics.totalCost > 0) {
+        signals.financial.projectsWithFinancialData += 1;
+      }
+
+      signals.quality.pendingApprovals += project.workflow.approvals.pending;
+      signals.quality.inReviewDeliverables += project.workflow.deliverables.inReview;
+      signals.quality.completedDeliverables += project.workflow.deliverables.completed;
+
+      if (isBlockedByStageGate(project)) signals.risk.blockedProjects += 1;
+      if (!project.latestUpdate.text) signals.risk.projectsMissingLatestUpdate += 1;
+      signals.risk.overdueWorkItems += project.metrics.overdueWorkItems;
+      if (isEscalated(project.escalationLevel)) signals.risk.escalatedProjects += 1;
+      if ((project.ragStatus || "").toUpperCase() === "RED") signals.risk.ragRedProjects += 1;
+      if ((project.ragStatus || "").toUpperCase() === "AMBER") signals.risk.ragAmberProjects += 1;
+
+      microsoft.totalLinkedItems += project.microsoft.totalLinkedItems;
+      if (project.microsoft.totalLinkedItems > 0) {
+        microsoft.linkedProjectCount += 1;
+      }
+      if (timestampOf(project.microsoft.latestLinkedAt) > timestampOf(microsoft.latestActivityAt)) {
+        microsoft.latestActivityAt = project.microsoft.latestLinkedAt;
+      }
+      for (const [type, count] of Object.entries(project.microsoft.byType) as Array<[MicrosoftTypeKey, number]>) {
+        microsoft.byType[type] += count;
+      }
+
+      if (project.latestUpdate.text && project.latestUpdate.updatedAt) {
+        latestUpdates.push({
+          projectInfoId: project.projectInfoId,
+          projectName: project.projectName,
+          lifecycleStageLabel: project.lifecycleStageLabel,
+          text: project.latestUpdate.text,
+          updatedAt: project.latestUpdate.updatedAt,
+          updatedBy: project.latestUpdate.updatedBy,
+          ragStatus: project.ragStatus,
+          microsoftLinkedItems: project.microsoft.totalLinkedItems,
+        });
+      }
+
+      linkedProjects.push({
+        projectInfoId: project.projectInfoId,
+        projectName: project.projectName,
+        lifecycleStageLabel: project.lifecycleStageLabel,
+        isActive: project.isActive,
+        executionGateStatus: project.stageGate.executionGateStatus,
+        executionEnabled: project.stageGate.executionEnabled,
+        latestUpdateText: project.latestUpdate.text,
+        latestUpdateAt: project.latestUpdate.updatedAt,
+        latestUpdateBy: project.latestUpdate.updatedBy,
+        totalRevenue: project.metrics.totalRevenue,
+        totalCost: project.metrics.totalCost,
+        pendingApprovals: project.workflow.approvals.pending,
+        inReviewDeliverables: project.workflow.deliverables.inReview,
+        completedDeliverables: project.workflow.deliverables.completed,
+        overdueWorkItems: project.metrics.overdueWorkItems,
+        microsoftLinkedItems: project.microsoft.totalLinkedItems,
+        ragStatus: project.ragStatus,
+        escalationLevel: project.escalationLevel,
+      });
+    }
+
+    signals.financial.grossMargin = signals.financial.totalRevenue - signals.financial.totalCost;
+
+    latestUpdates.sort((left, right) => timestampOf(right.updatedAt) - timestampOf(left.updatedAt));
+    linkedProjects.sort((left, right) => {
+      const activeDelta = Number(right.isActive) - Number(left.isActive);
+      if (activeDelta !== 0) return activeDelta;
+      const updateDelta = timestampOf(right.latestUpdateAt) - timestampOf(left.latestUpdateAt);
+      if (updateDelta !== 0) return updateDelta;
+      return left.projectName.localeCompare(right.projectName);
+    });
 
     return {
       clientId: clientRow.id,
@@ -333,11 +544,18 @@ export async function buildProjectLifecycleWorkspace(): Promise<ProjectLifecycle
       clientName: clientRow.name,
       projectCount: clientProjects.length,
       activeProjectCount: clientProjects.filter((project) => project.isActive).length,
-      lifecycleStages,
+      lifecycleStages: Array.from(lifecycleStages).sort(),
+      lifecycleDistribution: Array.from(lifecycleDistributionMap.entries())
+        .map(([stage, count]) => ({ stage, count }))
+        .sort((left, right) => right.count - left.count || left.stage.localeCompare(right.stage)),
       departmentCoverage,
       latestUpdateAt: latestProject?.latestUpdate.updatedAt || null,
       latestUpdateProjectName: latestProject?.projectName || null,
-      microsoftLinkedItems: clientProjects.reduce((sum, project) => sum + project.microsoft.totalLinkedItems, 0),
+      microsoftLinkedItems: microsoft.totalLinkedItems,
+      latestUpdates: latestUpdates.slice(0, 6),
+      linkedProjects,
+      signals,
+      microsoft,
     };
   });
 
@@ -375,4 +593,64 @@ export async function buildProjectLifecycleWorkspace(): Promise<ProjectLifecycle
     projects,
     clients: clientOverview,
   };
+}
+
+export async function buildProjectLifecycleWorkspace(): Promise<ProjectLifecycleWorkspacePayload> {
+  const [projectRows, phaseHistoryRows, microsoftRows, clientRows, summaryMap] = await Promise.all([
+    db
+      .select({
+        id: projectInfo.id,
+        canonicalProjectId: projectInfo.canonicalProjectId,
+        projectName: projectInfo.projectName,
+        clientId: projectInfo.clientId,
+        phase: projectInfo.phase,
+        executionPhase: projectInfo.executionPhase,
+        pm: projectInfo.pm,
+        pd: projectInfo.pd,
+        isActive: projectInfo.isActive,
+        archivedStatus: projectInfo.archivedStatus,
+        phaseUpdatedAt: projectInfo.phaseUpdatedAt,
+        executionGateStatus: projectInfo.executionGateStatus,
+        executionEnabled: projectInfo.executionEnabled,
+        signedStatus: projectInfo.signedStatus,
+        signedDate: projectInfo.signedDate,
+        ragStatus: projectInfo.ragStatus,
+        escalationLevel: projectInfo.escalationLevel,
+      })
+      .from(projectInfo)
+      .orderBy(projectInfo.projectName),
+    db
+      .select({
+        projectId: projectPhaseHistory.projectId,
+        changedAt: projectPhaseHistory.changedAt,
+      })
+      .from(projectPhaseHistory)
+      .orderBy(desc(projectPhaseHistory.changedAt)),
+    db
+      .select({
+        projectId: msObjects.linkedProjectId,
+        type: msObjects.type,
+        linkedAt: msObjects.receivedOrStartDatetime,
+      })
+      .from(msObjects)
+      .where(sql`${msObjects.linkedProjectId} is not null`)
+      .orderBy(desc(msObjects.receivedOrStartDatetime)),
+    db
+      .select({
+        id: clients.id,
+        clientId: clients.clientId,
+        name: clients.name,
+      })
+      .from(clients)
+      .orderBy(clients.name),
+    getPlatformProjectSummaryMap(),
+  ]);
+
+  return buildProjectLifecycleWorkspaceFromSources({
+    projectRows,
+    phaseHistoryRows,
+    microsoftRows,
+    clientRows,
+    summaryMap,
+  });
 }

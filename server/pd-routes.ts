@@ -13,7 +13,7 @@ function requireAuth(req: Request, res: Response, next: () => void) {
 }
 
 function isPdRole(role: string): boolean {
-  return ["PROJECT_DEVELOPER", "COO_ADMIN", "CEO_ADMIN", "CCO", "admin"].includes(role);
+  return ["PROJECT_DEVELOPER", "KEY_ACCOUNTS_MANAGER", "COO_ADMIN", "CEO_ADMIN", "CCO", "admin"].includes(role);
 }
 
 function canCreatePdTicket(role: string): boolean {
@@ -42,7 +42,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd/clients", requireAuth, requirePermission('pd_quality', 'edit'), async (req: Request, res: Response) => {
+  app.post("/api/pd/clients", requireAuth, requirePermission('pd_clients', 'create'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
@@ -98,7 +98,7 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/pd/clients/:id", requireAuth, requirePermission('pd_quality', 'edit'), async (req: Request, res: Response) => {
+  app.patch("/api/pd/clients/:id", requireAuth, requirePermission('pd_clients', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
