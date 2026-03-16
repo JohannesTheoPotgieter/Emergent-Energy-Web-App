@@ -966,6 +966,16 @@ export default function ProjectDetailPage() {
     enabled: !!projectInfo?.project_info_id,
   });
 
+  const { data: projectExceptions } = useQuery<{ items: Array<{ id: string; title: string; severity: string; sourceLink: string; reason: string }>; summary?: { total: number; bySeverity: Record<string, number> } }>({
+    queryKey: ["project-exceptions", projectInfoId],
+    queryFn: async () => {
+      const res = await engFetch(`/api/exceptions?projectId=${projectInfoId}`);
+      if (!res.ok) return { items: [], summary: { total: 0, bySeverity: {} } };
+      return res.json();
+    },
+    enabled: !!projectInfoId,
+  });
+
   const { data: qualityData } = useQuery({
     queryKey: ["quality-summary", projectName],
     queryFn: async () => {
@@ -1210,6 +1220,21 @@ export default function ProjectDetailPage() {
                     <p className={`text-sm font-semibold ${ragColor(qualityRag)}`}>{qualityRag.toUpperCase()}</p>
                   </div>
                 </div>
+              </div>
+
+              <div className="rounded-lg border border-red-100 bg-red-50/30 p-3 space-y-2" data-testid="overview-project-exceptions">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Project exceptions</p>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <Badge className="bg-red-100 text-red-700">Critical: {projectExceptions?.summary?.bySeverity?.critical || 0}</Badge>
+                  <Badge className="bg-orange-100 text-orange-700">High: {projectExceptions?.summary?.bySeverity?.high || 0}</Badge>
+                </div>
+                {(projectExceptions?.items || []).slice(0, 3).map((item) => (
+                  <a key={item.id} href={item.sourceLink} className="block rounded-md border bg-white px-2 py-1 text-xs hover:bg-slate-50">
+                    <span className="font-medium">{item.title}</span>
+                    <span className="ml-2 text-muted-foreground">{item.reason}</span>
+                  </a>
+                ))}
+                {!(projectExceptions?.items || []).length ? <p className="text-xs text-emerald-700">No active exceptions.</p> : null}
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">

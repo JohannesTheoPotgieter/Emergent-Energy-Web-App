@@ -23,6 +23,8 @@ type CompanyPriorityLink = {
   taskType: string | null;
 };
 
+type ExceptionSummary = { total: number; bySeverity: Record<string, number> };
+
 type CompanyPriority = {
   id: number;
   title: string;
@@ -95,6 +97,18 @@ export default function Home() {
     queryFn: async () => {
       const res = await fetch("/api/mytool/company-priorities?horizon=week", { credentials: "include" });
       if (!res.ok) throw new Error("Could not load company priorities.");
+      return res.json();
+    },
+  });
+
+  const { data: exceptionSummary } = useQuery<ExceptionSummary>({
+    queryKey: ["home-exception-summary"],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/exceptions/summary", { credentials: "include", headers });
+      if (!res.ok) return { total: 0, bySeverity: {} };
       return res.json();
     },
   });
@@ -234,6 +248,24 @@ export default function Home() {
               </div>
             </Link>
           )) : <p className="text-sm text-slate-500">No active priorities are published for your role. Open Company Priorities for full context.</p>}
+        </CardContent>
+      </Card>
+
+      <Card className="border-red-100 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg"><AlertTriangle className="h-4 w-4 text-red-600" />Exception focus</CardTitle>
+          <p className="text-sm text-slate-600">Action the highest-risk exceptions first.</p>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {["critical", "high", "medium", "low"].map((sev) => (
+              <div key={sev} className="rounded border px-2 py-1">
+                <p className="text-[10px] uppercase text-slate-500">{sev}</p>
+                <p className="text-sm font-semibold">{exceptionSummary?.bySeverity?.[sev] || 0}</p>
+              </div>
+            ))}
+          </div>
+          <Button asChild variant="outline" size="sm"><Link href="/exceptions">Open Exceptions ({exceptionSummary?.total || 0})</Link></Button>
         </CardContent>
       </Card>
 

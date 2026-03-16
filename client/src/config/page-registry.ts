@@ -89,6 +89,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminRecovery", path: "/admin/recovery", label: "Recovery Center", iconKey: "ShieldAlert", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminRecoveryPage" },
   { id: "adminControlCenter", path: "/admin/control-center", label: "Control Center", iconKey: "Gauge", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminControlCenterPage" },
   { id: "commandCenter", path: "/command-center", label: "Command Center", iconKey: "Zap", navGroup: "MY_WORK", permissionEntity: "my_work", showInSidebar: true, routeComponentKey: "CommandCenterPage" },
+  { id: "exceptions", path: "/exceptions", label: "Exceptions", iconKey: "ShieldAlert", navGroup: "MY_WORK", permissionEntity: "my_work", showInSidebar: true, routeComponentKey: "ExceptionsPage" },
   { id: "clients", path: "/clients", label: "Clients", iconKey: "Users", navGroup: "PROJECTS", permissionEntity: "pd_clients", showInSidebar: true, routeComponentKey: "ClientsPage", aliases: ["/pd/clients"] },
   { id: "actionLaunchpad", path: "/actions/launchpad", label: "Quick Create", routeComponentKey: "ActionLaunchpadPage" },
   { id: "pdPmHandover", path: "/pd/handover/:projectId", label: "PD to PM Handover", routeComponentKey: "PdPmHandoverPage" },
