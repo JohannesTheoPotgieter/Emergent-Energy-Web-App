@@ -5,6 +5,7 @@ import { verifyToken } from "./jwt";
 import { invoiceCaptures, projectInfo, users, counterparties, procurementItems } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -108,6 +109,19 @@ export function registerInvoiceCaptureRoutes(app: Express) {
         changesJson: { invoiceNumber, amount, projectId },
       });
 
+      const actor = actorFromReq(req);
+      await createProjectEvent({
+        projectId: result[0].projectId,
+        eventType: "invoice.captured",
+        actorUserId: actor.actorUserId,
+        actorRole: actor.actorRole,
+        sourceEntityType: "invoice_captures",
+        sourceEntityId: String(result[0].id),
+        summary: `Invoice captured${result[0].invoiceNumber ? `: ${result[0].invoiceNumber}` : ""}`,
+        details: { amount: result[0].amount, status: result[0].status, linkedProcurementItemId: result[0].linkedProcurementItemId },
+        idempotencyKey: `invoice-captured:${result[0].id}`,
+      });
+
       res.status(201).json(result[0]);
     } catch (err: any) {
       console.error("[InvoiceCapture] Create error:", err.message);
@@ -131,6 +145,22 @@ export function registerInvoiceCaptureRoutes(app: Express) {
       }
 
       const result = await db.update(invoiceCaptures).set(updates).where(eq(invoiceCaptures.id, id)).returning();
+
+      if (updates.status && updates.status !== old.status) {
+        const actor = actorFromReq(req);
+        const eventType = updates.status === "approved" ? "invoice.approved" : "invoice.payment_status_changed";
+        await createProjectEvent({
+          projectId: old.projectId,
+          eventType,
+          actorUserId: actor.actorUserId,
+          actorRole: actor.actorRole,
+          sourceEntityType: "invoice_captures",
+          sourceEntityId: String(id),
+          summary: `Invoice status changed: ${old.status} → ${updates.status}`,
+          details: { fromStatus: old.status, toStatus: updates.status, invoiceNumber: result[0].invoiceNumber || old.invoiceNumber || null },
+          idempotencyKey: `invoice-status:${id}:${old.status}:${updates.status}`,
+        });
+      }
 
       if (result[0].linkedProcurementItemId) {
         await db.update(procurementItems)

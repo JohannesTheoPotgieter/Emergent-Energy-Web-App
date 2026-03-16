@@ -7,6 +7,7 @@ import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
 import { requirePermission } from "./permission-middleware";
+import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -1110,6 +1111,18 @@ export function registerLifecycleRoutes(app: Express) {
 
         const [updated] = await db.select().from(projectInfo).where(eq(projectInfo.id, existing.id));
         logAuditFromReq(req, { entityType: "lifecycle", entityId: String(existing.id), action: "update", projectName: cleanName, changesJson: { description: "Engineering project promoted (existing)", phase: targetPhase } });
+        const actor = actorFromReq(req);
+        await createProjectEvent({
+          projectId: existing.id,
+          eventType: "project.created",
+          actorUserId: actor.actorUserId,
+          actorRole: actor.actorRole,
+          sourceEntityType: "project_info",
+          sourceEntityId: String(existing.id),
+          summary: `Project promoted into engineering lifecycle (${targetPhase})`,
+          details: { phase: targetPhase, mode: "promote_existing" },
+          idempotencyKey: `project-promote-existing:${existing.id}:${targetPhase}`,
+        });
         return res.json(updated);
       }
 
@@ -1135,6 +1148,18 @@ export function registerLifecycleRoutes(app: Express) {
       }
 
       logAuditFromReq(req, { entityType: "lifecycle", entityId: String(created.id), action: "create", projectName: cleanName, changesJson: { description: "Engineering project promoted (new)", phase: targetPhase } });
+      const actor = actorFromReq(req);
+      await createProjectEvent({
+        projectId: created.id,
+        eventType: "project.created",
+        actorUserId: actor.actorUserId,
+        actorRole: actor.actorRole,
+        sourceEntityType: "project_info",
+        sourceEntityId: String(created.id),
+        summary: `Project created in engineering lifecycle (${targetPhase})`,
+        details: { phase: targetPhase, mode: "promote_new" },
+        idempotencyKey: `project-created:${created.id}`,
+      });
       res.json(created);
     } catch (err: any) {
       console.error("[lifecycle-board] POST promote-engineering error:", err);
@@ -1218,6 +1243,18 @@ export function registerLifecycleRoutes(app: Express) {
       }
 
       logAuditFromReq(req, { entityType: "project_lifecycle", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Phase changed", fromPhase: existing.phase, toPhase: phase.trim() } });
+      const actor = actorFromReq(req);
+      await createProjectEvent({
+        projectId: id,
+        eventType: "project.stage_changed",
+        actorUserId: actor.actorUserId,
+        actorRole: actor.actorRole,
+        sourceEntityType: "project_info",
+        sourceEntityId: String(id),
+        summary: `Stage changed from ${existing.phase || "unknown"} to ${phase.trim()}`,
+        details: { fromPhase: existing.phase, toPhase: phase.trim(), engStagesCreated: engStagesResult?.stagesCreated || 0 },
+        idempotencyKey: `phase:${id}:${existing.phase || ""}:${phase.trim()}`,
+      });
       res.json({ ...updated, engStagesResult });
     } catch (err: any) {
       console.error("[lifecycle-board] PATCH phase error:", err);
@@ -1334,6 +1371,19 @@ export function registerLifecycleRoutes(app: Express) {
       if (!effectiveSignedDocumentLink?.trim()) responseEligibilityReasons.push('No signed document link');
 
       logAuditFromReq(req, { entityType: "lifecycle", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Execution gate updated", previousStatus, newStatus: newGateStatus, executionEnabled: effectiveExecutionEnabled } });
+      const actor = actorFromReq(req);
+      const eventType = effectiveExecutionEnabled && !isEligible ? "project.override_granted" : (newGateStatus === "ENABLED" ? "project.gate_passed" : "project.gate_failed");
+      await createProjectEvent({
+        projectId: id,
+        eventType,
+        actorUserId: actor.actorUserId,
+        actorRole: actor.actorRole,
+        sourceEntityType: "execution_gate_log",
+        sourceEntityId: `${id}:${newGateStatus}`,
+        summary: effectiveExecutionEnabled ? `Execution gate enabled (${newGateStatus})` : `Execution gate set to ${newGateStatus}`,
+        details: { previousStatus, newStatus: newGateStatus, executionEnabled: effectiveExecutionEnabled, isEligible, reason: reason || null },
+        idempotencyKey: `gate:${id}:${previousStatus || ""}:${newGateStatus}:${String(effectiveExecutionEnabled)}`,
+      });
       res.json({
         id: updated.id,
         projectName: updated.projectName,

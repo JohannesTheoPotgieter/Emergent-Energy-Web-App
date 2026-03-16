@@ -5333,3 +5333,22 @@ export const invoiceCaptures = pgTable("invoice_captures", {
 export const insertInvoiceCaptureSchema = createInsertSchema(invoiceCaptures).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertInvoiceCapture = z.infer<typeof insertInvoiceCaptureSchema>;
 export type InvoiceCapture = typeof invoiceCaptures.$inferSelect;
+
+export const projectEvents = pgTable("project_events", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  eventType: text("event_type").notNull(),
+  eventTimestamp: timestamp("event_timestamp").notNull().defaultNow(),
+  actorUserId: integer("actor_user_id").references(() => users.id),
+  actorRole: text("actor_role"),
+  sourceEntityType: text("source_entity_type").notNull(),
+  sourceEntityId: text("source_entity_id").notNull(),
+  summary: text("summary").notNull(),
+  details: jsonb("details").notNull().default(sql`'{}'::jsonb`),
+  visibility: jsonb("visibility").notNull().default(sql`'{"scope":"project"}'::jsonb`),
+  idempotencyKey: text("idempotency_key").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertProjectEventSchema = createInsertSchema(projectEvents).omit({ id: true, createdAt: true } as any);
+export type InsertProjectEvent = z.infer<typeof insertProjectEventSchema>;
+export type ProjectEvent = typeof projectEvents.$inferSelect;

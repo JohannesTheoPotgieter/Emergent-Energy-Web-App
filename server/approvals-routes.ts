@@ -16,6 +16,7 @@ import {
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
@@ -287,6 +288,20 @@ export function registerApprovalsRoutes(app: Express) {
 
       const created = (Array.isArray(result) ? result : (result as any).rows || [])[0];
       logAuditFromReq(req, "approval_created", "approvals", created?.id, { type, title, projectId, approvalCategory });
+      if (created?.projectId) {
+        const actor = actorFromReq(req);
+        await createProjectEvent({
+          projectId: created.projectId,
+          eventType: "approval.requested",
+          actorUserId: actor.actorUserId,
+          actorRole: actor.actorRole,
+          sourceEntityType: "approvals",
+          sourceEntityId: String(created.id),
+          summary: `Approval requested: ${created.title}`,
+          details: { status: created.status, approvalCategory: created.approvalCategory, type: created.type },
+          idempotencyKey: `approval-requested:${created.id}`,
+        });
+      }
       res.status(201).json(created);
     } catch (err: any) {
       console.error("Error creating approval:", err);
@@ -319,6 +334,20 @@ export function registerApprovalsRoutes(app: Express) {
       if (!updated) return res.status(404).json({ error: "Approval not found" });
 
       logAuditFromReq(req, `approval_${status || "updated"}`, "approvals", id, { status, decisionNote });
+      if (updated.projectId && (status === "approved" || status === "rejected")) {
+        const actor = actorFromReq(req);
+        await createProjectEvent({
+          projectId: updated.projectId,
+          eventType: status === "approved" ? "approval.approved" : "approval.rejected",
+          actorUserId: actor.actorUserId,
+          actorRole: actor.actorRole,
+          sourceEntityType: "approvals",
+          sourceEntityId: String(updated.id),
+          summary: `Approval ${status}: ${updated.title}`,
+          details: { status: updated.status, decisionNote: updated.decisionNote || null, type: updated.type },
+          idempotencyKey: `approval-decision:${updated.id}:${updated.status}`,
+        });
+      }
       res.json(updated);
     } catch (err: any) {
       console.error("Error updating approval:", err);
