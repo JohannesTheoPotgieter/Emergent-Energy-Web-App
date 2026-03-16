@@ -53,6 +53,7 @@ import {
 } from "./canonical-boundaries";
 import { listImportSyncState } from "./services/imports-governance-service";
 import { classifyProjectInfoPayload } from "./services/source-of-truth-policy";
+import { convertWorkItemTypeInPlace, WorkItemConversionError } from "./services/work-item-conversion-service";
 
 function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
   if (fontColor === 'red') return false;
@@ -5920,21 +5921,75 @@ export async function registerRoutes(
       if (operation === "convertToMilestoneWI") {
         const { workItemId, subtaskWorkItemIds } = data || {};
         if (!workItemId) return res.status(400).json({ error: "workItemId required" });
-        await db.transaction(async (tx) => {
-          await tx.update(workItems)
-            .set({ isMilestone: true, duration: 0, updatedAt: new Date() })
-            .where(eq(workItems.id, workItemId));
-          if (Array.isArray(subtaskWorkItemIds) && subtaskWorkItemIds.length > 0) {
-            const parentItem = await tx.select({ indentLevel: workItems.indentLevel }).from(workItems).where(eq(workItems.id, workItemId));
-            const parentIndent = parentItem[0]?.indentLevel ?? 0;
-            for (const stId of subtaskWorkItemIds) {
-              if (stId === workItemId) continue;
-              await tx.update(workItems)
-                .set({ parentId: workItemId, indentLevel: parentIndent + 1, updatedAt: new Date() })
-                .where(eq(workItems.id, stId));
-            }
+
+        const projectInfoRow = await storage.getProjectInfo(rawProjectName);
+        const projectId = projectInfoRow?.id || null;
+        if (!projectId) return res.status(400).json({ error: "Project not found" });
+
+        try {
+          await db.transaction(async (tx) => {
+            const repo = {
+              getById: async (id: number) => {
+                const rows = await tx.select({
+                  id: workItems.id,
+                  projectId: workItems.projectId,
+                  title: workItems.title,
+                  isMilestone: workItems.isMilestone,
+                  duration: workItems.duration,
+                  indentLevel: workItems.indentLevel,
+                  parentId: workItems.parentId,
+                  deletedAt: workItems.deletedAt,
+                  createdAt: workItems.createdAt,
+                  updatedAt: workItems.updatedAt,
+                }).from(workItems).where(eq(workItems.id, id)).limit(1);
+                return rows[0] || null;
+              },
+              listByIds: async (ids: number[]) => {
+                if (!ids.length) return [];
+                return tx.select({
+                  id: workItems.id,
+                  projectId: workItems.projectId,
+                  title: workItems.title,
+                  isMilestone: workItems.isMilestone,
+                  duration: workItems.duration,
+                  indentLevel: workItems.indentLevel,
+                  parentId: workItems.parentId,
+                  deletedAt: workItems.deletedAt,
+                  createdAt: workItems.createdAt,
+                  updatedAt: workItems.updatedAt,
+                }).from(workItems).where(inArray(workItems.id, ids));
+              },
+              patchById: async (id: number, patch: any) => {
+                await tx.update(workItems).set(patch).where(eq(workItems.id, id));
+              },
+            };
+
+            await convertWorkItemTypeInPlace({
+              repo,
+              workItemId,
+              target: "milestone",
+              projectId,
+              subtaskWorkItemIds,
+            });
+          });
+        } catch (err: any) {
+          if (err instanceof WorkItemConversionError) {
+            return res.status(err.status).json({ error: err.message });
           }
+          throw err;
+        }
+
+        logAuditFromReq(req, {
+          entityType: "work_item",
+          action: "convert_to_milestone",
+          entityId: String(workItemId),
+          changesJson: {
+            projectName: rawProjectName,
+            subtaskWorkItemIds: Array.isArray(subtaskWorkItemIds) ? subtaskWorkItemIds : [],
+            conversion: "in_place",
+          },
         });
+
         notifyStructureChange(`Task converted to milestone.`);
         return res.json({ message: "Converted to milestone" });
       }
@@ -5942,9 +5997,59 @@ export async function registerRoutes(
       if (operation === "convertToTaskWI") {
         const { workItemId } = data || {};
         if (!workItemId) return res.status(400).json({ error: "workItemId required" });
-        await db.update(workItems)
-          .set({ isMilestone: false, duration: 1, updatedAt: new Date() })
-          .where(eq(workItems.id, workItemId));
+
+        const projectInfoRow = await storage.getProjectInfo(rawProjectName);
+        const projectId = projectInfoRow?.id || null;
+        if (!projectId) return res.status(400).json({ error: "Project not found" });
+
+        try {
+          await db.transaction(async (tx) => {
+            const repo = {
+              getById: async (id: number) => {
+                const rows = await tx.select({
+                  id: workItems.id,
+                  projectId: workItems.projectId,
+                  title: workItems.title,
+                  isMilestone: workItems.isMilestone,
+                  duration: workItems.duration,
+                  indentLevel: workItems.indentLevel,
+                  parentId: workItems.parentId,
+                  deletedAt: workItems.deletedAt,
+                  createdAt: workItems.createdAt,
+                  updatedAt: workItems.updatedAt,
+                }).from(workItems).where(eq(workItems.id, id)).limit(1);
+                return rows[0] || null;
+              },
+              listByIds: async () => [],
+              patchById: async (id: number, patch: any) => {
+                await tx.update(workItems).set(patch).where(eq(workItems.id, id));
+              },
+            };
+
+            await convertWorkItemTypeInPlace({
+              repo,
+              workItemId,
+              target: "task",
+              projectId,
+            });
+          });
+        } catch (err: any) {
+          if (err instanceof WorkItemConversionError) {
+            return res.status(err.status).json({ error: err.message });
+          }
+          throw err;
+        }
+
+        logAuditFromReq(req, {
+          entityType: "work_item",
+          action: "convert_to_task",
+          entityId: String(workItemId),
+          changesJson: {
+            projectName: rawProjectName,
+            conversion: "in_place",
+          },
+        });
+
         notifyStructureChange(`Milestone converted to regular task.`);
         return res.json({ message: "Converted to task" });
       }
