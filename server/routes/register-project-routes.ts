@@ -13,4 +13,6 @@ export async function registerProjectRoutes(app: Express) {
   registerPortfolioRoutes(app);
   const { registerPdRoutes } = await import("../pd-routes");
   registerPdRoutes(app);
+  const { registerProjectEventsRoutes } = await import("../project-events-routes");
+  registerProjectEventsRoutes(app);
 }
