@@ -1,6 +1,3 @@
-import { SecretClient } from "@azure/keyvault-secrets";
-import { DefaultAzureCredential } from "@azure/identity";
-
 type SecretName =
   | "DATABASE_URL"
   | "SESSION_SECRET"
@@ -28,29 +25,35 @@ const SECRET_RESOLUTIONS: SecretResolution[] = [
 
 const strictRuntime = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
 
-let secretClient: SecretClient | null = null;
+let secretClient: any = null;
 
-function getVaultClient(): SecretClient | null {
+async function getVaultClient(): Promise<any | null> {
   if (secretClient) return secretClient;
 
   const keyVaultUri = process.env.KEY_VAULT_URI;
   if (!keyVaultUri) return null;
 
-  const credential = new DefaultAzureCredential();
-  secretClient = new SecretClient(keyVaultUri, credential);
-  return secretClient;
+  try {
+    const { SecretClient } = await import("@azure/keyvault-secrets");
+    const { DefaultAzureCredential } = await import("@azure/identity");
+    const credential = new DefaultAzureCredential();
+    secretClient = new SecretClient(keyVaultUri, credential);
+    return secretClient;
+  } catch {
+    if (strictRuntime) {
+      throw new Error("[Secrets] @azure/keyvault-secrets or @azure/identity packages not installed.");
+    }
+    return null;
+  }
 }
 
-async function readVaultSecret(vaultName: string): Promise<string | null> {
-  const client = getVaultClient();
-  if (!client) return null;
-
+async function readVaultSecret(client: any, vaultName: string): Promise<string | null> {
   const response = await client.getSecret(vaultName);
   return response.value || null;
 }
 
 export async function preloadRuntimeSecrets(): Promise<void> {
-  const client = getVaultClient();
+  const client = await getVaultClient();
   if (!client) {
     if (strictRuntime) {
       throw new Error("[Secrets] KEY_VAULT_URI must be configured in staging/production.");
@@ -62,7 +65,7 @@ export async function preloadRuntimeSecrets(): Promise<void> {
     if (process.env[secret.envName]) continue;
 
     try {
-      const value = await readVaultSecret(secret.vaultName);
+      const value = await readVaultSecret(client, secret.vaultName);
       if (value) {
         process.env[secret.envName] = value;
       }
@@ -85,4 +88,3 @@ export async function preloadRuntimeSecrets(): Promise<void> {
 export function getSecretFromEnv(name: SecretName): string | undefined {
   return process.env[name];
 }
-
