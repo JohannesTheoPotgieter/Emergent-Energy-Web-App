@@ -13,7 +13,6 @@ import Dashboard from "@/pages/dashboard";
 import ProjectLifecyclePage from "@/pages/project-lifecycle";
 import ProjectsSummary from "@/pages/projects";
 import CashflowPage from "@/pages/cashflow";
-import RevenueTracker from "@/pages/revenue";
 import RevenueTrackerPage from "@/pages/revenue-tracker";
 import CostTracker from "@/pages/cos";
 import GpTrackerPage from "@/pages/gp-tracker";
@@ -104,7 +103,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   FinancialLinkingPage,
   ProjectDetailPage,
   CashflowPage,
-  RevenueTracker,
   CostTracker,
   RevenueTrackerPage,
   GpTrackerPage,

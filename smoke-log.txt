@@ -1,0 +1,990 @@
+
+> rest-express@1.0.0 test:smoke
+> tsx script/run-with-app.ts "playwright test -c qa/playwright.config.ts qa/tests/e2e/smoke.spec.ts"
+
+Starting app server for command: playwright test -c qa/playwright.config.ts qa/tests/e2e/smoke.spec.ts
+
+> rest-express@1.0.0 dev
+> node script/with-node-env.cjs development tsx server/index.ts
+
+[DB] No DATABASE_URL found, using SQLite for reliability
+[DB] No DATABASE_URL found, using SQLite for reliability
+[DB] Using SQLite file: C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\data\app.sqlite
+[DB] Startup schema repair disabled - running additive SQLite compatibility bootstrap
+[DB] Ensuring SQLite schema exists...
+[DB] ✓ SQLite schema verified
+[DB] SQLite schema verified
+11:08:22 PM [express] Using in-memory session store (dbMode=sqlite)
+[Lifecycle] Migration error: near "EXISTS": syntax error
+11:08:23 PM [Startup:Routes] All route groups registered
+[Milestones] Notification checker started (6h interval)
+[MS Sync] Periodic sync started (every 15 minutes)
+11:08:24 PM [Startup] [Startup] dbMode=sqlite
+11:08:24 PM [Startup] [Startup] flags={"startupMaintenanceEnabled":false,"startupSchemaRepairEnabled":false,"startupDataSeedEnabled":false,"startupBackfillEnabled":false,"startupSessionResetEnabled":false,"startupSyncEnabled":true,"runtimeMaintenanceEnabled":false,"runtimeMutationsActive":false}
+11:08:24 PM [Startup] [Startup] maintenance=skipped
+11:08:24 PM [Startup] [Startup] backfills=skipped
+11:08:24 PM [Startup] [Startup] seeds=skipped
+11:08:24 PM [Startup] [Startup] routes=registered
+11:08:24 PM [Startup] [Startup] runtime=import-scheduler, milestone-checker, periodic-sync
+11:08:24 PM [Startup] serving on port 5000
+11:08:24 PM [express] GET /api/health 200 in 16ms
+Server is healthy at http://127.0.0.1:5000/api/health
+
+Running 80 tests using 1 worker
+
+[1A[2K[1/80] [chromium] › qa\tests\e2e\smoke.spec.ts:277:9 › Expanded Route Smoke Coverage › Role: admin › admin route smoke: /
+11:08:37 PM [express] GET /api/auth/microsoft/config 200 in 3ms
+11:08:37 PM [express] GET /api/version 200 in 16ms
+11:08:37 PM [express] GET /api/auth/me 401 in 2ms
+11:08:38 PM [express] POST /api/auth/login 200 in 89ms
+[Engineering] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:38 PM [express] GET /api/notifications/unread-count 500 in 6ms
+11:08:38 PM [express] GET /api/auth/permissions 200 in 5ms
+Dashboard fetch error: SqliteError: no such column: "phase_updated_at" - should this be a string literal in single-quotes?
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12) {
+  code: 'SQLITE_ERROR'
+}
+11:08:38 PM [express] GET /api/dashboard 500 in 63ms
+11:08:38 PM [express] GET /api/projects-summary 500 in 50ms
+11:08:38 PM [express] GET /api/overview 200 in 62ms
+11:08:38 PM [express] GET /api/auth/permissions 304 in 12ms
+11:08:38 PM [express] GET /api/outlook/status 200 in 10ms
+11:08:38 PM [express] GET /api/feature-flags/rollout 200 in 25ms
+[MyWork AllTasks] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\ms-sync-routes.ts:590:12) {
+  code: 'SQLITE_ERROR'
+}
+[Outlook] Connector fallback failed: User SSO token required for user-scoped Microsoft data. Please sign in with Microsoft.
+11:08:38 PM [express] GET /api/my-work/all-tasks 500 in 15ms
+11:08:38 PM [express] GET /api/ms-objects/mine 404 in 23ms
+11:08:38 PM [express] GET /api/ms-teams/chats 200 in 32ms
+[Engineering] Error: SqliteError: no such table: notifications
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:38 PM [express] GET /api/notifications 500 in 4ms
+11:08:38 PM [express] GET /api/mytool/escalated-priorities 200 in 6ms
+[Outlook] DB fallback failed: value.toISOString is not a function
+11:08:38 PM [express] GET /api/outlook/events 200 in 81ms
+[Milestones] Notification check error: no such column: pi.pm_user_id
+11:08:39 PM [express] GET /api/auth/me 200 in 3ms
+[Engineering] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:39 PM [express] GET /api/notifications/unread-count 500 in 3ms
+11:08:39 PM [express] GET /api/auth/permissions 304 in 5ms
+Dashboard fetch error: SqliteError: no such column: "phase_updated_at" - should this be a string literal in single-quotes?
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12) {
+  code: 'SQLITE_ERROR'
+}
+11:08:39 PM [express] GET /api/dashboard 500 in 42ms
+11:08:39 PM [express] GET /api/projects-summary 500 in 25ms
+11:08:39 PM [express] GET /api/overview 200 in 41ms
+11:08:39 PM [express] GET /api/auth/permissions 304 in 3ms
+[MyWork AllTasks] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\ms-sync-routes.ts:590:12) {
+  code: 'SQLITE_ERROR'
+}
+11:08:39 PM [express] GET /api/my-work/all-tasks 500 in 11ms
+11:08:39 PM [express] GET /api/outlook/status 304 in 18ms
+11:08:39 PM [express] GET /api/ms-objects/mine 404 in 14ms
+11:08:39 PM [express] GET /api/ms-teams/chats 304 in 17ms
+[Outlook] Connector fallback failed: User SSO token required for user-scoped Microsoft data. Please sign in with Microsoft.
+11:08:39 PM [express] GET /api/feature-flags/rollout 304 in 26ms
+[Engineering] Error: SqliteError: no such table: notifications
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+11:08:39 PM [express] GET /api/notifications 500 in 9ms
+11:08:39 PM [express] GET /api/mytool/escalated-priorities 304 in 6ms
+[Outlook] DB fallback failed: value.toISOString is not a function
+11:08:39 PM [express] GET /api/outlook/events 304 in 53ms
+[Engineering] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:40 PM [express] GET /api/notifications/unread-count 500 in 2ms
+Dashboard fetch error: SqliteError: no such column: "phase_updated_at" - should this be a string literal in single-quotes?
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12) {
+  code: 'SQLITE_ERROR'
+}
+11:08:40 PM [express] GET /api/dashboard 500 in 16ms
+11:08:40 PM [express] GET /api/projects-summary 500 in 11ms
+[1A[2K[2/80] [chromium] › qa\tests\e2e\smoke.spec.ts:277:9 › Expanded Route Smoke Coverage › Role: admin › admin route smoke: / (retry #1)
+11:08:44 PM [express] GET /api/auth/microsoft/config 200 in 2ms
+11:08:44 PM [express] GET /api/version 200 in 20ms
+11:08:44 PM [express] GET /api/auth/me 401 in 1ms
+11:08:45 PM [express] POST /api/auth/login 200 in 150ms
+[Engineering] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:45 PM [express] GET /api/notifications/unread-count 500 in 3ms
+11:08:45 PM [express] GET /api/auth/permissions 200 in 5ms
+11:08:45 PM [express] GET /api/auth/permissions 304 in 4ms
+Dashboard fetch error: SqliteError: no such column: "phase_updated_at" - should this be a string literal in single-quotes?
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:45 PM [express] GET /api/dashboard 500 in 11ms
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12) {
+  code: 'SQLITE_ERROR'
+}
+11:08:45 PM [express] GET /api/projects-summary 500 in 92ms
+11:08:45 PM [express] GET /api/overview 200 in 131ms
+[MyWork AllTasks] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\ms-sync-routes.ts:590:12) {
+  code: 'SQLITE_ERROR'
+}
+11:08:45 PM [express] GET /api/my-work/all-tasks 500 in 44ms
+11:08:45 PM [express] GET /api/outlook/status 200 in 58ms
+11:08:45 PM [express] GET /api/ms-objects/mine 404 in 49ms
+11:08:45 PM [express] GET /api/ms-teams/chats 200 in 56ms
+[Outlook] Connector fallback failed: User SSO token required for user-scoped Microsoft data. Please sign in with Microsoft.
+11:08:45 PM [express] GET /api/feature-flags/rollout 200 in 68ms
+[Engineering] Error: SqliteError: no such table: notifications
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+11:08:45 PM [express] GET /api/notifications 500 in 16ms
+11:08:45 PM [express] GET /api/mytool/escalated-priorities 200 in 13ms
+[Outlook] DB fallback failed: value.toISOString is not a function
+11:08:45 PM [express] GET /api/outlook/events 200 in 113ms
+11:08:46 PM [express] GET /api/auth/me 200 in 3ms
+[Engineering] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:46 PM [express] GET /api/notifications/unread-count 500 in 3ms
+11:08:46 PM [express] GET /api/auth/permissions 304 in 3ms
+Dashboard fetch error: SqliteError: no such column: "phase_updated_at" - should this be a string literal in single-quotes?
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:46 PM [express] GET /api/dashboard 500 in 8ms
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12) {
+  code: 'SQLITE_ERROR'
+}
+11:08:47 PM [express] GET /api/auth/permissions 304 in 16ms
+11:08:47 PM [express] GET /api/projects-summary 500 in 15ms
+11:08:47 PM [express] GET /api/overview 200 in 25ms
+[MyWork AllTasks] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\ms-sync-routes.ts:590:12)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+11:08:47 PM [express] GET /api/outlook/status 304 in 20ms
+11:08:47 PM [express] GET /api/ms-teams/chats 304 in 19ms
+[Outlook] Connector fallback failed: User SSO token required for user-scoped Microsoft data. Please sign in with Microsoft.
+11:08:47 PM [express] GET /api/my-work/all-tasks 500 in 17ms
+11:08:47 PM [express] GET /api/ms-objects/mine 404 in 22ms
+11:08:47 PM [express] GET /api/feature-flags/rollout 304 in 31ms
+[Engineering] Error: SqliteError: no such table: notifications
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+11:08:47 PM [express] GET /api/notifications 500 in 9ms
+11:08:47 PM [express] GET /api/mytool/escalated-priorities 304 in 7ms
+[Outlook] DB fallback failed: value.toISOString is not a function
+11:08:47 PM [express] GET /api/outlook/events 304 in 61ms
+[Engineering] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:48 PM [express] GET /api/notifications/unread-count 500 in 1ms
+Dashboard fetch error: SqliteError: no such column: "phase_updated_at" - should this be a string literal in single-quotes?
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12) {
+  code: 'SQLITE_ERROR'
+}
+11:08:48 PM [express] GET /api/dashboard 500 in 14ms
+11:08:48 PM [express] GET /api/projects-summary 500 in 8ms
+[1A[2K  1) [chromium] › qa\tests\e2e\smoke.spec.ts:277:9 › Expanded Route Smoke Coverage › Role: admin › admin route smoke: / 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m13[39m
+
+      371 |
+      372 |           expect(redirectLoopDetected).toBeFalsy();
+    > 373 |           expect(responses500.length).toBe(0);
+          |                                       ^
+      374 |           if (!permissionBlocked) {
+      375 |             expect(headingOrAnchorFound).toBeTruthy();
+      376 |             expect(primaryWidgetOrActionFound).toBeTruthy();
+        at C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\qa\tests\e2e\smoke.spec.ts:373:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-00bba-le-admin-admin-route-smoke--chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-00bba-le-admin-admin-route-smoke--chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-00bba-le-admin-admin-route-smoke--chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m13[39m
+
+      371 |
+      372 |           expect(redirectLoopDetected).toBeFalsy();
+    > 373 |           expect(responses500.length).toBe(0);
+          |                                       ^
+      374 |           if (!permissionBlocked) {
+      375 |             expect(headingOrAnchorFound).toBeTruthy();
+      376 |             expect(primaryWidgetOrActionFound).toBeTruthy();
+        at C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\qa\tests\e2e\smoke.spec.ts:373:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-00bba-le-admin-admin-route-smoke--chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-00bba-le-admin-admin-route-smoke--chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-00bba-le-admin-admin-route-smoke--chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-00bba-le-admin-admin-route-smoke--chromium-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-00bba-le-admin-admin-route-smoke--chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[1A[2K[3/80] [chromium] › qa\tests\e2e\smoke.spec.ts:277:9 › Expanded Route Smoke Coverage › Role: admin › admin route smoke: /projects
+11:08:52 PM [express] GET /api/auth/microsoft/config 200 in 2ms
+11:08:52 PM [express] GET /api/version 200 in 13ms
+11:08:52 PM [express] GET /api/auth/me 401 in 1ms
+11:08:52 PM [express] POST /api/auth/login 200 in 68ms
+[Engineering] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:52 PM [express] GET /api/notifications/unread-count 500 in 1ms
+11:08:52 PM [express] GET /api/auth/permissions 200 in 3ms
+11:08:52 PM [express] GET /api/auth/permissions 304 in 5ms
+Dashboard fetch error: SqliteError: no such column: "phase_updated_at" - should this be a string literal in single-quotes?
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12) {
+  code: 'SQLITE_ERROR'
+}
+11:08:52 PM [express] GET /api/dashboard 500 in 17ms
+11:08:52 PM [express] GET /api/projects-summary 500 in 8ms
+11:08:52 PM [express] GET /api/overview 200 in 14ms
+[MyWork AllTasks] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\ms-sync-routes.ts:590:12) {
+  code: 'SQLITE_ERROR'
+}
+11:08:52 PM [express] GET /api/my-work/all-tasks 500 in 7ms
+11:08:52 PM [express] GET /api/outlook/status 200 in 11ms
+11:08:52 PM [express] GET /api/ms-objects/mine 404 in 9ms
+11:08:52 PM [express] GET /api/ms-teams/chats 200 in 11ms
+[Outlook] Connector fallback failed: User SSO token required for user-scoped Microsoft data. Please sign in with Microsoft.
+11:08:52 PM [express] GET /api/feature-flags/rollout 200 in 15ms
+[Engineering] Error: SqliteError: no such table: notifications
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+11:08:52 PM [express] GET /api/notifications 500 in 5ms
+11:08:52 PM [express] GET /api/mytool/escalated-priorities 200 in 7ms
+[Outlook] DB fallback failed: value.toISOString is not a function
+11:08:52 PM [express] GET /api/outlook/events 200 in 38ms
+11:08:53 PM [express] GET /api/auth/me 200 in 2ms
+[Engineering] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:53 PM [express] GET /api/notifications/unread-count 500 in 3ms
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+11:08:53 PM [express] GET /api/pm-assignable-users 200 in 12ms
+11:08:53 PM [express] GET /api/projects-summary 500 in 11ms
+11:08:53 PM [express] GET /api/auth/permissions 304 in 4ms
+Dashboard fetch error: SqliteError: no such column: "phase_updated_at" - should this be a string literal in single-quotes?
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12) {
+  code: 'SQLITE_ERROR'
+}
+11:08:53 PM [express] GET /api/dashboard 500 in 28ms
+11:08:53 PM [express] GET /api/projects-summary 500 in 18ms
+11:08:53 PM [express] GET /api/overview 200 in 30ms
+11:08:53 PM [express] GET /api/auth/permissions 304 in 5ms
+[Engineering] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:54 PM [express] GET /api/notifications/unread-count 500 in 1ms
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12) {
+  code: 'SQLITE_ERROR'
+}
+11:08:54 PM [express] GET /api/projects-summary 500 in 6ms
+Dashboard fetch error: SqliteError: no such column: "phase_updated_at" - should this be a string literal in single-quotes?
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:54 PM [express] GET /api/dashboard 500 in 8ms
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12) {
+  code: 'SQLITE_ERROR'
+}
+11:08:54 PM [express] GET /api/projects-summary 500 in 7ms
+[1A[2K[4/80] [chromium] › qa\tests\e2e\smoke.spec.ts:277:9 › Expanded Route Smoke Coverage › Role: admin › admin route smoke: /projects (retry #1)
+11:08:58 PM [express] GET /api/auth/microsoft/config 200 in 1ms
+11:08:58 PM [express] GET /api/version 200 in 16ms
+11:08:58 PM [express] GET /api/auth/me 401 in 1ms
+11:08:58 PM [express] POST /api/auth/login 200 in 104ms
+[Engineering] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:58 PM [express] GET /api/notifications/unread-count 500 in 3ms
+11:08:58 PM [express] GET /api/auth/permissions 200 in 3ms
+11:08:58 PM [express] GET /api/auth/permissions 304 in 4ms
+Dashboard fetch error: SqliteError: no such column: "phase_updated_at" - should this be a string literal in single-quotes?
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:08:58 PM [express] GET /api/dashboard 500 in 8ms
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12) {
+  code: 'SQLITE_ERROR'
+}
+11:08:58 PM [express] GET /api/projects-summary 500 in 16ms
+11:08:58 PM [express] GET /api/overview 200 in 25ms
+11:08:58 PM [express] GET /api/outlook/status 200 in 12ms
+11:08:58 PM [express] GET /api/ms-teams/chats 200 in 9ms
+[MyWork AllTasks] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\ms-sync-routes.ts:590:12) {
+  code: 'SQLITE_ERROR'
+}
+[Outlook] Connector fallback failed: User SSO token required for user-scoped Microsoft data. Please sign in with Microsoft.
+11:08:58 PM [express] GET /api/my-work/all-tasks 500 in 13ms
+11:08:58 PM [express] GET /api/ms-objects/mine 404 in 19ms
+11:08:58 PM [express] GET /api/feature-flags/rollout 200 in 29ms
+[Engineering] Error: SqliteError: no such table: notifications
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+11:08:58 PM [express] GET /api/notifications 500 in 8ms
+11:08:58 PM [express] GET /api/mytool/escalated-priorities 200 in 7ms
+[Outlook] DB fallback failed: value.toISOString is not a function
+11:08:58 PM [express] GET /api/outlook/events 200 in 66ms
+11:09:00 PM [express] GET /api/auth/me 200 in 3ms
+[Engineering] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:09:00 PM [express] GET /api/notifications/unread-count 500 in 4ms
+11:09:00 PM [express] GET /api/pm-assignable-users 200 in 3ms
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+11:09:00 PM [express] GET /api/projects-summary 500 in 17ms
+11:09:00 PM [express] GET /api/auth/permissions 304 in 5ms
+Dashboard fetch error: SqliteError: no such column: "phase_updated_at" - should this be a string literal in single-quotes?
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+11:09:00 PM [express] GET /api/dashboard 500 in 23ms
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+11:09:00 PM [express] GET /api/overview 200 in 38ms
+11:09:00 PM [express] GET /api/projects-summary 500 in 24ms
+11:09:00 PM [express] GET /api/auth/permissions 304 in 6ms
+[Engineering] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:09:01 PM [express] GET /api/notifications/unread-count 500 in 5ms
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+Dashboard fetch error: SqliteError: no such column: "phase_updated_at" - should this be a string literal in single-quotes?
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:09:01 PM [express] GET /api/projects-summary 500 in 16ms
+11:09:01 PM [express] GET /api/dashboard 500 in 9ms
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12) {
+  code: 'SQLITE_ERROR'
+}
+11:09:01 PM [express] GET /api/projects-summary 500 in 11ms
+[1A[2K  2) [chromium] › qa\tests\e2e\smoke.spec.ts:277:9 › Expanded Route Smoke Coverage › Role: admin › admin route smoke: /projects 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m13[39m
+
+      371 |
+      372 |           expect(redirectLoopDetected).toBeFalsy();
+    > 373 |           expect(responses500.length).toBe(0);
+          |                                       ^
+      374 |           if (!permissionBlocked) {
+      375 |             expect(headingOrAnchorFound).toBeTruthy();
+      376 |             expect(primaryWidgetOrActionFound).toBeTruthy();
+        at C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\qa\tests\e2e\smoke.spec.ts:373:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-c9d3a--admin-route-smoke-projects-chromium\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-c9d3a--admin-route-smoke-projects-chromium\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-c9d3a--admin-route-smoke-projects-chromium\error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m0[39m
+    Received: [31m13[39m
+
+      371 |
+      372 |           expect(redirectLoopDetected).toBeFalsy();
+    > 373 |           expect(responses500.length).toBe(0);
+          |                                       ^
+      374 |           if (!permissionBlocked) {
+      375 |             expect(headingOrAnchorFound).toBeTruthy();
+      376 |             expect(primaryWidgetOrActionFound).toBeTruthy();
+        at C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\qa\tests\e2e\smoke.spec.ts:373:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-c9d3a--admin-route-smoke-projects-chromium-retry1\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-c9d3a--admin-route-smoke-projects-chromium-retry1\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-c9d3a--admin-route-smoke-projects-chromium-retry1\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-c9d3a--admin-route-smoke-projects-chromium-retry1\trace.zip
+    Usage:
+
+        npx playwright show-trace qa\artifacts\e2e\results\smoke-Expanded-Route-Smoke-c9d3a--admin-route-smoke-projects-chromium-retry1\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[1A[2K[5/80] [chromium] › qa\tests\e2e\smoke.spec.ts:277:9 › Expanded Route Smoke Coverage › Role: admin › admin route smoke: /project/:projectName
+11:09:05 PM [express] GET /api/auth/microsoft/config 200 in 1ms
+11:09:05 PM [express] GET /api/version 200 in 14ms
+11:09:05 PM [express] GET /api/auth/me 401 in 1ms
+11:09:06 PM [express] POST /api/auth/login 200 in 74ms
+[Engineering] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:09:06 PM [express] GET /api/notifications/unread-count 500 in 1ms
+11:09:06 PM [express] GET /api/auth/permissions 200 in 2ms
+11:09:06 PM [express] GET /api/auth/permissions 304 in 5ms
+Dashboard fetch error: SqliteError: no such column: "phase_updated_at" - should this be a string literal in single-quotes?
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12) {
+  code: 'SQLITE_ERROR'
+}
+11:09:06 PM [express] GET /api/dashboard 500 in 25ms
+11:09:06 PM [express] GET /api/projects-summary 500 in 15ms
+11:09:06 PM [express] GET /api/overview 200 in 22ms
+[MyWork AllTasks] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\ms-sync-routes.ts:590:12)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+11:09:06 PM [express] GET /api/outlook/status 200 in 14ms
+11:09:06 PM [express] GET /api/ms-teams/chats 200 in 13ms
+[Outlook] Connector fallback failed: User SSO token required for user-scoped Microsoft data. Please sign in with Microsoft.
+11:09:06 PM [express] GET /api/my-work/all-tasks 500 in 11ms
+11:09:06 PM [express] GET /api/ms-objects/mine 404 in 18ms
+11:09:06 PM [express] GET /api/feature-flags/rollout 200 in 25ms
+[Engineering] Error: SqliteError: no such table: notifications
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:09:06 PM [express] GET /api/notifications 500 in 6ms
+11:09:06 PM [express] GET /api/mytool/escalated-priorities 200 in 15ms
+[Outlook] DB fallback failed: value.toISOString is not a function
+11:09:06 PM [express] GET /api/outlook/events 200 in 100ms
+11:09:07 PM [express] GET /api/auth/me 200 in 2ms
+[Engineering] Error: SqliteError: unrecognized token: ":"
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15) {
+  code: 'SQLITE_ERROR'
+}
+11:09:07 PM [express] GET /api/notifications/unread-count 500 in 1ms
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12) {
+  code: 'SQLITE_ERROR'
+}
+11:09:07 PM [express] GET /api/pm-assignable-users 200 in 13ms
+11:09:07 PM [express] GET /api/projects-summary 500 in 9ms
+Dashboard fetch error: SqliteError: no such column: "phase_updated_at" - should this be a string literal in single-quotes?
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at SQLiteSelectBase._prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:865:85)
+    at SQLiteSelectBase.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:884:15)
+    at SQLiteSelectBase.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\query-builders\select.ts:896:15)
+    at SQLiteSelectBase.then (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\query-promise.ts:31:15)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+11:09:07 PM [express] GET /api/auth/permissions 304 in 25ms
+11:09:07 PM [express] GET /api/dashboard 500 in 24ms
+Projects summary fetch error: SqliteError: no such table: project_pd_pm_handover
+    at Database.prepare (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\better-sqlite3\lib\methods\wrappers.js:5:21)
+    at BetterSQLiteSession.prepareQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\better-sqlite3\session.ts:50:28)
+    at BetterSQLiteSession.prepareOneTimeQuery (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:135:15)
+    at BetterSQLiteSession.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\session.ts:158:15)
+    at BetterSQLite3Database.all (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\node_modules\src\sqlite-core\db.ts:554:23)
+    at BetterSQLite3Database.dbInstance.execute (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\db.ts:43:37)
+    at <anonymous> (C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\server\routes.ts:1899:12)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processImmediate (node:internal/timers:459:9) {
+  code: 'SQLITE_ERROR'
+}
+11:09:07 PM [express] GET /api/overview 200 in 29ms
+11:09:07 PM [express] GET /api/projects-summary 500 in 15ms
+11:09:07 PM [express] GET /api/auth/permissions 304 in 3ms
+[1A[2K[6/80] [chromium] › qa\tests\e2e\smoke.spec.ts:277:9 › Expanded Route Smoke Coverage › Role: admin › admin route smoke: /engineering

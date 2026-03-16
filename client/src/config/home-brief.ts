@@ -36,7 +36,7 @@ const roleQuickActions: Record<string, QuickAction[]> = {
   finance: [
     { label: "PO Approvals", description: "Approve pending procurement requests.", path: "/my-work/approvals" },
     { label: "Invoice Matching", description: "Resolve invoice linking and gaps.", path: "/actions/launchpad?action=link-invoice" },
-    { label: "COS Control", description: "Check budget vs actual exceptions.", path: "/cos-control" },
+    { label: "COS Tracker", description: "Check budget vs actual exceptions.", path: "/cos" },
     { label: "Cashflow", description: "Review near-term cashflow posture.", path: "/cashflow" },
   ],
   quality: [

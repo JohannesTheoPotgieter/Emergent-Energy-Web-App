@@ -155,8 +155,8 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
     ],
   },
 
-  "/cos-control": {
-    id: "cos-control",
+  "/cos": {
+    id: "cos-tracker",
     title: "COS Control",
     steps: [
       {
@@ -165,7 +165,7 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
         position: "center",
       },
       {
-        targetSelector: '[data-testid="cos-control-page"]',
+        targetSelector: '[data-testid="table-cos-grid"]',
         title: "COS Overview",
         description: "Each row shows a project with its contract value, costed total, actual total, variance, and COS percentage. Red variance means over-budget, green means under-budget.",
         position: "center",

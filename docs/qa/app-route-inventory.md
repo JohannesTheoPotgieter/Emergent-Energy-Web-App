@@ -22,6 +22,7 @@ API dependencies are inferred from `/api/...` calls in each page component and s
 | `/admin/smart-import` | SmartImportPage | `admin` | `/api/import/preview`, `/api/import/commit/`, `/api/import/history` | Upload, Approve, Rollback, Export | `adminSmartImport` |
 | `/admin/excel-updates` | AdminExcelUpdatePage | `admin` | `/api/weekly-updates`, `/api/weekly-updates/`, `/api/weekly-updates/by-project/` | Create, Save, Filter, Export | `adminExcelUpdates` |
 | `/cashflow` | CashflowPage | `cashflow` | `/api/cashflow-2026`, `/api/cashflow-2026/available-payment`, `/api/cashflow-2026/available-payment-history` | Save, Upload, Export, Import | `cashflow` |
+| `/cashflow-forecast` | redirect to `/cashflow` | `none` | redirect only | Redirect to `/cashflow` and validate legacy finance bookmarks still resolve to the canonical tracker. | `cashflowForecastLegacyRedirect` |
 | `/clients` | ClientsPage | `pd_clients` | `/api/pd/clients`, `/api/pd/clients/`, `/api/pd/clients/project-counts` | Create, Save, Export, Import | `clients` |
 | `/collaboration` | CollaborationPage | `collaboration_hub` | `/api/admin/sp-settings`, `/api/ms-objects/`, `/api/ms-objects/mine` | Create, Save, Approve, Export | `collaboration` |
 | `/collaboration/email` | CollabEmailPage | `collaboration_hub` | `/api/ms-objects/mine`, `/api/ms-sync/trigger` | Export, Import, Filter, Search | `collabEmail` |
@@ -29,6 +30,7 @@ API dependencies are inferred from `/api/...` calls in each page component and s
 | `/command-center` | redirect to `/my-work` | `my_work` | redirect only | Redirect to `/my-work` and verify Command Center is not a live workspace. | `commandCenter` |
 | `/company-priorities` | MyToolPrioritiesPage | `company_priorities` | `/api/mytool/company-priorities`, `/api/mytool/company-priorities/`, `/api/mytool/priority-links/` | Create, Save, Export, Import | `companyPriorities` |
 | `/cos` | CostTracker | `cos` | `/api/cos-tracker`, `/api/cos-tracker/month-detail`, `/api/cos-tracker/toggle-realised/` | Export, Import, Filter, Search | `cos` |
+| `/cos-control` | redirect to `/cos` | `none` | redirect only | Redirect to `/cos` and validate legacy finance bookmarks still resolve to the canonical tracker. | `cosControlLegacyRedirect` |
 | `/counterparties` | CounterpartiesPage | `subcontractors` | `/api/counterparties`, `/api/counterparties/`, `/api/subcontractor-dashboard/counterparty/` | Create, Save, Export, Import | `counterparties` |
 | `/dashboard` | Dashboard | `execution_board` | `/api/program-dashboard` | Export, Import, Filter, Search | `dashboard` |
 | `/department-scores` | DepartmentScoresPage | `department_scores` | `/api/gamification/leaderboard` | Export, Import | `departmentScores` |
@@ -82,7 +84,7 @@ API dependencies are inferred from `/api/...` calls in each page component and s
 | `/pm/approvals` | ApprovalsPage | `approvals` | `/api/approvals/pending`, `/api/deliverables/`, `/api/eng-stages/approvals/` | Approve, Reject, Open project, Filter | `pmApprovals` |
 | `/pm/deliverables` | PMDeliverablesPage | `deliverables` | `/api/projects-summary`, `/api/deliverable-capture/list/`, `/api/ms-objects/project/` | Capture Deliverable, Download, Open approvals, Open project | `pmDeliverables` |
 | `/quality` | QmDashboardPage | `quality` | `/api/projects-summary`, `/api/quality/all-items`, `/api/quality/checklists` | Create, Approve, Export, Import | `quality` |
-| `/revenue` | RevenueTracker | `none` | `/api/rev-tracker`, `/api/tracker-monthly` | Export, Import, Edit | `revenue` |
+| `/revenue` | redirect to `/revenue-tracker` | `none` | redirect only | Redirect to `/revenue-tracker` and validate legacy finance bookmarks still resolve to the canonical tracker. | `revenue` |
 | `/revenue-tracker` | RevenueTrackerPage | `revenue_tracker` | `/api/revenue-tracker`, `/api/revenue-tracker/month-detail`, `/api/tracker-monthly` | Export, Import, Filter, Search | `revenueTracker` |
 | `/settings/integrations` | — | `none` | redirect only | Redirect to `/admin/settings` and validate access control. | `settingsIntegrations` |
 | `/smart-import` | SmartImportPage | `smart_import` | `/api/counterparties`, `/api/smart-import/`, `/api/smart-import/pending-runs` | Create, Save, Approve, Upload | `smartImport` |

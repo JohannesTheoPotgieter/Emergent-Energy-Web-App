@@ -14,6 +14,14 @@ Scope for this phase: trustability hardening only (no destructive migration, no 
 | Work items / planning tasks | `work_items` table | `operational_tasks` as read/mirror adapter | Active planning write flows must write `work_items` first; legacy task table updates are best-effort mirror only. |
 | Project/core routing paths | `project_info` | Legacy project snapshots/read models | Routes should resolve project identity from `project_info.id` / `project_info.project_name` and avoid split write-master behavior. |
 
+## Frontend route boundary decisions
+
+| Surface | Canonical route(s) | Legacy compatibility retained | Notes |
+|---|---|---|---|
+| Project List placement | `/projects` under Project Management navigation | None found in active runtime | `client/src/config/app-navigation.ts` and `client/src/config/page-registry.ts` are the active navigation sources. |
+| Finance trackers | `/cashflow`, `/cos`, `/revenue-tracker`, `/gp-tracker` | `/cashflow-forecast`, `/cos-control`, `/revenue` redirect to canonical routes | Legacy bookmarks remain supported, but new links and walkthroughs should target canonical finance routes only. |
+| Microsoft admin settings | `/admin/settings` | `/settings/integrations`, `/admin/ms-integration`, `/admin/ms-mapping` redirect to `/admin/settings` | Keep runtime Microsoft APIs intact while collapsing duplicate admin UI entry points. |
+
 ## Banned mixed-write patterns
 
 1. **Same flow writing legacy first, canonical second** for task-like entities.
@@ -31,4 +39,3 @@ Scope for this phase: trustability hardening only (no destructive migration, no 
 - Routes that still update `operational_tasks` directly (e.g., engineering/task module paths) without canonical-first handoff.
 - Recovery/admin flows that may independently touch `work_items` and `operational_tasks` and need shared adapters.
 - Read-side query merges in reporting views (`project_plan` + normalized/canonical tables) that are still needed for backward-compatible API outputs.
-

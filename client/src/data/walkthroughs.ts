@@ -71,7 +71,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
         stepNumber: 1,
         title: "Open the COS Tracker",
         description: "Navigate to 'COS Control' under the FINANCE section in the sidebar. This page shows the consolidated Cost of Sales view across all projects.",
-        targetPage: "/cos-control",
+        targetPage: "/cos",
         tryIt: "Click 'COS Control' in the sidebar now. You'll see a table showing all projects with their costed vs actual breakdowns.",
       },
       {
@@ -882,7 +882,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
         stepNumber: 1,
         title: "Open COS Control",
         description: "Navigate to 'COS Control' under FINANCE. This shows every project's cost of sales compared side by side.",
-        targetPage: "/cos-control",
+        targetPage: "/cos",
         tryIt: "Click 'COS Control' in the sidebar.",
       },
       {
@@ -909,7 +909,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
         stepNumber: 1,
         title: "Open Revenue Overview",
         description: "Navigate to 'Revenue' under FINANCE. This shows revenue metrics across all projects.",
-        targetPage: "/revenue",
+        targetPage: "/revenue-tracker",
         tryIt: "Click 'Revenue' in the sidebar to see the overview.",
       },
       {
