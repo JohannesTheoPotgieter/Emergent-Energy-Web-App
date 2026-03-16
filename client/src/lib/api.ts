@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 import { getErrorMessage } from "./errors";
 import { parseApiError, networkError, ApiError } from "./api-error";
+import { runAsyncAction } from "./async-action";
 
 const API_BASE = "/api";
 
@@ -17,41 +18,47 @@ export function setAuthToken(token: string | null) {
 }
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
-  const token = getAuthToken();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
+  return runAsyncAction(async ({ signal, correlationId }) => {
+    const token = getAuthToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId,
+    };
 
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      ...options,
-      credentials: "include",
-      headers: {
-        ...headers,
-        ...options?.headers,
-      },
-    });
-  } catch {
-    throw networkError();
-  }
-
-  if (!response.ok) {
-    let errorData: any = {};
-    try {
-      errorData = await response.json();
-    } catch {
-      errorData = { message: response.statusText || "Request failed" };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
     }
 
-    throw parseApiError(response, errorData);
-  }
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        signal,
+        credentials: "include",
+        headers: {
+          ...headers,
+          ...options?.headers,
+        },
+      });
+    } catch {
+      throw networkError();
+    }
 
-  return response.json();
+    if (!response.ok) {
+      let errorData: any = {};
+      try {
+        errorData = await response.json();
+      } catch {
+        errorData = { message: response.statusText || "Request failed" };
+      }
+
+      throw parseApiError(response, errorData);
+    }
+
+    return response.json();
+  }, {
+    action: `fetchJSON:${options?.method ?? "GET"}:${url}`,
+  });
 }
 
 export const authApi = {
@@ -179,28 +186,37 @@ export const uploadApi = {
     }
 
     let response: Response;
-    try {
-      response = await fetch(`${API_BASE}/upload`, {
-        method: "POST",
-        credentials: "include",
-        headers,
-        body: formData,
-      });
-    } catch {
-      throw networkError();
-    }
-
-    if (!response.ok) {
-      let errorData: any = {};
+    return runAsyncAction(async ({ signal, correlationId }) => {
       try {
-        errorData = await response.json();
+        response = await fetch(`${API_BASE}/upload`, {
+          method: "POST",
+          signal,
+          credentials: "include",
+          headers: {
+            ...headers,
+            "X-Correlation-ID": correlationId,
+          },
+          body: formData,
+        });
       } catch {
-        errorData = { message: "Upload failed" };
+        throw networkError();
       }
-      throw parseApiError(response, errorData);
-    }
 
-    return response.json() as Promise<UploadResult>;
+      if (!response.ok) {
+        let errorData: any = {};
+        try {
+          errorData = await response.json();
+        } catch {
+          errorData = { message: "Upload failed" };
+        }
+        throw parseApiError(response, errorData);
+      }
+
+      return response.json() as Promise<UploadResult>;
+    }, {
+      action: "uploadApi:uploadFiles",
+      timeoutMs: 120_000,
+    });
   },
   getHistory: async () => {
     return fetchJSON<UploadMetadata[]>(`${API_BASE}/uploads`);
