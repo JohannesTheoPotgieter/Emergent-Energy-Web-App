@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, ArrowRight, CalendarClock, ClipboardList, Mail, MessageSquare, Target } from "lucide-react";
 import { getRoleQuickActions, normalizeRoleLabel } from "@/config/home-brief";
+import { formatSouthAfricanDate, getDeterministicRoleQuote, getWelcomeHeading } from "@/lib/home-welcome";
 
 type Task = { id: number; title?: string; status?: string; dueDate?: string; projectName?: string; assignees?: string };
 type PriorityData = {
@@ -190,6 +191,17 @@ export default function Home() {
     return [...behind, ...milestones].slice(0, 6);
   }, [highPriority]);
 
+  const welcomeUser = useMemo(() => ({
+    id: user?.id,
+    email: user?.email,
+    name: user?.name,
+    role: user?.role,
+  }), [user]);
+
+  const welcomeHeading = useMemo(() => getWelcomeHeading(welcomeUser), [welcomeUser]);
+  const welcomeDate = useMemo(() => formatSouthAfricanDate(), []);
+  const welcomeQuote = useMemo(() => getDeterministicRoleQuote(welcomeUser, role), [welcomeUser, role]);
+
   const hasErrors = tasksError || highPriorityError || companyPrioritiesError;
   const isRetrying = tasksFetching || priorityFetching || prioritiesFetching;
 
@@ -198,10 +210,10 @@ export default function Home() {
       <header className="space-y-4 rounded-xl border border-primary/20 bg-white p-4 shadow-sm md:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <img src="/emergent-logo.png" alt="Emergent Energy" className="h-8 w-auto object-contain md:h-9" />
             <div>
-              <h1 className="text-xl font-semibold text-foreground md:text-2xl">Daily Operating Home</h1>
-              <p className="text-sm text-muted-foreground">Good morning, {user?.username || "team"}. Focus on what matters first.</p>
+              <h1 className="text-xl font-semibold text-foreground md:text-2xl">{welcomeHeading}</h1>
+              <p className="text-sm text-muted-foreground">{welcomeDate}</p>
+              <p className="mt-1 text-sm text-primary/90">{welcomeQuote}</p>
             </div>
           </div>
           <Button asChild variant="outline" size="sm" className="border-primary/30 text-primary hover:bg-primary/10">
