@@ -5576,3 +5576,24 @@ export const projectLinkageReviewQueue = pgTable("project_linkage_review_queue",
 export const insertProjectLinkageReviewQueueSchema = createInsertSchema(projectLinkageReviewQueue).omit({ id: true, createdAt: true } as any);
 export type InsertProjectLinkageReviewQueue = z.infer<typeof insertProjectLinkageReviewQueueSchema>;
 export type ProjectLinkageReviewQueue = typeof projectLinkageReviewQueue.$inferSelect;
+
+export const projectEvents = pgTable("project_events", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull(),
+  eventType: text("event_type").notNull(),
+  eventTimestamp: timestamp("event_timestamp").notNull().defaultNow(),
+  actorUserId: integer("actor_user_id").references(() => users.id),
+  actorRole: text("actor_role"),
+  sourceEntityType: text("source_entity_type").notNull(),
+  sourceEntityId: text("source_entity_id").notNull(),
+  summary: text("summary").notNull(),
+  details: jsonb("details").default({}),
+  visibility: jsonb("visibility").default({ scope: "project" }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueProjectIdempotency: unique("project_events_project_idempotency_unique").on(table.projectId, table.idempotencyKey),
+}));
+export const insertProjectEventSchema = createInsertSchema(projectEvents).omit({ id: true, createdAt: true } as any);
+export type InsertProjectEvent = z.infer<typeof insertProjectEventSchema>;
+export type ProjectEvent = typeof projectEvents.$inferSelect;
