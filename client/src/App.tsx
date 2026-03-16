@@ -79,7 +79,7 @@ import PmHandoverReviewPage from "@/pages/pm-handover-review";
 import HandoverControlPage from "@/pages/handover-control";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
-import { checkPermission } from "@shared/schema";
+import { checkPermission, normalizeRoleForPermissions } from "@shared/schema";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PAGE_REGISTRY, ROLE_LANDING_PAGE, getPermissionEntityForPath } from "@/config/page-registry";
@@ -207,7 +207,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   const navMode = isMobile ? NAVIGATION_MODE.mobile : NAVIGATION_MODE.desktop;
 
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-  const effectiveRole = user?.role || companyRole;
+  const effectiveRole = normalizeRoleForPermissions(user?.role || companyRole);
 
   if (process.env.NODE_ENV !== "production") {
     (window as any).__navMode = navMode;
@@ -219,7 +219,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      if (user?.role) headers["x-company-role"] = user.role;
+      if (effectiveRole) headers["x-company-role"] = effectiveRole;
       const res = await fetch("/api/auth/permissions", { headers, credentials: "include" });
       return res.json();
     },
@@ -261,16 +261,27 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   }
 
   const entity = getPermissionEntityForPath(location);
-  if (entity && user?.role) {
+  if (entity && effectiveRole) {
     const ep = permissions?.entityPermissions;
     let hasView = true;
     if (ep && ep[entity]) {
       hasView = ep[entity]["view"] === true;
     } else {
-      hasView = checkPermission(user.role, entity, "view");
+      hasView = checkPermission(effectiveRole, entity, "view");
     }
     if (!hasView) {
       return <AccessDenied />;
+    }
+
+    if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") {
+      (window as any).__permissionDebug = {
+        user: user ? { id: user.id, role: user.role } : null,
+        effectiveRole,
+        route: location,
+        checkedEntity: entity,
+        hasView,
+        entityPermissions: permissions?.entityPermissions ?? null,
+      };
     }
   }
 
@@ -283,13 +294,15 @@ function ProtectedPages() {
 
   const { user } = useAuth();
 
+  const effectiveRole = normalizeRoleForPermissions(user?.role || (typeof window !== "undefined" ? localStorage.getItem("company_role") : null));
+
   const { data: permissions } = useQuery<{ entityPermissions?: Record<string, Record<string, boolean>> | null }>({
     queryKey: ["auth-permissions-landing", user?.role],
     queryFn: async () => {
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      if (user?.role) headers["x-company-role"] = user.role;
+      if (effectiveRole) headers["x-company-role"] = effectiveRole;
       const res = await fetch("/api/auth/permissions", { headers, credentials: "include" });
       return res.json();
     },
@@ -310,7 +323,7 @@ function ProtectedPages() {
       <Switch>
         <Route path="/">{() => {
           const role = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-          const selectedRole = role || user?.role || null;
+          const selectedRole = normalizeRoleForPermissions(role || user?.role || null);
 
           if (roleAwareUxEnabled) {
             const pagesById = new Map(PAGE_REGISTRY.map((page) => [page.id, page]));
