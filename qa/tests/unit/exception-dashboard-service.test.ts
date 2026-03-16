@@ -21,8 +21,10 @@ describe("exception-dashboard-service", () => {
   });
 
   it("builds deep links for exception actions", () => {
-    expect(buildExceptionLink("work_item", 21)).toBe("/my-work/tasks?taskId=21");
-    expect(buildExceptionLink("approval", 9)).toBe("/my-work/approvals");
+    expect(buildExceptionLink("work_item", 21)).toBe("/my-work/tasks?itemKey=plan-21");
+    expect(buildExceptionLink("work_item", 21, "Solar A")).toBe("/project/Solar%20A?mode=execution&section=delivery&subTab=task-grid");
+    expect(buildExceptionLink("approval", 9)).toBe("/my-work/tasks?itemKey=approval-gen-9");
+    expect(buildExceptionLink("approval", 9, "Solar B")).toBe("/project/Solar%20B?mode=execution&section=collaboration&subTab=approvals");
     expect(buildExceptionLink("procurement", 4)).toBe("/subcontractor-dashboard?itemId=4");
     expect(buildExceptionLink("raid", 2, "Solar A")).toBe("/project/Solar%20A?tab=raid");
   });

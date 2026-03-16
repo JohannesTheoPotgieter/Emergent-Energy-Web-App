@@ -24,16 +24,17 @@ import {
   Inbox, Filter, Eye, Calendar, Building2, FolderOpen, AlertTriangle, ListTodo,
   ClipboardList, ShieldCheck, FileCheck, BookOpen, CheckCircle2, Circle, Clock,
   AlertCircle, Wrench, Users, User, UserPlus, LayoutList, Columns3, Link2, GripVertical,
-  Save, RotateCw, MoreHorizontal, ArrowRight, Hash, Tag, TrendingUp, Zap,
+  Save, RotateCw, MoreHorizontal, ArrowRight, Hash, Tag, TrendingUp, Zap, ExternalLink,
   Target, Activity,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import { canReassignTask as canReassignTaskByRole, getTaskAssigneeNames, isTaskDueSoon, isTaskOverdue as isTaskOverdueLogic } from "@/pages/my-work-tasks-logic";
+import { useLocation } from "wouter";
 
 type SortField = "priority" | "dueDate" | "createdAt" | "status" | "smart";
 type SortDirection = "asc" | "desc";
-type SourceFilter = "all" | "personal" | "operational" | "plan" | "engineering_task" | "quality_task" | "approvals" | "tr_register" | "deliverables" | "notifications" | "tracking";
+type SourceFilter = "all" | "personal" | "operational" | "plan" | "engineering_task" | "quality_task" | "approvals" | "tr_register" | "deliverables" | "notifications" | "microsoft" | "tracking";
 type TrackingRole = "assignee" | "creator" | "both" | "viewer" | "admin_overview";
 type ViewMode = "list" | "board";
 
@@ -113,6 +114,13 @@ interface UnifiedTask {
   resolvedOwners?: ResolvedUser[] | null;
   trId?: string | null;
   _trackingRole?: TrackingRole;
+  projectId?: number | null;
+  sourceHref?: string | null;
+  projectHref?: string | null;
+  externalHref?: string | null;
+  sourceContextLabel?: string | null;
+  sourceTypeLabel?: string | null;
+  assigneeDisplay?: string | null;
 }
 
 const SOURCE_CONFIG: Record<SourceFilter, { label: string; shortLabel: string; icon: any; color: string; bgColor: string; dot: string }> = {
@@ -127,7 +135,18 @@ const SOURCE_CONFIG: Record<SourceFilter, { label: string; shortLabel: string; i
   tracking: { label: "Tracking", shortLabel: "Tracking", icon: Eye, color: "text-teal-600", bgColor: "bg-teal-50 border-teal-200", dot: "bg-teal-500" },
   deliverables: { label: "Deliverables", shortLabel: "Deliver", icon: FileCheck, color: "text-rose-600", bgColor: "bg-rose-50 border-rose-200", dot: "bg-rose-500" },
   notifications: { label: "Notifications", shortLabel: "Notifs", icon: AlertTriangle, color: "text-orange-600", bgColor: "bg-orange-50 border-orange-200", dot: "bg-orange-500" },
+  microsoft: { label: "Microsoft", shortLabel: "MS", icon: Link2, color: "text-indigo-600", bgColor: "bg-indigo-50 border-indigo-200", dot: "bg-indigo-500" },
 };
+
+const SOURCE_FILTER_VALUES: SourceFilter[] = ["all", "personal", "operational", "plan", "engineering_task", "quality_task", "approvals", "tr_register", "deliverables", "notifications", "microsoft", "tracking"];
+
+function isSourceFilter(value: string | null): value is SourceFilter {
+  return value != null && SOURCE_FILTER_VALUES.includes(value as SourceFilter);
+}
+
+function isExternalHref(value?: string | null) {
+  return typeof value === "string" && /^https?:\/\//i.test(value);
+}
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
@@ -203,21 +222,42 @@ const DUE_URGENCY_STYLES: Record<string, string> = {
 export default function MyWorkTasksPage() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const [, navigate] = useLocation();
 
   const mwDefaults = useMemo(() => getSavedMyWorkDefault(user?.id), [user?.id]);
+  const queryDefaults = useMemo(() => {
+    if (typeof window === "undefined") {
+      return {
+        sourceFilter: null as SourceFilter | null,
+        projectFilter: "",
+        overdueOnly: false,
+        dueThisWeekOnly: false,
+        blockedOnly: false,
+      };
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    return {
+      sourceFilter: isSourceFilter(params.get("source")) ? params.get("source") : null,
+      projectFilter: params.get("project") || "",
+      overdueOnly: params.get("overdue") === "1",
+      dueThisWeekOnly: params.get("dueSoon") === "1" || params.get("dueThisWeek") === "1",
+      blockedOnly: params.get("blocked") === "1",
+    };
+  }, []);
   const [searchText, setSearchText] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<TaskStatus[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority[]>([]);
-  const [projectFilter, setProjectFilter] = useState("");
+  const [projectFilter, setProjectFilter] = useState(queryDefaults.projectFilter);
   const [sortField, setSortField] = useState<SortField>(mwDefaults?.sortField || "smart");
   const [sortDirection, setSortDirection] = useState<SortDirection>(mwDefaults?.sortDirection || "asc");
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(mwDefaults?.sourceFilter || "all");
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(queryDefaults.sourceFilter || mwDefaults?.sourceFilter || "all");
   const [showFilters, setShowFilters] = useState(false);
-  const [overdueOnly, setOverdueOnly] = useState(false);
-  const [dueThisWeekOnly, setDueThisWeekOnly] = useState(false);
+  const [overdueOnly, setOverdueOnly] = useState(queryDefaults.overdueOnly);
+  const [dueThisWeekOnly, setDueThisWeekOnly] = useState(queryDefaults.dueThisWeekOnly);
   const [assignedScope, setAssignedScope] = useState<"all" | "assigned_to_me" | "unassigned" | "created_by_me">("all");
-  const [blockedOnly, setBlockedOnly] = useState(false);
+  const [blockedOnly, setBlockedOnly] = useState(queryDefaults.blockedOnly);
   const [groomMode, setGroomMode] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
   const [drawerTask, setDrawerTask] = useState<TaskItem | null>(null);
@@ -277,6 +317,13 @@ export default function MyWorkTasksPage() {
 
   const { data: rawProjectInfos = [] } = useQuery<any[]>({ queryKey: ["/api/project-info"] });
 
+  const microsoftItems = useMemo(() => {
+    if (Array.isArray(allTaskData?.microsoftItems) && allTaskData.microsoftItems.length > 0) {
+      return allTaskData.microsoftItems;
+    }
+    return msActionItems;
+  }, [allTaskData?.microsoftItems, msActionItems]);
+
   const projectNames = useMemo(() =>
     rawProjectInfos.map((p: any) => p.projectName || p.project_name).filter(Boolean).sort(),
     [rawProjectInfos]
@@ -285,9 +332,19 @@ export default function MyWorkTasksPage() {
   const unifiedTasks: UnifiedTask[] = useMemo(() => {
     if (!allTaskData) return [];
     const result: UnifiedTask[] = [];
+    const withSourceMeta = <T extends UnifiedTask>(task: T, raw: any): T => ({
+      ...task,
+      projectId: raw?.projectId ?? raw?.project_id ?? null,
+      sourceHref: raw?.sourceHref || null,
+      projectHref: raw?.projectHref || null,
+      externalHref: raw?.externalHref || null,
+      sourceContextLabel: raw?.sourceContextLabel || null,
+      sourceTypeLabel: raw?.sourceTypeLabel || null,
+      assigneeDisplay: raw?.assigneeDisplay || null,
+    });
 
     for (const t of (allTaskData.personal || [])) {
-      result.push({
+      result.push(withSourceMeta({
         _key: `personal-${t.id}`, _source: "personal", _sourceLabel: "Personal",
         _sourceColor: "bg-blue-50 border-blue-200 text-blue-700", _rawId: t.id, id: t.id,
         title: t.title || "", status: t.status || "todo", priority: t.priority || "normal",
@@ -303,12 +360,12 @@ export default function MyWorkTasksPage() {
         completionNote: t.completionNote || t.completion_note || null,
         plannedForDate: t.plannedForDate || t.planned_for_date || null,
         department: t.department || null, tag: t.tag || null,
-      });
+      }, t));
     }
 
     for (const t of (allTaskData.operational || [])) {
       if (t.parentTaskId) continue;
-      result.push({
+      result.push(withSourceMeta({
         _key: `op-${t.id}`, _source: "operational", _sourceLabel: "Project",
         _sourceColor: "bg-emerald-50 border-emerald-200 text-emerald-700", _rawId: t.id, id: t.id,
         title: t.title || "", status: normalizeStatus(t.status), priority: normalizePriority(t.priority),
@@ -318,28 +375,36 @@ export default function MyWorkTasksPage() {
         percentComplete: t.percentComplete || t.percent_complete || 0, assignees: t.assignees || null,
         resolvedAssignees: t.resolvedAssignees || null, description: t.description || null,
         _trackingRole: t.trackingRole || "assignee",
-      });
+      }, t));
     }
 
     for (const a of (allTaskData.approvals?.engineering || [])) {
-      result.push({
+      result.push(withSourceMeta({
         _key: `approval-eng-${a.id}`, _source: "approvals", _sourceLabel: "Eng Approval",
         _sourceColor: "bg-amber-50 border-amber-200 text-amber-700", _rawId: a.id, id: a.id,
         title: a.title || "", status: normalizeStatus(a.status), priority: "high",
         projectName: a.projectName || null, dueAt: null, createdAt: a.createdAt || null, notes: null,
-      });
+      }, a));
     }
     for (const a of (allTaskData.approvals?.quality || [])) {
-      result.push({
+      result.push(withSourceMeta({
         _key: `approval-qc-${a.id}`, _source: "approvals", _sourceLabel: "QC Review",
         _sourceColor: "bg-amber-50 border-amber-200 text-amber-700", _rawId: a.id, id: a.id,
         title: a.title || "", status: normalizeStatus(a.status), priority: "high",
         projectName: a.projectName || null, dueAt: null, createdAt: a.createdAt || null, notes: null,
-      });
+      }, a));
+    }
+    for (const a of (allTaskData.approvals?.general || [])) {
+      result.push(withSourceMeta({
+        _key: `approval-gen-${a.id}`, _source: "approvals", _sourceLabel: "Approval",
+        _sourceColor: "bg-amber-50 border-amber-200 text-amber-700", _rawId: a.id, id: a.id,
+        title: a.title || "", status: normalizeStatus(a.status), priority: "high",
+        projectName: a.projectName || null, dueAt: null, createdAt: a.createdAt || null, notes: null,
+      }, a));
     }
 
     for (const t of (allTaskData.trRegister || [])) {
-      result.push({
+      result.push(withSourceMeta({
         _key: `tr-${t.id}`, _source: "tr_register", _sourceLabel: "Action",
         _sourceColor: "bg-purple-50 border-purple-200 text-purple-700", _rawId: t.id, id: t.id,
         title: t.actionDescription || "", status: normalizeStatus(t.status),
@@ -349,22 +414,22 @@ export default function MyWorkTasksPage() {
         ragStatus: t.ragStatus || null, owners: t.owners || null, resolvedOwners: t.resolvedOwners || null,
         trId: t.trId || null, department: t.department || null,
         _trackingRole: t.trackingRole || "assignee",
-      });
+      }, t));
     }
 
     for (const d of (allTaskData.deliverables || [])) {
-      result.push({
+      result.push(withSourceMeta({
         _key: `del-${d.id}`, _source: "deliverables", _sourceLabel: "Deliverable",
         _sourceColor: "bg-rose-50 border-rose-200 text-rose-700", _rawId: d.id, id: d.id,
         title: d.title || "", status: normalizeStatus(d.status), priority: "normal",
         projectName: d.projectName || d.project_name || null, dueAt: null,
         createdAt: d.createdAt || d.created_at || null, updatedAt: d.updatedAt || d.updated_at || null, notes: null,
         deliverableType: d.deliverableType || d.deliverable_type || null, deliverableStatus: d.status || null,
-      });
+      }, d));
     }
 
     for (const t of (allTaskData.planTasks || [])) {
-      result.push({
+      result.push(withSourceMeta({
         _key: `plan-${t.id}`, _source: "plan", _sourceLabel: "Project Plan",
         _sourceColor: "bg-violet-50 border-violet-200 text-violet-700", _rawId: t.id, id: t.id,
         title: t.title || "", status: normalizeStatus(t.status), priority: "normal",
@@ -373,53 +438,53 @@ export default function MyWorkTasksPage() {
         percentComplete: t.pctComplete ? Math.round(t.pctComplete * 100) : 0,
         assignees: t.owner ? [t.owner] : null, resolvedAssignees: t.resolvedAssignee ? [t.resolvedAssignee] : null,
         _trackingRole: t.trackingRole || "assignee",
-      });
+      }, t));
     }
 
     for (const t of (allTaskData.engineeringTasks || [])) {
-      result.push({
+      result.push(withSourceMeta({
         _key: `eng-${t.id}`, _source: "engineering_task", _sourceLabel: "Engineering",
         _sourceColor: "bg-cyan-50 border-cyan-200 text-cyan-700", _rawId: t.id, id: t.id,
         title: t.title || "", status: normalizeStatus(t.status), priority: "normal",
         projectName: t.projectName || null, dueAt: null, createdAt: null,
         notes: t.lifecyclePhase ? `Phase: ${t.lifecyclePhase}` : null,
         assignees: t.assigneeName ? [t.assigneeName] : null, resolvedAssignees: t.resolvedAssignee ? [t.resolvedAssignee] : null,
-      });
+      }, t));
     }
 
     for (const t of (allTaskData.qualityTasks || [])) {
-      result.push({
+      result.push(withSourceMeta({
         _key: `qc-${t.id}`, _source: "quality_task", _sourceLabel: "Quality",
         _sourceColor: "bg-rose-50 border-rose-200 text-rose-700", _rawId: t.id, id: t.id,
         title: t.title || "", status: normalizeStatus(t.status), priority: "normal",
         projectName: t.projectName || null, dueAt: t.endDate || null, createdAt: null, notes: null,
         resolvedAssignees: t.resolvedAssignee ? [t.resolvedAssignee] : null,
-      });
+      }, t));
     }
 
     for (const n of (unreadNotifs.items || [])) {
-      result.push({
+      result.push(withSourceMeta({
         _key: `notif-${n.id}`, _source: "notifications", _sourceLabel: "Notification",
         _sourceColor: "bg-orange-50 border-orange-200 text-orange-700", _rawId: n.id, id: n.id,
         title: n.title || "", status: "todo" as TaskStatus,
         priority: n.eventType === "excel_sync_confirmation" ? "normal" : "high",
         projectName: n.projectName || n.project_name || null, dueAt: null,
         createdAt: n.createdAt || n.created_at || null, updatedAt: n.updatedAt || n.updated_at || null, notes: n.body || null,
-      });
+      }, n));
     }
 
-    for (const item of msActionItems) {
-      result.push({
-        _key: `ms-${item.id}`, _source: "notifications", _sourceLabel: "MS 365",
+    for (const item of microsoftItems) {
+      result.push(withSourceMeta({
+        _key: `ms-${item.id}`, _source: "microsoft", _sourceLabel: "Microsoft",
         _sourceColor: "bg-indigo-50 border-indigo-200 text-indigo-700", _rawId: item.id, id: item.id,
         title: item.subjectOrTitle || item.subject_or_title || "", status: "todo" as TaskStatus, priority: "normal",
-        projectName: null, dueAt: null,
+        projectName: item.linkedProjectName || item.linked_project_name || null, dueAt: null,
         createdAt: item.receivedOrStartDatetime || item.received_or_start_datetime || null, notes: item.preview || null,
-      });
+      }, item));
     }
 
     return result;
-  }, [allTaskData, unreadNotifs, msActionItems]);
+  }, [allTaskData, unreadNotifs, microsoftItems]);
 
   useEffect(() => {
     if (unifiedDetailOpen && unifiedDetailTask) {
@@ -611,6 +676,21 @@ export default function MyWorkTasksPage() {
     }
   }, []);
 
+  const handleOpenSource = useCallback((task: UnifiedTask) => {
+    const href = task.sourceHref || (task._source === "personal" ? `/my-work/tasks?itemKey=${encodeURIComponent(task._key)}` : null);
+    if (!href) {
+      handleOpenDrawer(task);
+      return;
+    }
+
+    if (isExternalHref(href)) {
+      window.open(href, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    navigate(href);
+  }, [handleOpenDrawer, navigate]);
+
   useEffect(() => {
     if (typeof window === "undefined" || unifiedTasks.length === 0) {
       return;
@@ -648,6 +728,7 @@ export default function MyWorkTasksPage() {
   const isDueSoon = useCallback((task: UnifiedTask) => isTaskDueSoon(task), []);
 
   const taskTypeLabel = useCallback((task: UnifiedTask) => {
+    if (task.sourceTypeLabel) return task.sourceTypeLabel;
     if (task._source === "approvals") return task._key.startsWith("approval-qc-") ? "Quality Approval" : "Engineering Approval";
     return task._sourceLabel;
   }, []);
@@ -733,7 +814,7 @@ export default function MyWorkTasksPage() {
   }, [unifiedTasks, sourceFilter, debouncedSearch, statusFilter, priorityFilter, projectFilter, overdueOnly, dueThisWeekOnly, blockedOnly, assignedScope, groomMode, showCompleted, sortField, sortDirection, isTaskOverdue, isDueSoon, isTaskAssignedToCurrentUser]);
 
   const sourceCounts = useMemo(() => {
-    const counts: Record<SourceFilter, number> = { all: 0, personal: 0, operational: 0, plan: 0, engineering_task: 0, quality_task: 0, approvals: 0, tr_register: 0, tracking: 0, deliverables: 0, notifications: 0 };
+    const counts: Record<SourceFilter, number> = { all: 0, personal: 0, operational: 0, plan: 0, engineering_task: 0, quality_task: 0, approvals: 0, tr_register: 0, tracking: 0, deliverables: 0, notifications: 0, microsoft: 0 };
     for (const t of unifiedTasks) {
       if (counts[t._source] !== undefined) counts[t._source]++;
       if (t._trackingRole === "creator" || t._trackingRole === "both" || t._trackingRole === "viewer") counts.tracking++;
@@ -1014,7 +1095,7 @@ export default function MyWorkTasksPage() {
           ) : (
             <div className="divide-y divide-border/40">
               {filteredTasks.map(task => (
-                <CompactTaskRow key={task._key} task={task} isExpanded={expandedTasks.has(task.id)} onToggleExpand={() => task._source === "operational" && task.subtaskCount! > 0 && toggleExpand(task.id)} onOpenDrawer={() => handleOpenDrawer(task)} onStatusChange={handleStatusChange} onDelete={task._source === "personal" ? () => deleteTaskMutation.mutate(task.id) : undefined} onDismiss={task._source === "notifications" ? () => dismissNotifMutation.mutate(task) : undefined} onAddSubtask={task._source === "operational" ? () => setSubtaskDialog({ parentId: task.id, projectName: task.projectName || "" }) : undefined} allTaskData={allTaskData} onSubtaskAddForChild={(parentId: number, projectName: string) => setSubtaskDialog({ parentId, projectName })} isOverdue={isTaskOverdue(task)} onQuickStatus={(newStatus) => boardStatusMutation.mutate({ task, newStatus })} canReassign={canReassignTask(task)} taskTypeLabel={taskTypeLabel(task)} />
+                <CompactTaskRow key={task._key} task={task} isExpanded={expandedTasks.has(task.id)} onToggleExpand={() => task._source === "operational" && task.subtaskCount! > 0 && toggleExpand(task.id)} onPrimaryAction={() => handleOpenSource(task)} onOpenDrawer={() => handleOpenDrawer(task)} onStatusChange={handleStatusChange} onDelete={task._source === "personal" ? () => deleteTaskMutation.mutate(task.id) : undefined} onDismiss={task._source === "notifications" || task._source === "microsoft" ? () => dismissNotifMutation.mutate(task) : undefined} onAddSubtask={task._source === "operational" ? () => setSubtaskDialog({ parentId: task.id, projectName: task.projectName || "" }) : undefined} allTaskData={allTaskData} onSubtaskAddForChild={(parentId: number, projectName: string) => setSubtaskDialog({ parentId, projectName })} isOverdue={isTaskOverdue(task)} onQuickStatus={(newStatus) => boardStatusMutation.mutate({ task, newStatus })} canReassign={canReassignTask(task)} taskTypeLabel={taskTypeLabel(task)} />
               ))}
             </div>
           )}
@@ -1057,7 +1138,7 @@ export default function MyWorkTasksPage() {
                           key={task._key}
                           draggable={canDrag}
                           onDragStart={(e) => handleBoardDragStart(e, task)}
-                          onClick={() => handleOpenDrawer(task)}
+                          onClick={() => handleOpenSource(task)}
                           className={`bg-background rounded-lg border p-2.5 transition-all hover:shadow-md hover:border-primary/30 ${canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"} ${draggedTask?._key === task._key ? "opacity-40" : ""} ${cardOverdue ? "border-l-2 border-l-red-400" : ""}`}
                           data-testid={`board-card-${task._key}`}
                         >
@@ -1232,7 +1313,7 @@ export default function MyWorkTasksPage() {
   );
 }
 
-function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStatusChange, onDelete, onDismiss, onAddSubtask, allTaskData, onSubtaskAddForChild, isOverdue, onQuickStatus, canReassign, taskTypeLabel }: { task: UnifiedTask; isExpanded: boolean; onToggleExpand: () => void; onOpenDrawer: () => void; onStatusChange: (id: number, status: TaskStatus) => void; onDelete?: () => void; onDismiss?: () => void; onAddSubtask?: () => void; allTaskData: any; onSubtaskAddForChild: (parentId: number, projectName: string) => void; isOverdue: boolean; onQuickStatus: (newStatus: string) => void; canReassign: boolean; taskTypeLabel: string }) {
+function CompactTaskRow({ task, isExpanded, onToggleExpand, onPrimaryAction, onOpenDrawer, onStatusChange, onDelete, onDismiss, onAddSubtask, allTaskData, onSubtaskAddForChild, isOverdue, onQuickStatus, canReassign, taskTypeLabel }: { task: UnifiedTask; isExpanded: boolean; onToggleExpand: () => void; onPrimaryAction: () => void; onOpenDrawer: () => void; onStatusChange: (id: number, status: TaskStatus) => void; onDelete?: () => void; onDismiss?: () => void; onAddSubtask?: () => void; allTaskData: any; onSubtaskAddForChild: (parentId: number, projectName: string) => void; isOverdue: boolean; onQuickStatus: (newStatus: string) => void; canReassign: boolean; taskTypeLabel: string }) {
   const subtasks = useMemo(() => {
     if (!isExpanded || task._source !== "operational" || !allTaskData?.operational) return [];
     return (allTaskData.operational as any[]).filter(t => t.parentTaskId === task.id || t.parent_task_id === task.id);
@@ -1262,7 +1343,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
 
   return (
     <div data-testid={`task-row-${task._key}`}>
-      <div className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 sm:py-2.5 transition-all hover:bg-muted/40 cursor-pointer group ${isDone ? "opacity-50" : ""} ${isOverdue && !isDone ? "bg-red-50/40 border-l-2 border-l-red-400" : ""} ${task.status === "blocked" && !isDone ? "bg-amber-50/30 border-l-2 border-l-amber-400" : ""}`} onClick={onOpenDrawer}>
+      <div className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 sm:py-2.5 transition-all hover:bg-muted/40 cursor-pointer group ${isDone ? "opacity-50" : ""} ${isOverdue && !isDone ? "bg-red-50/40 border-l-2 border-l-red-400" : ""} ${task.status === "blocked" && !isDone ? "bg-amber-50/30 border-l-2 border-l-amber-400" : ""}`} onClick={onPrimaryAction}>
 
         {task._source === "operational" && (task.subtaskCount || 0) > 0 ? (
           <button onClick={e => { e.stopPropagation(); onToggleExpand(); }} className="shrink-0 p-0.5 rounded hover:bg-muted" data-testid={`btn-expand-${task._key}`}>
@@ -1323,6 +1404,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
         )}
 
         <div className="shrink-0 flex items-center gap-0.5 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+          <button onClick={e => { e.stopPropagation(); onOpenDrawer(); }} className="p-1 rounded text-muted-foreground/40 hover:text-foreground hover:bg-muted" title="Quick details" data-testid={`btn-open-detail-${task._key}`}><Eye className="h-3 w-3" /></button>
           {canQuickStatus && !isDone && (
             <>
               <button onClick={e => { e.stopPropagation(); onQuickStatus("in_progress"); }} className={`p-1 rounded transition-colors ${task.status === "in_progress" ? "text-blue-500 bg-blue-50" : "text-muted-foreground/40 hover:text-blue-500 hover:bg-blue-50"}`} title="In Progress"><Clock className="h-3 w-3" /></button>
@@ -1331,7 +1413,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
           )}
           {task._source === "operational" && onAddSubtask && <button onClick={e => { e.stopPropagation(); onAddSubtask(); }} className="p-1 rounded text-muted-foreground/40 hover:text-emerald-500 hover:bg-emerald-50" title="Add subtask" data-testid={`btn-add-subtask-${task._key}`}><Plus className="h-3 w-3" /></button>}
           {task._source === "personal" && onDelete && <button onClick={e => { e.stopPropagation(); onDelete(); }} className="p-1 rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-50" data-testid={`btn-delete-${task._key}`}><Trash2 className="h-3 w-3" /></button>}
-          {task._source === "notifications" && onDismiss && <button onClick={e => { e.stopPropagation(); onDismiss(); }} className="p-1 rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-50" title="Dismiss" data-testid={`btn-dismiss-${task._key}`}><X className="h-3 w-3" /></button>}
+          {(task._source === "notifications" || task._source === "microsoft") && onDismiss && <button onClick={e => { e.stopPropagation(); onDismiss(); }} className="p-1 rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-50" title="Dismiss" data-testid={`btn-dismiss-${task._key}`}><X className="h-3 w-3" /></button>}
         </div>
       </div>
 
@@ -1552,6 +1634,14 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
 
   const detailDue = smartDueLabel(task.dueAt);
   const detailDueStyle = DUE_URGENCY_STYLES[detailDue.urgency] || "";
+  const openHref = useCallback((href?: string | null) => {
+    if (!href) return;
+    if (isExternalHref(href)) {
+      window.open(href, "_blank", "noopener,noreferrer");
+      return;
+    }
+    window.location.assign(href);
+  }, []);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -1574,7 +1664,7 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
           <h3 className="text-sm font-semibold leading-snug" data-testid="text-unified-task-title">{task.title}</h3>
           <div className="flex items-center flex-wrap gap-2 mt-2.5">
             {task.projectName && (
-              <button className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5 hover:bg-muted" data-testid="text-unified-project" onClick={() => window.location.assign(`/projects?search=${encodeURIComponent(task.projectName || "")}`)}>
+              <button className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5 hover:bg-muted" data-testid="text-unified-project" onClick={() => openHref(task.projectHref || `/projects?search=${encodeURIComponent(task.projectName || "")}`)}>
                 <FolderOpen className="h-3 w-3" /> {task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")} <Link2 className="h-3 w-3" />
               </button>
             )}
@@ -1587,7 +1677,15 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
             {task.department && <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5"><Tag className="h-3 w-3" /> {task.department}</span>}
             {task.trId && <span className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5"><Hash className="h-3 w-3" /> {task.trId}</span>}
             <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5" data-testid="text-unified-type"><ListTodo className="h-3 w-3" /> {taskTypeLabel}</span>
+            {task.assigneeDisplay && <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5"><Users className="h-3 w-3" /> {task.assigneeDisplay}</span>}
           </div>
+          {(task.sourceHref || task.projectHref || task.externalHref) && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {task.sourceHref && <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={() => openHref(task.sourceHref)} data-testid="button-open-source-context"><Link2 className="h-3 w-3" /> {task.sourceContextLabel || "Open source"}</Button>}
+              {task.projectHref && task.projectHref !== task.sourceHref && <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5" onClick={() => openHref(task.projectHref)} data-testid="button-open-project-context"><FolderOpen className="h-3 w-3" /> Open project</Button>}
+              {task.externalHref && task.externalHref !== task.sourceHref && <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5" onClick={() => openHref(task.externalHref)} data-testid="button-open-origin-context"><ExternalLink className="h-3 w-3" /> Open original</Button>}
+            </div>
+          )}
         </div>
 
         <Tabs value={detailTab} onValueChange={setDetailTab} className="flex-1 flex flex-col min-h-0">
@@ -1705,7 +1803,7 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
                 </div>
               )}
 
-              {task._source === "notifications" && (
+              {(task._source === "notifications" || task._source === "microsoft") && (
                 <div>
                   <Label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 block">Dismiss</Label>
                   <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-red-600 hover:bg-red-50 w-full" onClick={() => { dismissMutation.mutate(); }} disabled={dismissMutation.isPending} data-testid="btn-dismiss-notif"><X className="h-3 w-3 mr-1.5" /> Dismiss Notification</Button>

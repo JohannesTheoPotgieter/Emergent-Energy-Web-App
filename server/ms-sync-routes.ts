@@ -1,12 +1,12 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { db } from "./db";
-import { eq, and, or, desc, asc, sql, inArray, isNull } from "drizzle-orm";
+import { eq, and, or, desc, asc, sql, inArray, isNull, ne } from "drizzle-orm";
 import {
   mytoolTasks, operationalTasks, trItems, deliverables,
   projectEngApprovals, projectEngStages, engStageTemplates,
   qcItemInstance, qcChecklist, qcTemplateItem,
-  projectInfo, users, normalizedPlanTasks, engineeringTasks,
+  projectInfo, users, normalizedPlanTasks, engineeringTasks, approvals,
   msAccounts, msObjects, communicationFollowUps, projectCommunicationTimelineEvents, workItemAssignments,
 } from "@shared/schema";
 import {
@@ -25,9 +25,11 @@ import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import {
   listAssignableDirectory,
   listAssignableDirectoryForTaskSource,
+  getAssignmentsForEntity,
   mapTaskSourceToEntityType,
   setEntityAssignment,
 } from "./services/assignment-service";
+import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
 
 const tagSchema = z.object({
   projectId: z.number(),
@@ -466,7 +468,7 @@ export function registerMsSyncRoutes(app: Express) {
 
       const userEmail = currentUser?.email || currentUser?.username || "";
 
-      const [personalTasks, opTasks, trRegisterItems, approvalData, deliverableItems, planTasks, engTasks, qualityTasks] = await Promise.all([
+      const [personalTasks, opTasks, trRegisterItems, approvalData, deliverableItems, planTasks, engTasks, qualityTasks, microsoftItems] = await Promise.all([
         db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)).orderBy(desc(mytoolTasks.createdAt)),
 
         db.select().from(operationalTasks).where(
@@ -485,6 +487,7 @@ export function registerMsSyncRoutes(app: Express) {
             createdAt: projectEngApprovals.createdAt,
             stageName: engStageTemplates.name,
             projectName: projectInfo.projectName,
+            projectId: projectInfo.id,
             approverUserId: projectEngApprovals.approverUserId,
           })
             .from(projectEngApprovals)
@@ -516,6 +519,7 @@ export function registerMsSyncRoutes(app: Express) {
             id: qcItemInstance.id,
             itemName: qcTemplateItem.itemName,
             projectName: qcChecklist.projectName,
+            projectId: qcChecklist.projectId,
             lastUpdatedAt: qcItemInstance.lastUpdatedAt,
           })
             .from(qcItemInstance)
@@ -525,7 +529,47 @@ export function registerMsSyncRoutes(app: Express) {
 
           let filteredQc = (userRole === "QUALITY_MANAGER" || userRole === "quality_manager" || isAdmin) ? qcItems : [];
 
-          return { engApprovals: filtered, qcItems: filteredQc };
+          const generalApprovals = await db.select({
+            id: approvals.id,
+            title: approvals.title,
+            status: approvals.status,
+            projectId: approvals.projectId,
+            projectName: projectInfo.projectName,
+            requestedAt: approvals.requestedAt,
+            approvalCategory: approvals.approvalCategory,
+            assignedApprover: approvals.assignedApprover,
+            relatedEntityType: approvals.relatedEntityType,
+            relatedEntityId: approvals.relatedEntityId,
+          })
+            .from(approvals)
+            .leftJoin(projectInfo, eq(approvals.projectId, projectInfo.id))
+            .where(eq(approvals.status, "pending"))
+            .orderBy(desc(approvals.requestedAt));
+
+          const generalAssignmentEntries = await Promise.all(
+            generalApprovals.map(async (approval) => [approval.id, await getAssignmentsForEntity("approval", approval.id, "APPROVER")] as const),
+          );
+          const generalAssignmentsById = new Map(generalAssignmentEntries);
+
+          let filteredGeneral = generalApprovals;
+          if (!isAdmin) {
+            filteredGeneral = generalApprovals.filter((approval) => {
+              if (approval.assignedApprover === userId) return true;
+              const assignments = (generalAssignmentsById.get(approval.id) || []) as Awaited<ReturnType<typeof getAssignmentsForEntity>>;
+              return assignments.some(
+                (assignment) => assignment.assigneeType === "internal_user" && assignment.assigneeId === userId,
+              );
+            });
+          }
+
+          return {
+            engApprovals: filtered,
+            qcItems: filteredQc,
+            generalApprovals: filteredGeneral.map((approval) => ({
+              ...approval,
+              assignments: generalAssignmentsById.get(approval.id) || [],
+            })),
+          };
         })(),
 
         db.select().from(deliverables).where(
@@ -573,6 +617,28 @@ export function registerMsSyncRoutes(app: Express) {
           WHERE qi.assignee_user_id = ${userId}
             AND qi.is_applicable = true
         `).then((r: any) => Array.isArray(r) ? r : (r.rows || [])),
+
+        db.select({
+          id: msObjects.id,
+          type: msObjects.type,
+          subjectOrTitle: msObjects.subjectOrTitle,
+          preview: msObjects.preview,
+          webLink: msObjects.webLink,
+          senderOrOrganizer: msObjects.senderOrOrganizer,
+          receivedOrStartDatetime: msObjects.receivedOrStartDatetime,
+          actionRequired: msObjects.actionRequired,
+          linkedProjectId: msObjects.linkedProjectId,
+          linkedTaskId: msObjects.linkedTaskId,
+          linkedProjectName: projectInfo.projectName,
+        })
+          .from(msObjects)
+          .leftJoin(projectInfo, eq(msObjects.linkedProjectId, projectInfo.id))
+          .where(and(
+            eq(msObjects.userId, userId),
+            eq(msObjects.actionRequired, true),
+            ne(msObjects.dismissed, true),
+          ))
+          .orderBy(desc(msObjects.receivedOrStartDatetime)),
       ]);
 
       const subtaskParentIds = opTasks.filter(t => t.parentTaskId === null || t.parentTaskId === undefined).map(t => t.id);
@@ -607,63 +673,145 @@ export function registerMsSyncRoutes(app: Express) {
         return found || null;
       };
 
+      const withSourceLinks = (
+        source: "personal" | "operational" | "plan" | "engineering_task" | "quality_task" | "approvals" | "deliverables" | "tr_register" | "microsoft",
+        payload: Record<string, any>,
+        options: {
+          itemKey?: string | null;
+          rawId?: number | string | null;
+          projectName?: string | null;
+          sourceType?: string | null;
+          linkedTaskId?: number | null;
+          linkedTaskType?: "personal" | "operational" | null;
+          webLink?: string | null;
+        } = {},
+      ) => ({
+        ...payload,
+        itemKey: options.itemKey || null,
+        ...buildMyWorkSourceLinks({
+          source,
+          rawId: options.rawId ?? null,
+          itemKey: options.itemKey || null,
+          projectName: options.projectName ?? null,
+          sourceType: options.sourceType ?? null,
+          linkedTaskId: options.linkedTaskId ?? null,
+          linkedTaskType: options.linkedTaskType ?? null,
+          webLink: options.webLink ?? null,
+        }),
+      });
+
       res.json({
-        personal: personalTasks.map(t => ({
+        personal: personalTasks.map(t => withSourceLinks("personal", {
           ...t,
           resolvedOwner: resolveUserId(t.ownerUserId),
+        }, {
+          itemKey: `personal-${t.id}`,
+          rawId: t.id,
+          projectName: t.projectName,
         })),
         operational: opTasks.map(t => {
           const isOwnerOrAssignee = t.ownerUserId === userId || (t.assignees || []).includes(userName);
           const isCreator = t.createdBy === userId;
           const trackingRole = isOwnerOrAssignee && isCreator ? "both" : isOwnerOrAssignee ? "assignee" : "creator";
-          return {
+          return withSourceLinks("operational", {
             ...t,
             status: normalizeTaskStatus(t.status),
             subtaskCount: subtaskCounts[t.id] || 0,
             resolvedAssignees: mergeResolvedWithTextNames(resolveUserIds(t.assigneeUserIds), t.assignees, userMap),
             resolvedOwner: resolveUserId(t.ownerUserId),
             trackingRole,
-          };
+          }, {
+            itemKey: `op-${t.id}`,
+            rawId: t.id,
+            projectName: t.projectName,
+          });
         }),
         trRegister: trRegisterItems.map(t => {
           const isOwner = (t.owners || []).includes(userName);
           const isCreatorByEmail = t.createdBy === userEmail || t.createdBy === userName || t.createdBy === username;
           const trackingRole = isOwner && isCreatorByEmail ? "both" : isOwner ? "assignee" : "creator";
-          return {
+          return withSourceLinks("tr_register", {
             ...t,
             resolvedOwners: mergeResolvedWithTextNames(resolveUserIds(t.ownerUserIds), t.owners, userMap),
             trackingRole,
-          };
+          }, {
+            itemKey: `tr-${t.id}`,
+            rawId: t.id,
+          });
         }),
         approvals: {
-          engineering: approvalData.engApprovals.map(a => ({
+          engineering: approvalData.engApprovals.map((a: any) => withSourceLinks("approvals", {
             id: a.id,
+            projectId: a.projectId,
             title: `${a.stageName} — ${a.approverRole}`,
             projectName: a.projectName,
             status: a.status,
             createdAt: a.createdAt,
             type: "engineering" as const,
+          }, {
+            itemKey: `approval-eng-${a.id}`,
+            rawId: a.id,
+            projectName: a.projectName,
+            sourceType: "engineering",
           })),
-          quality: approvalData.qcItems.map(q => ({
+          quality: approvalData.qcItems.map((q: any) => withSourceLinks("approvals", {
             id: q.id,
+            projectId: q.projectId,
             title: q.itemName,
             projectName: q.projectName,
             status: "review",
             createdAt: q.lastUpdatedAt,
             type: "quality" as const,
+          }, {
+            itemKey: `approval-qc-${q.id}`,
+            rawId: q.id,
+            projectName: q.projectName,
+            sourceType: "quality",
           })),
+          general: (approvalData.generalApprovals || []).map((approval: any) => {
+            const primaryAssignment = approval.assignments?.[0] || null;
+            return withSourceLinks("approvals", {
+              id: approval.id,
+              title: approval.title,
+              projectId: approval.projectId,
+              projectName: approval.projectName,
+              status: approval.status,
+              createdAt: approval.requestedAt,
+              type: "general" as const,
+              approvalCategory: approval.approvalCategory,
+              relatedEntityType: approval.relatedEntityType,
+              relatedEntityId: approval.relatedEntityId,
+              assignments: approval.assignments || [],
+              assigneeDisplay: primaryAssignment?.displayLabel || (approval.assignedApprover ? resolveUserId(approval.assignedApprover)?.name || null : null),
+            }, {
+              itemKey: `approval-gen-${approval.id}`,
+              rawId: approval.id,
+              projectName: approval.projectName,
+              sourceType: "general",
+            });
+          }),
         },
-        deliverables: deliverableItems,
+        deliverables: deliverableItems.map((d: any) => withSourceLinks("deliverables", {
+          ...d,
+          resolvedOwner: resolveUserId(d.ownerUserId),
+          resolvedReviewer: resolveUserId(d.reviewerUserId),
+          resolvedQcReviewer: resolveUserId(d.qcReviewerUserId),
+        }, {
+          itemKey: `del-${d.id}`,
+          rawId: d.id,
+          projectName: d.projectName,
+        })),
         planTasks: (planTasks as any[]).map((t: any) => {
           const isOwner = t.assignee_user_id === userId;
           const role = t.assignment_role;
           const isViewer = role === 'VIEWER';
           const isAdminOverview = !role && !isOwner && isAdmin;
           const trackingRole = isViewer ? "viewer" : isAdminOverview ? "admin_overview" : isOwner ? "assignee" : role ? "assignee" : "assignee";
-          return {
+          return withSourceLinks("plan", {
             id: t.id,
             title: t.task_name,
             status: normalizeTaskStatus(t.status),
+            projectId: t.project_id,
             projectName: t.project_name,
             owner: t.owner,
             phase: t.phase,
@@ -678,26 +826,36 @@ export function registerMsSyncRoutes(app: Express) {
             workstream: t.workstream || "PM",
             trackingRole,
             _source: "plan",
-          };
+          }, {
+            itemKey: `plan-${t.id}`,
+            rawId: t.id,
+            projectName: t.project_name,
+          });
         }),
-        engineeringTasks: engTasks.map(t => ({
+        engineeringTasks: engTasks.map((t: any) => withSourceLinks("engineering_task", {
           id: t.id,
           title: t.title,
           status: normalizeTaskStatus(t.status),
+          projectId: t.projectId ?? null,
           projectName: t.projectName,
           lifecyclePhase: t.lifecyclePhaseTag,
           assigneeUserId: t.assigneeUserId,
           assigneeName: t.assigneeName,
           resolvedAssignee: resolveUserId(t.assigneeUserId) || resolveTextNameToUser(t.assigneeName),
-          scheduledDate: (t as any).scheduledDate || null,
-          scheduledStartTime: (t as any).scheduledStartTime || null,
-          scheduledEndTime: (t as any).scheduledEndTime || null,
+          scheduledDate: t.scheduledDate || null,
+          scheduledStartTime: t.scheduledStartTime || null,
+          scheduledEndTime: t.scheduledEndTime || null,
           _source: "engineering_task",
+        }, {
+          itemKey: `eng-${t.id}`,
+          rawId: t.id,
+          projectName: t.projectName,
         })),
-        qualityTasks: (qualityTasks as any[]).map((t: any) => ({
+        qualityTasks: (qualityTasks as any[]).map((t: any) => withSourceLinks("quality_task", {
           id: t.id,
           title: t.item_name,
           status: normalizeTaskStatus(t.qm_status || "not_started"),
+          projectId: t.project_id,
           projectName: t.project_name,
           startDate: t.start_date,
           endDate: t.end_date,
@@ -707,7 +865,26 @@ export function registerMsSyncRoutes(app: Express) {
           scheduledStartTime: t.scheduled_start_time || null,
           scheduledEndTime: t.scheduled_end_time || null,
           _source: "quality_task",
+        }, {
+          itemKey: `qc-${t.id}`,
+          rawId: t.id,
+          projectName: t.project_name,
         })),
+        microsoftItems: microsoftItems.map((item: any) => {
+          const linkedTaskType = item.linkedTaskId ? (item.linkedProjectId ? "operational" : "personal") : null;
+          return withSourceLinks("microsoft", {
+            ...item,
+            linkedTaskType,
+          }, {
+            itemKey: `ms-${item.id}`,
+            rawId: item.id,
+            projectName: item.linkedProjectName,
+            sourceType: item.type,
+            linkedTaskId: item.linkedTaskId,
+            linkedTaskType,
+            webLink: item.webLink,
+          });
+        }),
         userMap: Object.fromEntries(userMap),
       });
     } catch (err: any) {
