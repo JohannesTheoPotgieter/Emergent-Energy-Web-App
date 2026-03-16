@@ -12,7 +12,7 @@ function requireAuth(req: Request, res: Response, next: Function) {
 }
 
 export function registerWeeklyReviewRoutes(app: Express) {
-  app.get("/api/weekly-reviews-all", requireAuth, async (req, res) => {
+  app.get("/api/weekly-reviews-all", requireAuth, requirePermission('weekly_review_wizard', 'view'), async (req, res) => {
     try {
       const reviews = await db
         .select()
@@ -24,7 +24,7 @@ export function registerWeeklyReviewRoutes(app: Express) {
     }
   });
 
-  app.get("/api/weekly-reviews/:projectName", requireAuth, async (req, res) => {
+  app.get("/api/weekly-reviews/:projectName", requireAuth, requirePermission('weekly_review_wizard', 'view'), async (req, res) => {
     try {
       const { projectName } = req.params;
       const reviews = await db
@@ -38,7 +38,7 @@ export function registerWeeklyReviewRoutes(app: Express) {
     }
   });
 
-  app.get("/api/weekly-reviews/:projectName/:id", requireAuth, async (req, res) => {
+  app.get("/api/weekly-reviews/:projectName/:id", requireAuth, requirePermission('weekly_review_wizard', 'view'), async (req, res) => {
     try {
       const id = Number(req.params.id);
       const [review] = await db.select().from(weeklyReviews).where(eq(weeklyReviews.id, id));
@@ -49,7 +49,7 @@ export function registerWeeklyReviewRoutes(app: Express) {
     }
   });
 
-  app.post("/api/weekly-reviews/:projectName", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
+  app.post("/api/weekly-reviews/:projectName", requireAuth, requirePermission('weekly_review_wizard', 'create'), async (req, res) => {
     try {
       const { projectName } = req.params;
       const userId = (req.user as any)?.id;
@@ -75,7 +75,7 @@ export function registerWeeklyReviewRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/weekly-reviews/:projectName/:id", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
+  app.patch("/api/weekly-reviews/:projectName/:id", requireAuth, requirePermission('weekly_review_wizard', 'edit'), async (req, res) => {
     try {
       const id = Number(req.params.id);
       const body = req.body;
