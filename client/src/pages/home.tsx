@@ -180,28 +180,28 @@ export default function Home() {
   const isRetrying = tasksFetching || priorityFetching || prioritiesFetching;
 
   return (
-    <div className="space-y-6 bg-gradient-to-b from-emerald-50/50 to-white p-1">
-      <header className="space-y-4 rounded-xl border border-emerald-100 bg-white p-4 shadow-sm md:p-5">
+    <div className="ee-page space-y-6 p-0">
+      <header className="space-y-4 rounded-xl border border-primary/20 bg-white p-4 shadow-sm md:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <img src="/emergent-logo.png" alt="Emergent Energy" className="h-8 w-auto object-contain md:h-9" />
             <div>
-              <h1 className="text-xl font-semibold text-slate-900 md:text-2xl">Daily Operating Home</h1>
-              <p className="text-sm text-slate-600">Good morning, {user?.username || "team"}. Focus on what matters first.</p>
+              <h1 className="text-xl font-semibold text-foreground md:text-2xl">Daily Operating Home</h1>
+              <p className="text-sm text-muted-foreground">Good morning, {user?.username || "team"}. Focus on what matters first.</p>
             </div>
           </div>
-          <Button asChild variant="outline" size="sm" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+          <Button asChild variant="outline" size="sm" className="border-primary/30 text-primary hover:bg-primary/10">
             <Link href="/my-work/tasks">Open My Tasks</Link>
           </Button>
         </div>
         <div className="grid gap-2 sm:grid-cols-3">
-          <Link href="/company-priorities" className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 hover:bg-emerald-100">
+          <Link href="/company-priorities" className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-primary hover:bg-primary/15">
             Company priorities: {filteredPriorities.length}
           </Link>
-          <Link href="/my-work/tasks" className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+          <Link href="/my-work/tasks" className="rounded-lg border border-border px-3 py-2 text-sm text-foreground hover:bg-muted/50">
             Open tasks: {myOpenTasks.length}
           </Link>
-          <Link href="/my-work/calendar" className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+          <Link href="/my-work/calendar" className="rounded-lg border border-border px-3 py-2 text-sm text-foreground hover:bg-muted/50">
             Due today: {dueToday.length}
           </Link>
         </div>
@@ -216,121 +216,121 @@ export default function Home() {
         </div>
       ) : null}
 
-      <Card className="border-emerald-200 shadow-sm">
+      <Card className="border-primary/30 shadow-sm">
         <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg"><Target className="h-4 w-4 text-emerald-600" />Company Priorities / Strategic Focus</CardTitle>
-          <p className="text-sm text-slate-600">Start here first. These priorities drive today&apos;s execution.</p>
+          <CardTitle className="flex items-center gap-2 text-lg"><Target className="h-4 w-4 text-primary" />Company Priorities / Strategic Focus</CardTitle>
+          <p className="text-sm text-muted-foreground">Start here first. These priorities drive today&apos;s execution.</p>
         </CardHeader>
         <CardContent className="space-y-2">
           {filteredPriorities.length ? filteredPriorities.map((priority) => (
-            <Link key={priority.id} href={getPriorityDestination(priority)} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 p-3 hover:border-emerald-200 hover:bg-emerald-50/40">
+            <Link key={priority.id} href={getPriorityDestination(priority)} className="flex items-start justify-between gap-3 rounded-lg border border-border p-3 hover:border-primary/30 hover:bg-primary/10/40">
               <div className="space-y-1">
-                <p className="text-sm font-medium text-slate-900">{priority.title}</p>
-                {priority.description ? <p className="text-xs text-slate-600">{priority.description}</p> : null}
+                <p className="text-sm font-medium text-foreground">{priority.title}</p>
+                {priority.description ? <p className="text-xs text-muted-foreground">{priority.description}</p> : null}
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {priority.department ? <Badge variant="outline">{priority.department}</Badge> : null}
-                <ArrowRight className="h-4 w-4 text-emerald-600" />
+                <ArrowRight className="h-4 w-4 text-primary" />
               </div>
             </Link>
-          )) : <p className="text-sm text-slate-500">No active priorities are published for your role. Open Company Priorities for full context.</p>}
+          )) : <p className="text-sm text-muted-foreground">No active priorities are published for your role. Open Company Priorities for full context.</p>}
         </CardContent>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="border-slate-200 shadow-sm">
+        <Card className="border-border">
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg"><ClipboardList className="h-4 w-4 text-emerald-600" />My Tasks</CardTitle>
-            <p className="text-sm text-slate-600">Action your queue now, then clear approvals and blockers.</p>
+            <CardTitle className="flex items-center gap-2 text-lg"><ClipboardList className="h-4 w-4 text-primary" />My Tasks</CardTitle>
+            <p className="text-sm text-muted-foreground">Action your queue now, then clear approvals and blockers.</p>
           </CardHeader>
           <CardContent className="space-y-2">
             {myOpenTasks.length ? myOpenTasks.map((task) => (
-              <Link key={task.id} href={`/my-work/tasks?taskId=${task.id}`} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 hover:bg-slate-50">
+              <Link key={task.id} href={`/my-work/tasks?taskId=${task.id}`} className="flex items-center justify-between rounded-lg border border-border p-3 hover:bg-muted/50">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-900">{task.title || `Task #${task.id}`}</p>
-                  <p className="text-xs text-slate-500">{task.projectName || "General"}{task.dueDate ? ` · Due ${task.dueDate}` : ""}</p>
+                  <p className="truncate text-sm font-medium text-foreground">{task.title || `Task #${task.id}`}</p>
+                  <p className="text-xs text-muted-foreground">{task.projectName || "General"}{task.dueDate ? ` · Due ${task.dueDate}` : ""}</p>
                 </div>
-                {task.status ? <Badge className="bg-slate-100 text-slate-700">{task.status}</Badge> : null}
+                {task.status ? <Badge className="bg-slate-100 text-foreground">{task.status}</Badge> : null}
               </Link>
-            )) : <p className="text-sm text-slate-500">No open tasks in your queue.</p>}
+            )) : <p className="text-sm text-muted-foreground">No open tasks in your queue.</p>}
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 shadow-sm">
+        <Card className="border-border">
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg"><AlertTriangle className="h-4 w-4 text-amber-600" />Important Exceptions</CardTitle>
-            <p className="text-sm text-slate-600">Escalate or resolve these exceptions before normal work.</p>
+            <p className="text-sm text-muted-foreground">Escalate or resolve these exceptions before normal work.</p>
           </CardHeader>
           <CardContent className="space-y-2">
             {keyExceptions.length ? keyExceptions.map((item) => (
               <Link key={item.id} href={item.path} className="flex items-center justify-between rounded-lg border border-amber-200/70 bg-amber-50/50 p-3 hover:bg-amber-50">
                 <div>
-                  <p className="text-sm font-medium text-slate-900">{item.title}</p>
-                  <p className="text-xs text-slate-600">{item.detail}</p>
+                  <p className="text-sm font-medium text-foreground">{item.title}</p>
+                  <p className="text-xs text-muted-foreground">{item.detail}</p>
                 </div>
                 <ArrowRight className="h-4 w-4 text-amber-700" />
               </Link>
-            )) : <p className="text-sm text-slate-500">No urgent exceptions right now.</p>}
+            )) : <p className="text-sm text-muted-foreground">No urgent exceptions right now.</p>}
           </CardContent>
         </Card>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="border-slate-200 shadow-sm">
+        <Card className="border-border">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Role-Based Quick Links</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {roleActions.map((action) => (
-              <Link key={action.label} href={action.path} className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50">
+              <Link key={action.label} href={action.path} className="flex items-center justify-between rounded-lg border border-border p-2.5 hover:bg-muted/50">
                 <div>
-                  <p className="text-sm font-medium text-slate-900">{action.label}</p>
-                  <p className="text-xs text-slate-500">{action.description}</p>
+                  <p className="text-sm font-medium text-foreground">{action.label}</p>
+                  <p className="text-xs text-muted-foreground">{action.description}</p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-emerald-600" />
+                <ArrowRight className="h-4 w-4 text-primary" />
               </Link>
             ))}
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 shadow-sm">
+        <Card className="border-border">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Meetings, Calendar & Microsoft</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <Link href="/my-work/calendar" className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-emerald-600" />My Calendar & Meetings</span><ArrowRight className="h-4 w-4 text-slate-400" /></Link>
-            <Link href="/my-work/email" className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><Mail className="h-4 w-4 text-emerald-600" />Important Email & Reminders</span><ArrowRight className="h-4 w-4 text-slate-400" /></Link>
-            <Link href="/my-work/teams" className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><MessageSquare className="h-4 w-4 text-emerald-600" />Teams Summary</span><ArrowRight className="h-4 w-4 text-slate-400" /></Link>
+            <Link href="/my-work/calendar" className="flex items-center justify-between rounded-lg border border-border p-2.5 hover:bg-muted/50 text-sm"><span className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary" />My Calendar & Meetings</span><ArrowRight className="h-4 w-4 text-muted-foreground/80" /></Link>
+            <Link href="/my-work/email" className="flex items-center justify-between rounded-lg border border-border p-2.5 hover:bg-muted/50 text-sm"><span className="flex items-center gap-2"><Mail className="h-4 w-4 text-primary" />Important Email & Reminders</span><ArrowRight className="h-4 w-4 text-muted-foreground/80" /></Link>
+            <Link href="/my-work/teams" className="flex items-center justify-between rounded-lg border border-border p-2.5 hover:bg-muted/50 text-sm"><span className="flex items-center gap-2"><MessageSquare className="h-4 w-4 text-primary" />Teams Summary</span><ArrowRight className="h-4 w-4 text-muted-foreground/80" /></Link>
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 shadow-sm">
+        <Card className="border-border">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Project Health Snapshot</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {projectHealth.length ? projectHealth.map((item) => (
-              <Link key={item.id} href={item.path} className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50">
+              <Link key={item.id} href={item.path} className="flex items-center justify-between rounded-lg border border-border p-2.5 hover:bg-muted/50">
                 <div>
-                  <p className="text-sm font-medium text-slate-900">{item.title}</p>
-                  <p className="text-xs text-slate-500">{item.detail}</p>
+                  <p className="text-sm font-medium text-foreground">{item.title}</p>
+                  <p className="text-xs text-muted-foreground">{item.detail}</p>
                 </div>
-                <ArrowRight className="h-4 w-4 text-slate-400" />
+                <ArrowRight className="h-4 w-4 text-muted-foreground/80" />
               </Link>
-            )) : <p className="text-sm text-slate-500">No project health exceptions for your current scope.</p>}
+            )) : <p className="text-sm text-muted-foreground">No project health exceptions for your current scope.</p>}
           </CardContent>
         </Card>
       </div>
 
-      <Card className="border-slate-200 shadow-sm">
+      <Card className="border-border">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Morning Checklist</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-2 md:grid-cols-2">
-          <Link href="/my-work/tasks" className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700 hover:bg-slate-50">1) Clear overdue + blocked items ({overdue.length + blocked.length})</Link>
-          <Link href="/my-work/tasks" className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700 hover:bg-slate-50">2) Review approvals waiting ({waitingApproval.length})</Link>
-          <Link href="/my-work/calendar" className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700 hover:bg-slate-50">3) Confirm first meetings and dependencies</Link>
-          <Link href="/company-priorities" className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700 hover:bg-slate-50">4) Align work to strategic focus</Link>
+          <Link href="/my-work/tasks" className="rounded-lg border border-border p-3 text-sm text-foreground hover:bg-muted/50">1) Clear overdue + blocked items ({overdue.length + blocked.length})</Link>
+          <Link href="/my-work/tasks" className="rounded-lg border border-border p-3 text-sm text-foreground hover:bg-muted/50">2) Review approvals waiting ({waitingApproval.length})</Link>
+          <Link href="/my-work/calendar" className="rounded-lg border border-border p-3 text-sm text-foreground hover:bg-muted/50">3) Confirm first meetings and dependencies</Link>
+          <Link href="/company-priorities" className="rounded-lg border border-border p-3 text-sm text-foreground hover:bg-muted/50">4) Align work to strategic focus</Link>
         </CardContent>
       </Card>
     </div>
