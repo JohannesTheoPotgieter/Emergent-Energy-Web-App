@@ -9,11 +9,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { AlertTriangle, Copy, Plus, Save, Search, Shield, ShieldAlert, Users } from "lucide-react";
-import type { PermissionAction, PermissionEntity } from "@shared/schema";
+import type { AuthorityAction, PermissionAction } from "@shared/schema";
 
 const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
+const AUTHORITY_ACTIONS: AuthorityAction[] = ["view", "create", "edit", "delete", "approve", "assign", "reassign", "close_complete", "export", "manage_settings"];
+const AUTHORITY_SCOPES = ["own", "department", "assigned_projects", "all_projects", "company_admin"] as const;
 const NAV_SECTIONS = ["MY_WORK", "PROJECTS", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "MONEY", "INFORMATION", "SETTINGS"];
-const SCOPE_OPTIONS = ["none", "own", "assigned", "department", "assigned_projects", "managed_projects", "all_department", "company_wide", "finance_only", "admin_only"];
 
 type RoleRow = {
   role: string;
@@ -21,6 +22,7 @@ type RoleRow = {
   description: string | null;
   sections: string[];
   entityPermissions: Record<string, Record<string, boolean>> | null;
+  authorityModel?: { rules?: Record<string, { enabled?: boolean; scope?: string }> } | null;
   canManageUsers: boolean;
   canManageRoles: boolean;
   canEditData: boolean;
@@ -30,7 +32,7 @@ type RoleRow = {
   protected?: boolean;
 };
 
-type UserRow = { id: number; name: string; email: string; role: string; department?: string; status?: string };
+type UserRow = { id: number; name: string; email: string; role: string };
 
 function authHeaders(): HeadersInit {
   const token = localStorage.getItem("auth_token");
@@ -67,6 +69,7 @@ function RolesControlCenter() {
   const [createKey, setCreateKey] = useState("");
   const [createLabel, setCreateLabel] = useState("");
   const [effective, setEffective] = useState<any[]>([]);
+  const [authorityEffective, setAuthorityEffective] = useState<any[]>([]);
 
   const load = async () => {
     const [roleRes, userRes] = await Promise.all([
@@ -85,7 +88,6 @@ function RolesControlCenter() {
 
   const selected = useMemo(() => roles.find((r) => r.role === selectedRole), [roles, selectedRole]);
   const hasChanges = Object.keys(draft).length > 0;
-
   const filteredRoles = roles.filter((r) => {
     if (kindFilter === "system" && !r.isSystem) return false;
     if (kindFilter === "custom" && r.isSystem) return false;
@@ -95,11 +97,18 @@ function RolesControlCenter() {
 
   const effectiveRole = { ...selected, ...draft } as RoleRow;
   const currentEp = (effectiveRole.entityPermissions || {}) as Record<string, Record<string, boolean>>;
+  const authorityRules = effectiveRole.authorityModel?.rules || {};
 
   const updateEp = (entity: string, action: string, value: boolean) => {
     const next = { ...currentEp, [entity]: { ...(currentEp[entity] || {}), [action]: value } };
     if ((action === "edit" || action === "approve" || action === "delete") && value) next[entity].view = true;
     setDraft((d) => ({ ...d, entityPermissions: next }));
+  };
+
+  const updateAuthorityRule = (entity: string, action: AuthorityAction, patch: { enabled?: boolean; scope?: string }) => {
+    const key = `${entity}.${action}`;
+    const nextRules = { ...authorityRules, [key]: { ...(authorityRules[key] || {}), ...patch } };
+    setDraft((d) => ({ ...d, authorityModel: { ...(effectiveRole.authorityModel || {}), rules: nextRules } }));
   };
 
   const save = async () => {
@@ -117,26 +126,14 @@ function RolesControlCenter() {
     setShowCreate(false); setCreateKey(""); setCreateLabel(""); await load();
   };
 
-  const cloneRole = async () => {
-    if (!selected) return;
-    const key = `${selected.role}_COPY_${Date.now().toString().slice(-4)}`;
-    await fetch(`/api/roles/${selected.role}/clone`, { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role: key, label: `${selected.label} Copy` }) });
-    await load();
-  };
-
-  const archiveRole = async () => {
-    if (!selected || selected.isSystem) return;
-    await fetch(`/api/roles/${selected.role}/archive`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ archived: true }) });
-    await load();
-  };
-
   const loadEffective = async (userId?: number) => {
     const res = await fetch("/api/roles/effective-access", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role: selectedRole, userId }) });
     const data = await res.json();
     setEffective(data.matrix || []);
+    setAuthorityEffective(data.authorityMatrix || []);
   };
 
-  const resources = Object.keys(currentEp).sort();
+  const resources = Object.keys(currentEp).filter((k) => !k.startsWith("_")).sort();
 
   return (
     <div className="grid grid-cols-12 gap-4">
@@ -148,18 +145,45 @@ function RolesControlCenter() {
 
       <div className="col-span-9 space-y-3">
         {hasChanges && <div className="sticky top-2 z-20 rounded border bg-amber-50 px-3 py-2 flex items-center justify-between"><span className="text-sm">Unsaved changes</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => setDraft({})}>Reset</Button><Button size="sm" onClick={save}><Save className="h-3 w-3 mr-1" />Save</Button></div></div>}
-        <Card><CardHeader><CardTitle className="text-base flex items-center justify-between">{selected?.label || "Select role"}<div className="flex gap-2"><Button size="sm" variant="outline" onClick={cloneRole}><Copy className="h-3 w-3 mr-1" />Clone</Button><Button size="sm" variant="outline" disabled={selected?.isSystem} onClick={archiveRole}>Archive</Button></div></CardTitle></CardHeader><CardContent>
+        <Card><CardHeader><CardTitle className="text-base">{selected?.label || "Select role"}</CardTitle></CardHeader><CardContent>
           <Tabs defaultValue="overview">
-            <TabsList className="grid grid-cols-7 w-full">
-              <TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="navigation">Navigation</TabsTrigger><TabsTrigger value="resources">Resources & Actions</TabsTrigger><TabsTrigger value="scope">Scope & Limits</TabsTrigger><TabsTrigger value="enforcement">Enforcement</TabsTrigger><TabsTrigger value="users">Users</TabsTrigger><TabsTrigger value="effective">Effective Access</TabsTrigger>
+            <TabsList className="grid grid-cols-6 w-full">
+              <TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="navigation">Navigation</TabsTrigger><TabsTrigger value="resources">Legacy Permissions</TabsTrigger><TabsTrigger value="authority">Authority Model</TabsTrigger><TabsTrigger value="users">Users</TabsTrigger><TabsTrigger value="effective">Effective Access</TabsTrigger>
             </TabsList>
-            <TabsContent value="overview" className="space-y-3 mt-3"><div className="grid grid-cols-2 gap-3"><div><Label>Name</Label><Input value={effectiveRole.label || ""} onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} /></div><div><Label>Description</Label><Input value={effectiveRole.description || ""} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} /></div></div><div className="text-sm text-muted-foreground">Type: {selected?.isSystem ? "System" : "Custom"} · Assigned users: {selected?.userCount || 0} · Configured resources: {selected?.configuredResources || 0}</div></TabsContent>
-            <TabsContent value="navigation" className="mt-3"><p className="text-xs text-amber-700 mb-2">Navigation visibility only. This controls what appears in the UI navigation and route access, but authority must also be enforced in backend/API permission checks.</p><div className="grid grid-cols-2 gap-2">{NAV_SECTIONS.map((s) => <div key={s} className="rounded border p-2 flex items-center justify-between"><span>{s}</span><Switch checked={(effectiveRole.sections || []).includes(s)} onCheckedChange={(v) => setDraft((d) => ({ ...d, sections: v ? [...(effectiveRole.sections || []), s] : (effectiveRole.sections || []).filter((x) => x !== s) }))} /></div>)}</div></TabsContent>
-            <TabsContent value="resources" className="mt-3 space-y-2"><Input placeholder="Search resources" onChange={(e) => setFilter(e.target.value)} /><div className="space-y-2 max-h-[50vh] overflow-auto">{resources.filter((r) => !filter || r.toLowerCase().includes(filter.toLowerCase())).map((entity) => <div key={entity} className="rounded border p-2"><div className="font-medium text-sm mb-2">{entity}</div><div className="flex gap-2 flex-wrap">{ACTIONS.map((a) => <label key={a} className="text-xs border rounded px-2 py-1 flex items-center gap-1"><input type="checkbox" checked={Boolean(currentEp[entity]?.[a])} onChange={(e) => updateEp(entity, a, e.target.checked)} />{a}</label>)}</div></div>)}</div></TabsContent>
-            <TabsContent value="scope" className="mt-3"><Label>Default Data Scope</Label><select className="w-full border rounded h-9 px-2" value={(currentEp._scope?.default as any) || "none"} onChange={(e) => updateEp("_scope", "default", true) || setDraft((d) => ({ ...d, entityPermissions: { ...currentEp, _scope: { defaultValue: e.target.value } as any } }))}>{SCOPE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}</select></TabsContent>
-            <TabsContent value="enforcement" className="mt-3 space-y-2"><div className="text-sm">Backend-enforced guardrails</div>{["cannot_delete_protected", "cannot_edit_closed", "cannot_approve_own", "dual_approval_sensitive", "lock_financial_after_approval"].map((rule) => <div key={rule} className="flex items-center justify-between border rounded p-2"><span className="text-sm">{rule}</span><Switch checked={Boolean((currentEp._enforcement || {})[rule])} onCheckedChange={(v) => setDraft((d) => ({ ...d, entityPermissions: { ...currentEp, _enforcement: { ...(currentEp._enforcement || {}), [rule]: v } } }))} /></div>)}</TabsContent>
+            <TabsContent value="overview" className="space-y-3 mt-3"><div className="grid grid-cols-2 gap-3"><div><Label>Name</Label><Input value={effectiveRole.label || ""} onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} /></div><div><Label>Description</Label><Input value={effectiveRole.description || ""} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} /></div></div><div className="text-sm text-muted-foreground">Type: {selected?.isSystem ? "System" : "Custom"} · Assigned users: {selected?.userCount || 0}</div></TabsContent>
+            <TabsContent value="navigation" className="mt-3"><p className="text-xs text-amber-700 mb-2">Navigation visibility only; authority is enforced through API checks.</p><div className="grid grid-cols-2 gap-2">{NAV_SECTIONS.map((s) => <div key={s} className="rounded border p-2 flex items-center justify-between"><span>{s}</span><Switch checked={(effectiveRole.sections || []).includes(s)} onCheckedChange={(v) => setDraft((d) => ({ ...d, sections: v ? [...(effectiveRole.sections || []), s] : (effectiveRole.sections || []).filter((x) => x !== s) }))} /></div>)}</div></TabsContent>
+            <TabsContent value="resources" className="mt-3 space-y-2"><div className="text-xs text-muted-foreground">Legacy compatibility layer (existing auth remains intact).</div><div className="space-y-2 max-h-[46vh] overflow-auto">{resources.map((entity) => <div key={entity} className="rounded border p-2"><div className="font-medium text-sm mb-2">{entity}</div><div className="flex gap-2 flex-wrap">{ACTIONS.map((a) => <label key={a} className="text-xs border rounded px-2 py-1 flex items-center gap-1"><input type="checkbox" checked={Boolean(currentEp[entity]?.[a])} onChange={(e) => updateEp(entity, a, e.target.checked)} />{a}</label>)}</div></div>)}</div></TabsContent>
+            <TabsContent value="authority" className="mt-3 space-y-2">
+              <div className="text-xs text-muted-foreground">Operational authority model with scopes, assignment controls, and approval workflow hooks.</div>
+              <div className="space-y-2 max-h-[46vh] overflow-auto">
+                {resources.map((entity) => (
+                  <div key={entity} className="rounded border p-2 space-y-2">
+                    <div className="font-medium text-sm">{entity}</div>
+                    {AUTHORITY_ACTIONS.map((action) => {
+                      const key = `${entity}.${action}`;
+                      const rule = authorityRules[key] || {};
+                      return (
+                        <div key={key} className="grid grid-cols-4 gap-2 items-center text-xs">
+                          <span>{action}</span>
+                          <Switch checked={Boolean(rule.enabled)} onCheckedChange={(v) => updateAuthorityRule(entity, action, { enabled: v })} />
+                          <select className="border rounded h-8 px-2" value={rule.scope || "assigned_projects"} onChange={(e) => updateAuthorityRule(entity, action, { scope: e.target.value })}>
+                            {AUTHORITY_SCOPES.map((scope) => <option key={scope} value={scope}>{scope}</option>)}
+                          </select>
+                          <span className="text-muted-foreground">auditable</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </TabsContent>
             <TabsContent value="users" className="mt-3"><div className="space-y-2">{users.filter((u) => u.role === selectedRole).map((u) => <div key={u.id} className="border rounded p-2 flex justify-between items-center"><div><div className="text-sm font-medium">{u.name}</div><div className="text-xs text-muted-foreground">{u.email}</div></div><Button size="sm" variant="outline" onClick={() => loadEffective(u.id)}>Inspect access</Button></div>)}</div></TabsContent>
-            <TabsContent value="effective" className="mt-3"><Button size="sm" onClick={() => loadEffective()}>Refresh effective access</Button><div className="space-y-2 mt-2 max-h-[45vh] overflow-auto">{effective.map((row: any) => <div key={row.entity} className="rounded border p-2"><div className="font-medium text-sm mb-1">{row.entity}</div><div className="grid grid-cols-3 gap-1">{row.actions.map((a: any) => <div key={a.action} className={`text-xs rounded p-1 ${a.allowed ? "bg-green-50" : "bg-red-50"}`}>{a.action}: {a.allowed ? "Allowed" : "Blocked"}</div>)}</div></div>)}</div></TabsContent>
+            <TabsContent value="effective" className="mt-3"><Button size="sm" onClick={() => loadEffective()}>Refresh effective access</Button><div className="space-y-2 mt-2 max-h-[45vh] overflow-auto">
+              <div className="text-sm font-medium">Legacy effective permissions by role</div>
+              {effective.map((row: any) => <div key={`legacy-${row.entity}`} className="rounded border p-2"><div className="font-medium text-sm mb-1">{row.entity}</div><div className="grid grid-cols-3 gap-1">{row.actions.map((a: any) => <div key={a.action} className={`text-xs rounded p-1 ${a.allowed ? "bg-green-50" : "bg-red-50"}`}>{a.action}: {a.allowed ? "Allowed" : "Blocked"}</div>)}</div></div>)}
+              <div className="text-sm font-medium pt-2">Authority effective permissions by role / user</div>
+              {authorityEffective.map((row: any) => <div key={`auth-${row.entity}`} className="rounded border p-2"><div className="font-medium text-sm mb-1">{row.entity}</div><div className="grid grid-cols-2 gap-1">{row.actions.map((a: any) => <div key={a.action} className={`text-xs rounded p-1 ${a.allowed ? "bg-green-50" : "bg-red-50"}`}>{a.action}: {a.allowed ? "Allowed" : "Blocked"} ({a.scope})</div>)}</div></div>)}
+            </div></TabsContent>
           </Tabs>
         </CardContent></Card>
       </div>
@@ -173,7 +197,17 @@ function GlobalUsersView() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [search, setSearch] = useState("");
-  useEffect(() => { (async () => { const [u, r] = await Promise.all([fetch("/api/admin/users", { headers: authHeaders(), credentials: "include" }), fetch("/api/roles", { headers: authHeaders(), credentials: "include" })]); setUsers(await u.json()); setRoles(await r.json()); })(); }, []);
+
+  useEffect(() => {
+    (async () => {
+      const [u, r] = await Promise.all([
+        fetch("/api/admin/users", { headers: authHeaders(), credentials: "include" }),
+        fetch("/api/roles", { headers: authHeaders(), credentials: "include" }),
+      ]);
+      setUsers(await u.json());
+      setRoles(await r.json());
+    })();
+  }, []);
 
   const updateRole = async (id: number, role: string) => {
     await fetch(`/api/admin/users/${id}/role`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role }) });
