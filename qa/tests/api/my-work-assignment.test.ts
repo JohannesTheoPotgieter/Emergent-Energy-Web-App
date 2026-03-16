@@ -48,4 +48,47 @@ describe("API: my-work task assignment", () => {
     const found = (myTasks.data?.personal || []).some((t: any) => t.id === taskId && (t.title || "").includes("Assignment E2E"));
     expect(found).toBe(true);
   });
+
+  it("accepts canonical internal assignment payload and returns normalized assignment", async () => {
+    const admin = await login("johannes", "2023");
+    expect(admin.status).toBe(200);
+
+    const created = await apiRequest("POST", "/api/mytool/tasks", { title: `Canonical Assignment ${Date.now()}`, priority: "normal", status: "todo" }, admin.token);
+    expect(created.status).toBe(201);
+
+    const assignable = await apiRequest("GET", "/api/users/assignable", undefined, admin.token);
+    expect(assignable.status).toBe(200);
+    const target = (assignable.data || []).find((u: any) => u.username === "eon") || (assignable.data || [])[0];
+    expect(target?.id).toBeTruthy();
+
+    const reassign = await apiRequest(
+      "PATCH",
+      "/api/tasks/reassign",
+      { taskId: created.data.id, taskSource: "personal", assigneeType: "internal_user", assigneeId: target.id },
+      admin.token,
+    );
+
+    expect(reassign.status).toBe(200);
+    expect(reassign.data?.assignment?.assigneeType).toBe("internal_user");
+    expect(reassign.data?.assignment?.assigneeId).toBe(target.id);
+    expect(reassign.data?.assignment?.source).toBe("internal");
+  });
+
+  it("rejects invalid assignee type", async () => {
+    const admin = await login("johannes", "2023");
+    expect(admin.status).toBe(200);
+
+    const created = await apiRequest("POST", "/api/mytool/tasks", { title: `Invalid Assignment ${Date.now()}`, priority: "normal", status: "todo" }, admin.token);
+    expect(created.status).toBe(201);
+
+    const reassign = await apiRequest(
+      "PATCH",
+      "/api/tasks/reassign",
+      { taskId: created.data.id, taskSource: "personal", assigneeType: "invalid_type", assigneeId: 1 },
+      admin.token,
+    );
+
+    expect(reassign.status).toBe(400);
+  });
+
 });
