@@ -16,6 +16,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { TASK_PRIORITIES } from "@shared/schema";
 import { TASK_STATUSES, getTaskStatusBadgeClass, getTaskStatusBarClass, getTaskStatusLabel, isTaskComplete } from "@shared/task-status";
+import { bucketEngineeringStandupTasks } from "@shared/engineering-standup";
 import {
   AlertTriangle,
   Wrench,
@@ -972,7 +973,7 @@ function AssigneeGroup({ name, tasks, onUpdate, defaultOpen, onOpenTask }: { nam
 }
 
 function StandupBucket({
-  title, icon, tasks, color, open, onToggle, testId, onUpdate, onOpenTask,
+  title, icon, tasks, color, open, onToggle, testId, onUpdate, onOpenTask, assigneeCount,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -983,6 +984,7 @@ function StandupBucket({
   testId: string;
   onUpdate: (id: number, updates: Record<string, any>) => void;
   onOpenTask?: (task: FullTask) => void;
+  assigneeCount?: number;
 }) {
   const grouped = groupByAssignee(tasks);
 
@@ -1004,7 +1006,7 @@ function StandupBucket({
         </div>
         <span className={`shrink-0 ${color}`}>{icon}</span>
         <span className="font-semibold text-sm flex-1">{title}</span>
-        <span className="text-[10px] text-muted-foreground mr-1">{grouped.size} assignee{grouped.size !== 1 ? "s" : ""}</span>
+        <span className="text-[10px] text-muted-foreground mr-1">{(assigneeCount ?? grouped.size)} assignee{(assigneeCount ?? grouped.size) !== 1 ? "s" : ""}</span>
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${countBg}`}>{tasks.length}</span>
       </button>
       {open && (
@@ -1071,31 +1073,15 @@ function StandupModeView() {
   }, []);
 
   const today = new Date().toISOString().split("T")[0];
-  const sevenDays = new Date();
-  sevenDays.setDate(sevenDays.getDate() + 7);
-  const weekEnd = sevenDays.toISOString().split("T")[0];
+  const { groups: bucketedGroups, assigneeCounts } = useMemo(() => bucketEngineeringStandupTasks(allTasks, today, 7), [allTasks, today]);
 
-  const nonComplete = allTasks.filter(t => !isTaskComplete(t.status));
-
-  const overdueTasks = nonComplete.filter(t => t.dueDate && t.dueDate < today);
-  const overduIds = new Set(overdueTasks.map(t => t.id));
-
-  const dueSoonTasks = nonComplete.filter(t =>
-    t.dueDate && t.dueDate >= today && t.dueDate <= weekEnd && !overduIds.has(t.id)
-  );
-  const dueSoonIds = new Set(dueSoonTasks.map(t => t.id));
-
-  const holdTasks = nonComplete.filter(t => t.status === "HOLD" && !overduIds.has(t.id));
-  const holdIds = new Set(holdTasks.map(t => t.id));
-
-  const inProgressTasks = nonComplete.filter(t =>
-    t.status === "IN PROGRESS" && !overduIds.has(t.id) && !dueSoonIds.has(t.id) && !holdIds.has(t.id)
-  );
-  const inProgressIds = new Set(inProgressTasks.map(t => t.id));
-
-  const everythingElse = nonComplete.filter(t =>
-    !overduIds.has(t.id) && !dueSoonIds.has(t.id) && !holdIds.has(t.id) && !inProgressIds.has(t.id)
-  );
+  const overdueTasks = bucketedGroups.overdue;
+  const dueSoonTasks = bucketedGroups.dueSoon;
+  const holdTasks = bucketedGroups.onHold;
+  const inProgressTasks = bucketedGroups.inProgress;
+  const unassignedTasks = bucketedGroups.unassigned;
+  const everythingElse = bucketedGroups.everythingElse;
+  const nonComplete = [...overdueTasks, ...dueSoonTasks, ...holdTasks, ...inProgressTasks, ...unassignedTasks, ...everythingElse];
 
   const blockerCount = overdueTasks.length + holdTasks.length;
 
@@ -1104,8 +1090,9 @@ function StandupModeView() {
     { key: "dueSoon", title: "Due Soon (7 days)", icon: <Timer className="h-4 w-4" />, tasks: dueSoonTasks, color: "text-indigo-600", defaultOpen: true, testId: "standup-bucket-due-soon" },
     { key: "hold", title: "On Hold", icon: <PauseCircle className="h-4 w-4" />, tasks: holdTasks, color: "text-amber-600", defaultOpen: true, testId: "standup-bucket-hold" },
     { key: "inProgress", title: "In Progress", icon: <Zap className="h-4 w-4" />, tasks: inProgressTasks, color: "text-blue-600", defaultOpen: false, testId: "standup-bucket-in-progress" },
+    { key: "unassigned", title: "Unassigned / Needs Triage", icon: <User className="h-4 w-4" />, tasks: unassignedTasks, color: "text-slate-600", defaultOpen: true, testId: "standup-bucket-unassigned" },
     { key: "everythingElse", title: "Everything Else", icon: <ListTodo className="h-4 w-4" />, tasks: everythingElse, color: "text-muted-foreground", defaultOpen: false, testId: "standup-bucket-everything-else" },
-  ]), [dueSoonTasks, everythingElse, holdTasks, inProgressTasks, overdueTasks]);
+  ]), [dueSoonTasks, everythingElse, holdTasks, inProgressTasks, overdueTasks, unassignedTasks]);
 
   useEffect(() => {
     if (Object.keys(openBuckets).length > 0) return;
@@ -1192,6 +1179,7 @@ function StandupModeView() {
               testId={group.testId}
               onUpdate={handleUpdate}
               onOpenTask={handleOpenTask}
+              assigneeCount={assigneeCounts[group.key as keyof typeof assigneeCounts]}
             />
           );
           if (index === 0) {
