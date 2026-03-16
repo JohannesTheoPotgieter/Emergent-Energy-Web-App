@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { assertPermission, permissionsForRole } from "../policies/access-policy";
 import { recordAudit } from "../services/audit-service";
 import * as service from "../services/project-v2-service";
-import { asyncHandler, created, ok, paginationQuerySchema, validate } from "../utils/http";
+import { ApiV2Error, asyncHandler, created, ok, paginationQuerySchema, validate } from "../utils/http";
 import {
   engineeringDesignCreateSchema,
   engineeringDesignPatchSchema,
@@ -24,6 +24,13 @@ import {
 } from "../validators/project-v2-validators";
 
 const actor = (req: Request) => ({ actorRole: (req.user as any).role, userId: (req.user as any).id, userName: (req.user as any).name });
+
+
+const assertBodyProjectContext = (routeProjectId: number, payload: { projectId?: number }) => {
+  if (payload.projectId != null && payload.projectId !== routeProjectId) {
+    throw new ApiV2Error("VALIDATION_ERROR", 400, "projectId in payload must match route projectId");
+  }
+};
 
 export const me = asyncHandler(async (req: Request, res: Response) => {
   const user = req.user as any;
@@ -92,6 +99,7 @@ export const engineeringDesigns = asyncHandler(async (req, res) => {
   if (req.method === "POST") {
     assertPermission((req.user as any).role, "engineering.write");
     const payload = validate(engineeringDesignCreateSchema, req.body, "Invalid engineering design payload");
+    assertBodyProjectContext(projectId, payload);
     const row = await service.createEngineeringDesignService(projectId, payload, (req.user as any).id);
     await recordAudit({ ...actor(req), entityType: "engineering_design", entityId: String(row.id), action: "CREATE" });
     return created(res, row);
@@ -116,6 +124,7 @@ export const qualityChecks = asyncHandler(async (req, res) => {
   if (req.method === "POST") {
     assertPermission((req.user as any).role, "quality.write");
     const payload = validate(qualityCheckCreateSchema, req.body, "Invalid quality check payload");
+    assertBodyProjectContext(projectId, payload);
     const row = await service.createQualityCheckService(projectId, payload);
     await recordAudit({ ...actor(req), entityType: "quality_check", entityId: String(row.id), action: "CREATE" });
     return created(res, row);
@@ -139,6 +148,7 @@ export const createWorkItem = asyncHandler(async (req, res) => {
   assertPermission((req.user as any).role, "work_items.write");
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   const payload = validate(workItemCreateSchema, req.body, "Invalid work item payload");
+  assertBodyProjectContext(projectId, payload);
   const createdRow = await service.createWorkItemService(projectId, payload, (req.user as any).id);
   await recordAudit({ ...actor(req), entityType: "work_item", entityId: String(createdRow.id), action: "CREATE" });
   created(res, createdRow);
@@ -163,6 +173,7 @@ export const createMilestone = asyncHandler(async (req, res) => {
   assertPermission((req.user as any).role, "milestones.write");
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   const payload = validate(milestoneCreateSchema, req.body, "Invalid milestone payload");
+  assertBodyProjectContext(projectId, payload);
   const row = await service.createMilestoneService(projectId, payload, (req.user as any).id);
   await recordAudit({ ...actor(req), entityType: "milestone", entityId: String(row.id), action: "CREATE" });
   created(res, row);
@@ -192,6 +203,7 @@ export const createProcurementItem = asyncHandler(async (req, res) => {
   assertPermission((req.user as any).role, "procurement.write");
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   const payload = validate(procurementItemCreateSchema, req.body, "Invalid procurement item payload");
+  assertBodyProjectContext(projectId, payload);
   const row = await service.createProcurementItemService(projectId, payload);
   await recordAudit({ ...actor(req), entityType: "procurement_item", entityId: String(row.id), action: "CREATE" });
   created(res, row);
@@ -212,6 +224,7 @@ export const procurementPos = asyncHandler(async (req, res) => {
   if (req.method === "POST") {
     assertPermission((req.user as any).role, "procurement.write");
     const payload = validate(procurementPoCreateSchema, req.body, "Invalid purchase order payload");
+    assertBodyProjectContext(projectId, payload);
     const row = await service.createPurchaseOrderService(projectId, payload);
     await recordAudit({ ...actor(req), entityType: "purchase_order", entityId: String(row.id), action: "CREATE" });
     return created(res, row);
@@ -232,6 +245,7 @@ export const procurementInvoices = asyncHandler(async (req, res) => {
   if (req.method === "POST") {
     assertPermission((req.user as any).role, "invoice.write");
     const payload = validate(invoiceCreateSchema, req.body, "Invalid invoice payload");
+    assertBodyProjectContext(projectId, payload);
     const row = await service.createInvoiceService(projectId, payload, (req.user as any).id);
     await recordAudit({ ...actor(req), entityType: "invoice", entityId: String(row.id), action: "CREATE" });
     return created(res, row);
@@ -274,6 +288,7 @@ export const financeVariations = asyncHandler(async (req, res) => {
   if (req.method === "POST") {
     assertPermission((req.user as any).role, "finance.write");
     const payload = validate(financeVariationCreateSchema, req.body, "Invalid finance variation payload");
+    assertBodyProjectContext(projectId, payload);
     const row = await service.createFinanceVariationService(projectId, payload, (req.user as any).id);
     await recordAudit({ ...actor(req), entityType: "finance_variation", entityId: String(row.id), action: "CREATE" });
     return created(res, row);

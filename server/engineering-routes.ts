@@ -1368,8 +1368,13 @@ export function registerEngineeringRoutes(app: Express) {
   app.post("/api/deliverables", requireAuth, async (req, res) => {
     try {
       const data = req.body;
+      const projectId = Number(data.projectId);
+      if (!Number.isInteger(projectId) || projectId <= 0) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
       const [del] = await db.insert(deliverables).values({
         ...data,
+        projectId,
         status: "TO DO",
         currentVersion: 1,
       }).returning();

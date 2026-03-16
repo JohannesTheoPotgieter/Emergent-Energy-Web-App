@@ -24,7 +24,13 @@ describe("api v2 policy and validation", () => {
     const payload = workItemCreateSchema.parse({ title: "Task", workstream: "ENG" });
     expect(payload.status).toBe("Not Started");
     expect(milestoneCreateSchema.parse({ title: "M" }).isMilestone).toBe(true);
-    expect(procurementPoCreateSchema.parse({ title: "PO", poId: 100 }).poId).toBe(100);
+    expect(procurementPoCreateSchema.parse({ title: "PO", poId: 100, projectId: 5 }).poId).toBe(100);
+    expect(workItemCreateSchema.parse({ title: "Task", workstream: "ENG", projectId: 5 }).projectId).toBe(5);
     expect(financeVariationCreateSchema.parse({ title: "VO" }).expectedCost).toBe(0);
+  });
+
+  it("rejects invalid payload project context values", () => {
+    expect(() => workItemCreateSchema.parse({ title: "Task", workstream: "ENG", projectId: 0 })).toThrow();
+    expect(() => procurementPoCreateSchema.parse({ title: "PO", poId: 100, projectId: -1 })).toThrow();
   });
 });
