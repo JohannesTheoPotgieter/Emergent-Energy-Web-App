@@ -8,6 +8,15 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { isSuperAdmin } from "@/lib/access-control";
+import {
+  canManageRoleActions,
+  resolveAdminRolesViewState,
+  resolveSelectedRole,
+  type AdminRolesViewState,
+  type RoleSummary,
+  type UserSummary,
+} from "./admin-roles.utils";
 import { AlertTriangle, Copy, Plus, Save, Search, Shield, ShieldAlert, Users } from "lucide-react";
 import type { AuthorityAction, PermissionAction } from "@shared/schema";
 
@@ -16,32 +25,26 @@ const AUTHORITY_ACTIONS: AuthorityAction[] = ["view", "create", "edit", "delete"
 const AUTHORITY_SCOPES = ["own", "department", "assigned_projects", "all_projects", "company_admin"] as const;
 const NAV_SECTIONS = ["MY_WORK", "PROJECTS", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "MONEY", "INFORMATION", "SETTINGS"];
 
-type RoleRow = {
-  role: string;
-  label: string;
-  description: string | null;
-  sections: string[];
-  entityPermissions: Record<string, Record<string, boolean>> | null;
-  authorityModel?: { rules?: Record<string, { enabled?: boolean; scope?: string }> } | null;
-  canManageUsers: boolean;
-  canManageRoles: boolean;
-  canEditData: boolean;
-  isSystem: boolean;
-  userCount?: number;
-  configuredResources?: number;
-  protected?: boolean;
-};
-
-type UserRow = { id: number; name: string; email: string; role: string };
+type RoleRow = RoleSummary;
+type UserRow = UserSummary;
 
 function authHeaders(): HeadersInit {
   const token = localStorage.getItem("auth_token");
   return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
 
+async function parseJsonSafe<T>(res: Response): Promise<T | null> {
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 export default function AdminRolesPage() {
   const companyRole = localStorage.getItem("company_role");
-  if (!["COO_ADMIN", "CEO_ADMIN"].includes(companyRole || "")) {
+  const tokenRole = localStorage.getItem("user_role");
+  if (!isSuperAdmin(tokenRole, companyRole)) {
     return <div className="min-h-[60vh] flex items-center justify-center"><Card><CardContent className="py-12 px-16 text-center"><AlertTriangle className="mx-auto mb-3 text-amber-500" /><p>Access denied.</p></CardContent></Card></div>;
   }
 
@@ -70,17 +73,42 @@ function RolesControlCenter() {
   const [createLabel, setCreateLabel] = useState("");
   const [effective, setEffective] = useState<any[]>([]);
   const [authorityEffective, setAuthorityEffective] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string>("");
+  const [canManageRoles, setCanManageRoles] = useState(false);
 
   const load = async () => {
-    const [roleRes, userRes] = await Promise.all([
-      fetch("/api/roles/control-center", { headers: authHeaders(), credentials: "include" }),
-      fetch("/api/admin/users", { headers: authHeaders(), credentials: "include" }),
-    ]);
-    const roleData = await roleRes.json();
-    const userData = await userRes.json();
-    setRoles(roleData.roles || []);
-    setUsers(userData || []);
-    if (!selectedRole && roleData.roles?.[0]?.role) setSelectedRole(roleData.roles[0].role);
+    setIsLoading(true);
+    setLoadError("");
+    try {
+      const [roleRes, userRes, permRes] = await Promise.all([
+        fetch("/api/roles/control-center", { headers: authHeaders(), credentials: "include" }),
+        fetch("/api/admin/users", { headers: authHeaders(), credentials: "include" }),
+        fetch("/api/auth/permissions", { headers: authHeaders(), credentials: "include" }),
+      ]);
+
+      const roleData = await parseJsonSafe<{ roles?: RoleRow[] }>(roleRes);
+      const userData = await parseJsonSafe<UserRow[] | { error?: string }>(userRes);
+      const permData = await parseJsonSafe<{ canManageRoles?: boolean }>(permRes);
+
+      const nextRoles = Array.isArray(roleData?.roles) ? roleData!.roles : [];
+      const nextUsers = Array.isArray(userData) ? userData : [];
+
+      setRoles(nextRoles);
+      setUsers(nextUsers);
+      setCanManageRoles(canManageRoleActions(Boolean(permData?.canManageRoles), roleRes.ok && userRes.ok));
+      setSelectedRole((prev) => resolveSelectedRole(prev, nextRoles));
+
+      if (!roleRes.ok) {
+        setLoadError("Unable to load roles. Your account may not have access.");
+      }
+    } catch {
+      setRoles([]);
+      setUsers([]);
+      setLoadError("Unable to load roles right now.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => { void load(); }, []);
@@ -112,7 +140,7 @@ function RolesControlCenter() {
   };
 
   const save = async () => {
-    if (!selected) return;
+    if (!selected || !canManageRoles) return;
     const res = await fetch(`/api/roles/${selected.role}`, { method: "PUT", headers: authHeaders(), credentials: "include", body: JSON.stringify(draft) });
     if (!res.ok) return toast({ title: "Save failed", variant: "destructive" });
     setDraft({});
@@ -121,6 +149,7 @@ function RolesControlCenter() {
   };
 
   const createRole = async () => {
+    if (!canManageRoles) return;
     const res = await fetch("/api/roles", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role: createKey.trim(), label: createLabel.trim(), sections: ["MY_WORK"], canEditData: true }) });
     if (!res.ok) return toast({ title: "Create role failed", variant: "destructive" });
     setShowCreate(false); setCreateKey(""); setCreateLabel(""); await load();
@@ -128,31 +157,49 @@ function RolesControlCenter() {
 
   const loadEffective = async (userId?: number) => {
     const res = await fetch("/api/roles/effective-access", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role: selectedRole, userId }) });
-    const data = await res.json();
-    setEffective(data.matrix || []);
-    setAuthorityEffective(data.authorityMatrix || []);
+    const data = await parseJsonSafe<{ matrix?: any[]; authorityMatrix?: any[] }>(res);
+    setEffective(data?.matrix || []);
+    setAuthorityEffective(data?.authorityMatrix || []);
   };
 
   const resources = Object.keys(currentEp).filter((k) => !k.startsWith("_")).sort();
+  const viewState: AdminRolesViewState = resolveAdminRolesViewState({ isLoading, hasError: Boolean(loadError), roleCount: roles.length, canManageRoles });
 
   return (
     <div className="grid grid-cols-12 gap-4">
-      <Card className="col-span-3"><CardHeader><CardTitle className="text-base flex items-center justify-between">Roles <Button size="sm" onClick={() => setShowCreate(true)}><Plus className="h-3 w-3 mr-1" />Create</Button></CardTitle></CardHeader><CardContent className="space-y-2">
+      <Card className="col-span-3"><CardHeader><CardTitle className="text-base flex items-center justify-between">Roles <Button size="sm" onClick={() => setShowCreate(true)} disabled={!canManageRoles}><Plus className="h-3 w-3 mr-1" />Create</Button></CardTitle></CardHeader><CardContent className="space-y-2">
         <div className="relative"><Search className="h-3 w-3 absolute left-2 top-2.5" /><Input className="pl-7 h-8" placeholder="Search roles" value={filter} onChange={(e) => setFilter(e.target.value)} /></div>
         <div className="flex gap-1"><Button variant={kindFilter === "all" ? "default" : "outline"} size="sm" onClick={() => setKindFilter("all")}>All</Button><Button variant={kindFilter === "system" ? "default" : "outline"} size="sm" onClick={() => setKindFilter("system")}>System</Button><Button variant={kindFilter === "custom" ? "default" : "outline"} size="sm" onClick={() => setKindFilter("custom")}>Custom</Button></div>
         <div className="space-y-1 max-h-[70vh] overflow-auto">{filteredRoles.map((r) => <button key={r.role} className={`w-full text-left rounded border p-2 ${selectedRole === r.role ? "border-primary bg-primary/5" : ""}`} onClick={() => setSelectedRole(r.role)}><div className="font-medium text-sm flex items-center justify-between">{r.label} {r.isSystem && <Badge variant="secondary">System</Badge>}</div><div className="text-xs text-muted-foreground flex items-center gap-2"><Users className="h-3 w-3" />{r.userCount || 0} users {r.protected && <ShieldAlert className="h-3 w-3 text-amber-500" />}</div></button>)}</div>
       </CardContent></Card>
 
       <div className="col-span-9 space-y-3">
-        {hasChanges && <div className="sticky top-2 z-20 rounded border bg-amber-50 px-3 py-2 flex items-center justify-between"><span className="text-sm">Unsaved changes</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => setDraft({})}>Reset</Button><Button size="sm" onClick={save}><Save className="h-3 w-3 mr-1" />Save</Button></div></div>}
+        {viewState === "loading" && <Card><CardContent className="py-8 text-sm text-muted-foreground">Loading role authority structure…</CardContent></Card>}
+        {viewState === "error" && <Card><CardContent className="py-8 text-sm text-destructive">{loadError}</CardContent></Card>}
+        {viewState === "empty" && (
+          <Card>
+            <CardHeader><CardTitle className="text-base">No roles configured</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">No system or custom roles were returned. Seeded roles should appear automatically; if this persists, check startup seed status.</p>
+              {canManageRoles && <Button size="sm" onClick={() => setShowCreate(true)}><Plus className="h-3 w-3 mr-1" />Create Role</Button>}
+            </CardContent>
+          </Card>
+        )}
+
+        {viewState === "ready" && <>
+        {hasChanges && <div className="sticky top-2 z-20 rounded border bg-amber-50 px-3 py-2 flex items-center justify-between"><span className="text-sm">Unsaved changes</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => setDraft({})}>Reset</Button><Button size="sm" onClick={save} disabled={!canManageRoles}><Save className="h-3 w-3 mr-1" />Save</Button></div></div>}
         <Card><CardHeader><CardTitle className="text-base">{selected?.label || "Select role"}</CardTitle></CardHeader><CardContent>
           <Tabs defaultValue="overview">
             <TabsList className="grid grid-cols-6 w-full">
               <TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="navigation">Navigation</TabsTrigger><TabsTrigger value="resources">Legacy Permissions</TabsTrigger><TabsTrigger value="authority">Authority Model</TabsTrigger><TabsTrigger value="users">Users</TabsTrigger><TabsTrigger value="effective">Effective Access</TabsTrigger>
             </TabsList>
-            <TabsContent value="overview" className="space-y-3 mt-3"><div className="grid grid-cols-2 gap-3"><div><Label>Name</Label><Input value={effectiveRole.label || ""} onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} /></div><div><Label>Description</Label><Input value={effectiveRole.description || ""} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} /></div></div><div className="text-sm text-muted-foreground">Type: {selected?.isSystem ? "System" : "Custom"} · Assigned users: {selected?.userCount || 0}</div></TabsContent>
-            <TabsContent value="navigation" className="mt-3"><p className="text-xs text-amber-700 mb-2">Navigation visibility only; authority is enforced through API checks.</p><div className="grid grid-cols-2 gap-2">{NAV_SECTIONS.map((s) => <div key={s} className="rounded border p-2 flex items-center justify-between"><span>{s}</span><Switch checked={(effectiveRole.sections || []).includes(s)} onCheckedChange={(v) => setDraft((d) => ({ ...d, sections: v ? [...(effectiveRole.sections || []), s] : (effectiveRole.sections || []).filter((x) => x !== s) }))} /></div>)}</div></TabsContent>
-            <TabsContent value="resources" className="mt-3 space-y-2"><div className="text-xs text-muted-foreground">Legacy compatibility layer (existing auth remains intact).</div><div className="space-y-2 max-h-[46vh] overflow-auto">{resources.map((entity) => <div key={entity} className="rounded border p-2"><div className="font-medium text-sm mb-2">{entity}</div><div className="flex gap-2 flex-wrap">{ACTIONS.map((a) => <label key={a} className="text-xs border rounded px-2 py-1 flex items-center gap-1"><input type="checkbox" checked={Boolean(currentEp[entity]?.[a])} onChange={(e) => updateEp(entity, a, e.target.checked)} />{a}</label>)}</div></div>)}</div></TabsContent>
+            <TabsContent value="overview" className="space-y-3 mt-3"><div className="grid grid-cols-2 gap-3"><div><Label>Name</Label><Input value={effectiveRole.label || ""} onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} disabled={!canManageRoles} /></div><div><Label>Description</Label><Input value={effectiveRole.description || ""} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} disabled={!canManageRoles} /></div></div><div className="text-sm text-muted-foreground">Type: {selected?.isSystem ? "System" : "Custom"} · Assigned users: {selected?.userCount || 0}</div></TabsContent>
+            <TabsContent value="navigation" className="mt-3"><div className="grid grid-cols-3 gap-2">{NAV_SECTIONS.map((s) => <label key={s} className="text-sm border rounded p-2 flex items-center gap-2"><input type="checkbox" checked={Boolean((effectiveRole.sections || []).includes(s))} onChange={(e) => {
+              const next = new Set(effectiveRole.sections || []);
+              if (e.target.checked) next.add(s); else next.delete(s);
+              setDraft((d) => ({ ...d, sections: [...next] }));
+            }} disabled={!canManageRoles} />{s}</label>)}</div></TabsContent>
+            <TabsContent value="resources" className="mt-3"><div className="space-y-2 max-h-[46vh] overflow-auto">{resources.map((entity) => <div key={entity} className="rounded border p-2"><div className="font-medium text-sm mb-2">{entity}</div><div className="flex gap-2 flex-wrap">{ACTIONS.map((a) => <label key={a} className="text-xs border rounded px-2 py-1 flex items-center gap-1"><input type="checkbox" checked={Boolean(currentEp[entity]?.[a])} onChange={(e) => updateEp(entity, a, e.target.checked)} disabled={!canManageRoles} />{a}</label>)}</div></div>)}</div></TabsContent>
             <TabsContent value="authority" className="mt-3 space-y-2">
               <div className="text-xs text-muted-foreground">Operational authority model with scopes, assignment controls, and approval workflow hooks.</div>
               <div className="space-y-2 max-h-[46vh] overflow-auto">
@@ -165,8 +212,8 @@ function RolesControlCenter() {
                       return (
                         <div key={key} className="grid grid-cols-4 gap-2 items-center text-xs">
                           <span>{action}</span>
-                          <Switch checked={Boolean(rule.enabled)} onCheckedChange={(v) => updateAuthorityRule(entity, action, { enabled: v })} />
-                          <select className="border rounded h-8 px-2" value={rule.scope || "assigned_projects"} onChange={(e) => updateAuthorityRule(entity, action, { scope: e.target.value })}>
+                          <Switch checked={Boolean(rule.enabled)} onCheckedChange={(v) => updateAuthorityRule(entity, action, { enabled: v })} disabled={!canManageRoles} />
+                          <select className="border rounded h-8 px-2" value={rule.scope || "assigned_projects"} onChange={(e) => updateAuthorityRule(entity, action, { scope: e.target.value })} disabled={!canManageRoles}>
                             {AUTHORITY_SCOPES.map((scope) => <option key={scope} value={scope}>{scope}</option>)}
                           </select>
                           <span className="text-muted-foreground">auditable</span>
@@ -186,9 +233,10 @@ function RolesControlCenter() {
             </div></TabsContent>
           </Tabs>
         </CardContent></Card>
+        </>}
       </div>
 
-      <Dialog open={showCreate} onOpenChange={setShowCreate}><DialogContent><DialogHeader><DialogTitle>Create role</DialogTitle></DialogHeader><div className="space-y-2"><Label>Role key</Label><Input value={createKey} onChange={(e) => setCreateKey(e.target.value.toUpperCase())} /><Label>Label</Label><Input value={createLabel} onChange={(e) => setCreateLabel(e.target.value)} /></div><DialogFooter><Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button><Button onClick={createRole}>Create</Button></DialogFooter></DialogContent></Dialog>
+      <Dialog open={showCreate} onOpenChange={setShowCreate}><DialogContent><DialogHeader><DialogTitle>Create role</DialogTitle></DialogHeader><div className="space-y-2"><Label>Role key</Label><Input value={createKey} onChange={(e) => setCreateKey(e.target.value.toUpperCase())} /><Label>Label</Label><Input value={createLabel} onChange={(e) => setCreateLabel(e.target.value)} /></div><DialogFooter><Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button><Button onClick={createRole} disabled={!canManageRoles}>Create</Button></DialogFooter></DialogContent></Dialog>
     </div>
   );
 }
@@ -204,8 +252,10 @@ function GlobalUsersView() {
         fetch("/api/admin/users", { headers: authHeaders(), credentials: "include" }),
         fetch("/api/roles", { headers: authHeaders(), credentials: "include" }),
       ]);
-      setUsers(await u.json());
-      setRoles(await r.json());
+      const usersData = await parseJsonSafe<UserRow[] | { error?: string }>(u);
+      const roleData = await parseJsonSafe<RoleRow[] | { error?: string }>(r);
+      setUsers(Array.isArray(usersData) ? usersData : []);
+      setRoles(Array.isArray(roleData) ? roleData : []);
     })();
   }, []);
 
