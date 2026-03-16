@@ -56,38 +56,6 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const headers: Record<string, string> = {};
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method,
-        signal,
-        headers,
-        body: data ? JSON.stringify(data) : undefined,
-        credentials: "include",
-      });
-    } catch {
-      throw networkError();
-    }
-
-    await throwIfResNotOk(res);
-    return res;
-  }, {
-    action: `apiRequest:${method}:${url}`,
-  });
-}
-
-type UnauthorizedBehavior = "returnNull" | "throw";
-export const getQueryFn: <T>(options: {
-  on401: UnauthorizedBehavior;
-}) => QueryFunction<T> =
-  ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
     const requestUrl = queryKey.join("/") as string;
     return runAsyncAction(async ({ signal, correlationId }) => {
       const headers: Record<string, string> = {
