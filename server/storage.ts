@@ -1,5 +1,5 @@
 import { db, getDbMode } from "./db";
-import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
+import { safeLegacyWrite } from "./legacy-table-guard";
 import { UsersRepository } from "./repositories/users-repository";
 import { WorkManagementRepository } from "./repositories/work-management-repository";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
@@ -518,130 +518,272 @@ export class DatabaseStorage implements IStorage {
     return this.usersRepository.create(user);
   }
 
+  private mapProjectInfoToLegacyProject(project: ProjectInfo): Project {
+    const code = `PI-${String(project.id).padStart(5, "0")}`;
+    return {
+      id: project.id,
+      name: project.projectName,
+      code,
+      manager: project.pm || project.pd || "Unassigned",
+      site: "N/A",
+      status: (project.phase || "Planning") as any,
+      stage: (project.executionPhase || project.phase || "Development") as any,
+      startDate: project.constructionStartDate || project.pdHandoverDate || "",
+      completionDate: project.clientHandoverDate || project.omHandoverDate || "",
+      budget: project.contractValue || "0",
+      sourceFile: "project_info",
+      lastUpdated: project.updatedAt,
+    };
+  }
+
+  private mapCostLineToLegacyExpense(line: typeof normalizedCostLines.$inferSelect, projectId: number): Expense {
+    return {
+      id: line.id,
+      projectId,
+      category: (line.costCategory || "Other") as any,
+      description: line.description || line.counterpartyName || "",
+      amount: line.amountExVat || "0",
+      date: line.invoiceDate || line.approvedDate || line.paidDate || "",
+      vendor: line.counterpartyName || "",
+      invoiceNumber: line.invoiceNumber,
+      status: (line.status === "PAID" ? "Paid" : line.status === "APPROVED" ? "Approved" : "Forecast") as any,
+      sourceSheet: line.sourceSheet || "normalized_cost_lines",
+      rowLocator: line.sourceRow,
+      createdAt: new Date(),
+    };
+  }
+
+  private mapRevenueLineToLegacyRevenue(line: typeof normalizedRevenueLines.$inferSelect, projectId: number): Revenue {
+    return {
+      id: line.id,
+      projectId,
+      type: (line.milestoneName ? "Milestone" : "Other") as any,
+      amount: line.amountExVat || "0",
+      date: line.invoiceDate || line.expectedPaymentDate || line.paidDate || "",
+      status: (line.status === "PAID" ? "Paid" : line.status === "INVOICED" ? "Invoiced" : "Forecast") as any,
+      sourceSheet: line.sourceSheet || "normalized_revenue_lines",
+      rowLocator: line.sourceRow,
+      createdAt: new Date(),
+    };
+  }
+
+  private mapWorkItemToLegacyTask(item: typeof workItems.$inferSelect, projectId: number): Task {
+    return {
+      id: item.id,
+      projectId,
+      taskName: item.title,
+      startDate: item.startDate || item.scheduledDate || "",
+      endDate: item.endDate || item.actualEnd || "",
+      progress: Math.round(Number(item.percentComplete || 0) * 100),
+      status: (item.status || "Not Started") as any,
+      assignee: item.ownerName || "",
+      sourceSheet: item.sourceSheet || "work_items",
+      rowLocator: item.sourceRow,
+      createdAt: item.createdAt,
+    };
+  }
+
   // Projects (legacy)
   async getAllProjects(): Promise<Project[]> {
-    return this.dbInstance.select().from(projects).orderBy(desc(projects.lastUpdated));
+    const rows = await this.dbInstance.select().from(projectInfo).orderBy(desc(projectInfo.updatedAt));
+    return rows.map((p) => this.mapProjectInfoToLegacyProject(p));
   }
 
   async getProject(id: number): Promise<Project | undefined> {
-    const [project] = await this.dbInstance.select().from(projects).where(eq(projects.id, id));
-    return project;
+    const [project] = await this.dbInstance.select().from(projectInfo).where(eq(projectInfo.id, id));
+    return project ? this.mapProjectInfoToLegacyProject(project) : undefined;
   }
 
   async getProjectByCode(code: string): Promise<Project | undefined> {
-    const [project] = await this.dbInstance.select().from(projects).where(eq(projects.code, code));
-    return project;
+    const id = Number.parseInt(code.replace(/\D+/g, ""), 10);
+    if (Number.isNaN(id)) return undefined;
+    const [project] = await this.dbInstance.select().from(projectInfo).where(eq(projectInfo.id, id));
+    return project ? this.mapProjectInfoToLegacyProject(project) : undefined;
   }
 
   async createProject(project: InsertProject): Promise<Project> {
-    // Explicitly provide timestamp for SQLite compatibility
-    const [created] = await this.dbInstance.insert(projects).values({
-      ...project,
-      lastUpdated: new Date(),
-    }).returning();
-    return created;
+    const [created] = await this.dbInstance.insert(projectInfo).values({
+      projectName: project.name,
+      pd: project.manager,
+      phase: project.status,
+      executionPhase: project.stage,
+      constructionStartDate: project.startDate,
+      clientHandoverDate: project.completionDate,
+      contractValue: String(project.budget),
+      updatedAt: new Date(),
+    } as any).returning();
+    return this.mapProjectInfoToLegacyProject(created);
   }
 
   async updateProject(id: number, project: Partial<InsertProject>): Promise<Project | undefined> {
+    const payload: Record<string, unknown> = { updatedAt: new Date() };
+    if (project.name !== undefined) payload.projectName = project.name;
+    if (project.manager !== undefined) payload.pd = project.manager;
+    if (project.status !== undefined) payload.phase = project.status;
+    if (project.stage !== undefined) payload.executionPhase = project.stage;
+    if (project.startDate !== undefined) payload.constructionStartDate = project.startDate;
+    if (project.completionDate !== undefined) payload.clientHandoverDate = project.completionDate;
+    if (project.budget !== undefined) payload.contractValue = String(project.budget);
+
     const [updated] = await this.dbInstance
-      .update(projects)
-      .set({ ...project, lastUpdated: new Date() })
-      .where(eq(projects.id, id))
+      .update(projectInfo)
+      .set(payload as any)
+      .where(eq(projectInfo.id, id))
       .returning();
-    return updated;
+    return updated ? this.mapProjectInfoToLegacyProject(updated) : undefined;
   }
 
   async deleteProject(id: number): Promise<boolean> {
-    const result = await this.dbInstance.delete(projects).where(eq(projects.id, id)).returning();
+    const result = await this.dbInstance
+      .update(projectInfo)
+      .set({ isActive: false, archivedStatus: "ARCHIVED", updatedAt: new Date() })
+      .where(eq(projectInfo.id, id))
+      .returning();
     return result.length > 0;
   }
 
   // Expenses (legacy)
   async getAllExpenses(): Promise<Expense[]> {
-    return this.dbInstance.select().from(expenses).orderBy(desc(expenses.date));
+    const lines = await this.dbInstance.select().from(normalizedCostLines).orderBy(desc(normalizedCostLines.id));
+    const projectMap = new Map((await this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo)).map((p) => [p.projectName, p.id]));
+    return lines.map((line) => this.mapCostLineToLegacyExpense(line, projectMap.get(line.projectName) ?? line.projectId ?? 0));
   }
 
   async getExpensesByProject(projectId: number): Promise<Expense[]> {
-    return this.dbInstance.select().from(expenses).where(eq(expenses.projectId, projectId)).orderBy(desc(expenses.date));
+    const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
+    if (!project?.projectName) return [];
+    const lines = await this.dbInstance.select().from(normalizedCostLines).where(eq(normalizedCostLines.projectName, project.projectName)).orderBy(desc(normalizedCostLines.id));
+    return lines.map((line) => this.mapCostLineToLegacyExpense(line, projectId));
   }
 
   async createExpense(expense: InsertExpense): Promise<Expense> {
     // Explicitly provide timestamp for SQLite compatibility
-    const [created] = await this.dbInstance.insert(expenses).values({
-      ...expense,
-      createdAt: new Date(),
-    }).returning();
-    return created;
+    const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, expense.projectId));
+    const [created] = await this.dbInstance.insert(normalizedCostLines).values({
+      projectId: expense.projectId,
+      projectName: project?.projectName || "",
+      costCategory: expense.category,
+      description: expense.description,
+      amountExVat: String(expense.amount),
+      invoiceNumber: expense.invoiceNumber || null,
+      invoiceDate: expense.date,
+      counterpartyName: expense.vendor,
+      status: "PLANNED",
+      sourceSheet: expense.sourceSheet,
+      sourceRow: expense.rowLocator,
+    } as any).returning();
+    return this.mapCostLineToLegacyExpense(created, expense.projectId);
   }
 
   async createManyExpenses(expenseList: InsertExpense[]): Promise<Expense[]> {
     if (expenseList.length === 0) return [];
     // Explicitly provide timestamp for SQLite compatibility
-    const now = new Date();
-    const withTimestamps = expenseList.map(e => ({ ...e, createdAt: now }));
-    return this.dbInstance.insert(expenses).values(withTimestamps).returning();
+    const created: Expense[] = [];
+    for (const expense of expenseList) {
+      created.push(await this.createExpense(expense));
+    }
+    return created;
   }
 
   async deleteExpensesByProject(projectId: number): Promise<void> {
-    await this.dbInstance.delete(expenses).where(eq(expenses.projectId, projectId));
+    const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
+    if (!project?.projectName) return;
+    await this.dbInstance.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, project.projectName));
   }
 
   // Revenues (legacy)
   async getAllRevenues(): Promise<Revenue[]> {
-    return this.dbInstance.select().from(revenues).orderBy(desc(revenues.date));
+    const lines = await this.dbInstance.select().from(normalizedRevenueLines).orderBy(desc(normalizedRevenueLines.id));
+    const projectMap = new Map((await this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo)).map((p) => [p.projectName, p.id]));
+    return lines.map((line) => this.mapRevenueLineToLegacyRevenue(line, projectMap.get(line.projectName) ?? line.projectId ?? 0));
   }
 
   async getRevenuesByProject(projectId: number): Promise<Revenue[]> {
-    return this.dbInstance.select().from(revenues).where(eq(revenues.projectId, projectId)).orderBy(desc(revenues.date));
+    const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
+    if (!project?.projectName) return [];
+    const lines = await this.dbInstance.select().from(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, project.projectName)).orderBy(desc(normalizedRevenueLines.id));
+    return lines.map((line) => this.mapRevenueLineToLegacyRevenue(line, projectId));
   }
 
   async createRevenue(revenue: InsertRevenue): Promise<Revenue> {
     // Explicitly provide timestamp for SQLite compatibility
-    const [created] = await this.dbInstance.insert(revenues).values({
-      ...revenue,
-      createdAt: new Date(),
-    }).returning();
-    return created;
+    const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, revenue.projectId));
+    const [created] = await this.dbInstance.insert(normalizedRevenueLines).values({
+      projectId: revenue.projectId,
+      projectName: project?.projectName || "",
+      milestoneName: revenue.type,
+      amountExVat: String(revenue.amount),
+      invoiceDate: revenue.date,
+      status: "PLANNED",
+      sourceSheet: revenue.sourceSheet,
+      sourceRow: revenue.rowLocator,
+      importRunId: 1,
+    } as any).returning();
+    return this.mapRevenueLineToLegacyRevenue(created, revenue.projectId);
   }
 
   async createManyRevenues(revenueList: InsertRevenue[]): Promise<Revenue[]> {
     if (revenueList.length === 0) return [];
     // Explicitly provide timestamp for SQLite compatibility
-    const now = new Date();
-    const withTimestamps = revenueList.map(r => ({ ...r, createdAt: now }));
-    return this.dbInstance.insert(revenues).values(withTimestamps).returning();
+    const created: Revenue[] = [];
+    for (const revenue of revenueList) {
+      created.push(await this.createRevenue(revenue));
+    }
+    return created;
   }
 
   async deleteRevenuesByProject(projectId: number): Promise<void> {
-    await this.dbInstance.delete(revenues).where(eq(revenues.projectId, projectId));
+    const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
+    if (!project?.projectName) return;
+    await this.dbInstance.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, project.projectName));
   }
 
   // Tasks (legacy)
   async getAllTasks(): Promise<Task[]> {
-    return safeLegacyQuery(() => this.dbInstance.select().from(tasks).orderBy(desc(tasks.createdAt)), []);
+    const items = await this.dbInstance.select().from(workItems).where(isNull(workItems.deletedAt)).orderBy(desc(workItems.createdAt));
+    const projectMap = new Map((await this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo)).map((p) => [p.projectName, p.id]));
+    return items.map((item) => this.mapWorkItemToLegacyTask(item, projectMap.get(item.projectName) ?? item.projectId ?? 0));
   }
 
   async getTasksByProject(projectId: number): Promise<Task[]> {
-    return safeLegacyQuery(() => this.dbInstance.select().from(tasks).where(eq(tasks.projectId, projectId)).orderBy(desc(tasks.createdAt)), []);
+    const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
+    if (!project?.projectName) return [];
+    const items = await this.dbInstance.select().from(workItems).where(and(eq(workItems.projectName, project.projectName), isNull(workItems.deletedAt))).orderBy(desc(workItems.createdAt));
+    return items.map((item) => this.mapWorkItemToLegacyTask(item, projectId));
   }
 
   async createTask(task: InsertTask): Promise<Task> {
-    const [created] = await this.dbInstance.insert(tasks).values({
-      ...task,
-      createdAt: new Date(),
-    }).returning();
-    return created;
+    const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, task.projectId));
+    const [created] = await this.dbInstance.insert(workItems).values({
+      projectId: task.projectId,
+      projectName: project?.projectName || "",
+      title: task.taskName,
+      status: task.status,
+      startDate: task.startDate,
+      endDate: task.endDate,
+      percentComplete: Number(task.progress || 0) / 100,
+      ownerName: task.assignee,
+      sourceSheet: task.sourceSheet,
+      sourceRow: task.rowLocator,
+    } as any).returning();
+    return this.mapWorkItemToLegacyTask(created, task.projectId);
   }
 
   async createManyTasks(taskList: InsertTask[]): Promise<Task[]> {
     if (taskList.length === 0) return [];
-    const now = new Date();
-    const withTimestamps = taskList.map(t => ({ ...t, createdAt: now }));
-    return this.dbInstance.insert(tasks).values(withTimestamps).returning();
+    const created: Task[] = [];
+    for (const task of taskList) {
+      created.push(await this.createTask(task));
+    }
+    return created;
   }
 
   async deleteTasksByProject(projectId: number): Promise<void> {
-    await this.dbInstance.delete(tasks).where(eq(tasks.projectId, projectId));
+    const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
+    if (!project?.projectName) return;
+    await this.dbInstance.update(workItems)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(eq(workItems.projectName, project.projectName));
   }
 
   // Budgets
