@@ -35,6 +35,7 @@ export interface RouteProofResult {
 
 export const PRIORITY_ROUTE_EXPECTATIONS: RouteProofExpectation[] = [
   { routeId: "dashboard", label: "Home / Dashboard", expectedHeadingOrAnchor: /(Execution Board|Action Hub|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Link\s+href=|Create|New\s+PD\s+Ticket)/i, todo: "Add workflow assertion for role-aware landing redirects and KPI card drilldowns." },
+  { routeId: "projectLifecycle", label: "Project Lifecycle", expectedHeadingOrAnchor: /(Project Lifecycle|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Search|Input|Link\s+href=)/i, todo: "Add workflow tests for section switching, lifecycle watchlist drilldowns, and overview refresh." },
   { routeId: "projects", label: "Projects", expectedHeadingOrAnchor: /(Project|Projects|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|SearchableSelect|input|Link\s+href=)/i, todo: "Add tests for filters, pagination, and project-open interactions." },
   { routeId: "projectDetail", label: "Project Detail", expectedHeadingOrAnchor: /(Project|Phase|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Tabs|Dialog|Textarea|input)/i, todo: "Add route-param + tab navigation workflow tests and save flows." },
   { routeId: "engineering", label: "Engineering", expectedHeadingOrAnchor: /(Engineering|data-testid|Standup)/i, expectedPrimaryActionOrWidget: /(Button|Table|Task|input|Link\s+href=)/i, todo: "Add tests for engineering triage and status transitions." },

@@ -25,12 +25,17 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
-    label: "Projects",
-    path: "/lifecycle-board",
-    match: (pathname) => startsWithAny(pathname, ["/lifecycle-board", "/clients"]),
+    label: "Project Lifecycle",
+    path: "/project-lifecycle",
+    match: (pathname) => startsWithAny(pathname, ["/project-lifecycle", "/lifecycle-board", "/projects", "/project", "/clients", "/handover-control"]),
     secondary: [
-      { label: "Lifecycle Board", path: "/lifecycle-board" },
+      { label: "Overview", path: "/project-lifecycle" },
+      { label: "Lifecycle", path: "/lifecycle-board" },
+      { label: "Project List", path: "/projects" },
+      { label: "Stage Gates", path: "/project-lifecycle/stage-gates" },
+      { label: "Latest Updates", path: "/project-lifecycle/latest-updates" },
       { label: "Clients", path: "/clients" },
+      { label: "Client Overview", path: "/project-lifecycle/client-overview" },
     ],
   },
   {
@@ -44,10 +49,9 @@ export const TOP_SECTIONS: TopSection[] = [
   },
   {
     label: "Project Management",
-    path: "/projects",
-    match: (pathname) => startsWithAny(pathname, ["/projects", "/project", "/pm-dashboard", "/pm/on-the-go", "/execution-board", "/weekly-reviews", "/pm/handover-review", "/portfolios"]),
+    path: "/pm-dashboard",
+    match: (pathname) => startsWithAny(pathname, ["/pm-dashboard", "/pm/on-the-go", "/execution-board", "/weekly-reviews", "/pm/handover-review", "/portfolios"]),
     secondary: [
-      { label: "Project List", path: "/projects" },
       { label: "Portfolios", path: "/portfolios" },
       { label: "PM Dashboard", path: "/pm-dashboard" },
       { label: "Execution Board", path: "/execution-board" },
@@ -143,7 +147,7 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection) {
   if (pathname === "/") return ["Home"];
 
   const projectMatch = pathname.match(/^\/project\/([^/]+)/);
-  if (projectMatch) return ["Project Management", decodeURIComponent(projectMatch[1])];
+  if (projectMatch) return ["Project Lifecycle", decodeURIComponent(projectMatch[1])];
 
   const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)/);
   if (portfolioMatch) return ["Project Management", "Portfolios", decodeURIComponent(portfolioMatch[1])];

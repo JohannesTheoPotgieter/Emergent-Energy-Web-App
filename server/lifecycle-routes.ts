@@ -9,6 +9,7 @@ import { logAuditFromReq } from "./audit-logger";
 import { requirePermission } from "./permission-middleware";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 import { createStageGateOverride, evaluateStageGate } from "./services/lifecycle-stage-gate-service";
+import { buildProjectLifecycleWorkspace } from "./services/project-lifecycle-workspace-service";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -269,6 +270,16 @@ export function registerLifecycleRoutes(app: Express) {
     } catch (err: any) {
       console.error("[lifecycle-board] GET rag-history error:", err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/project-lifecycle/workspace", requireAuth, requirePermission("lifecycle", "view"), async (_req: Request, res: Response) => {
+    try {
+      const workspace = await buildProjectLifecycleWorkspace();
+      res.json(workspace);
+    } catch (err: any) {
+      console.error("[project-lifecycle] GET workspace error:", err);
+      res.status(500).json({ error: err.message || "Failed to load Project Lifecycle workspace" });
     }
   });
 
