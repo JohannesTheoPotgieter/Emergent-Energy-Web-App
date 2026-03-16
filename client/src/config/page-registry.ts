@@ -20,7 +20,11 @@ export interface PageRegistryEntry {
 
 export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "dashboard", path: "/dashboard", label: "Execution Board", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "Dashboard", labels: { legacy: "Execution Board" } },
-  { id: "projects", path: "/projects", label: "Project List", iconKey: "FileSpreadsheet", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "ProjectsSummary", labels: { legacy: "Project Summary" } },
+  { id: "projectLifecycle", path: "/project-lifecycle", label: "Project Lifecycle", iconKey: "Layers", navGroup: "PROJECTS", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "ProjectLifecyclePage" },
+  { id: "projectLifecycleStageGates", path: "/project-lifecycle/stage-gates", label: "Stage Gates", permissionEntity: "lifecycle", routeComponentKey: "ProjectLifecyclePage" },
+  { id: "projectLifecycleLatestUpdates", path: "/project-lifecycle/latest-updates", label: "Latest Updates", permissionEntity: "projects", routeComponentKey: "ProjectLifecyclePage" },
+  { id: "projectLifecycleClientOverview", path: "/project-lifecycle/client-overview", label: "Client Overview", permissionEntity: "pd_clients", routeComponentKey: "ProjectLifecyclePage" },
+  { id: "projects", path: "/projects", label: "Project List", iconKey: "FileSpreadsheet", navGroup: "PROJECTS", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "ProjectsSummary", labels: { legacy: "Project Summary" } },
   { id: "projectFinancialLinking", path: "/project/:projectName/financial-linking", label: "Financial Linking", routeComponentKey: "FinancialLinkingPage" },
   { id: "projectDetail", path: "/project/:projectName", label: "Project Detail", routeComponentKey: "ProjectDetailPage" },
   { id: "cashflow", path: "/cashflow", label: "Cashflow", iconKey: "Wallet", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: true, routeComponentKey: "CashflowPage", labels: { redesigned: "Cashflow Control" } },
@@ -40,7 +44,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "quality", path: "/quality", label: "Quality Dashboard", iconKey: "ShieldCheck", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "QmDashboardPage" },
   { id: "engineering", path: "/engineering", label: "Eng Overview", iconKey: "Wrench", navGroup: "ENGINEERING", permissionEntity: "engineering", showInSidebar: true, routeComponentKey: "EngineeringDashboardPage", labels: { legacy: "Eng Standup" } },
   { id: "engineeringTasks", path: "/engineering/tasks", label: "Task Execution", iconKey: "ListTodo", navGroup: "ENGINEERING", permissionEntity: "eng_tasks", showInSidebar: true, routeComponentKey: "EngineeringTasksPage" },
-  { id: "lifecycle", path: "/lifecycle-board", label: "Lifecycle Board", iconKey: "Layers", navGroup: "PROJECTS", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "LifecycleBoardPage", labels: { legacy: "Exco" } },
+  { id: "lifecycle", path: "/lifecycle-board", label: "Lifecycle", iconKey: "Layers", navGroup: "PROJECTS", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "LifecycleBoardPage", labels: { legacy: "Exco" } },
   { id: "executionBoard", path: "/execution-board", label: "Execution Board", permissionEntity: "execution_board", routeComponentKey: "ExecutionBoardPage", aliases: ["/execution-dashboard"] },
   { id: "myToolMeetings", path: "/my-tool/meetings", label: "My Work Meetings", routeComponentKey: "MyToolMeetingsPage" },
   { id: "adminSettings", path: "/admin/settings", label: "App Settings", iconKey: "Settings", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "RoleSettingsPage", labels: { legacy: "Settings" } },

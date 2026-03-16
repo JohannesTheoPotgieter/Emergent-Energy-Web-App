@@ -975,9 +975,9 @@ export default function LifecycleBoardPage() {
     <div className="space-y-4" data-testid="lifecycle-board-page">
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-2xl font-bold" data-testid="text-lifecycle-title">Company Lifecycle Board</h1>
+          <h1 className="text-2xl font-bold" data-testid="text-lifecycle-title">Lifecycle</h1>
           <p className="text-muted-foreground text-sm">
-            Drag projects between columns to change phase
+            Existing lifecycle board for stage movement, history, and gate visibility
             <span className="ml-2 text-xs">
               ({trackerCount} with tracker{preTrackerCount > 0 ? `, ${preTrackerCount} pre-tracker` : ""})
             </span>
