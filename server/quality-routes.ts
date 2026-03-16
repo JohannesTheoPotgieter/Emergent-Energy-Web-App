@@ -69,6 +69,19 @@ function isAdminRole(role: string) {
   return role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN";
 }
 
+
+async function resolveProjectIdForItemInstance(itemInstanceId: number): Promise<number | null> {
+  const rows = await db.execute(sql`
+    SELECT c.project_id
+    FROM qc_item_instance i
+    JOIN qc_checklist c ON c.id = i.checklist_id
+    WHERE i.id = ${itemInstanceId}
+    LIMIT 1
+  `);
+  const value = rows.rows?.[0]?.project_id;
+  return typeof value === "number" ? value : null;
+}
+
 function requireQmChallenge(req: Request, res: Response, next: NextFunction) {
   if (isAdminRole(getUserRole(req))) return next();
   if ((req.session as any)?.qmChallengePassed) return next();
@@ -497,7 +510,11 @@ export function registerQualityRoutes(app: Express) {
       const { evidenceUrl, evidenceNote } = req.body;
       if (!evidenceUrl) return res.status(400).json({ error: "evidenceUrl required" });
 
+      const projectId = await resolveProjectIdForItemInstance(itemId);
+      if (!projectId) return res.status(400).json({ error: "project_context_missing", message: "Cannot attach evidence without project linkage" });
+
       const [evidence] = await db.insert(qcItemEvidence).values({
+        projectId,
         itemInstanceId: itemId, evidenceUrl, evidenceNote,
       }).returning();
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: decodeURIComponent(req.params.projectName), changesJson: { description: "Evidence added", evidenceUrl } });
@@ -516,7 +533,11 @@ export function registerQualityRoutes(app: Express) {
       const note = req.body.note || "";
 
       const evidenceUrl = `/uploads/qm-approvals/${file.filename}`;
+      const projectId = await resolveProjectIdForItemInstance(itemId);
+      if (!projectId) return res.status(400).json({ error: "project_context_missing", message: "Cannot attach evidence without project linkage" });
+
       const [evidence] = await db.insert(qcItemEvidence).values({
+        projectId,
         itemInstanceId: itemId,
         evidenceUrl,
         evidenceNote: note || file.originalname,
@@ -590,8 +611,12 @@ export function registerQualityRoutes(app: Express) {
 
       if (file) {
         const evidenceUrl = `/uploads/qm-approvals/${file.filename}`;
+      const projectId = await resolveProjectIdForItemInstance(itemId);
+      if (!projectId) return res.status(400).json({ error: "project_context_missing", message: "Cannot attach evidence without project linkage" });
+
         await db.insert(qcItemEvidence).values({
-          itemInstanceId: itemId,
+          projectId,
+        itemInstanceId: itemId,
           evidenceUrl,
           evidenceNote: `Submitted for approval: ${file.originalname}`,
         });

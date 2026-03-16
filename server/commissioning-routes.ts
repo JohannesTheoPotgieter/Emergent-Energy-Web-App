@@ -146,6 +146,7 @@ export function registerCommissioningRoutes(app: Express) {
               description: old.description || '',
               status: 'pending',
               requestedBy: user.id,
+              projectId: old.projectId,
             }).returning();
             updates.approvalId = approvalResult[0].id;
           } catch (approvalErr: any) {
