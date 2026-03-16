@@ -22,8 +22,9 @@ export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
+  options?: { headers?: Record<string, string> },
 ): Promise<Response> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...(options?.headers || {}) };
   if (data) {
     headers["Content-Type"] = "application/json";
   }

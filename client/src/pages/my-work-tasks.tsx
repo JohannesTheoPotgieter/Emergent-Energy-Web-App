@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { createTaskRequestId } from "@/lib/idempotency";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { format, isPast, parseISO, formatDistanceToNow, differenceInCalendarDays, startOfDay } from "date-fns";
@@ -226,6 +227,8 @@ export default function MyWorkTasksPage() {
   const [viewMode, setViewMode] = useState<ViewMode>(mwDefaults?.viewMode || "list");
   const [hasCustomDefault, setHasCustomDefault] = useState(!!mwDefaults);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const createTaskSubmitLockRef = useRef(false);
+  const createTaskRequestIdRef = useRef<string | null>(null);
   const [draggedTask, setDraggedTask] = useState<UnifiedTask | null>(null);
   const [dropTargetCol, setDropTargetCol] = useState<TaskStatus | null>(null);
   const [newTask, setNewTask] = useState({
@@ -431,11 +434,25 @@ export default function MyWorkTasksPage() {
   }, []);
 
   const createTaskMutation = useMutation({
-    mutationFn: async (body: Record<string, unknown>) => {
-      await apiRequest("POST", "/api/mytool/tasks", body);
+    mutationFn: async ({ body, requestId }: { body: Record<string, unknown>; requestId: string }) => {
+      const res = await apiRequest("POST", "/api/mytool/tasks", body, { headers: { "x-idempotency-key": requestId } });
+      return res.json();
     },
-    onSuccess: () => { invalidateAll(); toast({ title: "Task created" }); },
-    onError: () => { toast({ title: "Failed to create task", variant: "destructive" }); },
+    onSuccess: (data: any) => {
+      invalidateAll();
+      toast({
+        title: data?.idempotentReplay ? "Task already created" : "Task created",
+        description: data?.idempotentReplay ? "Duplicate submit ignored and existing task returned." : "Your task was successfully created.",
+      });
+    },
+    onError: (err: any) => {
+      const message = err?.message || "Failed to create task";
+      toast({ title: "Failed to create task", description: message, variant: "destructive" });
+    },
+    onSettled: () => {
+      createTaskSubmitLockRef.current = false;
+      createTaskRequestIdRef.current = null;
+    },
   });
 
   const createTrItemMutation = useMutation({
@@ -526,6 +543,9 @@ export default function MyWorkTasksPage() {
 
   const handleCreateTask = useCallback(() => {
     if (!newTask.title.trim()) return;
+    if (createTaskSubmitLockRef.current || createTaskMutation.isPending || createTrItemMutation.isPending) {
+      return;
+    }
     if (newTask.type === "action") {
       createTrItemMutation.mutate({
         actionDescription: newTask.title.trim(),
@@ -537,14 +557,21 @@ export default function MyWorkTasksPage() {
         supportingInfo: newTask.description || "",
       });
     } else {
+      createTaskSubmitLockRef.current = true;
+      const requestId = createTaskRequestIdRef.current || createTaskRequestId();
+      createTaskRequestIdRef.current = requestId;
       createTaskMutation.mutate({
-        title: newTask.title.trim(),
-        priority: newTask.priority,
-        status: newTask.status,
-        dueAt: newTask.dueDate || null,
-        projectName: newTask.projectName || null,
-        department: newTask.department || null,
-        notes: newTask.description || null,
+        requestId,
+        body: {
+          title: newTask.title.trim(),
+          priority: newTask.priority,
+          status: newTask.status,
+          dueAt: newTask.dueDate || null,
+          projectName: newTask.projectName || null,
+          department: newTask.department || null,
+          notes: newTask.description || null,
+          clientRequestId: requestId,
+        },
       });
     }
     setNewTask({ title: "", description: "", priority: "normal", status: "todo", dueDate: "", projectName: "", department: "", ragStatus: "", type: "personal", assignees: [] });
