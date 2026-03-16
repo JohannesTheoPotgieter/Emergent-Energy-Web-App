@@ -1,0 +1,158 @@
+export type SecondaryItem = { label: string; path: string; disabled?: boolean };
+export type TopSection = {
+  label: string;
+  path: string;
+  match: (pathname: string) => boolean;
+  secondary: SecondaryItem[];
+};
+
+function matchesPathPrefix(pathname: string, prefix: string) {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
+function startsWithAny(pathname: string, prefixes: string[]) {
+  return prefixes.some((prefix) => matchesPathPrefix(pathname, prefix));
+}
+
+export const TOP_SECTIONS: TopSection[] = [
+  {
+    label: "Home",
+    path: "/",
+    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/my-tool"]),
+    secondary: [
+      { label: "Home", path: "/" },
+      { label: "My Work", path: "/my-work" },
+    ],
+  },
+  {
+    label: "Projects",
+    path: "/lifecycle-board",
+    match: (pathname) => startsWithAny(pathname, ["/lifecycle-board", "/clients"]),
+    secondary: [
+      { label: "Lifecycle Board", path: "/lifecycle-board" },
+      { label: "Clients", path: "/clients" },
+    ],
+  },
+  {
+    label: "Project Development",
+    path: "/pd",
+    match: (pathname) => startsWithAny(pathname, ["/pd"]),
+    secondary: [
+      { label: "PD Dashboard", path: "/pd" },
+      { label: "PD Tickets", path: "/pd/tickets" },
+    ],
+  },
+  {
+    label: "Project Management",
+    path: "/projects",
+    match: (pathname) => startsWithAny(pathname, ["/projects", "/project", "/pm-dashboard", "/pm/on-the-go", "/execution-board", "/weekly-reviews", "/pm/handover-review", "/portfolios"]),
+    secondary: [
+      { label: "Project List", path: "/projects" },
+      { label: "Portfolios", path: "/portfolios" },
+      { label: "PM Dashboard", path: "/pm-dashboard" },
+      { label: "Execution Board", path: "/execution-board" },
+      { label: "PM On-The-Go", path: "/pm/on-the-go" },
+      { label: "Weekly Reviews", path: "/weekly-reviews" },
+      { label: "PM Handover Review", path: "/pm/handover-review" },
+    ],
+  },
+  {
+    label: "Engineering",
+    path: "/engineering",
+    match: (pathname) => startsWithAny(pathname, ["/engineering"]),
+    secondary: [
+      { label: "Overview", path: "/engineering" },
+      { label: "Requests & Tasks", path: "/engineering/tasks" },
+    ],
+  },
+  {
+    label: "Quality",
+    path: "/quality",
+    match: (pathname) => startsWithAny(pathname, ["/quality"]),
+    secondary: [{ label: "Quality Workspace", path: "/quality" }],
+  },
+  {
+    label: "Finance",
+    path: "/cashflow",
+    match: (pathname) => startsWithAny(pathname, ["/cashflow", "/cos", "/revenue-tracker", "/gp-tracker", "/invoice-patterns", "/counterparties", "/subcontractor-dashboard"]),
+    secondary: [
+      { label: "Cashflow", path: "/cashflow" },
+      { label: "Cost of Sales", path: "/cos" },
+      { label: "Revenue", path: "/revenue-tracker" },
+      { label: "Gross Profit", path: "/gp-tracker" },
+      { label: "Procurement", path: "/subcontractor-dashboard" },
+      { label: "Counterparties", path: "/counterparties" },
+    ],
+  },
+  {
+    label: "Knowledge",
+    path: "/ee-info",
+    match: (pathname) => startsWithAny(pathname, ["/ee-info", "/leaderboard", "/feedback", "/training", "/knowledge-game", "/department-scores"]),
+    secondary: [
+      { label: "Lifecycle & SOP", path: "/ee-info" },
+      { label: "Leaderboard", path: "/leaderboard" },
+      { label: "Training", path: "/training" },
+      { label: "Knowledge Game", path: "/knowledge-game" },
+      { label: "Department Scores", path: "/department-scores" },
+      { label: "Feedback", path: "/feedback" },
+    ],
+  },
+  {
+    label: "Admin",
+    path: "/admin/control-center",
+    match: (pathname) => startsWithAny(pathname, ["/admin", "/settings"]),
+    secondary: [
+      { label: "Control Center", path: "/admin/control-center" },
+      { label: "Smart Import", path: "/admin/smart-import" },
+      { label: "Excel Updates", path: "/admin/excel-updates" },
+      { label: "Roles & Permissions", path: "/admin/roles" },
+      { label: "System Settings", path: "/admin/settings" },
+      { label: "Audit Log", path: "/admin/activity-log" },
+    ],
+  },
+];
+
+export function buildVisibleTopSections(options: {
+  canViewPath: (path: string) => boolean;
+}) {
+  const { canViewPath } = options;
+
+  return TOP_SECTIONS
+    .map((section) => {
+      const secondary = section.secondary.filter((item) => item.path === "/" || canViewPath(item.path));
+      if (section.label === "Home") {
+        return { ...section, secondary };
+      }
+
+      const canSeeSectionRoot = canViewPath(section.path);
+      if (!canSeeSectionRoot && secondary.length === 0) {
+        return null;
+      }
+
+      return { ...section, secondary };
+    })
+    .filter(Boolean) as TopSection[];
+}
+
+export function linkIsActive(current: string, target: string) {
+  if (target === "/") return current === "/";
+  return current === target || current.startsWith(`${target}/`);
+}
+
+export function getBreadcrumbs(pathname: string, activeSection: TopSection) {
+  if (pathname === "/") return ["Home"];
+
+  const projectMatch = pathname.match(/^\/project\/([^/]+)/);
+  if (projectMatch) return ["Project Management", decodeURIComponent(projectMatch[1])];
+
+  const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)/);
+  if (portfolioMatch) return ["Project Management", "Portfolios", decodeURIComponent(portfolioMatch[1])];
+
+  if (pathname === "/pd/tickets/create") return ["Project Development", "PD Tickets", "Create"];
+
+  const ticketMatch = pathname.match(/^\/pd\/tickets\/([^/]+)/);
+  if (ticketMatch) return ["Project Development", "PD Tickets", `Ticket ${decodeURIComponent(ticketMatch[1])}`];
+
+  const leaf = activeSection.secondary.find((item) => linkIsActive(pathname, item.path));
+  return [activeSection.label, leaf?.label].filter(Boolean) as string[];
+}
