@@ -1603,7 +1603,7 @@ export const approvals = pgTable("approvals", {
   relatedEntityId: integer("related_entity_id"),
   assignedApprover: integer("assigned_approver").references(() => users.id),
   dueDate: timestamp("due_date"),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
   approvalCategory: text("approval_category"),
 });
 
@@ -1812,7 +1812,7 @@ export type QcTemplatePostmortemMetric = typeof qcTemplatePostmortemMetric.$infe
 
 export const qcChecklist = pgTable("qc_checklist", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
   projectName: text("project_name").notNull(),
   templateId: integer("template_id").notNull().references(() => qcTemplate.id),
   status: text("status").notNull().default("active"),
@@ -1849,6 +1849,7 @@ export type QcItemInstance = typeof qcItemInstance.$inferSelect;
 
 export const qcItemEvidence = pgTable("qc_item_evidence", {
   id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: 'cascade' }),
   itemInstanceId: integer("item_instance_id").notNull().references(() => qcItemInstance.id, { onDelete: 'cascade' }),
   evidenceUrl: text("evidence_url").notNull(),
   evidenceNote: text("evidence_note"),
@@ -2076,7 +2077,7 @@ export type DeliverableStatus = typeof DELIVERABLE_STATUSES[number];
 
 export const deliverables = pgTable("deliverables", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
   projectName: text("project_name").notNull(),
   deliverableType: text("deliverable_type").notNull(),
   title: text("title").notNull(),
@@ -3748,7 +3749,7 @@ export type NormalizedPlanTask = typeof normalizedPlanTasks.$inferSelect;
 
 export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
   projectName: text("project_name").notNull(),
   description: text("description"),
   milestoneName: text("milestone_name"),
@@ -3800,7 +3801,7 @@ export type Counterparty = typeof counterparties.$inferSelect;
 
 export const normalizedCostLines = pgTable("normalized_cost_lines", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
   projectName: text("project_name").notNull(),
   costCategory: text("cost_category"),
   counterpartyId: integer("counterparty_id").references(() => counterparties.id),
@@ -3835,7 +3836,7 @@ export type NormalizedCostLine = typeof normalizedCostLines.$inferSelect;
 
 export const normalizedExecutionPhases = pgTable("normalized_execution_phases", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
   projectName: text("project_name").notNull(),
   phaseName: text("phase_name").notNull(),
   phaseDate: text("phase_date"),
@@ -4983,7 +4984,7 @@ export const workItemDepTypeEnum = pgEnum('work_item_dep_type', ['FS', 'SS', 'FF
 export const workItems = pgTable("work_items", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").references(() => clients.id),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
   workstream: workItemWorkstreamEnum("workstream").notNull(),
   type: text("type"),
   source: workItemSourceEnum("source").notNull().default("UI"),
@@ -5333,3 +5334,19 @@ export const invoiceCaptures = pgTable("invoice_captures", {
 export const insertInvoiceCaptureSchema = createInsertSchema(invoiceCaptures).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertInvoiceCapture = z.infer<typeof insertInvoiceCaptureSchema>;
 export type InvoiceCapture = typeof invoiceCaptures.$inferSelect;
+
+export const projectLinkageReviewQueue = pgTable("project_linkage_review_queue", {
+  id: serial("id").primaryKey(),
+  tableName: text("table_name").notNull(),
+  recordId: integer("record_id").notNull(),
+  reason: text("reason").notNull(),
+  contextJson: jsonb("context_json"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedByUserId: integer("resolved_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueRecord: unique("project_linkage_review_queue_table_record_unique").on(table.tableName, table.recordId),
+}));
+export const insertProjectLinkageReviewQueueSchema = createInsertSchema(projectLinkageReviewQueue).omit({ id: true, createdAt: true } as any);
+export type InsertProjectLinkageReviewQueue = z.infer<typeof insertProjectLinkageReviewQueueSchema>;
+export type ProjectLinkageReviewQueue = typeof projectLinkageReviewQueue.$inferSelect;
