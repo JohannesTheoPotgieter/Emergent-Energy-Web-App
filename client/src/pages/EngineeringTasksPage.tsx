@@ -92,6 +92,7 @@ import type { Task, Comment, ActivityEntry, TeamMember, EngDefaultView } from "@
 import { formatDate, formatDateShort, isOverdue, isDueThisWeek, daysLabel, getAvatarColor, getInitials, sortTasksForColumn } from "@/lib/task-formatters";
 import { useEngineeringTaskFilters } from "@/hooks/useEngineeringTaskFilters";
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
+import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 
 async function engFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
@@ -842,6 +843,11 @@ function TaskDetailDrawer({
     if (!task) return;
     if (!canTransition(task.status, newStatus)) {
       toast({ title: "Transition not allowed", description: `Cannot move task from ${getTaskStatusLabel(task.status)} to ${getTaskStatusLabel(newStatus)}.`, variant: "destructive" });
+      return;
+    }
+    const blockedReason = getTaskWorkflowBlockReason(task, newStatus);
+    if (blockedReason) {
+      toast({ title: "Status change blocked", description: blockedReason, variant: "destructive" });
       return;
     }
     if (newStatus === "HOLD") {
@@ -2785,6 +2791,11 @@ export default function EngineeringTasksPage() {
     if (!task) return;
     if (!canTransition(task.status, newStatus)) {
       toast({ title: "Transition not allowed", description: `Cannot move task from ${getTaskStatusLabel(task.status)} to ${getTaskStatusLabel(newStatus)}.`, variant: "destructive" });
+      return;
+    }
+    const blockedReason = getTaskWorkflowBlockReason(task, newStatus);
+    if (blockedReason) {
+      toast({ title: "Status change blocked", description: blockedReason, variant: "destructive" });
       return;
     }
     if (newStatus === "HOLD") {

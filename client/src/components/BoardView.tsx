@@ -9,6 +9,8 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus, User, Flag, GripVertical, Clock, AlertCircle, Eye } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
+import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 
 interface BoardViewProps {
   projectName: string;
@@ -39,6 +41,7 @@ const PRIORITY_VARIANT: Record<string, string> = {
 export default function BoardView({ projectName, onTaskClick }: BoardViewProps) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [addingToColumn, setAddingToColumn] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
@@ -99,7 +102,12 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
     if (!isNaN(taskId)) {
       const task = tasks.find((t: any) => t.id === taskId);
       if (task && task.status !== newStatus) {
-        updateStatusMutation.mutate({ id: taskId, status: newStatus });
+        const blockedReason = getTaskWorkflowBlockReason(task, newStatus);
+        if (blockedReason) {
+          toast({ title: "Status change blocked", description: blockedReason, variant: "destructive" });
+        } else {
+          updateStatusMutation.mutate({ id: taskId, status: newStatus });
+        }
       }
     }
     setDraggedTaskId(null);
