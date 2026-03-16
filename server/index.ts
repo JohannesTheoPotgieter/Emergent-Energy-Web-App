@@ -1,6 +1,7 @@
 import express from "express";
 import passport from "passport";
 import { createServer } from "http";
+import { preloadRuntimeSecrets } from "./secrets/vault";
 import { storage } from "./storage";
 import { dbMode, initializeDatabase } from "./db";
 import { serveStatic } from "./static";
@@ -53,6 +54,8 @@ export function log(message: string, source = "express") {
 }
 
 async function bootstrap() {
+  await preloadRuntimeSecrets();
+
   const startupModes = getStartupModes();
   const {
     startupMaintenanceEnabled,

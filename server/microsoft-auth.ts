@@ -1,8 +1,12 @@
 import { ConfidentialClientApplication, Configuration, AuthorizationCodeRequest, AuthorizationUrlRequest, SilentFlowRequest, AccountInfo } from "@azure/msal-node";
 
-const TENANT_ID = process.env.AZURE_TENANT_ID || "";
-const CLIENT_ID = process.env.AZURE_CLIENT_ID || "";
-const CLIENT_SECRET = process.env.AZURE_CLIENT_SECRET || "";
+function getMicrosoftAuthConfig(): { tenantId: string; clientId: string; clientSecret: string } {
+  return {
+    tenantId: process.env.AZURE_TENANT_ID || "",
+    clientId: process.env.AZURE_CLIENT_ID || "",
+    clientSecret: process.env.AZURE_CLIENT_SECRET || "",
+  };
+}
 
 const SCOPES = [
   "User.Read",
@@ -26,25 +30,29 @@ function getRedirectUri(): string {
   return `${protocol}://${domain}/api/auth/microsoft/callback`;
 }
 
-const msalConfig: Configuration = {
-  auth: {
-    clientId: CLIENT_ID,
-    authority: `https://login.microsoftonline.com/${TENANT_ID}`,
-    clientSecret: CLIENT_SECRET,
-  },
-};
+function createMsalConfig(): Configuration {
+  const config = getMicrosoftAuthConfig();
+  return {
+    auth: {
+      clientId: config.clientId,
+      authority: `https://login.microsoftonline.com/${config.tenantId}`,
+      clientSecret: config.clientSecret,
+    },
+  };
+}
 
 let msalClient: ConfidentialClientApplication | null = null;
 
 function getMsalClient(): ConfidentialClientApplication {
   if (!msalClient) {
-    msalClient = new ConfidentialClientApplication(msalConfig);
+    msalClient = new ConfidentialClientApplication(createMsalConfig());
   }
   return msalClient;
 }
 
 export function isMicrosoftAuthConfigured(): boolean {
-  return !!(TENANT_ID && CLIENT_ID && CLIENT_SECRET);
+  const config = getMicrosoftAuthConfig();
+  return !!(config.tenantId && config.clientId && config.clientSecret);
 }
 
 export async function getAuthorizationUrl(state?: string): Promise<string> {
@@ -118,7 +126,7 @@ export async function refreshTokenSilent(serializedCache: string, msUserId: stri
   if (!isMicrosoftAuthConfigured()) return null;
 
   try {
-    const refreshClient = new ConfidentialClientApplication(msalConfig);
+    const refreshClient = new ConfidentialClientApplication(createMsalConfig());
     refreshClient.getTokenCache().deserialize(serializedCache);
 
     const accounts = await refreshClient.getTokenCache().getAllAccounts();
