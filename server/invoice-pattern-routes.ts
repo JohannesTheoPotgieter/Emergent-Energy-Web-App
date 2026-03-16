@@ -742,6 +742,39 @@ router.post("/api/admin/wipe-all-data", requireAuth, requirePermission('admin', 
   }
 });
 
+router.get("/api/counterparties/summary", requireAuth, requirePermission('procurement', 'view'), async (_req: Request, res: Response) => {
+  try {
+    const rows = await db.execute(sql`
+      SELECT
+        c.id,
+        c.name_canonical as "nameCanonical",
+        c.type_default as "typeDefault",
+        c.is_core as "isCore",
+        c.contact_person as "contactPerson",
+        c.contact_phone as "contactPhone",
+        c.contact_email as "contactEmail",
+        c.address,
+        c.vat_number as "vatNumber",
+        c.registration_number as "registrationNumber",
+        c.payment_terms as "paymentTerms",
+        c.notes,
+        c.last_seen_at as "lastSeenAt",
+        COUNT(ncl.id)::int as "usageCount",
+        COUNT(DISTINCT ncl.project_id)::int as "linkedProjectCount",
+        COALESCE(SUM(CASE WHEN ncl.amount_ex_vat ~ '^-?[0-9]+(\.[0-9]+)?$' THEN CAST(ncl.amount_ex_vat AS numeric) ELSE 0 END), 0)::float as "totalSpendExVat",
+        COALESCE(SUM(CASE WHEN ncl.cost_line_status != 'PAID' AND ncl.amount_ex_vat ~ '^-?[0-9]+(\.[0-9]+)?$' THEN CAST(ncl.amount_ex_vat AS numeric) ELSE 0 END), 0)::float as "openAmountExVat"
+      FROM counterparties c
+      LEFT JOIN normalized_cost_lines ncl ON ncl.counterparty_id = c.id
+      GROUP BY c.id
+      ORDER BY c.name_canonical ASC
+    `);
+
+    res.json(rows.rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/api/counterparties", requireAuth, async (_req: Request, res: Response) => {
   try {
     const all = await db
@@ -793,6 +826,14 @@ router.patch("/api/counterparties/:id", requireAuth, requirePermission('procurem
     if (req.body.typeDefault !== undefined) updates.typeDefault = req.body.typeDefault;
     if (req.body.nameAliases !== undefined) updates.nameAliases = req.body.nameAliases;
     if (req.body.isCore !== undefined) updates.isCore = req.body.isCore;
+    if (req.body.contactPerson !== undefined) updates.contactPerson = req.body.contactPerson;
+    if (req.body.contactPhone !== undefined) updates.contactPhone = req.body.contactPhone;
+    if (req.body.contactEmail !== undefined) updates.contactEmail = req.body.contactEmail;
+    if (req.body.address !== undefined) updates.address = req.body.address;
+    if (req.body.vatNumber !== undefined) updates.vatNumber = req.body.vatNumber;
+    if (req.body.registrationNumber !== undefined) updates.registrationNumber = req.body.registrationNumber;
+    if (req.body.paymentTerms !== undefined) updates.paymentTerms = req.body.paymentTerms;
+    if (req.body.notes !== undefined) updates.notes = req.body.notes;
     const [updated] = await db
       .update(counterparties)
       .set(updates)

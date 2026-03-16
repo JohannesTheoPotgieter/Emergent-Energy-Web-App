@@ -37,6 +37,7 @@ import ExecutionBoardPage from "@/pages/execution-board";
 import SmartImportPage from "@/pages/smart-import";
 import InvoicePatternsPage from "@/pages/invoice-patterns";
 import SubcontractorDashboardPage from "@/pages/subcontractor-dashboard";
+import CounterpartiesPage from "@/pages/counterparties";
 import SystemActivityLogPage from "@/pages/system-activity-log";
 import WeeklyReviewsPage from "@/pages/weekly-reviews";
 import AdminRolesPage from "@/pages/admin-roles";
@@ -128,6 +129,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   SmartImportPage,
   InvoicePatternsPage,
   SubcontractorDashboardPage,
+  CounterpartiesPage,
   SystemActivityLogPage,
   WeeklyReviewsPage,
   AdminRolesPage,
