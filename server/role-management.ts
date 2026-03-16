@@ -1,7 +1,7 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql } from "drizzle-orm";
-import { rolePermissions, users, DEFAULT_ROLE_PERMISSIONS } from "@shared/schema";
+import { normalizeRoleForPermissions, rolePermissions, users, DEFAULT_ROLE_PERMISSIONS } from "@shared/schema";
 import { verifyToken } from "./jwt";
 import { invalidateEntityPermCache } from "./permission-middleware";
 import bcrypt from "bcryptjs";
@@ -15,7 +15,7 @@ const LEGACY_ROLE_MAP: Record<string, string> = {
 };
 
 function mapRole(raw: string): string {
-  return LEGACY_ROLE_MAP[raw] || raw;
+  return normalizeRoleForPermissions(LEGACY_ROLE_MAP[raw] || raw);
 }
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
