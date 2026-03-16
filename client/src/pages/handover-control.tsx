@@ -30,7 +30,7 @@ export default function HandoverControlPage() {
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="handover-control-page">
-      <SectionHeader icon={<Handshake className="h-5 w-5" />} title="PD→PM Handover Control" description="Operational tracker for handover readiness and execution enablement." />
+      <SectionHeader icon={<Handshake className="h-5 w-5" />} title="Site / Execution Controls" description="Execution enablement and handover controls for work that has moved from PD into delivery." />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Total handovers</p><p className="text-xl font-semibold">{totals.total}</p></CardContent></Card>

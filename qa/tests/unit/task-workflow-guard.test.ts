@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { assertTaskWorkflowTransition, type TaskWorkflowContext } from "../../../server/lib/task-workflow-guard";
+import { DELIVERABLE_REQUIRED_TAG } from "@shared/task-deliverable-requirement";
 
 const baseContext = (overrides: Partial<TaskWorkflowContext> = {}): TaskWorkflowContext => ({
   taskId: 1,
@@ -23,6 +24,12 @@ describe("task workflow guard", () => {
 
   it("blocks deliverable-required task from direct complete via status patch", () => {
     expect(() => assertTaskWorkflowTransition(baseContext({ deliverableRequired: true }), "COMPLETE", "status_update"))
+      .toThrow("This task requires a deliverable. Use Send Deliverable.");
+  });
+
+  it("treats explicit deliverable-required tags as part of the same workflow rule", () => {
+    expect(DELIVERABLE_REQUIRED_TAG).toBe("DELIVERABLE_REQUIRED");
+    expect(() => assertTaskWorkflowTransition(baseContext({ deliverableRequired: true }), "COMPLETE", "bulk_status_update"))
       .toThrow("This task requires a deliverable. Use Send Deliverable.");
   });
 

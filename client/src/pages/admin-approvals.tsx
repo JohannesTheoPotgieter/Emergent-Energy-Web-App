@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
 import { useLocation } from "wouter";
 import { format } from "date-fns";
@@ -32,6 +31,7 @@ import {
   ThumbsDown,
   Loader2,
 } from "lucide-react";
+import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 
 type ApprovalType = "all" | "engineering" | "quality" | "deliverable" | "general";
 
@@ -97,9 +97,8 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 export default function AdminApprovalsPage() {
-  const { user } = useAuth();
   const { allowed: canView } = usePermission('approvals', 'view');
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   const [filter, setFilter] = useState<ApprovalType>("all");
   const [showAll, setShowAll] = useState(false);
   const [actionDialog, setActionDialog] = useState<{ item: ApprovalItem; action: "approve" | "reject" } | null>(null);
@@ -205,6 +204,12 @@ export default function AdminApprovalsPage() {
   const items = data?.items || [];
   const counts = data?.counts || { engineering: 0, quality: 0, deliverable: 0, general: 0, total: 0 };
   const filtered = filter === "all" ? items : items.filter(i => i.type === filter);
+  const isPmWorkspace = location.startsWith("/pm/");
+  const subtitle = isPmWorkspace
+    ? "Execution approvals queue for post-handover delivery work. Approval-required items must use Send for Approval only."
+    : showAll
+      ? "All pending approvals across all projects"
+      : "Your pending approvals";
 
   function openAction(item: ApprovalItem, action: "approve" | "reject", e: { stopPropagation: () => void }) {
     e.stopPropagation();
@@ -248,36 +253,37 @@ export default function AdminApprovalsPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-approvals-title">Approvals</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {showAll ? "All pending approvals across all projects" : "Your pending approvals"}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {isAdmin && (
-            <Button
-              variant={showAll ? "default" : "outline"}
-              size="sm"
-              className="text-xs gap-1.5"
-              onClick={() => setShowAll(!showAll)}
-              data-testid="btn-toggle-show-all"
-            >
-              <User className="w-3.5 h-3.5" />
-              {showAll ? "Show Mine" : "Show All"}
-            </Button>
-          )}
-          {counts.total > 0 && (
-            <Badge variant="destructive" className="text-sm px-3 py-1" data-testid="badge-total-count">
-              {counts.total} pending
-            </Badge>
-          )}
-        </div>
-      </div>
+    <>
+      <PageShell className="p-4 sm:p-6">
+        <div className="max-w-5xl mx-auto space-y-6">
+        <SectionHeader
+          icon={<ShieldCheck className="h-5 w-5" />}
+          title="Approvals"
+          description={subtitle}
+          actions={
+            <div className="flex items-center gap-3">
+              {isAdmin && (
+                <Button
+                  variant={showAll ? "default" : "outline"}
+                  size="sm"
+                  className="text-xs gap-1.5"
+                  onClick={() => setShowAll(!showAll)}
+                  data-testid="btn-toggle-show-all"
+                >
+                  <User className="w-3.5 h-3.5" />
+                  {showAll ? "Show Mine" : "Show All"}
+                </Button>
+              )}
+              {counts.total > 0 && (
+                <Badge variant="destructive" className="text-sm px-3 py-1" data-testid="badge-total-count">
+                  {counts.total} pending
+                </Badge>
+              )}
+            </div>
+          }
+        />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card
           className={`cursor-pointer transition-colors ${filter === "engineering" ? "ring-2 ring-purple-400" : ""}`}
           onClick={() => setFilter(filter === "engineering" ? "all" : "engineering")}
@@ -340,126 +346,128 @@ export default function AdminApprovalsPage() {
         </Card>
       </div>
 
-      {filter !== "all" && (
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">Showing: {typeConfig[filter].label}</span>
-          <Button variant="ghost" size="sm" onClick={() => setFilter("all")} data-testid="button-clear-filter">
-            Clear
-          </Button>
-        </div>
-      )}
+        {filter !== "all" && (
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Showing: {typeConfig[filter].label}</span>
+            <Button variant="ghost" size="sm" onClick={() => setFilter("all")} data-testid="button-clear-filter">
+              Clear
+            </Button>
+          </div>
+        )}
 
-      {isLoading && (
-        <div className="text-center py-12 text-muted-foreground" data-testid="text-loading">
-          Loading approvals...
-        </div>
-      )}
+        {isLoading && (
+          <div className="text-center py-12 text-muted-foreground" data-testid="text-loading">
+            Loading approvals...
+          </div>
+        )}
 
-      {error && (
-        <div className="text-center py-12 text-destructive" data-testid="text-error">
-          <AlertTriangle className="w-8 h-8 mx-auto mb-2" />
-          Failed to load approvals
-        </div>
-      )}
+        {error && (
+          <div className="text-center py-12 text-destructive" data-testid="text-error">
+            <AlertTriangle className="w-8 h-8 mx-auto mb-2" />
+            Failed to load approvals
+          </div>
+        )}
 
-      {!isLoading && !error && filtered.length === 0 && (
-        <Card>
-          <CardContent className="p-12 text-center" data-testid="text-empty">
-            <CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-green-500" />
-            <h3 className="text-lg font-medium">All caught up</h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              {filter === "all"
-                ? (showAll ? "No pending approvals across any category" : "No approvals assigned to you right now")
-                : `No pending ${typeConfig[filter].label.toLowerCase()} approvals`}
-            </p>
-          </CardContent>
-        </Card>
-      )}
+        {!isLoading && !error && filtered.length === 0 && (
+          <Card>
+            <CardContent className="p-12 text-center" data-testid="text-empty">
+              <CheckCircle2 className="w-12 h-12 mx-auto mb-3 text-green-500" />
+              <h3 className="text-lg font-medium">All caught up</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                {filter === "all"
+                  ? (showAll ? "No pending approvals across any category" : "No approvals assigned to you right now")
+                  : `No pending ${typeConfig[filter].label.toLowerCase()} approvals`}
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
-      {!isLoading && !error && filtered.length > 0 && (
-        <div className="space-y-2">
-          {filtered.map(item => {
-            const config = typeConfig[item.type];
-            const Icon = config.icon;
+        {!isLoading && !error && filtered.length > 0 && (
+          <div className="space-y-2">
+            {filtered.map(item => {
+              const config = typeConfig[item.type];
+              const Icon = config.icon;
 
-            return (
-              <Card
-                key={item.id}
-                className="hover:shadow-md transition-shadow"
-                data-testid={`card-approval-${item.id}`}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div className={`p-2 rounded-lg ${config.bg} mt-0.5`}>
-                      <Icon className={`w-4 h-4 ${config.color}`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm truncate" data-testid={`text-title-${item.id}`}>
-                          {item.title}
-                        </span>
-                        <Badge className={`text-[10px] ${config.badgeClass}`}>
-                          {config.label}
-                        </Badge>
-                        <Badge variant="secondary" className="text-[10px]">
-                          {item.status}
-                        </Badge>
+              return (
+                <Card
+                  key={item.id}
+                  className="hover:shadow-md transition-shadow"
+                  data-testid={`card-approval-${item.id}`}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div className={`p-2 rounded-lg ${config.bg} mt-0.5`}>
+                        <Icon className={`w-4 h-4 ${config.color}`} />
                       </div>
-                      <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <FolderOpen className="w-3 h-3" />
-                          {item.projectName}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <User className="w-3 h-3" />
-                          {item.assignee}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {format(new Date(item.createdAt), "dd MMM yyyy")}
-                        </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-sm truncate" data-testid={`text-title-${item.id}`}>
+                            {item.title}
+                          </span>
+                          <Badge className={`text-[10px] ${config.badgeClass}`}>
+                            {config.label}
+                          </Badge>
+                          <Badge variant="secondary" className="text-[10px]">
+                            {item.status}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <FolderOpen className="w-3 h-3" />
+                            {item.projectName}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <User className="w-3 h-3" />
+                            {item.assignee}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {format(new Date(item.createdAt), "dd MMM yyyy")}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="h-7 text-xs bg-green-600 hover:bg-green-700 gap-1"
+                          onClick={(e) => openAction(item, "approve", e)}
+                          data-testid={`btn-approve-${item.id}`}
+                        >
+                          <ThumbsUp className="w-3 h-3" />
+                          Approve
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 gap-1"
+                          onClick={(e) => openAction(item, "reject", e)}
+                          data-testid={`btn-reject-${item.id}`}
+                        >
+                          <ThumbsDown className="w-3 h-3" />
+                          Reject
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          onClick={() => navigateToItem(item)}
+                          title="View in project"
+                          data-testid={`btn-navigate-${item.id}`}
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <Button
-                        variant="default"
-                        size="sm"
-                        className="h-7 text-xs bg-green-600 hover:bg-green-700 gap-1"
-                        onClick={(e) => openAction(item, "approve", e)}
-                        data-testid={`btn-approve-${item.id}`}
-                      >
-                        <ThumbsUp className="w-3 h-3" />
-                        Approve
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 gap-1"
-                        onClick={(e) => openAction(item, "reject", e)}
-                        data-testid={`btn-reject-${item.id}`}
-                      >
-                        <ThumbsDown className="w-3 h-3" />
-                        Reject
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0"
-                        onClick={() => navigateToItem(item)}
-                        title="View in project"
-                        data-testid={`btn-navigate-${item.id}`}
-                      >
-                        <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
         </div>
-      )}
+      </PageShell>
 
       <Dialog open={!!actionDialog} onOpenChange={(open) => { if (!open) { setActionDialog(null); setReason(""); } }}>
         <DialogContent className="sm:max-w-[440px]">
@@ -525,6 +533,6 @@ export default function AdminApprovalsPage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

@@ -18,10 +18,10 @@ describe("app navigation visibility", () => {
     expect(sections.some((section) => section.label === "Engineering")).toBe(false);
 
     const projectLifecycle = sections.find((section) => section.label === "Project Lifecycle");
-    expect(projectLifecycle?.secondary.map((item) => item.label)).toEqual(["Overview", "Project List"]);
+    expect(projectLifecycle?.secondary.map((item) => item.label)).toEqual(["Overview"]);
 
     const projectManagement = sections.find((section) => section.label === "Project Management");
-    expect(projectManagement?.secondary.map((item) => item.label)).toEqual(["PM Dashboard"]);
+    expect(projectManagement?.secondary.map((item) => item.label)).toEqual(["Execution Overview", "Project List"]);
   });
 
   it("keeps Home visible even when My Work is not permitted", () => {
@@ -40,11 +40,24 @@ describe("app navigation visibility", () => {
     expect(projectLifecycle?.secondary.map((item) => item.label)).toEqual([
       "Overview",
       "Lifecycle",
-      "Project List",
       "Stage Gates",
       "Latest Updates",
       "Clients",
       "Client Overview",
+    ]);
+  });
+
+  it("exposes the approved Project Management execution structure when permitted", () => {
+    const sections = buildVisibleTopSections({ canViewPath: () => true });
+    const projectManagement = sections.find((section) => section.label === "Project Management");
+
+    expect(projectManagement?.secondary.map((item) => item.label)).toEqual([
+      "Execution Overview",
+      "Project List",
+      "Work Plan / Board",
+      "Deliverables",
+      "Approvals",
+      "Site / Execution Controls",
     ]);
   });
 

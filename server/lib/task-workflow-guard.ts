@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import { hasDeliverableRequirementFlag } from "@shared/task-deliverable-requirement";
 import { db } from "../db";
 import { operationalTasks, taskDeliverables } from "@shared/schema";
 
@@ -36,6 +37,7 @@ export async function buildTaskWorkflowContext(taskId: number, fallbackCurrentSt
     approvalRequired: operationalTasks.approvalRequired,
     linkedDeliverableId: operationalTasks.linkedDeliverableId,
     taskTypeTag: operationalTasks.taskTypeTag,
+    tags: operationalTasks.tags,
   }).from(operationalTasks).where(eq(operationalTasks.id, taskId));
 
   const [deliverable] = await db.select({ id: taskDeliverables.id })
@@ -43,7 +45,7 @@ export async function buildTaskWorkflowContext(taskId: number, fallbackCurrentSt
     .where(eq(taskDeliverables.taskId, taskId))
     .limit(1);
 
-  const deliverableRequired = !!task?.linkedDeliverableId || String(task?.taskTypeTag || "").toUpperCase().includes("DELIVERABLE");
+  const deliverableRequired = hasDeliverableRequirementFlag(task || {});
 
   return {
     taskId,
@@ -91,4 +93,3 @@ export function assertTaskWorkflowTransition(
     throw new TaskWorkflowGuardError(APPROVAL_REQUIRED_MESSAGE);
   }
 }
-

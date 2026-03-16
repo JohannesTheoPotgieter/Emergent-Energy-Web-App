@@ -1,3 +1,5 @@
+import { hasDeliverableRequirementFlag } from "@shared/task-deliverable-requirement";
+
 const COMPLETE_STATUSES = new Set(["COMPLETE", "DONE", "CLOSED"]);
 const APPROVAL_STATUSES = new Set(["NEEDS APPROVAL", "QC APPROVED", "PROVIDE FEEDBACK", "OPERATIONAL APPROVAL"]);
 
@@ -6,6 +8,7 @@ export type WorkflowTaskLike = {
   approvalRequired?: boolean | null;
   linkedDeliverableId?: number | null;
   taskTypeTag?: string | null;
+  tags?: string[] | null;
   hasSentDeliverable?: boolean;
 };
 
@@ -15,7 +18,7 @@ export function getTaskWorkflowBlockReason(task: WorkflowTaskLike, requestedStat
   const movingToComplete = COMPLETE_STATUSES.has(next);
   const movingToApproval = APPROVAL_STATUSES.has(next);
   const currentlyInApprovalFlow = APPROVAL_STATUSES.has(current);
-  const deliverableRequired = !!task.linkedDeliverableId || String(task.taskTypeTag || "").toUpperCase().includes("DELIVERABLE");
+  const deliverableRequired = hasDeliverableRequirementFlag(task);
   const deliverableSent = !!task.hasSentDeliverable;
 
   if (deliverableRequired && movingToComplete) {

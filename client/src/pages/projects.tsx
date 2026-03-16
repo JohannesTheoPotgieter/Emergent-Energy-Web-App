@@ -44,6 +44,7 @@ import {
 import { useLocation } from "wouter";
 import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import type { PlatformProjectSummaryContract } from "@shared/platform-contracts";
 import { PROJECT_PHASES, PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import {
   Dialog,
@@ -110,12 +111,15 @@ interface ProjectSummary {
   latest_update_at: string | null;
   latest_update_by: string | null;
   escalation_level: string | null;
+  rag_status?: string | null;
   task_status_counts: Record<string, number>;
   phase_updated_at: string | null;
   has_tracker_import: boolean;
+  last_import_at?: string | null;
   is_active: boolean;
   pd_pm_handover_status?: string;
   pd_pm_handover_rejection_reason?: string | null;
+  shared_summary?: PlatformProjectSummaryContract | null;
 }
 
 type SortDir = "asc" | "desc";
@@ -849,6 +853,7 @@ const COLUMN_WIDTHS: Record<string, string> = {
 
 const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; stickyFirst?: boolean }[] = [
   { label: "Project Info", keys: ["project_name", "client_name", "size_kwp", "pd", "pm"], color: "bg-muted text-muted-foreground", stickyFirst: true },
+  { label: "Execution", keys: ["pd_pm_handover_status", "execution_attention"], color: "bg-blue-50 text-blue-700" },
   { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
   { label: "Phase & Schedule", keys: ["phase", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
@@ -864,10 +869,11 @@ const DEFAULT_DIRECTORY_COLUMNS = [
   "pm",
   "pd",
   "pd_pm_handover_status",
+  "execution_attention",
+  "latest_update",
   "financial_close",
   "financial_summary",
   "project_pct_complete",
-  "comments",
   "next_key_date",
 ];
 
@@ -901,6 +907,101 @@ function LatestUpdateCell({ project }: { project: ProjectSummary }) {
 
 function getNextKeyDate(project: ProjectSummary): string | null {
   return project.client_handover_date || project.om_handover_date || project.commissioning_date || project.construction_start_date || project.pd_handover_date || null;
+}
+
+function formatDateTime(val: string | null | undefined): string {
+  if (!val) return "No timestamp";
+  try {
+    return new Date(val).toLocaleString("en-ZA", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return val;
+  }
+}
+
+function getSharedKpiValue(summary: PlatformProjectSummaryContract | null | undefined, id: string): number {
+  return summary?.kpis.find((kpi) => kpi.id === id)?.value || 0;
+}
+
+function getTaskStatusCount(counts: Record<string, number> | null | undefined, statuses: string[]): number {
+  if (!counts) return 0;
+  const lookup = new Set(statuses.map((status) => status.toUpperCase()));
+  return Object.entries(counts).reduce((total, [status, count]) => {
+    return lookup.has(status.toUpperCase()) ? total + (count || 0) : total;
+  }, 0);
+}
+
+type ExecutionAttention = {
+  blocked: number;
+  overdue: number;
+  pendingApprovals: number;
+  pendingDeliverables: number;
+  nextStep: string;
+  trackerLine: string;
+  updateLine: string;
+};
+
+function getExecutionAttention(project: ProjectSummary): ExecutionAttention {
+  const blocked = getTaskStatusCount(project.task_status_counts, ["Blocked"]);
+  const overdue = getSharedKpiValue(project.shared_summary, "tasks_overdue");
+  const pendingApprovals = project.shared_summary?.workflow.approvals.pending || 0;
+  const pendingDeliverables = (project.shared_summary?.workflow.deliverables.pending || 0) + (project.shared_summary?.workflow.deliverables.inReview || 0);
+  const nextKeyDate = getNextKeyDate(project);
+
+  let nextStep = "Execution flowing";
+  if (project.pd_pm_handover_status && project.pd_pm_handover_status !== "ACCEPTED") {
+    nextStep = project.pd_pm_handover_status === "SUBMITTED_FOR_PM_REVIEW" ? "Close PD to PM handover review" : "Complete PD to PM handover";
+  } else if (blocked > 0) {
+    nextStep = `${blocked} blocked item${blocked !== 1 ? "s" : ""} need action`;
+  } else if (overdue > 0) {
+    nextStep = `${overdue} overdue task${overdue !== 1 ? "s" : ""} need recovery`;
+  } else if (pendingApprovals > 0) {
+    nextStep = `${pendingApprovals} approval${pendingApprovals !== 1 ? "s" : ""} waiting`;
+  } else if (pendingDeliverables > 0) {
+    nextStep = `${pendingDeliverables} deliverable${pendingDeliverables !== 1 ? "s" : ""} in flow`;
+  } else if (nextKeyDate) {
+    nextStep = `Prepare for ${formatDate(nextKeyDate)}`;
+  }
+
+  return {
+    blocked,
+    overdue,
+    pendingApprovals,
+    pendingDeliverables,
+    nextStep,
+    trackerLine: project.last_import_at ? `Tracker ${formatDateTime(project.last_import_at)}` : (project.has_tracker_import ? "Tracker linked" : "No tracker import"),
+    updateLine: project.latest_update_at ? `Latest Update ${formatDateTime(project.latest_update_at)}` : "Latest Update pending",
+  };
+}
+
+function ExecutionAttentionCell({ project, compact = false }: { project: ProjectSummary; compact?: boolean }) {
+  const attention = getExecutionAttention(project);
+  const hasSignals = attention.blocked + attention.overdue + attention.pendingApprovals + attention.pendingDeliverables > 0;
+
+  return (
+    <div className={`space-y-1 ${compact ? "" : "min-w-[220px]"}`}>
+      <div className="flex flex-wrap gap-1">
+        {attention.blocked > 0 ? <Badge className="bg-red-100 text-red-700 hover:bg-red-100">{attention.blocked} blocked</Badge> : null}
+        {attention.overdue > 0 ? <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">{attention.overdue} overdue</Badge> : null}
+        {attention.pendingApprovals > 0 ? <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">{attention.pendingApprovals} approvals</Badge> : null}
+        {attention.pendingDeliverables > 0 ? <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">{attention.pendingDeliverables} deliverables</Badge> : null}
+        {!hasSignals ? <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">Stable</Badge> : null}
+      </div>
+      <p className="text-[10px] text-foreground">
+        <span className="font-semibold">Next:</span> {attention.nextStep}
+      </p>
+      <p className="text-[9px] text-muted-foreground">
+        {attention.trackerLine}
+        {!compact ? ` | ${attention.updateLine}` : ""}
+      </p>
+      {compact ? <p className="text-[9px] text-muted-foreground">{attention.updateLine}</p> : null}
+    </div>
+  );
 }
 
 function EditProjectInfoModal({
@@ -1140,6 +1241,10 @@ function MobileProjectCard({ project, setLocation }: { project: ProjectSummary; 
             )}
           </div>
         )}
+
+        <div className="rounded-lg border bg-muted/20 p-2">
+          <ExecutionAttentionCell project={project} compact />
+        </div>
       </CardContent>
     </Card>
   );
@@ -1223,7 +1328,7 @@ export default function ProjectsSummary() {
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch("/api/projects-summary", { credentials: "include", headers });
-      if (!res.ok) throw new Error("Failed to fetch projects summary");
+      if (!res.ok) throw new Error("Failed to fetch project list");
       return res.json();
     },
     refetchOnMount: "always",
@@ -1440,8 +1545,8 @@ export default function ProjectsSummary() {
       <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
         <SectionHeader
           icon={<BarChart3 className="h-5 w-5" />}
-          title="Projects Summary"
-          description="Portfolio overview"
+          title="Project List"
+          description="Execution project management list"
         />
         <Card className="border border-red-200 bg-red-50/40">
           <CardContent className="py-10 px-6 text-center">
@@ -1462,8 +1567,8 @@ export default function ProjectsSummary() {
       <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
         <SectionHeader
           icon={<BarChart3 className="h-5 w-5" />}
-          title="Projects Summary"
-          description="Loading portfolio data..."
+          title="Project List"
+          description="Loading execution data..."
         />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
           {[1,2,3,4].map(i => <div key={i} className="h-24 bg-muted animate-pulse rounded-xl" />)}
@@ -1478,8 +1583,8 @@ export default function ProjectsSummary() {
       <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
         <SectionHeader
           icon={<BarChart3 className="h-5 w-5" />}
-          title="Projects Summary"
-          description="Portfolio overview"
+          title="Project List"
+          description="Execution project management list"
         />
         <Card className="border-2 border-dashed border-border">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
@@ -1488,7 +1593,7 @@ export default function ProjectsSummary() {
             </div>
             <h3 className="text-lg font-semibold text-foreground mb-2">No projects available</h3>
             <p className="text-sm text-muted-foreground max-w-md">
-              Upload tracker files to populate the Projects Summary dashboard with progress tracking and key dates.
+              Upload tracker files to populate the execution project list with trusted tracker-linked dates, latest updates, and operational signals.
             </p>
           </CardContent>
         </Card>
@@ -1659,6 +1764,11 @@ export default function ProjectsSummary() {
           </div>
         );
       },
+    },
+    {
+      key: "execution_attention",
+      header: "Execution Attention",
+      render: (p) => <ExecutionAttentionCell project={p} />,
     },
     {
       key: "phase",
@@ -1945,6 +2055,10 @@ export default function ProjectsSummary() {
           </Button>
         }
       />
+
+      <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
+        Tracker-fed schedule and finance fields remain authoritative here. Latest Update stays app-managed, text only, and visible for execution scanning.
+      </div>
 
       <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5 w-fit">
         <button
