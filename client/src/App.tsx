@@ -77,6 +77,7 @@ import ActionLaunchpadPage from "@/pages/action-launchpad";
 import PdPmHandoverPage from "@/pages/pd-pm-handover";
 import PmHandoverReviewPage from "@/pages/pm-handover-review";
 import HandoverControlPage from "@/pages/handover-control";
+import ExceptionsPage from "@/pages/exceptions";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { checkPermission, normalizeRoleForPermissions } from "@shared/schema";
@@ -165,6 +166,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   PdPmHandoverPage,
   PmHandoverReviewPage,
   HandoverControlPage,
+  ExceptionsPage,
 };
 
 const APP_ROUTES: RouteConfig[] = PAGE_REGISTRY.filter((page) => page.routeComponentKey || page.redirectTo).flatMap((page) => {
