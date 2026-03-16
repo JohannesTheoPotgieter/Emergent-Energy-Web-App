@@ -19,6 +19,9 @@ import {
   RefreshCw,
   Clock,
   Hash,
+  Mail,
+  CalendarDays,
+  CheckSquare,
 } from "lucide-react";
 
 function authHeaders() {
@@ -37,6 +40,19 @@ interface TeamsChat {
   lastUpdated: string | null;
   chatType: string;
   preview: string | null;
+}
+
+
+
+interface ProjectCommunicationItem {
+  id: number;
+  type: "email" | "event" | "teams" | "sharepoint_file";
+  subjectOrTitle: string | null;
+  receivedOrStartDatetime: string | null;
+  endDatetime: string | null;
+  webLink: string | null;
+  senderOrOrganizer: string | null;
+  linkedProjectId: number | null;
 }
 
 interface ProjectChatData {
@@ -72,6 +88,66 @@ export function ProjectChatTab({ projectName, projectInfoId }: { projectName: st
   const [showPicker, setShowPicker] = useState(false);
   const userRole = user?.role || "";
   const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(userRole);
+
+  const { data: projectComms = [] } = useQuery<ProjectCommunicationItem[]>({
+    queryKey: ["project-ms-objects", projectInfoId],
+    queryFn: async () => {
+      const res = await fetch(`/api/ms-objects/project/${projectInfoId}`, { headers: authHeaders(), credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load linked communications");
+      return res.json();
+    },
+    enabled: !!projectInfoId,
+  });
+
+  const { data: myUnlinked = [] } = useQuery<ProjectCommunicationItem[]>({
+    queryKey: ["my-ms-objects-linkable", projectInfoId],
+    queryFn: async () => {
+      const [emailsRes, eventsRes] = await Promise.all([
+        fetch("/api/ms-objects/mine?type=email&limit=30", { headers: authHeaders(), credentials: "include" }),
+        fetch("/api/ms-objects/mine?type=event&limit=30", { headers: authHeaders(), credentials: "include" }),
+      ]);
+      if (!emailsRes.ok || !eventsRes.ok) throw new Error("Failed to load Microsoft items");
+      const emails = await emailsRes.json();
+      const events = await eventsRes.json();
+      return [...emails, ...events].filter((i: any) => !i.linkedProjectId);
+    },
+    enabled: !!projectInfoId,
+  });
+
+  const linkCommMutation = useMutation({
+    mutationFn: async (msObjectId: number) => {
+      const res = await fetch(`/api/ms-objects/${msObjectId}/tag-project`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ projectId: projectInfoId }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to link communication");
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["project-ms-objects", projectInfoId] });
+      qc.invalidateQueries({ queryKey: ["my-ms-objects-linkable", projectInfoId] });
+      toast({ title: "Communication linked", description: "Linked to this project." });
+    },
+  });
+
+  const followUpMutation = useMutation({
+    mutationFn: async (msObjectId: number) => {
+      const res = await fetch(`/api/ms-objects/${msObjectId}/create-follow-up`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to create follow-up");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Follow-up created", description: "Task created from linked communication." });
+    },
+    onError: (err: Error) => toast({ title: "Could not create follow-up", description: err.message, variant: "destructive" }),
+  });
 
   const { data: chatData, isLoading } = useQuery<ProjectChatData>({
     queryKey: ["ms-teams-project-chat", projectInfoId],
@@ -155,6 +231,10 @@ export function ProjectChatTab({ projectName, projectInfoId }: { projectName: st
       (c.preview || "").toLowerCase().includes(q)
     );
   }, [chatData?.allChats, chatSearch]);
+
+
+  const upcomingMeetings = projectComms.filter((i) => i.type === "event" && i.receivedOrStartDatetime && new Date(i.receivedOrStartDatetime) > new Date()).slice(0, 5);
+  const linkedEmails = projectComms.filter((i) => i.type === "email").slice(0, 8);
 
   if (!projectInfoId) {
     return (
@@ -298,6 +378,57 @@ export function ProjectChatTab({ projectName, projectInfoId }: { projectName: st
             This chat was auto-matched by project name. Click "Change Chat" to link a different one.
           </p>
         )}
+
+        <Card className="w-full mt-6">
+          <CardContent className="p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-sm">Project-linked communications</h4>
+              <Badge variant="outline">{projectComms.length}</Badge>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs font-medium mb-2 flex items-center gap-1"><CalendarDays className="h-3 w-3" /> Upcoming meetings</p>
+                <div className="space-y-2">
+                  {upcomingMeetings.length === 0 ? <p className="text-xs text-muted-foreground">No upcoming linked meetings.</p> : upcomingMeetings.map((item) => (
+                    <div key={item.id} className="text-xs border rounded p-2">
+                      <div className="font-medium">{item.subjectOrTitle || "(No title)"}</div>
+                      <div className="text-muted-foreground">{item.receivedOrStartDatetime ? new Date(item.receivedOrStartDatetime).toLocaleString() : ""}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-medium mb-2 flex items-center gap-1"><Mail className="h-3 w-3" /> Linked email references</p>
+                <div className="space-y-2">
+                  {linkedEmails.length === 0 ? <p className="text-xs text-muted-foreground">No linked email references.</p> : linkedEmails.map((item) => (
+                    <div key={item.id} className="text-xs border rounded p-2 flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-medium">{item.subjectOrTitle || "(No subject)"}</div>
+                        <div className="text-muted-foreground">{item.senderOrOrganizer || "Unknown sender"}</div>
+                      </div>
+                      <Button size="sm" variant="outline" className="h-7 text-[10px]" onClick={() => followUpMutation.mutate(item.id)}><CheckSquare className="h-3 w-3 mr-1" />Follow-up</Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-medium mb-2">Link email or meeting to this project</p>
+              <div className="space-y-2 max-h-40 overflow-auto pr-1">
+                {myUnlinked.slice(0, 12).map((item) => (
+                  <div key={item.id} className="text-xs border rounded p-2 flex items-center justify-between gap-2">
+                    <div className="truncate">
+                      <span className="font-medium">{item.subjectOrTitle || "(No title)"}</span>
+                      <span className="text-muted-foreground ml-1">{item.type}</span>
+                    </div>
+                    <Button size="sm" className="h-7 text-[10px]" onClick={() => linkCommMutation.mutate(item.id)}>Link</Button>
+                  </div>
+                ))}
+                {myUnlinked.length === 0 && <p className="text-xs text-muted-foreground">No recent unlinked email or meetings.</p>}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -435,6 +566,24 @@ export function ProjectChatTab({ projectName, projectInfoId }: { projectName: st
           </CardContent>
         </Card>
       )}
+
+      <Card className="w-full mt-6 max-w-3xl">
+        <CardContent className="p-4">
+          <p className="text-xs font-medium mb-2">Link email or meeting to this project</p>
+          <div className="space-y-2 max-h-52 overflow-auto">
+            {myUnlinked.slice(0, 12).map((item) => (
+              <div key={item.id} className="text-xs border rounded p-2 flex items-center justify-between gap-2">
+                <div className="truncate">
+                  <span className="font-medium">{item.subjectOrTitle || "(No title)"}</span>
+                  <span className="text-muted-foreground ml-1">{item.type}</span>
+                </div>
+                <Button size="sm" className="h-7 text-[10px]" onClick={() => linkCommMutation.mutate(item.id)}>Link</Button>
+              </div>
+            ))}
+            {myUnlinked.length === 0 && <p className="text-xs text-muted-foreground">No recent unlinked email or meetings.</p>}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
