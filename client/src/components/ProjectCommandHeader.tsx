@@ -16,6 +16,7 @@ import {
 import { POGenerator } from "@/components/POGenerator";
 import CaptureDeliverable from "@/components/CaptureDeliverable";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
+import { formatNextMilestoneSummary, type NextMilestoneSummary } from "@/lib/next-milestone";
 
 function getPhaseLabel(phase: string | null): string {
   if (!phase) return "Unknown";
@@ -50,7 +51,7 @@ interface CommandHeaderProps {
   costRag: "green" | "amber" | "red";
   qualityRag: "green" | "amber" | "red";
   ragStatus: string | null;
-  nextMilestone: { name: string; date: string | null; allPaid: boolean } | null;
+  nextMilestone: NextMilestoneSummary | null | unknown;
   projectInfoId: number | null;
   isAdmin: boolean;
   canSetRag: boolean;
@@ -307,6 +308,7 @@ export function ProjectCommandHeader({
     : "Not Set";
 
   const phaseAccent = phase ? PHASE_ACCENT[phase] || "border-slate-400" : "border-slate-400";
+  const nextMilestoneDisplay = formatNextMilestoneSummary(nextMilestone, { truncateAt: 18 });
 
   return (
     <div className="command-header" data-testid="project-command-header">
@@ -454,17 +456,11 @@ export function ProjectCommandHeader({
               </div>
               <div className="p-3 text-center col-span-2 sm:col-span-1" data-testid="kpi-milestone">
                 <p className="text-[10px] font-medium text-[var(--cmd-text-muted)] uppercase tracking-wider mb-0.5">Next Milestone</p>
-                <p className={`text-xs font-semibold truncate ${nextMilestone?.allPaid ? "text-[var(--cmd-green)]" : "text-[var(--cmd-text-secondary)]"}`}>
-                  {nextMilestone
-                    ? nextMilestone.allPaid
-                      ? "All Paid ✓"
-                      : `${nextMilestone.name.length > 18 ? nextMilestone.name.substring(0, 18) + "…" : nextMilestone.name}`
-                    : "—"}
+                <p className={`text-xs font-semibold truncate ${nextMilestoneDisplay.allPaid ? "text-[var(--cmd-green)]" : "text-[var(--cmd-text-secondary)]"}`}>
+                  {nextMilestoneDisplay.label}
                 </p>
-                {nextMilestone && !nextMilestone.allPaid && nextMilestone.date && (
-                  <p className="text-[10px] text-[var(--cmd-text-muted)] mt-0.5">
-                    {new Date(nextMilestone.date).toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "numeric" })}
-                  </p>
+                {nextMilestoneDisplay.dateLabel && (
+                  <p className="text-[10px] text-[var(--cmd-text-muted)] mt-0.5">{nextMilestoneDisplay.dateLabel}</p>
                 )}
               </div>
             </div>

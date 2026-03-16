@@ -54,6 +54,7 @@ import { PageShell } from "@/components/layout/page-shell";
 import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
 import { usePermission } from "@/hooks/use-permissions";
 import { parseCockpitMode, resolveSummaryDeepLink, toCockpitModeQuery, type CockpitMode } from "@/lib/project-cockpit";
+import { formatNextMilestoneSummary, type NextMilestoneSummary } from "@/lib/next-milestone";
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", border: "border-border" },
@@ -1087,7 +1088,7 @@ export default function ProjectDetailPage() {
     return hasInvoice && hasInvDate;
   };
 
-  const nextMilestone = useMemo(() => {
+  const nextMilestone = useMemo<NextMilestoneSummary | null>(() => {
     const unpaid = (revenueData as any[])
       .filter((r: any) => !isInflowInBank(r) && r.plannedPaymentDate)
       .sort((a: any, b: any) => new Date(a.plannedPaymentDate).getTime() - new Date(b.plannedPaymentDate).getTime());
@@ -1226,7 +1227,7 @@ export default function ProjectDetailPage() {
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Executive signal</p>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
                 <div><p className="text-xs text-muted-foreground">Lifecycle stage</p><p className="font-semibold">{getPhaseLabel(phase)}</p></div>
-                <div><p className="text-xs text-muted-foreground">Next milestone</p><p className="font-semibold">{nextMilestone || "Not set"}</p></div>
+                <div><p className="text-xs text-muted-foreground">Next milestone</p><p className="font-semibold">{formatNextMilestoneSummary(nextMilestone, { fallbackLabel: "Not set" }).label}</p></div>
                 <div><p className="text-xs text-muted-foreground">Gate status</p><p className="font-semibold">{projectInfo?.execution_gate_status || "NOT_ELIGIBLE"}</p></div>
                 <div><p className="text-xs text-muted-foreground">Completion</p><p className="font-semibold">{completion}</p></div>
               </div>
