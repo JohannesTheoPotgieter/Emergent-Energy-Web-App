@@ -5,7 +5,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, trItems, deliverables } from "@shared/schema";
+import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, trItems, deliverables } from "@shared/schema";
 import { db } from "./db";
 import { safeLegacyQuery } from "./legacy-table-guard";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -54,6 +54,7 @@ import {
 import { listImportSyncState } from "./services/imports-governance-service";
 import { classifyProjectInfoPayload } from "./services/source-of-truth-policy";
 import { mytoolTaskIdempotencyStore } from "./lib/mytool-task-idempotency";
+import { computeNextRecurrenceDate, computeMilestoneProgress, isOverdue, shouldBlockTask, validateDependencyPair } from "./lib/mytool-work-engine";
 
 function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
   if (fontColor === 'red') return false;
@@ -78,6 +79,67 @@ function isCashflowConfirmedCheck(exp: any): boolean {
 
 async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
   return { expenses, inflows };
+}
+
+async function enrichMytoolTasks(userId: number, tasks: any[]) {
+  if (!tasks.length) return tasks;
+  const ids = tasks.map((t) => t.id);
+  const deps = await db.select().from(mytoolTaskDependencies).where(or(inArray(mytoolTaskDependencies.predecessorTaskId, ids), inArray(mytoolTaskDependencies.successorTaskId, ids)));
+  const taskById = new Map<number, any>(tasks.map((t) => [t.id, t]));
+
+  for (const task of tasks) {
+    const blockedBy = deps.filter((d) => d.successorTaskId === task.id).map((d) => {
+      const predecessor = taskById.get(d.predecessorTaskId);
+      return { ...d, predecessorStatus: predecessor?.status ?? null, predecessorTitle: predecessor?.title ?? null };
+    });
+    const blocking = deps.filter((d) => d.predecessorTaskId === task.id).map((d) => {
+      const successor = taskById.get(d.successorTaskId);
+      return { ...d, successorStatus: successor?.status ?? null, successorTitle: successor?.title ?? null };
+    });
+
+    const blockersIncomplete = blockedBy.filter((d) => shouldBlockTask([d.predecessorStatus]));
+    task.blockedBy = blockedBy;
+    task.blocking = blocking;
+    task.blockedByCount = blockersIncomplete.length;
+    task.isBlockedByDependencies = blockersIncomplete.length > 0;
+    task.isOverdue = isOverdue(task.dueAt, task.status);
+  }
+
+  const milestoneIds = tasks.filter((t) => t.taskType === "milestone").map((t) => t.id);
+  for (const milestoneId of milestoneIds) {
+    const linked = tasks.filter((t) => t.milestoneId === milestoneId);
+    const milestone = taskById.get(milestoneId);
+    milestone.milestoneTaskCount = linked.length;
+    milestone.milestoneProgress = computeMilestoneProgress(linked.map((t) => t.status));
+  }
+
+  return tasks;
+}
+
+async function refreshDependentTaskStates(taskId: number) {
+  const links = await db.select().from(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.predecessorTaskId, taskId));
+  for (const link of links) {
+    const predecessorLinks = await db.select().from(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.successorTaskId, link.successorTaskId));
+    if (!predecessorLinks.length) continue;
+    const predecessorIds = predecessorLinks.map((l) => l.predecessorTaskId);
+    const predecessors = await db.select().from(mytoolTasks).where(inArray(mytoolTasks.id, predecessorIds));
+    const shouldBlock = shouldBlockTask(predecessors.map((p) => p.status));
+    const [successor] = await db.select().from(mytoolTasks).where(eq(mytoolTasks.id, link.successorTaskId));
+    if (!successor) continue;
+
+    if (shouldBlock) {
+      if (successor.status !== "done" && successor.status !== "cancelled") {
+        await db.update(mytoolTasks).set({ blockedByDependencies: true, status: "blocked", blockedReason: successor.blockedReason || "Blocked by predecessor task dependency", updatedAt: new Date() }).where(eq(mytoolTasks.id, successor.id));
+      }
+    } else if (successor.blockedByDependencies) {
+      const updates: any = { blockedByDependencies: false, updatedAt: new Date() };
+      if (successor.status === "blocked" && (!successor.blockedReason || successor.blockedReason === "Blocked by predecessor task dependency")) {
+        updates.status = "planned";
+        updates.blockedReason = null;
+      }
+      await db.update(mytoolTasks).set(updates).where(eq(mytoolTasks.id, successor.id));
+    }
+  }
 }
 
 
@@ -13184,7 +13246,8 @@ export async function registerRoutes(
       } else {
         tasks = await storage.getMytoolTasks(userId);
       }
-      res.json(tasks);
+      const enriched = await enrichMytoolTasks(userId, tasks);
+      res.json(enriched);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -13229,7 +13292,7 @@ export async function registerRoutes(
         }
       }
 
-      const task = await storage.createMytoolTask({ ...req.body, bucket, ownerUserId: userId });
+      const task = await storage.createMytoolTask({ ...req.body, bucket, ownerUserId: userId, taskType: req.body.taskType || "task" });
       if (hasRequestId) {
         mytoolTaskIdempotencyStore.complete(userId, requestId, task.id);
       }
@@ -13278,6 +13341,9 @@ export async function registerRoutes(
       }
 
       const task = await storage.updateMytoolTask(taskId, req.body);
+      if (req.body.status !== undefined) {
+        await refreshDependentTaskStates(taskId);
+      }
 
       if (
         (req.body.status === "complete" || req.body.status === "done") &&
@@ -13293,24 +13359,37 @@ export async function registerRoutes(
         );
 
         if (!existingTask.recurrenceEndDate || nextDate <= existingTask.recurrenceEndDate) {
-          await storage.createMytoolTask({
-            ownerUserId: userId,
-            title: existingTask.title,
-            status: "todo",
-            priority: existingTask.priority,
-            plannedForDate: nextDate,
-            dueAt: existingTask.dueAt ? computeNextDueDate(existingTask.dueAt, existingTask.recurrenceFrequency, existingTask.recurrenceInterval || 1) : null,
-            notes: existingTask.notes,
-            projectName: existingTask.projectName,
-            tag: existingTask.tag,
-            sortOrder: existingTask.sortOrder,
-            isRecurring: true,
-            recurrenceFrequency: existingTask.recurrenceFrequency,
-            recurrenceInterval: existingTask.recurrenceInterval,
-            recurrenceDaysOfWeek: existingTask.recurrenceDaysOfWeek,
-            recurrenceEndDate: existingTask.recurrenceEndDate,
-            recurrenceParentId: existingTask.recurrenceParentId || existingTask.id,
-          });
+          const recurrenceParentId = existingTask.recurrenceParentId || existingTask.id;
+          const existingInstance = await db.select().from(mytoolTasks).where(and(
+            eq(mytoolTasks.ownerUserId, userId),
+            eq(mytoolTasks.recurrenceParentId, recurrenceParentId),
+            eq(mytoolTasks.plannedForDate, nextDate),
+            isNull(mytoolTasks.deletedAt),
+          )).limit(1);
+
+          if (!existingInstance.length) {
+            await storage.createMytoolTask({
+              ownerUserId: userId,
+              title: existingTask.title,
+              status: "planned",
+              priority: existingTask.priority,
+              plannedForDate: nextDate,
+              dueAt: existingTask.dueAt ? computeNextDueDate(existingTask.dueAt, existingTask.recurrenceFrequency, existingTask.recurrenceInterval || 1) : null,
+              notes: existingTask.notes,
+              projectName: existingTask.projectName,
+              tag: existingTask.tag,
+              sortOrder: existingTask.sortOrder,
+              isRecurring: true,
+              recurrenceFrequency: existingTask.recurrenceFrequency,
+              recurrenceInterval: existingTask.recurrenceInterval,
+              recurrenceDaysOfWeek: existingTask.recurrenceDaysOfWeek,
+              recurrenceEndDate: existingTask.recurrenceEndDate,
+              recurrenceParentId,
+              taskType: existingTask.taskType || "task",
+              milestoneId: existingTask.milestoneId || null,
+              autoGenerated: true,
+            });
+          }
         }
       }
 
@@ -13326,6 +13405,68 @@ export async function registerRoutes(
       await storage.deleteMytoolTask(parseInt(req.params.id));
       logAuditFromReq(req, { entityType: "mytool_task", action: "delete", entityId: req.params.id, changesJson: { description: "MyTool task deleted" } });
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/mytool/tasks/:id/dependencies", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const taskId = Number(req.params.id);
+      const deps = await db.select().from(mytoolTaskDependencies).where(or(eq(mytoolTaskDependencies.predecessorTaskId, taskId), eq(mytoolTaskDependencies.successorTaskId, taskId)));
+      res.json(deps);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/mytool/tasks/:id/dependencies", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const successorTaskId = Number(req.params.id);
+      const predecessorTaskId = Number(req.body.predecessorTaskId);
+      const dependencyType = req.body.dependencyType || "finish_to_start";
+      const validationMessage = validateDependencyPair(predecessorTaskId, successorTaskId);
+      if (validationMessage) return res.status(400).json({ error: validationMessage });
+
+      const predecessorLinks = await db.select().from(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.successorTaskId, predecessorTaskId));
+      if (predecessorLinks.some((l) => l.predecessorTaskId === successorTaskId)) {
+        return res.status(400).json({ error: "Circular dependency is not allowed" });
+      }
+
+      const [created] = await db.insert(mytoolTaskDependencies).values({ predecessorTaskId, successorTaskId, dependencyType }).onConflictDoNothing().returning();
+      await refreshDependentTaskStates(predecessorTaskId);
+      res.json(created || { predecessorTaskId, successorTaskId, dependencyType, duplicate: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/mytool/tasks/:id/dependencies/:dependencyId", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const dependencyId = Number(req.params.dependencyId);
+      const [dep] = await db.select().from(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.id, dependencyId));
+      await db.delete(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.id, dependencyId));
+      if (dep) await refreshDependentTaskStates(dep.predecessorTaskId);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/mytool/recurrence-templates", requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      const templates = await db.select().from(mytoolRecurrenceTemplates).orderBy(desc(mytoolRecurrenceTemplates.updatedAt));
+      res.json(templates);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/mytool/recurrence-templates", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const userId = (req.user as any).id;
+      const [template] = await db.insert(mytoolRecurrenceTemplates).values({ ...req.body, ownerUserId: userId }).returning();
+      res.json(template);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -14623,41 +14764,6 @@ export async function registerRoutes(
   registerUserFolderRoutes(app);
 
   return httpServer;
-}
-
-function computeNextRecurrenceDate(
-  currentDate: string,
-  frequency: string,
-  interval: number,
-  daysOfWeek: string | null
-): string {
-  const d = new Date(currentDate + "T00:00:00Z");
-
-  switch (frequency) {
-    case "daily":
-      d.setUTCDate(d.getUTCDate() + interval);
-      break;
-    case "weekly":
-      if (daysOfWeek) {
-        const days = daysOfWeek.split(",").map(Number).sort();
-        const currentDay = d.getUTCDay();
-        const nextDay = days.find(day => day > currentDay);
-        if (nextDay !== undefined) {
-          d.setUTCDate(d.getUTCDate() + (nextDay - currentDay));
-        } else {
-          const daysToAdd = 7 * interval - currentDay + days[0];
-          d.setUTCDate(d.getUTCDate() + daysToAdd);
-        }
-      } else {
-        d.setUTCDate(d.getUTCDate() + 7 * interval);
-      }
-      break;
-    case "monthly":
-      d.setUTCMonth(d.getUTCMonth() + interval);
-      break;
-  }
-
-  return d.toISOString().slice(0, 10);
 }
 
 function computeNextDueDate(currentDue: Date, frequency: string, interval: number): Date {

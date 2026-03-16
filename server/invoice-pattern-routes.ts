@@ -10,28 +10,19 @@ import {
 import { eq, and, desc, sql, isNull, isNotNull } from "drizzle-orm";
 import { classifyCostLines, generateRuleFromInvoice, normalizeInvoiceNumber } from "./lib/import/invoice-classifier";
 import { requirePermission } from "./permission-middleware";
+import { verifyToken } from "./jwt";
 
 const router = Router();
-
-const strictRuntime = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
-const jwtSecret = process.env.JWT_SECRET;
-
-if (strictRuntime && !jwtSecret) {
-  throw new Error("JWT_SECRET must be set in staging/production. Refusing unsafe JWT fallback.");
-}
 
 function jwtAuth(req: Request, res: Response, next: NextFunction) {
   if ((req as any).user) return next();
   if (req.isAuthenticated?.()) return next();
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
-    try {
-      const jwt = require("jsonwebtoken");
-      const decoded = jwt.verify(authHeader.slice(7), jwtSecret || "emergent-energy-jwt-secret-2026");
-      if (decoded && typeof decoded === "object") {
-        (req as any).user = { id: decoded.userId || decoded.id, role: decoded.role };
-      }
-    } catch {}
+    const decoded = verifyToken(authHeader.slice(7));
+    if (decoded) {
+      (req as any).user = { id: decoded.userId, role: decoded.role };
+    }
   }
   next();
 }

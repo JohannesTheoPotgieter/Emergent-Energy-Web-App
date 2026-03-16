@@ -4,6 +4,7 @@ import { eq, desc, sql } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import { projectInfo, users } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
+import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
 
 const PM_REVIEW_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"];
 
@@ -449,11 +450,21 @@ export function registerHandoverRoutes(app: Express) {
       };
 
       const missingItems = computeSubmitBlockers(project, handover);
+      const user = (req as any).user as any;
+      const evidence = await evaluateEvidence({
+        projectId,
+        completionType: "pd_pm_handover_submit",
+        sourceType: "pd_pm_handover",
+        sourceRef: String(projectId),
+        evaluatorUserId: user?.id,
+        evaluatorName: user?.name,
+      });
 
       res.json({
         project,
         handover: handover ? { ...handover, deliverables } : { status: "DRAFT", deliverables },
         blockers: missingItems,
+        evidence,
       });
     } catch (err: any) {
       console.error("[handover] GET pd-pm handover error:", err);
@@ -526,14 +537,44 @@ export function registerHandoverRoutes(app: Express) {
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       if (!project || !handover) return res.status(400).json({ error: "Could not submit handover. Likely reason: no draft exists. Save a draft and retry." });
       const missing = computeSubmitBlockers(project, handover);
-      if (missing.length > 0) {
-        return res.status(400).json({
-          error: `Cannot submit handover. Missing items: ${missing.join(", ")}. Complete these fields/documents, then retry.`,
-          missingItems: missing,
-        });
-      }
       const user = (req as any).user as any;
+      const evidence = await evaluateEvidence({
+        projectId,
+        completionType: "pd_pm_handover_submit",
+        sourceType: "pd_pm_handover",
+        sourceRef: String(projectId),
+        evaluatorUserId: user?.id,
+        evaluatorName: user?.name,
+      });
+      const overrideReason = String(req.body?.evidenceOverrideReason || "").trim();
+      const wantsOverride = !!overrideReason;
+      if (missing.length > 0 || !evidence.pass) {
+        if (!evidence.pass && wantsOverride) {
+          if (!isEvidenceOverrideAuthorized(user?.role)) {
+            return res.status(403).json({ error: "Evidence override requires authorized role." });
+          }
+          await db.execute(sql.raw(`
+            INSERT INTO evidence_override_records
+              (project_id, completion_type, source_type, source_ref, score_percent, threshold_percent, reason, authorized_by_user_id, authorized_by_name, authorized_by_role)
+            VALUES
+              (${projectId}, 'pd_pm_handover_submit', 'pd_pm_handover', '${projectId}', ${evidence.score}, ${evidence.threshold}, '${overrideReason.replace(/'/g, "''")}', ${user?.id || "NULL"}, ${user?.name ? `'${String(user.name).replace(/'/g, "''")}'` : "NULL"}, ${user?.role ? `'${String(user.role).replace(/'/g, "''")}'` : "NULL"})
+          `));
+        } else {
+          return res.status(400).json({
+            error: `Cannot submit handover. Missing items: ${missing.join(", ") || "Evidence threshold not met"}. Complete these fields/documents, then retry.`,
+            missingItems: missing,
+            evidence,
+          });
+        }
+      }
       await db.execute(sql.raw(`UPDATE project_pd_pm_handover SET status = 'SUBMITTED_FOR_PM_REVIEW', handover_status_text = 'Submitted for PM Review', submitted_by = '${(user?.name || 'Unknown').replace(/'/g, "''")}', submitted_at = NOW(), updated_at = NOW() WHERE project_id = ${projectId}`));
+      logAuditFromReq(req, {
+        entityType: "project_timeline",
+        entityId: String(projectId),
+        action: wantsOverride ? "evidence.override" : "evidence.completion_pass",
+        projectName: project.projectName,
+        changesJson: { sourceType: "pd_pm_handover", sourceRef: String(projectId), evidence, overrideReason: wantsOverride ? overrideReason : null },
+      });
       res.json({ success: true, status: "SUBMITTED_FOR_PM_REVIEW" });
     } catch (err: any) {
       console.error("[handover] submit error:", err);
@@ -615,5 +656,50 @@ export function registerHandoverRoutes(app: Express) {
       res.status(500).json({ error: "Could not update Excel tracker link. Refresh and retry. If it persists, contact your admin." });
     }
   });
+
+  app.post("/api/pd-pm-handover/:projectId/evidence", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.projectId, 10);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      const user = (req as any).user as any;
+      const payload = req.body || {};
+
+      await upsertEvidenceItem({
+        projectId,
+        completionType: "pd_pm_handover_submit",
+        sourceType: "pd_pm_handover",
+        sourceRef: String(projectId),
+        requirementKey: payload.requirementKey || null,
+        evidenceType: payload.evidenceType || "document",
+        title: payload.title || null,
+        valueRef: payload.valueRef || null,
+        valueJson: payload.valueJson,
+        uploadedByUserId: user?.id,
+        uploadedByName: user?.name,
+      });
+
+      const evidence = await evaluateEvidence({
+        projectId,
+        completionType: "pd_pm_handover_submit",
+        sourceType: "pd_pm_handover",
+        sourceRef: String(projectId),
+        evaluatorUserId: user?.id,
+        evaluatorName: user?.name,
+      });
+
+      logAuditFromReq(req, {
+        entityType: "project_timeline",
+        entityId: String(projectId),
+        action: "evidence.collected",
+        changesJson: { sourceType: "pd_pm_handover", sourceRef: String(projectId), payload },
+      });
+
+      res.status(201).json({ success: true, evidence });
+    } catch (err: any) {
+      console.error("[handover] add evidence error:", err);
+      res.status(500).json({ error: "Could not add handover evidence" });
+    }
+  });
+
 }
 

@@ -9,7 +9,7 @@ import { resolveDbConfig, setDbConfigStatus } from "./db-config";
 import { sql } from "drizzle-orm";
 import { getStartupModes } from "./startup-modes";
 
-const config = resolveDbConfig();
+let config = resolveDbConfig();
 
 let db: any;
 let dbMode: 'sqlite' | 'postgres';
@@ -22,6 +22,7 @@ let isInitialized = false;
  */
 async function initializeDatabase(): Promise<void> {
   if (isInitialized) return;
+  config = resolveDbConfig();
   const isProduction = process.env.NODE_ENV === "production";
 
   if (isProduction && (!config.connectionString || config.mode !== "postgres")) {

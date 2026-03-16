@@ -1,14 +1,20 @@
 import jwt from "jsonwebtoken";
 
-const isStrictRuntime = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
-const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = "12h";
 
-if (isStrictRuntime && !JWT_SECRET) {
-  throw new Error("JWT_SECRET must be set in staging/production. Refusing to start with an unsafe default.");
-}
+function resolveJwtSecret(): string {
+  const isStrictRuntime = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
+  const jwtSecret = process.env.JWT_SECRET;
 
-const effectiveJwtSecret = JWT_SECRET || "emergent-energy-jwt-secret-2026";
+  if (!jwtSecret) {
+    if (isStrictRuntime) {
+      throw new Error("JWT_SECRET must be set in staging/production.");
+    }
+    throw new Error("JWT_SECRET must be set in development. Configure local secret injection before starting the app.");
+  }
+
+  return jwtSecret;
+}
 
 export interface JWTPayload {
   userId: number;
@@ -18,12 +24,12 @@ export interface JWTPayload {
 }
 
 export function generateToken(user: JWTPayload): string {
-  return jwt.sign(user, effectiveJwtSecret, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign(user, resolveJwtSecret(), { expiresIn: JWT_EXPIRES_IN });
 }
 
 export function verifyToken(token: string): JWTPayload | null {
   try {
-    const decoded = jwt.verify(token, effectiveJwtSecret) as JWTPayload;
+    const decoded = jwt.verify(token, resolveJwtSecret()) as JWTPayload;
     return decoded;
   } catch (error) {
     return null;

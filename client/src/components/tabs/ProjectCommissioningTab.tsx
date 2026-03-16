@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +62,15 @@ interface CommissioningItem {
   completed_at: string | null;
 }
 
+interface EvidenceEvaluation {
+  totalRequired: number;
+  totalPresent: number;
+  missingItems: Array<{ requirementKey: string; label: string; missingBy: number }>;
+  score: number;
+  threshold: number;
+  pass: boolean;
+}
+
 interface ProgressRow {
   category: string;
   item_type: string;
@@ -97,6 +106,8 @@ export function ProjectCommissioningTab({ projectId, projectName }: ProjectCommi
   const [itemType, setItemType] = useState<"commissioning" | "closeout">("commissioning");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [overrideReasonByItem, setOverrideReasonByItem] = useState<Record<number, string>>({});
+  const [evidenceByItem, setEvidenceByItem] = useState<Record<number, EvidenceEvaluation>>({});
 
   const { data: items = [], isLoading } = useQuery<CommissioningItem[]>({
     queryKey: ["commissioning-items", projectId, itemType],
@@ -159,6 +170,27 @@ export function ProjectCommissioningTab({ projectId, projectName }: ProjectCommi
     },
     onSuccess: invalidateAll,
   });
+
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const pairs = await Promise.all(items.map(async (item) => {
+        try {
+          const res = await fetch(`/api/commissioning/${item.id}/evidence-evaluation`, { headers: getAuthHeaders(), credentials: "include" });
+          if (!res.ok) return [item.id, null] as const;
+          return [item.id, await res.json()] as const;
+        } catch {
+          return [item.id, null] as const;
+        }
+      }));
+      if (!mounted) return;
+      const next: Record<number, EvidenceEvaluation> = {};
+      for (const [id, ev] of pairs) if (ev) next[id] = ev as EvidenceEvaluation;
+      setEvidenceByItem(next);
+    })();
+    return () => { mounted = false; };
+  }, [items]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -264,11 +296,19 @@ export function ProjectCommissioningTab({ projectId, projectName }: ProjectCommi
                     item={item}
                     isExpanded={expandedId === item.id}
                     onToggle={() => setExpandedId(expandedId === item.id ? null : item.id)}
-                    onStatusChange={(status) => patchMutation.mutate({ id: item.id, data: { status } })}
+                    onStatusChange={(status) => patchMutation.mutate({ id: item.id, data: { status, evidenceOverrideReason: overrideReasonByItem[item.id] } })}
                     onUpdateNotes={(notes) => patchMutation.mutate({ id: item.id, data: { evidenceNotes: notes } })}
                     onReassign={(userId) => patchMutation.mutate({ id: item.id, data: { ownerUserId: userId } })}
                     onDelete={() => deleteMutation.mutate(item.id)}
                     isPending={patchMutation.isPending || deleteMutation.isPending}
+                    evidence={evidenceByItem[item.id]}
+                    overrideReason={overrideReasonByItem[item.id] || ""}
+                    onOverrideReasonChange={(v) => setOverrideReasonByItem((m) => ({ ...m, [item.id]: v }))}
+                    onAttachEvidence={async (payload) => {
+                      const res = await fetch(`/api/commissioning/${item.id}/evidence`, { method: "POST", headers: getAuthHeaders(), credentials: "include", body: JSON.stringify(payload) });
+                      if (!res.ok) throw new Error("Failed to attach evidence");
+                      invalidateAll();
+                    }}
                   />
                 ))}
               </div>
@@ -297,6 +337,10 @@ function ChecklistItem({
   onReassign,
   onDelete,
   isPending,
+  evidence,
+  overrideReason,
+  onOverrideReasonChange,
+  onAttachEvidence,
 }: {
   item: CommissioningItem;
   isExpanded: boolean;
@@ -306,6 +350,10 @@ function ChecklistItem({
   onReassign: (userId: number) => void;
   onDelete: () => void;
   isPending: boolean;
+  evidence?: EvidenceEvaluation;
+  overrideReason: string;
+  onOverrideReasonChange: (value: string) => void;
+  onAttachEvidence: (payload: { requirementKey?: string; evidenceType: string; title?: string; valueRef?: string }) => Promise<void>;
 }) {
   const cfg = STATUS_CONFIG[item.status];
   const transitions = VALID_TRANSITIONS[item.status];
@@ -380,6 +428,24 @@ function ChecklistItem({
                 placeholder="Add evidence notes, observations, or references..."
                 className="text-xs min-h-[60px] bg-white"
                 data-testid={`textarea-evidence-${item.id}`}
+              />
+            </div>
+
+            <div className="space-y-2 rounded-md border bg-slate-50 p-2">
+              <Label className="text-xs text-gray-600">Evidence completeness</Label>
+              <div className="text-xs text-gray-700">
+                {evidence ? `${evidence.score}% score (threshold ${evidence.threshold}%)` : "No evaluation yet"}
+              </div>
+              {!!evidence && !evidence.pass && (
+                <ul className="text-xs text-red-600 list-disc pl-4">
+                  {evidence.missingItems.map((m) => <li key={m.requirementKey}>{m.label}</li>)}
+                </ul>
+              )}
+              <Textarea
+                value={overrideReason}
+                onChange={(e) => onOverrideReasonChange(e.target.value)}
+                className="text-xs min-h-[54px] bg-white"
+                placeholder="Override reason (authorized roles only, required if below threshold)"
               />
             </div>
 

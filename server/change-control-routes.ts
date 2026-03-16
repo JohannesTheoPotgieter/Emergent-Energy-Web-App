@@ -165,6 +165,7 @@ export function registerChangeControlRoutes(app: Express) {
               description: old.impactSummary || old.description || '',
               status: 'pending',
               requestedBy: user.id,
+              projectId: old.projectId,
             }).returning();
             updates.approvalId = approvalResult[0].id;
           } catch (approvalErr: any) {

@@ -42,6 +42,11 @@ export interface TaskItem {
   pinnedWeek: boolean;
   isRecurring?: boolean;
   recurrenceFrequency?: string | null;
+  taskType?: "task" | "milestone";
+  milestoneId?: number | null;
+  blockedByCount?: number;
+  isBlockedByDependencies?: boolean;
+  milestoneProgress?: number;
   notes?: string | null;
   completionNote?: string | null;
   createdAt?: string | null;
@@ -174,6 +179,9 @@ export default function TaskCard({
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
             <PriorityBadge priority={task.priority} />
             {task.status !== "done" && <StatusLabel status={task.status} />}
+            {task.taskType === "milestone" && (
+              <Badge variant="outline" className="text-[10px] h-4 px-1">Milestone{typeof task.milestoneProgress === "number" ? ` ${task.milestoneProgress}%` : ""}</Badge>
+            )}
             {task.isRecurring && (
               <span className="inline-flex items-center gap-0.5 text-[10px] text-purple-600">
                 <Repeat className="h-2.5 w-2.5" />
@@ -192,10 +200,10 @@ export default function TaskCard({
             {task.department && (
               <span className="text-[10px] text-muted-foreground">{task.department}</span>
             )}
-            {isBlocked && task.blockedReason && (
-              <span className="text-[10px] text-red-500 truncate max-w-[120px]" title={task.blockedReason}>
+            {(isBlocked || task.isBlockedByDependencies) && (task.blockedReason || (task.blockedByCount || 0) > 0) && (
+              <span className="text-[10px] text-red-500 truncate max-w-[120px]" title={task.blockedReason || `Blocked by ${task.blockedByCount} ${(task.blockedByCount || 0) === 1 ? "dependency" : "dependencies"}` }>
                 <AlertCircle className="h-2.5 w-2.5 inline mr-0.5" />
-                {task.blockedReason}
+                {task.blockedReason || `Blocked by ${task.blockedByCount} ${(task.blockedByCount || 0) === 1 ? "dependency" : "dependencies"}` }
               </span>
             )}
           </div>
