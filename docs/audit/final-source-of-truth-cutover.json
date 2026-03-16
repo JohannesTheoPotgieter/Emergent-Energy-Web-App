@@ -1,0 +1,39 @@
+{
+  "migratedRoutes": [
+    "/api/dashboard",
+    "/api/projects",
+    "/api/projects/:id",
+    "/api/expenses",
+    "/api/revenues",
+    "/api/tasks"
+  ],
+  "migratedFrontendConsumers": [
+    "No endpoint contract changes required; existing consumers continue via adapter-backed APIs"
+  ],
+  "blockedLegacyTables": [
+    "projects",
+    "tasks",
+    "expenses",
+    "revenues",
+    "program_expense",
+    "program_inflows",
+    "project_plan",
+    "company_projects",
+    "project_notes",
+    "project_tasks"
+  ],
+  "remainingAdminOnlyLegacyUsage": [
+    "server/work-items-backfill.ts",
+    "server/migration-finalize-routes.ts",
+    "server/departments/admin-routes.ts",
+    "server/admin-control-routes.ts",
+    "server/admin-recovery-routes.ts",
+    "shared/schema.ts"
+  ],
+  "testResults": [
+    {
+      "name": "qa/tests/unit/final-source-of-truth-cutover.test.ts",
+      "status": "passed"
+    }
+  ]
+}
