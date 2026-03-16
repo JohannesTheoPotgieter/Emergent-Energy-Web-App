@@ -1,5 +1,6 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { ApiError, parseApiError, networkError } from "./api-error";
+import { runAsyncAction } from "./async-action";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -23,29 +24,36 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const headers: Record<string, string> = {};
-  if (data) {
-    headers["Content-Type"] = "application/json";
-  }
-  const token = localStorage.getItem('auth_token');
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
+  return runAsyncAction(async ({ signal, correlationId }) => {
+    const headers: Record<string, string> = {
+      "X-Correlation-ID": correlationId,
+    };
+    if (data) {
+      headers["Content-Type"] = "application/json";
+    }
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
 
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method,
-      headers,
-      body: data ? JSON.stringify(data) : undefined,
-      credentials: "include",
-    });
-  } catch (err) {
-    throw networkError();
-  }
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method,
+        signal,
+        headers,
+        body: data ? JSON.stringify(data) : undefined,
+        credentials: "include",
+      });
+    } catch {
+      throw networkError();
+    }
 
-  await throwIfResNotOk(res);
-  return res;
+    await throwIfResNotOk(res);
+    return res;
+  }, {
+    action: `apiRequest:${method}:${url}`,
+  });
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
@@ -54,28 +62,36 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const headers: Record<string, string> = {};
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
+    const requestUrl = queryKey.join("/") as string;
+    return runAsyncAction(async ({ signal, correlationId }) => {
+      const headers: Record<string, string> = {
+        "X-Correlation-ID": correlationId,
+      };
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
 
-    let res: Response;
-    try {
-      res = await fetch(queryKey.join("/") as string, {
-        credentials: "include",
-        headers,
-      });
-    } catch {
-      throw networkError();
-    }
+      let res: Response;
+      try {
+        res = await fetch(requestUrl, {
+          signal,
+          credentials: "include",
+          headers,
+        });
+      } catch {
+        throw networkError();
+      }
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
-    }
+      if (unauthorizedBehavior === "returnNull" && res.status === 401) {
+        return null;
+      }
 
-    await throwIfResNotOk(res);
-    return await res.json();
+      await throwIfResNotOk(res);
+      return await res.json();
+    }, {
+      action: `queryFn:GET:${requestUrl}`,
+    });
   };
 
 export function invalidateDashboardQueries(qc: QueryClient) {
