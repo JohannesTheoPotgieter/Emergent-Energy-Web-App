@@ -23,14 +23,40 @@ export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
+  options?: { headers?: Record<string, string> },
 ): Promise<Response> {
-  return runAsyncAction(async ({ signal, correlationId }) => {
-    const headers: Record<string, string> = {
-      "X-Correlation-ID": correlationId,
-    };
-    if (data) {
-      headers["Content-Type"] = "application/json";
-    }
+  const headers: Record<string, string> = { ...(options?.headers || {}) };
+  if (data) {
+    headers["Content-Type"] = "application/json";
+  }
+  const token = localStorage.getItem('auth_token');
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method,
+      headers,
+      body: data ? JSON.stringify(data) : undefined,
+      credentials: "include",
+    });
+  } catch (err) {
+    throw networkError();
+  }
+
+  await throwIfResNotOk(res);
+  return res;
+}
+
+type UnauthorizedBehavior = "returnNull" | "throw";
+export const getQueryFn: <T>(options: {
+  on401: UnauthorizedBehavior;
+}) => QueryFunction<T> =
+  ({ on401: unauthorizedBehavior }) =>
+  async ({ queryKey }) => {
+    const headers: Record<string, string> = {};
     const token = localStorage.getItem('auth_token');
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;

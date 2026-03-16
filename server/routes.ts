@@ -53,6 +53,7 @@ import {
 } from "./canonical-boundaries";
 import { listImportSyncState } from "./services/imports-governance-service";
 import { classifyProjectInfoPayload } from "./services/source-of-truth-policy";
+import { mytoolTaskIdempotencyStore } from "./lib/mytool-task-idempotency";
 
 function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
   if (fontColor === 'red') return false;
@@ -5920,21 +5921,75 @@ export async function registerRoutes(
       if (operation === "convertToMilestoneWI") {
         const { workItemId, subtaskWorkItemIds } = data || {};
         if (!workItemId) return res.status(400).json({ error: "workItemId required" });
-        await db.transaction(async (tx) => {
-          await tx.update(workItems)
-            .set({ isMilestone: true, duration: 0, updatedAt: new Date() })
-            .where(eq(workItems.id, workItemId));
-          if (Array.isArray(subtaskWorkItemIds) && subtaskWorkItemIds.length > 0) {
-            const parentItem = await tx.select({ indentLevel: workItems.indentLevel }).from(workItems).where(eq(workItems.id, workItemId));
-            const parentIndent = parentItem[0]?.indentLevel ?? 0;
-            for (const stId of subtaskWorkItemIds) {
-              if (stId === workItemId) continue;
-              await tx.update(workItems)
-                .set({ parentId: workItemId, indentLevel: parentIndent + 1, updatedAt: new Date() })
-                .where(eq(workItems.id, stId));
-            }
+
+        const projectInfoRow = await storage.getProjectInfo(rawProjectName);
+        const projectId = projectInfoRow?.id || null;
+        if (!projectId) return res.status(400).json({ error: "Project not found" });
+
+        try {
+          await db.transaction(async (tx) => {
+            const repo = {
+              getById: async (id: number) => {
+                const rows = await tx.select({
+                  id: workItems.id,
+                  projectId: workItems.projectId,
+                  title: workItems.title,
+                  isMilestone: workItems.isMilestone,
+                  duration: workItems.duration,
+                  indentLevel: workItems.indentLevel,
+                  parentId: workItems.parentId,
+                  deletedAt: workItems.deletedAt,
+                  createdAt: workItems.createdAt,
+                  updatedAt: workItems.updatedAt,
+                }).from(workItems).where(eq(workItems.id, id)).limit(1);
+                return rows[0] || null;
+              },
+              listByIds: async (ids: number[]) => {
+                if (!ids.length) return [];
+                return tx.select({
+                  id: workItems.id,
+                  projectId: workItems.projectId,
+                  title: workItems.title,
+                  isMilestone: workItems.isMilestone,
+                  duration: workItems.duration,
+                  indentLevel: workItems.indentLevel,
+                  parentId: workItems.parentId,
+                  deletedAt: workItems.deletedAt,
+                  createdAt: workItems.createdAt,
+                  updatedAt: workItems.updatedAt,
+                }).from(workItems).where(inArray(workItems.id, ids));
+              },
+              patchById: async (id: number, patch: any) => {
+                await tx.update(workItems).set(patch).where(eq(workItems.id, id));
+              },
+            };
+
+            await convertWorkItemTypeInPlace({
+              repo,
+              workItemId,
+              target: "milestone",
+              projectId,
+              subtaskWorkItemIds,
+            });
+          });
+        } catch (err: any) {
+          if (err instanceof WorkItemConversionError) {
+            return res.status(err.status).json({ error: err.message });
           }
+          throw err;
+        }
+
+        logAuditFromReq(req, {
+          entityType: "work_item",
+          action: "convert_to_milestone",
+          entityId: String(workItemId),
+          changesJson: {
+            projectName: rawProjectName,
+            subtaskWorkItemIds: Array.isArray(subtaskWorkItemIds) ? subtaskWorkItemIds : [],
+            conversion: "in_place",
+          },
         });
+
         notifyStructureChange(`Task converted to milestone.`);
         return res.json({ message: "Converted to milestone" });
       }
@@ -5942,9 +5997,59 @@ export async function registerRoutes(
       if (operation === "convertToTaskWI") {
         const { workItemId } = data || {};
         if (!workItemId) return res.status(400).json({ error: "workItemId required" });
-        await db.update(workItems)
-          .set({ isMilestone: false, duration: 1, updatedAt: new Date() })
-          .where(eq(workItems.id, workItemId));
+
+        const projectInfoRow = await storage.getProjectInfo(rawProjectName);
+        const projectId = projectInfoRow?.id || null;
+        if (!projectId) return res.status(400).json({ error: "Project not found" });
+
+        try {
+          await db.transaction(async (tx) => {
+            const repo = {
+              getById: async (id: number) => {
+                const rows = await tx.select({
+                  id: workItems.id,
+                  projectId: workItems.projectId,
+                  title: workItems.title,
+                  isMilestone: workItems.isMilestone,
+                  duration: workItems.duration,
+                  indentLevel: workItems.indentLevel,
+                  parentId: workItems.parentId,
+                  deletedAt: workItems.deletedAt,
+                  createdAt: workItems.createdAt,
+                  updatedAt: workItems.updatedAt,
+                }).from(workItems).where(eq(workItems.id, id)).limit(1);
+                return rows[0] || null;
+              },
+              listByIds: async () => [],
+              patchById: async (id: number, patch: any) => {
+                await tx.update(workItems).set(patch).where(eq(workItems.id, id));
+              },
+            };
+
+            await convertWorkItemTypeInPlace({
+              repo,
+              workItemId,
+              target: "task",
+              projectId,
+            });
+          });
+        } catch (err: any) {
+          if (err instanceof WorkItemConversionError) {
+            return res.status(err.status).json({ error: err.message });
+          }
+          throw err;
+        }
+
+        logAuditFromReq(req, {
+          entityType: "work_item",
+          action: "convert_to_task",
+          entityId: String(workItemId),
+          changesJson: {
+            projectName: rawProjectName,
+            conversion: "in_place",
+          },
+        });
+
         notifyStructureChange(`Milestone converted to regular task.`);
         return res.json({ message: "Converted to task" });
       }
@@ -13086,6 +13191,11 @@ export async function registerRoutes(
   });
 
   app.post("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
+    const userId = (req.user as any).id;
+    const rawRequestId = req.header("x-idempotency-key") || req.body?.clientRequestId;
+    const requestId = typeof rawRequestId === "string" ? rawRequestId.trim() : "";
+    const hasRequestId = requestId.length > 0;
+
     try {
       const validationErrors = validateTaskCreate(req.body);
       if (validationErrors.length > 0) {
@@ -13093,7 +13203,6 @@ export async function registerRoutes(
         validationErrors.forEach(e => { fields[e.field] = e.message; });
         return sendError(res, validationError(fields));
       }
-      const userId = (req.user as any).id;
       const bucket = req.body.bucket || 'personal';
       if (bucket === 'project' && !req.body.projectName) {
         return sendError(res, badRequest("Project name is required when bucket is 'project'"));
@@ -13103,10 +13212,35 @@ export async function registerRoutes(
       }
       if (req.body.status) req.body.status = normalizeStatus(req.body.status);
       if (req.body.priority) req.body.priority = normalizePriority(req.body.priority);
+
+      if (hasRequestId) {
+        const idempotencyResult = mytoolTaskIdempotencyStore.begin(userId, requestId);
+        if (idempotencyResult.state === "duplicate_pending") {
+          console.info("[mytool-task-create] request", { requestId, userId, result: "duplicate_pending" });
+          return res.status(409).json({ error: "Duplicate create request in progress", requestId });
+        }
+
+        if (idempotencyResult.state === "duplicate_completed" && idempotencyResult.taskId) {
+          const existingTask = await storage.getMytoolTask(idempotencyResult.taskId);
+          if (existingTask && existingTask.ownerUserId === userId) {
+            console.info("[mytool-task-create] request", { requestId, userId, result: "duplicate_completed", taskId: existingTask.id });
+            return res.json({ ...existingTask, idempotentReplay: true, requestId });
+          }
+        }
+      }
+
       const task = await storage.createMytoolTask({ ...req.body, bucket, ownerUserId: userId });
+      if (hasRequestId) {
+        mytoolTaskIdempotencyStore.complete(userId, requestId, task.id);
+      }
+      console.info("[mytool-task-create] request", { requestId: hasRequestId ? requestId : null, userId, result: "created", taskId: task.id });
       logAuditFromReq(req, { entityType: "mytool_task", action: "create", entityId: String(task.id), changesJson: { description: "MyTool task created", title: req.body.title, bucket } });
       res.json(task);
     } catch (err: any) {
+      if (hasRequestId) {
+        mytoolTaskIdempotencyStore.fail(userId, requestId);
+      }
+      console.error("[mytool-task-create] request", { requestId: hasRequestId ? requestId : null, userId, result: "error", message: err?.message || "unknown_error" });
       sendError(res, err);
     }
   });
