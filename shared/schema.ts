@@ -5288,6 +5288,7 @@ export type InsertSubcontractorAssignment = z.infer<typeof insertSubcontractorAs
 export type SubcontractorAssignment = typeof projectSubcontractorAssignments.$inferSelect;
 
 export const commissioningStatusEnum = pgEnum('commissioning_status', ['not_started', 'in_progress', 'ready_for_review', 'approved', 'closed']);
+export const evidenceTypeEnum = pgEnum('evidence_type', ['document', 'photo', 'form', 'structured_field', 'sign_off', 'linked_record']);
 
 export const commissioningItems = pgTable("commissioning_items", {
   id: serial("id").primaryKey(),
@@ -5310,6 +5311,88 @@ export const commissioningItems = pgTable("commissioning_items", {
 export const insertCommissioningItemSchema = createInsertSchema(commissioningItems).omit({ id: true, createdAt: true, updatedAt: true, completedAt: true } as any);
 export type InsertCommissioningItem = z.infer<typeof insertCommissioningItemSchema>;
 export type CommissioningItem = typeof commissioningItems.$inferSelect;
+
+export const evidenceRequirementDefinitions = pgTable("evidence_requirement_definitions", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  completionType: text("completion_type").notNull(),
+  sourceType: text("source_type").notNull(),
+  sourceRef: text("source_ref"),
+  requirementKey: text("requirement_key").notNull(),
+  label: text("label").notNull(),
+  evidenceType: evidenceTypeEnum("evidence_type").notNull(),
+  isRequired: boolean("is_required").notNull().default(true),
+  weight: real("weight").notNull().default(1),
+  minCount: integer("min_count").notNull().default(1),
+  thresholdPercent: real("threshold_percent"),
+  configJson: jsonb("config_json"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const evidenceCollectedItems = pgTable("evidence_collected_items", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  completionType: text("completion_type").notNull(),
+  sourceType: text("source_type").notNull(),
+  sourceRef: text("source_ref").notNull(),
+  requirementKey: text("requirement_key"),
+  evidenceType: evidenceTypeEnum("evidence_type").notNull(),
+  title: text("title"),
+  valueRef: text("value_ref"),
+  valueJson: jsonb("value_json"),
+  uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id),
+  uploadedByName: text("uploaded_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+});
+
+export const evidenceEvaluations = pgTable("evidence_evaluations", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  completionType: text("completion_type").notNull(),
+  sourceType: text("source_type").notNull(),
+  sourceRef: text("source_ref").notNull(),
+  thresholdPercent: real("threshold_percent").notNull(),
+  scorePercent: real("score_percent").notNull(),
+  totalRequired: integer("total_required").notNull(),
+  totalPresent: integer("total_present").notNull(),
+  missingItemsJson: jsonb("missing_items_json"),
+  pass: boolean("pass").notNull(),
+  evaluatedByUserId: integer("evaluated_by_user_id").references(() => users.id),
+  evaluatedByName: text("evaluated_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const evidenceOverrideRecords = pgTable("evidence_override_records", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  completionType: text("completion_type").notNull(),
+  sourceType: text("source_type").notNull(),
+  sourceRef: text("source_ref").notNull(),
+  scorePercent: real("score_percent").notNull(),
+  thresholdPercent: real("threshold_percent").notNull(),
+  reason: text("reason").notNull(),
+  authorizedByUserId: integer("authorized_by_user_id").notNull().references(() => users.id),
+  authorizedByName: text("authorized_by_name"),
+  authorizedByRole: text("authorized_by_role"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertEvidenceRequirementDefinitionSchema = createInsertSchema(evidenceRequirementDefinitions).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertEvidenceCollectedItemSchema = createInsertSchema(evidenceCollectedItems).omit({ id: true, createdAt: true, deletedAt: true } as any);
+export const insertEvidenceEvaluationSchema = createInsertSchema(evidenceEvaluations).omit({ id: true, createdAt: true } as any);
+export const insertEvidenceOverrideRecordSchema = createInsertSchema(evidenceOverrideRecords).omit({ id: true, createdAt: true } as any);
+
+export type InsertEvidenceRequirementDefinition = z.infer<typeof insertEvidenceRequirementDefinitionSchema>;
+export type InsertEvidenceCollectedItem = z.infer<typeof insertEvidenceCollectedItemSchema>;
+export type InsertEvidenceEvaluation = z.infer<typeof insertEvidenceEvaluationSchema>;
+export type InsertEvidenceOverrideRecord = z.infer<typeof insertEvidenceOverrideRecordSchema>;
+export type EvidenceRequirementDefinition = typeof evidenceRequirementDefinitions.$inferSelect;
+export type EvidenceCollectedItem = typeof evidenceCollectedItems.$inferSelect;
+export type EvidenceEvaluation = typeof evidenceEvaluations.$inferSelect;
+export type EvidenceOverrideRecord = typeof evidenceOverrideRecords.$inferSelect;
 
 export const invoiceCaptureStatusEnum = pgEnum('invoice_capture_status', ['captured', 'submitted', 'verified', 'approved', 'rejected']);
 
