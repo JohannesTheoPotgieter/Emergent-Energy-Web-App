@@ -20,6 +20,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
 import { useToast } from "@/hooks/use-toast";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
+import { evaluateQualityGovernanceItem } from "@shared/quality-governance";
 
 function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem('auth_token');
@@ -60,8 +61,87 @@ function getStatusConfig(status: string) {
   return STATUS_CONFIG[status] || STATUS_CONFIG.not_started;
 }
 
+function getRiskLevelClass(level: string) {
+  switch ((level || "").toLowerCase()) {
+    case "critical":
+      return "bg-red-50 text-red-700 border-red-200";
+    case "high":
+      return "bg-amber-50 text-amber-700 border-amber-200";
+    case "medium":
+      return "bg-sky-50 text-sky-700 border-sky-200";
+    default:
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  }
+}
+
 interface QualityTabProps {
   projectName: string;
+}
+
+interface QualityWorkspaceData {
+  projectId: number | null;
+  projectName: string;
+  hasChecklist: boolean;
+  checklistId: number | null;
+  counts: {
+    overdue: number;
+    resubmissionNeeded: number;
+    evidenceRequired: number;
+    pendingReview: number;
+    openWarnings: number;
+    blockedHandover: boolean;
+    linkedMicrosoftItems: number;
+  };
+  risk: {
+    level: string;
+    score: number;
+    summary: string;
+  };
+  handover: {
+    status: string;
+    rejectionReason: string | null;
+    qualityStatus: string | null;
+    qualityRequired: boolean;
+    readinessStatus: string | null;
+    executionEnabled: boolean;
+    executionGateStatus: string | null;
+    blockers: string[];
+    blocked: boolean;
+  };
+  focusItems: Array<{
+    id: number;
+    itemName: string;
+    phaseName: string;
+    groupName: string;
+    qmStatus: string;
+    approved: boolean;
+    approvalState: string;
+    resubmissionNeeded: boolean;
+    overdue: boolean;
+    daysOverdue: number;
+    evidenceRequired: boolean;
+    evidenceMissing: boolean;
+    evidenceCount: number;
+    endDate: string | null;
+    assigneeName: string | null;
+    approvalComment: string | null;
+  }>;
+  relevantMicrosoftItems: Array<{
+    id: number;
+    type: string;
+    subjectOrTitle: string | null;
+    senderOrOrganizer: string | null;
+    receivedOrStartDatetime: string | null;
+    webLink: string | null;
+    actionRequired: boolean | null;
+    linkedTaskId: number | null;
+    qualityContext?: {
+      itemInstanceId: number;
+      itemName: string;
+      phaseName?: string | null;
+      evidenceCount?: number;
+    } | null;
+  }>;
 }
 
 export function QualityTab({ projectName }: QualityTabProps) {
@@ -125,6 +205,18 @@ export function QualityTab({ projectName }: QualityTabProps) {
     staleTime: 0,
   });
 
+  const { data: workspaceData } = useQuery<QualityWorkspaceData>({
+    queryKey: ["quality-workspace", projectName],
+    queryFn: async () => {
+      const res = await qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/workspace`);
+      if (!res.ok) throw new Error("Failed to load quality workspace");
+      return res.json();
+    },
+    enabled: !!projectName,
+    refetchOnMount: "always",
+    staleTime: 0,
+  });
+
   const { data: planLinks = [] } = useQuery({
     queryKey: ["quality-plan-links", projectName],
     queryFn: async () => {
@@ -151,9 +243,13 @@ export function QualityTab({ projectName }: QualityTabProps) {
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
+    queryClient.invalidateQueries({ queryKey: ["quality-workspace", projectName] });
+    queryClient.invalidateQueries({ queryKey: ["quality-summary", projectName] });
     queryClient.invalidateQueries({ queryKey: ["quality-warnings", projectName] });
     queryClient.invalidateQueries({ queryKey: ["quality-warnings-all"] });
     queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
+    queryClient.invalidateQueries({ queryKey: ["quality-all-items"] });
+    queryClient.invalidateQueries({ queryKey: ["quality-dashboard"] });
   };
 
   const updateItemMutation = useMutation({
@@ -172,16 +268,31 @@ export function QualityTab({ projectName }: QualityTabProps) {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
-  const approveItemMutation = useMutation({
-    mutationFn: async ({ itemInstanceId, approved }: { itemInstanceId: number; approved: boolean }) => {
-      const res = await qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/item/${itemInstanceId}/approve`, {
+  const sendForApprovalMutation = useMutation({
+    mutationFn: async ({ itemInstanceId, approverUserId }: { itemInstanceId: number; approverUserId: string }) => {
+      const formData = new FormData();
+      formData.append("approverUserId", approverUserId);
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/quality/project/${encodeURIComponent(projectName)}/item/${itemInstanceId}/send-for-approval`, {
         method: "POST",
-        body: JSON.stringify({ approved }),
+        headers,
+        body: formData,
+        credentials: "include",
       });
-      if (!res.ok) throw new Error("Failed to update approval");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || err.message || "Failed to send for approval");
+      }
       return res.json();
     },
-    onSuccess: invalidateAll,
+    onSuccess: () => {
+      invalidateAll();
+      setSendForApprovalItem(null);
+      setSfaApprover("");
+      toast({ title: "Sent for approval", description: "The item is now in review for the selected approver." });
+    },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
@@ -323,6 +434,41 @@ export function QualityTab({ projectName }: QualityTabProps) {
     }
   }, [checklistData?.phases]);
 
+  const openQualityItem = useCallback((itemInstanceId: number) => {
+    if (!checklistData?.itemInstances?.length) return;
+
+    const instance = checklistData.itemInstances.find((row: any) => row.id === itemInstanceId);
+    if (!instance) return;
+
+    const templateItem = (checklistData.templateItems || []).find((row: any) => row.id === instance.templateItemId);
+    const group = templateItem
+      ? (checklistData.groups || []).find((row: any) => row.id === templateItem.templateGroupId)
+      : null;
+    const phaseId = group?.templatePhaseId ?? null;
+
+    if (group?.id) {
+      setExpandedGroups((prev) => ({ ...prev, [group.id]: true }));
+    }
+    if (phaseId) {
+      setSelectedPhaseId(phaseId);
+    }
+    setExpandedItems((prev) => ({ ...prev, [itemInstanceId]: true }));
+
+    window.setTimeout(() => {
+      document.querySelector(`[data-testid="quality-item-${itemInstanceId}"]`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 80);
+  }, [checklistData]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const deepLinkedItemId = Number(params.get("qualityItemId") || 0);
+    if (!deepLinkedItemId) return;
+    openQualityItem(deepLinkedItemId);
+  }, [openQualityItem]);
+
   const teamMemberMap = useMemo(() => {
     const map = new Map<number, string>();
     teamMembers.forEach(m => map.set(m.id, m.name));
@@ -381,6 +527,17 @@ export function QualityTab({ projectName }: QualityTabProps) {
 
   const { phases = [], groups = [], templateItems = [], itemInstances = [], riskQuestions = [], riskAnswers = [], evidence = [] } = checklistData;
   const activeWarnings = Array.isArray(warnings) ? warnings.filter((w: any) => w.status !== "resolved") : [];
+  const governanceCounts = workspaceData?.counts || {
+    overdue: 0,
+    resubmissionNeeded: 0,
+    evidenceRequired: 0,
+    pendingReview: 0,
+    openWarnings: activeWarnings.length,
+    blockedHandover: false,
+    linkedMicrosoftItems: 0,
+  };
+  const governanceFocusItems = workspaceData?.focusItems || [];
+  const relevantMicrosoftItems = workspaceData?.relevantMicrosoftItems || [];
 
   const getPhaseProgress = (phaseId: number) => {
     const phaseGroups = groups.filter((g: any) => g.templatePhaseId === phaseId);
@@ -455,6 +612,168 @@ export function QualityTab({ projectName }: QualityTabProps) {
         <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 flex items-center gap-3" data-testid="quality-readonly-banner">
           <Lock className="w-4 h-4 text-blue-500 shrink-0" />
           <span className="text-sm text-blue-700">View-only mode - editing requires Quality Manager access</span>
+        </div>
+      )}
+
+      <Card className="border-border/70" data-testid="quality-governance-summary">
+        <CardContent className="p-4 space-y-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-sm font-semibold">Quality governance view</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {workspaceData?.risk?.summary || "Quality actions, evidence, and handover signals stay visible here."}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant="outline" className={getRiskLevelClass(workspaceData?.risk?.level || "low")}>
+                {(workspaceData?.risk?.level || "low").toUpperCase()} risk
+              </Badge>
+              {workspaceData?.handover?.blocked && (
+                <Badge variant="outline" className="bg-violet-50 text-violet-700 border-violet-200">
+                  Handover blocked
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-lg border border-red-100 bg-red-50/50 px-3 py-3">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Overdue</p>
+              <p className="text-lg font-bold text-red-600 mt-1">{governanceCounts.overdue}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">Past due and unresolved</p>
+            </div>
+            <div className="rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-3">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Resubmission</p>
+              <p className="text-lg font-bold text-amber-600 mt-1">{governanceCounts.resubmissionNeeded}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">Rejected items awaiting rework</p>
+            </div>
+            <div className="rounded-lg border border-sky-100 bg-sky-50/50 px-3 py-3">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Evidence gaps</p>
+              <p className="text-lg font-bold text-sky-600 mt-1">{governanceCounts.evidenceRequired}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">Required proof still missing</p>
+            </div>
+            <div className="rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-3">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Pending review</p>
+              <p className="text-lg font-bold text-violet-600 mt-1">{governanceCounts.pendingReview}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">Items in approval flow</p>
+            </div>
+            <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-3">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Linked Microsoft</p>
+              <p className="text-lg font-bold text-emerald-600 mt-1">{governanceCounts.linkedMicrosoftItems}</p>
+              <p className="text-[11px] text-muted-foreground mt-1">Quality-linked comms and follow-ups</p>
+            </div>
+          </div>
+
+          {workspaceData?.handover?.blocked && (
+            <div className="rounded-lg border border-violet-200 bg-violet-50/60 px-4 py-3" data-testid="quality-handover-blocked">
+              <div className="flex items-center gap-2 text-violet-700">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span className="text-sm font-semibold">Execution readiness is currently blocked by quality context</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {(workspaceData.handover.blockers || []).map((blocker) => (
+                  <Badge key={blocker} variant="outline" className="bg-white/80 text-violet-700 border-violet-200">
+                    {blocker}
+                  </Badge>
+                ))}
+              </div>
+              {workspaceData.handover.rejectionReason && (
+                <p className="text-xs text-violet-700/90 mt-2">{workspaceData.handover.rejectionReason}</p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {(governanceFocusItems.length > 0 || relevantMicrosoftItems.length > 0) && (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+          {governanceFocusItems.length > 0 && (
+            <Card data-testid="quality-focus-queue">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Priority quality queue</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {governanceFocusItems.map((item) => (
+                  <div key={item.id} className="rounded-lg border px-3 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">{item.itemName}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{item.phaseName} • {item.groupName}</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => openQualityItem(item.id)}
+                        data-testid={`open-focus-item-${item.id}`}
+                      >
+                        Open item
+                      </Button>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {item.resubmissionNeeded && (
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Resubmission</Badge>
+                      )}
+                      {item.overdue && (
+                        <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">{item.daysOverdue}d overdue</Badge>
+                      )}
+                      {item.evidenceMissing && (
+                        <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200">Evidence required</Badge>
+                      )}
+                      {item.approvalState === "pending_review" && (
+                        <Badge variant="outline" className="bg-violet-50 text-violet-700 border-violet-200">Pending review</Badge>
+                      )}
+                    </div>
+                    {item.approvalComment && (
+                      <p className="text-xs text-muted-foreground mt-2">{item.approvalComment}</p>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {relevantMicrosoftItems.length > 0 && (
+            <Card data-testid="quality-microsoft-context">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Relevant Microsoft-linked quality items</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {relevantMicrosoftItems.map((item) => (
+                  <div key={item.id} className="rounded-lg border px-3 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">{item.subjectOrTitle || "Microsoft item"}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {(item.type || "item").replaceAll("_", " ")} linked to {item.qualityContext?.itemName || "quality context"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {item.qualityContext?.itemInstanceId && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => openQualityItem(item.qualityContext!.itemInstanceId)}
+                            data-testid={`open-ms-quality-item-${item.id}`}
+                          >
+                            Open item
+                          </Button>
+                        )}
+                        {item.webLink && (
+                          <a href={item.webLink} target="_blank" rel="noopener noreferrer" className="inline-flex">
+                            <Button variant="ghost" size="sm" className="h-8 px-2 text-xs">
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </Button>
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 
@@ -710,6 +1029,16 @@ export function QualityTab({ projectName }: QualityTabProps) {
                             const hasRedWarning = itemLinks.some((l: any) => isTaskCompleted(l.planItemId)) && !instance.approved;
                             const currentStatus = getItemQmStatus(instance);
                             const statusCfg = getStatusConfig(currentStatus);
+                            const governance = evaluateQualityGovernanceItem({
+                              qmStatus: instance.qmStatus,
+                              approved: instance.approved,
+                              isApplicable: instance.isApplicable,
+                              endDate: instance.endDate,
+                              scheduledDate: instance.scheduledDate,
+                              approvalComment: instance.approvalComment,
+                              isEvidenceRequired: templateItem.isEvidenceRequired,
+                              evidenceCount: itemEvidence.length,
+                            });
                             const assigneeName = instance.primaryAssignment?.displayLabel
                               || (instance.assigneeUserId ? teamMemberMap.get(instance.assigneeUserId) : null);
                             const isExpanded = expandedItems[instance.id] ?? false;
@@ -753,6 +1082,21 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                         {instance.approved && (
                                           <Badge className="text-[9px] gap-0.5 px-1.5 py-0 h-4 bg-emerald-100 text-emerald-700 border-emerald-200" variant="outline">
                                             <CheckCircle2 className="w-2.5 h-2.5" /> Approved
+                                          </Badge>
+                                        )}
+                                        {governance.resubmissionNeeded && (
+                                          <Badge variant="outline" className="text-[9px] gap-0.5 px-1.5 py-0 h-4 bg-amber-50 text-amber-700 border-amber-200">
+                                            <AlertCircle className="w-2.5 h-2.5" /> Resubmission
+                                          </Badge>
+                                        )}
+                                        {governance.overdue && (
+                                          <Badge variant="outline" className="text-[9px] gap-0.5 px-1.5 py-0 h-4 bg-red-50 text-red-700 border-red-200">
+                                            <Clock className="w-2.5 h-2.5" /> {governance.daysOverdue}d overdue
+                                          </Badge>
+                                        )}
+                                        {governance.evidenceMissing && (
+                                          <Badge variant="outline" className="text-[9px] gap-0.5 px-1.5 py-0 h-4 bg-sky-50 text-sky-700 border-sky-200">
+                                            <Paperclip className="w-2.5 h-2.5" /> Evidence required
                                           </Badge>
                                         )}
                                       </div>
@@ -838,7 +1182,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                               role: "",
                                             }] : null}
                                             mode="single"
-                                            invalidateKeys={["quality-checklist", "quality-warnings", "quality-checklists"]}
+                                            invalidateKeys={["quality-checklist", "quality-workspace", "quality-warnings", "quality-checklists", "quality-all-items", "quality-dashboard"]}
                                             showUnassignedLabel={true}
                                             disabled={!canEdit}
                                             disabledReason="Only Quality authority can change this assignment"
@@ -877,6 +1221,14 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                       </div>
                                     )}
 
+                                    {governance.resubmissionNeeded && instance.approvalComment && (
+                                      <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3" data-testid={`resubmission-info-${instance.id}`}>
+                                        <AlertCircle className="w-4 h-4 shrink-0" />
+                                        <span className="font-medium">Resubmission required</span>
+                                        <span className="text-amber-700/90">{instance.approvalComment}</span>
+                                      </div>
+                                    )}
+
                                     {canEdit && !instance.approved && (
                                       <div>
                                         {sendForApprovalItem === instance.id ? (
@@ -893,15 +1245,16 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                             <Button
                                               size="sm"
                                               className="h-8 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700"
-                                              disabled={!sfaApprover}
+                                              disabled={!sfaApprover || sendForApprovalMutation.isPending}
                                               onClick={() => {
-                                                approveItemMutation.mutate({ itemInstanceId: instance.id, approved: true });
-                                                setSendForApprovalItem(null);
-                                                setSfaApprover("");
+                                                sendForApprovalMutation.mutate({
+                                                  itemInstanceId: instance.id,
+                                                  approverUserId: sfaApprover,
+                                                });
                                               }}
                                               data-testid={`btn-confirm-approval-${instance.id}`}
                                             >
-                                              <CheckCircle className="w-3 h-3" /> Approve
+                                              {sendForApprovalMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />} Send
                                             </Button>
                                             <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setSendForApprovalItem(null); setSfaApprover(""); }} data-testid={`btn-cancel-approval-${instance.id}`}>Cancel</Button>
                                           </div>

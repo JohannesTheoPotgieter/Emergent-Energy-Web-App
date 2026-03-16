@@ -1,6 +1,36 @@
+export interface TaskResolvedUser {
+  id: number;
+  name: string;
+  username: string;
+  role: string;
+}
+
+export interface TaskDeliverableLink {
+  id: number;
+  title: string;
+  status: string;
+  updatedAt: string | null;
+}
+
+export interface TaskMicrosoftContextItem {
+  id: number;
+  linkedTaskId: number | null;
+  type: string;
+  title: string | null;
+  webLink: string | null;
+  actionRequired: boolean;
+  receivedOrStartDatetime: string | null;
+  sourceHref: string | null;
+  sourceContextLabel: string | null;
+  externalHref: string | null;
+}
+
 export interface Task {
   id: number;
-  projectName: string;
+  workItemId?: number | null;
+  canonical?: boolean;
+  projectId?: number | null;
+  projectName: string | null;
   title: string;
   description: string | null;
   status: string;
@@ -10,6 +40,7 @@ export interface Task {
   ownerUserId: number | null;
   approverUserId: number | null;
   assigneeUserId?: number | null;
+  assigneeUserIds?: number[] | null;
   dueDate: string | null;
   startDate: string | null;
   percentComplete: number;
@@ -30,6 +61,24 @@ export interface Task {
   tags: string[] | null;
   createdAt: string;
   updatedAt: string;
+  resolvedOwner?: TaskResolvedUser | null;
+  resolvedAssignees?: TaskResolvedUser[] | null;
+  isUnassigned?: boolean;
+  isBlocked?: boolean;
+  isReviewNeeded?: boolean;
+  isApprovalPending?: boolean;
+  projectLinkedDeliverableCount?: number;
+  approvalPendingDeliverableCount?: number;
+  projectLinkedDeliverables?: TaskDeliverableLink[] | null;
+  deliverableContextHref?: string | null;
+  deliverableContextLabel?: string | null;
+  projectHref?: string | null;
+  sourceHref?: string | null;
+  sourceContextLabel?: string | null;
+  externalHref?: string | null;
+  hasMicrosoftContext?: boolean;
+  microsoftActionRequiredCount?: number;
+  relatedMicrosoftItems?: TaskMicrosoftContextItem[] | null;
 }
 
 export interface Comment {
@@ -64,5 +113,9 @@ export interface EngDefaultView {
   statusFilter: string;
   priorityFilter: string;
   assigneeFilter: string;
+  projectFilter?: string;
+  dueDateFilter?: string;
+  workloadStateFilter?: string;
+  linkedSourceFilter?: string;
   boardCompact: boolean;
 }

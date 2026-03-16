@@ -12,13 +12,22 @@ import {
   qcPostmortem, qcPostmortemMetricValue, qcPostmortemSummary,
   qcAccessChallenge, calendarHoliday,
   notifications, notificationThrottle,
-  users,
+  users, projectInfo,
 } from "@shared/schema";
 import { requireAuthority, requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { getAssignmentsForEntity, setEntityAssignment } from "./services/assignment-service";
+import {
+  computeQualityRiskSummary,
+  evaluateQualityGovernanceItem,
+  getQualityHandoverReasons,
+  isHandoverQualityBlocked,
+  isQualityStatusRequired,
+} from "@shared/quality-governance";
+import { getProjectLinkedItems } from "./project-linking-service";
+import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./services/project-development-workspace-service";
 
 const qmApprovalUploadsDir = path.join(process.cwd(), "uploads", "qm-approvals");
 if (!fs.existsSync(qmApprovalUploadsDir)) fs.mkdirSync(qmApprovalUploadsDir, { recursive: true });
@@ -31,6 +40,13 @@ const qmApprovalUpload = multer({
 });
 
 type AppUser = { id: number; email: string; name: string; role: string; };
+type ProjectInfoRow = typeof projectInfo.$inferSelect;
+type QcChecklistRow = typeof qcChecklist.$inferSelect;
+type QcItemInstanceRow = typeof qcItemInstance.$inferSelect;
+type QcTemplateItemRow = typeof qcTemplateItem.$inferSelect;
+type QcTemplateGroupRow = typeof qcTemplateGroup.$inferSelect;
+type QcTemplatePhaseRow = typeof qcTemplatePhase.$inferSelect;
+type QcItemEvidenceRow = typeof qcItemEvidence.$inferSelect;
 
 function getUser(req: Request): AppUser {
   return getEffectiveUser(req) as AppUser;
@@ -133,6 +149,242 @@ function businessDaysBetween(startStr: string, endStr: string, holidays: string[
     cur.setDate(cur.getDate() + 1);
   }
   return count;
+}
+
+function uniqueNumberList(values: Array<number | null | undefined>): number[] {
+  const result = new Set<number>();
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      result.add(value);
+    }
+  }
+  return Array.from(result);
+}
+
+function normalizeHandoverRow(row: any) {
+  if (!row) return null;
+  const deliverables =
+    typeof row.deliverables === "string"
+      ? (() => {
+          try {
+            return JSON.parse(row.deliverables);
+          } catch {
+            return {};
+          }
+        })()
+      : (row.deliverables || {});
+
+  return {
+    ...row,
+    deliverables,
+  };
+}
+
+async function loadProjectQualityGovernanceContext(projectName: string, userId: number) {
+  const projectRows: ProjectInfoRow[] = await db.select().from(projectInfo).where(eq(projectInfo.projectName, projectName));
+  const [project] = projectRows;
+  const checklistRows: QcChecklistRow[] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
+  const [checklist] = checklistRows;
+  const warnings = await db.select().from(qcWarning)
+    .where(and(eq(qcWarning.projectName, projectName), sql`${qcWarning.status} != 'resolved'`))
+    .orderBy(desc(qcWarning.createdAt));
+
+  if (!project || !checklist) {
+    return {
+      project: project || null,
+      checklist: checklist || null,
+      warnings,
+      phaseSummaries: [] as any[],
+      governanceItems: [] as any[],
+      riskSummary: computeQualityRiskSummary({ items: [], warnings }),
+      handover: {
+        status: "DRAFT",
+        rejectionReason: null,
+        qualityStatus: null,
+        qualityRequired: false,
+        readinessStatus: null,
+        executionEnabled: project?.executionEnabled ?? false,
+        executionGateStatus: project?.executionGateStatus ?? "NOT_ELIGIBLE",
+        blockers: [] as string[],
+        blocked: false,
+      },
+      relevantMicrosoftItems: [] as any[],
+      focusItems: [] as any[],
+    };
+  }
+
+  const itemInstances: QcItemInstanceRow[] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
+
+  const templateItemIds = uniqueNumberList(itemInstances.map((item) => item.templateItemId));
+  const templateItems: QcTemplateItemRow[] = templateItemIds.length > 0
+    ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
+    : [];
+  const templateItemMap = new Map<number, QcTemplateItemRow>(templateItems.map((item) => [item.id, item]));
+
+  const groupIds = uniqueNumberList(templateItems.map((item) => item.templateGroupId));
+  const groups: QcTemplateGroupRow[] = groupIds.length > 0
+    ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.id, groupIds))
+    : [];
+  const groupMap = new Map<number, QcTemplateGroupRow>(groups.map((group) => [group.id, group]));
+
+  const phaseIds = uniqueNumberList(groups.map((group) => group.templatePhaseId));
+  const phases: QcTemplatePhaseRow[] = phaseIds.length > 0
+    ? await db.select().from(qcTemplatePhase).where(inArray(qcTemplatePhase.id, phaseIds))
+    : [];
+  const phaseMap = new Map<number, QcTemplatePhaseRow>(phases.map((phase) => [phase.id, phase]));
+
+  const evidence: QcItemEvidenceRow[] = itemInstances.length > 0
+    ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemInstances.map((item) => item.id)))
+    : [];
+  const evidenceCountMap = new Map<number, number>();
+  for (const item of evidence) {
+    evidenceCountMap.set(item.itemInstanceId, (evidenceCountMap.get(item.itemInstanceId) || 0) + 1);
+  }
+
+  const assigneeUserIds = [...new Set(
+    itemInstances
+      .map((item) => item.assigneeUserId)
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value)),
+  )];
+  const assigneeRows = assigneeUserIds.length > 0
+    ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, assigneeUserIds))
+    : [];
+  const assigneeMap = new Map(assigneeRows.map((row) => [row.id, row.name]));
+
+  const governanceItems = itemInstances.map((instance) => {
+    const templateItem = templateItemMap.get(instance.templateItemId);
+    const group = templateItem ? groupMap.get(templateItem.templateGroupId) : null;
+    const phase = group ? phaseMap.get(group.templatePhaseId) : null;
+    const evidenceCount = evidenceCountMap.get(instance.id) || 0;
+    const evaluation = evaluateQualityGovernanceItem({
+      qmStatus: instance.qmStatus,
+      approved: instance.approved,
+      isApplicable: instance.isApplicable,
+      endDate: instance.endDate,
+      scheduledDate: instance.scheduledDate,
+      approvalComment: instance.approvalComment,
+      isEvidenceRequired: templateItem?.isEvidenceRequired ?? false,
+      evidenceCount,
+    });
+
+    return {
+      ...instance,
+      itemName: templateItem?.itemName || "Unknown",
+      isEvidenceRequired: templateItem?.isEvidenceRequired ?? false,
+      defaultSeverity: templateItem?.defaultSeverity || "Medium",
+      groupId: group?.id || null,
+      groupName: group?.groupName || "Unknown",
+      phaseId: phase?.id || null,
+      phaseName: phase?.phaseName || "Unknown",
+      evidenceCount,
+      assigneeName: instance.assigneeUserId ? (assigneeMap.get(instance.assigneeUserId) || null) : null,
+      ...evaluation,
+    };
+  });
+
+  const phaseSummaries = phases.map((phase) => {
+    const phaseItems = governanceItems.filter((item) => item.phaseId === phase.id);
+    const applicableItems = phaseItems.filter((item) => item.isApplicable !== false);
+    const approvedItems = applicableItems.filter((item) => item.approved).length;
+    return {
+      phaseId: phase.id,
+      phaseKey: phase.phaseKey,
+      phaseName: phase.phaseName,
+      totalItems: phaseItems.length,
+      applicableItems: applicableItems.length,
+      approvedItems,
+      progressPercent: applicableItems.length > 0 ? Math.round((approvedItems / applicableItems.length) * 100) : 0,
+    };
+  });
+
+  const handoverRows: any[] = await db.execute(sql.raw(
+    `SELECT * FROM project_pd_pm_handover WHERE project_id = ${project.id} LIMIT 1`,
+  )).then((result: any) => (Array.isArray(result) ? result : result.rows || []));
+  const handover = normalizeHandoverRow(handoverRows[0]) || { deliverables: {} };
+
+  const workspace = await getProjectDevelopmentWorkspace({
+    projectId: project.id,
+    projectName: project.projectName,
+    canonicalProjectId: project.canonicalProjectId,
+    clientId: project.clientId,
+    phase: project.phase,
+    executionGateStatus: project.executionGateStatus,
+    executionEnabled: project.executionEnabled,
+    handover,
+  });
+
+  const handoverBlockers = computePdPmSubmitBlockers({
+    project,
+    handover,
+    workspace,
+  });
+
+  const handoverSummaryInput = {
+    blockers: handoverBlockers,
+    engineeringStatus: handover.engineering_status,
+    qualityRequired: workspace.downstream.quality.qualityRequired,
+    qualityStatus: workspace.downstream.quality.qualityStatus || handover.quality_status || null,
+    handoverStatus: handover.status || "DRAFT",
+    rejectionReason: handover.rejection_reason || null,
+    executionEnabled: project.executionEnabled,
+    executionGateStatus: project.executionGateStatus,
+  };
+
+  const relevantMicrosoftItems = (await getProjectLinkedItems(project.id, userId))
+    .filter((item: any) => Boolean(item?.qualityContext?.itemInstanceId));
+
+  const riskSummary = computeQualityRiskSummary({
+    items: governanceItems,
+    warnings,
+    handover: handoverSummaryInput,
+    linkedMicrosoftCount: relevantMicrosoftItems.length,
+  });
+
+  const focusItems = [...governanceItems]
+    .filter((item) =>
+      item.overdue ||
+      item.evidenceMissing ||
+      item.resubmissionNeeded ||
+      item.approvalState === "pending_review",
+    )
+    .sort((left, right) => {
+      const leftRank =
+        (left.resubmissionNeeded ? 400 : 0) +
+        (left.overdue ? 300 : 0) +
+        (left.evidenceMissing ? 200 : 0) +
+        (left.approvalState === "pending_review" ? 100 : 0) +
+        Number(left.daysOverdue || 0);
+      const rightRank =
+        (right.resubmissionNeeded ? 400 : 0) +
+        (right.overdue ? 300 : 0) +
+        (right.evidenceMissing ? 200 : 0) +
+        (right.approvalState === "pending_review" ? 100 : 0) +
+        Number(right.daysOverdue || 0);
+      return rightRank - leftRank;
+    })
+    .slice(0, 8);
+
+  return {
+    project,
+    checklist,
+    warnings,
+    phaseSummaries,
+    governanceItems,
+    riskSummary,
+    handover: {
+      status: handover.status || "DRAFT",
+      rejectionReason: handover.rejection_reason || null,
+      qualityStatus: handoverSummaryInput.qualityStatus,
+      qualityRequired: handoverSummaryInput.qualityRequired,
+      readinessStatus: workspace.readiness.readinessStatus || handover.handover_readiness_status || null,
+      executionEnabled: project.executionEnabled,
+      executionGateStatus: project.executionGateStatus,
+      blockers: getQualityHandoverReasons(handoverSummaryInput),
+      blocked: isHandoverQualityBlocked(handoverSummaryInput),
+    },
+    relevantMicrosoftItems,
+    focusItems,
+  };
 }
 
 export function registerQualityRoutes(app: Express) {
@@ -284,7 +536,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.get("/api/quality/templates/:templateId", requireAuth, async (req, res) => {
     try {
-      const tid = parseInt(req.params.templateId);
+      const tid = parseInt(String(req.params.templateId), 10);
       const [tmpl] = await db.select().from(qcTemplate).where(eq(qcTemplate.id, tid));
       if (!tmpl) return res.status(404).json({ error: "Template not found" });
 
@@ -308,7 +560,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.get("/api/quality/project/:projectName/checklist", requireAuth, async (req, res) => {
     try {
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(String(req.params.projectName));
       let [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
 
       if (!checklist) {
@@ -387,7 +639,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'edit'), async (req, res) => {
     try {
-      const itemId = parseInt(req.params.itemInstanceId);
+      const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const {
         startDate,
         endDate,
@@ -472,7 +724,7 @@ export function registerQualityRoutes(app: Express) {
       }
 
       const assignments = await getAssignmentsForEntity("quality_item", itemId, "ASSIGNEE");
-      const pName = decodeURIComponent(req.params.projectName);
+      const pName = decodeURIComponent(String(req.params.projectName));
       recalculateWarnings(pName).catch(() => {});
 
 
@@ -497,11 +749,11 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId/approve", requireAuth, requireAdminOrQm, requirePermission('quality', 'approve'), async (req, res) => {
     try {
-      const itemId = parseInt(req.params.itemInstanceId);
+      const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const { approved, comment } = req.body;
+      const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
 
       if (approved) {
-        const [existing] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, itemId));
         if (existing && (existing.qmStatus === "review" || existing.qmStatus === "fail")) {
           const role = getUserRole(req);
           const isQmManager = isAdminRole(role) || role === "quality_manager" || role === "QUALITY_MANAGER";
@@ -523,10 +775,14 @@ export function registerQualityRoutes(app: Express) {
       } else {
         updates.approvedByUserId = null;
         updates.approvedAt = null;
+        if (existing?.qmStatus === "review") {
+          updates.qmStatus = "fail";
+        }
+        updates.approvalComment = comment?.trim() ? comment.trim() : null;
       }
 
       const [updated] = await db.update(qcItemInstance).set(updates).where(eq(qcItemInstance.id, itemId)).returning();
-      const pName = decodeURIComponent(req.params.projectName);
+      const pName = decodeURIComponent(String(req.params.projectName));
       recalculateWarnings(pName).catch(() => {});
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: approved ? "approve" : "update", projectName: pName, changesJson: { description: approved ? "Quality item approved" : "Quality item approval revoked" } });
       res.json(updated);
@@ -538,7 +794,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence", requireAuth, requireAdminOrQm, async (req, res) => {
     try {
-      const itemId = parseInt(req.params.itemInstanceId);
+      const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const { evidenceUrl, evidenceNote } = req.body;
       if (!evidenceUrl) return res.status(400).json({ error: "evidenceUrl required" });
 
@@ -549,7 +805,7 @@ export function registerQualityRoutes(app: Express) {
         projectId,
         itemInstanceId: itemId, evidenceUrl, evidenceNote,
       }).returning();
-      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: decodeURIComponent(req.params.projectName), changesJson: { description: "Evidence added", evidenceUrl } });
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: decodeURIComponent(String(req.params.projectName)), changesJson: { description: "Evidence added", evidenceUrl } });
       res.json(evidence);
     } catch (err: any) {
       console.error("[Quality] Error:", err);
@@ -559,7 +815,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence/upload", requireAuth, requireAdminOrQm, qmApprovalUpload.single("file"), async (req, res) => {
     try {
-      const itemId = parseInt(req.params.itemInstanceId);
+      const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const file = req.file;
       if (!file) return res.status(400).json({ error: "No file uploaded" });
       const note = req.body.note || "";
@@ -574,7 +830,7 @@ export function registerQualityRoutes(app: Express) {
         evidenceUrl,
         evidenceNote: note || file.originalname,
       }).returning();
-      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: decodeURIComponent(req.params.projectName), changesJson: { description: "Evidence file uploaded", fileName: file.originalname } });
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: decodeURIComponent(String(req.params.projectName)), changesJson: { description: "Evidence file uploaded", fileName: file.originalname } });
       res.json(evidence);
     } catch (err: any) {
       console.error("[Quality] Error:", err);
@@ -625,8 +881,8 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, qmApprovalUpload.single("file"), async (req, res) => {
     try {
-      const itemId = parseInt(req.params.itemInstanceId);
-      const projectName = decodeURIComponent(req.params.projectName);
+      const itemId = parseInt(String(req.params.itemInstanceId), 10);
+      const projectName = decodeURIComponent(String(req.params.projectName));
       const approverUserId = parseInt(req.body.approverUserId);
       if (!approverUserId) return res.status(400).json({ error: "Approver is required" });
 
@@ -677,8 +933,8 @@ export function registerQualityRoutes(app: Express) {
 
   app.delete("/api/quality/evidence/:evidenceId", requireAuth, requireAdminOrQm, async (req, res) => {
     try {
-      await db.delete(qcItemEvidence).where(eq(qcItemEvidence.id, parseInt(req.params.evidenceId)));
-      logAuditFromReq(req, { entityType: "quality_checklist", entityId: req.params.evidenceId, action: "delete", changesJson: { description: "Evidence deleted" } });
+      await db.delete(qcItemEvidence).where(eq(qcItemEvidence.id, parseInt(String(req.params.evidenceId), 10)));
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.evidenceId), action: "delete", changesJson: { description: "Evidence deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Quality] Error:", err);
@@ -690,7 +946,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/items", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'edit'), async (req, res) => {
     try {
-      const pName = decodeURIComponent(req.params.projectName);
+      const pName = decodeURIComponent(String(req.params.projectName));
       const { itemName, groupId } = req.body;
       if (!itemName) return res.status(400).json({ error: "itemName required" });
 
@@ -738,8 +994,8 @@ export function registerQualityRoutes(app: Express) {
 
   app.delete("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'delete'), async (req, res) => {
     try {
-      const pName = decodeURIComponent(req.params.projectName);
-      const itemId = parseInt(req.params.itemInstanceId);
+      const pName = decodeURIComponent(String(req.params.projectName));
+      const itemId = parseInt(String(req.params.itemInstanceId), 10);
 
       const [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, pName));
       if (!checklist) return res.status(404).json({ error: "No checklist found for this project" });
@@ -777,7 +1033,7 @@ export function registerQualityRoutes(app: Express) {
       if (answerNumber !== undefined) updates.answerNumber = answerNumber;
 
       const [updated] = await db.update(qcRiskAnswer).set(updates).where(eq(qcRiskAnswer.id, riskAnswerId)).returning();
-      const pName = decodeURIComponent(req.params.projectName);
+      const pName = decodeURIComponent(String(req.params.projectName));
       recalculateWarnings(pName).catch(() => {});
 
 
@@ -793,7 +1049,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.get("/api/quality/project/:projectName/warnings", requireAuth, async (req, res) => {
     try {
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(String(req.params.projectName));
       const warnings = await db.select().from(qcWarning)
         .where(eq(qcWarning.projectName, projectName))
         .orderBy(desc(qcWarning.createdAt));
@@ -824,7 +1080,7 @@ export function registerQualityRoutes(app: Express) {
         const projectsWithLinks = [...new Set(allPlanLinks.map((l: any) => l.projectName))];
         const allWiTasks = await getAllPMWorkItemsAsProjectPlan();
         const allPlanTasks = allWiTasks.filter((t: any) => projectsWithLinks.includes(t.projectName));
-        const templateItemIds = [...new Set(allItems.map((i: any) => i.templateItemId))];
+        const templateItemIds = uniqueNumberList(allItems.map((item: any) => item.templateItemId));
         const templateItems = templateItemIds.length
           ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
           : [];
@@ -861,7 +1117,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/warning/:warningId/acknowledge", requireAuth, requireAdminOrQm, async (req, res) => {
     try {
-      const warningId = parseInt(req.params.warningId);
+      const warningId = parseInt(String(req.params.warningId), 10);
       const { note } = req.body;
       await db.update(qcWarning).set({ status: "in_progress", updatedAt: new Date() }).where(eq(qcWarning.id, warningId));
       await db.insert(qcWarningEvent).values({
@@ -882,7 +1138,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/warning/:warningId/resolve", requireAuth, requireAdminOrQm, async (req, res) => {
     try {
-      const warningId = parseInt(req.params.warningId);
+      const warningId = parseInt(String(req.params.warningId), 10);
       const { note } = req.body;
       await db.update(qcWarning).set({ status: "resolved", updatedAt: new Date() }).where(eq(qcWarning.id, warningId));
       await db.insert(qcWarningEvent).values({
@@ -905,7 +1161,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.get("/api/quality/project/:projectName/plan-links", requireAuth, async (req, res) => {
     try {
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(String(req.params.projectName));
       const links = await db.select().from(qcPlanLink).where(eq(qcPlanLink.projectName, projectName));
       res.json(links);
     } catch (err: any) {
@@ -916,7 +1172,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/plan-link", requireAuth, requireAdminOrQm, async (req, res) => {
     try {
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(String(req.params.projectName));
       const { planItemId, itemInstanceId, phaseId, linkType } = req.body;
       if (!planItemId) return res.status(400).json({ error: "planItemId is required" });
       if (!itemInstanceId && !phaseId) return res.status(400).json({ error: "Either phaseId or itemInstanceId is required" });
@@ -934,10 +1190,10 @@ export function registerQualityRoutes(app: Express) {
 
   app.delete("/api/quality/plan-link/:linkId", requireAuth, requireAdminOrQm, async (req, res) => {
     try {
-      const [deletedLink] = await db.select().from(qcPlanLink).where(eq(qcPlanLink.id, parseInt(req.params.linkId)));
-      await db.delete(qcPlanLink).where(eq(qcPlanLink.id, parseInt(req.params.linkId)));
+      const [deletedLink] = await db.select().from(qcPlanLink).where(eq(qcPlanLink.id, parseInt(String(req.params.linkId), 10)));
+      await db.delete(qcPlanLink).where(eq(qcPlanLink.id, parseInt(String(req.params.linkId), 10)));
       if (deletedLink) recalculateWarnings(deletedLink.projectName).catch(() => {});
-      logAuditFromReq(req, { entityType: "quality_checklist", entityId: req.params.linkId, action: "delete", projectName: deletedLink?.projectName, changesJson: { description: "Plan link deleted" } });
+      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.linkId), action: "delete", projectName: deletedLink?.projectName, changesJson: { description: "Plan link deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Quality] Error:", err);
@@ -949,31 +1205,55 @@ export function registerQualityRoutes(app: Express) {
 
   app.get("/api/quality/project/:projectName/summary", requireAuth, async (req, res) => {
     try {
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(String(req.params.projectName));
+      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.projectName, projectName));
       const [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
-      if (!checklist) return res.json({ hasChecklist: false, phases: [] });
+      if (!checklist) {
+        return res.json({
+          hasChecklist: false,
+          phases: [],
+          governance: {
+            overdueCount: 0,
+            resubmissionCount: 0,
+            evidenceGapCount: 0,
+            pendingReviewCount: 0,
+            blockedHandover: false,
+            riskLevel: "low",
+            riskScore: 0,
+            },
+        });
+      }
 
       const itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
-      const templateItems = itemInstances.length
-        ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, itemInstances.map(i => i.templateItemId)))
+      const templateItemIds = uniqueNumberList(itemInstances.map((item) => item.templateItemId));
+      const templateItems: QcTemplateItemRow[] = templateItemIds.length > 0
+        ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
         : [];
-      const groups = templateItems.length
-        ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.id, templateItems.map(t => t.templateGroupId)))
+      const templateItemMap = new Map<number, QcTemplateItemRow>(templateItems.map((item) => [item.id, item]));
+      const groupIds = uniqueNumberList(templateItems.map((item) => item.templateGroupId));
+      const groups: QcTemplateGroupRow[] = groupIds.length > 0
+        ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.id, groupIds))
         : [];
-      const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, checklist.templateId));
-
+      const groupMap = new Map<number, QcTemplateGroupRow>(groups.map((group) => [group.id, group]));
+      const phases: QcTemplatePhaseRow[] = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, checklist.templateId));
+      const evidenceRows: QcItemEvidenceRow[] = itemInstances.length > 0
+        ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemInstances.map((item) => item.id)))
+        : [];
+      const evidenceCountMap = new Map<number, number>();
+      for (const evidence of evidenceRows) {
+        evidenceCountMap.set(evidence.itemInstanceId, (evidenceCountMap.get(evidence.itemInstanceId) || 0) + 1);
+      }
       const warnings = await db.select().from(qcWarning)
         .where(and(eq(qcWarning.projectName, projectName), sql`${qcWarning.status} != 'resolved'`));
 
-      const phaseSummaries = phases.map(phase => {
-        const phaseGroups = groups.filter(g => g.templatePhaseId === phase.id);
-        const phaseGroupIds = phaseGroups.map(g => g.id);
-        const phaseTemplateItems = templateItems.filter(ti => phaseGroupIds.includes(ti.templateGroupId));
-        const phaseItemIds = phaseTemplateItems.map(ti => ti.id);
-        const phaseInstances = itemInstances.filter(ii => phaseItemIds.includes(ii.templateItemId));
-
-        const applicable = phaseInstances.filter(i => i.isApplicable);
-        const approved = applicable.filter(i => i.approved);
+      const phaseSummaries = phases.map((phase) => {
+        const phaseGroups = groups.filter((group) => group.templatePhaseId === phase.id);
+        const phaseGroupIds = phaseGroups.map((group) => group.id);
+        const phaseTemplateItems = templateItems.filter((item) => phaseGroupIds.includes(item.templateGroupId));
+        const phaseItemIds = phaseTemplateItems.map((item) => item.id);
+        const phaseInstances = itemInstances.filter((item) => phaseItemIds.includes(item.templateItemId));
+        const applicable = phaseInstances.filter((item) => item.isApplicable);
+        const approved = applicable.filter((item) => item.approved);
 
         return {
           phaseId: phase.id,
@@ -986,17 +1266,127 @@ export function registerQualityRoutes(app: Express) {
         };
       });
 
+      const handoverRows: any[] = project
+        ? await db.execute(sql.raw(
+            `SELECT project_id, status, engineering_status, quality_status, rejection_reason FROM project_pd_pm_handover WHERE project_id = ${project.id} LIMIT 1`,
+          )).then((result: any) => (Array.isArray(result) ? result : result.rows || []))
+        : [];
+      const handover = handoverRows[0];
+      const riskSummary = computeQualityRiskSummary({
+        items: itemInstances.map((item) => ({
+          qmStatus: item.qmStatus,
+          approved: item.approved,
+          isApplicable: item.isApplicable,
+          endDate: item.endDate,
+          scheduledDate: item.scheduledDate,
+          approvalComment: item.approvalComment,
+          isEvidenceRequired: templateItemMap.get(item.templateItemId)?.isEvidenceRequired ?? false,
+          evidenceCount: evidenceCountMap.get(item.id) || 0,
+        })),
+        warnings,
+        handover: {
+          engineeringStatus: handover?.engineering_status || null,
+          qualityRequired: isQualityStatusRequired(handover?.engineering_status || null),
+          qualityStatus: handover?.quality_status || null,
+          handoverStatus: handover?.status || null,
+          rejectionReason: handover?.rejection_reason || null,
+          executionEnabled: project?.executionEnabled ?? false,
+          executionGateStatus: project?.executionGateStatus ?? "NOT_ELIGIBLE",
+        },
+      });
+
       res.json({
         hasChecklist: true,
         checklistId: checklist.id,
         status: checklist.status,
         phases: phaseSummaries,
         totalWarnings: warnings.length,
-        highWarnings: warnings.filter(w => w.severity === "High").length,
-        openWarnings: warnings.filter(w => w.status === "open").length,
+        highWarnings: warnings.filter((warning: any) => warning.severity === "High").length,
+        openWarnings: warnings.filter((warning: any) => warning.status === "open").length,
+        governance: {
+          overdueCount: riskSummary.exposures.overdueCount,
+          resubmissionCount: riskSummary.exposures.resubmissionCount,
+          evidenceGapCount: riskSummary.exposures.evidenceGapCount,
+          pendingReviewCount: riskSummary.exposures.pendingReviewCount,
+          blockedHandover: riskSummary.exposures.blockedHandover,
+          riskLevel: riskSummary.level,
+          riskScore: riskSummary.score,
+          handoverBlockers: getQualityHandoverReasons({
+            engineeringStatus: handover?.engineering_status || null,
+            qualityRequired: isQualityStatusRequired(handover?.engineering_status || null),
+            qualityStatus: handover?.quality_status || null,
+            handoverStatus: handover?.status || null,
+            rejectionReason: handover?.rejection_reason || null,
+            executionEnabled: project?.executionEnabled ?? false,
+            executionGateStatus: project?.executionGateStatus ?? "NOT_ELIGIBLE",
+          }),
+        },
       });
     } catch (err: any) {
       console.error("[Quality] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/quality/project/:projectName/workspace", requireAuth, async (req, res) => {
+    try {
+      const projectName = decodeURIComponent(String(req.params.projectName));
+      const userId = getUser(req).id;
+      const context = await loadProjectQualityGovernanceContext(projectName, userId);
+
+      res.json({
+        projectId: context.project?.id || null,
+        projectName,
+        hasChecklist: !!context.checklist,
+        checklistId: context.checklist?.id || null,
+        counts: {
+          overdue: context.riskSummary.exposures.overdueCount,
+          resubmissionNeeded: context.riskSummary.exposures.resubmissionCount,
+          evidenceRequired: context.riskSummary.exposures.evidenceGapCount,
+          pendingReview: context.riskSummary.exposures.pendingReviewCount,
+          openWarnings: context.riskSummary.exposures.openWarningCount,
+          blockedHandover: context.riskSummary.exposures.blockedHandover,
+          linkedMicrosoftItems: context.riskSummary.exposures.linkedMicrosoftCount,
+        },
+        risk: {
+          level: context.riskSummary.level,
+          score: context.riskSummary.score,
+          summary: context.riskSummary.summary,
+        },
+        handover: context.handover,
+        focusItems: context.focusItems.map((item: any) => ({
+          id: item.id,
+          itemName: item.itemName,
+          phaseName: item.phaseName,
+          groupName: item.groupName,
+          qmStatus: item.qmStatus,
+          approved: item.approved,
+          approvalState: item.approvalState,
+          resubmissionNeeded: item.resubmissionNeeded,
+          overdue: item.overdue,
+          daysOverdue: item.daysOverdue,
+          evidenceRequired: item.isEvidenceRequired,
+          evidenceMissing: item.evidenceMissing,
+          evidenceCount: item.evidenceCount,
+          endDate: item.endDate,
+          assigneeName: item.assigneeName,
+          approvalComment: item.approvalComment,
+        })),
+        relevantMicrosoftItems: context.relevantMicrosoftItems.map((item: any) => ({
+          id: item.id,
+          type: item.type,
+          subjectOrTitle: item.subjectOrTitle,
+          senderOrOrganizer: item.senderOrOrganizer,
+          receivedOrStartDatetime: item.receivedOrStartDatetime,
+          webLink: item.webLink,
+          actionRequired: item.actionRequired,
+          linkedTaskId: item.linkedTaskId,
+          taskContext: item.taskContext,
+          qualityContext: item.qualityContext,
+        })),
+      });
+    } catch (err: any) {
+      console.error("[Quality] workspace error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1012,7 +1402,7 @@ export function registerQualityRoutes(app: Express) {
       const allInstances = await db.select().from(qcItemInstance);
       const allChecklists = await db.select().from(qcChecklist);
 
-      const checklistMap = new Map(allChecklists.map(cl => [cl.id, cl]));
+      const checklistMap = new Map<number, QcChecklistRow>(allChecklists.map(cl => [cl.id, cl]));
 
       let filtered = allInstances;
       if (projectFilter) {
@@ -1029,26 +1419,26 @@ export function registerQualityRoutes(app: Express) {
         return res.json([]);
       }
 
-      const templateItemIds = [...new Set(filtered.map(i => i.templateItemId))];
-      const templateItems = templateItemIds.length
+      const templateItemIds = uniqueNumberList(filtered.map(i => i.templateItemId));
+      const templateItems: QcTemplateItemRow[] = templateItemIds.length
         ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
         : [];
-      const templateItemMap = new Map(templateItems.map(ti => [ti.id, ti]));
+      const templateItemMap = new Map<number, QcTemplateItemRow>(templateItems.map(ti => [ti.id, ti]));
 
-      const groupIds = [...new Set(templateItems.map(ti => ti.templateGroupId))];
-      const groups = groupIds.length
+      const groupIds = uniqueNumberList(templateItems.map(ti => ti.templateGroupId));
+      const groups: QcTemplateGroupRow[] = groupIds.length
         ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.id, groupIds))
         : [];
-      const groupMap = new Map(groups.map(g => [g.id, g]));
+      const groupMap = new Map<number, QcTemplateGroupRow>(groups.map(g => [g.id, g]));
 
-      const phaseIds = [...new Set(groups.map(g => g.templatePhaseId))];
-      const phases = phaseIds.length
+      const phaseIds = uniqueNumberList(groups.map(g => g.templatePhaseId));
+      const phases: QcTemplatePhaseRow[] = phaseIds.length
         ? await db.select().from(qcTemplatePhase).where(inArray(qcTemplatePhase.id, phaseIds))
         : [];
-      const phaseMap = new Map(phases.map(p => [p.id, p]));
+      const phaseMap = new Map<number, QcTemplatePhaseRow>(phases.map(p => [p.id, p]));
 
       const itemInstanceIds = filtered.map(i => i.id);
-      const allEvidence = itemInstanceIds.length
+      const allEvidence: QcItemEvidenceRow[] = itemInstanceIds.length
         ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemInstanceIds))
         : [];
       const evidenceCountMap = new Map<number, number>();
@@ -1056,7 +1446,7 @@ export function registerQualityRoutes(app: Express) {
         evidenceCountMap.set(ev.itemInstanceId, (evidenceCountMap.get(ev.itemInstanceId) || 0) + 1);
       }
 
-      const assigneeUserIds = [...new Set(filtered.map(i => i.assigneeUserId).filter((id): id is number => id !== null))];
+      const assigneeUserIds = uniqueNumberList(filtered.map(i => i.assigneeUserId));
       let userMap = new Map<number, string>();
       if (assigneeUserIds.length) {
         const assignees = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, assigneeUserIds));
@@ -1068,6 +1458,17 @@ export function registerQualityRoutes(app: Express) {
         const templateItem = templateItemMap.get(inst.templateItemId);
         const group = templateItem ? groupMap.get(templateItem.templateGroupId) : undefined;
         const phase = group ? phaseMap.get(group.templatePhaseId) : undefined;
+        const evidenceCount = evidenceCountMap.get(inst.id) || 0;
+        const evaluation = evaluateQualityGovernanceItem({
+          qmStatus: inst.qmStatus,
+          approved: inst.approved,
+          isApplicable: inst.isApplicable,
+          endDate: inst.endDate,
+          scheduledDate: inst.scheduledDate,
+          approvalComment: inst.approvalComment,
+          isEvidenceRequired: templateItem?.isEvidenceRequired ?? false,
+          evidenceCount,
+        });
 
         return {
           id: inst.id,
@@ -1080,9 +1481,16 @@ export function registerQualityRoutes(app: Express) {
           assigneeName: inst.assigneeUserId ? (userMap.get(inst.assigneeUserId) || null) : null,
           startDate: inst.startDate,
           endDate: inst.endDate,
-          evidenceCount: evidenceCountMap.get(inst.id) || 0,
+          evidenceCount,
+          evidenceRequired: templateItem?.isEvidenceRequired ?? false,
+          evidenceMissing: evaluation.evidenceMissing,
+          overdue: evaluation.overdue,
+          daysOverdue: evaluation.daysOverdue,
+          approvalState: evaluation.approvalState,
+          resubmissionNeeded: evaluation.resubmissionNeeded,
           approved: inst.approved,
           approvedAt: inst.approvedAt,
+          approvalComment: inst.approvalComment,
         };
       });
 
@@ -1102,6 +1510,18 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/checklists", requireAuth, async (req, res) => {
     try {
       const allChecklists = await db.select().from(qcChecklist);
+      const projectIds = uniqueNumberList(allChecklists.map((checklist) => checklist.projectId));
+      const allProjects: ProjectInfoRow[] = projectIds.length > 0
+        ? await db.select().from(projectInfo).where(inArray(projectInfo.id, projectIds))
+        : [];
+      const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project) => [project.id, project]));
+
+      const handoverRows: any[] = projectIds.length > 0
+        ? await db.execute(sql.raw(
+            `SELECT project_id, status, engineering_status, quality_status, rejection_reason FROM project_pd_pm_handover WHERE project_id IN (${projectIds.join(",")})`,
+          )).then((result: any) => (Array.isArray(result) ? result : result.rows || []))
+        : [];
+      const handoverMap = new Map(handoverRows.map((row: any) => [Number(row.project_id), row]));
 
       const allWarnings = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
       const warningsByProject: Record<string, number> = {};
@@ -1129,18 +1549,29 @@ export function registerQualityRoutes(app: Express) {
         }
       }
 
-      const templateItemIds = [...new Set(allItems.map((i: any) => i.templateItemId))];
-      const templateItems = templateItemIds.length
+      const templateItemIds = uniqueNumberList(allItems.map((i: any) => i.templateItemId));
+      const templateItems: QcTemplateItemRow[] = templateItemIds.length
         ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
         : [];
-      const groupIds = [...new Set(templateItems.map(t => t.templateGroupId))];
-      const groups = groupIds.length
+      const templateItemMap = new Map<number, QcTemplateItemRow>(templateItems.map((item) => [item.id, item]));
+      const groupIds = uniqueNumberList(templateItems.map(t => t.templateGroupId));
+      const groups: QcTemplateGroupRow[] = groupIds.length
         ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.id, groupIds))
         : [];
+      const groupMap = new Map<number, QcTemplateGroupRow>(groups.map((group) => [group.id, group]));
+      const evidenceRows: QcItemEvidenceRow[] = allItems.length > 0
+        ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, allItems.map((item) => item.id)))
+        : [];
+      const evidenceCountMap = new Map<number, number>();
+      for (const evidence of evidenceRows) {
+        evidenceCountMap.set(evidence.itemInstanceId, (evidenceCountMap.get(evidence.itemInstanceId) || 0) + 1);
+      }
 
       const result = await Promise.all(allChecklists.map(async (cl) => {
         const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, cl.templateId));
         const clItems = allItems.filter(i => i.checklistId === cl.id);
+        const project = projectMap.get(cl.projectId);
+        const handover = handoverMap.get(cl.projectId);
 
         const phaseData = phases.map(phase => {
           const phaseGroups = groups.filter(g => g.templatePhaseId === phase.id);
@@ -1163,15 +1594,61 @@ export function registerQualityRoutes(app: Express) {
           };
         });
 
+        const governanceItems = clItems.map((item) => {
+          const templateItem = templateItemMap.get(item.templateItemId);
+          const group = templateItem ? groupMap.get(templateItem.templateGroupId) : null;
+          const evidenceCount = evidenceCountMap.get(item.id) || 0;
+          return {
+            qmStatus: item.qmStatus,
+            approved: item.approved,
+            isApplicable: item.isApplicable,
+            endDate: item.endDate,
+            scheduledDate: item.scheduledDate,
+            approvalComment: item.approvalComment,
+            isEvidenceRequired: templateItem?.isEvidenceRequired ?? false,
+            evidenceCount,
+            groupName: group?.groupName || null,
+          };
+        });
+
+        const storedProjectWarnings = allWarnings.filter((warning) => warning.projectName === cl.projectName);
+        const syntheticWarningCount = Math.max(0, (warningsByProject[cl.projectName] || 0) - storedProjectWarnings.length);
+        const warningInputs = [
+          ...storedProjectWarnings,
+          ...Array.from({ length: syntheticWarningCount }, () => ({ severity: "High", status: "open" })),
+        ];
+        const handoverInput = {
+          engineeringStatus: handover?.engineering_status || null,
+          qualityRequired: isQualityStatusRequired(handover?.engineering_status || null),
+          qualityStatus: handover?.quality_status || null,
+          handoverStatus: handover?.status || null,
+          rejectionReason: handover?.rejection_reason || null,
+          executionEnabled: project?.executionEnabled ?? false,
+          executionGateStatus: project?.executionGateStatus ?? "NOT_ELIGIBLE",
+        };
+        const riskSummary = computeQualityRiskSummary({
+          items: governanceItems,
+          warnings: warningInputs,
+          handover: handoverInput,
+        });
+
         return {
           id: cl.id,
+          projectId: cl.projectId,
           projectName: cl.projectName,
           templateId: cl.templateId,
           status: cl.status,
           createdAt: cl.createdAt,
-          updatedAt: cl.updatedAt,
+          updatedAt: (cl as any).updatedAt,
           phases: phaseData,
           warningCount: warningsByProject[cl.projectName] || 0,
+          overdueCount: riskSummary.exposures.overdueCount,
+          resubmissionCount: riskSummary.exposures.resubmissionCount,
+          evidenceGapCount: riskSummary.exposures.evidenceGapCount,
+          pendingReviewCount: riskSummary.exposures.pendingReviewCount,
+          blockedHandover: riskSummary.exposures.blockedHandover,
+          qualityRiskScore: riskSummary.score,
+          qualityRiskLevel: riskSummary.level,
         };
       }));
 
@@ -1189,6 +1666,32 @@ export function registerQualityRoutes(app: Express) {
       const allChecklists = await db.select().from(qcChecklist);
       const allWarnings = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
       const allItems = await db.select().from(qcItemInstance);
+      const projectIds = uniqueNumberList(allChecklists.map((checklist) => checklist.projectId));
+      const allProjects: ProjectInfoRow[] = projectIds.length > 0
+        ? await db.select().from(projectInfo).where(inArray(projectInfo.id, projectIds))
+        : [];
+      const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project) => [project.id, project]));
+
+      const handoverRows: any[] = projectIds.length > 0
+        ? await db.execute(sql.raw(
+            `SELECT project_id, status, engineering_status, quality_status, rejection_reason FROM project_pd_pm_handover WHERE project_id IN (${projectIds.join(",")})`,
+          )).then((result: any) => (Array.isArray(result) ? result : result.rows || []))
+        : [];
+      const handoverMap = new Map(handoverRows.map((row: any) => [Number(row.project_id), row]));
+
+      const templateItemIds = uniqueNumberList(allItems.map((item) => item.templateItemId));
+      const templateItems: QcTemplateItemRow[] = templateItemIds.length > 0
+        ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
+        : [];
+      const templateItemMap = new Map<number, QcTemplateItemRow>(templateItems.map((item) => [item.id, item]));
+
+      const evidenceRows: QcItemEvidenceRow[] = allItems.length > 0
+        ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, allItems.map((item) => item.id)))
+        : [];
+      const evidenceCountMap = new Map<number, number>();
+      for (const evidence of evidenceRows) {
+        evidenceCountMap.set(evidence.itemInstanceId, (evidenceCountMap.get(evidence.itemInstanceId) || 0) + 1);
+      }
 
       const pendingApprovals = allItems.filter(i => i.isApplicable && !i.approved);
       const projectWarningCounts: Record<string, { high: number; total: number; }> = {};
@@ -1198,9 +1701,56 @@ export function registerQualityRoutes(app: Express) {
         if (w.severity === "High") projectWarningCounts[w.projectName].high++;
       }
 
-      const projectsAtRisk = Object.entries(projectWarningCounts)
-        .filter(([, v]) => v.high > 0)
-        .map(([projectName, v]) => ({ projectName, ...v }));
+      const projectSummaries = allChecklists.map((checklist) => {
+        const projectItems = allItems.filter((item) => item.checklistId === checklist.id);
+        const project = projectMap.get(checklist.projectId);
+        const handover = handoverMap.get(checklist.projectId);
+        const warningInputs = allWarnings.filter((warning) => warning.projectName === checklist.projectName);
+
+        const riskSummary = computeQualityRiskSummary({
+          items: projectItems.map((item) => ({
+            qmStatus: item.qmStatus,
+            approved: item.approved,
+            isApplicable: item.isApplicable,
+            endDate: item.endDate,
+            scheduledDate: item.scheduledDate,
+            approvalComment: item.approvalComment,
+            isEvidenceRequired: templateItemMap.get(item.templateItemId)?.isEvidenceRequired ?? false,
+            evidenceCount: evidenceCountMap.get(item.id) || 0,
+          })),
+          warnings: warningInputs,
+          handover: {
+            engineeringStatus: handover?.engineering_status || null,
+            qualityRequired: isQualityStatusRequired(handover?.engineering_status || null),
+            qualityStatus: handover?.quality_status || null,
+            handoverStatus: handover?.status || null,
+            rejectionReason: handover?.rejection_reason || null,
+            executionEnabled: project?.executionEnabled ?? false,
+            executionGateStatus: project?.executionGateStatus ?? "NOT_ELIGIBLE",
+          },
+        });
+
+        return {
+          projectName: checklist.projectName,
+          warningCount: warningInputs.length,
+          ...riskSummary,
+        };
+      });
+
+      const projectsAtRisk = projectSummaries
+        .filter((project) => project.level === "high" || project.level === "critical")
+        .map((project) => ({
+          projectName: project.projectName,
+          high: project.exposures.highWarningCount,
+          total: project.warningCount,
+          riskLevel: project.level,
+          riskScore: project.score,
+          blockedHandover: project.exposures.blockedHandover,
+          overdueCount: project.exposures.overdueCount,
+          resubmissionCount: project.exposures.resubmissionCount,
+          evidenceGapCount: project.exposures.evidenceGapCount,
+        }))
+        .sort((left, right) => right.riskScore - left.riskScore);
 
       const postmortems = await db.select().from(qcPostmortem);
       const checklistProjects = allChecklists.map(c => c.projectName);
@@ -1213,6 +1763,12 @@ export function registerQualityRoutes(app: Express) {
         openWarnings: allWarnings.filter(w => w.status === "open").length,
         totalWarnings: allWarnings.length,
         projectsAtRisk,
+        overdueActions: projectSummaries.reduce((sum, project) => sum + project.exposures.overdueCount, 0),
+        resubmissionNeeded: projectSummaries.reduce((sum, project) => sum + project.exposures.resubmissionCount, 0),
+        evidenceRequired: projectSummaries.reduce((sum, project) => sum + project.exposures.evidenceGapCount, 0),
+        blockedHandovers: projectSummaries.filter((project) => project.exposures.blockedHandover).length,
+        atRiskProjects: projectsAtRisk.length,
+        topRiskProjects: projectsAtRisk.slice(0, 5),
         outstandingPostmortems,
       });
     } catch (err: any) {
@@ -1225,7 +1781,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/recalculate-warnings", requireAuth, requireAdminOrQm, async (req, res) => {
     try {
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(String(req.params.projectName));
       const count = await recalculateWarnings(projectName);
       logAuditFromReq(req, { entityType: "qc_warning", entityId: "0", action: "create", projectName, changesJson: { description: "Warnings recalculated", warningsGenerated: count } });
       res.json({ success: true, warningsGenerated: count });
@@ -1239,7 +1795,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.get("/api/quality/postmortem/:projectName", requireAuth, async (req, res) => {
     try {
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(String(req.params.projectName));
       const [pm] = await db.select().from(qcPostmortem).where(eq(qcPostmortem.projectName, projectName));
       if (!pm) return res.json({ postmortem: null, metricValues: [], summary: null });
 
@@ -1256,7 +1812,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/postmortem/:projectName", requireAuth, requireAdminOrQm, async (req, res) => {
     try {
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(String(req.params.projectName));
       const { metricInputs } = req.body;
 
       let [pm] = await db.select().from(qcPostmortem).where(eq(qcPostmortem.projectName, projectName));
@@ -1363,8 +1919,8 @@ export function registerQualityRoutes(app: Express) {
 
   app.delete("/api/quality/holidays/:id", requireAuth, requireRole("admin"), async (req, res) => {
     try {
-      await db.delete(calendarHoliday).where(eq(calendarHoliday.id, parseInt(req.params.id)));
-      logAuditFromReq(req, { entityType: "quality_template", entityId: req.params.id, action: "delete", changesJson: { description: "Holiday deleted" } });
+      await db.delete(calendarHoliday).where(eq(calendarHoliday.id, parseInt(String(req.params.id), 10)));
+      logAuditFromReq(req, { entityType: "quality_template", entityId: String(req.params.id), action: "delete", changesJson: { description: "Holiday deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Quality] Error:", err);
@@ -1376,7 +1932,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.get("/api/quality/plan-warnings/:projectName", requireAuth, async (req, res) => {
     try {
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(String(req.params.projectName));
       const warnings = await db.select().from(qcWarning)
         .where(and(
           eq(qcWarning.projectName, projectName),
@@ -1417,7 +1973,7 @@ export function registerQualityRoutes(app: Express) {
       if (!isAdminRole(role)) {
         return res.status(403).json({ error: "Admin access required" });
       }
-      const userId = parseInt(req.params.userId);
+      const userId = parseInt(String(req.params.userId), 10);
       const { role: newRole } = req.body;
       if (!newRole) return res.status(400).json({ error: "Role is required" });
       const { users } = await import("@shared/schema");

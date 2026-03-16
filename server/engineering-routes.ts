@@ -13,6 +13,7 @@ import {
   projectEngApprovals, projectEngStages, engStageTemplates,
   dashboardWidgetConfig, DEFAULT_WIDGET_ORDER,
   workItems,
+  msObjects,
   phaseTemplate as phaseTemplateTbl,
   uploadMetadata, refreshLogs, writebackAuditLog, phaseTemplateApplication, appSettings,
   TASK_STATUSES, TASK_WORKSTREAMS, TASK_PRIORITIES, PROJECT_PHASES,
@@ -27,6 +28,7 @@ import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { getAssignmentsForEntity, listAssignableDirectory } from "./services/assignment-service";
+import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
 
 const approvalUploadsDir = path.join(process.cwd(), "uploads", "approvals");
 if (!fs.existsSync(approvalUploadsDir)) fs.mkdirSync(approvalUploadsDir, { recursive: true });
@@ -46,6 +48,42 @@ function getUser(req: Request): AppUser {
 
 function getUserRole(req: Request): string {
   return getEffectiveUser(req)?.role || "";
+}
+
+const BLOCKED_STATUSES = new Set(["HOLD", "ON HOLD"]);
+const REVIEW_NEEDED_STATUSES = new Set(["PROVIDE FEEDBACK"]);
+const APPROVAL_PENDING_STATUSES = new Set(["NEEDS APPROVAL", "OPERATIONAL APPROVAL"]);
+const COMPLETE_LIKE_STATUSES = new Set(["COMPLETE", "COMPLETED", "DONE"]);
+const MICROSOFT_ADMIN_ROLES = new Set(["admin", "COO_ADMIN", "CEO_ADMIN"]);
+
+function normalizeStatus(status?: string | null): string {
+  return (status || "").trim().toUpperCase();
+}
+
+function isBlockedStatus(status?: string | null): boolean {
+  return BLOCKED_STATUSES.has(normalizeStatus(status));
+}
+
+function isReviewNeededStatus(status?: string | null): boolean {
+  return REVIEW_NEEDED_STATUSES.has(normalizeStatus(status));
+}
+
+function isApprovalPendingStatus(status?: string | null): boolean {
+  return APPROVAL_PENDING_STATUSES.has(normalizeStatus(status));
+}
+
+function isDeliverableApprovalPendingStatus(status?: string | null): boolean {
+  const normalized = normalizeStatus(status);
+  if (!normalized) return false;
+  if (COMPLETE_LIKE_STATUSES.has(normalized)) return false;
+  return [
+    "APPROVAL",
+    "REVIEW",
+    "SUBMITTED",
+    "PENDING",
+    "AWAITING",
+    "QC",
+  ].some((token) => normalized.includes(token));
 }
 
 async function isLocalSyncedSaveFlowEnabled(): Promise<boolean> {
@@ -352,12 +390,167 @@ export function registerEngineeringRoutes(app: Express) {
 
       const { buildUserMap, mergeResolvedWithTextNames } = await import("./user-resolver");
       const userMap = await buildUserMap();
+      const visibleProjectIds = Array.from(
+        new Set(
+          tasks
+            .map((task: any) => (typeof task.projectId === "number" ? task.projectId : null))
+            .filter((value): value is number => Number.isInteger(value) && value > 0),
+        ),
+      );
+      const canViewAllMicrosoftContext = MICROSOFT_ADMIN_ROLES.has(getUserRole(req));
+      const currentUserId = getUser(req).id;
+
+      const [deliverableRows, microsoftRows] = await Promise.all([
+        visibleProjectIds.length > 0
+          ? db.select({
+              id: deliverables.id,
+              projectId: deliverables.projectId,
+              title: deliverables.title,
+              status: deliverables.status,
+              updatedAt: deliverables.updatedAt,
+            })
+            .from(deliverables)
+            .where(inArray(deliverables.projectId, visibleProjectIds))
+            .orderBy(desc(deliverables.updatedAt))
+          : Promise.resolve([]),
+        visibleProjectIds.length > 0
+          ? db.select({
+              id: msObjects.id,
+              userId: msObjects.userId,
+              linkedProjectId: msObjects.linkedProjectId,
+              linkedTaskId: msObjects.linkedTaskId,
+              type: msObjects.type,
+              subjectOrTitle: msObjects.subjectOrTitle,
+              webLink: msObjects.webLink,
+              actionRequired: msObjects.actionRequired,
+              receivedOrStartDatetime: msObjects.receivedOrStartDatetime,
+            })
+            .from(msObjects)
+            .where(and(
+              inArray(msObjects.linkedProjectId, visibleProjectIds),
+              ne(msObjects.dismissed, true),
+              ...(canViewAllMicrosoftContext ? [] : [eq(msObjects.userId, currentUserId)]),
+            ))
+            .orderBy(desc(msObjects.receivedOrStartDatetime))
+          : Promise.resolve([]),
+      ]);
+
+      const deliverablesByProject = new Map<number, Array<{
+        id: number;
+        title: string;
+        status: string;
+        updatedAt: Date | null;
+      }>>();
+      for (const row of deliverableRows) {
+        const list = deliverablesByProject.get(row.projectId) || [];
+        list.push({
+          id: row.id,
+          title: row.title,
+          status: row.status,
+          updatedAt: row.updatedAt,
+        });
+        deliverablesByProject.set(row.projectId, list);
+      }
+
+      const microsoftByProject = new Map<number, Array<{
+        id: number;
+        linkedTaskId: number | null;
+        type: string;
+        title: string | null;
+        webLink: string | null;
+        actionRequired: boolean;
+        receivedOrStartDatetime: Date | null;
+      }>>();
+      for (const row of microsoftRows) {
+        const projectKey = typeof row.linkedProjectId === "number" ? row.linkedProjectId : null;
+        if (!projectKey) continue;
+        const list = microsoftByProject.get(projectKey) || [];
+        list.push({
+          id: row.id,
+          linkedTaskId: row.linkedTaskId,
+          type: row.type,
+          title: row.subjectOrTitle,
+          webLink: row.webLink,
+          actionRequired: row.actionRequired === true,
+          receivedOrStartDatetime: row.receivedOrStartDatetime,
+        });
+        microsoftByProject.set(projectKey, list);
+      }
+
       const enriched = tasks.map((t: any) => {
-        const idResolved = (t.assigneeUserIds || []).map((uid: number) => userMap.get(uid)).filter(Boolean);
+        const resolvedAssigneeIds = Array.from(
+          new Set([
+            ...((t.assigneeUserIds || []).filter((uid: number) => Number.isInteger(uid)) as number[]),
+            ...(typeof t.ownerUserId === "number" ? [t.ownerUserId] : []),
+          ]),
+        );
+        const idResolved = resolvedAssigneeIds.map((uid: number) => userMap.get(uid)).filter(Boolean);
+        const mergedAssignees = mergeResolvedWithTextNames(idResolved, t.assignees, userMap);
+        const projectDeliverables = typeof t.projectId === "number" ? (deliverablesByProject.get(t.projectId) || []) : [];
+        const rawMicrosoftItems = typeof t.projectId === "number" ? (microsoftByProject.get(t.projectId) || []) : [];
+        const projectLinks = t.projectName
+          ? buildMyWorkSourceLinks({
+              source: "engineering_task",
+              rawId: t.id,
+              projectName: t.projectName,
+            })
+          : null;
+        const deliverableLinks = t.projectName
+          ? buildMyWorkSourceLinks({
+              source: "deliverables",
+              rawId: t.id,
+              projectName: t.projectName,
+            })
+          : null;
+        const relatedMicrosoftItems = rawMicrosoftItems.slice(0, 3).map((item) => {
+          const msLinks = buildMyWorkSourceLinks({
+            source: "microsoft",
+            rawId: item.id,
+            projectName: t.projectName || null,
+            sourceType: item.type,
+            webLink: item.webLink,
+          });
+          return {
+            id: item.id,
+            linkedTaskId: item.linkedTaskId,
+            type: item.type,
+            title: item.title,
+            webLink: item.webLink,
+            actionRequired: item.actionRequired,
+            receivedOrStartDatetime: item.receivedOrStartDatetime,
+            sourceHref: msLinks.sourceHref,
+            sourceContextLabel: msLinks.sourceContextLabel,
+            externalHref: msLinks.externalHref,
+          };
+        });
+        const microsoftActionRequiredCount = rawMicrosoftItems.filter((item) => item.actionRequired).length;
+        const approvalPendingDeliverableCount = projectDeliverables.filter((item) =>
+          isDeliverableApprovalPendingStatus(item.status),
+        ).length;
+
         return {
           ...t,
-          resolvedAssignees: mergeResolvedWithTextNames(idResolved, t.assignees, userMap),
+          assignees: mergedAssignees.map((user: any) => user.name),
+          assigneeUserIds: resolvedAssigneeIds,
+          assigneeUserId: resolvedAssigneeIds[0] || null,
+          resolvedAssignees: mergedAssignees,
           resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
+          isUnassigned: mergedAssignees.length === 0 && !t.ownerUserId,
+          isBlocked: isBlockedStatus(t.status) || !!t.holdReason || !!t.blockedType,
+          isReviewNeeded: isReviewNeededStatus(t.status),
+          isApprovalPending: isApprovalPendingStatus(t.status),
+          projectLinkedDeliverableCount: projectDeliverables.length,
+          approvalPendingDeliverableCount,
+          projectLinkedDeliverables: projectDeliverables.slice(0, 3),
+          deliverableContextHref: deliverableLinks?.sourceHref || null,
+          deliverableContextLabel: deliverableLinks?.sourceContextLabel || null,
+          projectHref: projectLinks?.projectHref || null,
+          sourceHref: projectLinks?.sourceHref || null,
+          sourceContextLabel: projectLinks?.sourceContextLabel || null,
+          externalHref: projectLinks?.externalHref || null,
+          hasMicrosoftContext: rawMicrosoftItems.length > 0,
+          microsoftActionRequiredCount,
+          relatedMicrosoftItems,
         };
       });
       res.json(enriched);

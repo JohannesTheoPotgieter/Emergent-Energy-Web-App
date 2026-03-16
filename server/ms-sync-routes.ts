@@ -629,10 +629,12 @@ export function registerMsSyncRoutes(app: Express) {
           actionRequired: msObjects.actionRequired,
           linkedProjectId: msObjects.linkedProjectId,
           linkedTaskId: msObjects.linkedTaskId,
+          linkedQualityItemInstanceId: operationalTasks.linkedQualityItemInstanceId,
           linkedProjectName: projectInfo.projectName,
         })
           .from(msObjects)
           .leftJoin(projectInfo, eq(msObjects.linkedProjectId, projectInfo.id))
+          .leftJoin(operationalTasks, eq(msObjects.linkedTaskId, operationalTasks.id))
           .where(and(
             eq(msObjects.userId, userId),
             eq(msObjects.actionRequired, true),
@@ -683,6 +685,7 @@ export function registerMsSyncRoutes(app: Express) {
           sourceType?: string | null;
           linkedTaskId?: number | null;
           linkedTaskType?: "personal" | "operational" | null;
+          linkedQualityItemInstanceId?: number | null;
           webLink?: string | null;
         } = {},
       ) => ({
@@ -696,6 +699,7 @@ export function registerMsSyncRoutes(app: Express) {
           sourceType: options.sourceType ?? null,
           linkedTaskId: options.linkedTaskId ?? null,
           linkedTaskType: options.linkedTaskType ?? null,
+          linkedQualityItemInstanceId: options.linkedQualityItemInstanceId ?? null,
           webLink: options.webLink ?? null,
         }),
       });
@@ -882,6 +886,7 @@ export function registerMsSyncRoutes(app: Express) {
             sourceType: item.type,
             linkedTaskId: item.linkedTaskId,
             linkedTaskType,
+            linkedQualityItemInstanceId: item.linkedQualityItemInstanceId,
             webLink: item.webLink,
           });
         }),

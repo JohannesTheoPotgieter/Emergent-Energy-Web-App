@@ -32,6 +32,60 @@ interface DependentTask {
   status: string;
 }
 
+interface FinanceFieldAudit {
+  fieldName: string;
+  sourceValue: string | number | null;
+  managedValue: string | number | null;
+  overrideValue: string | number | null;
+  previousValue: string | number | null;
+  changedAt: string | null;
+  changedByUserId: number | null;
+  changedByName: string | null;
+  overrideCategory: string | null;
+  overrideComment: string | null;
+}
+
+interface FinanceRecentChange {
+  id: number;
+  action: string;
+  entityId: string | null;
+  summary: string | null;
+  actorRole: string | null;
+  actorUserId: number | null;
+  actorName: string | null;
+  overrideCategory: string | null;
+  overrideComment: string | null;
+  createdAt: string;
+  changedFields: Array<{
+    fieldName: string;
+    oldValue: string | null;
+    newValue: string | null;
+  }>;
+}
+
+interface FinanceGovernanceGroup {
+  pendingCount: number;
+  affectingCashCount?: number;
+  pending: Array<Record<string, any>>;
+}
+
+interface MicrosoftFinanceSummary {
+  linkedCount: number;
+  actionRequiredCount: number;
+  unreadCount: number;
+  linkedTaskCount: number;
+  recent: Array<Record<string, any>>;
+}
+
+interface FinanceRiskSignal {
+  key: string;
+  severity: "warning" | "info" | "critical";
+  label: string;
+  detail: string;
+  amount?: number;
+  count?: number;
+}
+
 interface Milestone {
   id: number;
   rowNumber: number;
@@ -51,6 +105,17 @@ interface Milestone {
   dependentTask: DependentTask | null;
   dateOverride: string | null;
   dateOverrideReason: string | null;
+  trust?: {
+    sourceSheet: string;
+    sourceRow: number;
+    hasVariance: boolean;
+    editedFields: string[];
+    lastChangedAt: string | null;
+    lastChangedByName: string | null;
+    taskLink: { taskId: number; changedAt: string | null; changedByName: string | null } | null;
+    dateOverrideChange: { dateOverride: string; reason: string | null; changedAt: string | null; changedByName: string | null } | null;
+    fieldAudits: Record<string, FinanceFieldAudit>;
+  };
 }
 
 interface TaskAlert {
@@ -74,12 +139,60 @@ interface RevenueTabData {
     issueCount: number;
   };
   highlevel: {
-    costed: { revenue: number; expenditure: number; profit: number; margin: number; isManualOverride: boolean };
+    costed: {
+      revenue: number;
+      expenditure: number;
+      profit: number;
+      margin: number;
+      isManualOverride: boolean;
+      trust?: {
+        sourceRevenue: number;
+        managedRevenue: number;
+        revenueVariance: number;
+        sourceExpenditure: number;
+        managedExpenditure: number;
+        expenditureVariance: number;
+        changedAt: string | null;
+        changedByName: string | null;
+        overrideCategory: string | null;
+        overrideComment: string | null;
+      };
+    };
     planned: { revenue: number; expenditure: number; profit: number; margin: number };
     actual: { revenue: number; expenditure: number; profit: number; margin: number };
     voPmLimit: number | null;
     currentVoTotal: number | null;
   };
+  reconciliation?: {
+    source: {
+      sourceSheet: string;
+      milestoneCount: number;
+      importedContractValue: number;
+      projectContractValue: number;
+    };
+    managed: {
+      overriddenMilestoneCount: number;
+      overriddenFieldCount: number;
+      manualCostedOverride: boolean;
+      latestChangeAt: string | null;
+      latestChangeByName: string | null;
+    };
+    variances: {
+      projectContractVsImported: number;
+      costedRevenueVsImported: number;
+      costedExpenditureVsImportedBudget: number;
+      actualMarginVsCostedMargin: number;
+      liveMarginVsCostedMargin: number;
+      overdueExposure: number;
+      unbankedExposure: number;
+      unlinkedMilestones: number;
+    };
+    approvals: FinanceGovernanceGroup;
+    editRequests: FinanceGovernanceGroup;
+    microsoft: MicrosoftFinanceSummary;
+    recentChanges: FinanceRecentChange[];
+  };
+  riskSignals?: FinanceRiskSignal[];
 }
 
 export function RevenueTrackingTab({ projectName, highlightId }: RevenueTrackingTabProps) {
@@ -91,6 +204,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   const [drawerFilter, setDrawerFilter] = useState<string | null>(null);
   const [editingCosted, setEditingCosted] = useState(false);
   const [costedValues, setCostedValues] = useState({ revenue: "", expenditure: "" });
+  const [costedChangeReason, setCostedChangeReason] = useState("");
   const [linkingRow, setLinkingRow] = useState<number | null>(null);
   const [taskSearchTerm, setTaskSearchTerm] = useState("");
   const [dateOverrideRow, setDateOverrideRow] = useState<number | null>(null);
@@ -129,16 +243,31 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
     enabled: !!projectName,
   });
 
+  const describeRevenueOverride = (overridesToSave: RevenueOverride[]) => {
+    const rowNumbers = Array.from(new Set(overridesToSave.map((override) => override.rowNumber))).sort((left, right) => left - right);
+    const fields = Array.from(new Set(overridesToSave.map((override) => override.fieldName)));
+    const category = fields.every((field) => field === "plannedPaymentDate" || field === "paymentReceivedDate")
+      ? "TIMING_ADJUSTMENT"
+      : "DATA_CORRECTION";
+    const comment = `Updated ${fields.join(", ")} for revenue milestone row${rowNumbers.length > 1 ? "s" : ""} ${rowNumbers.join(", ")} from the project revenue workspace.`;
+    return { category, comment };
+  };
+
   const saveMutation = useMutation({
     mutationFn: async (overridesToSave: RevenueOverride[]) => {
       const token = localStorage.getItem('auth_token');
       const hdrs: Record<string, string> = { "Content-Type": "application/json" };
       if (token) hdrs["Authorization"] = `Bearer ${token}`;
+      const governance = describeRevenueOverride(overridesToSave);
       const res = await fetch(`/api/revenue-tracking/overrides`, {
         credentials: "include",
         method: "POST",
         headers: hdrs,
-        body: JSON.stringify({ overrides: overridesToSave.map(o => ({ ...o, projectName })) }),
+        body: JSON.stringify({
+          overrides: overridesToSave.map(o => ({ ...o, projectName })),
+          overrideCategory: governance.category,
+          overrideComment: governance.comment,
+        }),
       });
       if (!res.ok) throw new Error("Failed to save changes");
       return res.json();
@@ -172,16 +301,31 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
       const token = localStorage.getItem('auth_token');
       const hdrs: Record<string, string> = { "Content-Type": "application/json" };
       if (token) hdrs["Authorization"] = `Bearer ${token}`;
+      const governance = {
+        overrideCategory: "DATA_CORRECTION",
+        overrideComment: inBank
+          ? `Marked revenue milestone row ${rowNumber} as received in bank from the revenue workspace.`
+          : `Reopened revenue milestone row ${rowNumber} as not yet received in bank from the revenue workspace.`,
+      };
       const res = await fetch(`/api/revenue-tracking/overrides`, {
         credentials: "include",
         method: "POST",
         headers: hdrs,
-        body: JSON.stringify({ overrides }),
+        body: JSON.stringify({ overrides, ...governance }),
       });
       if (!res.ok) throw new Error("Failed to update");
       return res.json();
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: (data, variables) => {
+      if (data?.status === "pending_approval") {
+        toast({
+          title: "Submitted for Approval",
+          description: "Your payment status change has been sent to management for approval.",
+        });
+        queryClient.invalidateQueries({ queryKey: ["financial-edit-requests"] });
+        queryClient.invalidateQueries({ queryKey: ["financial-warnings"] });
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
       invalidateDashboardQueries(queryClient);
       toast({ title: variables.inBank ? "Marked as In Bank" : "Marked as outstanding", description: variables.inBank ? "Payment confirmed in bank — received date set" : "Payment marked as not yet received — received date cleared" });
@@ -218,7 +362,18 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
       if (!res.ok) throw new Error("Failed to link task");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data?.status === "pending_approval") {
+        toast({
+          title: "Submitted for Approval",
+          description: "Your costed value change has been sent to management for approval.",
+        });
+        queryClient.invalidateQueries({ queryKey: ["financial-edit-requests"] });
+        queryClient.invalidateQueries({ queryKey: ["financial-warnings"] });
+        setEditingCosted(false);
+        setCostedChangeReason("");
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
       setLinkingRow(null);
       setTaskSearchTerm("");
@@ -300,15 +455,29 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
         body: JSON.stringify({
           revenue: parseFloat(values.revenue) || null,
           expenditure: parseFloat(values.expenditure) || null,
+          changeCategory: "RECONCILIATION",
+          changeReason: costedChangeReason.trim() || "Costed revenue and expenditure adjusted from the revenue tracking workspace.",
         }),
       });
       if (!res.ok) throw new Error("Failed to save costed values");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data?.status === "pending_approval") {
+        toast({
+          title: "Submitted for Approval",
+          description: "Your costed value change has been sent to management for approval.",
+        });
+        queryClient.invalidateQueries({ queryKey: ["financial-edit-requests"] });
+        queryClient.invalidateQueries({ queryKey: ["financial-warnings"] });
+        setEditingCosted(false);
+        setCostedChangeReason("");
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["revenue-tab", projectName] });
       invalidateDashboardQueries(queryClient);
       setEditingCosted(false);
+      setCostedChangeReason("");
       toast({ title: "Costed values saved", description: "High-level costed values updated" });
     },
     onError: () => {
@@ -329,6 +498,21 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
     } catch { return "-"; }
   };
 
+  const formatDateTime = (dateStr: string | null | undefined) => {
+    if (!dateStr) return "Unknown";
+    try {
+      return new Date(dateStr).toLocaleString("en-ZA", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
   const formatDateForInput = (dateStr: any) => {
     if (!dateStr) return "";
     try { return new Date(dateStr).toISOString().split("T")[0]; } catch { return ""; }
@@ -338,6 +522,25 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
     const num = typeof val === "string" ? parseFloat(val) : (val ?? 0);
     if (isNaN(num)) return "-";
     return `${(num * 100).toFixed(1)}%`;
+  };
+
+  const buildMilestoneTrustTitle = (milestone: Milestone) => {
+    if (!milestone.trust) return "Imported revenue line";
+    const editedFields = milestone.trust.editedFields.length > 0 ? milestone.trust.editedFields.join(", ") : "None";
+    const dated = milestone.trust.lastChangedAt ? `Last changed: ${formatDateTime(milestone.trust.lastChangedAt)}` : "Last changed: Imported only";
+    const author = milestone.trust.lastChangedByName ? `By: ${milestone.trust.lastChangedByName}` : "By: Import";
+    const reasons = Object.values(milestone.trust.fieldAudits || {})
+      .map((audit) => audit.overrideComment)
+      .filter(Boolean)
+      .slice(0, 2)
+      .join(" | ");
+    return [
+      `Source: ${milestone.trust.sourceSheet} row ${milestone.trust.sourceRow}`,
+      `Edited fields: ${editedFields}`,
+      author,
+      dated,
+      reasons ? `Reason: ${reasons}` : null,
+    ].filter(Boolean).join("\n");
   };
 
   const startEditing = (row: Milestone) => {
@@ -417,6 +620,8 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
   }
 
   const { milestones, summary, highlevel } = data;
+  const reconciliation = data.reconciliation;
+  const riskSignals = data.riskSignals || [];
 
   const StatusBadge = ({ status, flags, milestone }: { status: string; flags: string[]; milestone: Milestone }) => {
     const hasInvoice = !!milestone.milestoneInvoiceNumber;
@@ -510,6 +715,93 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
         </Card>
       )}
 
+      {reconciliation && (
+        <Card className="border-slate-200 bg-slate-50/70">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Info className="h-4 w-4 text-slate-600" />
+              Finance Trust Snapshot
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Imported revenue truth stays visible while managed changes, approvals, and linked Microsoft actions remain auditable.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="rounded-md border bg-white p-3">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Imported contract</p>
+                <p className="text-sm font-semibold">{formatCurrency(reconciliation.source.importedContractValue)}</p>
+                <p className="text-[10px] text-muted-foreground">{reconciliation.source.milestoneCount} imported milestone rows</p>
+              </div>
+              <div className="rounded-md border bg-white p-3">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Managed overrides</p>
+                <p className="text-sm font-semibold">{reconciliation.managed.overriddenFieldCount}</p>
+                <p className="text-[10px] text-muted-foreground">{reconciliation.managed.overriddenMilestoneCount} milestone rows edited</p>
+              </div>
+              <div className="rounded-md border bg-white p-3">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Cash exposure</p>
+                <p className="text-sm font-semibold">{formatCurrency(reconciliation.variances.unbankedExposure)}</p>
+                <p className="text-[10px] text-muted-foreground">{formatCurrency(reconciliation.variances.overdueExposure)} overdue</p>
+              </div>
+              <div className="rounded-md border bg-white p-3">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Cash approvals</p>
+                <p className="text-sm font-semibold">{reconciliation.approvals.affectingCashCount || 0}</p>
+                <p className="text-[10px] text-muted-foreground">{reconciliation.editRequests.pendingCount} pending finance edits</p>
+              </div>
+              <div className="rounded-md border bg-white p-3">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Microsoft-linked actions</p>
+                <p className="text-sm font-semibold">{reconciliation.microsoft.actionRequiredCount}</p>
+                <p className="text-[10px] text-muted-foreground">{reconciliation.microsoft.linkedCount} linked item(s)</p>
+              </div>
+            </div>
+
+            {riskSignals.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {riskSignals.slice(0, 5).map((signal) => (
+                  <div
+                    key={signal.key}
+                    className={`rounded-full border px-3 py-1.5 text-[11px] ${
+                      signal.severity === "warning"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : signal.severity === "critical"
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : "border-slate-200 bg-white text-slate-700"
+                    }`}
+                    title={signal.detail}
+                  >
+                    <span className="font-semibold">{signal.label}</span>
+                    {typeof signal.amount === "number" ? ` • ${formatCurrency(signal.amount)}` : ""}
+                    {typeof signal.count === "number" ? ` • ${signal.count}` : ""}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {reconciliation.recentChanges.length > 0 && (
+              <div className="rounded-md border bg-white p-3 space-y-2">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Recent managed changes</p>
+                {reconciliation.recentChanges.slice(0, 3).map((change) => (
+                  <div key={change.id} className="flex items-start justify-between gap-3 text-xs">
+                    <div>
+                      <p className="font-medium text-slate-800">{change.summary || change.action}</p>
+                      <p className="text-muted-foreground">
+                        {(change.actorName || change.actorRole || "System")} • {formatDateTime(change.createdAt)}
+                      </p>
+                      {change.overrideComment && <p className="text-muted-foreground">{change.overrideComment}</p>}
+                    </div>
+                    {change.changedFields.length > 0 && (
+                      <Badge variant="outline" className="text-[10px]">
+                        {change.changedFields.length} field{change.changedFields.length === 1 ? "" : "s"}
+                      </Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* A) HIGH LEVEL PROJECT REVENUE TRACKING */}
       <Card>
         <CardHeader className="pb-2">
@@ -525,6 +817,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                   revenue: highlevel.costed.revenue.toString(),
                   expenditure: highlevel.costed.expenditure.toString(),
                 });
+                setCostedChangeReason(highlevel.costed.trust?.overrideComment || "");
               }} data-testid="button-edit-costed">
                 <Edit2 className="h-3 w-3 mr-1" /> Edit Costed
               </Button>
@@ -598,15 +891,39 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                 </TableBody>
               </Table>
             </div>
+            {highlevel.costed.trust && (
+              <div className="mt-3 rounded-md border bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
+                <span className="font-semibold">Source vs managed:</span>{" "}
+                imported revenue {formatCurrency(highlevel.costed.trust.sourceRevenue)} / managed revenue {formatCurrency(highlevel.costed.trust.managedRevenue)}{" "}
+                ({formatCurrency(highlevel.costed.trust.revenueVariance)} variance) • imported expenditure {formatCurrency(highlevel.costed.trust.sourceExpenditure)} / managed expenditure {formatCurrency(highlevel.costed.trust.managedExpenditure)}{" "}
+                ({formatCurrency(highlevel.costed.trust.expenditureVariance)} variance)
+                {highlevel.costed.trust.changedAt && (
+                  <span>
+                    {" "}• last costed change {formatDateTime(highlevel.costed.trust.changedAt)}
+                    {highlevel.costed.trust.changedByName ? ` by ${highlevel.costed.trust.changedByName}` : ""}
+                  </span>
+                )}
+                {highlevel.costed.trust.overrideComment && <span> • {highlevel.costed.trust.overrideComment}</span>}
+              </div>
+            )}
             {editingCosted && (
-              <div className="flex justify-end gap-2 mt-3">
-                <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => setEditingCosted(false)}>
+              <div className="mt-3 space-y-2">
+                <Input
+                  value={costedChangeReason}
+                  onChange={(e) => setCostedChangeReason(e.target.value)}
+                  placeholder="Reason for changing costed values (recommended)"
+                  className="text-xs"
+                  data-testid="input-costed-reason"
+                />
+                <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => { setEditingCosted(false); setCostedChangeReason(""); }}>
                   <X className="h-3 w-3 mr-1" /> Cancel
                 </Button>
                 <Button size="sm" className="text-xs h-7" onClick={() => saveCostedMutation.mutate(costedValues)}
                   disabled={saveCostedMutation.isPending} data-testid="button-save-costed">
                   <Save className="h-3 w-3 mr-1" /> Save Costed
                 </Button>
+                </div>
               </div>
             )}
             {highlevel.costed.isManualOverride && !editingCosted && (
@@ -694,10 +1011,34 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                         >
                           <TableCell className="font-mono text-xs">{m.milestoneNo}</TableCell>
                           <TableCell className="text-xs font-medium">
-                            <div className="flex items-center gap-1">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1">
                               <span className="truncate max-w-[160px]" title={m.milestoneName}>{m.milestoneName}</span>
                               {m.hasOverride && (
-                                <Badge variant="outline" className="text-[9px] px-1 py-0 border-orange-300 text-orange-600">edited</Badge>
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] px-1 py-0 border-orange-300 text-orange-600"
+                                  title={buildMilestoneTrustTitle(m)}
+                                >
+                                  edited
+                                </Badge>
+                              )}
+                              {m.trust?.hasVariance && (
+                                <span className="text-[10px] text-slate-500" title={buildMilestoneTrustTitle(m)}>
+                                  <Info className="h-3 w-3" />
+                                </span>
+                              )}
+                              </div>
+                              {m.trust && (
+                                <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                                  <span>{m.trust.sourceSheet} row {m.trust.sourceRow}</span>
+                                  {m.trust.editedFields.length > 0 && <span>{m.trust.editedFields.length} managed field change(s)</span>}
+                                  {m.trust.lastChangedAt && (
+                                    <span>
+                                      {m.trust.lastChangedByName || "Managed edit"} • {formatDateTime(m.trust.lastChangedAt)}
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </div>
                           </TableCell>
@@ -736,7 +1077,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                                 </div>
                               </div>
                             ) : (
-                              <div className="flex items-center gap-1 group">
+                              <div className="flex items-center gap-1 group" title={buildMilestoneTrustTitle(m)}>
                                 <span className={m.isRed ? "text-red-500 font-medium" : "text-foreground"}>
                                   {formatDate(m.date)}
                                 </span>
@@ -762,7 +1103,9 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                               <Input value={editValues.invoiceNumber} onChange={(e) => setEditValues({ ...editValues, invoiceNumber: e.target.value })}
                                 className="h-7 text-xs" placeholder="INV-XXX" data-testid={`input-invoice-${m.rowNumber}`} />
                             ) : (
-                              <span className="font-mono">{m.milestoneInvoiceNumber || "-"}</span>
+                              <span className="font-mono" title={m.trust?.fieldAudits?.milestoneInvoiceNumber?.overrideComment || buildMilestoneTrustTitle(m)}>
+                                {m.milestoneInvoiceNumber || "-"}
+                              </span>
                             )}
                           </TableCell>
 
@@ -772,7 +1115,9 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                               <Input type="date" value={editValues.invoiceRaisedDate} onChange={(e) => setEditValues({ ...editValues, invoiceRaisedDate: e.target.value })}
                                 className="h-7 text-xs w-[110px]" data-testid={`input-invoiced-${m.rowNumber}`} />
                             ) : (
-                              <span>{formatDate(m.invoiceRaisedDate)}</span>
+                              <span title={m.trust?.fieldAudits?.invoiceRaisedDate?.overrideComment || buildMilestoneTrustTitle(m)}>
+                                {formatDate(m.invoiceRaisedDate)}
+                              </span>
                             )}
                           </TableCell>
 

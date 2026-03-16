@@ -27,6 +27,7 @@ export interface MyWorkSourceLinkInput {
   sourceType?: string | null;
   linkedTaskId?: number | null;
   linkedTaskType?: "personal" | "operational" | null;
+  linkedQualityItemInstanceId?: number | null;
   webLink?: string | null;
 }
 
@@ -225,7 +226,9 @@ export function buildMyWorkSourceLinks(input: MyWorkSourceLinkInput): MyWorkSour
 
   if (input.source === "microsoft") {
     if (input.projectName && input.linkedTaskId && input.linkedTaskType === "operational") {
-      const context = buildProjectContext(input.projectName, "task-grid", "Open linked project task");
+      const context = input.linkedQualityItemInstanceId
+        ? buildProjectContext(input.projectName, "quality", "Open linked quality item")
+        : buildProjectContext(input.projectName, "task-grid", "Open linked project task");
       return {
         ...context,
         sourceTypeLabel: toMicrosoftTypeLabel(input.sourceType),
