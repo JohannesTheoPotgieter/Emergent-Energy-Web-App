@@ -5,13 +5,20 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
-import { UserPlus, X, Check, Search, User } from "lucide-react";
+import { UserPlus, X, Check, Search, User, Building2 } from "lucide-react";
 
 interface AssignableUser {
   id: number;
   name: string;
   username: string;
   role: string;
+  email?: string;
+}
+
+interface Counterparty {
+  id: number;
+  nameCanonical: string;
+  typeDefault?: string;
 }
 
 interface ResolvedUser {
@@ -91,6 +98,7 @@ export default function UserAssignmentPicker({
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [assigneeType, setAssigneeType] = useState<"internal_user" | "external_counterparty">("internal_user");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: allUsers = [] } = useQuery<AssignableUser[]>({
@@ -106,16 +114,30 @@ export default function UserAssignmentPicker({
     staleTime: 60000,
   });
 
+  const { data: counterparties = [] } = useQuery<Counterparty[]>({
+    queryKey: ["/api/counterparties"],
+    queryFn: async () => {
+      const res = await fetch("/api/counterparties", {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to fetch counterparties");
+      return res.json();
+    },
+    staleTime: 60000,
+  });
+
   const reassignMutation = useMutation({
-    mutationFn: async (userId: number | null) => {
+    mutationFn: async (payload: { assigneeType: "internal_user" | "external_counterparty" | null; assigneeId: number | null }) => {
       const res = await fetch("/api/tasks/reassign", {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ taskId, taskSource, userId }),
+        body: JSON.stringify({ taskId, taskSource, ...payload }),
       });
-      if (!res.ok) throw new Error("Failed to reassign");
-      return res.json();
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Failed to reassign");
+      return body;
     },
     onSuccess: () => {
       for (const key of invalidateKeys) {
@@ -125,8 +147,8 @@ export default function UserAssignmentPicker({
       toast({ title: "Assignment updated" });
       setOpen(false);
     },
-    onError: () => {
-      toast({ title: "Failed to update assignment", variant: "destructive" });
+    onError: (error: any) => {
+      toast({ title: error?.message || "Failed to update assignment", variant: "destructive" });
     },
   });
 
@@ -145,7 +167,7 @@ export default function UserAssignmentPicker({
   if (hasTextNames && allUsers.length > 0) {
     const resolvedIds = new Set(effectiveResolved.map(u => u.id));
     for (const textName of textNames!) {
-      if (!textName?.trim()) continue;
+      if (!textName?.trim() || textName.startsWith("counterparty:")) continue;
       if (effectiveResolved.some(u => nameMatchesAnyUser(textName, u))) continue;
       const match = allUsers.find(u => nameMatchesAnyUser(textName, u));
       if (match && !resolvedIds.has(match.id)) {
@@ -155,12 +177,20 @@ export default function UserAssignmentPicker({
     }
   }
 
+  const resolvedExternal = (textNames || []).flatMap((name) => {
+    if (!name?.startsWith("counterparty:")) return [];
+    const id = Number(name.split(":")[1]);
+    if (!id) return [];
+    const cp = counterparties.find(c => c.id === id);
+    return [{ id, name: cp?.nameCanonical || `Counterparty #${id}` }];
+  });
+
   const unmatchedNames = hasTextNames ? textNames!.filter(n => {
-    if (!n?.trim()) return false;
+    if (!n?.trim() || n.startsWith("counterparty:")) return false;
     return !effectiveResolved.some(u => nameMatchesAnyUser(n, u));
   }) : [];
 
-  const isUnassigned = effectiveResolved.length === 0 && unmatchedNames.length === 0 && !hasTextNames;
+  const isUnassigned = effectiveResolved.length === 0 && resolvedExternal.length === 0 && unmatchedNames.length === 0 && !hasTextNames;
 
   const filteredUsers = allUsers.filter(u => {
     if (search) {
@@ -168,6 +198,11 @@ export default function UserAssignmentPicker({
       return u.name.toLowerCase().includes(s) || u.username.toLowerCase().includes(s);
     }
     return true;
+  });
+
+  const filteredCounterparties = counterparties.filter(cp => {
+    if (!search) return true;
+    return cp.nameCanonical.toLowerCase().includes(search.toLowerCase());
   });
 
   const isXs = size === "xs";
@@ -184,6 +219,18 @@ export default function UserAssignmentPicker({
             {getInitials(u.name)}
           </span>
           {u.name}
+          <span className="text-[9px] text-blue-600">Internal</span>
+        </span>
+      ))}
+
+      {resolvedExternal.map((cp, i) => (
+        <span
+          key={`cp-${cp.id}-${i}`}
+          className={`inline-flex items-center gap-1 ${isXs ? 'px-1 py-0.5 text-[10px]' : 'px-1.5 py-0.5 text-xs'} rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-medium`}
+        >
+          <Building2 className={isXs ? "w-2.5 h-2.5" : "w-3 h-3"} />
+          {cp.name}
+          <span className="text-[9px]">External</span>
         </span>
       ))}
 
@@ -210,43 +257,48 @@ export default function UserAssignmentPicker({
             size="icon"
             className={`${isXs ? 'h-5 w-5' : 'h-6 w-6'} rounded-full hover:bg-blue-50 text-muted-foreground hover:text-blue-600`}
             data-testid={`btn-assign-${taskSource}-${taskId}`}
-            title={disabled ? (disabledReason || "You do not have permission to assign this task") : "Assign user"}
+            title={disabled ? (disabledReason || "You do not have permission to assign this task") : "Assign"}
             disabled={disabled}
           >
             <UserPlus className={isXs ? "h-3 w-3" : "h-3.5 w-3.5"} />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-64 p-2" align="start" side="bottom">
+        <PopoverContent className="w-72 p-2" align="start" side="bottom">
+          <div className="flex items-center gap-1 mb-2">
+            <Button size="sm" variant={assigneeType === "internal_user" ? "default" : "outline"} className="h-7 text-xs" onClick={() => setAssigneeType("internal_user")}>Internal</Button>
+            <Button size="sm" variant={assigneeType === "external_counterparty" ? "default" : "outline"} className="h-7 text-xs" onClick={() => setAssigneeType("external_counterparty")}>External</Button>
+          </div>
           <div className="flex items-center gap-1.5 mb-2">
             <Search className="h-3.5 w-3.5 text-muted-foreground" />
             <Input
               ref={inputRef}
               className="h-7 text-xs border-0 shadow-none focus-visible:ring-0"
-              placeholder="Search users..."
+              placeholder={assigneeType === "internal_user" ? "Search users..." : "Search counterparties..."}
               value={search}
               onChange={e => setSearch(e.target.value)}
-              data-testid="input-user-search"
+              data-testid="input-assignment-search"
             />
           </div>
-          <div className="max-h-48 overflow-y-auto space-y-0.5">
-            {mode === "single" && (hasResolvedUsers || hasTextNames) && (
+          <div className="max-h-52 overflow-y-auto space-y-0.5">
+            {(hasResolvedUsers || hasTextNames) && mode === "single" && (
               <button
                 className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-red-600 hover:bg-red-50 transition-colors"
-                onClick={() => reassignMutation.mutate(null)}
+                onClick={() => reassignMutation.mutate({ assigneeType: null, assigneeId: null })}
                 data-testid="btn-unassign"
               >
                 <X className="h-3.5 w-3.5" />
                 Remove assignment
               </button>
             )}
-            {filteredUsers.map(u => {
+
+            {assigneeType === "internal_user" && filteredUsers.map(u => {
               const isAssigned = resolvedSet.has(u.id);
               return (
                 <button
                   key={u.id}
                   className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${isAssigned ? 'bg-blue-50 text-blue-700' : 'hover:bg-muted text-foreground'}`}
                   onClick={() => {
-                    if (!isAssigned) reassignMutation.mutate(u.id);
+                    if (!isAssigned) reassignMutation.mutate({ assigneeType: "internal_user", assigneeId: u.id });
                   }}
                   disabled={isAssigned}
                   data-testid={`btn-select-user-${u.id}`}
@@ -259,8 +311,24 @@ export default function UserAssignmentPicker({
                 </button>
               );
             })}
-            {filteredUsers.length === 0 && (
+
+            {assigneeType === "external_counterparty" && filteredCounterparties.map(cp => (
+              <button
+                key={cp.id}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors hover:bg-muted text-foreground"
+                onClick={() => reassignMutation.mutate({ assigneeType: "external_counterparty", assigneeId: cp.id })}
+                data-testid={`btn-select-counterparty-${cp.id}`}
+              >
+                <Building2 className="h-4 w-4 text-amber-700" />
+                <span className="flex-1 text-left truncate">{cp.nameCanonical}</span>
+              </button>
+            ))}
+
+            {assigneeType === "internal_user" && filteredUsers.length === 0 && (
               <p className="text-xs text-muted-foreground text-center py-3">No users found</p>
+            )}
+            {assigneeType === "external_counterparty" && filteredCounterparties.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-3">No counterparties found</p>
             )}
           </div>
         </PopoverContent>
@@ -297,7 +365,7 @@ export function UserAvatarGroup({
   if (textNames && textNames.length > 0 && allUsersFallback.length > 0) {
     const ids = new Set(effectiveUsers.map(u => u.id));
     for (const tn of textNames) {
-      if (!tn?.trim()) continue;
+      if (!tn?.trim() || tn.startsWith("counterparty:")) continue;
       if (effectiveUsers.some(u => nameMatchesAnyUser(tn, u))) continue;
       const match = allUsersFallback.find(u => nameMatchesAnyUser(tn, u));
       if (match && !ids.has(match.id)) {
@@ -312,7 +380,7 @@ export function UserAvatarGroup({
   const isXs = size === "xs";
 
   const unmatchedNames = (textNames || []).filter(n => {
-    if (!n) return false;
+    if (!n || n.startsWith("counterparty:")) return false;
     return !effectiveUsers.some(u => nameMatchesAnyUser(n, u));
   });
 
