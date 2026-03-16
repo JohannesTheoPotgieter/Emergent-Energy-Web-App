@@ -260,28 +260,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [results]);
 
   return (
-    <div className="min-h-screen bg-white text-slate-900">
-      <header className="sticky top-0 z-50 border-b border-slate-200/90 bg-white/95 shadow-sm backdrop-blur">
-        <div className="px-4 lg:px-6 py-3 flex items-center gap-3">
+    <div className="min-h-screen ee-shell">
+      <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
+        <div className="px-4 lg:px-6 py-2.5 flex items-center gap-2.5">
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="lg:hidden"><Menu className="h-5 w-5" /></Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-[300px]">
+            <SheetContent side="left" className="w-[300px] border-r border-border">
               <SheetHeader><SheetTitle>Emergent Energy</SheetTitle></SheetHeader>
               <div className="mt-6 space-y-2">
                 {visibleSections.map((section) => {
                   const isActive = section.label === activeSection.label;
                   return (
                     <div key={section.label} className="space-y-1">
-                      <Link href={section.path} className={cn("block rounded-md px-3 py-2 text-sm font-medium transition-colors", isActive ? "bg-emerald-50 text-emerald-700" : "text-slate-700 hover:bg-slate-50")}>{section.label}</Link>
+                      <Link href={section.path} className={cn("block rounded-md px-3 py-2 text-sm font-medium transition-colors", isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}>{section.label}</Link>
                       {isActive ? (
-                        <div className="ml-3 border-l border-emerald-200 pl-3 space-y-1">
+                        <div className="ml-3 border-l border-primary/30 pl-3 space-y-1">
                           {section.secondary.map((item) => (
                             item.disabled ? (
-                              <span key={item.path} className="block rounded px-2 py-1.5 text-xs text-slate-400 cursor-not-allowed">{item.label}</span>
+                              <span key={item.path} className="block rounded px-2 py-1.5 text-xs text-muted-foreground/60 cursor-not-allowed">{item.label}</span>
                             ) : (
-                              <Link key={item.path} href={item.path} className={cn("block rounded px-2 py-1.5 text-xs", linkIsActive(location, item.path) ? "bg-emerald-100 text-emerald-800" : "text-slate-600 hover:bg-slate-100")}>{item.label}</Link>
+                              <Link key={item.path} href={item.path} className={cn("block rounded px-2 py-1.5 text-xs", linkIsActive(location, item.path) ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/60")}>{item.label}</Link>
                             )
                           ))}
                         </div>
@@ -294,34 +294,34 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </Sheet>
 
           <Link href="/" className="flex items-center gap-3 min-w-fit">
-            <img src="/emergent-logo.png" alt="Emergent Energy" className="h-8 w-auto object-contain" />
+            <img src="/emergent-logo.png" alt="Emergent Energy" className="h-7 w-auto object-contain" />
             <div className="hidden lg:block">
-              <p className="text-xs text-slate-500">{activeSection.label}</p>
+              <p className="text-xs text-muted-foreground">{activeSection.label}</p>
             </div>
           </Link>
 
-          <div className="relative flex-1 max-w-xl">
-            <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search projects, work items, finance, documents, people" className="pl-9 border-slate-200 focus-visible:ring-emerald-600" />
+          <div className="relative flex-1 max-w-2xl">
+            <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60" />
+            <Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search projects, work items, finance, documents, people" className="pl-9 border-input focus-visible:ring-ring/30" />
             {searchTerm.trim().length >= 2 && (
-              <div className="absolute left-0 right-0 top-[105%] rounded-xl border border-slate-200 bg-white shadow-xl p-2 max-h-96 overflow-auto">
+              <div className="absolute left-0 right-0 top-[105%] rounded-lg border border-border bg-background shadow-[var(--shadow-md)] p-2 max-h-96 overflow-auto">
                 {loadingSearch ? (
-                  <p className="text-xs text-slate-500 p-2">Searching across projects, work items, and finance…</p>
+                  <p className="text-xs text-muted-foreground p-2">Searching across projects, work items, and finance…</p>
                 ) : searchError ? (
                   <div className="p-2 space-y-2">
-                    <p className="text-xs text-red-600">{searchError}</p>
+                    <p className="text-xs text-red-700">{searchError}</p>
                     <Button size="sm" variant="outline" className="h-7 text-xs" onClick={retrySearch} data-testid="btn-retry-global-search">Retry</Button>
                   </div>
                 ) : (
                   <>
                     {Object.entries(groupedResults).map(([group, items]) => items.length > 0 ? (
                       <div key={group} className="mb-2">
-                        <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-slate-500">{group}</p>
+                        <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">{group}</p>
                         {items.map((item) => {
                           const hasLink = isDirectResultUrl(item.url);
                           if (!hasLink) {
                             return (
-                              <div key={item.id} className="rounded px-2 py-2 text-slate-400 cursor-not-allowed">
+                              <div key={item.id} className="rounded px-2 py-2 text-muted-foreground/60 cursor-not-allowed">
                                 <p className="text-sm">{item.title}</p>
                                 {item.subtitle ? <p className="text-xs truncate">{item.subtitle}</p> : null}
                                 <p className="text-[11px] mt-1">No direct link available yet</p>
@@ -330,15 +330,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                           }
 
                           return (
-                            <Link key={item.id} href={item.url!} onClick={() => setSearchTerm("")} className="block rounded px-2 py-2 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
+                            <Link key={item.id} href={item.url!} onClick={() => setSearchTerm("")} className="block rounded px-2 py-2 transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                               <p className="text-sm">{item.title}</p>
-                              {item.subtitle ? <p className="text-xs text-slate-500 truncate">{item.subtitle}</p> : null}
+                              {item.subtitle ? <p className="text-xs text-muted-foreground truncate">{item.subtitle}</p> : null}
                             </Link>
                           );
                         })}
                       </div>
                     ) : null)}
-                    {results.length === 0 ? <p className="text-xs text-slate-500 p-2">No matches found. Try a project name, invoice number, or task keyword.</p> : null}
+                    {results.length === 0 ? <p className="text-xs text-muted-foreground p-2">No matches found. Try a project name, invoice number, or task keyword.</p> : null}
                   </>
                 )}
               </div>
@@ -347,7 +347,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
           <DropdownMenu open={quickCreateOpen} onOpenChange={setQuickCreateOpen}>
             <DropdownMenuTrigger asChild>
-              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => setQuickCreateOpen((prev) => !prev)} onMouseEnter={() => setQuickCreateOpen(true)}><Plus className="h-4 w-4 mr-1" />Quick Create</Button>
+              <Button onClick={() => setQuickCreateOpen((prev) => !prev)} onMouseEnter={() => setQuickCreateOpen(true)}><Plus className="h-4 w-4 mr-1" />Quick Create</Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72">
               <DropdownMenuLabel>Create</DropdownMenuLabel>
@@ -361,7 +361,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
           <DropdownMenu open={microsoftMenuOpen} onOpenChange={setMicrosoftMenuOpen}>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" onClick={() => setMicrosoftMenuOpen((prev) => !prev)}><CalendarClock className="h-4 w-4" /></Button>
+              <Button variant="ghost" size="icon" onClick={() => setMicrosoftMenuOpen((prev) => !prev)}><CalendarClock className="h-4 w-4" /></Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Microsoft Shortcuts</DropdownMenuLabel>
@@ -378,13 +378,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="gap-2" onClick={() => setUserMenuOpen((prev) => !prev)} data-testid="button-user-menu">
                 <Avatar className="h-7 w-7"><AvatarFallback>{user?.username?.slice(0, 2)?.toUpperCase() || "EE"}</AvatarFallback></Avatar>
-                <span className="hidden md:inline text-sm">{user?.username || "User"}</span>
+                <span className="hidden md:inline text-sm text-foreground">{user?.username || "User"}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel className="space-y-1">
                 <div className="font-medium flex items-center gap-2"><UserCircle2 className="h-4 w-4" />{user?.username || "User"}</div>
-                <div className="text-xs text-slate-500 flex items-center gap-1"><Building2 className="h-3 w-3" />{user?.role || "role"}</div>
+                <div className="text-xs text-muted-foreground flex items-center gap-1"><Building2 className="h-3 w-3" />{user?.role || "role"}</div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => logout()}><LogOut className="h-4 w-4 mr-2" />Log out</DropdownMenuItem>
@@ -392,7 +392,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </DropdownMenu>
         </div>
 
-        <nav className="hidden lg:flex px-6 border-t border-slate-200 overflow-x-auto scrollbar-thin">
+        <nav className="hidden lg:flex px-6 border-t border-border overflow-x-auto">
           {visibleSections.map((section) => {
             const active = section.label === activeSection.label;
             return (
@@ -401,7 +401,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 href={section.path}
                 className={cn(
                   "px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors",
-                  active ? "border-emerald-600 text-emerald-700" : "border-transparent text-slate-600 hover:text-slate-900",
+                  active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground",
                 )}
               >
                 {section.label}
@@ -410,8 +410,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="px-4 lg:px-6 border-t border-slate-200 bg-slate-50/70">
-          <div className="flex items-center gap-2 py-2 text-xs text-slate-500">
+        <div className="px-4 lg:px-6 border-t border-border bg-muted/40">
+          <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
             {breadcrumbs.map((crumb, idx) => (
               <span key={crumb + idx} className="flex items-center gap-2">{idx > 0 ? <ChevronRight className="h-3 w-3" /> : null}<span>{crumb}</span></span>
             ))}
@@ -422,10 +422,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 key={item.path}
                 href={item.path}
                 className={cn(
-                  "px-3.5 py-1.5 rounded-md border text-sm whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500",
+                  "px-3.5 py-1.5 rounded-md border text-sm whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   linkIsActive(location, item.path)
-                    ? "border-emerald-200 bg-emerald-100 text-emerald-800"
-                    : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-white",
+                    ? "border-primary/30 bg-primary/15 text-primary"
+                    : "border-transparent text-muted-foreground hover:border-border hover:bg-background",
                 )}
               >
                 {item.label}
@@ -438,7 +438,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <main className="p-4 lg:p-6">{children}</main>
 
       <div className="fixed bottom-4 right-4 lg:hidden">
-        <Badge className="bg-emerald-600"><Bell className="h-3 w-3 mr-1" />Actions Active</Badge>
+        <Badge className="bg-primary"><Bell className="h-3 w-3 mr-1" />Actions Active</Badge>
       </div>
     </div>
   );

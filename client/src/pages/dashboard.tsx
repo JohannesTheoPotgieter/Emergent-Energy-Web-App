@@ -116,7 +116,7 @@ export default function DashboardPage() {
   }, [data?.actionCenter]);
 
   return (
-    <div className="space-y-5 max-w-[1800px] mx-auto p-4 pb-8" data-testid="execution-dashboard-page">
+    <div className="ee-page p-0 pb-8" data-testid="execution-dashboard-page">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
@@ -159,7 +159,7 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <Card className="border-border/60">
+      <Card className="border-border">
         <CardContent className="p-4 space-y-3">
           <div className="flex items-center gap-2 mb-1">
             <Filter className="w-4 h-4 text-muted-foreground" />
@@ -189,10 +189,10 @@ export default function DashboardPage() {
                 <button
                   key={key}
                   onClick={() => setFilters((f) => ({ ...f, [key]: !active }))}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border transition-all ${
                     active
-                      ? "bg-emerald-50 border-emerald-300 text-emerald-700 shadow-sm"
-                      : "bg-white border-border text-muted-foreground hover:bg-muted/50 hover:border-border"
+                      ? "bg-primary/10 border-primary/30 text-primary"
+                      : "bg-background border-border text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                   }`}
                   data-testid={`filter-toggle-${key}`}
                 >
@@ -205,7 +205,7 @@ export default function DashboardPage() {
       </Card>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-3">
-        <Card className="border-border/60">
+        <Card className="border-border">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
@@ -215,14 +215,14 @@ export default function DashboardPage() {
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
               <div><p className="text-[10px] text-muted-foreground">Active Projects</p><p className="text-lg font-bold">{Number(data?.kpis?.activeDashboardProjects || 0)}</p></div>
-              <div><p className="text-[10px] text-muted-foreground">Behind Plan</p><p className="text-lg font-bold text-red-600">{Number(data?.kpis?.projectsBehindPlan || 0)}</p></div>
+              <div><p className="text-[10px] text-muted-foreground">Behind Plan</p><p className="text-lg font-bold text-red-700">{Number(data?.kpis?.projectsBehindPlan || 0)}</p></div>
               <div><p className="text-[10px] text-muted-foreground">Avg. Actual</p><p className="text-sm font-semibold">{pct(data?.kpis?.averageActualProgressPct)}</p></div>
               <div><p className="text-[10px] text-muted-foreground">Avg. Expected</p><p className="text-sm font-semibold">{pct(data?.kpis?.averageExpectedProgressPct)}</p></div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-border/60">
+        <Card className="border-border">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
@@ -238,7 +238,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/60">
+        <Card className="border-border">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
@@ -255,11 +255,11 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/60">
+        <Card className="border-border">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
-                <AlertTriangle className="w-4 h-4 text-red-600" />
+                <AlertTriangle className="w-4 h-4 text-red-700" />
               </div>
               <span className="text-xs text-muted-foreground font-medium">Risks & Actions</span>
             </div>
@@ -274,7 +274,7 @@ export default function DashboardPage() {
       </div>
 
       {activeTab === "COO" && (
-        <Card className="border-border/60">
+        <Card className="border-border">
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -329,8 +329,8 @@ export default function DashboardPage() {
                                   <td className="py-2.5 px-4 font-medium text-foreground">{r.project}</td>
                                   <td className="py-2.5 px-4 text-muted-foreground max-w-[300px] truncate">{r.issueTitle}</td>
                                   <td className="py-2.5 px-4">
-                                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium border ${sev.bg} ${sev.text}`}>
-                                      <span className={`w-1.5 h-1.5 rounded-full ${sev.dot}`} />
+                                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium border ${sev.bg} ${sev.text}`}>
+                                      <span className={`w-1.5 h-1.5 rounded-md ${sev.dot}`} />
                                       {r.severity}
                                     </span>
                                   </td>
@@ -358,7 +358,7 @@ export default function DashboardPage() {
 
               {totalActionItems === 0 && (
                 <div className="text-center py-8">
-                  <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-3">
+                  <div className="w-12 h-12 rounded-md bg-emerald-50 flex items-center justify-center mx-auto mb-3">
                     <Activity className="w-6 h-6 text-emerald-500" />
                   </div>
                   <p className="text-sm text-muted-foreground">No action items to review</p>
@@ -369,11 +369,11 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {activeTab === "Program" && <Card className="border-border/60"><CardContent className="p-6 text-sm text-muted-foreground">Phase flow, PM load, delivery exceptions, and schedule behavior all use the same canonical progress source for the visible project set.</CardContent></Card>}
-      {activeTab === "Finance" && <Card className="border-border/60"><CardContent className="p-6 text-sm text-muted-foreground">Planned/received/open inflow and planned/paid/open expenditure are FY-only and reconcile with the main table and KPI strip.</CardContent></Card>}
-      {activeTab === "Construction" && <Card className="border-border/60"><CardContent className="p-6 text-sm text-muted-foreground">Phase, dates, site readiness and execution timing for the same visible project population.</CardContent></Card>}
+      {activeTab === "Program" && <Card className="border-border"><CardContent className="p-6 text-sm text-muted-foreground">Phase flow, PM load, delivery exceptions, and schedule behavior all use the same canonical progress source for the visible project set.</CardContent></Card>}
+      {activeTab === "Finance" && <Card className="border-border"><CardContent className="p-6 text-sm text-muted-foreground">Planned/received/open inflow and planned/paid/open expenditure are FY-only and reconcile with the main table and KPI strip.</CardContent></Card>}
+      {activeTab === "Construction" && <Card className="border-border"><CardContent className="p-6 text-sm text-muted-foreground">Phase, dates, site readiness and execution timing for the same visible project population.</CardContent></Card>}
 
-      <Card className="border-border/60">
+      <Card className="border-border">
         <CardContent className="p-4">
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 className="w-5 h-5 text-blue-500" />
@@ -383,7 +383,7 @@ export default function DashboardPage() {
           {isLoading ? (
             <div className="text-center py-10 text-sm text-muted-foreground">Loading projects...</div>
           ) : (
-            <div className="rounded-lg border border-border/60">
+            <div className="rounded-lg border border-border">
               <table className="w-full text-sm" data-testid="execution-dashboard-table">
                 <thead>
                   <tr className="bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -422,7 +422,7 @@ export default function DashboardPage() {
                             <span className="tabular-nums font-medium text-sm">{pct(p.actualProgressPct)}</span>
                             <div className="text-[10px] text-muted-foreground tabular-nums">of {pct(p.expectedProgressPct)}</div>
                           </td>
-                          <td className={`py-2.5 px-2 text-right tabular-nums text-sm font-medium hidden md:table-cell ${variance < 0 ? "text-red-600" : variance > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
+                          <td className={`py-2.5 px-2 text-right tabular-nums text-sm font-medium hidden md:table-cell ${variance < 0 ? "text-red-700" : variance > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
                             {pct(p.scheduleVariancePct)}
                           </td>
                           <td className="py-2.5 px-2 text-right tabular-nums text-sm text-amber-600 hidden lg:table-cell">{money(p.openInflowFy)}</td>
@@ -457,7 +457,7 @@ export default function DashboardPage() {
                                   <div className="space-y-1.5 text-sm">
                                     <p><span className="text-muted-foreground">Actual:</span> <span className="font-medium">{pct(p.actualProgressPct)}</span></p>
                                     <p><span className="text-muted-foreground">Expected:</span> {pct(p.expectedProgressPct)}</p>
-                                    <p><span className="text-muted-foreground">Variance:</span> <span className={variance < 0 ? "text-red-600 font-medium" : "text-emerald-600 font-medium"}>{pct(p.scheduleVariancePct)}</span></p>
+                                    <p><span className="text-muted-foreground">Variance:</span> <span className={variance < 0 ? "text-red-700 font-medium" : "text-emerald-600 font-medium"}>{pct(p.scheduleVariancePct)}</span></p>
                                   </div>
                                 </div>
                                 <div className="bg-white rounded-lg border p-3">
@@ -508,7 +508,7 @@ export default function DashboardPage() {
               </table>
               {(data?.projects || []).length === 0 && (
                 <div className="text-center py-12">
-                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
+                  <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center mx-auto mb-3">
                     <FolderOpen className="w-6 h-6 text-muted-foreground" />
                   </div>
                   <p className="text-sm text-muted-foreground">No projects match current filters</p>
