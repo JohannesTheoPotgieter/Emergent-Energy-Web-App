@@ -28,8 +28,9 @@ import {
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
+import { canReassignTask as canReassignTaskByRole, getTaskAssigneeNames, isTaskDueSoon, isTaskOverdue as isTaskOverdueLogic } from "@/pages/my-work-tasks-logic";
 
-type SortField = "priority" | "dueDate" | "createdAt" | "status";
+type SortField = "priority" | "dueDate" | "createdAt" | "status" | "smart";
 type SortDirection = "asc" | "desc";
 type SourceFilter = "all" | "personal" | "operational" | "plan" | "engineering_task" | "quality_task" | "approvals" | "tr_register" | "deliverables" | "notifications" | "tracking";
 type TrackingRole = "assignee" | "creator" | "both" | "viewer" | "admin_overview";
@@ -81,6 +82,7 @@ interface UnifiedTask {
   projectName: string | null;
   dueAt: string | null;
   createdAt: string | null;
+  updatedAt?: string | null;
   notes: string | null;
   subtaskCount?: number;
   parentTaskId?: number | null;
@@ -207,12 +209,13 @@ export default function MyWorkTasksPage() {
   const [statusFilter, setStatusFilter] = useState<TaskStatus[]>([]);
   const [priorityFilter, setPriorityFilter] = useState<TaskPriority[]>([]);
   const [projectFilter, setProjectFilter] = useState("");
-  const [sortField, setSortField] = useState<SortField>(mwDefaults?.sortField || "dueDate");
+  const [sortField, setSortField] = useState<SortField>(mwDefaults?.sortField || "smart");
   const [sortDirection, setSortDirection] = useState<SortDirection>(mwDefaults?.sortDirection || "asc");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>(mwDefaults?.sourceFilter || "all");
   const [showFilters, setShowFilters] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [dueThisWeekOnly, setDueThisWeekOnly] = useState(false);
+  const [assignedScope, setAssignedScope] = useState<"all" | "assigned_to_me" | "unassigned" | "created_by_me">("all");
   const [blockedOnly, setBlockedOnly] = useState(false);
   const [groomMode, setGroomMode] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
@@ -287,7 +290,7 @@ export default function MyWorkTasksPage() {
         _sourceColor: "bg-blue-50 border-blue-200 text-blue-700", _rawId: t.id, id: t.id,
         title: t.title || "", status: t.status || "todo", priority: t.priority || "normal",
         projectName: t.projectName || t.project_name || null, dueAt: t.dueAt || t.due_at || null,
-        createdAt: t.createdAt || t.created_at || null, notes: t.notes || null,
+        createdAt: t.createdAt || t.created_at || null, updatedAt: t.updatedAt || t.updated_at || null, notes: t.notes || null,
         nextStep: t.nextStep || t.next_step || null, definitionOfDone: t.definitionOfDone || t.definition_of_done || null,
         blockedReason: t.blockedReason || t.blocked_reason || null, pinnedToday: t.pinnedToday || t.pinned_today || false,
         pinnedWeek: t.pinnedWeek || t.pinned_week || false, isRecurring: t.isRecurring || t.is_recurring || false,
@@ -308,7 +311,7 @@ export default function MyWorkTasksPage() {
         _sourceColor: "bg-emerald-50 border-emerald-200 text-emerald-700", _rawId: t.id, id: t.id,
         title: t.title || "", status: normalizeStatus(t.status), priority: normalizePriority(t.priority),
         projectName: t.projectName || t.project_name || null, dueAt: t.dueDate || t.due_date || null,
-        createdAt: t.createdAt || t.created_at || null, notes: t.description || t.comment || null,
+        createdAt: t.createdAt || t.created_at || null, updatedAt: t.updatedAt || t.updated_at || null, notes: t.description || t.comment || null,
         subtaskCount: t.subtaskCount || 0, parentTaskId: t.parentTaskId || t.parent_task_id || null,
         percentComplete: t.percentComplete || t.percent_complete || 0, assignees: t.assignees || null,
         resolvedAssignees: t.resolvedAssignees || null, description: t.description || null,
@@ -340,7 +343,7 @@ export default function MyWorkTasksPage() {
         title: t.actionDescription || "", status: normalizeStatus(t.status),
         priority: t.ragStatus === "Red" ? "critical" : t.ragStatus === "Amber" ? "high" : "normal",
         projectName: null, dueAt: t.dueDate || t.due_date || null,
-        createdAt: t.createdAt || t.created_at || null, notes: t.outcomeComments || t.supportingInfo || null,
+        createdAt: t.createdAt || t.created_at || null, updatedAt: t.updatedAt || t.updated_at || null, notes: t.outcomeComments || t.supportingInfo || null,
         ragStatus: t.ragStatus || null, owners: t.owners || null, resolvedOwners: t.resolvedOwners || null,
         trId: t.trId || null, department: t.department || null,
         _trackingRole: t.trackingRole || "assignee",
@@ -353,7 +356,7 @@ export default function MyWorkTasksPage() {
         _sourceColor: "bg-rose-50 border-rose-200 text-rose-700", _rawId: d.id, id: d.id,
         title: d.title || "", status: normalizeStatus(d.status), priority: "normal",
         projectName: d.projectName || d.project_name || null, dueAt: null,
-        createdAt: d.createdAt || d.created_at || null, notes: null,
+        createdAt: d.createdAt || d.created_at || null, updatedAt: d.updatedAt || d.updated_at || null, notes: null,
         deliverableType: d.deliverableType || d.deliverable_type || null, deliverableStatus: d.status || null,
       });
     }
@@ -399,7 +402,7 @@ export default function MyWorkTasksPage() {
         title: n.title || "", status: "todo" as TaskStatus,
         priority: n.eventType === "excel_sync_confirmation" ? "normal" : "high",
         projectName: n.projectName || n.project_name || null, dueAt: null,
-        createdAt: n.createdAt || n.created_at || null, notes: n.body || null,
+        createdAt: n.createdAt || n.created_at || null, updatedAt: n.updatedAt || n.updated_at || null, notes: n.body || null,
       });
     }
 
@@ -611,10 +614,26 @@ export default function MyWorkTasksPage() {
     return Array.from(set).sort();
   }, [unifiedTasks, projectNames]);
 
-  const isTaskOverdue = useCallback((task: UnifiedTask) => {
-    if (!task.dueAt || task.status === "complete" || task.status === "done" || task.status === "cancelled") return false;
-    try { return isPast(parseISO(task.dueAt)); } catch { return false; }
+  const isTaskOverdue = useCallback((task: UnifiedTask) => isTaskOverdueLogic(task), []);
+
+  const isDueSoon = useCallback((task: UnifiedTask) => isTaskDueSoon(task), []);
+
+  const taskTypeLabel = useCallback((task: UnifiedTask) => {
+    if (task._source === "approvals") return task._key.startsWith("approval-qc-") ? "Quality Approval" : "Engineering Approval";
+    return task._sourceLabel;
   }, []);
+
+  const isTaskAssignedToCurrentUser = useCallback((task: UnifiedTask) => {
+    const me = (user?.name || "").trim().toLowerCase();
+    const myUsername = (user?.username || "").trim().toLowerCase();
+    if (!me && !myUsername) return false;
+    return getTaskAssigneeNames(task).some((name) => {
+      const lower = name.toLowerCase();
+      return lower === me || lower === myUsername || lower.startsWith(me + " ") || lower === me.split(" ")[0];
+    });
+  }, [user?.name, user?.username]);
+
+  const canReassignTask = useCallback((task: UnifiedTask) => canReassignTaskByRole(task, user?.role || ""), [user?.role]);
 
   const filteredTasks = useMemo(() => {
     let result = [...unifiedTasks];
@@ -623,19 +642,29 @@ export default function MyWorkTasksPage() {
     } else if (sourceFilter !== "all") {
       result = result.filter(t => t._source === sourceFilter);
     }
+
     if (debouncedSearch.trim()) {
       const lower = debouncedSearch.toLowerCase();
-      result = result.filter(t =>
-        t.title.toLowerCase().includes(lower) || (t.projectName && t.projectName.toLowerCase().includes(lower)) ||
-        (t.notes && t.notes.toLowerCase().includes(lower)) || (t.trId && t.trId.toLowerCase().includes(lower))
-      );
+      result = result.filter(t => {
+        const assigneeText = getTaskAssigneeNames(t).join(" ").toLowerCase();
+        return t.title.toLowerCase().includes(lower)
+          || (t.projectName && t.projectName.toLowerCase().includes(lower))
+          || (t.notes && t.notes.toLowerCase().includes(lower))
+          || (t.description && t.description.toLowerCase().includes(lower))
+          || (t.trId && t.trId.toLowerCase().includes(lower))
+          || assigneeText.includes(lower);
+      });
     }
+
     if (statusFilter.length > 0) result = result.filter(t => statusFilter.includes(t.status));
     if (priorityFilter.length > 0) result = result.filter(t => priorityFilter.includes(t.priority));
     if (projectFilter) result = result.filter(t => t.projectName === projectFilter);
     if (overdueOnly) result = result.filter(t => isTaskOverdue(t));
-    if (dueThisWeekOnly) result = result.filter(t => { try { if (!t.dueAt) return false; const diff = differenceInCalendarDays(parseISO(t.dueAt), startOfDay(new Date())); return diff >= 0 && diff <= 7; } catch { return false; } });
+    if (dueThisWeekOnly) result = result.filter(t => isDueSoon(t));
     if (blockedOnly) result = result.filter(t => t.status === "blocked");
+    if (assignedScope === "assigned_to_me") result = result.filter(t => isTaskAssignedToCurrentUser(t));
+    if (assignedScope === "unassigned") result = result.filter(t => getTaskAssigneeNames(t).length === 0);
+    if (assignedScope === "created_by_me") result = result.filter(t => t._trackingRole === "creator" || t._trackingRole === "both");
     if (groomMode) result = result.filter(t => t.status !== "complete" && t.status !== "done" && t.status !== "cancelled" && (!t.nextStep || !t.nextStep.trim() || !t.definitionOfDone || !t.definitionOfDone.trim()));
     if (!showCompleted && statusFilter.length === 0) {
       result = result.filter(t => t.status !== "complete" && t.status !== "done" && t.status !== "cancelled");
@@ -647,25 +676,32 @@ export default function MyWorkTasksPage() {
       const bOverdue = isTaskOverdue(b) ? 1 : 0;
       if (aOverdue !== bOverdue) return bOverdue - aOverdue;
 
+      const aDueSoon = isDueSoon(a) ? 1 : 0;
+      const bDueSoon = isDueSoon(b) ? 1 : 0;
+      if (aDueSoon !== bDueSoon) return bDueSoon - aDueSoon;
+
+      const priorityCmp = (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2);
+      if (sortField === "smart" && priorityCmp !== 0) return priorityCmp;
+
       const aBlocked = a.status === "blocked" ? 1 : 0;
       const bBlocked = b.status === "blocked" ? 1 : 0;
       if (aBlocked !== bBlocked) return bBlocked - aBlocked;
 
       switch (sortField) {
-        case "priority": cmp = (priorityOrder[a.priority] ?? 2) - (priorityOrder[b.priority] ?? 2); if (cmp === 0) cmp = (a.dueAt || "9999").localeCompare(b.dueAt || "9999"); break;
+        case "smart":
+        case "priority":
+          cmp = priorityCmp;
+          if (cmp === 0) cmp = (a.dueAt || "9999").localeCompare(b.dueAt || "9999");
+          break;
         case "status": cmp = (statusOrder[a.status] ?? 2) - (statusOrder[b.status] ?? 2); break;
         case "dueDate": cmp = (a.dueAt || "9999").localeCompare(b.dueAt || "9999"); break;
         case "createdAt": cmp = (b.createdAt || "").localeCompare(a.createdAt || ""); break;
       }
       return sortDirection === "desc" ? -cmp : cmp;
     });
-    return result;
-  }, [unifiedTasks, sourceFilter, debouncedSearch, statusFilter, priorityFilter, projectFilter, overdueOnly, dueThisWeekOnly, blockedOnly, groomMode, showCompleted, sortField, sortDirection, isTaskOverdue]);
 
-  const toggleStatus = (s: TaskStatus) => setStatusFilter(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
-  const togglePriority = (p: TaskPriority) => setPriorityFilter(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
-  const handleSort = (field: SortField) => { if (sortField === field) setSortDirection(prev => prev === "asc" ? "desc" : "asc"); else { setSortField(field); setSortDirection("asc"); } };
-  const toggleExpand = (taskId: number) => setExpandedTasks(prev => { const next = new Set(prev); if (next.has(taskId)) next.delete(taskId); else next.add(taskId); return next; });
+    return result;
+  }, [unifiedTasks, sourceFilter, debouncedSearch, statusFilter, priorityFilter, projectFilter, overdueOnly, dueThisWeekOnly, blockedOnly, assignedScope, groomMode, showCompleted, sortField, sortDirection, isTaskOverdue, isDueSoon, isTaskAssignedToCurrentUser]);
 
   const sourceCounts = useMemo(() => {
     const counts: Record<SourceFilter, number> = { all: 0, personal: 0, operational: 0, plan: 0, engineering_task: 0, quality_task: 0, approvals: 0, tr_register: 0, tracking: 0, deliverables: 0, notifications: 0 };
@@ -687,7 +723,7 @@ export default function MyWorkTasksPage() {
     clearMyWorkDefault(user?.id);
     setHasCustomDefault(false);
     setViewMode("list");
-    setSortField("priority");
+    setSortField("smart");
     setSortDirection("asc");
     setSourceFilter("all");
     toast({ title: "Default view reset" });
@@ -708,7 +744,7 @@ export default function MyWorkTasksPage() {
     return { total: unifiedTasks.length, active: active.length, overdue: overdue.length, critical: critical.length, done: done.length, blocked: blocked.length, inProgress: inProgress.length, dueToday: dueToday.length, dueSoon: dueSoon.length, dueThisWeek: dueThisWeek.length, approvalsPending: approvalsPending.length, completionRate };
   }, [unifiedTasks, isTaskOverdue]);
 
-  const activeFilters = statusFilter.length + priorityFilter.length + (projectFilter ? 1 : 0) + (overdueOnly ? 1 : 0) + (dueThisWeekOnly ? 1 : 0) + (blockedOnly ? 1 : 0);
+  const activeFilters = statusFilter.length + priorityFilter.length + (projectFilter ? 1 : 0) + (overdueOnly ? 1 : 0) + (dueThisWeekOnly ? 1 : 0) + (blockedOnly ? 1 : 0) + (assignedScope !== "all" ? 1 : 0);
 
   const handleBoardDragStart = useCallback((e: React.DragEvent, task: UnifiedTask) => {
     const canDrag = ["personal", "operational", "engineering_task", "tr_register"].includes(task._source);
@@ -841,9 +877,9 @@ export default function MyWorkTasksPage() {
             <Button variant={showFilters ? "secondary" : "ghost"} size="sm" className="h-7 px-2 text-xs" onClick={() => setShowFilters(!showFilters)} data-testid="button-toggle-filters">
               <Filter className="h-3 w-3" /> {activeFilters > 0 && <span className="ml-0.5 text-[10px] bg-primary text-primary-foreground rounded-full w-4 h-4 flex items-center justify-center">{activeFilters}</span>}
             </Button>
-            {(["priority", "dueDate", "status"] as SortField[]).map(field => (
+            {(["smart", "priority", "dueDate", "status"] as SortField[]).map(field => (
               <button key={field} onClick={() => handleSort(field)} className={`px-1.5 py-1 rounded text-[10px] font-medium transition-colors ${sortField === field ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"}`} data-testid={`sort-${field}`}>
-                {field === "priority" ? "Pri" : field === "dueDate" ? "Due" : "Stat"}
+                {field === "smart" ? "Smart" : field === "priority" ? "Pri" : field === "dueDate" ? "Due" : "Stat"}
                 {sortField === field && <span className="ml-0.5">{sortDirection === "asc" ? "↑" : "↓"}</span>}
               </button>
             ))}
@@ -871,10 +907,26 @@ export default function MyWorkTasksPage() {
           <button onClick={() => { setBlockedOnly(!blockedOnly); if (!blockedOnly) { setOverdueOnly(false); setDueThisWeekOnly(false); } }} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap border transition-all ${blockedOnly ? "bg-orange-500 text-white border-orange-500" : kpiStats.blocked > 0 ? "text-orange-600 border-orange-200 hover:bg-orange-50" : "text-muted-foreground border-transparent hover:bg-muted"}`} data-testid="quick-filter-blocked">
             <AlertTriangle className="h-3 w-3" /> Blocked {kpiStats.blocked > 0 && <span className="opacity-80">{kpiStats.blocked}</span>}
           </button>
+          <div className="w-px h-4 bg-border mx-1 shrink-0" />
+          {[
+            { key: "all", label: "All" },
+            { key: "assigned_to_me", label: "Assigned to me" },
+            { key: "unassigned", label: "Unassigned" },
+            { key: "created_by_me", label: "Created by me" },
+          ].map((scope) => (
+            <button
+              key={scope.key}
+              onClick={() => setAssignedScope(scope.key as typeof assignedScope)}
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap border transition-all ${assignedScope === scope.key ? "bg-primary text-primary-foreground border-primary" : "text-muted-foreground border-transparent hover:bg-muted"}`}
+              data-testid={`quick-filter-assigned-${scope.key}`}
+            >
+              {scope.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {(overdueOnly || dueThisWeekOnly || blockedOnly) && (
+      {(overdueOnly || dueThisWeekOnly || blockedOnly || assignedScope !== "all") && (
         <div className="shrink-0 mb-1.5 flex gap-1">
           {overdueOnly && <Badge variant="destructive" className="cursor-pointer gap-1 text-[10px]" onClick={() => setOverdueOnly(false)} data-testid="badge-overdue-filter">
             <AlertCircle className="h-3 w-3" /> Overdue only <X className="h-3 w-3 ml-1" />
@@ -884,6 +936,9 @@ export default function MyWorkTasksPage() {
           </Badge>}
           {blockedOnly && <Badge className="cursor-pointer gap-1 text-[10px] bg-orange-500 hover:bg-orange-600" onClick={() => setBlockedOnly(false)} data-testid="badge-blocked-filter">
             <AlertTriangle className="h-3 w-3" /> Blocked only <X className="h-3 w-3 ml-1" />
+          </Badge>}
+          {assignedScope !== "all" && <Badge variant="outline" className="cursor-pointer gap-1 text-[10px]" onClick={() => setAssignedScope("all")} data-testid="badge-assigned-scope">
+            <Users className="h-3 w-3" /> {assignedScope === "assigned_to_me" ? "Assigned to me" : assignedScope === "unassigned" ? "Unassigned" : "Created by me"} <X className="h-3 w-3 ml-1" />
           </Badge>}
         </div>
       )}
@@ -915,7 +970,7 @@ export default function MyWorkTasksPage() {
               />
             </>
           )}
-          {activeFilters > 0 && (<button onClick={() => { setStatusFilter([]); setPriorityFilter([]); setProjectFilter(""); setOverdueOnly(false); setDueThisWeekOnly(false); setBlockedOnly(false); }} className="text-[10px] text-red-500 hover:underline ml-1" data-testid="button-clear-all-filters">Clear all</button>)}
+          {activeFilters > 0 && (<button onClick={() => { setStatusFilter([]); setPriorityFilter([]); setProjectFilter(""); setOverdueOnly(false); setDueThisWeekOnly(false); setBlockedOnly(false); setAssignedScope("all"); }} className="text-[10px] text-red-500 hover:underline ml-1" data-testid="button-clear-all-filters">Clear all</button>)}
         </div>
       )}
 
@@ -925,12 +980,12 @@ export default function MyWorkTasksPage() {
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
               <Inbox className="h-8 w-8 mb-2 opacity-40" />
               <p className="text-sm font-medium">No tasks found</p>
-              <p className="text-xs mt-1 opacity-70">{overdueOnly ? "No overdue tasks" : sourceFilter !== "all" ? "Try 'All' to see everything" : "Click '+ New' to get started"}</p>
+              <p className="text-xs mt-1 opacity-70">{overdueOnly ? "No overdue tasks" : assignedScope !== "all" ? "Try resetting assignment scope" : sourceFilter !== "all" ? "Try 'All' to see everything" : "Click '+ New' to get started"}</p>
             </div>
           ) : (
             <div className="divide-y divide-border/40">
               {filteredTasks.map(task => (
-                <CompactTaskRow key={task._key} task={task} isExpanded={expandedTasks.has(task.id)} onToggleExpand={() => task._source === "operational" && task.subtaskCount! > 0 && toggleExpand(task.id)} onOpenDrawer={() => handleOpenDrawer(task)} onStatusChange={handleStatusChange} onDelete={task._source === "personal" ? () => deleteTaskMutation.mutate(task.id) : undefined} onDismiss={task._source === "notifications" ? () => dismissNotifMutation.mutate(task) : undefined} onAddSubtask={task._source === "operational" ? () => setSubtaskDialog({ parentId: task.id, projectName: task.projectName || "" }) : undefined} allTaskData={allTaskData} onSubtaskAddForChild={(parentId: number, projectName: string) => setSubtaskDialog({ parentId, projectName })} isOverdue={isTaskOverdue(task)} onQuickStatus={(newStatus) => boardStatusMutation.mutate({ task, newStatus })} />
+                <CompactTaskRow key={task._key} task={task} isExpanded={expandedTasks.has(task.id)} onToggleExpand={() => task._source === "operational" && task.subtaskCount! > 0 && toggleExpand(task.id)} onOpenDrawer={() => handleOpenDrawer(task)} onStatusChange={handleStatusChange} onDelete={task._source === "personal" ? () => deleteTaskMutation.mutate(task.id) : undefined} onDismiss={task._source === "notifications" ? () => dismissNotifMutation.mutate(task) : undefined} onAddSubtask={task._source === "operational" ? () => setSubtaskDialog({ parentId: task.id, projectName: task.projectName || "" }) : undefined} allTaskData={allTaskData} onSubtaskAddForChild={(parentId: number, projectName: string) => setSubtaskDialog({ parentId, projectName })} isOverdue={isTaskOverdue(task)} onQuickStatus={(newStatus) => boardStatusMutation.mutate({ task, newStatus })} canReassign={canReassignTask(task)} taskTypeLabel={taskTypeLabel(task)} />
               ))}
             </div>
           )}
@@ -1012,7 +1067,7 @@ export default function MyWorkTasksPage() {
       )}
 
       {drawerOpen && drawerTask && (<TaskDetailDrawer task={drawerTask} open={drawerOpen} onOpenChange={(open) => setDrawerOpen(open)} onInvalidate={invalidateAll} />)}
-      {unifiedDetailOpen && unifiedDetailTask && (<TaskDetailPanel task={unifiedDetailTask} open={unifiedDetailOpen} onOpenChange={setUnifiedDetailOpen} onInvalidate={invalidateAll} allProjects={allProjects} />)}
+      {unifiedDetailOpen && unifiedDetailTask && (<TaskDetailPanel task={unifiedDetailTask} open={unifiedDetailOpen} onOpenChange={setUnifiedDetailOpen} onInvalidate={invalidateAll} allProjects={allProjects} canReassign={canReassignTask(unifiedDetailTask)} taskTypeLabel={taskTypeLabel(unifiedDetailTask)} />)}
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="max-w-[95vw] sm:max-w-lg">
@@ -1148,7 +1203,7 @@ export default function MyWorkTasksPage() {
   );
 }
 
-function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStatusChange, onDelete, onDismiss, onAddSubtask, allTaskData, onSubtaskAddForChild, isOverdue, onQuickStatus }: { task: UnifiedTask; isExpanded: boolean; onToggleExpand: () => void; onOpenDrawer: () => void; onStatusChange: (id: number, status: TaskStatus) => void; onDelete?: () => void; onDismiss?: () => void; onAddSubtask?: () => void; allTaskData: any; onSubtaskAddForChild: (parentId: number, projectName: string) => void; isOverdue: boolean; onQuickStatus: (newStatus: string) => void }) {
+function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStatusChange, onDelete, onDismiss, onAddSubtask, allTaskData, onSubtaskAddForChild, isOverdue, onQuickStatus, canReassign, taskTypeLabel }: { task: UnifiedTask; isExpanded: boolean; onToggleExpand: () => void; onOpenDrawer: () => void; onStatusChange: (id: number, status: TaskStatus) => void; onDelete?: () => void; onDismiss?: () => void; onAddSubtask?: () => void; allTaskData: any; onSubtaskAddForChild: (parentId: number, projectName: string) => void; isOverdue: boolean; onQuickStatus: (newStatus: string) => void; canReassign: boolean; taskTypeLabel: string }) {
   const subtasks = useMemo(() => {
     if (!isExpanded || task._source !== "operational" || !allTaskData?.operational) return [];
     return (allTaskData.operational as any[]).filter(t => t.parentTaskId === task.id || t.parent_task_id === task.id);
@@ -1210,6 +1265,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
           </div>
           <div className="flex items-center gap-2 mt-0.5">
             {task.projectName && <span className="text-[10px] text-muted-foreground truncate max-w-[140px]" title={task.projectName} data-testid={`badge-project-${task._key}`}>{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
+            <span className="text-[10px] text-muted-foreground/80" data-testid={`badge-type-${task._key}`}>{taskTypeLabel}</span>
             {task.percentComplete !== undefined && task.percentComplete > 0 && (
               <div className="flex items-center gap-1 shrink-0">
                 <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${task.percentComplete}%` }} /></div>
@@ -1217,6 +1273,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
               </div>
             )}
             {task.ragStatus && <span className={`shrink-0 inline-flex items-center gap-0.5 text-[9px] font-medium ${task.ragStatus === "Red" ? "text-red-600" : task.ragStatus === "Amber" ? "text-amber-600" : "text-green-600"}`}><span className={`w-1.5 h-1.5 rounded-full ${task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"}`} />{task.ragStatus}</span>}
+            <span className="text-[9px] uppercase tracking-wide text-muted-foreground border border-border/50 rounded px-1 py-px" data-testid={`badge-status-${task._key}`}>{task.status.replace("_", " ")}</span>
           </div>
         </div>
 
@@ -1224,9 +1281,11 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onOpenDrawer, onStat
         {(task._trackingRole === "creator" || task._trackingRole === "both") && <span className="shrink-0 hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border bg-teal-50 border-teal-200 text-teal-700" data-testid={`badge-tracking-${task._key}`}><Eye className="h-2.5 w-2.5" />Tracking</span>}
         {task._trackingRole === "viewer" && <span className="shrink-0 hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border bg-sky-50 border-sky-200 text-sky-700" data-testid={`badge-viewing-${task._key}`}><Eye className="h-2.5 w-2.5" />Viewing</span>}
 
+        {["personal", "operational", "plan", "engineering_task", "quality_task", "tr_register"].includes(task._source) && (
         <div className="hidden sm:block shrink-0" onClick={e => e.stopPropagation()}>
-          <UserAssignmentPicker taskId={task._rawId} taskSource={task._source === "approvals" ? "operational" : task._source} resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null} textNames={task.assignees || task.owners || null} mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"} size="xs" invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks", "/api/tr-register"]} />
+          <UserAssignmentPicker taskId={task._rawId} taskSource={task._source} resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null} textNames={task.assignees || task.owners || null} mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"} size="xs" invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks", "/api/tr-register"]} disabled={!canReassign} disabledReason="You do not have permission to reassign this task" />
         </div>
+        )}
 
         {due.label && (
           <span className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] tabular-nums ${dueStyle}`} data-testid={`text-due-${task._key}`}>
@@ -1384,7 +1443,7 @@ function ViewerManagement({ taskId, onInvalidate }: { taskId: number; onInvalida
   );
 }
 
-function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }: { task: UnifiedTask; open: boolean; onOpenChange: (open: boolean) => void; onInvalidate: () => void; allProjects: string[] }) {
+function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, canReassign, taskTypeLabel }: { task: UnifiedTask; open: boolean; onOpenChange: (open: boolean) => void; onInvalidate: () => void; allProjects: string[]; canReassign: boolean; taskTypeLabel: string }) {
   const { toast } = useToast();
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editNotes, setEditNotes] = useState(task.notes || "");
@@ -1484,9 +1543,9 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
           <h3 className="text-sm font-semibold leading-snug" data-testid="text-unified-task-title">{task.title}</h3>
           <div className="flex items-center flex-wrap gap-2 mt-2.5">
             {task.projectName && (
-              <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5" data-testid="text-unified-project">
-                <FolderOpen className="h-3 w-3" /> {task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-              </span>
+              <button className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5 hover:bg-muted" data-testid="text-unified-project" onClick={() => window.location.assign(`/projects?search=${encodeURIComponent(task.projectName || "")}`)}>
+                <FolderOpen className="h-3 w-3" /> {task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")} <Link2 className="h-3 w-3" />
+              </button>
             )}
             {detailDue.label && (
               <span className={`flex items-center gap-1 text-[10px] rounded-md px-1.5 py-0.5 border ${detailDueStyle}`} data-testid="text-unified-due">
@@ -1496,6 +1555,7 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
             )}
             {task.department && <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5"><Tag className="h-3 w-3" /> {task.department}</span>}
             {task.trId && <span className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5"><Hash className="h-3 w-3" /> {task.trId}</span>}
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5" data-testid="text-unified-type"><ListTodo className="h-3 w-3" /> {taskTypeLabel}</span>
           </div>
         </div>
 
@@ -1517,12 +1577,15 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
                 </div>
               )}
 
-              <div>
-                <Label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5 block">Assigned To</Label>
-                <div onClick={e => e.stopPropagation()}>
-                  <UserAssignmentPicker taskId={task._rawId} taskSource={task._source === "approvals" ? "operational" : task._source} resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null} textNames={task.assignees || task.owners || null} mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"} size="sm" invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks", "/api/tr-register"]} />
+              {["personal", "operational", "plan", "engineering_task", "quality_task", "tr_register"].includes(task._source) && (
+                <div>
+                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5 block">Assigned To</Label>
+                  <div onClick={e => e.stopPropagation()}>
+                    <UserAssignmentPicker taskId={task._rawId} taskSource={task._source} resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null} textNames={task.assignees || task.owners || null} mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"} size="sm" invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks", "/api/tr-register"]} disabled={!canReassign} disabledReason="You do not have permission to reassign this task" />
+                  </div>
+                  {!canReassign && <p className="text-[10px] text-muted-foreground mt-1">You have read-only assignment access for this task.</p>}
                 </div>
-              </div>
+              )}
 
               {task._source === "plan" && (
                 <ViewerManagement taskId={task._rawId} onInvalidate={onInvalidate} />
@@ -1569,9 +1632,10 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects }
                 </div>
               )}
 
-              {task.createdAt && (
-                <div className="text-[10px] text-muted-foreground pt-2 border-t">
-                  Created {(() => { try { return formatDistanceToNow(new Date(task.createdAt), { addSuffix: true }); } catch { return ""; } })()}
+              {(task.createdAt || task.updatedAt) && (
+                <div className="text-[10px] text-muted-foreground pt-2 border-t space-y-1">
+                  {task.createdAt && <div>Created {(() => { try { return formatDistanceToNow(new Date(task.createdAt), { addSuffix: true }); } catch { return ""; } })()}</div>}
+                  {task.updatedAt && <div>Updated {(() => { try { return formatDistanceToNow(new Date(task.updatedAt), { addSuffix: true }); } catch { return ""; } })()}</div>}
                 </div>
               )}
 
