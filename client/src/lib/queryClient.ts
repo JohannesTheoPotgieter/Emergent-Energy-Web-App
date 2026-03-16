@@ -1,5 +1,6 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { ApiError, parseApiError, networkError } from "./api-error";
+import { runAsyncAction } from "./async-action";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -63,20 +64,60 @@ export const getQueryFn: <T>(options: {
 
     let res: Response;
     try {
-      res = await fetch(queryKey.join("/") as string, {
-        credentials: "include",
+      res = await fetch(url, {
+        method,
+        signal,
         headers,
+        body: data ? JSON.stringify(data) : undefined,
+        credentials: "include",
       });
     } catch {
       throw networkError();
     }
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
-    }
-
     await throwIfResNotOk(res);
-    return await res.json();
+    return res;
+  }, {
+    action: `apiRequest:${method}:${url}`,
+  });
+}
+
+type UnauthorizedBehavior = "returnNull" | "throw";
+export const getQueryFn: <T>(options: {
+  on401: UnauthorizedBehavior;
+}) => QueryFunction<T> =
+  ({ on401: unauthorizedBehavior }) =>
+  async ({ queryKey }) => {
+    const requestUrl = queryKey.join("/") as string;
+    return runAsyncAction(async ({ signal, correlationId }) => {
+      const headers: Record<string, string> = {
+        "X-Correlation-ID": correlationId,
+      };
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      let res: Response;
+      try {
+        res = await fetch(requestUrl, {
+          signal,
+          credentials: "include",
+          headers,
+        });
+      } catch {
+        throw networkError();
+      }
+
+      if (unauthorizedBehavior === "returnNull" && res.status === 401) {
+        return null;
+      }
+
+      await throwIfResNotOk(res);
+      return await res.json();
+    }, {
+      action: `queryFn:GET:${requestUrl}`,
+    });
   };
 
 export function invalidateDashboardQueries(qc: QueryClient) {

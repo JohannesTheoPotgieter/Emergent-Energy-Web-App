@@ -55,6 +55,8 @@ export function useMutationWithToast<
         ? "Access Denied"
         : apiErr?.code === "CONFLICT"
         ? "Conflict"
+        : apiErr?.retryable
+        ? "Temporary issue"
         : "Error";
 
       const description = apiErr?.fieldErrors
@@ -63,7 +65,9 @@ export function useMutationWithToast<
 
       toast({
         title,
-        description,
+        description: apiErr?.retryable
+          ? `${description} You can safely retry this action.`
+          : description,
         variant: "destructive",
       });
 
