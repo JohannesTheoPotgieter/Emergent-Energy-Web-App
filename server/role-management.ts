@@ -77,6 +77,14 @@ function countConfiguredResourcePermissions(entityPermissions: unknown): number 
   return entries.filter(([, actions]) => Object.values(actions || {}).some(Boolean)).length;
 }
 
+
+async function ensureRolePermissionsSeeded() {
+  const existing = await db.select().from(rolePermissions);
+  if (existing.length > 0) return existing;
+  await seedRolePermissions();
+  return db.select().from(rolePermissions);
+}
+
 function migrateSections(sections: string[]): string[] {
   const migrated = new Set<string>();
   for (const s of sections) {
@@ -120,7 +128,7 @@ export async function seedRolePermissions() {
 export function registerRoleManagementRoutes(app: Express) {
   app.get("/api/roles", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
     try {
-      const roles = await db.select().from(rolePermissions);
+      const roles = await ensureRolePermissionsSeeded();
       res.json(roles);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -129,7 +137,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.get("/api/roles/control-center", jwtAuth, requireAuth, requireAdmin, async (_req: Request, res: Response) => {
     try {
-      const roles = await db.select().from(rolePermissions);
+      const roles = await ensureRolePermissionsSeeded();
       const userCounts = await db
         .select({ role: users.role, count: sql<number>`count(*)::int` })
         .from(users)
