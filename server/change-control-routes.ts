@@ -5,6 +5,7 @@ import { verifyToken } from "./jwt";
 import { changeRequests, projectInfo, users, approvals } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -108,6 +109,19 @@ export function registerChangeControlRoutes(app: Express) {
         changesJson: { title, changeType, projectId },
       });
 
+      const actor = actorFromReq(req);
+      await createProjectEvent({
+        projectId: result[0].projectId,
+        eventType: "change.created",
+        actorUserId: actor.actorUserId,
+        actorRole: actor.actorRole,
+        sourceEntityType: "change_requests",
+        sourceEntityId: String(result[0].id),
+        summary: `Change request created: ${result[0].title}`,
+        details: { changeType: result[0].changeType, status: result[0].status },
+        idempotencyKey: `change-created:${result[0].id}`,
+      });
+
       res.status(201).json(result[0]);
     } catch (err: any) {
       console.error("[ChangeControl] Create error:", err.message);
@@ -168,6 +182,20 @@ export function registerChangeControlRoutes(app: Express) {
         changesJson: { before: { status: old.status }, after: { status: result[0].status }, updates: req.body },
       });
 
+      if (updates.status && updates.status !== old.status) {
+        const actor = actorFromReq(req);
+        await createProjectEvent({
+          projectId: old.projectId,
+          eventType: "change.status_changed",
+          actorUserId: actor.actorUserId,
+          actorRole: actor.actorRole,
+          sourceEntityType: "change_requests",
+          sourceEntityId: String(id),
+          summary: `Change request status changed: ${old.status} → ${updates.status}`,
+          details: { fromStatus: old.status, toStatus: updates.status, title: old.title },
+          idempotencyKey: `change-status:${id}:${old.status}:${updates.status}`,
+        });
+      }
       res.json(result[0]);
     } catch (err: any) {
       console.error("[ChangeControl] Update error:", err.message);

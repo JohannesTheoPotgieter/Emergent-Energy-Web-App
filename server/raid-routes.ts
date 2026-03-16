@@ -5,6 +5,7 @@ import { raidItems, insertRaidItemSchema, projectInfo, users } from "@shared/sch
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { verifyToken } from "./jwt";
+import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -123,6 +124,18 @@ export function registerRaidRoutes(app: Express) {
         changesJson: { type: created.type, title: created.title, projectId: created.projectId },
       });
 
+      const actor = actorFromReq(req);
+      await createProjectEvent({
+        projectId: created.projectId,
+        eventType: "raid.created",
+        actorUserId: actor.actorUserId,
+        actorRole: actor.actorRole,
+        sourceEntityType: "raid_items",
+        sourceEntityId: String(created.id),
+        summary: `RAID ${created.type} created: ${created.title}`,
+        details: { type: created.type, status: created.status, priority: created.priority },
+        idempotencyKey: `raid-created:${created.id}`,
+      });
       res.status(201).json(created);
     } catch (err: any) {
       console.error("[RAID] POST create error:", err);
@@ -165,6 +178,20 @@ export function registerRaidRoutes(app: Express) {
         changesJson: { before: existing, after: updated },
       });
 
+      if (updates.status && updates.status !== existing.status) {
+        const actor = actorFromReq(req);
+        await createProjectEvent({
+          projectId: existing.projectId,
+          eventType: "raid.status_changed",
+          actorUserId: actor.actorUserId,
+          actorRole: actor.actorRole,
+          sourceEntityType: "raid_items",
+          sourceEntityId: String(id),
+          summary: `RAID status changed: ${existing.status} → ${updates.status}`,
+          details: { fromStatus: existing.status, toStatus: updates.status, type: existing.type, title: existing.title },
+          idempotencyKey: `raid-status:${id}:${existing.status}:${updates.status}`,
+        });
+      }
       res.json(updated);
     } catch (err: any) {
       console.error("[RAID] PATCH update error:", err);
