@@ -1,6 +1,6 @@
 import { useAuth } from "./use-auth";
 import { useQuery } from "@tanstack/react-query";
-import { checkPermission, PermissionEntity, PermissionAction } from "@shared/schema";
+import { checkPermission, normalizeRoleForPermissions, PermissionEntity, PermissionAction } from "@shared/schema";
 
 interface PermissionsResponse {
   role?: string;
@@ -16,7 +16,7 @@ export function usePermission(entity: PermissionEntity, action: PermissionAction
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      if (user?.role) headers["x-company-role"] = user.role;
+      if (user?.role) headers["x-company-role"] = normalizeRoleForPermissions(user.role);
       const res = await fetch("/api/auth/permissions", { headers, credentials: "include" });
       return res.json();
     },
@@ -38,6 +38,6 @@ export function usePermission(entity: PermissionEntity, action: PermissionAction
     if (ep[entity][action] === false) return { allowed: false, loading: false };
   }
 
-  const allowed = checkPermission(user.role, entity, action);
+  const allowed = checkPermission(normalizeRoleForPermissions(user.role), entity, action);
   return { allowed, loading: false };
 }

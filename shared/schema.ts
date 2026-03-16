@@ -2632,7 +2632,7 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'cos' | 'cashflow' | 'smart_import' | 'tr_register' | 'pm_dashboard'
   | 'eng_stages' | 'eng_tasks' | 'lifecycle' | 'my_tool' | 'create_project'
   | 'weekly_reviews' | 'ee_info'
-  | 'execution_board' | 'leaderboard' | 'feedback' | 'approvals' | 'activity_log'
+  | 'execution_board' | 'leaderboard' | 'training' | 'knowledge_game' | 'department_scores' | 'feedback' | 'approvals' | 'activity_log'
   | 'company_priorities' | 'meetings' | 'phase_templates' | 'invoice_patterns'
   | 'portfolios' | 'notifications' | 'subcontractors' | 'cos_control' | 'cashflow_forecast' | 'home'
   | 'pd_overview' | 'pd_plan' | 'pd_finance' | 'pd_engineering' | 'pd_quality' | 'pd_history'
@@ -2650,6 +2650,16 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'my_work' | 'ms_sync' | 'project_tagging' | 'excel_updates' | 'database_migration'
   | 'revenue_tracker' | 'gp_tracker' | 'work_items';
 export type PermissionAction = 'view' | 'create' | 'edit' | 'approve' | 'override' | 'delete';
+
+export const ROLE_PERMISSION_ALIASES: Record<string, string> = {
+  admin: "COO_ADMIN",
+  COO: "COO_ADMIN",
+};
+
+export function normalizeRoleForPermissions(role?: string | null): string {
+  if (!role) return "";
+  return ROLE_PERMISSION_ALIASES[role] || role;
+}
 
 export interface EntityPermissionRule {
   entity: PermissionEntity;
@@ -2997,6 +3007,33 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'leaderboard',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'training',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'knowledge_game',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'department_scores',
     view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -3511,11 +3548,12 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
 ];
 
 export function checkPermission(role: string, entity: PermissionEntity, action: PermissionAction): boolean {
+  const normalizedRole = normalizeRoleForPermissions(role);
   const rule = ENTITY_PERMISSION_DEFAULTS.find(r => r.entity === entity);
   if (!rule) return false;
   const actionKey = `${action}_roles` as keyof EntityPermissionRule;
   const allowedRoles = rule[actionKey] as string[];
-  return allowedRoles.includes(role);
+  return allowedRoles.includes(normalizedRole);
 }
 
 export const rolePermissions = pgTable("role_permissions", {

@@ -1,11 +1,8 @@
 import { Request, Response, NextFunction } from "express";
-import { rolePermissions, type PermissionEntity, type PermissionAction } from "@shared/schema";
-import { evaluatePermissionForRole } from "@shared/permission-resolver";
+import { ENTITY_PERMISSION_DEFAULTS, normalizeRoleForPermissions, rolePermissions, type PermissionEntity, type PermissionAction } from "@shared/schema";
 import { verifyToken } from "./jwt";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
-
-const ROLE_ALIASES: Record<string, string> = { 'admin': 'COO_ADMIN' };
 
 let entityPermCache: Record<string, Record<string, Record<string, boolean>>> = {};
 let cacheLoadedAt = 0;
@@ -48,11 +45,7 @@ function resolveUserRole(req: Request): string | null {
     }
   }
 
-  if (role && ROLE_ALIASES[role]) {
-    role = ROLE_ALIASES[role];
-  }
-
-  return role;
+  return normalizeRoleForPermissions(role);
 }
 
 export function requirePermission(entity: PermissionEntity, action: PermissionAction) {
