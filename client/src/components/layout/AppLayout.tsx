@@ -91,13 +91,14 @@ const TOP_SECTIONS: TopSection[] = [
   {
     label: "Finance",
     path: "/cashflow",
-    match: (p) => startsWithAny(p, ["/cashflow", "/cos", "/revenue-tracker", "/gp-tracker", "/invoice-patterns", "/subcontractor-dashboard"]),
+    match: (p) => startsWithAny(p, ["/cashflow", "/cos", "/revenue-tracker", "/gp-tracker", "/invoice-patterns", "/counterparties", "/subcontractor-dashboard"]),
     secondary: [
       { label: "Cashflow", path: "/cashflow" },
       { label: "Cost of Sales", path: "/cos" },
       { label: "Revenue", path: "/revenue-tracker" },
       { label: "Gross Profit", path: "/gp-tracker" },
       { label: "Procurement", path: "/subcontractor-dashboard" },
+      { label: "Counterparties", path: "/counterparties" },
     ],
   },
   {
