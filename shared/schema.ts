@@ -2650,6 +2650,22 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'my_work' | 'ms_sync' | 'project_tagging' | 'excel_updates' | 'database_migration'
   | 'revenue_tracker' | 'gp_tracker' | 'work_items';
 export type PermissionAction = 'view' | 'create' | 'edit' | 'approve' | 'override' | 'delete';
+export const AUTHORITY_ACTIONS = [
+  'view',
+  'create',
+  'edit',
+  'delete',
+  'approve',
+  'assign',
+  'reassign',
+  'close_complete',
+  'export',
+  'manage_settings',
+] as const;
+export type AuthorityAction = (typeof AUTHORITY_ACTIONS)[number];
+
+export const AUTHORITY_SCOPES = ['own', 'department', 'assigned_projects', 'all_projects', 'company_admin'] as const;
+export type AuthorityScope = (typeof AUTHORITY_SCOPES)[number];
 
 export const ROLE_PERMISSION_ALIASES: Record<string, string> = {
   admin: "COO_ADMIN",
@@ -3566,6 +3582,7 @@ export const rolePermissions = pgTable("role_permissions", {
   canManageRoles: boolean("can_manage_roles").notNull().default(false),
   canEditData: boolean("can_edit_data").notNull().default(true),
   entityPermissions: jsonb("entity_permissions"),
+  authorityModel: jsonb("authority_model"),
   isSystem: boolean("is_system").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
