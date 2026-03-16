@@ -20,6 +20,16 @@ import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/Micro
 import type { NextAction, BlockerInfo, OwnerInfo } from "@/hooks/use-guidance";
 import { usePermission } from "@/hooks/use-permissions";
 
+interface StageGateBlock {
+  projectId: number;
+  projectName: string;
+  gateName: string;
+  fromStage: string | null;
+  targetStage: string;
+  missingItems: Array<{ requirementType: string; requirementKey: string; message: string }>;
+  canOverride: boolean;
+}
+
 interface ProjectInfo {
   id: number | null;
   projectName: string;
@@ -403,6 +413,11 @@ export default function LifecycleBoardPage() {
     overrideReason: "",
   });
   const [showOverrideReason, setShowOverrideReason] = useState(false);
+  const [gateBlock, setGateBlock] = useState<StageGateBlock | null>(null);
+  const [gateOverrideReason, setGateOverrideReason] = useState("");
+  const [gateOverrideNote, setGateOverrideNote] = useState("");
+  const [gateOverrideExpiryDate, setGateOverrideExpiryDate] = useState("");
+  const [gateOverrideBusy, setGateOverrideBusy] = useState(false);
   const [ragModalOpen, setRagModalOpen] = useState(false);
   const [ragModalProject, setRagModalProject] = useState<ProjectInfo | null>(null);
   const [ragForm, setRagForm] = useState({ rag: "", comment: "" });
@@ -436,6 +451,7 @@ export default function LifecycleBoardPage() {
 
   const role = localStorage.getItem("company_role") || "";
   const isExec = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"].includes(role);
+  const canOverrideStageGate = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER", "admin"].includes(role);
 
   function getGateAuthHeaders(): HeadersInit {
     const token = localStorage.getItem("auth_token");
@@ -686,7 +702,20 @@ export default function LifecycleBoardPage() {
 
       if (!res.ok) {
         const err = await res.json();
-        toast({ title: "Error", description: err.error || "Failed to move project", variant: "destructive" });
+        if (res.status === 409 && err?.error === "stage_gate_failed" && err?.gate) {
+          setGateBlock({
+            projectId: Number(draggedProject.id),
+            projectName: draggedProject.projectName,
+            gateName: err.gate.gateName,
+            fromStage: err.gate.fromStage || null,
+            targetStage: err.gate.targetStage,
+            missingItems: err.gate.missingItems || [],
+            canOverride: Boolean(err.gate.canOverride),
+          });
+          toast({ title: "Stage gate blocked", description: "Complete blockers or submit a formal override.", variant: "destructive" });
+        } else {
+          toast({ title: "Error", description: err.error || "Failed to move project", variant: "destructive" });
+        }
         invalidateProjects();
       } else {
         toast({ title: "Phase Updated", description: `${cleanProjectName(draggedProject.projectName)} moved to ${targetPhase.label}` });
@@ -698,6 +727,53 @@ export default function LifecycleBoardPage() {
     }
 
     setDraggedProject(null);
+  };
+
+  const submitStageGateOverride = async () => {
+    if (!gateBlock) return;
+    if (!gateOverrideReason.trim() || gateOverrideReason.trim().length < 8) {
+      toast({ title: "Reason required", description: "Override reason must be at least 8 characters.", variant: "destructive" });
+      return;
+    }
+    setGateOverrideBusy(true);
+    try {
+      const res = await fetch(`/api/lifecycle-board/projects/${gateBlock.projectId}/stage-gates/override`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          gateName: gateBlock.gateName,
+          targetStage: gateBlock.targetStage,
+          overrideReason: gateOverrideReason.trim(),
+          note: gateOverrideNote.trim() || null,
+          expiryDate: gateOverrideExpiryDate || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast({ title: "Override failed", description: err.message || err.error || "Failed to save override", variant: "destructive" });
+        return;
+      }
+      const moveRes = await fetch(`/api/lifecycle-board/projects/${gateBlock.projectId}/phase`, {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ phase: gateBlock.targetStage }),
+      });
+      if (!moveRes.ok) {
+        const err = await moveRes.json();
+        toast({ title: "Override saved", description: `Override logged, but move is still blocked: ${err.message || err.error || 'unknown reason'}.`, variant: "destructive" });
+      } else {
+        toast({ title: "Override applied", description: "Override recorded and stage movement completed." });
+        setGateBlock(null);
+        setGateOverrideReason("");
+        setGateOverrideNote("");
+        setGateOverrideExpiryDate("");
+      }
+      invalidateProjects();
+    } catch {
+      toast({ title: "Network error", description: "Could not submit gate override", variant: "destructive" });
+    } finally {
+      setGateOverrideBusy(false);
+    }
   };
 
   const handleDragEnd = () => {
@@ -1922,6 +1998,45 @@ export default function LifecycleBoardPage() {
               </DialogFooter>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+
+
+      <Dialog open={!!gateBlock} onOpenChange={(open) => { if (!open) setGateBlock(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Stage move blocked by gate</DialogTitle>
+            <DialogDescription>
+              {gateBlock ? `${cleanProjectName(gateBlock.projectName)} cannot move to ${gateBlock.targetStage} until the blockers below are resolved.` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded border p-3 bg-amber-50">
+              <p className="text-xs font-semibold text-amber-900">Missing requirements</p>
+              <ul className="mt-2 list-disc pl-5 text-sm text-amber-900">
+                {gateBlock?.missingItems.map((item, idx) => (
+                  <li key={`${item.requirementKey}-${idx}`}>{item.message}</li>
+                ))}
+              </ul>
+            </div>
+            {gateBlock?.canOverride && canOverrideStageGate ? (
+              <div className="rounded border p-3 bg-red-50 space-y-2">
+                <p className="text-xs font-semibold text-red-900">Exception override (audited)</p>
+                <Textarea value={gateOverrideReason} onChange={(e) => setGateOverrideReason(e.target.value)} placeholder="Why this move must proceed despite missing requirements" />
+                <Input type="date" value={gateOverrideExpiryDate} onChange={(e) => setGateOverrideExpiryDate(e.target.value)} />
+                <Input value={gateOverrideNote} onChange={(e) => setGateOverrideNote(e.target.value)} placeholder="Optional supporting note" />
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGateBlock(null)}>Close</Button>
+            {gateBlock?.canOverride && canOverrideStageGate ? (
+              <Button onClick={submitStageGateOverride} disabled={gateOverrideBusy || gateOverrideReason.trim().length < 8}>
+                {gateOverrideBusy ? "Submitting..." : "Submit override and continue"}
+              </Button>
+            ) : null}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

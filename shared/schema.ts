@@ -3679,6 +3679,54 @@ export const executionGateLog = pgTable("execution_gate_log", {
 });
 export type ExecutionGateLog = typeof executionGateLog.$inferSelect;
 
+export const stageGateDefinitions = pgTable("stage_gate_definitions", {
+  id: serial("id").primaryKey(),
+  gateName: text("gate_name").notNull(),
+  fromStage: text("from_stage").notNull(),
+  targetStage: text("target_stage").notNull(),
+  requirementType: text("requirement_type").notNull(),
+  requirementKey: text("requirement_key").notNull(),
+  requirementConfig: jsonb("requirement_config").notNull().default({}),
+  isRequired: boolean("is_required").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type StageGateDefinition = typeof stageGateDefinitions.$inferSelect;
+
+export const projectGateEvaluations = pgTable("project_gate_evaluations", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  gateName: text("gate_name").notNull(),
+  fromStage: text("from_stage"),
+  targetStage: text("target_stage").notNull(),
+  status: text("status").notNull(),
+  missingItems: jsonb("missing_items").notNull().default([]),
+  hasOverride: boolean("has_override").notNull().default(false),
+  overrideId: integer("override_id"),
+  evaluatedByUserId: integer("evaluated_by_user_id").references(() => users.id),
+  evaluatedByRole: text("evaluated_by_role"),
+  evaluatedAt: timestamp("evaluated_at").notNull().defaultNow(),
+});
+export type ProjectGateEvaluation = typeof projectGateEvaluations.$inferSelect;
+
+export const stageGateOverrides = pgTable("stage_gate_overrides", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  gateName: text("gate_name").notNull(),
+  targetStage: text("target_stage").notNull(),
+  overrideReason: text("override_reason").notNull(),
+  overriddenBy: integer("overridden_by").references(() => users.id),
+  overriddenByRole: text("overridden_by_role").notNull(),
+  note: text("note"),
+  expiresAt: timestamp("expires_at"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  revokedAt: timestamp("revoked_at"),
+});
+export type StageGateOverride = typeof stageGateOverrides.$inferSelect;
+
 export const smartImportRuns = pgTable("smart_import_runs", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projectInfo.id),
