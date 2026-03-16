@@ -43,6 +43,7 @@ import {
   TrendingUp,
   Download,
   CheckCircle,
+  Wallet,
 } from "lucide-react";
 
 interface ProjectProcurementTabProps {
@@ -112,10 +113,11 @@ function formatDateInput(d: string | null | undefined): string {
   }
 }
 
-type ProcurementSubTab = "overview" | "items" | "purchase-orders" | "deliveries" | "invoices" | "traceability";
+type ProcurementSubTab = "overview" | "commercial-control" | "items" | "purchase-orders" | "deliveries" | "invoices" | "traceability";
 
 const SUB_TABS: { key: ProcurementSubTab; label: string; icon: React.ElementType }[] = [
   { key: "overview", label: "Overview", icon: BarChart3 },
+  { key: "commercial-control", label: "Commercial Control", icon: Wallet },
   { key: "items", label: "Items", icon: Package },
   { key: "purchase-orders", label: "Purchase Orders", icon: ShoppingCart },
   { key: "deliveries", label: "Deliveries", icon: Truck },
@@ -185,6 +187,10 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
 
   const totalExpected = items.reduce((s: number, i: any) => s + (parseFloat(i.expected_cost) || 0), 0);
   const totalActual = items.reduce((s: number, i: any) => s + (parseFloat(i.actual_cost) || 0), 0);
+  const totalCommitted = items.reduce((s: number, i: any) => {
+    const committedStatuses = ["approved", "ordered", "partially_received", "received", "invoiced", "closed"];
+    return s + (committedStatuses.includes(i.status) ? (parseFloat(i.expected_cost) || 0) : 0);
+  }, 0);
 
   const statusCounts: Record<string, number> = {};
   items.forEach((i: any) => {
@@ -251,7 +257,7 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
           const Icon = tab.icon;
           const isActive = activeSubTab === tab.key;
           return (
-            <Button
+        <Button
               key={tab.key}
               size="sm"
               variant={isActive ? "default" : "ghost"}
@@ -415,6 +421,30 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
             </Card>
           )}
         </div>
+      )}
+
+
+      {activeSubTab === "commercial-control" && (
+        <Card className="bg-white" data-testid="procurement-commercial-control">
+          <CardContent className="p-4 space-y-4">
+            <h3 className="text-sm font-semibold flex items-center gap-2"><Wallet className="w-4 h-4 text-[#16A34A]" />Project Commercial Control</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="border rounded-md p-3 bg-slate-50">
+                <p className="text-[10px] uppercase text-muted-foreground">Planned</p>
+                <p className="text-lg font-bold font-mono">{formatRand(totalExpected)}</p>
+              </div>
+              <div className="border rounded-md p-3 bg-blue-50">
+                <p className="text-[10px] uppercase text-muted-foreground">Committed</p>
+                <p className="text-lg font-bold font-mono">{formatRand(totalCommitted)}</p>
+              </div>
+              <div className="border rounded-md p-3 bg-emerald-50">
+                <p className="text-[10px] uppercase text-muted-foreground">Actual</p>
+                <p className="text-lg font-bold font-mono">{formatRand(totalActual)}</p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">Status flow: Request → PO → Delivery → Invoice → Approval → Payment. Use Item detail fields to link budget line, deliverable, receipt, invoice, and payment status without duplicate capture.</p>
+          </CardContent>
+        </Card>
       )}
 
       {activeSubTab === "items" && (
@@ -665,6 +695,11 @@ function ExpandedProcurementDetail({
   const [actualCost, setActualCost] = useState(item.actual_cost?.toString() || "");
   const [poId, setPoId] = useState(item.po_id || "");
   const [invoiceRef, setInvoiceRef] = useState(item.invoice_ref || "");
+  const [budgetLine, setBudgetLine] = useState(item.budget_line || "");
+  const [linkedMilestone, setLinkedMilestone] = useState(item.linked_milestone || "");
+  const [receiptRef, setReceiptRef] = useState(item.receipt_ref || "");
+  const [progressPercent, setProgressPercent] = useState(item.progress_percent?.toString() || "");
+  const [paymentStatus, setPaymentStatus] = useState(item.payment_status || "not_applicable");
 
   const patchMutation = useMutation({
     mutationFn: async (updates: Record<string, any>) => {
@@ -731,6 +766,10 @@ function ExpandedProcurementDetail({
           />
         </div>
         <div className="space-y-1">
+          <Label className="text-[10px] uppercase text-muted-foreground">Budget Line</Label>
+          <Input className="h-8 w-40 text-xs" value={budgetLine} onChange={(e) => setBudgetLine(e.target.value)} placeholder="Budget line" data-testid={`input-budget-line-${item.id}`} />
+        </div>
+        <div className="space-y-1">
           <Label className="text-[10px] uppercase text-muted-foreground">Invoice Ref</Label>
           <Input
             className="h-8 w-40 text-xs"
@@ -739,6 +778,22 @@ function ExpandedProcurementDetail({
             placeholder="Invoice reference"
             data-testid={`input-invoice-ref-${item.id}`}
           />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] uppercase text-muted-foreground">Milestone</Label>
+          <Input className="h-8 w-40 text-xs" value={linkedMilestone} onChange={(e) => setLinkedMilestone(e.target.value)} placeholder="Milestone" data-testid={`input-linked-milestone-${item.id}`} />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] uppercase text-muted-foreground">Receipt Ref</Label>
+          <Input className="h-8 w-40 text-xs" value={receiptRef} onChange={(e) => setReceiptRef(e.target.value)} placeholder="GRN / receipt" data-testid={`input-receipt-ref-${item.id}`} />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] uppercase text-muted-foreground">Progress %</Label>
+          <Input className="h-8 w-24 text-xs font-mono" value={progressPercent} onChange={(e) => setProgressPercent(e.target.value)} placeholder="0-100" data-testid={`input-progress-${item.id}`} />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] uppercase text-muted-foreground">Payment</Label>
+          <SearchableSelect options={[{ value: "not_applicable", label: "Not Applicable" }, { value: "pending_approval", label: "Pending Approval" }, { value: "approved", label: "Approved" }, { value: "scheduled", label: "Scheduled" }, { value: "paid", label: "Paid" }, { value: "on_hold", label: "On Hold" }]} value={paymentStatus} onValueChange={setPaymentStatus} triggerClassName="h-8 text-xs w-40" data-testid={`select-payment-status-${item.id}`} />
         </div>
         <Button
           size="sm"
@@ -749,6 +804,11 @@ function ExpandedProcurementDetail({
               actualCost: actualCost ? parseFloat(actualCost) : undefined,
               poId: poId || undefined,
               invoiceRef: invoiceRef || undefined,
+              budgetLine: budgetLine || undefined,
+              linkedMilestone: linkedMilestone || undefined,
+              receiptRef: receiptRef || undefined,
+              progressPercent: progressPercent ? parseFloat(progressPercent) : undefined,
+              paymentStatus,
             })
           }
           data-testid={`btn-save-detail-${item.id}`}
@@ -804,6 +864,9 @@ function CreateProcurementDialog({
     requiredDate: "",
     ownerUserId: "",
     notes: "",
+    budgetLine: "",
+    linkedDeliverableId: "",
+    linkedMilestone: "",
   });
 
   const createMutation = useMutation({
@@ -820,7 +883,7 @@ function CreateProcurementDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["procurement", projectId] });
       onOpenChange(false);
-      setForm({ title: "", description: "", category: "", supplierId: "", quantity: "", unit: "", expectedCost: "", requiredDate: "", ownerUserId: "", notes: "" });
+      setForm({ title: "", description: "", category: "", supplierId: "", quantity: "", unit: "", expectedCost: "", requiredDate: "", ownerUserId: "", notes: "", budgetLine: "", linkedDeliverableId: "", linkedMilestone: "" });
     },
   });
 
@@ -837,6 +900,9 @@ function CreateProcurementDialog({
       ownerUserId: form.ownerUserId ? parseInt(form.ownerUserId) : undefined,
       requiredDate: form.requiredDate || undefined,
       notes: form.notes || undefined,
+      budgetLine: form.budgetLine || undefined,
+      linkedDeliverableId: form.linkedDeliverableId ? parseInt(form.linkedDeliverableId) : undefined,
+      linkedMilestone: form.linkedMilestone || undefined,
     });
   };
 
@@ -953,6 +1019,16 @@ function CreateProcurementDialog({
                 triggerClassName="h-8 text-xs w-full"
                 data-testid="select-create-owner"
               />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Budget Line</Label>
+              <Input className="h-8 text-sm" value={form.budgetLine} onChange={(e) => setForm({ ...form, budgetLine: e.target.value })} placeholder="e.g. BOS-Electrical" data-testid="input-create-budget-line" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Milestone</Label>
+              <Input className="h-8 text-sm" value={form.linkedMilestone} onChange={(e) => setForm({ ...form, linkedMilestone: e.target.value })} placeholder="Milestone ref" data-testid="input-create-milestone" />
             </div>
           </div>
           <div className="space-y-1">
@@ -1801,6 +1877,9 @@ function CaptureInvoiceDialog({
     linkedPoId: "",
     linkedProcurementItemId: "",
     notes: "",
+    budgetLine: "",
+    linkedDeliverableId: "",
+    linkedMilestone: "",
   });
   const [file, setFile] = useState<File | null>(null);
 
