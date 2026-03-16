@@ -1,7 +1,7 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
-import { verifyToken } from "./jwt";
+import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { logAuditFromReq } from "./audit-logger";
 import {
   intakeRequests, intakeTasks, intakeTaskTemplates,
@@ -18,41 +18,27 @@ import {
 } from "./sharepoint-list";
 import { getConnector } from "./intake-connector";
 
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
+function isMissingTableError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  return message.includes("no such table") || message.includes("does not exist");
 }
 
 function requireCOO(req: Request, res: Response, next: NextFunction) {
-  const role = (req as any).user?.role || "";
+  const role = getEffectiveUser(req)?.role || "";
   if (role === "COO_ADMIN") return next();
   res.status(403).json({ error: "forbidden", message: "COO access required" });
 }
 
 function requireRole(...roles: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const role = (req as any).user?.role || "";
+    const role = getEffectiveUser(req)?.role || "";
     if (roles.includes(role)) return next();
     res.status(403).json({ error: "forbidden", message: `Required role: ${roles.join(" or ")}` });
   };
 }
 
 function getUserRole(req: Request): string {
-  return (req as any).user?.role || "";
+  return getEffectiveUser(req)?.role || "";
 }
 
 export function registerSyncRoutes(app: Express) {
@@ -797,20 +783,46 @@ export function registerSyncRoutes(app: Express) {
   // ===== Status =====
   app.get("/api/sp-sync/status", jwtAuth, requireAuth, async (_req, res) => {
     try {
-      const config = await getConfig();
-      const totalRequests = await db.select({ count: sql<number>`count(*)` }).from(intakeRequests);
-      const conflictRequests = await db.select({ count: sql<number>`count(*)` }).from(intakeRequests)
-        .where(eq(intakeRequests.syncConflict, true));
-
       const connector = getConnector();
+      let config = null;
+      let totalRequestCount = 0;
+      let conflictCount = 0;
+
+      try {
+        config = await getConfig();
+      } catch (err) {
+        if (!isMissingTableError(err)) {
+          throw err;
+        }
+      }
+
+      try {
+        const totalRequests = await db.select({ count: sql<number>`count(*)` }).from(intakeRequests);
+        totalRequestCount = totalRequests[0]?.count || 0;
+      } catch (err) {
+        if (!isMissingTableError(err)) {
+          throw err;
+        }
+      }
+
+      try {
+        const conflictRequests = await db.select({ count: sql<number>`count(*)` }).from(intakeRequests)
+          .where(eq(intakeRequests.syncConflict, true));
+        conflictCount = conflictRequests[0]?.count || 0;
+      } catch (err) {
+        if (!isMissingTableError(err)) {
+          throw err;
+        }
+      }
+
       res.json({
         configured: !!config,
         connectorAvailable: connector.isAvailable(),
         connectorName: connector.name,
         lastPulledAt: config?.lastPulledAt,
         lastPushedAt: config?.lastPushedAt,
-        totalRequests: totalRequests[0]?.count || 0,
-        conflictsCount: conflictRequests[0]?.count || 0,
+        totalRequests: totalRequestCount,
+        conflictsCount: conflictCount,
         siteName: config?.siteName,
         listName: config?.listName,
       });

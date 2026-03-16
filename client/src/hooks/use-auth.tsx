@@ -86,16 +86,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     try {
       await authApi.logout();
+    } catch (error) {
+      console.error("Logout error:", error);
+    } finally {
       setUser(null);
-      // Clear JWT token on logout
       setAuthToken(null);
+      localStorage.removeItem("company_role");
       setLocation("/auth/login");
       toast({
         title: "Logged out",
         description: "You have been logged out successfully.",
       });
-    } catch (error) {
-      console.error("Logout error:", error);
     }
   };
 

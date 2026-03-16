@@ -4,11 +4,9 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { requirePermission } from "../permission-middleware";
-import passport from "passport";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
-import { generateToken, verifyToken } from "../jwt";
 import { parseTrackerFile, applyFontColors } from "../excelParser";
 import { getStartupFlags } from "../startup-flags";
 
@@ -95,129 +93,6 @@ router.get("/api/health", async (req, res) => {
     message: dbStatus.message,
     timestamp: new Date().toISOString(),
   });
-});
-
-// ==================== AUTH ROUTES ====================
-
-router.get("/api/auth/status", async (req, res) => {
-  try {
-    const { dbMode } = await import("../db");
-    const { getDbConfigStatus } = await import("../db-config");
-    const dbStatus = getDbConfigStatus();
-
-    res.json({
-      authenticated: req.isAuthenticated(),
-      user: req.user ? {
-        email: req.user.email,
-        role: req.user.role
-      } : null,
-      dbMode,
-      dbConnected: dbStatus.connected,
-    });
-  } catch (error) {
-    const errorMsg = "Failed to get auth status";
-    res.status(500).json({
-      error: errorMsg,
-      message: errorMsg,
-      detail: error instanceof Error ? error.message : String(error)
-    });
-  }
-});
-
-router.post("/api/auth/login", async (req, res, next) => {
-  const { dbMode } = await import("../db");
-
-  passport.authenticate("local", (err: any, user: Express.User | false, info: { message: string }) => {
-    if (err) {
-      console.error("[LOGIN ERROR] Full error:", err);
-      console.error("[LOGIN ERROR] Stack trace:", err.stack);
-
-      if (err.message && (err.message.includes('ENOTFOUND') || err.message.includes('ECONNREFUSED'))) {
-        return res.status(503).json({
-          error: "Database connection unavailable",
-          message: "Database connection unavailable. Please check the database configuration.",
-          detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
-          code: 'DB_CONNECTION_ERROR',
-          dbMode
-        });
-      }
-
-      return res.status(500).json({
-        error: "Server error during login",
-        message: "An error occurred during login",
-        detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
-        code: 'LOGIN_ERROR',
-        dbMode
-      });
-    }
-
-    if (!user) {
-      console.log("[LOGIN] Failed login attempt:", req.body?.email, "- Reason:", info?.message);
-      return res.status(401).json({
-        error: info?.message || "Invalid email or password",
-        message: info?.message || "Login failed"
-      });
-    }
-
-    req.logIn(user, (err) => {
-      if (err) {
-        console.error("[SESSION ERROR]:", err);
-        return res.status(500).json({
-          error: "Failed to establish session",
-          message: "Failed to establish session",
-          detail: process.env.NODE_ENV === 'development' ? err.message : undefined,
-          code: 'SESSION_ERROR'
-        });
-      }
-
-      console.log("[LOGIN] Successful login:", user.email);
-
-      const token = generateToken({
-        userId: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-      });
-
-      return res.json({
-        message: "Login successful",
-        user: { id: user.id, email: user.email, name: user.name, role: user.role },
-        token,
-      });
-    });
-  })(req, res, next);
-});
-
-router.post("/api/auth/logout", (req, res) => {
-  req.logout((err) => {
-    if (err) {
-      return res.status(500).json({ error: "Logout failed", message: "Logout failed" });
-    }
-    res.json({ message: "Logged out successfully" });
-  });
-});
-
-router.get("/api/auth/me", (req, res) => {
-  if (req.isAuthenticated() && req.user) {
-    return res.json({
-      user: { id: req.user.id, email: req.user.email, name: req.user.name, role: req.user.role }
-    });
-  }
-
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-
-    if (payload) {
-      return res.json({
-        user: { id: payload.userId, email: payload.email, name: payload.name, role: payload.role }
-      });
-    }
-  }
-
-  res.status(401).json({ error: "Not authenticated", message: "Not authenticated" });
 });
 
 // ==================== FINANCIAL CLOSE ====================

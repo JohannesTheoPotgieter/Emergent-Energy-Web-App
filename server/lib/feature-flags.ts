@@ -7,23 +7,42 @@ function parseFlagValue(raw: string | null | undefined): boolean {
   return raw === "true" || raw === "1";
 }
 
+function isMissingAppSettingsTableError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return message.includes("no such table: app_settings");
+}
+
 export async function getFeatureFlag(key: string): Promise<boolean> {
-  const rows = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
-  if (rows.length === 0) return false;
-  return parseFlagValue(rows[0].value);
+  try {
+    const rows = await db.select().from(appSettings).where(eq(appSettings.key, key)).limit(1);
+    if (rows.length === 0) return false;
+    return parseFlagValue(rows[0].value);
+  } catch (error) {
+    if (isMissingAppSettingsTableError(error)) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 export async function getFeatureFlags(keys: readonly string[]): Promise<Record<string, boolean>> {
   if (!keys.length) return {};
-  const rows = await db
-    .select({ key: appSettings.key, value: appSettings.value })
-    .from(appSettings)
-    .where(inArray(appSettings.key, [...keys]));
-
   const result: Record<string, boolean> = {};
   for (const key of keys) result[key] = false;
-  for (const row of rows) result[row.key] = parseFlagValue(row.value);
-  return result;
+  try {
+    const rows = await db
+      .select({ key: appSettings.key, value: appSettings.value })
+      .from(appSettings)
+      .where(inArray(appSettings.key, [...keys]));
+
+    for (const row of rows) result[row.key] = parseFlagValue(row.value);
+    return result;
+  } catch (error) {
+    if (isMissingAppSettingsTableError(error)) {
+      return result;
+    }
+    throw error;
+  }
 }
 
 export async function setFeatureFlag(key: string, value: boolean, updatedBy: string): Promise<void> {
@@ -36,16 +55,23 @@ export async function setFeatureFlag(key: string, value: boolean, updatedBy: str
 }
 
 export async function ensureRolloutFeatureFlags(updatedBy = "system"): Promise<void> {
-  for (const flag of ROLLOUT_FEATURE_FLAGS) {
-    const existing = await db.select({ key: appSettings.key }).from(appSettings).where(eq(appSettings.key, flag.key)).limit(1);
-    if (!existing.length) {
-      await db.insert(appSettings).values({
-        key: flag.key,
-        value: flag.defaultValue ? "true" : "false",
-        updatedBy,
-        updatedAt: new Date(),
-      });
+  try {
+    for (const flag of ROLLOUT_FEATURE_FLAGS) {
+      const existing = await db.select({ key: appSettings.key }).from(appSettings).where(eq(appSettings.key, flag.key)).limit(1);
+      if (!existing.length) {
+        await db.insert(appSettings).values({
+          key: flag.key,
+          value: flag.defaultValue ? "true" : "false",
+          updatedBy,
+          updatedAt: new Date(),
+        });
+      }
     }
+  } catch (error) {
+    if (isMissingAppSettingsTableError(error)) {
+      return;
+    }
+    throw error;
   }
 }
 

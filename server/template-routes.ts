@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
-import { verifyToken } from "./jwt";
+import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import {
   users, projectInfo, projectPhaseHistory, operationalTasks,
   deliverables, taskActivityLog,
@@ -16,26 +16,7 @@ import { generateEngStagesForProject } from "./eng-stage-routes";
 import { createHash } from "crypto";
 
 function getUser(req: Request) {
-  return (req as any).user;
-}
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
+  return getEffectiveUser(req);
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {

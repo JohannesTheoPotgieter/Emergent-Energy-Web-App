@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { useToast } from "@/hooks/use-toast";
 import { isSuperAdmin } from "@/lib/access-control";
 import {
+  buildRoleAuthorityCategories,
   canManageRoleActions,
   resolveAdminRolesViewState,
   resolveSelectedRole,
@@ -17,7 +18,7 @@ import {
   type RoleSummary,
   type UserSummary,
 } from "./admin-roles.utils";
-import { AlertTriangle, Copy, Plus, Save, Search, Shield, ShieldAlert, Users } from "lucide-react";
+import { AlertTriangle, Plus, Save, Search, Shield, ShieldAlert, Users } from "lucide-react";
 import type { AuthorityAction, PermissionAction } from "@shared/schema";
 
 const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
@@ -126,6 +127,7 @@ function RolesControlCenter() {
   const effectiveRole = { ...selected, ...draft } as RoleRow;
   const currentEp = (effectiveRole.entityPermissions || {}) as Record<string, Record<string, boolean>>;
   const authorityRules = effectiveRole.authorityModel?.rules || {};
+  const authorityCategories = buildRoleAuthorityCategories(effectiveRole);
 
   const updateEp = (entity: string, action: string, value: boolean) => {
     const next = { ...currentEp, [entity]: { ...(currentEp[entity] || {}), [action]: value } };
@@ -174,7 +176,7 @@ function RolesControlCenter() {
       </CardContent></Card>
 
       <div className="col-span-9 space-y-3">
-        {viewState === "loading" && <Card><CardContent className="py-8 text-sm text-muted-foreground">Loading role authority structure…</CardContent></Card>}
+        {viewState === "loading" && <Card><CardContent className="py-8 text-sm text-muted-foreground">Loading role authority structure...</CardContent></Card>}
         {viewState === "error" && <Card><CardContent className="py-8 text-sm text-destructive">{loadError}</CardContent></Card>}
         {viewState === "empty" && (
           <Card>
@@ -189,11 +191,27 @@ function RolesControlCenter() {
         {viewState === "ready" && <>
         {hasChanges && <div className="sticky top-2 z-20 rounded border bg-amber-50 px-3 py-2 flex items-center justify-between"><span className="text-sm">Unsaved changes</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => setDraft({})}>Reset</Button><Button size="sm" onClick={save} disabled={!canManageRoles}><Save className="h-3 w-3 mr-1" />Save</Button></div></div>}
         <Card><CardHeader><CardTitle className="text-base">{selected?.label || "Select role"}</CardTitle></CardHeader><CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+            {authorityCategories.map((category) => (
+              <Card key={category.label}>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">{category.label}</CardTitle></CardHeader>
+                <CardContent className="space-y-2">
+                  {category.items.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {category.items.map((item) => <Badge key={item} variant="outline">{item}</Badge>)}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No authority configured.</p>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
           <Tabs defaultValue="overview">
             <TabsList className="grid grid-cols-6 w-full">
               <TabsTrigger value="overview">Overview</TabsTrigger><TabsTrigger value="navigation">Navigation</TabsTrigger><TabsTrigger value="resources">Legacy Permissions</TabsTrigger><TabsTrigger value="authority">Authority Model</TabsTrigger><TabsTrigger value="users">Users</TabsTrigger><TabsTrigger value="effective">Effective Access</TabsTrigger>
             </TabsList>
-            <TabsContent value="overview" className="space-y-3 mt-3"><div className="grid grid-cols-2 gap-3"><div><Label>Name</Label><Input value={effectiveRole.label || ""} onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} disabled={!canManageRoles} /></div><div><Label>Description</Label><Input value={effectiveRole.description || ""} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} disabled={!canManageRoles} /></div></div><div className="text-sm text-muted-foreground">Type: {selected?.isSystem ? "System" : "Custom"} · Assigned users: {selected?.userCount || 0}</div></TabsContent>
+            <TabsContent value="overview" className="space-y-3 mt-3"><div className="grid grid-cols-2 gap-3"><div><Label>Name</Label><Input value={effectiveRole.label || ""} onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} disabled={!canManageRoles} /></div><div><Label>Description</Label><Input value={effectiveRole.description || ""} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} disabled={!canManageRoles} /></div></div><div className="text-sm text-muted-foreground">Type: {selected?.isSystem ? "System" : "Custom"} | Assigned users: {selected?.userCount || 0}</div></TabsContent>
             <TabsContent value="navigation" className="mt-3"><div className="grid grid-cols-3 gap-2">{NAV_SECTIONS.map((s) => <label key={s} className="text-sm border rounded p-2 flex items-center gap-2"><input type="checkbox" checked={Boolean((effectiveRole.sections || []).includes(s))} onChange={(e) => {
               const next = new Set(effectiveRole.sections || []);
               if (e.target.checked) next.add(s); else next.delete(s);

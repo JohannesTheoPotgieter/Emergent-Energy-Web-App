@@ -1,38 +1,150 @@
-import { Router, Request, Response, NextFunction } from "express";
+import { Router, Request, Response } from "express";
 import { db } from "./db";
 import {
   invoicePatternRules,
   invoicePatternMatches,
   counterparties,
+  counterpartyContacts,
+  entityAssignments,
   smartImportRuns,
   normalizedCostLines,
 } from "@shared/schema";
-import { eq, and, desc, sql, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, desc, sql, isNotNull, asc } from "drizzle-orm";
 import { classifyCostLines, generateRuleFromInvoice, normalizeInvoiceNumber } from "./lib/import/invoice-classifier";
 import { requirePermission } from "./permission-middleware";
-import { verifyToken } from "./jwt";
+import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import { badRequest, notFound, sendError } from "./lib/api-error";
+import { logAuditFromReq } from "./audit-logger";
 
 const router = Router();
 
-function jwtAuth(req: Request, res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const decoded = verifyToken(authHeader.slice(7));
-    if (decoded) {
-      (req as any).user = { id: decoded.userId, role: decoded.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
-
 router.use(jwtAuth);
+
+function getUserId(req: Request): number | null {
+  return getEffectiveUser(req)?.id ?? null;
+}
+
+function normalizeRoleTags(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  return [...new Set(input
+    .map((value) => String(value || "").trim())
+    .filter(Boolean))];
+}
+
+function parseCurrencyAmount(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  const sanitized = String(value ?? "")
+    .replace(/[^0-9.\-]/g, "")
+    .trim();
+  const parsed = Number(sanitized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function buildCounterpartyUsageIndex() {
+  const rows = await db.select({
+    counterpartyId: normalizedCostLines.counterpartyId,
+    projectId: normalizedCostLines.projectId,
+    amountExVat: normalizedCostLines.amountExVat,
+    status: normalizedCostLines.status,
+  })
+    .from(normalizedCostLines)
+    .where(isNotNull(normalizedCostLines.counterpartyId));
+
+  const usage = new Map<number, {
+    usageCount: number;
+    projectIds: Set<number>;
+    totalSpendExVat: number;
+    openAmountExVat: number;
+  }>();
+
+  for (const row of rows) {
+    const counterpartyId = Number(row.counterpartyId ?? 0);
+    if (!Number.isFinite(counterpartyId) || counterpartyId <= 0) continue;
+
+    const bucket = usage.get(counterpartyId) || {
+      usageCount: 0,
+      projectIds: new Set<number>(),
+      totalSpendExVat: 0,
+      openAmountExVat: 0,
+    };
+
+    bucket.usageCount += 1;
+    if (typeof row.projectId === "number") {
+      bucket.projectIds.add(row.projectId);
+    }
+
+    const amount = parseCurrencyAmount(row.amountExVat);
+    bucket.totalSpendExVat += amount;
+    if (row.status !== "PAID") {
+      bucket.openAmountExVat += amount;
+    }
+
+    usage.set(counterpartyId, bucket);
+  }
+
+  return usage;
+}
+
+async function buildCounterpartyAssignmentIndex() {
+  const [directAssignments, contactAssignments] = await Promise.all([
+    db.select({
+      assigneeId: entityAssignments.assigneeId,
+      entityType: entityAssignments.entityType,
+    })
+      .from(entityAssignments)
+      .where(and(
+        eq(entityAssignments.assigneeType, "external_counterparty"),
+        eq(entityAssignments.active, true),
+      )),
+    db.select({
+      assigneeId: entityAssignments.assigneeId,
+      counterpartyId: counterpartyContacts.counterpartyId,
+      entityType: entityAssignments.entityType,
+    })
+      .from(entityAssignments)
+      .innerJoin(counterpartyContacts, eq(counterpartyContacts.id, entityAssignments.assigneeId))
+      .where(and(
+        eq(entityAssignments.assigneeType, "external_contact"),
+        eq(entityAssignments.active, true),
+      )),
+  ]);
+
+  const usage = new Map<number, {
+    directAssignments: number;
+    contactAssignments: number;
+    entityTypes: Set<string>;
+  }>();
+
+  for (const row of directAssignments) {
+    const bucket = usage.get(row.assigneeId) || {
+      directAssignments: 0,
+      contactAssignments: 0,
+      entityTypes: new Set<string>(),
+    };
+    bucket.directAssignments += 1;
+    bucket.entityTypes.add(String(row.entityType || ""));
+    usage.set(row.assigneeId, bucket);
+  }
+
+  for (const row of contactAssignments) {
+    const counterpartyId = Number(row.counterpartyId ?? 0);
+    if (!Number.isFinite(counterpartyId) || counterpartyId <= 0) continue;
+
+    const bucket = usage.get(counterpartyId) || {
+      directAssignments: 0,
+      contactAssignments: 0,
+      entityTypes: new Set<string>(),
+    };
+    bucket.contactAssignments += 1;
+    bucket.entityTypes.add(String(row.entityType || ""));
+    usage.set(counterpartyId, bucket);
+  }
+
+  return usage;
+}
 
 async function autoCreatePatternsForAliases(
   counterpartyId: number,
@@ -151,7 +263,7 @@ router.post("/api/invoice-patterns", requireAuth, requirePermission('procurement
     if (!patternType || !patternValue || !inferredType) {
       return res.status(400).json({ error: "patternType, patternValue, and inferredType are required" });
     }
-    const userId = (req as any).user?.id || null;
+    const userId = getUserId(req);
 
     let resolvedCounterpartyId = counterpartyId || null;
     if (counterpartyName && !resolvedCounterpartyId) {
@@ -302,7 +414,7 @@ router.post("/api/smart-import/:runId/classify-review", requireAuth, requirePerm
           selectedCounterpartyId,
           null
         );
-        const userId = (req as any).user?.id || null;
+        const userId = getUserId(req);
         const [newRule] = await db
           .insert(invoicePatternRules)
           .values({
@@ -342,7 +454,7 @@ router.post("/api/smart-import/:runId/classify-review", requireAuth, requirePerm
           selectedCounterpartyId,
           null
         );
-        const userId = (req as any).user?.id || null;
+        const userId = getUserId(req);
         const [newRule] = await db
           .insert(invoicePatternRules)
           .values({
@@ -397,7 +509,7 @@ router.post("/api/smart-import/:runId/classify-review", requireAuth, requirePerm
 
 router.post("/api/procurement-analysis/classify", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
-    const userId = (req as any).user?.id || null;
+    const userId = getUserId(req);
 
     const allLines = await db.select().from(normalizedCostLines);
 
@@ -605,7 +717,7 @@ router.get("/api/invoice-pattern-matches", requireAuth, async (req: Request, res
 
 router.post("/api/procurement-analysis/reset-tags", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = getEffectiveUser(req);
     const userRole = user?.role;
     if (!["COO_ADMIN", "CEO_ADMIN"].includes(userRole)) {
       return res.status(403).json({ error: "Only COO/CEO Admin can reset tags" });
@@ -650,7 +762,7 @@ router.post("/api/procurement-analysis/reset-tags", requireAuth, requirePermissi
 
 router.post("/api/admin/wipe-all-data", requireAuth, requirePermission('admin', 'delete'), async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
+    const user = getEffectiveUser(req);
     const userRole = user?.role;
     if (!["admin", "COO_ADMIN", "CEO_ADMIN"].includes(userRole)) {
       return res.status(403).json({ error: "Only COO/CEO Admin can wipe data" });
@@ -744,56 +856,124 @@ router.post("/api/admin/wipe-all-data", requireAuth, requirePermission('admin', 
 
 router.get("/api/counterparties/summary", requireAuth, requirePermission('procurement', 'view'), async (_req: Request, res: Response) => {
   try {
-    const rows = await db.execute(sql`
-      SELECT
-        c.id,
-        c.name_canonical as "nameCanonical",
-        c.type_default as "typeDefault",
-        c.is_core as "isCore",
-        c.contact_person as "contactPerson",
-        c.contact_phone as "contactPhone",
-        c.contact_email as "contactEmail",
-        c.address,
-        c.vat_number as "vatNumber",
-        c.registration_number as "registrationNumber",
-        c.payment_terms as "paymentTerms",
-        c.notes,
-        c.last_seen_at as "lastSeenAt",
-        COUNT(ncl.id)::int as "usageCount",
-        COUNT(DISTINCT ncl.project_id)::int as "linkedProjectCount",
-        COALESCE(SUM(CASE WHEN ncl.amount_ex_vat ~ '^-?[0-9]+(\.[0-9]+)?$' THEN CAST(ncl.amount_ex_vat AS numeric) ELSE 0 END), 0)::float as "totalSpendExVat",
-        COALESCE(SUM(CASE WHEN ncl.cost_line_status != 'PAID' AND ncl.amount_ex_vat ~ '^-?[0-9]+(\.[0-9]+)?$' THEN CAST(ncl.amount_ex_vat AS numeric) ELSE 0 END), 0)::float as "openAmountExVat"
-      FROM counterparties c
-      LEFT JOIN normalized_cost_lines ncl ON ncl.counterparty_id = c.id
-      GROUP BY c.id
-      ORDER BY c.name_canonical ASC
-    `);
+    const [allCounterparties, usageIndex, assignmentIndex, contactCounts] = await Promise.all([
+      db.select().from(counterparties).orderBy(asc(counterparties.nameCanonical)),
+      buildCounterpartyUsageIndex(),
+      buildCounterpartyAssignmentIndex(),
+      db.select({
+        counterpartyId: counterpartyContacts.counterpartyId,
+        isActive: counterpartyContacts.isActive,
+      }).from(counterpartyContacts),
+    ]);
 
-    res.json(rows.rows);
+    const activeContactCountByCounterparty = new Map<number, number>();
+    for (const contact of contactCounts) {
+      if (!contact.isActive) continue;
+      activeContactCountByCounterparty.set(
+        contact.counterpartyId,
+        (activeContactCountByCounterparty.get(contact.counterpartyId) || 0) + 1,
+      );
+    }
+
+    res.json(allCounterparties.map((counterparty) => {
+      const usage = usageIndex.get(counterparty.id);
+      const assignments = assignmentIndex.get(counterparty.id);
+      return {
+        ...counterparty,
+        usageCount: usage?.usageCount || 0,
+        linkedProjectCount: usage?.projectIds.size || 0,
+        totalSpendExVat: usage?.totalSpendExVat || 0,
+        openAmountExVat: usage?.openAmountExVat || 0,
+        activeContactCount: activeContactCountByCounterparty.get(counterparty.id) || 0,
+        directAssignmentCount: assignments?.directAssignments || 0,
+        contactAssignmentCount: assignments?.contactAssignments || 0,
+        assignmentEntityTypes: assignments ? [...assignments.entityTypes].filter(Boolean).sort() : [],
+      };
+    }));
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendError(res, err);
   }
 });
 
-router.get("/api/counterparties", requireAuth, async (_req: Request, res: Response) => {
+router.get("/api/counterparties", requireAuth, requirePermission('procurement', 'view'), async (_req: Request, res: Response) => {
   try {
     const all = await db
       .select()
       .from(counterparties)
-      .orderBy(counterparties.nameCanonical);
+      .orderBy(asc(counterparties.nameCanonical));
     res.json(all);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendError(res, err);
+  }
+});
+
+router.get("/api/counterparties/:id", requireAuth, requirePermission('procurement', 'view'), async (req: Request, res: Response) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      throw badRequest("Invalid counterparty ID");
+    }
+
+    const [[counterparty], contacts, usageIndex, assignmentIndex, activeAssignments] = await Promise.all([
+      db.select().from(counterparties).where(eq(counterparties.id, id)).limit(1),
+      db.select().from(counterpartyContacts).where(eq(counterpartyContacts.counterpartyId, id)).orderBy(asc(counterpartyContacts.name)),
+      buildCounterpartyUsageIndex(),
+      buildCounterpartyAssignmentIndex(),
+      db.select({
+        id: entityAssignments.id,
+        entityType: entityAssignments.entityType,
+        entityId: entityAssignments.entityId,
+        assignmentRole: entityAssignments.assignmentRole,
+        assigneeType: entityAssignments.assigneeType,
+        assigneeId: entityAssignments.assigneeId,
+        displayLabelSnapshot: entityAssignments.displayLabelSnapshot,
+        assignedAt: entityAssignments.assignedAt,
+      })
+        .from(entityAssignments)
+        .where(and(
+          eq(entityAssignments.active, true),
+          sql`(
+            (${entityAssignments.assigneeType} = 'external_counterparty' AND ${entityAssignments.assigneeId} = ${id})
+            OR (${entityAssignments.assigneeType} = 'external_contact' AND ${entityAssignments.assigneeId} IN (
+              SELECT id FROM counterparty_contacts WHERE counterparty_id = ${id}
+            ))
+          )`,
+        ))
+        .orderBy(desc(entityAssignments.assignedAt)),
+    ]);
+
+    if (!counterparty) {
+      throw notFound("Counterparty");
+    }
+
+    const usage = usageIndex.get(id);
+    const assignments = assignmentIndex.get(id);
+    res.json({
+      ...counterparty,
+      contacts,
+      summary: {
+        usageCount: usage?.usageCount || 0,
+        linkedProjectCount: usage?.projectIds.size || 0,
+        totalSpendExVat: usage?.totalSpendExVat || 0,
+        openAmountExVat: usage?.openAmountExVat || 0,
+        directAssignmentCount: assignments?.directAssignments || 0,
+        contactAssignmentCount: assignments?.contactAssignments || 0,
+        assignmentEntityTypes: assignments ? [...assignments.entityTypes].filter(Boolean).sort() : [],
+      },
+      activeAssignments,
+    });
+  } catch (err: any) {
+    sendError(res, err);
   }
 });
 
 router.post("/api/counterparties", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
-    const { nameCanonical, typeDefault, nameAliases, isCore } = req.body;
+    const { nameCanonical, typeDefault, nameAliases, isCore, isActive, roleTags } = req.body;
     if (!nameCanonical || !nameCanonical.trim()) {
-      return res.status(400).json({ error: "nameCanonical is required" });
+      throw badRequest("nameCanonical is required");
     }
-    const userId = (req as any).user?.id || null;
+    const userId = getUserId(req);
     const aliases: string[] = Array.isArray(nameAliases) ? nameAliases : [];
     const cpType = typeDefault || "OTHER";
 
@@ -803,29 +983,48 @@ router.post("/api/counterparties", requireAuth, requirePermission('procurement',
         nameCanonical: nameCanonical.trim(),
         typeDefault: cpType,
         nameAliases: aliases,
-        isCore: isCore || false,
+        isCore: Boolean(isCore),
+        isActive: isActive !== undefined ? Boolean(isActive) : true,
+        roleTags: normalizeRoleTags(roleTags),
         createdBy: userId,
+        updatedAt: new Date(),
       })
       .returning();
 
     const createdRules = await autoCreatePatternsForAliases(cp.id, nameCanonical.trim(), aliases, cpType, userId);
+    logAuditFromReq(req, {
+      entityType: "counterparty",
+      entityId: String(cp.id),
+      action: "create",
+      changesJson: {
+        nameCanonical: cp.nameCanonical,
+        typeDefault: cp.typeDefault,
+        isActive: cp.isActive,
+        roleTags: cp.roleTags,
+        autoCreatedRules: createdRules.length,
+      },
+    });
 
-    res.json({ ...cp, autoCreatedRules: createdRules.length });
+    res.status(201).json({ ...cp, autoCreatedRules: createdRules.length });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendError(res, err);
   }
 });
 
 router.patch("/api/counterparties/:id", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
-    if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
-    const userId = (req as any).user?.id || null;
-    const updates: any = {};
-    if (req.body.nameCanonical !== undefined) updates.nameCanonical = req.body.nameCanonical.trim();
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      throw badRequest("Invalid counterparty ID");
+    }
+    const userId = getUserId(req);
+    const updates: any = { updatedAt: new Date() };
+    if (req.body.nameCanonical !== undefined) updates.nameCanonical = String(req.body.nameCanonical).trim();
     if (req.body.typeDefault !== undefined) updates.typeDefault = req.body.typeDefault;
     if (req.body.nameAliases !== undefined) updates.nameAliases = req.body.nameAliases;
-    if (req.body.isCore !== undefined) updates.isCore = req.body.isCore;
+    if (req.body.isCore !== undefined) updates.isCore = Boolean(req.body.isCore);
+    if (req.body.isActive !== undefined) updates.isActive = Boolean(req.body.isActive);
+    if (req.body.roleTags !== undefined) updates.roleTags = normalizeRoleTags(req.body.roleTags);
     if (req.body.contactPerson !== undefined) updates.contactPerson = req.body.contactPerson;
     if (req.body.contactPhone !== undefined) updates.contactPhone = req.body.contactPhone;
     if (req.body.contactEmail !== undefined) updates.contactEmail = req.body.contactEmail;
@@ -834,31 +1033,136 @@ router.patch("/api/counterparties/:id", requireAuth, requirePermission('procurem
     if (req.body.registrationNumber !== undefined) updates.registrationNumber = req.body.registrationNumber;
     if (req.body.paymentTerms !== undefined) updates.paymentTerms = req.body.paymentTerms;
     if (req.body.notes !== undefined) updates.notes = req.body.notes;
+
     const [updated] = await db
       .update(counterparties)
       .set(updates)
       .where(eq(counterparties.id, id))
       .returning();
-    if (!updated) return res.status(404).json({ error: "Counterparty not found" });
+    if (!updated) {
+      throw notFound("Counterparty");
+    }
 
     await syncPatternsForCounterparty(
       id,
       updated.nameCanonical,
       (updated.nameAliases as string[]) || [],
       updated.typeDefault,
-      userId
+      userId,
     );
+
+    logAuditFromReq(req, {
+      entityType: "counterparty",
+      entityId: String(id),
+      action: "update",
+      changesJson: {
+        nameCanonical: updated.nameCanonical,
+        typeDefault: updated.typeDefault,
+        isActive: updated.isActive,
+        roleTags: updated.roleTags,
+      },
+    });
 
     res.json(updated);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendError(res, err);
+  }
+});
+
+router.post("/api/counterparties/:id/contacts", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
+  try {
+    const counterpartyId = parseInt(req.params.id, 10);
+    if (isNaN(counterpartyId)) {
+      throw badRequest("Invalid counterparty ID");
+    }
+    if (!req.body?.name || !String(req.body.name).trim()) {
+      throw badRequest("Contact name is required");
+    }
+
+    const [contact] = await db.insert(counterpartyContacts).values({
+      counterpartyId,
+      name: String(req.body.name).trim(),
+      email: req.body.email || null,
+      phone: req.body.phone || null,
+      title: req.body.title || null,
+      roleTags: normalizeRoleTags(req.body.roleTags),
+      isActive: req.body.isActive !== undefined ? Boolean(req.body.isActive) : true,
+      notes: req.body.notes || null,
+      createdByUserId: getUserId(req),
+      updatedAt: new Date(),
+    }).returning();
+
+    logAuditFromReq(req, {
+      entityType: "counterparty_contact",
+      entityId: String(contact.id),
+      action: "create",
+      changesJson: {
+        counterpartyId,
+        name: contact.name,
+        isActive: contact.isActive,
+        roleTags: contact.roleTags,
+      },
+    });
+
+    res.status(201).json(contact);
+  } catch (err: any) {
+    sendError(res, err);
+  }
+});
+
+router.patch("/api/counterparties/:id/contacts/:contactId", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
+  try {
+    const counterpartyId = parseInt(req.params.id, 10);
+    const contactId = parseInt(req.params.contactId, 10);
+    if (isNaN(counterpartyId) || isNaN(contactId)) {
+      throw badRequest("Invalid counterparty or contact ID");
+    }
+
+    const updates: any = { updatedAt: new Date() };
+    if (req.body.name !== undefined) updates.name = String(req.body.name).trim();
+    if (req.body.email !== undefined) updates.email = req.body.email;
+    if (req.body.phone !== undefined) updates.phone = req.body.phone;
+    if (req.body.title !== undefined) updates.title = req.body.title;
+    if (req.body.roleTags !== undefined) updates.roleTags = normalizeRoleTags(req.body.roleTags);
+    if (req.body.isActive !== undefined) updates.isActive = Boolean(req.body.isActive);
+    if (req.body.notes !== undefined) updates.notes = req.body.notes;
+
+    const [updated] = await db.update(counterpartyContacts)
+      .set(updates)
+      .where(and(
+        eq(counterpartyContacts.id, contactId),
+        eq(counterpartyContacts.counterpartyId, counterpartyId),
+      ))
+      .returning();
+
+    if (!updated) {
+      throw notFound("Counterparty contact");
+    }
+
+    logAuditFromReq(req, {
+      entityType: "counterparty_contact",
+      entityId: String(contactId),
+      action: "update",
+      changesJson: {
+        counterpartyId,
+        name: updated.name,
+        isActive: updated.isActive,
+        roleTags: updated.roleTags,
+      },
+    });
+
+    res.json(updated);
+  } catch (err: any) {
+    sendError(res, err);
   }
 });
 
 router.delete("/api/counterparties/:id", requireAuth, requirePermission('procurement', 'delete'), async (req: Request, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
-    if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      throw badRequest("Invalid counterparty ID");
+    }
     await db.transaction(async (tx) => {
       await tx.update(normalizedCostLines)
         .set({ counterpartyId: null })
@@ -869,11 +1173,20 @@ router.delete("/api/counterparties/:id", requireAuth, requirePermission('procure
       await tx.update(invoicePatternMatches)
         .set({ inferredCounterpartyId: null })
         .where(eq(invoicePatternMatches.inferredCounterpartyId, id));
+      await tx.delete(counterpartyContacts).where(eq(counterpartyContacts.counterpartyId, id));
       await tx.delete(counterparties).where(eq(counterparties.id, id));
     });
+
+    logAuditFromReq(req, {
+      entityType: "counterparty",
+      entityId: String(id),
+      action: "delete",
+      changesJson: { counterpartyId: id },
+    });
+
     res.json({ ok: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendError(res, err);
   }
 });
 

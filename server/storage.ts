@@ -1,5 +1,5 @@
 import { db, getDbMode } from "./db";
-import { safeLegacyWrite } from "./legacy-table-guard";
+import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
 import { UsersRepository } from "./repositories/users-repository";
 import { WorkManagementRepository } from "./repositories/work-management-repository";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
@@ -840,13 +840,29 @@ export class DatabaseStorage implements IStorage {
 
   // Project Info (new)
   async getProjectInfo(projectName: string): Promise<ProjectInfo | undefined> {
-    const [info] = await this.dbInstance.select().from(projectInfo).where(eq(projectInfo.projectName, projectName));
-    return info;
+    try {
+      const [info] = await this.dbInstance.select().from(projectInfo).where(eq(projectInfo.projectName, projectName));
+      return info;
+    } catch (error) {
+      if (this.shouldUseLegacyProjectInfoReadFallback(error)) {
+        const [info] = await this.listLegacyCompatibleProjectInfo({ projectName });
+        return info;
+      }
+      throw error;
+    }
   }
 
   async getProjectInfoById(id: number): Promise<ProjectInfo | undefined> {
-    const [info] = await this.dbInstance.select().from(projectInfo).where(eq(projectInfo.id, id));
-    return info;
+    try {
+      const [info] = await this.dbInstance.select().from(projectInfo).where(eq(projectInfo.id, id));
+      return info;
+    } catch (error) {
+      if (this.shouldUseLegacyProjectInfoReadFallback(error)) {
+        const [info] = await this.listLegacyCompatibleProjectInfo({ id });
+        return info;
+      }
+      throw error;
+    }
   }
 
   async updateProjectInfoById(id: number, fields: Partial<InsertProjectInfo>): Promise<ProjectInfo | undefined> {
@@ -859,7 +875,90 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllProjectInfo(): Promise<ProjectInfo[]> {
-    return this.dbInstance.select().from(projectInfo).orderBy(desc(projectInfo.updatedAt));
+    try {
+      return await this.dbInstance.select().from(projectInfo).orderBy(desc(projectInfo.updatedAt));
+    } catch (error) {
+      if (this.shouldUseLegacyProjectInfoReadFallback(error)) {
+        return this.listLegacyCompatibleProjectInfo();
+      }
+      throw error;
+    }
+  }
+
+  private shouldUseLegacyProjectInfoReadFallback(error: unknown): boolean {
+    if (getDbMode() !== "sqlite") {
+      return false;
+    }
+
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    return message.includes("no such column")
+      && [
+        "phase_updated_at",
+        "phase_updated_by_user_id",
+        "phase_notes",
+        "execution_phase",
+        "client_id",
+        "archived_status",
+        "pm_user_id",
+        "pd_user_id",
+      ].some((column) => message.includes(column));
+  }
+
+  private async listLegacyCompatibleProjectInfo(filters?: {
+    projectName?: string;
+    id?: number;
+  }): Promise<ProjectInfo[]> {
+    const baseQuery = this.dbInstance.select({
+      id: projectInfo.id,
+      projectName: projectInfo.projectName,
+      sizeKwp: projectInfo.sizeKwp,
+      pd: projectInfo.pd,
+      pm: projectInfo.pm,
+      contractValue: projectInfo.contractValue,
+      phase: projectInfo.phase,
+      updatedAt: projectInfo.updatedAt,
+    }).from(projectInfo);
+
+    const rows = filters?.projectName
+      ? await baseQuery.where(eq(projectInfo.projectName, filters.projectName))
+      : filters?.id != null
+        ? await baseQuery.where(eq(projectInfo.id, filters.id))
+        : await baseQuery.orderBy(desc(projectInfo.updatedAt));
+
+    return rows.map((row) => ({
+      ...row,
+      phaseUpdatedAt: null,
+      phaseUpdatedByUserId: null,
+      phaseNotes: null,
+      pdHandoverDate: null,
+      constructionStartDate: null,
+      commissioningDate: null,
+      omHandoverDate: null,
+      clientHandoverDate: null,
+      escalationLevel: null,
+      constructionStartActual: null,
+      pdHandoverActual: null,
+      commissioningActual: null,
+      clientHandoverActual: null,
+      ragStatus: null,
+      ragComment: null,
+      ragUpdatedAt: null,
+      ragUpdatedByUserId: null,
+      isActive: true,
+      executionEnabled: false,
+      executionGateStatus: "NOT_ELIGIBLE",
+      executionGateReason: null,
+      signedStatus: "NONE",
+      signedDate: null,
+      signedDocumentLink: null,
+      executionPhase: null,
+      excelTrackerLink: null,
+      canonicalProjectId: row.id,
+      clientId: null,
+      archivedStatus: "ACTIVE",
+      pmUserId: null,
+      pdUserId: null,
+    })) as ProjectInfo[];
   }
 
   async upsertProjectInfo(info: InsertProjectInfo): Promise<ProjectInfo> {
@@ -1286,16 +1385,24 @@ export class DatabaseStorage implements IStorage {
 
   // Project Plan Overrides (user edits for tasks/milestones)
   async getProjectPlanOverridesByProject(projectName: string): Promise<ProjectPlanOverride[]> {
-    return this.dbInstance.select()
-      .from(projectPlanOverrides)
-      .where(eq(projectPlanOverrides.projectName, projectName))
-      .orderBy(projectPlanOverrides.rowNumber);
+    return safeLegacyQuery(
+      () =>
+        this.dbInstance.select()
+          .from(projectPlanOverrides)
+          .where(eq(projectPlanOverrides.projectName, projectName))
+          .orderBy(projectPlanOverrides.rowNumber),
+      [],
+    );
   }
 
   async getAllProjectPlanOverrides(): Promise<ProjectPlanOverride[]> {
-    return this.dbInstance.select()
-      .from(projectPlanOverrides)
-      .orderBy(projectPlanOverrides.projectName, projectPlanOverrides.rowNumber);
+    return safeLegacyQuery(
+      () =>
+        this.dbInstance.select()
+          .from(projectPlanOverrides)
+          .orderBy(projectPlanOverrides.projectName, projectPlanOverrides.rowNumber),
+      [],
+    );
   }
 
   async upsertProjectPlanOverride(override: InsertProjectPlanOverride): Promise<ProjectPlanOverride> {

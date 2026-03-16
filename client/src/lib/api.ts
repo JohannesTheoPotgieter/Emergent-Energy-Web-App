@@ -389,6 +389,33 @@ export interface ProjectSummary {
   revenue_outstanding: number;
   expenses_outstanding: number;
   current_vo_total: number;
+  shared_summary?: {
+    project: {
+      canonicalProjectId: number;
+      projectInfoId: number;
+      projectName: string;
+      clientId: number | null;
+      clientName: string | null;
+      lifecycleStage: string | null;
+      lifecycleStageLabel: string | null;
+      rawPhase: string | null;
+      executionPhase: string | null;
+    };
+    latestUpdate: {
+      text: string | null;
+      updatedAt: string | null;
+      updatedBy: string | null;
+    };
+    activity: {
+      lastActivityAt: string | null;
+      lastActivitySummary: string | null;
+      lastActivityActor: string | null;
+    };
+    workflow: {
+      approvals: { total: number; pending: number; approved: number; rejected: number };
+      deliverables: { total: number; pending: number; inReview: number; completed: number };
+    };
+  } | null;
 }
 
 export interface ProjectInfo {

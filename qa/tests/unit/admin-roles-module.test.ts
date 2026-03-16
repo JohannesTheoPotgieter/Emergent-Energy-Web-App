@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROLE_PERMISSIONS } from "@shared/schema";
 import {
+  buildRoleAuthorityCategories,
   canManageRoleActions,
   resolveAdminRolesViewState,
   resolveSelectedRole,
@@ -50,5 +51,31 @@ describe("admin roles module state", () => {
     expect(canManageRoleActions(true, true)).toBe(true);
     expect(canManageRoleActions(false, true)).toBe(false);
     expect(canManageRoleActions(true, false)).toBe(false);
+  });
+
+  it("builds meaningful authority categories for the roles UI", () => {
+    const categories = buildRoleAuthorityCategories(role({
+      sections: ["PROJECTS", "MONEY"],
+      authoritySummary: [
+        {
+          entity: "approvals",
+          actions: [
+            { action: "approve", allowed: true, scope: "all_projects" },
+            { action: "assign", allowed: true, scope: "department" },
+          ],
+        },
+        {
+          entity: "procurement",
+          actions: [
+            { action: "edit", allowed: true, scope: "assigned_projects" },
+          ],
+        },
+      ],
+    }));
+
+    expect(categories.find((category) => category.label === "Module access")?.items).toContain("MONEY");
+    expect(categories.find((category) => category.label === "Assignment rights")?.items).toContain("approvals.assign");
+    expect(categories.find((category) => category.label === "Approval rights")?.items).toContain("approvals");
+    expect(categories.find((category) => category.label === "Financial authority")?.items).toContain("procurement.edit");
   });
 });

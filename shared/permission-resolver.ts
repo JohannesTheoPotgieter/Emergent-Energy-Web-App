@@ -80,6 +80,10 @@ const LEGACY_ACTION_MAP: Partial<Record<AuthorityAction, PermissionAction>> = {
   edit: "edit",
   delete: "delete",
   approve: "approve",
+  assign: "edit",
+  reassign: "edit",
+  close_complete: "edit",
+  export: "view",
 };
 
 const STRICTER_ACTIONS: AuthorityAction[] = ["delete", "approve", "manage_settings"];
@@ -170,7 +174,7 @@ export function evaluateAuthorityForRole(params: {
   role: string;
   entity: PermissionEntity;
   action: AuthorityAction;
-  roleRecord?: Pick<RolePermission, "entityPermissions" | "authorityModel"> | null;
+  roleRecord?: Pick<RolePermission, "entityPermissions" | "authorityModel" | "canManageUsers" | "canManageRoles"> | null;
   userOverride?: Partial<AuthorityModel> | null;
 }): AuthorityEvaluationResult {
   const { role, entity, action, roleRecord, userOverride } = params;
@@ -199,6 +203,25 @@ export function evaluateAuthorityForRole(params: {
         approvalThresholds: merged.approvalThresholds || [],
         delegatedAuthority: merged.delegatedAuthority || [],
         assignmentRules: merged.assignmentRules || [],
+      },
+    };
+  }
+
+  if (action === "manage_settings") {
+    const canManageSettings = Boolean(roleRecord?.canManageRoles || roleRecord?.canManageUsers || role === "COO_ADMIN" || role === "CEO_ADMIN");
+    return {
+      allowed: canManageSettings,
+      action,
+      scope: DEFAULT_SCOPE_BY_ACTION[action],
+      reason: canManageSettings
+        ? "Allowed via legacy administrative capability fallback."
+        : `No authority rule configured for ${ruleKey}; denied by migration-safe default.`,
+      source: canManageSettings ? "legacy_fallback" : "none",
+      constraints: {
+        fieldRestrictions: [],
+        approvalThresholds: [],
+        delegatedAuthority: [],
+        assignmentRules: [],
       },
     };
   }

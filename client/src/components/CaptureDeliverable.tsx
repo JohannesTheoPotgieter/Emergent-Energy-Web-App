@@ -11,16 +11,12 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
+import { type AssignableDirectoryEntry, fetchAssignables, getAssigneeBadgeLabel, getAuthHeaders as authHeaders } from "@/lib/assignables";
 import {
   Upload, FileText, Package, DollarSign, ListChecks,
   ChevronRight, Check, ChevronsUpDown, Loader2,
   X, Paperclip, Download, ArrowLeft, Info, FolderOpen,
 } from "lucide-react";
-
-function authHeaders() {
-  const token = localStorage.getItem("auth_token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
 
 type LinkType = "work_item" | "cost_line" | "revenue_line" | null;
 type Step = "project" | "link" | "upload";
@@ -54,7 +50,8 @@ export default function CaptureDeliverable({
   const [description, setDescription] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [deliverableType, setDeliverableType] = useState("project_document");
-  const [ownerUserId, setOwnerUserId] = useState<string>("");
+  const [ownerAssigneeType, setOwnerAssigneeType] = useState<"internal" | "external">("internal");
+  const [ownerAssigneeValue, setOwnerAssigneeValue] = useState<string>("");
   const [itemSearch, setItemSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -72,7 +69,8 @@ export default function CaptureDeliverable({
       setDescription("");
       setFile(null);
       setDeliverableType("project_document");
-      setOwnerUserId("");
+      setOwnerAssigneeType("internal");
+      setOwnerAssigneeValue("");
       setItemSearch("");
     }
   }, [open]);
@@ -106,13 +104,9 @@ export default function CaptureDeliverable({
     staleTime: 30_000,
   });
 
-  const { data: assignableUsers = [] } = useQuery<{ id: number; name: string; email: string }[]>({
-    queryKey: ["pm-assignable-users"],
-    queryFn: async () => {
-      const res = await fetch("/api/pm-assignable-users", { headers: authHeaders(), credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
+  const { data: assignables = [] } = useQuery<AssignableDirectoryEntry[]>({
+    queryKey: ["deliverable-assignables"],
+    queryFn: async () => fetchAssignables("deliverable"),
     enabled: open,
     staleTime: 60_000,
   });
@@ -138,7 +132,13 @@ export default function CaptureDeliverable({
       formData.append("projectName", selectedProjectName);
       formData.append("title", title);
       formData.append("deliverableType", deliverableType);
-      if (ownerUserId) formData.append("ownerUserId", ownerUserId);
+      if (ownerAssigneeValue) {
+        const selectedAssignee = assignables.find((entry) => `${entry.assigneeType}:${entry.assigneeId}` === ownerAssigneeValue);
+        if (selectedAssignee) {
+          formData.append("ownerAssigneeType", selectedAssignee.assigneeType);
+          formData.append("ownerAssigneeId", String(selectedAssignee.assigneeId));
+        }
+      }
       if (description) formData.append("description", description);
       if (linkType) formData.append("linkType", linkType);
       if (linkId) formData.append("linkId", String(linkId));
@@ -226,6 +226,12 @@ export default function CaptureDeliverable({
   );
 
   const canSubmit = !!selectedProjectId && !!title && !!file;
+  const ownerAssignableOptions = assignables
+    .filter((entry) => ownerAssigneeType === "internal" ? entry.assigneeType === "internal_user" : entry.assigneeType !== "internal_user")
+    .map((entry) => ({
+      value: `${entry.assigneeType}:${entry.assigneeId}`,
+      label: `${entry.displayLabel}${entry.secondaryLabel ? ` | ${entry.secondaryLabel}` : ""} | ${getAssigneeBadgeLabel(entry.assigneeType)}`,
+    }));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -438,7 +444,7 @@ export default function CaptureDeliverable({
                       ))}
                       {filteredWorkItems.length > 50 && (
                         <p className="text-xs text-muted-foreground text-center py-2">
-                          Showing 50 of {filteredWorkItems.length} — use search to narrow down
+                          Showing 50 of {filteredWorkItems.length} - use search to narrow down
                         </p>
                       )}
                     </div>
@@ -453,7 +459,7 @@ export default function CaptureDeliverable({
 
             <div className="flex justify-end pt-2 border-t">
               <Button variant="ghost" size="sm" onClick={skipLink} data-testid="btn-skip-link">
-                Skip — Upload without linking
+                Skip - Upload without linking
               </Button>
             </div>
           </div>
@@ -580,16 +586,41 @@ export default function CaptureDeliverable({
               </div>
               <div>
                 <Label className="text-xs">Assign To</Label>
-                <SearchableSelect
-                  value={ownerUserId}
-                  onValueChange={setOwnerUserId}
-                  placeholder="Select user..."
-                  data-testid="select-owner-user"
-                  options={assignableUsers.map((u) => ({
-                    value: String(u.id),
-                    label: u.name || u.email,
-                  }))}
-                />
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={ownerAssigneeType === "internal" ? "default" : "outline"}
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        setOwnerAssigneeType("internal");
+                        setOwnerAssigneeValue("");
+                      }}
+                    >
+                      Internal
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={ownerAssigneeType === "external" ? "default" : "outline"}
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        setOwnerAssigneeType("external");
+                        setOwnerAssigneeValue("");
+                      }}
+                    >
+                      External
+                    </Button>
+                  </div>
+                  <SearchableSelect
+                    value={ownerAssigneeValue}
+                    onValueChange={setOwnerAssigneeValue}
+                    placeholder={ownerAssigneeType === "internal" ? "Select internal owner..." : "Select counterparty or contact..."}
+                    data-testid="select-owner-user"
+                    options={ownerAssignableOptions}
+                  />
+                </div>
               </div>
             </div>
 

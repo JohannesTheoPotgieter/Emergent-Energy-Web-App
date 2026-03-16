@@ -1,26 +1,48 @@
-import type { Express, RequestHandler } from "express";
+import type { Express } from "express";
 import passport from "passport";
 import { db } from "../db";
 import { users } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 import { generateToken, verifyToken } from "../jwt";
+import {
+  clearRevokedSessionId,
+  clearRevokedUserTokenVersionFloor,
+  extractBearerToken,
+  getEffectiveUser,
+  getTokenVersionForUser,
+  requireAuth,
+  revokeSessionId,
+  resolveAuthenticatedUser,
+  revokeBearerToken,
+  revokeUserTokens,
+  setRevokedUserTokenVersionFloor,
+} from "../auth-context";
 import { ApiError, sendError, unauthorized, serverError, logApiError } from "../lib/api-error";
 
-export async function registerAuthRoutes(app: Express, requireAuth: RequestHandler): Promise<void> {
+export async function registerAuthRoutes(app: Express): Promise<void> {
   app.get("/api/auth/status", async (req, res) => {
     try {
       const { dbMode } = await import("../db");
       const { getDbConfigStatus } = await import("../db-config");
       const dbStatus = getDbConfigStatus();
+      const authHeader = req.headers.authorization;
+      const user = await resolveAuthenticatedUser(req);
+      const sessionAuth = Boolean(req.isAuthenticated?.());
 
       res.json({
-        authenticated: req.isAuthenticated(),
-        user: req.user
+        authenticated: Boolean(user),
+        user: user
           ? {
-              email: req.user.email,
-              role: req.user.role,
+              email: user.email,
+              role: user.role,
             }
           : null,
+        hasSession: sessionAuth,
+        hasUser: Boolean(user),
+        hasCookie: Boolean(req.headers.cookie),
+        hasAuthHeader: Boolean(authHeader),
+        jwtValid: Boolean(authHeader && authHeader.startsWith("Bearer ") && user),
+        sessionAuth,
         dbMode,
         dbConnected: dbStatus.connected,
       });
@@ -55,7 +77,8 @@ export async function registerAuthRoutes(app: Express, requireAuth: RequestHandl
       }
 
       const ALLOWED_PASSWORD_LOGIN_USERNAMES = ["johannes"];
-      if (!ALLOWED_PASSWORD_LOGIN_USERNAMES.includes((user.email?.split("@")[0] || "").toLowerCase()) && user.id !== 31) {
+      const requestedUsername = String(req.body?.username ?? "").trim().toLowerCase();
+      if (!ALLOWED_PASSWORD_LOGIN_USERNAMES.includes(requestedUsername) && user.id !== 31) {
         console.log("[LOGIN] Password login blocked for non-allowed user:", user.email, "role:", user.role);
         return sendError(
           res,
@@ -69,43 +92,92 @@ export async function registerAuthRoutes(app: Express, requireAuth: RequestHandl
           return sendError(res, new ApiError(500, "SESSION_ERROR", "Failed to establish session", { dbMode }));
         }
 
-        const token = generateToken({ userId: user.id, email: user.email, name: user.name, role: user.role });
+        void (async () => {
+          try {
+            const tokenVersion = await getTokenVersionForUser(user.id);
+            const token = generateToken({
+              userId: user.id,
+              email: user.email,
+              name: user.name,
+              role: user.role,
+              tokenVersion,
+            });
+            clearRevokedSessionId(req.sessionID);
+            clearRevokedUserTokenVersionFloor(user.id);
 
-        return res.json({
-          message: "Login successful",
-          user: { id: user.id, email: user.email, name: user.name, role: user.role },
-          token,
-        });
+            res.json({
+              message: "Login successful",
+              user: { id: user.id, email: user.email, name: user.name, role: user.role },
+              token,
+            });
+          } catch (tokenError) {
+            logApiError("POST /api/auth/login token", tokenError);
+            sendError(res, new ApiError(500, "TOKEN_ERROR", "Failed to create auth token", { dbMode }));
+          }
+        })();
       });
     })(req, res, next);
   });
 
-  app.post("/api/auth/logout", (req, res) => {
-    req.logout((err) => {
-      if (err) {
-        return sendError(res, new ApiError(500, "LOGOUT_FAILED", "Logout failed"));
+  app.post("/api/auth/logout", requireAuth, async (req, res) => {
+    const currentUser = getEffectiveUser(req);
+    const bearerToken = extractBearerToken(req);
+    const bearerPayload = bearerToken ? verifyToken(bearerToken) : null;
+    const sessionId = req.sessionID;
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        req.logout((err) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          resolve();
+        });
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        if (!req.session) {
+          resolve();
+          return;
+        }
+
+        req.session.destroy((err) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+
+          resolve();
+        });
+      });
+
+      if (currentUser?.id) {
+        const nextTokenVersion = await revokeUserTokens(currentUser.id);
+        const bearerTokenVersion = typeof bearerPayload?.tokenVersion === "number" ? bearerPayload.tokenVersion : 0;
+        setRevokedUserTokenVersionFloor(currentUser.id, Math.max(nextTokenVersion, bearerTokenVersion + 1));
       }
+      if (bearerToken) {
+        revokeBearerToken(bearerToken);
+      }
+      revokeSessionId(sessionId);
+
+      res.clearCookie("connect.sid");
       res.json({ message: "Logged out successfully" });
-    });
+    } catch (error) {
+      logApiError("POST /api/auth/logout", error);
+      sendError(res, new ApiError(500, "LOGOUT_FAILED", "Logout failed"));
+    }
   });
 
-  app.get("/api/auth/me", (req, res) => {
-    if (req.isAuthenticated() && req.user) {
-      return res.json({ user: { id: req.user.id, email: req.user.email, name: req.user.name, role: req.user.role } });
+  app.get("/api/auth/me", async (req, res) => {
+    const user = await resolveAuthenticatedUser(req);
+    if (!user) {
+      return sendError(res, unauthorized("Not authenticated"));
     }
 
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      const token = authHeader.substring(7);
-      const payload = verifyToken(token);
-      if (payload) {
-        return res.json({
-          user: { id: payload.userId, email: payload.email, name: payload.name, role: payload.role },
-        });
-      }
-    }
-
-    return sendError(res, unauthorized("Not authenticated"));
+    return res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
   });
 
   if (process.env.NODE_ENV === "development") {
@@ -113,7 +185,14 @@ export async function registerAuthRoutes(app: Express, requireAuth: RequestHandl
       try {
         const [adminUser] = await db.select().from(users).where(eq(users.username, "johannes"));
         if (!adminUser) return res.status(404).send("Dev user not found");
-        const token = generateToken({ userId: adminUser.id, email: adminUser.email || "", name: adminUser.name || "", role: adminUser.role || "" });
+        const tokenVersion = await getTokenVersionForUser(adminUser.id);
+        const token = generateToken({
+          userId: adminUser.id,
+          email: adminUser.email || "",
+          name: adminUser.name || "",
+          role: adminUser.role || "",
+          tokenVersion,
+        });
         res.send(`<!DOCTYPE html><html><body><script>localStorage.setItem('auth_token','${token}');window.location.href='/dashboard';</script></body></html>`);
       } catch (e) {
         res.status(500).send("Dev login failed");
@@ -176,13 +255,28 @@ export async function registerAuthRoutes(app: Express, requireAuth: RequestHandl
 
       const dbUser = matchedUser[0];
       const sessionUser = { id: dbUser.id, email: dbUser.email, name: dbUser.name, role: dbUser.role };
+
       req.logIn(sessionUser, (loginError) => {
         if (loginError) {
           return res.redirect("/auth/login?error=ms_session_failed");
         }
 
-        const token = generateToken({ userId: dbUser.id, email: dbUser.email, name: dbUser.name, role: dbUser.role });
-        return res.redirect(`/auth/ms-callback?token=${encodeURIComponent(token)}&user=${encodeURIComponent(JSON.stringify(sessionUser))}`);
+        void (async () => {
+          try {
+            const tokenVersion = await getTokenVersionForUser(dbUser.id);
+            const token = generateToken({
+              userId: dbUser.id,
+              email: dbUser.email,
+              name: dbUser.name,
+              role: dbUser.role,
+              tokenVersion,
+            });
+            res.redirect(`/auth/ms-callback?token=${encodeURIComponent(token)}&user=${encodeURIComponent(JSON.stringify(sessionUser))}`);
+          } catch (tokenError) {
+            logApiError("GET /api/auth/microsoft/callback token", tokenError);
+            res.redirect("/auth/login?error=ms_auth_failed");
+          }
+        })();
       });
     } catch (error) {
       logApiError("GET /api/auth/microsoft/callback", error);

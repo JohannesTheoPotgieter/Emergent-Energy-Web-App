@@ -1,6 +1,8 @@
 import type { Express } from "express";
 
 export async function registerCoreRoutes(app: Express) {
+  const { registerPlatformRoutes } = await import("../platform-routes");
+  registerPlatformRoutes(app);
   const { registerQualityRoutes } = await import("../quality-routes");
   registerQualityRoutes(app);
   const { registerEngineeringRoutes } = await import("../engineering-routes");

@@ -25,6 +25,19 @@ describe("vault-backed secret preloading", () => {
     delete process.env.AZURE_CLIENT_SECRET;
   });
 
+  it("accepts strict-runtime secrets that are already present in the host env without requiring Key Vault", async () => {
+    delete process.env.KEY_VAULT_URI;
+    process.env.DATABASE_URL = "postgres://direct-env";
+    process.env.SESSION_SECRET = "session-secret-from-env";
+    process.env.JWT_SECRET = "jwt-secret-from-env";
+    process.env.AZURE_CLIENT_SECRET = "client-secret-from-env";
+
+    const { preloadRuntimeSecrets } = await import("../../../server/secrets/vault");
+
+    await expect(preloadRuntimeSecrets()).resolves.toBeUndefined();
+    expect(getSecretMock).not.toHaveBeenCalled();
+  });
+
   it("hydrates required secrets into process.env without logging values", async () => {
     getSecretMock.mockImplementation(async (name: string) => {
       const values: Record<string, string> = {
@@ -50,5 +63,12 @@ describe("vault-backed secret preloading", () => {
     const { preloadRuntimeSecrets } = await import("../../../server/secrets/vault");
 
     await expect(preloadRuntimeSecrets()).rejects.toThrow(/Missing required runtime secrets/);
+  });
+
+  it("explains that strict runtime can use host env vars when Key Vault is not configured", async () => {
+    delete process.env.KEY_VAULT_URI;
+    const { preloadRuntimeSecrets } = await import("../../../server/secrets/vault");
+
+    await expect(preloadRuntimeSecrets()).rejects.toThrow(/Replit Secrets|environment variables|KEY_VAULT_URI/);
   });
 });

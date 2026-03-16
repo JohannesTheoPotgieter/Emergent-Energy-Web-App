@@ -1,7 +1,6 @@
-import { Express, Request, Response, NextFunction } from "express";
+import { Express, NextFunction, Request, Response } from "express";
 import { db } from "./db";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -15,9 +14,11 @@ import {
   notifications, notificationThrottle,
   users,
 } from "@shared/schema";
-import { requirePermission } from "./permission-middleware";
+import { requireAuthority, requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
+import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import { getAssignmentsForEntity, setEntityAssignment } from "./services/assignment-service";
 
 const qmApprovalUploadsDir = path.join(process.cwd(), "uploads", "qm-approvals");
 if (!fs.existsSync(qmApprovalUploadsDir)) fs.mkdirSync(qmApprovalUploadsDir, { recursive: true });
@@ -32,30 +33,11 @@ const qmApprovalUpload = multer({
 type AppUser = { id: number; email: string; name: string; role: string; };
 
 function getUser(req: Request): AppUser {
-  return req.user as any as AppUser;
+  return getEffectiveUser(req) as AppUser;
 }
 
 function getUserRole(req: Request): string {
-  return (req.user as any)?.role || "";
-}
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
+  return getEffectiveUser(req)?.role || "";
 }
 
 function requireRole(...roles: string[]) {
@@ -362,6 +344,10 @@ export function registerQualityRoutes(app: Express) {
 
       const itemIds = itemInstances.map(i => i.id);
       const evidence = itemIds.length ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemIds)) : [];
+      const assignmentEntries = await Promise.all(
+        itemIds.map(async (itemId) => [itemId, await getAssignmentsForEntity("quality_item", itemId, "ASSIGNEE")] as const),
+      );
+      const assignmentMap = new Map(assignmentEntries);
 
       const templateId = checklist.templateId;
       const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, templateId));
@@ -376,7 +362,17 @@ export function registerQualityRoutes(app: Express) {
         phases,
         groups,
         templateItems,
-        itemInstances,
+        itemInstances: itemInstances.map((item) => {
+          const assignments = assignmentMap.get(item.id) || [];
+          const primaryAssignment = assignments[0] || null;
+          return {
+            ...item,
+            assignments,
+            primaryAssignment,
+            assigneeDisplayLabel: primaryAssignment?.displayLabel || null,
+            assigneeDisplayType: primaryAssignment?.assigneeType || null,
+          };
+        }),
         riskQuestions,
         riskAnswers,
         evidence,
@@ -392,7 +388,18 @@ export function registerQualityRoutes(app: Express) {
   app.post("/api/quality/project/:projectName/item/:itemInstanceId", requireAuth, requireAdminOrQm, requirePermission('pd_quality', 'edit'), async (req, res) => {
     try {
       const itemId = parseInt(req.params.itemInstanceId);
-      const { startDate, endDate, isApplicable, notApplicableReason, approvalComment, allowedWorkingDays, qmStatus, assigneeUserId } = req.body;
+      const {
+        startDate,
+        endDate,
+        isApplicable,
+        notApplicableReason,
+        approvalComment,
+        allowedWorkingDays,
+        qmStatus,
+        assigneeUserId,
+        assigneeType,
+        assigneeId,
+      } = req.body;
 
       const ALLOWED_QM_STATUSES = ["pending", "pass", "fail", "review", "na"];
       if (qmStatus !== undefined && !ALLOWED_QM_STATUSES.includes(qmStatus)) {
@@ -423,7 +430,6 @@ export function registerQualityRoutes(app: Express) {
       }
       if (notApplicableReason !== undefined) updates.notApplicableReason = notApplicableReason;
       if (approvalComment !== undefined) updates.approvalComment = approvalComment;
-      if (assigneeUserId !== undefined) updates.assigneeUserId = assigneeUserId === null ? null : parseInt(assigneeUserId);
 
       if (qmStatus !== undefined) {
         updates.qmStatus = qmStatus;
@@ -451,12 +457,38 @@ export function registerQualityRoutes(app: Express) {
       }
 
       const [updated] = await db.update(qcItemInstance).set(updates).where(eq(qcItemInstance.id, itemId)).returning();
+      const requestedAssigneeType = assigneeType ?? (assigneeUserId !== undefined && assigneeUserId !== null ? "internal_user" : assigneeUserId === null ? null : undefined);
+      const requestedAssigneeId = assigneeId ?? (assigneeUserId !== undefined && assigneeUserId !== null ? parseInt(String(assigneeUserId), 10) : null);
+
+      if (requestedAssigneeType !== undefined || assigneeUserId === null) {
+        await setEntityAssignment(req, {
+          entityType: "quality_item",
+          entityId: itemId,
+          assignmentRole: "ASSIGNEE",
+          assigneeType: requestedAssigneeType ?? null,
+          assigneeId: requestedAssigneeId,
+          mode: requestedAssigneeType ? "replace" : "clear",
+        });
+      }
+
+      const assignments = await getAssignmentsForEntity("quality_item", itemId, "ASSIGNEE");
       const pName = decodeURIComponent(req.params.projectName);
       recalculateWarnings(pName).catch(() => {});
 
 
-      logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: pName, changesJson: { description: "Quality checklist item updated", qmStatus } });
-      res.json(updated);
+      logAuditFromReq(req, {
+        entityType: "quality_checklist",
+        entityId: String(itemId),
+        action: "update",
+        projectName: pName,
+        changesJson: {
+          description: "Quality checklist item updated",
+          qmStatus,
+          assigneeType: requestedAssigneeType ?? null,
+          assigneeId: requestedAssigneeId,
+        },
+      });
+      res.json({ ...updated, assignments, primaryAssignment: assignments[0] || null });
     } catch (err: any) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });

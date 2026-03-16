@@ -5,9 +5,9 @@
   "license": "MIT",
   "scripts": {
     "dev:client": "vite dev --port 5000",
-    "dev": "NODE_ENV=development tsx server/index.ts",
+    "dev": "node script/with-node-env.cjs development tsx server/index.ts",
     "build": "tsx script/build.ts",
-    "start": "NODE_ENV=production node dist/index.cjs",
+    "start": "node script/with-node-env.cjs production node dist/index.cjs",
     "check": "tsc -p tsconfig.check.json",
     "db:push": "drizzle-kit push",
     "migrate:clickup-engineering": "tsx scripts/migrate-clickup-engineering.ts",

@@ -1,4 +1,13 @@
-export const CANONICAL_STATUSES = ["todo", "in_progress", "blocked", "review", "complete", "cancelled"] as const;
+import {
+  PLATFORM_PRIORITY_CONVENTIONS,
+  PLATFORM_STATUS_CONVENTIONS,
+  normalizePlatformPriority,
+  normalizePlatformStatus,
+} from "@shared/platform-contracts";
+
+export const CANONICAL_PRIORITIES = PLATFORM_PRIORITY_CONVENTIONS;
+export const CANONICAL_STATUSES = PLATFORM_STATUS_CONVENTIONS;
+
 export type CanonicalStatus = typeof CANONICAL_STATUSES[number];
 
 export const STATUS_LABELS: Record<CanonicalStatus, string> = {
@@ -10,65 +19,14 @@ export const STATUS_LABELS: Record<CanonicalStatus, string> = {
   cancelled: "Cancelled",
 };
 
-const STATUS_MAP: Record<string, CanonicalStatus> = {
-  "todo": "todo",
-  "to do": "todo",
-  "to_do": "todo",
-  "not started": "todo",
-  "not_started": "todo",
-  "inbox": "todo",
-  "new": "todo",
-  "open": "todo",
-  "planned": "todo",
-
-  "in progress": "in_progress",
-  "in_progress": "in_progress",
-  "active": "in_progress",
-  "pending": "in_progress",
-  "started": "in_progress",
-  "wip": "in_progress",
-
-  "blocked": "blocked",
-  "on hold": "blocked",
-  "on_hold": "blocked",
-  "waiting": "blocked",
-
-  "review": "review",
-  "in review": "review",
-  "in_review": "review",
-  "qa_review": "review",
-  "needs review": "review",
-
-  "done": "complete",
-  "complete": "complete",
-  "completed": "complete",
-  "closed": "complete",
-  "finished": "complete",
-  "resolved": "complete",
-  "pass": "complete",
-
-  "cancelled": "cancelled",
-  "canceled": "cancelled",
-  "archived": "cancelled",
-  "removed": "cancelled",
-};
-
 export function normalizeStatus(status: string | null | undefined): CanonicalStatus {
-  if (!status) return "todo";
-  const s = status.toLowerCase().trim();
-  return STATUS_MAP[s] || "todo";
+  return normalizePlatformStatus(status);
 }
 
-export const CANONICAL_PRIORITIES = ["CRITICAL", "HIGH", "NORMAL", "LOW"] as const;
 export type CanonicalPriority = typeof CANONICAL_PRIORITIES[number];
 
 export function normalizePriority(priority: string | null | undefined): CanonicalPriority {
-  if (!priority) return "NORMAL";
-  const p = priority.toLowerCase().trim();
-  if (p === "critical" || p === "urgent" || p === "p1") return "CRITICAL";
-  if (p === "high" || p === "p2") return "HIGH";
-  if (p === "low" || p === "p4") return "LOW";
-  return "NORMAL";
+  return normalizePlatformPriority(priority);
 }
 
 export const CANONICAL_TASK_TYPES = ["personal", "operational", "plan", "engineering", "quality"] as const;

@@ -6,14 +6,14 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, trItems, deliverables } from "@shared/schema";
+import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, trItems, deliverables, uploadMetadata } from "@shared/schema";
 import { db } from "./db";
 import { safeLegacyQuery } from "./legacy-table-guard";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
 import { runSmartImportPreview } from "./lib/import/index";
 import { z } from "zod";
 import { format } from "date-fns";
-import { verifyToken } from "./jwt";
+import { requireAuth as sharedRequireAuth } from "./auth-context";
 import { calculateCPM, applyOverridesToTasks, applyOverridesToDependencies, type CPMDependency } from "./cpmEngine";
 import { classifyExpenseState } from "./lib/calculations/stateClassifier";
 import { scoreExpenseConfidence, scoreInflowConfidence, getAssumptionDriver } from "./lib/calculations/confidence";
@@ -53,6 +53,8 @@ import {
   syncOperationalTaskFromWorkItemUpdate,
 } from "./canonical-boundaries";
 import { listImportSyncState } from "./services/imports-governance-service";
+import { actorFromReq, createProjectEvent } from "./services/project-event-service";
+import { getPlatformProjectSummaryMap } from "./services/project-platform-summary-service";
 import { classifyProjectInfoPayload } from "./services/source-of-truth-policy";
 import { mytoolTaskIdempotencyStore } from "./lib/mytool-task-idempotency";
 import { computeNextRecurrenceDate, computeMilestoneProgress, isOverdue, shouldBlockTask, validateDependencyPair } from "./lib/mytool-work-engine";
@@ -107,18 +109,40 @@ async function enrichMytoolTasks(userId: number, tasks: any[]) {
   }
 
   const milestoneIds = tasks.filter((t) => t.taskType === "milestone").map((t) => t.id);
-  for (const mId of milestoneIds) {
-    const milestone = taskById.get(mId);
-    if (milestone) {
-      milestone.milestoneTaskCount = 0;
-      milestone.milestoneProgress = 0;
-    }
+  for (const milestoneId of milestoneIds) {
+    const linked = tasks.filter((t) => t.milestoneId === milestoneId);
+    const milestone = taskById.get(milestoneId);
+    milestone.milestoneTaskCount = linked.length;
+    milestone.milestoneProgress = computeMilestoneProgress(linked.map((t) => t.status));
   }
 
   return tasks;
 }
 
-async function refreshDependentTaskStates(_taskId: number) {
+async function refreshDependentTaskStates(taskId: number) {
+  const links = await db.select().from(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.predecessorTaskId, taskId));
+  for (const link of links) {
+    const predecessorLinks = await db.select().from(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.successorTaskId, link.successorTaskId));
+    if (!predecessorLinks.length) continue;
+    const predecessorIds = predecessorLinks.map((l) => l.predecessorTaskId);
+    const predecessors = await db.select().from(mytoolTasks).where(inArray(mytoolTasks.id, predecessorIds));
+    const shouldBlock = shouldBlockTask(predecessors.map((p) => p.status));
+    const [successor] = await db.select().from(mytoolTasks).where(eq(mytoolTasks.id, link.successorTaskId));
+    if (!successor) continue;
+
+    if (shouldBlock) {
+      if (successor.status !== "done" && successor.status !== "cancelled") {
+        await db.update(mytoolTasks).set({ blockedByDependencies: true, status: "blocked", blockedReason: successor.blockedReason || "Blocked by predecessor task dependency", updatedAt: new Date() }).where(eq(mytoolTasks.id, successor.id));
+      }
+    } else if (successor.blockedByDependencies) {
+      const updates: any = { blockedByDependencies: false, updatedAt: new Date() };
+      if (successor.status === "blocked" && (!successor.blockedReason || successor.blockedReason === "Blocked by predecessor task dependency")) {
+        updates.status = "planned";
+        updates.blockedReason = null;
+      }
+      await db.update(mytoolTasks).set(updates).where(eq(mytoolTasks.id, successor.id));
+    }
+  }
 }
 
 
@@ -569,32 +593,7 @@ function applyFinanceCosOverrides(
   });
 }
 
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  // Check session-based auth first
-  if (req.isAuthenticated()) {
-    return next();
-  }
-  
-  // Check JWT token as fallback
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    
-    if (payload) {
-      // Attach user to request for consistency
-      req.user = {
-        id: payload.userId,
-        email: payload.email,
-        name: payload.name,
-        role: payload.role,
-      };
-      return next();
-    }
-  }
-  
-  res.status(401).json({ error: "auth_required", message: "Authentication required", code: "AUTH_REQUIRED" });
-}
+const requireAuth = sharedRequireAuth;
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
@@ -922,7 +921,7 @@ export async function registerRoutes(
     }
   });
   
-  await registerAuthRoutes(app, requireAuth);
+  await registerAuthRoutes(app);
 
   // ==================== OVERVIEW API ====================
 
@@ -1809,7 +1808,7 @@ export async function registerRoutes(
         storage.getAllProjectEditableFields(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
-        db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`),
+        db.selectDistinct({ fileName: uploadMetadata.fileName }).from(uploadMetadata),
         db.selectDistinct({ projectName: smartImportRuns.projectName }).from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
         db.select().from(normalizedCostLines),
         db.select().from(normalizedRevenueLines),
@@ -1887,7 +1886,14 @@ export async function registerRoutes(
               }));
             })(),
         storage.getAllProjectPlanOverrides(),
-        db.execute(sql`SELECT project_name, MAX(COALESCE(committed_at, uploaded_at)) as last_import FROM smart_import_runs WHERE status = 'COMMITTED' GROUP BY project_name`),
+        db
+          .select({
+            projectName: smartImportRuns.projectName,
+            lastImport: sql<string>`MAX(COALESCE(${smartImportRuns.committedAt}, ${smartImportRuns.uploadedAt}))`,
+          })
+          .from(smartImportRuns)
+          .where(eq(smartImportRuns.status, 'COMMITTED'))
+          .groupBy(smartImportRuns.projectName),
         usePromotedProjectDetail ? listClientsFromPromotedCoreCompat() : db.select().from(clients),
       ]);
       const allPlans = applyProjectPlanOverrides(rawPlans, allPlanOverrides);
@@ -1896,8 +1902,8 @@ export async function registerRoutes(
       const clientMap = new Map(allClientsData.map(c => [c.id, c.name]));
 
       const importedProjectNames = new Set<string>();
-      for (const row of uploadMetaRows.rows) {
-        const fileName = (row as any).file_name as string;
+      for (const row of uploadMetaRows) {
+        const fileName = row.fileName;
         if (!fileName) continue;
         const stripped = fileName.replace(/\.(xlsx|xlsm|xls)$/i, '');
         importedProjectNames.add(stripped);
@@ -1913,9 +1919,9 @@ export async function registerRoutes(
       }
 
       const lastImportByProject = new Map<string, string>();
-      for (const row of lastImportRows.rows) {
-        const pName = (row as any).project_name as string;
-        const lastImport = (row as any).last_import as string;
+      for (const row of lastImportRows) {
+        const pName = row.projectName;
+        const lastImport = row.lastImport;
         if (pName && lastImport) {
           const isoDate = new Date(lastImport).toISOString();
           lastImportByProject.set(pName, isoDate);
@@ -2422,6 +2428,18 @@ export async function registerRoutes(
         finalResult = projectsSummary.filter((p: any) => p._user_scope === "owned" || p._user_scope === "assigned");
       }
 
+      const sharedSummaryByProject = await getPlatformProjectSummaryMap({
+        projectIds: finalResult
+          .map((project: any) => Number(project.project_info_id))
+          .filter((value: number) => Number.isFinite(value)),
+      });
+      finalResult = finalResult.map((project: any) => ({
+        ...project,
+        shared_summary: project.project_info_id
+          ? sharedSummaryByProject.get(Number(project.project_info_id)) || null
+          : null,
+      }));
+
       if (usePromotedProjectDetail || req.query.compare === "1" || req.query.compare === "true") {
         const projectDetailComparison = await compareProjectDetailMasterReadiness();
         if (projectDetailComparison.status !== "ready") {
@@ -2643,13 +2661,30 @@ export async function registerRoutes(
       }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "project_info", action: "update", entityId: projectName, projectName, changesJson: { description: "Project summary fields edited", ...parsed } });
+      const project = await storage.getProjectInfo(projectName);
+      if (project) {
+        const changedFields = Object.keys(parsed)
+          .filter((key) => parsed[key as keyof typeof parsed] !== undefined)
+          .sort();
+        const updatedAtKey = result?.updatedAt ? new Date(result.updatedAt).getTime() : Date.now();
+        await createProjectEvent({
+          projectId: project.id,
+          eventType: "project.summary_updated",
+          sourceEntityType: "project_editable_fields",
+          sourceEntityId: String(project.id),
+          summary: "Project summary fields updated",
+          details: { changedFields },
+          idempotencyKey: `project-summary:${project.id}:${updatedAtKey}:${changedFields.join(",")}`,
+          ...actorFromReq(req),
+        });
+      }
       res.json(result);
     } catch (error: any) {
-      console.error("Project edit error:", error);
       if (error?.name === "ZodError") {
-        return res.status(400).json({ error: "Invalid fields", message: error.issues?.map((i: any) => i.message).join("; ") || "Validation failed" });
+        return sendError(res, badRequest(error.issues?.map((issue: any) => issue.message).join("; ") || "Validation failed"));
       }
-      res.status(500).json({ error: "Failed to save project fields", message: "Failed to save project fields" });
+      logApiError("POST /api/projects-summary/:projectName/edit", error);
+      return sendError(res, serverError("Failed to save project fields"));
     }
   });
 
@@ -2678,10 +2713,24 @@ export async function registerRoutes(
       }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "project_info", action: "update_comment", entityId: projectName, projectName, changesJson: { description: "Latest update comment changed", latestUpdate } });
+      const project = await storage.getProjectInfo(projectName);
+      if (project) {
+        const updateAt = result?.latestUpdateAt ? new Date(result.latestUpdateAt).getTime() : 0;
+        await createProjectEvent({
+          projectId: project.id,
+          eventType: "project.latest_update_changed",
+          sourceEntityType: "project_editable_fields",
+          sourceEntityId: String(project.id),
+          summary: latestUpdate ? "Latest project update changed" : "Latest project update cleared",
+          details: { latestUpdate: latestUpdate || null },
+          idempotencyKey: `latest-update:${project.id}:${updateAt}:${latestUpdate || "clear"}`,
+          ...actorFromReq(req),
+        });
+      }
       res.json(result);
     } catch (error) {
-      console.error("Latest update error:", error);
-      res.status(500).json({ error: "Failed to save latest update" });
+      logApiError("PATCH /api/projects-summary/:projectName/latest-update", error);
+      return sendError(res, serverError("Failed to save latest update"));
     }
   });
 
@@ -2705,10 +2754,23 @@ export async function registerRoutes(
       }
 
       logAuditFromReq(req, { entityType: "project_info", action: "escalation_update", entityId: String(id), changesJson: { description: "Escalation level updated", escalationLevel } });
+      if (result) {
+        const escalationKey = result.updatedAt ? new Date(result.updatedAt).getTime() : Date.now();
+        await createProjectEvent({
+          projectId: result.id,
+          eventType: "project.escalation_changed",
+          sourceEntityType: "project_info",
+          sourceEntityId: String(result.id),
+          summary: `Escalation changed to ${escalationLevel || "None"}`,
+          details: { escalationLevel: escalationLevel || null },
+          idempotencyKey: `escalation:${result.id}:${escalationKey}:${escalationLevel || "none"}`,
+          ...actorFromReq(req),
+        });
+      }
       res.json(result);
     } catch (error) {
-      console.error("Escalation update error:", error);
-      res.status(500).json({ error: "Failed to update escalation level" });
+      logApiError("PATCH /api/projects-summary/:projectInfoId/escalation", error);
+      return sendError(res, serverError("Failed to update escalation level"));
     }
   });
 
@@ -13390,6 +13452,8 @@ export async function registerRoutes(
               recurrenceEndDate: existingTask.recurrenceEndDate,
               recurrenceParentId,
               taskType: existingTask.taskType || "task",
+              milestoneId: existingTask.milestoneId || null,
+              autoGenerated: true,
             });
           }
         }

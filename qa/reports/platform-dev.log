@@ -1,0 +1,23 @@
+
+> rest-express@1.0.0 dev
+> node script/with-node-env.cjs development tsx server/index.ts
+
+[DB] No DATABASE_URL found, using SQLite for reliability
+2:28:12 PM [express] Using in-memory session store (dbMode=undefined)
+[DB] No DATABASE_URL found, using SQLite for reliability
+[DB] Using SQLite file: C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App-main\Emergent-Energy-Web-App-main\data\app.sqlite
+[DB] Startup schema repair disabled - skipping SQLite schema repair (safe mode)
+[Lifecycle] Migration error: db.execute is not a function
+2:28:14 PM [Startup:Routes] All route groups registered
+[Milestones] Notification checker started (6h interval)
+[MS Sync] Periodic sync started (every 15 minutes)
+2:28:15 PM [Startup] [Startup] dbMode=sqlite
+2:28:15 PM [Startup] [Startup] flags={"startupMaintenanceEnabled":false,"startupSchemaRepairEnabled":false,"startupDataSeedEnabled":false,"startupBackfillEnabled":false,"startupSessionResetEnabled":false,"startupSyncEnabled":true,"runtimeMaintenanceEnabled":false,"runtimeMutationsActive":false}
+2:28:15 PM [Startup] [Startup] maintenance=skipped
+2:28:15 PM [Startup] [Startup] backfills=skipped
+2:28:15 PM [Startup] [Startup] seeds=skipped
+2:28:15 PM [Startup] [Startup] routes=registered
+2:28:15 PM [Startup] [Startup] runtime=import-scheduler, milestone-checker, periodic-sync
+2:28:15 PM [Startup] serving on port 5000
+2:28:17 PM [express] GET /api/health 200 in 21ms
+^C^C^C

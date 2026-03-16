@@ -19,6 +19,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
 import { useToast } from "@/hooks/use-toast";
+import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 
 function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem('auth_token');
@@ -48,11 +49,11 @@ function getRiskSeverityColor(severity: string) {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; dot: string; btnClass: string; icon: string }> = {
-  not_started: { label: "Not Started", color: "text-muted-foreground", bg: "bg-muted border-border", dot: "bg-slate-400", btnClass: "border-border text-muted-foreground hover:bg-muted", icon: "○" },
-  review: { label: "In Review", color: "text-amber-600", bg: "bg-amber-50 border-amber-200", dot: "bg-amber-500", btnClass: "border-amber-300 text-amber-600 hover:bg-amber-100", icon: "◔" },
-  pass: { label: "Passed", color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", dot: "bg-emerald-500", btnClass: "border-emerald-300 text-emerald-600 hover:bg-emerald-100", icon: "✓" },
-  fail: { label: "Failed", color: "text-red-600", bg: "bg-red-50 border-red-200", dot: "bg-red-500", btnClass: "border-red-300 text-red-600 hover:bg-red-100", icon: "✗" },
-  na: { label: "N/A", color: "text-slate-500", bg: "bg-muted border-border", dot: "bg-slate-300", btnClass: "border-border text-slate-500 hover:bg-muted", icon: "—" },
+  not_started: { label: "Not Started", color: "text-muted-foreground", bg: "bg-muted border-border", dot: "bg-slate-400", btnClass: "border-border text-muted-foreground hover:bg-muted", icon: "O" },
+  review: { label: "In Review", color: "text-amber-600", bg: "bg-amber-50 border-amber-200", dot: "bg-amber-500", btnClass: "border-amber-300 text-amber-600 hover:bg-amber-100", icon: "R" },
+  pass: { label: "Passed", color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200", dot: "bg-emerald-500", btnClass: "border-emerald-300 text-emerald-600 hover:bg-emerald-100", icon: "OK" },
+  fail: { label: "Failed", color: "text-red-600", bg: "bg-red-50 border-red-200", dot: "bg-red-500", btnClass: "border-red-300 text-red-600 hover:bg-red-100", icon: "X" },
+  na: { label: "N/A", color: "text-slate-500", bg: "bg-muted border-border", dot: "bg-slate-300", btnClass: "border-border text-slate-500 hover:bg-muted", icon: "-" },
 };
 
 function getStatusConfig(status: string) {
@@ -341,7 +342,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
     const passed = applicable.filter((i: any) => getItemQmStatus(i) === "pass");
     const failed = applicable.filter((i: any) => getItemQmStatus(i) === "fail");
     const inReview = applicable.filter((i: any) => getItemQmStatus(i) === "review");
-    const unassigned = applicable.filter((i: any) => !i.assigneeUserId);
+    const unassigned = applicable.filter((i: any) => !i.primaryAssignment);
     return {
       total: applicable.length,
       passed: passed.length,
@@ -419,7 +420,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
 
   const shouldShowItem = (instance: any) => {
     if (statusFilter === "all") return true;
-    if (statusFilter === "unassigned") return !instance.assigneeUserId;
+    if (statusFilter === "unassigned") return !instance.primaryAssignment;
     return getItemQmStatus(instance) === statusFilter;
   };
 
@@ -453,7 +454,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
       {!canEdit && (
         <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 flex items-center gap-3" data-testid="quality-readonly-banner">
           <Lock className="w-4 h-4 text-blue-500 shrink-0" />
-          <span className="text-sm text-blue-700">View-only mode — editing requires Quality Manager access</span>
+          <span className="text-sm text-blue-700">View-only mode - editing requires Quality Manager access</span>
         </div>
       )}
 
@@ -615,7 +616,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                   const task = projectTasks.find((t: any) => t.id === link.planItemId);
                   return (
                     <Badge key={link.id} variant="outline" className="gap-1 py-1 pl-2 pr-1 text-[11px]" data-testid={`plan-link-${link.id}`}>
-                      {task ? `${task.taskNo} — ${task.highLevelProgramme}` : `Task #${link.planItemId}`}
+                      {task ? `${task.taskNo} - ${task.highLevelProgramme}` : `Task #${link.planItemId}`}
                       {task?.actualPctComplete != null && (
                         <span className="text-muted-foreground ml-0.5">({Math.round(task.actualPctComplete * 100)}%)</span>
                       )}
@@ -646,7 +647,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                     data-testid={`select-link-task-${selectedPhaseId}`}
                     options={meaningfulTasks
                       .filter((t: any) => !selectedPhaseLinkedTasks.some((l: any) => l.planItemId === t.id))
-                      .map((task: any) => ({ value: String(task.id), label: `${task.taskNo} — ${task.highLevelProgramme}` }))}
+                      .map((task: any) => ({ value: String(task.id), label: `${task.taskNo} - ${task.highLevelProgramme}` }))}
                   />
                   <Button variant="ghost" size="sm" className="h-8" onClick={() => setLinkingPhaseId(null)} data-testid="cancel-link-phase-task">Cancel</Button>
                 </div>
@@ -709,7 +710,8 @@ export function QualityTab({ projectName }: QualityTabProps) {
                             const hasRedWarning = itemLinks.some((l: any) => isTaskCompleted(l.planItemId)) && !instance.approved;
                             const currentStatus = getItemQmStatus(instance);
                             const statusCfg = getStatusConfig(currentStatus);
-                            const assigneeName = instance.assigneeUserId ? teamMemberMap.get(instance.assigneeUserId) : null;
+                            const assigneeName = instance.primaryAssignment?.displayLabel
+                              || (instance.assigneeUserId ? teamMemberMap.get(instance.assigneeUserId) : null);
                             const isExpanded = expandedItems[instance.id] ?? false;
                             const isSelected = selectedItems.has(instance.id);
 
@@ -740,7 +742,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                         <p className={`text-sm font-medium ${hasRedWarning ? "text-red-600" : ""}`}>{templateItem.itemName}</p>
                                         {hasRedWarning && (
                                           <Badge variant="destructive" className="text-[9px] px-1.5 py-0 h-4 shrink-0" data-testid={`warning-unchecked-${instance.id}`}>
-                                            <AlertCircle className="w-2.5 h-2.5 mr-0.5" /> Task done — not checked
+                                            <AlertCircle className="w-2.5 h-2.5 mr-0.5" /> Task done - not checked
                                           </Badge>
                                         )}
                                         {itemEvidence.length > 0 && (
@@ -767,7 +769,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                           <span className="flex items-center gap-1">
                                             <Clock className="w-3 h-3" />
                                             {instance.startDate && new Date(instance.startDate).toLocaleDateString()}
-                                            {instance.startDate && instance.endDate && " → "}
+                                            {instance.startDate && instance.endDate && " -> "}
                                             {instance.endDate && new Date(instance.endDate).toLocaleDateString()}
                                           </span>
                                         )}
@@ -824,21 +826,24 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                       <div>
                                         <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Assignee</Label>
-                                        <SearchableSelect
-                                          disabled={!canEdit}
-                                          value={String(instance.assigneeUserId || "unassigned")}
-                                          onValueChange={(val) => {
-                                            const userId = val === "unassigned" ? null : parseInt(val);
-                                            updateItemMutation.mutate({ itemInstanceId: instance.id, updates: { assigneeUserId: userId } });
-                                          }}
-                                          placeholder="Unassigned"
-                                          triggerClassName="h-9 text-xs mt-1"
-                                          data-testid={`select-assignee-${instance.id}`}
-                                          options={[
-                                            { value: "unassigned", label: "Unassigned" },
-                                            ...teamMembers.map((m: any) => ({ value: String(m.id), label: m.name })),
-                                          ]}
-                                        />
+                                        <div className="mt-1">
+                                          <UserAssignmentPicker
+                                            taskId={instance.id}
+                                            taskSource="quality_task"
+                                            assignments={instance.assignments || null}
+                                            resolvedUsers={instance.assigneeUserId && assigneeName ? [{
+                                              id: instance.assigneeUserId,
+                                              name: assigneeName,
+                                              username: assigneeName,
+                                              role: "",
+                                            }] : null}
+                                            mode="single"
+                                            invalidateKeys={["quality-checklist", "quality-warnings", "quality-checklists"]}
+                                            showUnassignedLabel={true}
+                                            disabled={!canEdit}
+                                            disabledReason="Only Quality authority can change this assignment"
+                                          />
+                                        </div>
                                       </div>
                                       <div>
                                         <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Start Date</Label>
@@ -868,7 +873,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                       <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3" data-testid={`approval-info-${instance.id}`}>
                                         <CheckCircle2 className="w-4 h-4 shrink-0" />
                                         <span className="font-medium">Approved{instance.approvedAt ? ` on ${new Date(instance.approvedAt).toLocaleDateString()}` : ""}</span>
-                                        {instance.approvalComment && <span className="text-emerald-600/80 ml-1">— {instance.approvalComment}</span>}
+                                        {instance.approvalComment && <span className="text-emerald-600/80 ml-1">- {instance.approvalComment}</span>}
                                       </div>
                                     )}
 
@@ -1000,7 +1005,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                                 data-testid={`item-link-${link.id}`}
                                               >
                                                 <Link2 className="w-2.5 h-2.5" />
-                                                {task ? `${task.taskNo} — ${task.highLevelProgramme}` : `#${link.planItemId}`}
+                                                      {task ? `${task.taskNo} - ${task.highLevelProgramme}` : `#${link.planItemId}`}
                                                 {task?.actualPctComplete != null && (
                                                   <span className="ml-0.5">({Math.round(task.actualPctComplete * 100)}%)</span>
                                                 )}
@@ -1031,7 +1036,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                               data-testid={`select-link-item-task-${instance.id}`}
                                               options={meaningfulTasks
                                                 .filter((t: any) => !itemLinks.some((l: any) => l.planItemId === t.id))
-                                                .map((task: any) => ({ value: String(task.id), label: `${task.taskNo} — ${task.highLevelProgramme}` }))}
+                                      .map((task: any) => ({ value: String(task.id), label: `${task.taskNo} - ${task.highLevelProgramme}` }))}
                                             />
                                             <Button variant="ghost" size="sm" className="h-8" onClick={() => setLinkingItemId(null)} data-testid={`cancel-link-item-task-${instance.id}`}>Cancel</Button>
                                           </div>
