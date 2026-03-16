@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
-import { useAuth } from "@/hooks/use-auth";
+import { usePermission } from "@/hooks/use-permissions";
 import {
   Bar,
   Line,
@@ -370,7 +370,7 @@ type EditingCell = { field: string; monthKey: string; value: string };
 
 export default function RevenueTrackerPage() {
   const qc = useQueryClient();
-  const { isAdmin } = useAuth();
+  const { allowed: canEditRevenueTracker } = usePermission("revenue_tracker", "edit");
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "unrealised"; defaultProject?: string } | null>(null);
@@ -622,7 +622,7 @@ export default function RevenueTrackerPage() {
                             const val = m[row.dataKey] as number;
                             const isEditingCell = editing?.field === row.key && editing?.monthKey === m.monthKey;
 
-                            if (row.editable && isAdmin) {
+                            if (row.editable && canEditRevenueTracker) {
                               return (
                                 <td key={m.monthKey} className="px-2 py-1.5 text-right">
                                   {isEditingCell ? (

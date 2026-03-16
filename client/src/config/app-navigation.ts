@@ -123,8 +123,9 @@ export function buildVisibleTopSections(options: {
   return TOP_SECTIONS
     .map((section) => {
       const secondary = section.secondary.filter((item) => item.path === "/" || canViewPath(item.path));
+      const firstVisiblePath = secondary[0]?.path || section.path;
       if (section.label === "Home") {
-        return { ...section, secondary };
+        return { ...section, path: firstVisiblePath, secondary };
       }
 
       const canSeeSectionRoot = canViewPath(section.path);
@@ -132,7 +133,11 @@ export function buildVisibleTopSections(options: {
         return null;
       }
 
-      return { ...section, secondary };
+      return {
+        ...section,
+        path: canSeeSectionRoot ? section.path : firstVisiblePath,
+        secondary,
+      };
     })
     .filter(Boolean) as TopSection[];
 }

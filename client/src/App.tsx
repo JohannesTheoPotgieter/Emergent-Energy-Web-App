@@ -85,7 +85,6 @@ import { checkPermission, normalizeRoleForPermissions } from "@shared/schema";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PAGE_REGISTRY, getPermissionEntityForPath } from "@/config/page-registry";
-import { isSuperAdmin } from "@/lib/access-control";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 
 const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
@@ -255,11 +254,6 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
     if (!allowed) {
       return <Redirect to="/" />;
     }
-  }
-
-  const hasAdminAccess = isSuperAdmin(user?.role, effectiveRole);
-  if (!hasAdminAccess && location.startsWith("/admin")) {
-    return <Redirect to="/" />;
   }
 
   const entity = getPermissionEntityForPath(location);

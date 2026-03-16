@@ -3,6 +3,7 @@ import { requireAuth, requireAdmin } from './shared-middleware';
 import { storage } from "../storage";
 import { db } from "../db";
 import { requirePermission } from "../permission-middleware";
+import { requireTrackerPermission } from "../lib/finance-route-access";
 import { z } from "zod";
 import {
   approvals,
@@ -827,7 +828,7 @@ router.get("/api/program/cos", requireAuth, async (req, res) => {
 
 // ==================== CASHFLOW 2026 ====================
 
-router.get("/api/cashflow-2026", requireAuth, async (req, res) => {
+router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "view"), async (req, res) => {
   try {
     const projectFilterRaw = req.query.project ? String(req.query.project) : null;
     const projectFilters: Set<string> | null = projectFilterRaw
@@ -935,7 +936,7 @@ router.get("/api/cashflow-2026", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/api/cashflow-2026/detail", requireAuth, async (req, res) => {
+router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow", "view"), async (req, res) => {
   try {
     const weekStart = String(req.query.week || "");
     if (!weekStart || !/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
@@ -1014,7 +1015,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, async (req, res) => {
 
 // ==================== MANUAL INPUT ENDPOINTS ====================
 
-router.post("/api/cashflow-2026/opening-balance", requireAuth, requireAdmin, async (req, res) => {
+router.post("/api/cashflow-2026/opening-balance", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
   try {
     const { weekStartDate, openingBalance, computedValue, clearForward } = req.body;
     if (!weekStartDate || openingBalance == null) {
@@ -1055,7 +1056,7 @@ router.post("/api/cashflow-2026/opening-balance", requireAuth, requireAdmin, asy
   }
 });
 
-router.get("/api/cashflow-2026/balance-history", requireAuth, async (req, res) => {
+router.get("/api/cashflow-2026/balance-history", requireAuth, requirePermission("cashflow", "view"), async (req, res) => {
   try {
     const weekStart = req.query.week ? String(req.query.week) : null;
     if (weekStart) {
@@ -1070,7 +1071,7 @@ router.get("/api/cashflow-2026/balance-history", requireAuth, async (req, res) =
   }
 });
 
-router.delete("/api/cashflow-2026/opening-balance", requireAuth, requireAdmin, async (req, res) => {
+router.delete("/api/cashflow-2026/opening-balance", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
   try {
     const { weekStartDate } = req.body;
     if (!weekStartDate) {
@@ -1097,7 +1098,7 @@ router.delete("/api/cashflow-2026/opening-balance", requireAuth, requireAdmin, a
   }
 });
 
-router.post("/api/cashflow-2026/opex-budget", requireAuth, requireAdmin, async (req, res) => {
+router.post("/api/cashflow-2026/opex-budget", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
   try {
     const { monthKey, amount } = req.body;
     if (!monthKey || amount == null) {
@@ -1111,7 +1112,7 @@ router.post("/api/cashflow-2026/opex-budget", requireAuth, requireAdmin, async (
   }
 });
 
-router.get("/api/cashflow-2026/opex-budget", requireAuth, async (req, res) => {
+router.get("/api/cashflow-2026/opex-budget", requireAuth, requirePermission("cashflow", "view"), async (req, res) => {
   try {
     const entries = await storage.getAllOpexBudgetMonthly();
     res.json(entries);
@@ -1121,7 +1122,7 @@ router.get("/api/cashflow-2026/opex-budget", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/api/cashflow-2026/opex-weekly", requireAuth, requireAdmin, async (req, res) => {
+router.post("/api/cashflow-2026/opex-weekly", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
   try {
     const { weekStartDate, opexAmount } = req.body;
     if (!weekStartDate || opexAmount == null) {
@@ -1135,7 +1136,7 @@ router.post("/api/cashflow-2026/opex-weekly", requireAuth, requireAdmin, async (
   }
 });
 
-router.delete("/api/cashflow-2026/opex-weekly", requireAuth, requireAdmin, async (req, res) => {
+router.delete("/api/cashflow-2026/opex-weekly", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
   try {
     const { weekStartDate } = req.body;
     if (!weekStartDate) {
@@ -1151,7 +1152,7 @@ router.delete("/api/cashflow-2026/opex-weekly", requireAuth, requireAdmin, async
 
 // ==================== TRACKER MONTHLY ====================
 
-router.post("/api/tracker-monthly", requireAuth, requireAdmin, async (req, res) => {
+router.post("/api/tracker-monthly", requireAuth, requireTrackerPermission("edit"), async (req, res) => {
   try {
     const { trackerType, monthKey, realised, outstanding, budget } = req.body;
     if (!trackerType || !monthKey) {
@@ -1171,7 +1172,7 @@ router.post("/api/tracker-monthly", requireAuth, requireAdmin, async (req, res) 
   }
 });
 
-router.get("/api/tracker-monthly/:type", requireAuth, requireAdmin, async (req, res) => {
+router.get("/api/tracker-monthly/:type", requireAuth, requireTrackerPermission("view"), async (req, res) => {
   try {
     const trackerType = (req.params.type as string).toUpperCase();
     if (trackerType !== 'REV' && trackerType !== 'COS') {
@@ -1713,7 +1714,7 @@ router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin,
 
 // ==================== REVENUE TRACKER ====================
 
-router.get("/api/revenue-tracker/project/:projectName", requireAuth, async (req, res) => {
+router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
   try {
     const projectName = decodeURIComponent(String(req.params.projectName || ""));
     const [projectExpenses, revLines, manualEntries] = await Promise.all([
@@ -2149,7 +2150,7 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res)
   }
 });
 
-router.get("/api/revenue-tracker", requireAuth, async (req, res) => {
+router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
   try {
     const [allExpenses, allInflowsRaw, manualEntries] = await Promise.all([
       storage.getAllProgramExpenses(),
@@ -2296,7 +2297,7 @@ router.get("/api/revenue-tracker", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/api/revenue-tracker/month-detail", requireAuth, async (req, res) => {
+router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
   try {
     const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
     if (!monthKey) return res.status(400).json({ error: "monthKey required" });

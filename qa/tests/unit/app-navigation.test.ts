@@ -24,6 +24,16 @@ describe("app navigation visibility", () => {
     expect(projectManagement?.secondary.map((item) => item.label)).toEqual(["Execution Overview", "Project List"]);
   });
 
+  it("retargets a section link to the first visible child when the root page is not permitted", () => {
+    const sections = buildVisibleTopSections({
+      canViewPath: (path) => path === "/" || path === "/admin/smart-import",
+    });
+
+    const adminSection = sections.find((section) => section.label === "Admin");
+    expect(adminSection?.path).toBe("/admin/smart-import");
+    expect(adminSection?.secondary.map((item) => item.label)).toEqual(["Smart Import"]);
+  });
+
   it("keeps Home visible even when My Work is not permitted", () => {
     const sections = buildVisibleTopSections({
       canViewPath: (path) => path === "/",

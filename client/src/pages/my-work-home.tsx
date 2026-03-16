@@ -10,6 +10,7 @@ import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { PageShell, SectionHeader, KPIStrip } from "@/components/layout/page-shell";
+import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { format, parseISO } from "date-fns";
 import {
   CheckCircle2,
@@ -152,6 +153,7 @@ const SOURCE_FILTERS = [
 
 export default function MyWorkHomePage() {
   const { user } = useAuth();
+  const { canViewPath } = useAccessMatrix();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [, navigate] = useLocation();
@@ -278,6 +280,14 @@ export default function MyWorkHomePage() {
     }
     return msActionItems;
   }, [allTaskData?.microsoftItems, msActionItems]);
+  const personalMicrosoftTools = useMemo(() => {
+    return [
+      { label: "Personal Email", path: "/my-work/email" },
+      { label: "Personal Teams", path: "/my-work/teams" },
+      { label: "Personal Calendar", path: "/my-work/calendar" },
+      { label: "Meetings", path: "/my-work/meetings" },
+    ].filter((item) => canViewPath(item.path));
+  }, [canViewPath]);
 
   interface ActionItem {
     id: string;
@@ -987,7 +997,7 @@ export default function MyWorkHomePage() {
         </div>
 
         <div className="lg:col-span-1 space-y-4" data-testid="my-work-alerts-column">
-          {contextualMsSurfacesEnabled && (
+          {contextualMsSurfacesEnabled && personalMicrosoftTools.length > 0 && (
             <Card data-testid="card-my-work-personal-ms-tools">
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
@@ -997,10 +1007,9 @@ export default function MyWorkHomePage() {
               </CardHeader>
               <CardContent className="pt-0 space-y-2">
                 <div className="grid grid-cols-2 gap-2 text-xs">
-                  <Link href="/my-work/email"><Button variant="outline" size="sm" className="justify-start h-8">Personal Email</Button></Link>
-                  <Link href="/my-work/teams"><Button variant="outline" size="sm" className="justify-start h-8">Personal Teams</Button></Link>
-                  <Link href="/my-work/calendar"><Button variant="outline" size="sm" className="justify-start h-8">Personal Calendar</Button></Link>
-                  <Link href="/my-work/meetings"><Button variant="outline" size="sm" className="justify-start h-8">Meetings</Button></Link>
+                  {personalMicrosoftTools.map((tool) => (
+                    <Link key={tool.path} href={tool.path}><Button variant="outline" size="sm" className="justify-start h-8">{tool.label}</Button></Link>
+                  ))}
                 </div>
                 <div className="flex items-center gap-2 text-xs">
                   <Badge variant="outline" className={outlookStatus?.connected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600 border-slate-200"}>

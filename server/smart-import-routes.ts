@@ -9,6 +9,7 @@ import crypto from "crypto";
 import { logAuditFromReq } from "./audit-logger";
 import { db } from "./db";
 import { verifyToken } from "./jwt";
+import { requirePermission } from "./permission-middleware";
 import { runSmartImportPreview } from "./lib/import/index";
 import {
   smartImportRuns,
@@ -209,16 +210,9 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "auth_required", message: "Authentication required" });
 }
 
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = (req as any).user?.role;
-  const IMPORT_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "CONSTRUCTION_MANAGER", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER"];
-  if (IMPORT_ROLES.includes(role)) return next();
-  res.status(403).json({ error: "Admin access required" });
-}
-
 router.use(jwtAuth);
 
-router.get("/api/smart-import/runs", requireAuth, async (req: Request, res: Response) => {
+router.get("/api/smart-import/runs", requireAuth, requirePermission("smart_import", "view"), async (req: Request, res: Response) => {
   try {
     const rows = await db.execute(sql`
       SELECT id, project_name, status, source_file_name as file_name,
@@ -236,7 +230,7 @@ router.get("/api/smart-import/runs", requireAuth, async (req: Request, res: Resp
 });
 
 // POST /api/smart-import/upload
-router.post("/api/smart-import/upload", requireAuth, requireAdmin, (req: Request, res: Response, next: NextFunction) => {
+router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_import", "edit"), (req: Request, res: Response, next: NextFunction) => {
   upload.single("file")(req, res, (err: any) => {
     if (err) {
       const message = err.message || "File upload failed";
@@ -433,7 +427,7 @@ router.get("/api/smart-import/history/:projectName", requireAuth, async (req: Re
 });
 
 // GET /api/smart-import/pending-runs (must be BEFORE :runId to avoid route conflict)
-router.get("/api/smart-import/pending-runs", requireAuth, async (_req: Request, res: Response) => {
+router.get("/api/smart-import/pending-runs", requireAuth, requirePermission("smart_import", "view"), async (_req: Request, res: Response) => {
   try {
     const runs = await db
       .select({
@@ -501,7 +495,7 @@ router.get("/api/smart-import/pending-runs", requireAuth, async (_req: Request, 
   }
 });
 
-router.get("/api/smart-import/project-matches/:name", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.get("/api/smart-import/project-matches/:name", requireAuth, requirePermission("smart_import", "view"), async (req: Request, res: Response) => {
   try {
     const name = decodeURIComponent(req.params.name as string);
     const matches = await findProjectMatches(name);
@@ -516,7 +510,7 @@ router.get("/api/smart-import/project-matches/:name", requireAuth, requireAdmin,
   }
 });
 
-router.patch("/api/smart-import/:runId/assign-project", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.patch("/api/smart-import/:runId/assign-project", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -573,7 +567,7 @@ router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Re
 });
 
 // PATCH /api/smart-import/:runId/project-info
-router.patch("/api/smart-import/:runId/project-info", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.patch("/api/smart-import/:runId/project-info", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -621,7 +615,7 @@ router.patch("/api/smart-import/:runId/project-info", requireAuth, requireAdmin,
 });
 
 // PATCH /api/smart-import/:runId/mapping
-router.patch("/api/smart-import/:runId/mapping", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.patch("/api/smart-import/:runId/mapping", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -762,7 +756,7 @@ router.patch("/api/smart-import/:runId/mapping", requireAuth, requireAdmin, asyn
 });
 
 // PATCH /api/smart-import/:runId/issue/:issueId/resolve
-router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     const issueId = parseInt(req.params.issueId as string);
@@ -845,7 +839,7 @@ router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, req
 });
 
 // POST /api/smart-import/:runId/ignore-all-blockers
-router.post("/api/smart-import/:runId/ignore-all-blockers", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/ignore-all-blockers", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -901,7 +895,7 @@ router.post("/api/smart-import/:runId/ignore-all-blockers", requireAuth, require
 });
 
 // POST /api/smart-import/:runId/allow-all
-router.post("/api/smart-import/:runId/allow-all", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/allow-all", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -948,7 +942,7 @@ router.post("/api/smart-import/:runId/allow-all", requireAuth, requireAdmin, asy
 });
 
 // POST /api/smart-import/:runId/apply-prior-resolutions
-router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -1020,7 +1014,7 @@ router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, req
 });
 
 // POST /api/smart-import/:runId/commit
-router.post("/api/smart-import/:runId/commit", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -1987,7 +1981,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requireAdmin, async 
 });
 
 // POST /api/smart-import/:runId/rollback
-router.post("/api/smart-import/:runId/rollback", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/rollback", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -2190,7 +2184,7 @@ router.get("/api/smart-import/normalized/:projectName/expenditure", requireAuth,
 });
 
 // POST /api/smart-import/bulk-commit
-router.post("/api/smart-import/bulk-commit", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id || null;
     const { runIds, acknowledgeManualEdits, forceCommit } = req.body || {};
@@ -2356,7 +2350,7 @@ router.post("/api/smart-import/bulk-commit", requireAuth, requireAdmin, async (r
   }
 });
 
-router.get("/api/import-control-tower/history", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.get("/api/import-control-tower/history", requireAuth, requirePermission("admin", "view"), async (req: Request, res: Response) => {
   try {
     const importType = req.query.importType as string | undefined;
     const status = req.query.status as string | undefined;
@@ -2436,7 +2430,7 @@ router.get("/api/import-control-tower/history", requireAuth, requireAdmin, async
   }
 });
 
-router.get("/api/import-control-tower/run/:runId/errors", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.get("/api/import-control-tower/run/:runId/errors", requireAuth, requirePermission("admin", "view"), async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -2475,7 +2469,7 @@ router.get("/api/import-control-tower/run/:runId/errors", requireAuth, requireAd
   }
 });
 
-router.post("/api/import-control-tower/retry/:runId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+router.post("/api/import-control-tower/retry/:runId", requireAuth, requirePermission("admin", "edit"), async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
