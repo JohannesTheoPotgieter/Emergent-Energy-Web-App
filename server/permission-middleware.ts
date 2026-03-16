@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { ENTITY_PERMISSION_DEFAULTS, normalizeRoleForPermissions, rolePermissions, type PermissionEntity, type PermissionAction } from "@shared/schema";
+import { evaluatePermissionForRole } from "@shared/permission-resolver";
 import { verifyToken } from "./jwt";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
