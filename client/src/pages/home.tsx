@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar, CheckCircle2, Mail, MessageSquare } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarClock, ClipboardList, Mail, MessageSquare, Target } from "lucide-react";
 import { getRoleQuickActions, normalizeRoleLabel } from "@/config/home-brief";
 
 type Task = { id: number; title?: string; status?: string; dueDate?: string; projectName?: string; assignees?: string };
@@ -114,6 +114,11 @@ export default function Home() {
     }));
   }, [highPriority, tasks]);
 
+  const myOpenTasks = useMemo(
+    () => tasks.filter((task) => !["done", "closed", "completed"].includes(normalizeText(task.status))).slice(0, 6),
+    [tasks],
+  );
+
   const roleActions = useMemo(() => getRoleQuickActions(role).slice(0, 5), [role]);
 
   const filteredPriorities = useMemo(() => {
@@ -131,25 +136,79 @@ export default function Home() {
       .slice(0, 5);
   }, [companyPriorities, role, user]);
 
-  const roleKpis = {
-    "Open Tasks": tasks.filter((task) => !["done", "completed", "closed"].includes(normalizeText(task.status))).length,
-    "Overdue Work": overdue.length,
-    "Waiting Approval": waitingApproval.length,
-    "Blocked": blocked.length,
-  };
+  const keyExceptions = useMemo(
+    () => [
+      ...overdue.map((item) => ({
+        id: `overdue-${item.id}`,
+        title: item.title || `Task #${item.id}`,
+        detail: item.projectName ? `Overdue task · ${item.projectName}` : "Overdue task",
+        path: `/my-work/tasks?taskId=${item.id}`,
+      })),
+      ...blocked.map((item) => ({
+        id: `blocked-${item.id}`,
+        title: item.title || `Task #${item.id}`,
+        detail: item.projectName ? `Blocked task · ${item.projectName}` : "Blocked task",
+        path: `/my-work/tasks?taskId=${item.id}`,
+      })),
+      ...(highPriority?.projectsBehindPlan || []).slice(0, 3).map((project) => ({
+        id: `project-${project.projectName}`,
+        title: project.projectName,
+        detail: `Behind plan · ${project.severity}`,
+        path: `/project/${encodeURIComponent(project.projectName)}`,
+      })),
+    ].slice(0, 6),
+    [blocked, highPriority, overdue],
+  );
+
+  const projectHealth = useMemo(() => {
+    const behind = (highPriority?.projectsBehindPlan || []).slice(0, 4).map((project) => ({
+      id: `behind-${project.projectName}`,
+      title: project.projectName,
+      detail: `Behind plan (${project.severity})`,
+      path: `/project/${encodeURIComponent(project.projectName)}`,
+    }));
+    const milestones = (highPriority?.upcomingMilestones || []).slice(0, 4).map((item) => ({
+      id: `milestone-${item.projectName}-${item.milestoneType}`,
+      title: item.projectName,
+      detail: `${item.milestoneType} · ${item.date}`,
+      path: `/project/${encodeURIComponent(item.projectName)}`,
+    }));
+    return [...behind, ...milestones].slice(0, 6);
+  }, [highPriority]);
 
   const hasErrors = tasksError || highPriorityError || companyPrioritiesError;
   const isRetrying = tasksFetching || priorityFetching || prioritiesFetching;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Home</h1>
-        <p className="text-sm text-slate-600">Daily operating brief for {user?.username || "your"} day.</p>
-      </div>
+    <div className="space-y-6 bg-gradient-to-b from-emerald-50/50 to-white p-1">
+      <header className="space-y-4 rounded-xl border border-emerald-100 bg-white p-4 shadow-sm md:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <img src="/emergent-logo.png" alt="Emergent Energy" className="h-8 w-auto object-contain md:h-9" />
+            <div>
+              <h1 className="text-xl font-semibold text-slate-900 md:text-2xl">Daily Operating Home</h1>
+              <p className="text-sm text-slate-600">Good morning, {user?.username || "team"}. Focus on what matters first.</p>
+            </div>
+          </div>
+          <Button asChild variant="outline" size="sm" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+            <Link href="/my-work/tasks">Open My Tasks</Link>
+          </Button>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Link href="/company-priorities" className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 hover:bg-emerald-100">
+            Company priorities: {filteredPriorities.length}
+          </Link>
+          <Link href="/my-work/tasks" className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+            Open tasks: {myOpenTasks.length}
+          </Link>
+          <Link href="/my-work/calendar" className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+            Due today: {dueToday.length}
+          </Link>
+        </div>
+      </header>
 
       {hasErrors ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 space-y-2">
+        <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           <p>Some home data could not load. Please refresh or retry.</p>
           <Button variant="outline" size="sm" onClick={() => { refetchTasks(); refetchHighPriority(); refetchCompanyPriorities(); }} disabled={isRetrying}>
             {isRetrying ? "Retrying..." : "Retry home data"}
@@ -158,97 +217,122 @@ export default function Home() {
       ) : null}
 
       <Card className="border-emerald-200 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-lg">Company Priorities</CardTitle>
-          <p className="text-sm text-slate-600">What matters most for Emergent Energy today.</p>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg"><Target className="h-4 w-4 text-emerald-600" />Company Priorities / Strategic Focus</CardTitle>
+          <p className="text-sm text-slate-600">Start here first. These priorities drive today&apos;s execution.</p>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-2">
           {filteredPriorities.length ? filteredPriorities.map((priority) => (
-            <div key={priority.id} className="rounded-lg border border-slate-200 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-medium text-sm">{priority.title}</p>
-                <div className="flex items-center gap-2">
-                  {priority.department ? <Badge variant="outline">{priority.department}</Badge> : null}
-                  {priority.ownerRole ? <Badge className="bg-slate-100 text-slate-700">{priority.ownerRole}</Badge> : <Badge className="bg-emerald-100 text-emerald-700">Company-wide</Badge>}
-                </div>
+            <Link key={priority.id} href={getPriorityDestination(priority)} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 p-3 hover:border-emerald-200 hover:bg-emerald-50/40">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-slate-900">{priority.title}</p>
+                {priority.description ? <p className="text-xs text-slate-600">{priority.description}</p> : null}
               </div>
-              {priority.description ? <p className="mt-1 text-sm text-slate-600">{priority.description}</p> : null}
-              <div className="mt-2">
-                <Button asChild size="sm" variant="outline">
-                  <Link href={getPriorityDestination(priority)}>Open priority</Link>
-                </Button>
+              <div className="flex shrink-0 items-center gap-2">
+                {priority.department ? <Badge variant="outline">{priority.department}</Badge> : null}
+                <ArrowRight className="h-4 w-4 text-emerald-600" />
               </div>
-            </div>
-          )) : <p className="text-sm text-slate-500">No active priorities are published for your scope. Visit Company Priorities for full context.</p>}
+            </Link>
+          )) : <p className="text-sm text-slate-500">No active priorities are published for your role. Open Company Priorities for full context.</p>}
         </CardContent>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">My Morning Focus</CardTitle>
-            <p className="text-sm text-slate-600">What you need to do first.</p>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg"><ClipboardList className="h-4 w-4 text-emerald-600" />My Tasks</CardTitle>
+            <p className="text-sm text-slate-600">Action your queue now, then clear approvals and blockers.</p>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {[{ label: "Due today", count: dueToday.length, items: dueToday }, { label: "Waiting for my approval", count: waitingApproval.length, items: waitingApproval }, { label: "Overdue", count: overdue.length, items: overdue }, { label: "Blocked / needs escalation", count: blocked.length, items: blocked }].map((bucket) => (
-              <div key={bucket.label} className="rounded-lg border border-slate-200 p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium">{bucket.label}</p>
-                  <Badge className="bg-slate-100 text-slate-700">{bucket.count}</Badge>
+          <CardContent className="space-y-2">
+            {myOpenTasks.length ? myOpenTasks.map((task) => (
+              <Link key={task.id} href={`/my-work/tasks?taskId=${task.id}`} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 hover:bg-slate-50">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-900">{task.title || `Task #${task.id}`}</p>
+                  <p className="text-xs text-slate-500">{task.projectName || "General"}{task.dueDate ? ` · Due ${task.dueDate}` : ""}</p>
                 </div>
-                {bucket.items.length ? (
-                  <div className="mt-2 space-y-1">
-                    {bucket.items.slice(0, 2).map((item) => (
-                      <p key={item.id} className="text-xs text-slate-600 truncate">• {item.title || `Task #${item.id}`} {item.projectName ? `· ${item.projectName}` : ""}</p>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
+                {task.status ? <Badge className="bg-slate-100 text-slate-700">{task.status}</Badge> : null}
+              </Link>
+            )) : <p className="text-sm text-slate-500">No open tasks in your queue.</p>}
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg"><AlertTriangle className="h-4 w-4 text-amber-600" />Important Exceptions</CardTitle>
+            <p className="text-sm text-slate-600">Escalate or resolve these exceptions before normal work.</p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {keyExceptions.length ? keyExceptions.map((item) => (
+              <Link key={item.id} href={item.path} className="flex items-center justify-between rounded-lg border border-amber-200/70 bg-amber-50/50 p-3 hover:bg-amber-50">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">{item.title}</p>
+                  <p className="text-xs text-slate-600">{item.detail}</p>
+                </div>
+                <ArrowRight className="h-4 w-4 text-amber-700" />
+              </Link>
+            )) : <p className="text-sm text-slate-500">No urgent exceptions right now.</p>}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Role-Based Quick Links</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {roleActions.map((action) => (
+              <Link key={action.label} href={action.path} className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">{action.label}</p>
+                  <p className="text-xs text-slate-500">{action.description}</p>
+                </div>
+                <ArrowRight className="h-4 w-4 text-emerald-600" />
+              </Link>
             ))}
           </CardContent>
         </Card>
 
         <Card className="border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">Role Quick Actions</CardTitle>
-            <p className="text-sm text-slate-600">Where to go next as {role || "your"}.</p>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Meetings, Calendar & Microsoft</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {roleActions.map((action) => (
-              <Link key={action.label} href={action.path} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 hover:bg-slate-50">
-                <div>
-                  <p className="text-sm font-medium">{action.label}</p>
-                  <p className="text-xs text-slate-500">{action.description}</p>
-                </div>
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              </Link>
-            ))}
+            <Link href="/my-work/calendar" className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-emerald-600" />My Calendar & Meetings</span><ArrowRight className="h-4 w-4 text-slate-400" /></Link>
+            <Link href="/my-work/email" className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><Mail className="h-4 w-4 text-emerald-600" />Important Email & Reminders</span><ArrowRight className="h-4 w-4 text-slate-400" /></Link>
+            <Link href="/my-work/teams" className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><MessageSquare className="h-4 w-4 text-emerald-600" />Teams Summary</span><ArrowRight className="h-4 w-4 text-slate-400" /></Link>
           </CardContent>
         </Card>
-      </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="border-slate-200/80 shadow-sm bg-slate-50/40">
-          <CardHeader><CardTitle className="text-base text-slate-700">Microsoft Integration</CardTitle></CardHeader>
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Project Health Snapshot</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-2">
-            <Link href="/my-work/calendar" className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><Calendar className="h-4 w-4" />Calendar</span><span className="text-xs text-slate-500">Open</span></Link>
-            <Link href="/my-work/email" className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><Mail className="h-4 w-4" />Email</span><span className="text-xs text-slate-500">Open</span></Link>
-            <Link href="/my-work/teams" className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-2.5 hover:bg-slate-50 text-sm"><span className="flex items-center gap-2"><MessageSquare className="h-4 w-4" />Teams</span><span className="text-xs text-slate-500">Open</span></Link>
-          </CardContent>
-        </Card>
-
-        <Card className="border-slate-200/80 shadow-sm bg-slate-50/40">
-          <CardHeader><CardTitle className="text-base text-slate-700">KPI Snapshot</CardTitle></CardHeader>
-          <CardContent className="grid grid-cols-2 gap-2">
-            {Object.entries(roleKpis).map(([label, value]) => (
-              <div key={label} className="rounded-lg border border-slate-200 p-2.5 bg-white">
-                <p className="text-xs text-slate-500">{label}</p>
-                <p className="text-lg font-semibold">{value}</p>
-              </div>
-            ))}
+            {projectHealth.length ? projectHealth.map((item) => (
+              <Link key={item.id} href={item.path} className="flex items-center justify-between rounded-lg border border-slate-200 p-2.5 hover:bg-slate-50">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">{item.title}</p>
+                  <p className="text-xs text-slate-500">{item.detail}</p>
+                </div>
+                <ArrowRight className="h-4 w-4 text-slate-400" />
+              </Link>
+            )) : <p className="text-sm text-slate-500">No project health exceptions for your current scope.</p>}
           </CardContent>
         </Card>
       </div>
+
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Morning Checklist</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-2 md:grid-cols-2">
+          <Link href="/my-work/tasks" className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700 hover:bg-slate-50">1) Clear overdue + blocked items ({overdue.length + blocked.length})</Link>
+          <Link href="/my-work/tasks" className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700 hover:bg-slate-50">2) Review approvals waiting ({waitingApproval.length})</Link>
+          <Link href="/my-work/calendar" className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700 hover:bg-slate-50">3) Confirm first meetings and dependencies</Link>
+          <Link href="/company-priorities" className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700 hover:bg-slate-50">4) Align work to strategic focus</Link>
+        </CardContent>
+      </Card>
     </div>
   );
 }
