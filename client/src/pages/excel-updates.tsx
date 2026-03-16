@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { AdminPageShell, AdminQueryState } from "@/components/admin/admin-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -56,21 +57,28 @@ export default function ExcelUpdatesPage() {
     return params.toString();
   }, [tab, page, projectFilter]);
 
-  const { data, isLoading } = useQuery({
+  const updatesQuery = useQuery<any, Error>({
     queryKey: ["excel-updates", queryParams],
     queryFn: async () => {
       const res = await fetch(`/api/excel-updates?${queryParams}`, { headers: authHeaders(), credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
+      if (!res.ok) throw new Error("Excel update reconciliation could not be loaded.");
       return res.json();
     },
     refetchInterval: 30000,
   });
 
+  const data = updatesQuery.data;
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
   const pendingCount = data?.pendingCount ?? 0;
   const confirmedCount = data?.confirmedCount ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const governanceStatuses = [
+    pendingCount > 0
+      ? { label: `${pendingCount} pending confirmations`, tone: "warning" as const }
+      : { label: "No pending confirmations", tone: "success" as const },
+    { label: "Tracker reconciliation visible here", tone: "info" as const },
+  ];
 
   const confirmMutation = useMutation({
     mutationFn: async (notifId: number) => {
@@ -155,7 +163,18 @@ export default function ExcelUpdatesPage() {
   }, [items]);
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4" data-testid="excel-updates-page">
+    <AdminPageShell
+      surfaceId="excel-updates"
+      title="Excel Updates"
+      description="Review plan and Excel sync changes that still need to be captured in source trackers."
+      statuses={governanceStatuses}
+      metrics={[
+        { label: "Pending", value: pendingCount, helper: "Awaiting tracker confirmation" },
+        { label: "Confirmed", value: confirmedCount, helper: "Already reconciled" },
+        { label: "Visible Total", value: pendingCount + confirmedCount, helper: "Current queue volume" },
+      ]}
+    >
+    <div className="space-y-4" data-testid="excel-updates-page">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <FileSpreadsheet className="w-6 h-6 text-emerald-600" />
@@ -177,7 +196,7 @@ export default function ExcelUpdatesPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-3" data-testid="excel-updates-kpis">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" data-testid="excel-updates-kpis">
         <Card className="border-amber-200/50">
           <CardContent className="p-3 flex items-center gap-3">
             <div className="p-2 rounded-lg bg-amber-50">
@@ -281,30 +300,32 @@ export default function ExcelUpdatesPage() {
         )}
       </div>
 
-      {isLoading ? (
-        <div className="flex items-center justify-center py-16" data-testid="loading-state">
-          <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
-        </div>
-      ) : items.length === 0 ? (
-        <Card data-testid="empty-state">
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            {tab === "pending" ? (
-              <>
-                <CheckCircle2 className="w-12 h-12 text-emerald-600 mb-3" />
-                <p className="text-lg font-medium text-foreground">All caught up!</p>
-                <p className="text-sm text-muted-foreground">No pending Excel updates to confirm.</p>
-              </>
-            ) : (
-              <>
-                <FileSpreadsheet className="w-12 h-12 text-slate-600 mb-3" />
-                <p className="text-lg font-medium text-foreground">No updates found</p>
-                <p className="text-sm text-muted-foreground">No Excel sync notifications match your filters.</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-4">
+      <AdminQueryState
+        isLoading={updatesQuery.isLoading}
+        error={updatesQuery.error?.message || null}
+        onRetry={() => void updatesQuery.refetch()}
+        loadingLabel="Loading reconciliation queue..."
+      >
+        {items.length === 0 ? (
+          <Card data-testid="empty-state">
+            <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+              {tab === "pending" ? (
+                <>
+                  <CheckCircle2 className="w-12 h-12 text-emerald-600 mb-3" />
+                  <p className="text-lg font-medium text-foreground">All caught up!</p>
+                  <p className="text-sm text-muted-foreground">No pending Excel updates to confirm.</p>
+                </>
+              ) : (
+                <>
+                  <FileSpreadsheet className="w-12 h-12 text-slate-600 mb-3" />
+                  <p className="text-lg font-medium text-foreground">No updates found</p>
+                  <p className="text-sm text-muted-foreground">No Excel sync notifications match your filters.</p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-4">
           {grouped.map(([project, projectItems]) => (
             <div key={project} data-testid={`group-${project}`}>
               <div className="flex items-center gap-2 mb-2 px-1">
@@ -440,8 +461,9 @@ export default function ExcelUpdatesPage() {
               </div>
             </div>
           ))}
-        </div>
-      )}
+          </div>
+        )}
+      </AdminQueryState>
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between pt-1">
@@ -459,5 +481,6 @@ export default function ExcelUpdatesPage() {
         </div>
       )}
     </div>
+    </AdminPageShell>
   );
 }

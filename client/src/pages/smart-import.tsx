@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { AdminPageShell, AdminQueryState } from "@/components/admin/admin-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -2565,12 +2567,30 @@ interface BulkCommitResult {
   error?: string;
 }
 
+interface SmartImportRunHistoryItem {
+  id: number;
+  projectName: string;
+  sourceFileName: string;
+  status: string;
+  uploadedAt: string;
+  committedAt: string | null;
+  uploaderName: string | null;
+  recordsAttempted: number;
+  recordsSucceeded: number;
+  recordsFailed: number;
+  totalIssues: number;
+  unresolvedBlockers: number;
+  unresolvedWarnings: number;
+  resolvedIssues: number;
+}
+
 function BulkCommitPanel({ onBack, onSwitchToWizard }: {
   onBack: () => void;
   onSwitchToWizard: (runId: number) => void;
 }) {
   const [pendingRuns, setPendingRuns] = useState<PendingRun[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [committing, setCommitting] = useState(false);
   const [commitDone, setCommitDone] = useState(false);
   const [commitResults, setCommitResults] = useState<BulkCommitResult[]>([]);
@@ -2584,13 +2604,20 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
 
   const loadPendingRuns = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await fetch("/api/smart-import/pending-runs", { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setPendingRuns(data);
+      } else {
+        const err = await res.json().catch(() => ({ error: "Pending imports could not be loaded." }));
+        setPendingRuns([]);
+        setLoadError(err.error || "Pending imports could not be loaded.");
       }
     } catch {
+      setPendingRuns([]);
+      setLoadError("Pending imports could not be loaded.");
     } finally {
       setLoading(false);
     }
@@ -2711,6 +2738,22 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
         <CardContent className="flex items-center justify-center py-12">
           <Loader2 className="w-5 h-5 animate-spin text-blue-500 mr-2" />
           <span className="text-sm text-muted-foreground">Loading pending imports...</span>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <Card className="bg-card rounded-xl shadow-sm">
+        <CardContent className="py-6">
+          <AdminQueryState
+            isLoading={false}
+            error={loadError}
+            onRetry={() => { void loadPendingRuns(); }}
+          >
+            <div />
+          </AdminQueryState>
         </CardContent>
       </Card>
     );
@@ -2986,14 +3029,168 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
   );
 }
 
+function SmartImportGovernancePanel({
+  pendingRuns,
+  pendingRunsLoading,
+  pendingRunsError,
+  retryPendingRuns,
+  recentRuns,
+  recentRunsLoading,
+  recentRunsError,
+  retryRecentRuns,
+}: {
+  pendingRuns: PendingRun[];
+  pendingRunsLoading: boolean;
+  pendingRunsError: string | null;
+  retryPendingRuns: () => void;
+  recentRuns: SmartImportRunHistoryItem[];
+  recentRunsLoading: boolean;
+  recentRunsError: string | null;
+  retryRecentRuns: () => void;
+}) {
+  const recentAttentionRuns = recentRuns.filter((run) => run.status !== "COMMITTED" || run.unresolvedBlockers > 0 || run.unresolvedWarnings > 0 || run.recordsFailed > 0).slice(0, 5);
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr),minmax(0,0.9fr)]">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Zap className="w-4 h-4 text-blue-600" />
+            Import Governance Queue
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AdminQueryState
+            isLoading={pendingRunsLoading}
+            error={pendingRunsError}
+            onRetry={retryPendingRuns}
+            empty={pendingRuns.length === 0}
+            emptyTitle="No runs need review right now"
+            emptyDescription="New Excel uploads will appear here before they are committed."
+            loadingLabel="Loading pending import queue..."
+          >
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-border/70 bg-muted/30 p-3">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Pending Files</p>
+                  <p className="mt-1 text-2xl font-semibold text-foreground">{pendingRuns.length}</p>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-xs uppercase tracking-wide text-amber-700">With Warnings</p>
+                  <p className="mt-1 text-2xl font-semibold text-amber-700">{pendingRuns.filter((run) => run.warningCount > 0).length}</p>
+                </div>
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+                  <p className="text-xs uppercase tracking-wide text-red-700">Blocked</p>
+                  <p className="mt-1 text-2xl font-semibold text-red-700">{pendingRuns.filter((run) => run.blockerCount > 0).length}</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {pendingRuns.slice(0, 5).map((run) => (
+                  <div key={run.id} className="flex items-start justify-between gap-3 rounded-xl border border-border/70 p-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{run.projectName}</p>
+                      <p className="text-xs text-muted-foreground truncate">{run.sourceFileName}</p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        Uploaded {new Date(run.uploadedAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      {run.blockerCount > 0 ? <Badge className="bg-red-50 text-red-700 border-red-200">{run.blockerCount} blockers</Badge> : null}
+                      {run.warningCount > 0 ? <Badge className="bg-amber-50 text-amber-700 border-amber-200">{run.warningCount} warnings</Badge> : null}
+                      {run.blockerCount === 0 && run.warningCount === 0 ? <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">Ready</Badge> : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </AdminQueryState>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <History className="w-4 h-4 text-slate-700" />
+            Recent Import History
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AdminQueryState
+            isLoading={recentRunsLoading}
+            error={recentRunsError}
+            onRetry={retryRecentRuns}
+            empty={recentRuns.length === 0}
+            emptyTitle="No import history recorded yet"
+            emptyDescription="Completed and preview runs will appear here once files have been processed."
+            loadingLabel="Loading import history..."
+          >
+            <div className="space-y-2">
+              {(recentAttentionRuns.length > 0 ? recentAttentionRuns : recentRuns.slice(0, 5)).map((run) => (
+                <div key={run.id} className="rounded-xl border border-border/70 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{run.projectName}</p>
+                      <p className="text-xs text-muted-foreground truncate">{run.sourceFileName}</p>
+                    </div>
+                    <Badge variant="outline" className={run.status === "COMMITTED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : run.status === "FAILED" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
+                      {run.status.replace(/_/g, " ")}
+                    </Badge>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                    <span>{new Date(run.uploadedAt).toLocaleString()}</span>
+                    {run.uploaderName ? <span>By {run.uploaderName}</span> : null}
+                    <span>{run.recordsSucceeded}/{run.recordsAttempted} succeeded</span>
+                    {run.recordsFailed > 0 ? <span className="text-red-600">{run.recordsFailed} failed</span> : null}
+                    {run.unresolvedBlockers > 0 ? <span className="text-red-600">{run.unresolvedBlockers} blockers</span> : null}
+                    {run.unresolvedWarnings > 0 ? <span className="text-amber-600">{run.unresolvedWarnings} warnings</span> : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </AdminQueryState>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function SmartImportPage() {
   const [step, setStep] = useState(1);
   const [runId, setRunId] = useState<number | null>(null);
   const [preview, setPreview] = useState<any>(null);
   const [issues, setIssues] = useState<any[]>([]);
   const [loadingRun, setLoadingRun] = useState(false);
+  const [runLoadError, setRunLoadError] = useState<string | null>(null);
   const [bulkMode, setBulkMode] = useState(false);
   const [cameFromBulk, setCameFromBulk] = useState(false);
+  const pendingRunsQuery = useQuery<PendingRun[], Error>({
+    queryKey: ["smart-import-pending-governance"],
+    queryFn: async () => {
+      const res = await fetch("/api/smart-import/pending-runs", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("The pending import queue could not be loaded.");
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
+  const recentRunsQuery = useQuery<SmartImportRunHistoryItem[], Error>({
+    queryKey: ["smart-import-run-history"],
+    queryFn: async () => {
+      const res = await fetch("/api/smart-import/runs", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Recent import history could not be loaded.");
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
+  const pendingRuns = pendingRunsQuery.data ?? [];
+  const recentRuns = recentRunsQuery.data ?? [];
+  const recentCommittedRuns = recentRuns.filter((run) => run.status === "COMMITTED");
+  const recentFailedRuns = recentRuns.filter((run) => run.status === "FAILED");
+  const shellStatuses = [
+    pendingRuns.length > 0
+      ? { label: `${pendingRuns.length} runs awaiting review`, tone: "warning" as const }
+      : { label: "Import queue clear", tone: "success" as const },
+    { label: "Excel governance surfaced here", tone: "info" as const },
+  ];
 
   const returnToBulkPanel = useCallback(() => {
     setCameFromBulk(false);
@@ -3002,18 +3199,24 @@ export default function SmartImportPage() {
     setRunId(null);
     setPreview(null);
     setIssues([]);
+    setRunLoadError(null);
   }, []);
 
   const loadRunData = useCallback(async (id: number) => {
     setLoadingRun(true);
+    setRunLoadError(null);
     try {
       const res = await fetch(`/api/smart-import/${id}`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (data.preview) setPreview(data.preview);
         if (data.issues) setIssues(data.issues);
+      } else {
+        const err = await res.json().catch(() => ({ error: "Import details could not be loaded." }));
+        setRunLoadError(err.error || "Import details could not be loaded.");
       }
     } catch {
+      setRunLoadError("Import details could not be loaded.");
     } finally {
       setLoadingRun(false);
     }
@@ -3022,6 +3225,7 @@ export default function SmartImportPage() {
   const handleUploaded = (newRunId: number, newPreview: any) => {
     setRunId(newRunId);
     setPreview(newPreview);
+    setRunLoadError(null);
     setBulkMode(false);
     setCameFromBulk(false);
     setStep(2);
@@ -3043,15 +3247,39 @@ export default function SmartImportPage() {
     setRunId(wizardRunId);
     setStep(2);
     setIssues([]);
+    setRunLoadError(null);
     loadRunData(wizardRunId);
   };
 
   return (
-    <div className="space-y-4 max-w-4xl mx-auto" data-testid="smart-import-page">
+    <AdminPageShell
+      surfaceId="smart-import"
+      title="Smart Import"
+      description="Govern Excel tracker intake, review unresolved issues, and commit reconciled project data with clear operational visibility."
+      statuses={shellStatuses}
+      metrics={[
+        { label: "Pending Review", value: pendingRuns.length, helper: "Preview runs awaiting action" },
+        { label: "Committed Runs", value: recentCommittedRuns.length, helper: "Recent successful imports" },
+        { label: "Failed Runs", value: recentFailedRuns.length, helper: "Recent runs needing attention" },
+        { label: "Last Run", value: recentRuns[0]?.uploadedAt ? new Date(recentRuns[0].uploadedAt).toLocaleDateString() : "No data", helper: "Most recent upload" },
+      ]}
+    >
+    <div className="space-y-4 max-w-5xl" data-testid="smart-import-page">
       <div>
         <h1 className="text-2xl font-bold" data-testid="text-smart-import-title">Smart Import Wizard</h1>
         <p className="text-muted-foreground text-sm">Upload and review Excel tracker imports step by step</p>
       </div>
+
+      <SmartImportGovernancePanel
+        pendingRuns={pendingRuns}
+        pendingRunsLoading={pendingRunsQuery.isLoading}
+        pendingRunsError={pendingRunsQuery.error?.message || null}
+        retryPendingRuns={() => { void pendingRunsQuery.refetch(); }}
+        recentRuns={recentRuns}
+        recentRunsLoading={recentRunsQuery.isLoading}
+        recentRunsError={recentRunsQuery.error?.message || null}
+        retryRecentRuns={() => { void recentRunsQuery.refetch(); }}
+      />
 
       {!bulkMode && <StepIndicator currentStep={step} />}
 
@@ -3060,6 +3288,16 @@ export default function SmartImportPage() {
           <Loader2 className="w-5 h-5 animate-spin text-blue-500 mr-2" />
           <span className="text-sm text-muted-foreground">Loading import data...</span>
         </div>
+      )}
+
+      {runLoadError && !loadingRun && !bulkMode && (
+        <AdminQueryState
+          isLoading={false}
+          error={runLoadError}
+          onRetry={runId ? () => { void loadRunData(runId); } : undefined}
+        >
+          <div />
+        </AdminQueryState>
       )}
 
       {bulkMode ? (
@@ -3134,5 +3372,6 @@ export default function SmartImportPage() {
         </>
       )}
     </div>
+    </AdminPageShell>
   );
 }

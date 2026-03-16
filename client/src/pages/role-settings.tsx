@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { AdminPageShell, AdminQueryState } from "@/components/admin/admin-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ import {
   Zap,
   Plug,
   Clock,
+  FolderOpen,
 } from "lucide-react";
 import {
   COMPANY_ROLES,
@@ -74,7 +76,17 @@ async function fetchSetting(key: string): Promise<string | null> {
 }
 
 interface MsIntegrationStatus {
-  outlook: { configured: boolean; connected: boolean; email: string | null };
+  outlook: {
+    configured: boolean;
+    connected: boolean;
+    email: string | null;
+  };
+  sharepoint: {
+    enabled: boolean;
+    connected: boolean;
+    siteName: string | null;
+    driveName: string | null;
+  };
   teams: { enabled: boolean; configured: boolean; tags: string[] };
   user: { id: number; name: string; role: string };
 }
@@ -83,6 +95,19 @@ interface OutlookConnection {
   configured: boolean;
   connected: boolean;
   email?: string;
+}
+
+interface IntegrationHealthItem {
+  name: string;
+  type: string;
+  objectCount: number;
+  lastSyncTime: string | null;
+  status: string;
+  configured?: boolean;
+  connectedUsers?: number;
+  siteName?: string | null;
+  driveName?: string | null;
+  tagsConfigured?: number;
 }
 
 const SECTION_IDS = ["connections", "teams", "users", "passwords", "procurement"] as const;
@@ -97,13 +122,12 @@ const SECTION_META: Record<SectionId, { label: string; icon: any; description: s
 };
 
 export default function RoleSettingsPage() {
-  const { toast } = useToast();
-  const { isAdmin, user } = useAuth();
-  const queryClient = useQueryClient();
+  const { isAdmin } = useAuth();
   const companyRole = localStorage.getItem("company_role");
+  const canManageSettings = companyRole === "COO_ADMIN" || isAdmin;
   const [activeSection, setActiveSection] = useState<SectionId>("connections");
 
-  if (companyRole !== "COO_ADMIN" && !isAdmin) {
+  if (!canManageSettings) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]" data-testid="access-denied-container">
         <Card className="max-w-md w-full">
@@ -118,55 +142,55 @@ export default function RoleSettingsPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-0 flex-1 max-w-[1100px] mx-auto w-full" data-testid="app-settings-page">
-      <header className="shrink-0 mb-5">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground flex items-center gap-2" data-testid="text-page-title">
-          <Settings2 className="h-7 w-7 text-blue-600" />
-          App Settings
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage Microsoft 365 connections, user accounts, role passwords, and system tools
-        </p>
-      </header>
+    <AdminPageShell
+      surfaceId="settings"
+      title="System Settings"
+      description="Manage Microsoft 365 connectivity, role authentication, and governed admin tooling without leaving the trusted admin surface."
+      statuses={[
+        { label: "Admin-only controls", tone: "info" },
+        { label: "Microsoft visibility surfaced here", tone: "neutral" },
+      ]}
+    >
+      <div className="flex flex-col min-h-0 flex-1 w-full max-w-[1180px]" data-testid="app-settings-page">
+        <div className="flex flex-col md:flex-row gap-4 md:gap-6 flex-1 min-h-0">
+          <nav className="w-full md:w-64 shrink-0 flex md:flex-col gap-1 overflow-x-auto md:overflow-x-visible pb-2 md:pb-0" data-testid="settings-nav">
+            {SECTION_IDS.map((id) => {
+              const meta = SECTION_META[id];
+              const Icon = meta.icon;
+              const isActive = activeSection === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setActiveSection(id)}
+                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left text-sm transition-all whitespace-nowrap shrink-0 border ${
+                    isActive
+                      ? "bg-primary/8 text-foreground font-medium border-primary/20 shadow-[var(--shadow-xs)]"
+                      : "bg-background text-muted-foreground hover:bg-muted/50 hover:text-foreground border-border/70"
+                  }`}
+                  data-testid={`nav-${id}`}
+                >
+                  <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-primary" : "text-gray-400"}`} />
+                  <span>{meta.label}</span>
+                </button>
+              );
+            })}
+          </nav>
 
-      <div className="flex flex-col md:flex-row gap-4 md:gap-6 flex-1 min-h-0">
-        <nav className="w-full md:w-56 shrink-0 flex md:flex-col gap-1 overflow-x-auto md:overflow-x-visible pb-2 md:pb-0" data-testid="settings-nav">
-          {SECTION_IDS.map((id) => {
-            const meta = SECTION_META[id];
-            const Icon = meta.icon;
-            const isActive = activeSection === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setActiveSection(id)}
-                className={`flex items-center gap-2 md:gap-2.5 px-3 py-2 md:py-2.5 rounded-lg text-left text-sm transition-all whitespace-nowrap shrink-0 ${
-                  isActive
-                    ? "bg-blue-50 text-blue-700 font-medium border border-blue-200"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground border border-transparent"
-                }`}
-                data-testid={`nav-${id}`}
-              >
-                <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-blue-600" : "text-gray-400"}`} />
-                <span>{meta.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+          <div className="flex-1 min-w-0 min-h-0 overflow-y-auto">
+            <div className="mb-4 space-y-1">
+              <h2 className="text-lg font-semibold text-foreground">{SECTION_META[activeSection].label}</h2>
+              <p className="text-sm text-muted-foreground">{SECTION_META[activeSection].description}</p>
+            </div>
 
-        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto">
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-foreground">{SECTION_META[activeSection].label}</h2>
-            <p className="text-sm text-muted-foreground">{SECTION_META[activeSection].description}</p>
+            {activeSection === "connections" && <ConnectionsSection />}
+            {activeSection === "teams" && <TeamsSettingsSection />}
+            {activeSection === "users" && <UserMappingSection />}
+            {activeSection === "passwords" && <RolePasswordsSection />}
+            {activeSection === "procurement" && <ProcurementAnalysisSection />}
           </div>
-
-          {activeSection === "connections" && <ConnectionsSection />}
-          {activeSection === "teams" && <TeamsSettingsSection />}
-          {activeSection === "users" && <UserMappingSection />}
-          {activeSection === "passwords" && <RolePasswordsSection />}
-          {activeSection === "procurement" && <ProcurementAnalysisSection />}
         </div>
       </div>
-    </div>
+    </AdminPageShell>
   );
 }
 
@@ -174,9 +198,11 @@ function ConnectionsSection() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { isAdmin } = useAuth();
+  const companyRole = localStorage.getItem("company_role");
+  const canManageSettings = companyRole === "COO_ADMIN" || isAdmin;
   const [refreshingOutlook, setRefreshingOutlook] = useState(false);
 
-  const { data: integrationStatus } = useQuery<MsIntegrationStatus>({
+  const integrationStatusQuery = useQuery<MsIntegrationStatus, Error>({
     queryKey: ["/api/ms-integration/status"],
     queryFn: async () => {
       const res = await authFetch("/api/ms-integration/status");
@@ -185,28 +211,45 @@ function ConnectionsSection() {
     },
   });
 
-  const { data: outlookStatus, refetch: refetchOutlook } = useQuery<OutlookConnection>({
+  const outlookStatusQuery = useQuery<OutlookConnection, Error>({
     queryKey: ["/api/outlook/status"],
     retry: false,
   });
 
-  const [featureFlags, setFeatureFlags] = useState({ feature_ms_teams: false });
+  const [featureFlags, setFeatureFlags] = useState({
+    feature_ms_teams: false,
+    feature_ms_sharepoint_docs: false,
+  });
 
-  const { data: config } = useQuery<any>({
+  const configQuery = useQuery<any, Error>({
     queryKey: ["/api/admin/ms-integration"],
     queryFn: async () => {
       const res = await authFetch("/api/admin/ms-integration");
       if (!res.ok) throw new Error("Failed to load config");
       return res.json();
     },
-    enabled: isAdmin,
+    enabled: canManageSettings,
+  });
+
+  const integrationHealthQuery = useQuery<IntegrationHealthItem[], Error>({
+    queryKey: ["admin-settings-integration-health"],
+    queryFn: async () => {
+      const res = await authFetch("/api/admin/control-center/integration-health");
+      if (!res.ok) throw new Error("Failed to load integration health");
+      return res.json();
+    },
+    enabled: canManageSettings,
   });
 
   useEffect(() => {
+    const config = configQuery.data;
     if (config?.feature_flags) {
-      setFeatureFlags({ feature_ms_teams: config.feature_flags.feature_ms_teams || false });
+      setFeatureFlags({
+        feature_ms_teams: config.feature_flags.feature_ms_teams || false,
+        feature_ms_sharepoint_docs: config.feature_flags.feature_ms_sharepoint_docs || false,
+      });
     }
-  }, [config]);
+  }, [configQuery.data]);
 
   const saveConfigMutation = useMutation({
     mutationFn: async ({ key, value }: { key: string; value: any }) => {
@@ -220,12 +263,21 @@ function ConnectionsSection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ms-integration"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ms-integration/status"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-settings-integration-health"] });
       toast({ title: "Settings saved" });
     },
-    onError: () => {
-      toast({ title: "Error saving settings", variant: "destructive" });
+    onError: (err: any) => {
+      toast({ title: "Error saving settings", description: err?.message, variant: "destructive" });
     },
   });
+
+  const retryConnections = () => {
+    void integrationStatusQuery.refetch();
+    void outlookStatusQuery.refetch();
+    void configQuery.refetch();
+    void integrationHealthQuery.refetch();
+  };
 
   const handleRefreshOutlook = async () => {
     setRefreshingOutlook(true);
@@ -242,82 +294,251 @@ function ConnectionsSection() {
       toast({ title: "Refresh failed", description: err.message, variant: "destructive" });
     } finally {
       setRefreshingOutlook(false);
-      refetchOutlook();
+      queryClient.invalidateQueries({ queryKey: ["/api/outlook/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ms-integration/status"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-settings-integration-health"] });
+      void outlookStatusQuery.refetch();
     }
   };
+
+  const integrationStatus = integrationStatusQuery.data;
+  const outlookStatus = outlookStatusQuery.data;
+  const integrationHealth = integrationHealthQuery.data || [];
+  const healthByType = Object.fromEntries(integrationHealth.map((item) => [item.type, item])) as Record<string, IntegrationHealthItem>;
+
+  const outlookHealth = healthByType.outlook;
+  const sharepointHealth = healthByType.sharepoint;
+  const teamsHealth = healthByType.teams;
 
   const outlookConnected = integrationStatus?.outlook?.connected || outlookStatus?.connected;
   const outlookEmail = integrationStatus?.outlook?.email || outlookStatus?.email;
   const outlookConfigured = integrationStatus?.outlook?.configured ?? outlookStatus?.configured;
+  const sharepointEnabled = integrationStatus?.sharepoint?.enabled || featureFlags.feature_ms_sharepoint_docs;
+  const sharepointConnected = Boolean(integrationStatus?.sharepoint?.connected);
   const teamsEnabled = integrationStatus?.teams?.enabled || featureFlags.feature_ms_teams;
+  const teamsConfigured = Boolean(integrationStatus?.teams?.configured || teamsEnabled);
+
+  const outlookError = integrationStatusQuery.error?.message || outlookStatusQuery.error?.message || null;
+  const sharepointError = integrationStatusQuery.error?.message || integrationHealthQuery.error?.message || null;
+  const teamsError = integrationStatusQuery.error?.message || integrationHealthQuery.error?.message || null;
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <Card data-testid="card-outlook-status">
           <CardContent className="py-5">
-            <div className="flex items-center gap-3 mb-3">
-              <div className={`p-2.5 rounded-lg ${outlookConnected ? "bg-blue-100" : "bg-muted"}`}>
-                <Mail className={`h-5 w-5 ${outlookConnected ? "text-blue-600" : "text-gray-400"}`} />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold">Outlook</p>
-                <Badge variant="outline" className={`text-[10px] mt-0.5 ${outlookConnected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : outlookConfigured === false ? "bg-muted text-muted-foreground border-border" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid="badge-outlook-status">
-                  {outlookConnected ? "Connected" : outlookConfigured === false ? "Not Set Up" : "Disconnected"}
-                </Badge>
-              </div>
-            </div>
-            <div className="text-xs text-muted-foreground space-y-1.5">
-              {outlookConnected && outlookEmail && (
-                <div className="flex items-center gap-1.5">
-                  <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                  <span>{outlookEmail}</span>
+            <AdminQueryState
+              isLoading={integrationStatusQuery.isLoading || (outlookStatusQuery.isLoading && !integrationStatus?.outlook)}
+              error={outlookError}
+              onRetry={retryConnections}
+              loadingLabel="Loading Outlook status..."
+            >
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-lg ${outlookConnected ? "bg-blue-100" : "bg-muted"}`}>
+                    <Mail className={`h-5 w-5 ${outlookConnected ? "text-blue-600" : "text-gray-400"}`} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold">Outlook</p>
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] mt-0.5 ${
+                        outlookConnected
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : outlookConfigured === false
+                            ? "bg-muted text-muted-foreground border-border"
+                            : "bg-amber-50 text-amber-700 border-amber-200"
+                      }`}
+                      data-testid="badge-outlook-status"
+                    >
+                      {outlookConnected ? "Connected" : outlookConfigured === false ? "Not Set Up" : "Needs Attention"}
+                    </Badge>
+                  </div>
                 </div>
-              )}
-              <p>Powers calendar sync, email access, and approval notifications</p>
-            </div>
-            {outlookConnected && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1 mt-3 text-xs"
-                onClick={handleRefreshOutlook}
-                disabled={refreshingOutlook}
-                data-testid="button-refresh-outlook"
-              >
-                {refreshingOutlook ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                Refresh Connection
-              </Button>
-            )}
+
+                <div className="space-y-1.5 text-xs text-muted-foreground">
+                  {outlookConnected && outlookEmail ? (
+                    <div className="flex items-center gap-1.5">
+                      <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                      <span>{outlookEmail}</span>
+                    </div>
+                  ) : null}
+                  <p>Powers calendar sync, email access, and approval notifications.</p>
+                  <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/70 bg-muted/30 p-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Synced Objects</p>
+                      <p className="text-sm font-medium text-foreground">{outlookHealth?.objectCount ?? 0}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Connected Users</p>
+                      <p className="text-sm font-medium text-foreground">{outlookHealth?.connectedUsers ?? 0}</p>
+                    </div>
+                  </div>
+                  <p>
+                    Last sync:{" "}
+                    <span className="text-foreground">
+                      {outlookHealth?.lastSyncTime ? new Date(outlookHealth.lastSyncTime).toLocaleString() : "No sync recorded"}
+                    </span>
+                  </p>
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1 text-xs"
+                  onClick={handleRefreshOutlook}
+                  disabled={refreshingOutlook}
+                  data-testid="button-refresh-outlook"
+                >
+                  {refreshingOutlook ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                  Refresh Connection
+                </Button>
+              </div>
+            </AdminQueryState>
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-sharepoint-status">
+          <CardContent className="py-5">
+            <AdminQueryState
+              isLoading={integrationStatusQuery.isLoading || (integrationHealthQuery.isLoading && !sharepointHealth)}
+              error={sharepointError}
+              onRetry={retryConnections}
+              loadingLabel="Loading SharePoint status..."
+            >
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-lg ${sharepointConnected ? "bg-emerald-100" : "bg-muted"}`}>
+                    <FolderOpen className={`h-5 w-5 ${sharepointConnected ? "text-emerald-600" : "text-gray-400"}`} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold">SharePoint</p>
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] mt-0.5 ${
+                        sharepointConnected
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : sharepointEnabled
+                            ? "bg-amber-50 text-amber-700 border-amber-200"
+                            : "bg-muted text-muted-foreground border-border"
+                      }`}
+                      data-testid="badge-sharepoint-status"
+                    >
+                      {sharepointConnected ? "Connected" : sharepointEnabled ? "Needs Attention" : "Not Enabled"}
+                    </Badge>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 text-xs text-muted-foreground">
+                  <p>Controls document sync and project folder visibility from Microsoft 365.</p>
+                  {(integrationStatus?.sharepoint?.siteName || sharepointHealth?.siteName) && (
+                    <p>
+                      Site:{" "}
+                      <span className="text-foreground">
+                        {integrationStatus?.sharepoint?.siteName || sharepointHealth?.siteName}
+                      </span>
+                    </p>
+                  )}
+                  {(integrationStatus?.sharepoint?.driveName || sharepointHealth?.driveName) && (
+                    <p>
+                      Drive:{" "}
+                      <span className="text-foreground">
+                        {integrationStatus?.sharepoint?.driveName || sharepointHealth?.driveName}
+                      </span>
+                    </p>
+                  )}
+                  <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/70 bg-muted/30 p-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Synced Files</p>
+                      <p className="text-sm font-medium text-foreground">{sharepointHealth?.objectCount ?? 0}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Connected Users</p>
+                      <p className="text-sm font-medium text-foreground">{sharepointHealth?.connectedUsers ?? 0}</p>
+                    </div>
+                  </div>
+                  <p>
+                    Last sync:{" "}
+                    <span className="text-foreground">
+                      {sharepointHealth?.lastSyncTime ? new Date(sharepointHealth.lastSyncTime).toLocaleString() : "No sync recorded"}
+                    </span>
+                  </p>
+                </div>
+              </div>
+            </AdminQueryState>
           </CardContent>
         </Card>
 
         <Card data-testid="card-teams-status">
           <CardContent className="py-5">
-            <div className="flex items-center gap-3 mb-3">
-              <div className={`p-2.5 rounded-lg ${teamsEnabled ? "bg-purple-100" : "bg-muted"}`}>
-                <MessageSquare className={`h-5 w-5 ${teamsEnabled ? "text-purple-600" : "text-gray-400"}`} />
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold">Teams Chat</p>
-                <Badge variant="outline" className={`text-[10px] mt-0.5 ${teamsEnabled ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-muted text-muted-foreground border-border"}`} data-testid="badge-teams-status">
-                  {teamsEnabled ? "Enabled" : "Not Enabled"}
-                </Badge>
-              </div>
-            </div>
-            <div className="text-xs text-muted-foreground space-y-1.5">
-              <p>Link Teams messages to projects and create tasks from chats</p>
-              {teamsEnabled && integrationStatus?.teams?.tags && (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {integrationStatus.teams.tags.slice(0, 4).map(tag => (
-                    <Badge key={tag} variant="outline" className="text-[9px] py-0 px-1">{tag}</Badge>
-                  ))}
-                  {integrationStatus.teams.tags.length > 4 && (
-                    <Badge variant="outline" className="text-[9px] py-0 px-1">+{integrationStatus.teams.tags.length - 4}</Badge>
-                  )}
+            <AdminQueryState
+              isLoading={integrationStatusQuery.isLoading || (integrationHealthQuery.isLoading && !teamsHealth)}
+              error={teamsError}
+              onRetry={retryConnections}
+              loadingLabel="Loading Teams status..."
+            >
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-lg ${teamsEnabled ? "bg-purple-100" : "bg-muted"}`}>
+                    <MessageSquare className={`h-5 w-5 ${teamsEnabled ? "text-purple-600" : "text-gray-400"}`} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold">Teams Chat</p>
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] mt-0.5 ${
+                        teamsEnabled && teamsHealth?.status === "connected"
+                          ? "bg-purple-50 text-purple-700 border-purple-200"
+                          : teamsConfigured
+                            ? "bg-amber-50 text-amber-700 border-amber-200"
+                            : "bg-muted text-muted-foreground border-border"
+                      }`}
+                      data-testid="badge-teams-status"
+                    >
+                      {teamsEnabled && teamsHealth?.status === "connected"
+                        ? "Connected"
+                        : teamsConfigured
+                          ? "Configured"
+                          : "Not Enabled"}
+                    </Badge>
+                  </div>
                 </div>
-              )}
-            </div>
+
+                <div className="space-y-1.5 text-xs text-muted-foreground">
+                  <p>Links Teams messages to projects and lets users create tasks from conversations.</p>
+                  <div className="grid grid-cols-2 gap-2 rounded-lg border border-border/70 bg-muted/30 p-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Synced Items</p>
+                      <p className="text-sm font-medium text-foreground">{teamsHealth?.objectCount ?? 0}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Connected Users</p>
+                      <p className="text-sm font-medium text-foreground">{teamsHealth?.connectedUsers ?? 0}</p>
+                    </div>
+                  </div>
+                  {teamsEnabled && integrationStatus?.teams?.tags ? (
+                    <div className="flex flex-wrap gap-1">
+                      {integrationStatus.teams.tags.slice(0, 4).map((tag) => (
+                        <Badge key={tag} variant="outline" className="text-[9px] py-0 px-1">
+                          {tag}
+                        </Badge>
+                      ))}
+                      {integrationStatus.teams.tags.length > 4 ? (
+                        <Badge variant="outline" className="text-[9px] py-0 px-1">
+                          +{integrationStatus.teams.tags.length - 4}
+                        </Badge>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <p>
+                    Last sync:{" "}
+                    <span className="text-foreground">
+                      {teamsHealth?.lastSyncTime ? new Date(teamsHealth.lastSyncTime).toLocaleString() : "No sync recorded"}
+                    </span>
+                  </p>
+                </div>
+              </div>
+            </AdminQueryState>
           </CardContent>
         </Card>
       </div>
@@ -330,29 +551,66 @@ function ConnectionsSection() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-between p-3 rounded-lg border">
-            <div className="flex items-center gap-3">
-              <MessageSquare className="h-5 w-5 text-purple-600" />
-              <div>
-                <p className="text-sm font-medium">Teams Integration</p>
-                <p className="text-xs text-muted-foreground">Enable linking Teams messages to projects and creating tasks from chats</p>
+          <AdminQueryState
+            isLoading={configQuery.isLoading && !configQuery.data}
+            error={configQuery.error?.message || null}
+            onRetry={retryConnections}
+            loadingLabel="Loading feature toggles..."
+          >
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 rounded-lg border">
+                <div className="flex items-center gap-3">
+                  <FolderOpen className="h-5 w-5 text-emerald-600" />
+                  <div>
+                    <p className="text-sm font-medium">SharePoint Documents</p>
+                    <p className="text-xs text-muted-foreground">
+                      Enable project document visibility and synced SharePoint file surfaces.
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={featureFlags.feature_ms_sharepoint_docs}
+                  onCheckedChange={(checked) =>
+                    setFeatureFlags((current) => ({ ...current, feature_ms_sharepoint_docs: checked }))
+                  }
+                  data-testid="switch-feature-sharepoint"
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-lg border">
+                <div className="flex items-center gap-3">
+                  <MessageSquare className="h-5 w-5 text-purple-600" />
+                  <div>
+                    <p className="text-sm font-medium">Teams Integration</p>
+                    <p className="text-xs text-muted-foreground">
+                      Enable linking Teams messages to projects and creating tasks from chats.
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={featureFlags.feature_ms_teams}
+                  onCheckedChange={(checked) =>
+                    setFeatureFlags((current) => ({ ...current, feature_ms_teams: checked }))
+                  }
+                  data-testid="switch-feature-teams"
+                />
               </div>
             </div>
-            <Switch
-              checked={featureFlags.feature_ms_teams}
-              onCheckedChange={(checked) => setFeatureFlags({ feature_ms_teams: checked })}
-              data-testid="switch-feature-teams"
-            />
-          </div>
-          <Button
-            onClick={() => saveConfigMutation.mutate({ key: "feature_flags", value: { ...featureFlags, feature_ms_sharepoint_docs: false } })}
-            disabled={saveConfigMutation.isPending}
-            className="gap-1 mt-3"
-            size="sm"
-            data-testid="button-save-flags"
-          >
-            <Save className="h-3.5 w-3.5" /> Save
-          </Button>
+
+            <p className="mt-3 text-xs text-muted-foreground">
+              These toggles change the same backend `ms_integration_settings.feature_flags` record used by the live integration routes.
+            </p>
+
+            <Button
+              onClick={() => saveConfigMutation.mutate({ key: "feature_flags", value: featureFlags })}
+              disabled={saveConfigMutation.isPending}
+              className="gap-1 mt-3"
+              size="sm"
+              data-testid="button-save-flags"
+            >
+              <Save className="h-3.5 w-3.5" /> Save
+            </Button>
+          </AdminQueryState>
         </CardContent>
       </Card>
     </div>

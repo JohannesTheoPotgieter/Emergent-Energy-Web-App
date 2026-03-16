@@ -1,3 +1,5 @@
+import { ADMIN_NAV_ITEMS } from "@/config/admin-surfaces";
+
 export type SecondaryItem = { label: string; path: string; disabled?: boolean };
 export type TopSection = {
   label: string;
@@ -104,14 +106,7 @@ export const TOP_SECTIONS: TopSection[] = [
     label: "Admin",
     path: "/admin/control-center",
     match: (pathname) => startsWithAny(pathname, ["/admin", "/settings"]),
-    secondary: [
-      { label: "Control Center", path: "/admin/control-center" },
-      { label: "Smart Import", path: "/admin/smart-import" },
-      { label: "Excel Updates", path: "/admin/excel-updates" },
-      { label: "Roles & Permissions", path: "/admin/roles" },
-      { label: "System Settings", path: "/admin/settings" },
-      { label: "Audit Log", path: "/admin/activity-log" },
-    ],
+    secondary: ADMIN_NAV_ITEMS,
   },
 ];
 
