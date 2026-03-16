@@ -8,7 +8,7 @@ import {
   projectEngApprovals, projectEngStages, engStageTemplates,
   qcItemInstance, qcChecklist, qcTemplateItem,
   projectInfo, users, normalizedPlanTasks, engineeringTasks,
-  msAccounts, msObjects, communicationFollowUps, projectCommunicationTimelineEvents,
+  msAccounts, msObjects, communicationFollowUps, projectCommunicationTimelineEvents, counterparties,
 } from "@shared/schema";
 import {
   tagToProject,
@@ -67,6 +67,25 @@ function normalizeTaskStatus(status: string | null | undefined): string {
 }
 
 export function registerMsSyncRoutes(app: Express) {
+  const assignmentPayloadSchema = z
+    .object({
+      taskId: z.number().int().positive(),
+      taskSource: z.string().min(1),
+      assigneeType: z.enum(["internal_user", "external_counterparty"]).nullable().optional(),
+      assigneeId: z.number().int().positive().nullable().optional(),
+      userId: z.number().int().positive().nullable().optional(), // legacy shape
+    })
+    .superRefine((data, ctx) => {
+      const effectiveAssigneeType = data.assigneeType ?? (data.userId != null ? "internal_user" : null);
+      const effectiveAssigneeId = data.assigneeId ?? data.userId ?? null;
+      if (effectiveAssigneeType === null && effectiveAssigneeId !== null) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "assigneeId requires assigneeType" });
+      }
+      if (effectiveAssigneeType !== null && effectiveAssigneeId === null) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "assigneeId is required when assigneeType is set" });
+      }
+    });
+
   app.post("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
@@ -309,8 +328,15 @@ export function registerMsSyncRoutes(app: Express) {
 
   app.patch("/api/tasks/reassign", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const { taskId, taskSource, userId: assignUserId } = req.body;
-      if (!taskId || !taskSource) return res.status(400).json({ error: "taskId and taskSource required" });
+      const parsed = assignmentPayloadSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid assignment payload", details: parsed.error.issues });
+      }
+
+      const { taskId, taskSource } = parsed.data;
+      const assigneeType = parsed.data.assigneeType ?? (parsed.data.userId != null ? "internal_user" : null);
+      const assignUserId = assigneeType === "internal_user" ? (parsed.data.assigneeId ?? parsed.data.userId ?? null) : null;
+      const assignCounterpartyId = assigneeType === "external_counterparty" ? (parsed.data.assigneeId ?? null) : null;
 
       const currentUser = (req as any).user;
       const currentUserId = currentUser?.id;
@@ -320,6 +346,16 @@ export function registerMsSyncRoutes(app: Express) {
 
       const userMap = await buildUserMap();
       const targetUser = assignUserId ? userMap.get(assignUserId) : null;
+      const targetCounterparty = assignCounterpartyId
+        ? (await db.select().from(counterparties).where(eq(counterparties.id, assignCounterpartyId)).limit(1))[0] || null
+        : null;
+
+      if (assigneeType === "internal_user" && assignUserId && !targetUser) {
+        return res.status(404).json({ error: `Internal assignee ${assignUserId} not found` });
+      }
+      if (assigneeType === "external_counterparty" && assignCounterpartyId && !targetCounterparty) {
+        return res.status(404).json({ error: `External assignee ${assignCounterpartyId} not found` });
+      }
 
       const isViewerOnly = async (workItemId: number, uId: number): Promise<boolean> => {
         if (isPrivileged) return false;
@@ -346,6 +382,9 @@ export function registerMsSyncRoutes(app: Express) {
 
       switch (taskSource) {
         case "personal": {
+          if (assigneeType === "external_counterparty") {
+            return res.status(400).json({ error: "Personal tasks only support internal assignees" });
+          }
           const [task] = await db.select().from(mytoolTasks).where(eq(mytoolTasks.id, taskId));
           if (!task) return res.status(404).json({ error: "Task not found" });
           if (!isPrivileged && task.ownerUserId !== currentUserId) {
@@ -370,6 +409,8 @@ export function registerMsSyncRoutes(app: Express) {
               const newIds = [...currentIds, assignUserId];
               await db.execute(sql`UPDATE operational_tasks SET assignees = ${newAssignees}, assignee_user_ids = ${newIds} WHERE id = ${taskId}`);
             }
+          } else if (assignCounterpartyId && targetCounterparty) {
+            await db.execute(sql`UPDATE operational_tasks SET assignees = ${[`${"counterparty:"}${assignCounterpartyId}`]}, assignee_user_ids = '{}' WHERE id = ${taskId}`);
           } else {
             await db.execute(sql`UPDATE operational_tasks SET assignees = '{}', assignee_user_ids = '{}' WHERE id = ${taskId}`);
           }
@@ -382,6 +423,9 @@ export function registerMsSyncRoutes(app: Express) {
           if (currentUserId && await isViewerOnly(taskId, currentUserId)) {
             return res.status(403).json({ error: "Viewers have read-only access and cannot modify tasks" });
           }
+          if (assigneeType === "external_counterparty") {
+            return res.status(400).json({ error: "Plan tasks only support internal assignees" });
+          }
           await db.execute(sql`
             UPDATE work_items SET owner_user_id = ${assignUserId || null}
             WHERE id = ${taskId}
@@ -391,6 +435,9 @@ export function registerMsSyncRoutes(app: Express) {
           break;
         }
         case "engineering_task": {
+          if (assigneeType === "external_counterparty") {
+            return res.status(400).json({ error: "Engineering tasks only support internal assignees" });
+          }
           if (!isPrivileged) {
             return res.status(403).json({ error: "Only managers can reassign engineering tasks" });
           }
@@ -398,6 +445,9 @@ export function registerMsSyncRoutes(app: Express) {
           break;
         }
         case "quality_task": {
+          if (assigneeType === "external_counterparty") {
+            return res.status(400).json({ error: "Quality tasks only support internal assignees" });
+          }
           const [qcTask] = await db.execute(sql`SELECT assignee_user_id FROM qc_item_instance WHERE id = ${taskId}`).then((r: any) => Array.isArray(r) ? r : (r.rows || []));
           if (!qcTask) return res.status(404).json({ error: "QC task not found" });
           const isOwnQcTask = qcTask.assignee_user_id === currentUserId;
@@ -422,6 +472,8 @@ export function registerMsSyncRoutes(app: Express) {
               const newIds = [...currentIds, assignUserId];
               await db.execute(sql`UPDATE tr_items SET owners = ${newOwners}, owner_user_ids = ${newIds} WHERE id = ${taskId}`);
             }
+          } else if (assignCounterpartyId && targetCounterparty) {
+            await db.execute(sql`UPDATE tr_items SET owners = ${[`${"counterparty:"}${assignCounterpartyId}`]}, owner_user_ids = '{}' WHERE id = ${taskId}`);
           } else {
             await db.execute(sql`UPDATE tr_items SET owners = '{}', owner_user_ids = '{}' WHERE id = ${taskId}`);
           }
@@ -469,10 +521,25 @@ export function registerMsSyncRoutes(app: Express) {
         default:
           return res.status(400).json({ error: `Unknown task source: ${taskSource}` });
       }
-      res.json({ success: true });
+      res.json({
+        success: true,
+        assignment: {
+          assigneeType,
+          assigneeId: assignUserId ?? assignCounterpartyId ?? null,
+          displayName: targetUser?.name ?? targetCounterparty?.nameCanonical ?? null,
+          email: targetUser?.email ?? null,
+          avatar: null,
+          source: assigneeType === "external_counterparty" ? "external" : assigneeType === "internal_user" ? "internal" : null,
+        },
+      });
     } catch (err: any) {
-      console.error("[Reassign] Error:", err);
-      res.status(500).json({ error: err.message });
+      console.error("[Reassign] Assignment update failed", {
+        error: err?.message,
+        stack: err?.stack,
+        body: req.body,
+        userId: (req as any).user?.id,
+      });
+      res.status(500).json({ error: err.message || "Assignment update failed" });
     }
   });
 
