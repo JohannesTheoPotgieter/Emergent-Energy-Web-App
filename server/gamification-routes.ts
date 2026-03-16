@@ -2,6 +2,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { sql, eq, and, desc, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
+import { requirePermission } from "./permission-middleware";
 import {
   users,
   userBadges,
@@ -341,7 +342,7 @@ function getUserLevel(points: number): { level: number; title: string; nextThres
 }
 
 export function registerGamificationRoutes(app: Express) {
-  app.get("/api/gamification/leaderboard", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/gamification/leaderboard", jwtAuth, requireAuth, requirePermission("leaderboard", "view"), async (_req: Request, res: Response) => {
     try {
       const activities = await computeUserActivities();
       const allUsers = await db.select({ id: users.id, name: users.name, role: users.role }).from(users);
@@ -432,7 +433,7 @@ export function registerGamificationRoutes(app: Express) {
     }
   });
 
-  app.get("/api/gamification/user/:userId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/gamification/user/:userId", jwtAuth, requireAuth, requirePermission("leaderboard", "view"), async (req: Request, res: Response) => {
     try {
       const userId = parseInt(req.params.userId);
       const [u] = await db.select({ id: users.id, name: users.name, role: users.role }).from(users).where(eq(users.id, userId));
@@ -490,7 +491,7 @@ export function registerGamificationRoutes(app: Express) {
     }
   });
 
-  app.get("/api/gamification/user/:userId/details", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/gamification/user/:userId/details", jwtAuth, requireAuth, requirePermission("leaderboard", "view"), async (req: Request, res: Response) => {
     try {
       const userId = parseInt(req.params.userId);
       const [u] = await db.select({ id: users.id, name: users.name, role: users.role }).from(users).where(eq(users.id, userId));
