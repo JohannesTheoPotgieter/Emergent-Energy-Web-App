@@ -2,7 +2,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { invoiceCaptures, projectInfo, users, counterparties } from "@shared/schema";
+import { invoiceCaptures, projectInfo, users, counterparties, procurementItems } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import multer from "multer";
@@ -38,6 +38,11 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "auth_required" });
 }
 
+
+
+function oldInvoiceRefFallback(id: number): string {
+  return `INV-${id}`;
+}
 
 export function registerInvoiceCaptureRoutes(app: Express) {
   app.get("/api/invoice-captures/project/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
@@ -84,6 +89,18 @@ export function registerInvoiceCaptureRoutes(app: Express) {
         notes: notes || null,
       }).returning();
 
+
+      if (result[0].linkedProcurementItemId) {
+        await db.update(procurementItems)
+          .set({
+            invoiceRef: result[0].invoiceNumber || oldInvoiceRefFallback(result[0].id),
+            linkedInvoiceCaptureId: result[0].id,
+            paymentStatus: 'pending_approval',
+            updatedAt: new Date(),
+          } as any)
+          .where(eq(procurementItems.id, result[0].linkedProcurementItemId));
+      }
+
       logAuditFromReq(req, {
         entityType: "invoice_capture",
         entityId: String(result[0].id),
@@ -114,6 +131,16 @@ export function registerInvoiceCaptureRoutes(app: Express) {
       }
 
       const result = await db.update(invoiceCaptures).set(updates).where(eq(invoiceCaptures.id, id)).returning();
+
+      if (result[0].linkedProcurementItemId) {
+        await db.update(procurementItems)
+          .set({
+            invoiceRef: result[0].invoiceNumber || old.invoiceNumber || `INV-${result[0].id}`,
+            linkedInvoiceCaptureId: result[0].id,
+            updatedAt: new Date(),
+          } as any)
+          .where(eq(procurementItems.id, result[0].linkedProcurementItemId));
+      }
 
       logAuditFromReq(req, {
         entityType: "invoice_capture",
