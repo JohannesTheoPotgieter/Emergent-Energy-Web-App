@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, invalidateProjectQueries } from "@/lib/queryClient";
+import { createMilestoneFlow, invalidateMilestoneCreationQueries } from "@/lib/milestone-create-flow";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -585,6 +586,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false);
   const [milestoneTitle, setMilestoneTitle] = useState("");
+  const [isCreatingMilestone, setIsCreatingMilestone] = useState(false);
   const [showKeyDates, setShowKeyDates] = useState(true);
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>("month");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -750,6 +752,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     },
     onSuccess: (_data, variables) => {
       invalidateProjectQueries(qc, projectName);
+    invalidateMilestoneCreationQueries((queryKey) => qc.invalidateQueries({ queryKey }), projectName);
       const field = Object.keys(variables.updates)[0];
       if (field === "percentComplete") toast({ title: "Progress updated" });
       else if (field === "startDate" || field === "dueDate") toast({ title: "Date updated" });
@@ -1069,12 +1072,29 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     });
   };
 
-  const handleCreateMilestone = () => {
-    if (!milestoneTitle.trim()) return;
-    structureMutation.mutate(
-      { operation: "createMilestone", data: { title: milestoneTitle.trim() } },
-      { onSuccess: () => { setMilestoneDialogOpen(false); setMilestoneTitle(""); } }
-    );
+  const handleCreateMilestone = async () => {
+    setIsCreatingMilestone(true);
+    const result = await createMilestoneFlow({
+      title: milestoneTitle,
+      projectName,
+      request: apiRequest,
+    });
+    setIsCreatingMilestone(false);
+
+    if (!result.ok) {
+      toast({
+        title: result.kind === "validation" ? "Validation error" : "Create milestone failed",
+        description: result.message,
+        variant: result.kind === "validation" ? "default" : "destructive",
+      });
+      return;
+    }
+
+    invalidateProjectQueries(qc, projectName);
+    invalidateMilestoneCreationQueries((queryKey) => qc.invalidateQueries({ queryKey }), projectName);
+    toast({ title: "Milestone created" });
+    setMilestoneDialogOpen(false);
+    setMilestoneTitle("");
   };
 
   const setTaskNumberMutation = useMutation({
@@ -2297,12 +2317,14 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
             placeholder="Milestone name..."
             value={milestoneTitle}
             onChange={(e) => setMilestoneTitle(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !structureMutation.isPending) handleCreateMilestone(); }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !isCreatingMilestone) handleCreateMilestone(); }}
             data-testid="input-milestone-title"
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setMilestoneDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreateMilestone} disabled={!milestoneTitle.trim() || structureMutation.isPending}>Create</Button>
+            <Button onClick={handleCreateMilestone} disabled={isCreatingMilestone}>
+              {isCreatingMilestone ? "Creating..." : "Create"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
