@@ -32,6 +32,7 @@ import { ApiError, sendError, badRequest, notFound, validationError, unauthorize
 import { validateTaskCreate, validateTaskUpdate } from "./lib/task-validation";
 import { normalizeStatus, normalizePriority } from "./lib/canonical-task-engine";
 import { getFeatureFlag, getFeatureFlags } from "./lib/feature-flags";
+import { requireTrackerPermission } from "./lib/finance-route-access";
 import { registerAuthRoutes } from "./routes/auth-routes";
 import {
   compareCoreClientsReadiness,
@@ -2981,7 +2982,7 @@ export async function registerRoutes(
 
   // ==================== MANUAL INPUT ENDPOINTS ====================
 
-  app.post("/api/cashflow-2026/opening-balance", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/cashflow-2026/opening-balance", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
     try {
       const { weekStartDate, openingBalance, computedValue, clearForward } = req.body;
       if (!weekStartDate || openingBalance == null) {
@@ -3038,7 +3039,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/cashflow-2026/opening-balance", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/cashflow-2026/opening-balance", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
     try {
       const { weekStartDate } = req.body;
       if (!weekStartDate) {
@@ -3066,7 +3067,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/cashflow-2026/opex-budget", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/cashflow-2026/opex-budget", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
     try {
       const { monthKey, amount } = req.body;
       if (!monthKey || amount == null) {
@@ -3081,7 +3082,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cashflow-2026/opex-budget", requireAuth, async (req, res) => {
+  app.get("/api/cashflow-2026/opex-budget", requireAuth, requirePermission("cashflow", "view"), async (req, res) => {
     try {
       const entries = await storage.getAllOpexBudgetMonthly();
       res.json(entries);
@@ -3091,7 +3092,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/cashflow-2026/opex-weekly", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/cashflow-2026/opex-weekly", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
     try {
       const { weekStartDate, opexAmount } = req.body;
       if (!weekStartDate || opexAmount == null) {
@@ -3106,7 +3107,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/cashflow-2026/opex-weekly", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/cashflow-2026/opex-weekly", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
     try {
       const { weekStartDate } = req.body;
       if (!weekStartDate) {
@@ -3121,7 +3122,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/cashflow-2026/available-payment", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/cashflow-2026/available-payment", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
     try {
       const { weekStartDate, overrideValue, reason, computedValue } = req.body;
       if (!weekStartDate || overrideValue == null) {
@@ -3159,7 +3160,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/cashflow-2026/available-payment", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/cashflow-2026/available-payment", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
     try {
       const { weekStartDate } = req.body;
       if (!weekStartDate) {
@@ -3187,7 +3188,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cashflow-2026/available-payment-history", requireAuth, async (req, res) => {
+  app.get("/api/cashflow-2026/available-payment-history", requireAuth, requirePermission("cashflow", "view"), async (req, res) => {
     try {
       const weekStart = req.query.week ? String(req.query.week) : null;
       if (!weekStart) {
@@ -3201,7 +3202,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/tracker-monthly", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/tracker-monthly", requireAuth, requireTrackerPermission("edit"), async (req, res) => {
     try {
       const { trackerType, monthKey, realised, outstanding, budget } = req.body;
       if (!trackerType || !monthKey) {
@@ -3222,7 +3223,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/tracker-monthly/:type", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/tracker-monthly/:type", requireAuth, requireTrackerPermission("view"), async (req, res) => {
     try {
       const trackerType = (req.params.type as string).toUpperCase();
       if (trackerType !== 'REV' && trackerType !== 'COS') {

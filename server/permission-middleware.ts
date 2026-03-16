@@ -97,21 +97,31 @@ export async function evaluateAuthorityForRequest(req: Request, entity: Permissi
   });
 }
 
+export async function evaluatePermissionForRequest(req: Request, entity: PermissionEntity, action: PermissionAction) {
+  await loadEntityPermissions();
+  const role = resolveUserRole(req);
+  if (!role) {
+    return {
+      allowed: false,
+      reason: "Authentication required",
+      source: "none",
+    } as const;
+  }
+
+  return evaluatePermissionForRole({
+    role,
+    entity,
+    action,
+    roleRecord: buildRoleRecord(role) as any,
+  });
+}
+
 export function requirePermission(entity: PermissionEntity, action: PermissionAction) {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const role = resolveUserRole(req);
-    if (!role) {
+    if (!resolveUserRole(req)) {
       return res.status(401).json({ error: "auth_required", message: "Authentication required" });
     }
-
-    await loadEntityPermissions();
-
-    const evalResult = evaluatePermissionForRole({
-      role,
-      entity,
-      action,
-      roleRecord: { entityPermissions: entityPermCache[role] as any },
-    });
+    const evalResult = await evaluatePermissionForRequest(req, entity, action);
 
     if (evalResult.allowed) {
       return next();

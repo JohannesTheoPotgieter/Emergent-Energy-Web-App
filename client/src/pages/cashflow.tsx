@@ -1,5 +1,4 @@
 import { useState, useMemo, useCallback, Fragment } from "react";
-import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   LineChart,
@@ -57,6 +56,7 @@ import {
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { usePermission } from "@/hooks/use-permissions";
 
 interface CashflowWeek {
   weekStart: string;
@@ -513,7 +513,7 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
 }
 
 export default function CashflowPage() {
-  const { isAdmin } = useAuth();
+  const { allowed: canEditCashflow } = usePermission("cashflow", "edit");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
@@ -865,7 +865,7 @@ export default function CashflowPage() {
                 {showDetail ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 {showDetail ? "Hide Detail" : "Show Detail"}
               </Button>
-              {isAdmin && !isProjectFiltered && (
+              {canEditCashflow && !isProjectFiltered && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -1101,7 +1101,7 @@ export default function CashflowPage() {
                               </td>
                               <td className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] text-blue-600">
                                 <div className="flex items-center justify-end gap-1.5">
-                                  {isAdmin && editingBalance === week.weekStart ? (
+                                  {canEditCashflow && editingBalance === week.weekStart ? (
                                     <input
                                       type="number"
                                       className="w-28 text-right p-1.5 border border-blue-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
@@ -1119,9 +1119,9 @@ export default function CashflowPage() {
                                   ) : (
                                     <>
                                       <span
-                                        className={isAdmin ? "cursor-pointer hover:underline hover:text-blue-700 decoration-dashed underline-offset-2 transition-colors" : ""}
+                                        className={canEditCashflow ? "cursor-pointer hover:underline hover:text-blue-700 decoration-dashed underline-offset-2 transition-colors" : ""}
                                         onClick={(e) => {
-                                          if (!isAdmin) return;
+                                          if (!canEditCashflow) return;
                                           e.stopPropagation();
                                           setEditingBalance(week.weekStart);
                                           setEditingValue(week.openingBalance?.toString() || "0");
@@ -1148,7 +1148,7 @@ export default function CashflowPage() {
                                             {week.balanceDelta >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
                                             {formatRand(Math.abs(week.balanceDelta))}
                                           </span>
-                                          {isAdmin && (
+                                          {canEditCashflow && (
                                             <button
                                               className="p-0.5 rounded hover:bg-red-100 text-red-600 hover:text-red-600 transition-colors"
                                               onClick={(e) => {
@@ -1179,7 +1179,7 @@ export default function CashflowPage() {
                                 data-testid={`text-opex-${week.weekStart}`}
                               >
                                 <div className="flex items-center justify-end gap-1.5">
-                                  {isAdmin && editingOpex === week.weekStart ? (
+                                  {canEditCashflow && editingOpex === week.weekStart ? (
                                     <input
                                       type="number"
                                       className="w-28 text-right p-1.5 border border-orange-300 rounded-md text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
@@ -1197,9 +1197,9 @@ export default function CashflowPage() {
                                   ) : (
                                     <>
                                       <span
-                                        className={isAdmin ? "cursor-pointer hover:underline hover:text-red-700 decoration-dashed underline-offset-2 transition-colors" : ""}
+                                        className={canEditCashflow ? "cursor-pointer hover:underline hover:text-red-700 decoration-dashed underline-offset-2 transition-colors" : ""}
                                         onClick={(e) => {
-                                          if (!isAdmin) return;
+                                          if (!canEditCashflow) return;
                                           e.stopPropagation();
                                           setEditingOpex(week.weekStart);
                                           setEditingOpexValue(week.opexOutflows?.toString() || "0");
@@ -1216,7 +1216,7 @@ export default function CashflowPage() {
                                           >
                                             <ArrowRight className="h-3 w-3" />
                                           </span>
-                                          {isAdmin && (
+                                          {canEditCashflow && (
                                             <button
                                               className="p-0.5 rounded hover:bg-red-100 text-red-600 hover:text-red-600 transition-colors"
                                               onClick={(e) => {
@@ -1264,9 +1264,9 @@ export default function CashflowPage() {
                                   <span
                                     className={`font-semibold ${
                                       (week.availablePayment || 0) >= 0 ? "text-blue-700" : "text-red-700"
-                                    } ${isAdmin ? "cursor-pointer hover:underline decoration-dashed underline-offset-2 transition-colors" : ""}`}
+                                    } ${canEditCashflow ? "cursor-pointer hover:underline decoration-dashed underline-offset-2 transition-colors" : ""}`}
                                     onClick={(e) => {
-                                      if (!isAdmin) return;
+                                      if (!canEditCashflow) return;
                                       e.stopPropagation();
                                       setAvailPayEdit({ weekStart: week.weekStart, computedValue: week.computedAvailablePayment || 0 });
                                       setAvailPayValue(week.availablePayment?.toString() || "0");
@@ -1289,7 +1289,7 @@ export default function CashflowPage() {
                                       >
                                         <ArrowRight className="h-3 w-3" />
                                       </span>
-                                      {isAdmin && (
+                                      {canEditCashflow && (
                                         <button
                                           className="p-0.5 rounded hover:bg-red-100 text-red-600 hover:text-red-600 transition-colors"
                                           onClick={(e) => {

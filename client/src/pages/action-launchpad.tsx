@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,9 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { getAvailableQuickCreateActions, type QuickCreateActionId } from "@/lib/action-access";
+import { useAccessMatrix } from "@/hooks/use-access-matrix";
 
 type Project = { id: number; projectName: string };
-type LaunchAction = "engineering-request" | "task" | "handover" | "create-po" | "link-invoice";
+type LaunchAction = Exclude<QuickCreateActionId, "pd-ticket">;
 
 const ACTION_LABELS: Record<LaunchAction, string> = {
   "engineering-request": "Create Engineering Request",
@@ -29,9 +31,29 @@ async function parseError(res: Response, fallback: string) {
 export default function ActionLaunchpadPage() {
   const [location, navigate] = useLocation();
   const { toast } = useToast();
+  const { canAccessEntityAction, canViewPath, loading: accessLoading } = useAccessMatrix();
   const search = useMemo(() => new URLSearchParams(location.split("?")[1] || ""), [location]);
   const requested = (search.get("action") || "") as LaunchAction;
+  const availableActions = useMemo(() => {
+    return getAvailableQuickCreateActions({ canAccessEntityAction, canViewPath })
+      .filter((action) => action.id !== "pd-ticket") as Array<{ id: LaunchAction; label: string; path: string }>;
+  }, [canAccessEntityAction, canViewPath]);
   const [activeAction, setActiveAction] = useState<LaunchAction>(Object.keys(ACTION_LABELS).includes(requested) ? requested : "task");
+
+  useEffect(() => {
+    if (availableActions.length === 0) return;
+
+    const requestedAction = availableActions.find((action) => action.id === requested);
+    if (requestedAction) {
+      setActiveAction(requestedAction.id);
+      return;
+    }
+
+    const currentAction = availableActions.find((action) => action.id === activeAction);
+    if (!currentAction) {
+      setActiveAction(availableActions[0].id);
+    }
+  }, [activeAction, availableActions, requested]);
 
   const { data: projects = [], isLoading: projectsLoading, error: projectsError, refetch: refetchProjects, isFetching: projectsFetching } = useQuery<Project[]>({
     queryKey: ["action-launchpad-projects"],
@@ -55,6 +77,7 @@ export default function ActionLaunchpadPage() {
       throw new Error(`Could not load projects. ${guidance}`);
     },
     retry: 1,
+    enabled: !accessLoading && availableActions.length > 0,
   });
 
   const [projectId, setProjectId] = useState<string>("");
@@ -168,13 +191,20 @@ export default function ActionLaunchpadPage() {
         <CardHeader>
           <CardTitle>Action</CardTitle>
           <CardDescription>Select an action and complete required details.</CardDescription>
-          <div className="flex flex-wrap gap-2 pt-2">
-            {(Object.entries(ACTION_LABELS) as Array<[LaunchAction, string]>).map(([key, label]) => (
-              <Button key={key} type="button" variant={activeAction === key ? "default" : "outline"} onClick={() => setActiveAction(key)}>{label}</Button>
-            ))}
-          </div>
+          {availableActions.length > 0 ? (
+            <div className="flex flex-wrap gap-2 pt-2">
+              {availableActions.map((action) => (
+                <Button key={action.id} type="button" variant={activeAction === action.id ? "default" : "outline"} onClick={() => setActiveAction(action.id)}>{action.label}</Button>
+              ))}
+            </div>
+          ) : null}
         </CardHeader>
         <CardContent>
+          {!accessLoading && availableActions.length === 0 ? (
+            <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              No Quick Create actions are available for your current role and permissions.
+            </div>
+          ) : null}
           {projectsError ? (
             <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 space-y-2">
               <p>Could not load projects. Likely reason: server/network issue. How to fix: refresh the page and retry. If it persists, contact your admin.</p>
@@ -187,7 +217,7 @@ export default function ActionLaunchpadPage() {
           <form className="space-y-4" onSubmit={onSubmit}>
             <div className="space-y-1.5">
               <Label htmlFor="project">Project</Label>
-              <select id="project" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={projectId} onChange={(e) => setProjectId(e.target.value)} disabled={projectsLoading || submitting || !!projectsError}>
+              <select id="project" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" value={projectId} onChange={(e) => setProjectId(e.target.value)} disabled={projectsLoading || submitting || !!projectsError || availableActions.length === 0}>
                 <option value="">Select project</option>
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.projectName}</option>)}
               </select>
@@ -221,7 +251,7 @@ export default function ActionLaunchpadPage() {
             {activeAction === "handover" && <p className="text-sm text-slate-600">This launches the formal PD to PM handover workflow with mandatory validation and PM review.</p>}
 
             {!projectId ? <p className="text-xs text-amber-700">Select a project to continue.</p> : null}
-            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={submitting || projectsLoading || !!projectsError || !projectId}>{submitting ? "Submitting..." : ACTION_LABELS[activeAction]}</Button>
+            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={submitting || projectsLoading || !!projectsError || !projectId || availableActions.length === 0}>{submitting ? "Submitting..." : ACTION_LABELS[activeAction]}</Button>
           </form>
         </CardContent>
       </Card>

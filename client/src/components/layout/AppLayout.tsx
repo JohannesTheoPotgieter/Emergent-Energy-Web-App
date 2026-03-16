@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -12,19 +11,17 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Menu, Search, Plus, Bell, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, Building2, UserCircle2, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
-import { getPermissionEntityForPath } from "@/config/page-registry";
-import { checkPermission, normalizeRoleForPermissions, type PermissionEntity } from "@shared/schema";
+import { getAvailableQuickCreateActions } from "@/lib/action-access";
+import { useAccessMatrix } from "@/hooks/use-access-matrix";
 
 type SearchResult = { id: string; title: string; subtitle?: string; type: string; url?: string | null };
 
-const QUICK_CREATE_ACTIONS: Array<{ label: string; path: string }> = [
-  { label: "New PD Ticket", path: "/pd/tickets/create" },
-  { label: "Create Engineering Request", path: "/actions/launchpad?action=engineering-request" },
-  { label: "Create Task", path: "/actions/launchpad?action=task" },
-  { label: "Start Handover", path: "/actions/launchpad?action=handover" },
-  { label: "Create PO", path: "/actions/launchpad?action=create-po" },
-  { label: "Link Invoice", path: "/actions/launchpad?action=link-invoice" },
-];
+const MICROSOFT_SHORTCUTS = [
+  { label: "Calendar", path: "/my-work/calendar", icon: Calendar },
+  { label: "Email", path: "/my-work/email", icon: Mail },
+  { label: "Meetings", path: "/my-work/meetings", icon: CalendarClock },
+  { label: "Teams", path: "/my-work/teams", icon: MessageSquare },
+] as const;
 
 function isDirectResultUrl(url?: string | null) {
   return !!url && (url.startsWith("/") || url.startsWith("http://") || url.startsWith("https://"));
@@ -40,44 +37,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const [microsoftMenuOpen, setMicrosoftMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-  const effectiveRole = normalizeRoleForPermissions(companyRole || user?.role || null);
-
-  const { data: permissions } = useQuery<{ entityPermissions?: Record<string, Record<string, boolean>> | null }>({
-    queryKey: ["auth-permissions-layout", companyRole, user?.role],
-    queryFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      if (effectiveRole) headers["x-company-role"] = effectiveRole;
-      const res = await fetch("/api/auth/permissions", { headers, credentials: "include" });
-      return res.json();
-    },
-    enabled: !!effectiveRole,
-    staleTime: 60_000,
-  });
-
-  const canViewPath = useMemo(() => {
-    return (path: string) => {
-      if (path === "/") return true;
-      const entity = getPermissionEntityForPath(path);
-      if (!entity) return true;
-
-      const entityPermissions = permissions?.entityPermissions as Partial<Record<PermissionEntity, Record<string, boolean>>> | undefined;
-      const explicit = entityPermissions?.[entity];
-      if (explicit && typeof explicit.view === "boolean") {
-        return explicit.view === true;
-      }
-
-      return effectiveRole ? checkPermission(effectiveRole, entity, "view") : false;
-    };
-  }, [effectiveRole, permissions?.entityPermissions]);
+  const { canAccessEntityAction, canViewPath } = useAccessMatrix();
 
   const visibleSections = useMemo(() => {
     return buildVisibleTopSections({ canViewPath });
   }, [canViewPath]);
 
   const activeSection = useMemo(() => visibleSections.find((section) => section.match(location)) ?? visibleSections[0], [location, visibleSections]);
+  const quickCreateActions = useMemo(() => {
+    return getAvailableQuickCreateActions({ canAccessEntityAction, canViewPath });
+  }, [canAccessEntityAction, canViewPath]);
+  const microsoftShortcuts = useMemo(() => {
+    return MICROSOFT_SHORTCUTS.filter((shortcut) => canViewPath(shortcut.path));
+  }, [canViewPath]);
 
   useEffect(() => {
     const trimmed = searchTerm.trim();
@@ -234,32 +206,40 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
-          <DropdownMenu open={quickCreateOpen} onOpenChange={setQuickCreateOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button onClick={() => setQuickCreateOpen((prev) => !prev)} onMouseEnter={() => setQuickCreateOpen(true)}><Plus className="h-4 w-4 mr-1" />Quick Create</Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72">
-              <DropdownMenuLabel>Create</DropdownMenuLabel>
-              {QUICK_CREATE_ACTIONS.map((action) => (
-                <DropdownMenuItem key={action.label} asChild>
-                  <Link href={action.path}>{action.label}</Link>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {quickCreateActions.length > 0 ? (
+            <DropdownMenu open={quickCreateOpen} onOpenChange={setQuickCreateOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button onClick={() => setQuickCreateOpen((prev) => !prev)} onMouseEnter={() => setQuickCreateOpen(true)}><Plus className="h-4 w-4 mr-1" />Quick Create</Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuLabel>Create</DropdownMenuLabel>
+                {quickCreateActions.map((action) => (
+                  <DropdownMenuItem key={action.id} asChild>
+                    <Link href={action.path}>{action.label}</Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
 
-          <DropdownMenu open={microsoftMenuOpen} onOpenChange={setMicrosoftMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={() => setMicrosoftMenuOpen((prev) => !prev)}><CalendarClock className="h-4 w-4" /></Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Microsoft Shortcuts</DropdownMenuLabel>
-              <DropdownMenuItem asChild><Link href="/my-work/calendar"><Calendar className="h-4 w-4 mr-2" />Calendar</Link></DropdownMenuItem>
-              <DropdownMenuItem asChild><Link href="/my-work/email"><Mail className="h-4 w-4 mr-2" />Email</Link></DropdownMenuItem>
-              <DropdownMenuItem asChild><Link href="/my-work/meetings"><CalendarClock className="h-4 w-4 mr-2" />Meetings</Link></DropdownMenuItem>
-              <DropdownMenuItem asChild><Link href="/my-work/teams"><MessageSquare className="h-4 w-4 mr-2" />Teams</Link></DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {microsoftShortcuts.length > 0 ? (
+            <DropdownMenu open={microsoftMenuOpen} onOpenChange={setMicrosoftMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" onClick={() => setMicrosoftMenuOpen((prev) => !prev)}><CalendarClock className="h-4 w-4" /></Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Microsoft Shortcuts</DropdownMenuLabel>
+                {microsoftShortcuts.map((shortcut) => {
+                  const Icon = shortcut.icon;
+                  return (
+                    <DropdownMenuItem key={shortcut.path} asChild>
+                      <Link href={shortcut.path}><Icon className="h-4 w-4 mr-2" />{shortcut.label}</Link>
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
 
           <NotificationBell />
 

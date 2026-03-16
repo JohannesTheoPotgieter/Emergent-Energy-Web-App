@@ -22,6 +22,7 @@ import { syncAllForUser, syncUserCalendar, syncUserEmail, syncUserTeams, getSync
 import { buildUserMap, mergeResolvedWithTextNames, type ResolvedUser } from "./user-resolver";
 import { logAuditFromReq } from "./audit-logger";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import { requirePermission } from "./permission-middleware";
 import {
   listAssignableDirectory,
   listAssignableDirectoryForTaskSource,
@@ -30,6 +31,12 @@ import {
   setEntityAssignment,
 } from "./services/assignment-service";
 import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
+import {
+  filterMicrosoftItemsForRequest,
+  requireMicrosoftObjectSurfaceAccess,
+  requireMicrosoftSurfaceFromRequest,
+  requireMicrosoftSyncSurfaceAccess,
+} from "./lib/microsoft-route-access";
 
 const tagSchema = z.object({
   projectId: z.number(),
@@ -75,7 +82,7 @@ export function registerMsSyncRoutes(app: Express) {
       }
     });
 
-  app.post("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, async (req: Request, res: Response) => {
+  app.post("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -94,7 +101,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, async (req: Request, res: Response) => {
+  app.delete("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -110,7 +117,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.get("/api/ms-objects/mine", jwtAuth, requireAuth, requireUnifiedWorkFlag, async (req: Request, res: Response) => {
+  app.get("/api/ms-objects/mine", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftSurfaceFromRequest(), async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
@@ -125,13 +132,14 @@ export function registerMsSyncRoutes(app: Express) {
         items = items.filter((item: any) => item.actionRequired === true);
       }
 
-      res.json(items);
+      const visibleItems = await filterMicrosoftItemsForRequest(req, items);
+      res.json(visibleItems);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.get("/api/ms-objects/project/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/ms-objects/project/:projectId", jwtAuth, requireAuth, requirePermission("projects", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project id" });
@@ -140,13 +148,14 @@ export function registerMsSyncRoutes(app: Express) {
       if (!userId) return res.status(401).json({ error: "auth_required" });
 
       const items = await getProjectLinkedItems(projectId, userId);
-      res.json(items);
+      const visibleItems = await filterMicrosoftItemsForRequest(req, items);
+      res.json(visibleItems);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.post("/api/ms-objects/:id/convert-to-task", jwtAuth, requireAuth, requireUnifiedWorkFlag, async (req: Request, res: Response) => {
+  app.post("/api/ms-objects/:id/convert-to-task", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -165,7 +174,7 @@ export function registerMsSyncRoutes(app: Express) {
 
 
 
-  app.post("/api/ms-objects/:id/create-follow-up", jwtAuth, requireAuth, requireUnifiedWorkFlag, async (req: Request, res: Response) => {
+  app.post("/api/ms-objects/:id/create-follow-up", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -189,7 +198,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.get("/api/ms-objects/follow-ups/overdue", jwtAuth, requireAuth, requireUnifiedWorkFlag, async (req: Request, res: Response) => {
+  app.get("/api/ms-objects/follow-ups/overdue", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftSurfaceFromRequest(), async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
@@ -207,6 +216,7 @@ export function registerMsSyncRoutes(app: Express) {
           reminderSentAt: communicationFollowUps.reminderSentAt,
           createdAt: communicationFollowUps.createdAt,
           subjectOrTitle: msObjects.subjectOrTitle,
+          type: msObjects.type,
           webLink: msObjects.webLink,
         })
         .from(communicationFollowUps)
@@ -218,13 +228,14 @@ export function registerMsSyncRoutes(app: Express) {
         ))
         .orderBy(asc(communicationFollowUps.dueAt));
 
-      res.json(rows);
+      const visibleRows = await filterMicrosoftItemsForRequest(req, rows);
+      res.json(visibleRows);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.get("/api/projects/:projectId/communication-timeline", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:projectId/communication-timeline", jwtAuth, requireAuth, requirePermission("projects", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project id" });
@@ -245,7 +256,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/ms-objects/:id/dismiss", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/ms-objects/:id/dismiss", jwtAuth, requireAuth, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -258,7 +269,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.get("/api/ms-sync/status", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/ms-sync/status", jwtAuth, requireAuth, requireMicrosoftSyncSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
@@ -269,7 +280,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.post("/api/ms-sync/trigger", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/ms-sync/trigger", jwtAuth, requireAuth, requireMicrosoftSyncSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
@@ -704,6 +715,8 @@ export function registerMsSyncRoutes(app: Express) {
         }),
       });
 
+      const visibleMicrosoftItems = await filterMicrosoftItemsForRequest(req, microsoftItems);
+
       res.json({
         personal: personalTasks.map(t => withSourceLinks("personal", {
           ...t,
@@ -874,7 +887,7 @@ export function registerMsSyncRoutes(app: Express) {
           rawId: t.id,
           projectName: t.project_name,
         })),
-        microsoftItems: microsoftItems.map((item: any) => {
+        microsoftItems: visibleMicrosoftItems.map((item: any) => {
           const linkedTaskType = item.linkedTaskId ? (item.linkedProjectId ? "operational" : "personal") : null;
           return withSourceLinks("microsoft", {
             ...item,
@@ -898,7 +911,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.get("/api/ms-teams/project-chat/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/ms-teams/project-chat/:projectId", jwtAuth, requireAuth, requirePermission("teams_chat", "view"), async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
@@ -1007,7 +1020,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/ms-teams/project-chat/:projectId/unlink", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/ms-teams/project-chat/:projectId/unlink", jwtAuth, requireAuth, requirePermission("teams_chat", "delete"), async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user?.id;
       const userRole = (req as any).user?.role || "";
