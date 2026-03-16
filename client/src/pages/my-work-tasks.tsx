@@ -233,6 +233,7 @@ export default function MyWorkTasksPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const createTaskSubmitLockRef = useRef(false);
   const createTaskRequestIdRef = useRef<string | null>(null);
+  const openedQueryItemKeyRef = useRef<string | null>(null);
   const [draggedTask, setDraggedTask] = useState<UnifiedTask | null>(null);
   const [dropTargetCol, setDropTargetCol] = useState<TaskStatus | null>(null);
   const [newTask, setNewTask] = useState({
@@ -609,6 +610,31 @@ export default function MyWorkTasksPage() {
       setUnifiedDetailOpen(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || unifiedTasks.length === 0) {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const itemKey = params.get("itemKey");
+    if (!itemKey || itemKey === openedQueryItemKeyRef.current) {
+      return;
+    }
+
+    const target = unifiedTasks.find((task) => task._key === itemKey);
+    if (!target) {
+      return;
+    }
+
+    openedQueryItemKeyRef.current = itemKey;
+    handleOpenDrawer(target);
+
+    params.delete("itemKey");
+    const nextSearch = params.toString();
+    const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash || ""}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, [handleOpenDrawer, unifiedTasks]);
 
   const allProjects = useMemo(() => {
     const set = new Set<string>();

@@ -84,10 +84,7 @@ import { useQuery } from "@tanstack/react-query";
 import { checkPermission, normalizeRoleForPermissions } from "@shared/schema";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { PAGE_REGISTRY, ROLE_LANDING_PAGE, getPermissionEntityForPath } from "@/config/page-registry";
-import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
-import { logRoleAwareInteraction } from "@/lib/role-aware-audit";
-import { pickRoleAwareLandingPage } from "@/config/role-aware-ux";
+import { PAGE_REGISTRY, getPermissionEntityForPath } from "@/config/page-registry";
 import { isSuperAdmin } from "@/lib/access-control";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 
@@ -296,80 +293,11 @@ function ProtectedPages() {
   const [location] = useLocation();
   useScrollRestoration(location);
 
-  const { user } = useAuth();
-
-  const effectiveRole = normalizeRoleForPermissions(user?.role || (typeof window !== "undefined" ? localStorage.getItem("company_role") : null));
-
-  const { data: permissions } = useQuery<{ entityPermissions?: Record<string, Record<string, boolean>> | null }>({
-    queryKey: ["auth-permissions-landing", user?.role],
-    queryFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      if (effectiveRole) headers["x-company-role"] = effectiveRole;
-      const res = await fetch("/api/auth/permissions", { headers, credentials: "include" });
-      return res.json();
-    },
-    enabled: !!user?.role && location === "/",
-    staleTime: 60_000,
-  });
-
-  const { data: rolloutFlags } = useQuery({
-    queryKey: ["rollout-feature-flags"],
-    queryFn: fetchRolloutFeatureFlags,
-    staleTime: 60_000,
-  });
-  const roleAwareUxEnabled = rolloutFlags?.find((flag) => flag.key === "role_aware_ux")?.value === true;
-
   return (
     <RoleGuard>
     <AppLayout>
       <Switch>
-        <Route path="/">{() => {
-          const role = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-          const selectedRole = normalizeRoleForPermissions(role || user?.role || null);
-
-          if (roleAwareUxEnabled) {
-            const pagesById = new Map(PAGE_REGISTRY.map((page) => [page.id, page]));
-            const canAccess = (path: string) => {
-              const entity = getPermissionEntityForPath(path);
-              if (!entity || !selectedRole) return true;
-              const ep = permissions?.entityPermissions;
-              if (ep && ep[entity]) return ep[entity].view === true;
-              return checkPermission(selectedRole, entity, "view");
-            };
-
-            const suggested = pickRoleAwareLandingPage(selectedRole, pagesById, canAccess);
-            const preferredLandingPath = typeof window !== "undefined" ? localStorage.getItem("preferred_landing_path") : null;
-            const preferredReason = typeof window !== "undefined" ? localStorage.getItem("preferred_landing_reason") : null;
-            const preferredAllowed = !!preferredLandingPath && canAccess(preferredLandingPath);
-            const finalPath = preferredAllowed ? preferredLandingPath : suggested?.path;
-
-            if (suggested?.path && finalPath && finalPath !== "/") {
-              if (preferredAllowed && preferredReason) {
-                void logRoleAwareInteraction({
-                  action: "suggestion_overridden",
-                  suggestion: suggested.path,
-                  finalValue: finalPath,
-                  reason: preferredReason,
-                  role: selectedRole,
-                });
-              } else {
-                void logRoleAwareInteraction({
-                  action: "suggestion_accepted",
-                  suggestion: suggested.path,
-                  finalValue: finalPath,
-                  role: selectedRole,
-                });
-              }
-              return <Redirect to={finalPath} />;
-            }
-          }
-
-          const landingPath = role ? ROLE_LANDING_PAGE[role] : undefined;
-          if (landingPath) return <Redirect to={landingPath} />;
-          return <Home />;
-        }}</Route>
+        <Route path="/">{() => <Home />}</Route>
         {APP_ROUTES.map((route) => {
           if (route.redirectTo) {
             return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;

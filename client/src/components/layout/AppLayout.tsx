@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -10,124 +11,11 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Menu, Search, Plus, Bell, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, Building2, UserCircle2, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-type SecondaryItem = { label: string; path: string; disabled?: boolean };
-type TopSection = {
-  label: string;
-  path: string;
-  match: (pathname: string) => boolean;
-  secondary: SecondaryItem[];
-};
+import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
+import { getPermissionEntityForPath } from "@/config/page-registry";
+import { checkPermission, normalizeRoleForPermissions, type PermissionEntity } from "@shared/schema";
 
 type SearchResult = { id: string; title: string; subtitle?: string; type: string; url?: string | null };
-
-function matchesPathPrefix(pathname: string, prefix: string) {
-  return pathname === prefix || pathname.startsWith(`${prefix}/`);
-}
-
-function startsWithAny(pathname: string, prefixes: string[]) {
-  return prefixes.some((prefix) => matchesPathPrefix(pathname, prefix));
-}
-
-const TOP_SECTIONS: TopSection[] = [
-  {
-    label: "Home",
-    path: "/",
-    match: (p) => p === "/" || startsWithAny(p, ["/my-work", "/command-center", "/my-tool"]),
-    secondary: [
-      { label: "Command Center", path: "/command-center" },
-      { label: "My Work", path: "/my-work" },
-      { label: "Tasks", path: "/my-work/tasks" },
-      { label: "Approvals", path: "/my-work/approvals" },
-    ],
-  },
-  {
-    label: "Projects",
-    path: "/lifecycle-board",
-    match: (p) => startsWithAny(p, ["/lifecycle-board", "/clients"]),
-    secondary: [
-      { label: "Lifecycle Board", path: "/lifecycle-board" },
-      { label: "Clients", path: "/clients" },
-    ],
-  },
-  {
-    label: "Project Development",
-    path: "/pd",
-    match: (p) => startsWithAny(p, ["/pd"]),
-    secondary: [
-      { label: "PD Dashboard", path: "/pd" },
-      { label: "PD Tickets", path: "/pd/tickets" },
-    ],
-  },
-  {
-    label: "Project Management",
-    path: "/projects",
-    match: (p) => startsWithAny(p, ["/projects", "/project", "/pm-dashboard", "/pm/on-the-go", "/execution-board", "/weekly-reviews", "/pm/handover-review", "/portfolios"]),
-    secondary: [
-      { label: "Project List", path: "/projects" },
-      { label: "Portfolios", path: "/portfolios" },
-      { label: "PM Dashboard", path: "/pm-dashboard" },
-      { label: "Execution Board", path: "/execution-board" },
-      { label: "PM On-The-Go", path: "/pm/on-the-go" },
-      { label: "Weekly Reviews", path: "/weekly-reviews" },
-      { label: "PM Handover Review", path: "/pm/handover-review" },
-    ],
-  },
-  {
-    label: "Engineering",
-    path: "/engineering",
-    match: (p) => startsWithAny(p, ["/engineering"]),
-    secondary: [
-      { label: "Overview", path: "/engineering" },
-      { label: "Requests & Tasks", path: "/engineering/tasks" },
-    ],
-  },
-  {
-    label: "Quality",
-    path: "/quality",
-    match: (p) => startsWithAny(p, ["/quality"]),
-    secondary: [{ label: "Quality Workspace", path: "/quality" }],
-  },
-  {
-    label: "Finance",
-    path: "/cashflow",
-    match: (p) => startsWithAny(p, ["/cashflow", "/cos", "/revenue-tracker", "/gp-tracker", "/invoice-patterns", "/counterparties", "/subcontractor-dashboard"]),
-    secondary: [
-      { label: "Cashflow", path: "/cashflow" },
-      { label: "Cost of Sales", path: "/cos" },
-      { label: "Revenue", path: "/revenue-tracker" },
-      { label: "Gross Profit", path: "/gp-tracker" },
-      { label: "Procurement", path: "/subcontractor-dashboard" },
-      { label: "Counterparties", path: "/counterparties" },
-    ],
-  },
-  {
-    label: "Knowledge",
-    path: "/ee-info",
-    match: (p) => startsWithAny(p, ["/ee-info", "/leaderboard", "/feedback", "/training", "/knowledge-game", "/department-scores"]),
-    secondary: [
-      { label: "Lifecycle & SOP", path: "/ee-info" },
-      { label: "Leaderboard", path: "/leaderboard" },
-      { label: "Training", path: "/training" },
-      { label: "Knowledge Game", path: "/knowledge-game" },
-      { label: "Department Scores", path: "/department-scores" },
-      { label: "Feedback", path: "/feedback" },
-    ],
-  },
-  {
-    label: "Admin",
-    path: "/admin/control-center",
-    match: (p) => startsWithAny(p, ["/admin", "/settings"]),
-    secondary: [
-      { label: "Control Center", path: "/admin/control-center" },
-      { label: "Smart Import", path: "/admin/smart-import" },
-      { label: "Excel Updates", path: "/admin/excel-updates" },
-      { label: "Roles & Permissions", path: "/admin/roles" },
-      { label: "System Settings", path: "/admin/settings" },
-      { label: "Audit Log", path: "/admin/activity-log" },
-    ],
-  },
-];
 
 const QUICK_CREATE_ACTIONS: Array<{ label: string; path: string }> = [
   { label: "New PD Ticket", path: "/pd/tickets/create" },
@@ -137,29 +25,6 @@ const QUICK_CREATE_ACTIONS: Array<{ label: string; path: string }> = [
   { label: "Create PO", path: "/actions/launchpad?action=create-po" },
   { label: "Link Invoice", path: "/actions/launchpad?action=link-invoice" },
 ];
-
-function linkIsActive(current: string, target: string) {
-  if (target === "/") return current === "/";
-  return current === target || current.startsWith(`${target}/`);
-}
-
-function getBreadcrumbs(pathname: string, activeSection: TopSection) {
-  if (pathname === "/") return ["Home"];
-
-  const projectMatch = pathname.match(/^\/project\/([^/]+)/);
-  if (projectMatch) return ["Project Management", decodeURIComponent(projectMatch[1])];
-
-  const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)/);
-  if (portfolioMatch) return ["Project Management", "Portfolios", decodeURIComponent(portfolioMatch[1])];
-
-  if (pathname === "/pd/tickets/create") return ["Project Development", "PD Tickets", "Create"];
-
-  const ticketMatch = pathname.match(/^\/pd\/tickets\/([^/]+)/);
-  if (ticketMatch) return ["Project Development", "PD Tickets", `Ticket ${decodeURIComponent(ticketMatch[1])}`];
-
-  const leaf = activeSection.secondary.find((s) => linkIsActive(pathname, s.path));
-  return [activeSection.label, leaf?.label].filter(Boolean) as string[];
-}
 
 function isDirectResultUrl(url?: string | null) {
   return !!url && (url.startsWith("/") || url.startsWith("http://") || url.startsWith("https://"));
@@ -176,18 +41,41 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [microsoftMenuOpen, setMicrosoftMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-  const role = (companyRole || user?.role || "").toUpperCase();
-  const canSeeCommandCenter = role === "ADMIN" || role === "COO_ADMIN" || role === "CEO_ADMIN";
+  const effectiveRole = normalizeRoleForPermissions(companyRole || user?.role || null);
+
+  const { data: permissions } = useQuery<{ entityPermissions?: Record<string, Record<string, boolean>> | null }>({
+    queryKey: ["auth-permissions-layout", companyRole, user?.role],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      if (effectiveRole) headers["x-company-role"] = effectiveRole;
+      const res = await fetch("/api/auth/permissions", { headers, credentials: "include" });
+      return res.json();
+    },
+    enabled: !!effectiveRole,
+    staleTime: 60_000,
+  });
+
+  const canViewPath = useMemo(() => {
+    return (path: string) => {
+      if (path === "/") return true;
+      const entity = getPermissionEntityForPath(path);
+      if (!entity) return true;
+
+      const entityPermissions = permissions?.entityPermissions as Partial<Record<PermissionEntity, Record<string, boolean>>> | undefined;
+      const explicit = entityPermissions?.[entity];
+      if (explicit && typeof explicit.view === "boolean") {
+        return explicit.view === true;
+      }
+
+      return effectiveRole ? checkPermission(effectiveRole, entity, "view") : false;
+    };
+  }, [effectiveRole, permissions?.entityPermissions]);
 
   const visibleSections = useMemo(() => {
-    return TOP_SECTIONS.map((section) => {
-      if (section.label !== "Home") return section;
-      return {
-        ...section,
-        secondary: section.secondary.filter((item) => canSeeCommandCenter || item.path !== "/command-center"),
-      };
-    });
-  }, [canSeeCommandCenter]);
+    return buildVisibleTopSections({ canViewPath });
+  }, [canViewPath]);
 
   const activeSection = useMemo(() => visibleSections.find((section) => section.match(location)) ?? visibleSections[0], [location, visibleSections]);
 

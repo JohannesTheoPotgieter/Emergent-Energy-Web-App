@@ -59,8 +59,8 @@ const ROUTE_MATRIX: RouteExpectation[] = [
     route: "/",
     label: "Home",
     markers: {
-      headingOrAnchor: ["text=/Execution Board|Action Hub|My Work|PM Dashboard|Quality|Engineering/i", "[data-testid]"],
-      primaryWidgetOrAction: ["button:has-text('Create')", "button:has-text('Add')", "a[href*='/projects']", "input"],
+      headingOrAnchor: ["text=/Welcome|Company Priorities|Exception Focus|My Work Preview/i", "[data-testid]"],
+      primaryWidgetOrAction: ["a[href='/company-priorities']", "a[href='/my-work/tasks']", "a[href='/my-work']"],
     },
   },
   {
@@ -142,7 +142,7 @@ const ROUTE_MATRIX: RouteExpectation[] = [
     route: "/my-work",
     label: "My Work",
     markers: {
-      headingOrAnchor: ["text=/My Work|Today|Command Center/i"],
+      headingOrAnchor: ["text=/My Work|Today/i"],
       primaryWidgetOrAction: ["button", "a[href*='/my-work/tasks']", "input"],
     },
   },
