@@ -4,8 +4,20 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { requirePermission } from "../permission-middleware";
 import { z } from "zod";
-import { insertBudgetSchema, OVERRIDE_CATEGORIES, cosStatusOverrides, financialEditRequests, notifications, users } from "@shared/schema";
-import { eq, inArray } from "drizzle-orm";
+import {
+  approvals,
+  changeSets,
+  cosStatusOverrides,
+  fieldChanges,
+  financialEditRequests,
+  insertBudgetSchema,
+  msObjects,
+  notifications,
+  OVERRIDE_CATEGORIES,
+  projectInfo,
+  users,
+} from "@shared/schema";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { sendExcelSyncNotification } from "../excel-sync-notifications";
@@ -339,6 +351,320 @@ function applyFinanceCosOverrides(
     }
     return row;
   });
+}
+
+function normalizeOverrideValue(value: any): any {
+  if (value === "__null__") return null;
+  return value;
+}
+
+function formatChangeUserName(
+  actorUserId: number | null | undefined,
+  actorRole: string | null | undefined,
+  userNameById: Map<number, string>
+): string | null {
+  if (actorUserId && userNameById.has(actorUserId)) {
+    return userNameById.get(actorUserId)!;
+  }
+  return actorRole || null;
+}
+
+function buildFieldChangesByChangeSet(changeRows: any[], fieldRows: any[]) {
+  const byChangeSet = new Map<number, any[]>();
+  for (const field of fieldRows) {
+    const existing = byChangeSet.get(field.changeSetId) || [];
+    existing.push(field);
+    byChangeSet.set(field.changeSetId, existing);
+  }
+
+  const latestByEntity = new Map<string, any>();
+  for (const change of changeRows) {
+    if (!change.entityId || latestByEntity.has(change.entityId)) continue;
+    latestByEntity.set(change.entityId, {
+      ...change,
+      fieldChanges: byChangeSet.get(change.id) || [],
+    });
+  }
+
+  return { byChangeSet, latestByEntity };
+}
+
+function toRecentChangeSummary(changeRows: any[], fieldRowsByChangeSet: Map<number, any[]>, userNameById: Map<number, string>) {
+  return changeRows.slice(0, 5).map((change) => ({
+    id: change.id,
+    action: change.action,
+    entityId: change.entityId,
+    summary: change.summary,
+    actorRole: change.actorRole,
+    actorUserId: change.actorUserId,
+    actorName: formatChangeUserName(change.actorUserId, change.actorRole, userNameById),
+    overrideCategory: change.overrideCategory,
+    overrideComment: change.overrideComment,
+    createdAt: change.createdAt,
+    changedFields: (fieldRowsByChangeSet.get(change.id) || []).map((field) => ({
+      fieldName: field.fieldName,
+      oldValue: field.oldValue,
+      newValue: field.newValue,
+    })),
+  }));
+}
+
+function buildRevenueFieldAudit(
+  projectName: string,
+  rowNumber: number,
+  fieldName: string,
+  sourceValue: any,
+  managedValue: any,
+  overrideRecord: any | undefined,
+  latestChangeByEntity: Map<string, any>,
+  userNameById: Map<number, string>
+) {
+  const entityId = `${projectName}|row${rowNumber}|${fieldName}`;
+  const latestChange = latestChangeByEntity.get(entityId);
+  const fieldChange = latestChange?.fieldChanges?.find((field: any) => field.fieldName === fieldName);
+  return {
+    fieldName,
+    sourceValue,
+    managedValue,
+    overrideValue: overrideRecord ? normalizeOverrideValue(overrideRecord.overrideValue) : null,
+    changedAt: overrideRecord?.updatedAt || overrideRecord?.createdAt || latestChange?.createdAt || null,
+    changedByUserId: overrideRecord?.createdBy || latestChange?.actorUserId || null,
+    changedByName: overrideRecord?.createdBy ? userNameById.get(overrideRecord.createdBy) || null : formatChangeUserName(latestChange?.actorUserId, latestChange?.actorRole, userNameById),
+    overrideCategory: latestChange?.overrideCategory || null,
+    overrideComment: latestChange?.overrideComment || null,
+    previousValue: fieldChange?.oldValue ?? sourceValue ?? null,
+  };
+}
+
+function buildExpenditureFieldAudit(
+  projectName: string,
+  rowNumber: number,
+  fieldName: string,
+  managedValue: any,
+  overrideRecord: any | undefined,
+  latestChangeByEntity: Map<string, any>,
+  userNameById: Map<number, string>
+) {
+  const entityId = `${projectName}|row${rowNumber}|${fieldName}`;
+  const latestChange = latestChangeByEntity.get(entityId);
+  const fieldChange = latestChange?.fieldChanges?.find((field: any) => field.fieldName === fieldName);
+  const priorValue = fieldChange?.oldValue ?? null;
+
+  return {
+    fieldName,
+    managedValue,
+    sourceValue: priorValue ?? (overrideRecord ? null : managedValue),
+    overrideValue: overrideRecord ? normalizeOverrideValue(overrideRecord.overrideValue) : null,
+    previousValue: priorValue,
+    changedAt: overrideRecord?.updatedAt || overrideRecord?.createdAt || latestChange?.createdAt || null,
+    changedByUserId: overrideRecord?.createdBy || latestChange?.actorUserId || null,
+    changedByName: overrideRecord?.createdBy ? userNameById.get(overrideRecord.createdBy) || null : formatChangeUserName(latestChange?.actorUserId, latestChange?.actorRole, userNameById),
+    overrideCategory: latestChange?.overrideCategory || null,
+    overrideComment: latestChange?.overrideComment || null,
+  };
+}
+
+function auditValuesDiffer(left: any, right: any): boolean {
+  return String(left ?? "") !== String(right ?? "");
+}
+
+function isFinanceApprovalRecord(approval: {
+  type?: string | null;
+  title?: string | null;
+  description?: string | null;
+  approvalCategory?: string | null;
+  relatedEntityType?: string | null;
+}): boolean {
+  const haystack = [
+    approval.type,
+    approval.title,
+    approval.description,
+    approval.approvalCategory,
+    approval.relatedEntityType,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (!haystack) return false;
+
+  return [
+    "finance",
+    "financial",
+    "cash",
+    "invoice",
+    "revenue",
+    "budget",
+    "commercial",
+    "cost",
+    "procurement",
+    "purchase",
+    "variation",
+    "change",
+    "vo",
+  ].some((keyword) => haystack.includes(keyword));
+}
+
+async function loadProjectFinanceGovernanceContext(
+  projectName: string,
+  projectId?: number | null,
+  extraUserIds: number[] = []
+) {
+  const [approvalRows, editRequestRows, changeRows, microsoftRows] = await Promise.all([
+    projectId
+      ? db
+          .select({
+            id: approvals.id,
+            type: approvals.type,
+            title: approvals.title,
+            description: approvals.description,
+            status: approvals.status,
+            dueDate: approvals.dueDate,
+            requestedAt: approvals.requestedAt,
+            approvalCategory: approvals.approvalCategory,
+            relatedEntityType: approvals.relatedEntityType,
+          })
+          .from(approvals)
+          .where(eq(approvals.projectId, projectId))
+          .orderBy(desc(approvals.requestedAt))
+          .limit(25)
+      : Promise.resolve([] as any[]),
+    db
+      .select({
+        id: financialEditRequests.id,
+        editType: financialEditRequests.editType,
+        editTarget: financialEditRequests.editTarget,
+        editSummary: financialEditRequests.editSummary,
+        affectsRevenue: financialEditRequests.affectsRevenue,
+        affectsExpenditure: financialEditRequests.affectsExpenditure,
+        status: financialEditRequests.status,
+        createdAt: financialEditRequests.createdAt,
+        requestedByUserId: financialEditRequests.requestedByUserId,
+        requestedByName: users.name,
+      })
+      .from(financialEditRequests)
+      .leftJoin(users, eq(financialEditRequests.requestedByUserId, users.id))
+      .where(eq(financialEditRequests.projectName, projectName))
+      .orderBy(desc(financialEditRequests.createdAt))
+      .limit(25),
+    db
+      .select({
+        id: changeSets.id,
+        actorRole: changeSets.actorRole,
+        actorUserId: changeSets.actorUserId,
+        entityType: changeSets.entityType,
+        entityId: changeSets.entityId,
+        action: changeSets.action,
+        summary: changeSets.summary,
+        overrideCategory: changeSets.overrideCategory,
+        overrideComment: changeSets.overrideComment,
+        createdAt: changeSets.createdAt,
+      })
+      .from(changeSets)
+      .where(eq(changeSets.projectName, projectName))
+      .orderBy(desc(changeSets.createdAt))
+      .limit(40),
+    projectId
+      ? db
+          .select({
+            id: msObjects.id,
+            type: msObjects.type,
+            subjectOrTitle: msObjects.subjectOrTitle,
+            preview: msObjects.preview,
+            webLink: msObjects.webLink,
+            actionRequired: msObjects.actionRequired,
+            isRead: msObjects.isRead,
+            linkedTaskId: msObjects.linkedTaskId,
+            receivedOrStartDatetime: msObjects.receivedOrStartDatetime,
+          })
+          .from(msObjects)
+          .where(eq(msObjects.linkedProjectId, projectId))
+          .orderBy(desc(msObjects.receivedOrStartDatetime))
+          .limit(25)
+      : Promise.resolve([] as any[]),
+  ]);
+
+  const changeSetIds = changeRows.map((row) => row.id).filter((id): id is number => typeof id === "number");
+  const changeFieldRows = changeSetIds.length
+    ? await db.select().from(fieldChanges).where(inArray(fieldChanges.changeSetId, changeSetIds))
+    : [];
+
+  const userIds = Array.from(
+    new Set(
+      [
+        ...extraUserIds,
+        ...changeRows.map((row) => row.actorUserId),
+        ...editRequestRows.map((row) => row.requestedByUserId),
+      ].filter((id): id is number => typeof id === "number" && Number.isFinite(id))
+    )
+  );
+
+  const userRows = userIds.length
+    ? await db
+        .select({
+          id: users.id,
+          name: users.name,
+        })
+        .from(users)
+        .where(inArray(users.id, userIds))
+    : [];
+
+  const userNameById = new Map<number, string>(
+    userRows.map((row) => [row.id, row.name || `User ${row.id}`])
+  );
+
+  const { byChangeSet, latestByEntity } = buildFieldChangesByChangeSet(changeRows, changeFieldRows);
+  const pendingApprovals = approvalRows.filter((row) => row.status === "pending");
+  const cashAffectingApprovals = pendingApprovals.filter((row) => isFinanceApprovalRecord(row));
+  const pendingEditRequests = editRequestRows.filter((row) => row.status === "pending");
+
+  return {
+    latestChangeByEntity: latestByEntity,
+    userNameById,
+    recentChanges: toRecentChangeSummary(changeRows, byChangeSet, userNameById),
+    approvals: {
+      pendingCount: pendingApprovals.length,
+      affectingCashCount: cashAffectingApprovals.length,
+      pending: cashAffectingApprovals.slice(0, 5).map((row) => ({
+        id: row.id,
+        title: row.title,
+        type: row.type,
+        approvalCategory: row.approvalCategory,
+        dueDate: row.dueDate,
+        requestedAt: row.requestedAt,
+      })),
+    },
+    editRequests: {
+      pendingCount: pendingEditRequests.length,
+      pending: pendingEditRequests.slice(0, 5).map((row) => ({
+        id: row.id,
+        editType: row.editType,
+        editTarget: row.editTarget,
+        editSummary: row.editSummary,
+        affectsRevenue: row.affectsRevenue,
+        affectsExpenditure: row.affectsExpenditure,
+        requestedByName: row.requestedByName || userNameById.get(row.requestedByUserId) || null,
+        createdAt: row.createdAt,
+      })),
+    },
+    microsoft: {
+      linkedCount: microsoftRows.length,
+      actionRequiredCount: microsoftRows.filter((row) => row.actionRequired).length,
+      unreadCount: microsoftRows.filter((row) => row.isRead === false).length,
+      linkedTaskCount: microsoftRows.filter((row) => row.linkedTaskId != null).length,
+      recent: microsoftRows.slice(0, 5).map((row) => ({
+        id: row.id,
+        type: row.type,
+        subjectOrTitle: row.subjectOrTitle,
+        preview: row.preview,
+        webLink: row.webLink,
+        actionRequired: !!row.actionRequired,
+        isRead: row.isRead,
+        linkedTaskId: row.linkedTaskId,
+        receivedOrStartDatetime: row.receivedOrStartDatetime,
+      })),
+    },
+  };
 }
 
 function safeNum(value: unknown): number {
@@ -1100,7 +1426,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 
 router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res) => {
   try {
-    const projectName = decodeURIComponent(req.params.projectName);
+    const projectName = decodeURIComponent(String(req.params.projectName || ""));
     const projectExpenses = await storage.getProgramExpensesByProject(projectName);
 
     const cosByMonth = new Map<string, number>();
@@ -1335,7 +1661,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
 
 router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id || ""), 10);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
 
     const { realised } = req.body as { realised: boolean };
@@ -1373,7 +1699,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
 
 router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(String(req.params.id || ""), 10);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid cost line id" });
     const { noRevenueLinked } = req.body as { noRevenueLinked: boolean };
     if (typeof noRevenueLinked !== 'boolean') return res.status(400).json({ error: "noRevenueLinked (boolean) required" });
@@ -1389,7 +1715,7 @@ router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin,
 
 router.get("/api/revenue-tracker/project/:projectName", requireAuth, async (req, res) => {
   try {
-    const projectName = decodeURIComponent(req.params.projectName);
+    const projectName = decodeURIComponent(String(req.params.projectName || ""));
     const [projectExpenses, revLines, manualEntries] = await Promise.all([
       storage.getProgramExpensesByProject(projectName),
       storage.getProgramInflowsByProject(projectName),
@@ -1687,7 +2013,7 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
 
 router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res) => {
   try {
-    const projectName = decodeURIComponent(req.params.projectName);
+    const projectName = decodeURIComponent(String(req.params.projectName || ""));
     const [projectExpenses, revLines] = await Promise.all([
       storage.getProgramExpensesByProject(projectName),
       storage.getProgramInflowsByProject(projectName),
@@ -2494,10 +2820,27 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
     }
 
     const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
+    const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))];
+    const baselineRowsByProject = new Map<string, Map<number, any>>();
+
+    for (const projectName of projectNames) {
+      const [rawInflows, existingOverrides] = await Promise.all([
+        storage.getProgramInflowsByProject(projectName),
+        storage.getRevenueTrackingOverridesByProject(projectName),
+      ]);
+      const currentRows = applyRevenueTrackingOverrides(rawInflows, existingOverrides);
+      baselineRowsByProject.set(
+        projectName,
+        new Map(currentRows.map((row: any) => [row.rowNumber, row])),
+      );
+    }
+
     const saved = await storage.upsertManyRevenueTrackingOverrides(overridesWithUser);
 
     try {
       for (const o of overrides) {
+        const baselineRow = baselineRowsByProject.get(o.projectName)?.get(o.rowNumber);
+        const previousValue = baselineRow ? baselineRow[o.fieldName] : null;
         await recordOverride({
           actorUserId: userId,
           actorRole: (req as any).user?.role,
@@ -2507,8 +2850,8 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
           action: "REVENUE_OVERRIDE",
           overrideCategory,
           overrideComment: overrideComment.trim(),
-          oldRecord: {},
-          newRecord: { [o.fieldName]: o.overrideValue },
+          oldRecord: { [o.fieldName]: previousValue },
+          newRecord: { [o.fieldName]: normalizeOverrideValue(o.overrideValue) },
         });
       }
     } catch (auditErr: any) {
@@ -2516,7 +2859,7 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
     }
 
     sendExcelSyncNotification({
-      projectName: overrides[0]?.projectName || "Unknown",
+      projectName: projectNames[0] || "Unknown",
       changedByUserId: (req as any).user?.id,
       changeType: "revenue_override",
       changeDescription: "Revenue tracking override applied",
@@ -2559,6 +2902,9 @@ router.get("/api/revenue-tab/:projectName", async (req, res) => {
     ]);
 
     const inflows = applyRevenueTrackingOverrides(rawInflows, overrides);
+    const sourceInflowByRow = new Map(rawInflows.map((row: any) => [row.rowNumber, row]));
+    const overrideByFieldKey = new Map(overrides.map((row: any) => [`${row.rowNumber}|${row.fieldName}`, row]));
+    const taskLinkByRow = new Map(taskLinks.map((row: any) => [row.milestoneRowNumber, row]));
 
     const isRealMilestone = (r: any) => {
       const no = r.milestoneNo;
@@ -2574,6 +2920,15 @@ router.get("/api/revenue-tab/:projectName", async (req, res) => {
     };
 
     const today = new Date().toISOString().split('T')[0];
+    const pInfo = projectInfoList.find((p: any) => p.projectName === projectName);
+    const contractValue = pInfo ? parseFloat(String(pInfo.contractValue || '0')) : 0;
+    const governance = await loadProjectFinanceGovernanceContext(
+      projectName,
+      (pInfo as any)?.id ?? null,
+      overrides
+        .map((row: any) => row.createdBy)
+        .filter((id: any): id is number => typeof id === "number" && Number.isFinite(id))
+    );
 
     const milestones = inflows.filter(isRealMilestone).map((r: any) => {
       const hasInvoice = !!(r.milestoneInvoiceNumber && r.milestoneInvoiceNumber.trim());
@@ -2606,7 +2961,7 @@ router.get("/api/revenue-tab/:projectName", async (req, res) => {
 
       const hasOverride = overrides.some((o: any) => o.rowNumber === r.rowNumber);
 
-      const link = taskLinks.find((l: any) => l.milestoneRowNumber === r.rowNumber);
+      const link = taskLinkByRow.get(r.rowNumber);
       let linkedTask: any = null;
       if (link) {
         if (link.taskId > 0) {
@@ -2635,6 +2990,90 @@ router.get("/api/revenue-tab/:projectName", async (req, res) => {
         effectiveDate = linkedTask.dueDate;
       }
 
+      const sourceRow = sourceInflowByRow.get(r.rowNumber) || r;
+      const taskLinkChange = governance.latestChangeByEntity.get(`${projectName}|milestone${r.rowNumber}|task-link`);
+      const dateOverrideChange = governance.latestChangeByEntity.get(`${projectName}|milestone${r.rowNumber}|date-override`);
+      const fieldAudits = {
+        milestoneAmount: buildRevenueFieldAudit(
+          projectName,
+          r.rowNumber,
+          "milestoneAmount",
+          sourceRow?.milestoneAmount ?? null,
+          r.milestoneAmount,
+          overrideByFieldKey.get(`${r.rowNumber}|milestoneAmount`),
+          governance.latestChangeByEntity,
+          governance.userNameById,
+        ),
+        plannedPaymentDate: buildRevenueFieldAudit(
+          projectName,
+          r.rowNumber,
+          "plannedPaymentDate",
+          sourceRow?.plannedPaymentDate ?? null,
+          r.plannedPaymentDate,
+          overrideByFieldKey.get(`${r.rowNumber}|plannedPaymentDate`),
+          governance.latestChangeByEntity,
+          governance.userNameById,
+        ),
+        milestoneInvoiceNumber: buildRevenueFieldAudit(
+          projectName,
+          r.rowNumber,
+          "milestoneInvoiceNumber",
+          sourceRow?.milestoneInvoiceNumber ?? null,
+          r.milestoneInvoiceNumber,
+          overrideByFieldKey.get(`${r.rowNumber}|milestoneInvoiceNumber`),
+          governance.latestChangeByEntity,
+          governance.userNameById,
+        ),
+        invoiceRaisedDate: buildRevenueFieldAudit(
+          projectName,
+          r.rowNumber,
+          "invoiceRaisedDate",
+          sourceRow?.invoiceRaisedDate ?? null,
+          r.invoiceRaisedDate,
+          overrideByFieldKey.get(`${r.rowNumber}|invoiceRaisedDate`),
+          governance.latestChangeByEntity,
+          governance.userNameById,
+        ),
+        inBank: buildRevenueFieldAudit(
+          projectName,
+          r.rowNumber,
+          "inBank",
+          sourceRow?.inBank ?? 0,
+          r.inBank,
+          overrideByFieldKey.get(`${r.rowNumber}|inBank`),
+          governance.latestChangeByEntity,
+          governance.userNameById,
+        ),
+        paymentReceivedDate: buildRevenueFieldAudit(
+          projectName,
+          r.rowNumber,
+          "paymentReceivedDate",
+          sourceRow?.paymentReceivedDate ?? null,
+          r.paymentReceivedDate,
+          overrideByFieldKey.get(`${r.rowNumber}|paymentReceivedDate`),
+          governance.latestChangeByEntity,
+          governance.userNameById,
+        ),
+      };
+      const editedFields = Object.values(fieldAudits)
+        .filter((audit) => auditValuesDiffer(audit.sourceValue, audit.managedValue) || audit.overrideValue !== null || audit.overrideComment)
+        .map((audit) => audit.fieldName);
+      const latestFieldAudit = Object.values(fieldAudits).reduce((latest: any, audit: any) => {
+        if (!audit.changedAt) return latest;
+        if (!latest?.changedAt) return audit;
+        return new Date(audit.changedAt).getTime() > new Date(latest.changedAt).getTime() ? audit : latest;
+      }, null);
+      const taskLinkChangedByName = formatChangeUserName(taskLinkChange?.actorUserId, taskLinkChange?.actorRole, governance.userNameById);
+      const dateOverrideChangedByName = formatChangeUserName(dateOverrideChange?.actorUserId, dateOverrideChange?.actorRole, governance.userNameById);
+      const lastChangedAt = [
+        latestFieldAudit?.changedAt,
+        taskLinkChange?.createdAt,
+        dateOverrideChange?.createdAt,
+      ]
+        .filter(Boolean)
+        .sort((left, right) => new Date(String(right)).getTime() - new Date(String(left)).getTime())[0] || null;
+      const lastChangedByName = latestFieldAudit?.changedByName || dateOverrideChangedByName || taskLinkChangedByName || null;
+
       return {
         id: r.id,
         rowNumber: r.rowNumber,
@@ -2654,6 +3093,30 @@ router.get("/api/revenue-tab/:projectName", async (req, res) => {
         dependentTask: linkedTask ? { id: linkedTask.id, title: linkedTask.title, status: linkedTask.status, dueDate: linkedTask.dueDate } : null,
         dateOverride: link?.dateOverride || null,
         dateOverrideReason: link?.dateOverrideReason || null,
+        trust: {
+          sourceSheet: "Revenue Tracking",
+          sourceRow: sourceRow?.rowNumber ?? r.rowNumber,
+          hasVariance: editedFields.length > 0 || !!link?.dateOverride,
+          editedFields,
+          lastChangedAt,
+          lastChangedByName,
+          taskLink: link
+            ? {
+                taskId: link.taskId,
+                changedAt: taskLinkChange?.createdAt || null,
+                changedByName: taskLinkChangedByName,
+              }
+            : null,
+          dateOverrideChange: link?.dateOverride
+            ? {
+                dateOverride: link.dateOverride,
+                reason: link.dateOverrideReason || null,
+                changedAt: dateOverrideChange?.createdAt || null,
+                changedByName: dateOverrideChangedByName,
+              }
+            : null,
+          fieldAudits,
+        },
       };
     });
 
@@ -2662,9 +3125,6 @@ router.get("/api/revenue-tab/:projectName", async (req, res) => {
     const inBankTotal = milestones.filter((m: any) => m.status === 'inBank').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
     const pending = milestones.filter((m: any) => m.status === 'planned' || m.status === 'overdue').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
     const overdueTotal = milestones.filter((m: any) => m.status === 'overdue').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
-
-    const pInfo = projectInfoList.find((p: any) => p.projectName === projectName);
-    const contractValue = pInfo ? parseFloat(String(pInfo.contractValue || '0')) : 0;
 
     let costedExpenditure = 0;
     let actualExpenditure = 0;
@@ -2698,6 +3158,79 @@ router.get("/api/revenue-tab/:projectName", async (req, res) => {
     const liveExpenditure = allExpenditure;
     const liveProfit = liveRevenue - liveExpenditure;
     const liveMargin = liveRevenue > 0 ? liveProfit / liveRevenue : 0;
+    const costedChange = governance.latestChangeByEntity.get(`${projectName}|costed`);
+    const costedChangedByName = formatChangeUserName(costedChange?.actorUserId, costedChange?.actorRole, governance.userNameById);
+    const overriddenMilestoneCount = new Set(overrides.map((row: any) => row.rowNumber)).size;
+    const overriddenFieldCount = new Set(overrides.map((row: any) => `${row.rowNumber}:${row.fieldName}`)).size;
+    const unlinkedMilestones = milestones.filter((milestone: any) => !milestone.dependentTask);
+    const riskSignals = [
+      overdueTotal > 0
+        ? {
+            key: "overdue_revenue",
+            severity: "warning",
+            label: "Overdue revenue exposure",
+            amount: overdueTotal,
+            count: milestones.filter((milestone: any) => milestone.status === "overdue").length,
+            detail: "Milestones are past planned dates without invoice confirmation.",
+          }
+        : null,
+      pending > 0
+        ? {
+            key: "cash_exposure",
+            severity: "info",
+            label: "Unbanked revenue exposure",
+            amount: totalContract - inBankTotal,
+            count: milestones.filter((milestone: any) => milestone.status !== "inBank").length,
+            detail: "Contract value not yet confirmed in bank.",
+          }
+        : null,
+      unlinkedMilestones.length > 0
+        ? {
+            key: "unlinked_milestones",
+            severity: "info",
+            label: "Milestones missing task linkage",
+            amount: unlinkedMilestones.reduce((sum: number, milestone: any) => sum + safeNum(milestone.milestoneAmount), 0),
+            count: unlinkedMilestones.length,
+            detail: "Milestones should stay linked to project execution items for commercial traceability.",
+          }
+        : null,
+      governance.approvals.affectingCashCount > 0
+        ? {
+            key: "cash_approvals",
+            severity: "warning",
+            label: "Approvals affecting cash",
+            count: governance.approvals.affectingCashCount,
+            detail: "Pending approvals may change invoices, revenue timing, or commercial flow.",
+          }
+        : null,
+      governance.editRequests.pendingCount > 0
+        ? {
+            key: "pending_edits",
+            severity: "info",
+            label: "Pending finance edit requests",
+            count: governance.editRequests.pendingCount,
+            detail: "Awaiting approval before managed finance truth changes.",
+          }
+        : null,
+      governance.microsoft.actionRequiredCount > 0
+        ? {
+            key: "microsoft_actions",
+            severity: "info",
+            label: "Linked Microsoft items need action",
+            count: governance.microsoft.actionRequiredCount,
+            detail: "Project-linked communications or meetings flagged for action.",
+          }
+        : null,
+      actualMargin < plannedMargin
+        ? {
+            key: "margin_pressure",
+            severity: "warning",
+            label: "Margin pressure",
+            amount: actualProfit - plannedProfit,
+            detail: "Actual margin is below the current costed margin.",
+          }
+        : null,
+    ].filter(Boolean);
 
     res.json({
       milestones,
@@ -2717,6 +3250,18 @@ router.get("/api/revenue-tab/:projectName", async (req, res) => {
           profit: plannedProfit,
           margin: plannedMargin,
           isManualOverride: !!savedSummary?.plannedRevenue || !!savedSummary?.plannedExpenditure,
+          trust: {
+            sourceRevenue: totalContract,
+            managedRevenue: plannedRevenue,
+            revenueVariance: plannedRevenue - totalContract,
+            sourceExpenditure: costedExpenditure,
+            managedExpenditure: costedExpenditureFinal,
+            expenditureVariance: costedExpenditureFinal - costedExpenditure,
+            changedAt: costedChange?.createdAt || null,
+            changedByName: costedChangedByName,
+            overrideCategory: costedChange?.overrideCategory || null,
+            overrideComment: costedChange?.overrideComment || null,
+          },
         },
         planned: {
           revenue: liveRevenue,
@@ -2733,6 +3278,36 @@ router.get("/api/revenue-tab/:projectName", async (req, res) => {
         voPmLimit: null,
         currentVoTotal: null,
       },
+      reconciliation: {
+        source: {
+          sourceSheet: "Revenue Tracking",
+          milestoneCount: milestones.length,
+          importedContractValue: totalContract,
+          projectContractValue: contractValue,
+        },
+        managed: {
+          overriddenMilestoneCount,
+          overriddenFieldCount,
+          manualCostedOverride: !!savedSummary?.plannedRevenue || !!savedSummary?.plannedExpenditure,
+          latestChangeAt: governance.recentChanges[0]?.createdAt || null,
+          latestChangeByName: governance.recentChanges[0]?.actorName || null,
+        },
+        variances: {
+          projectContractVsImported: contractValue - totalContract,
+          costedRevenueVsImported: plannedRevenue - totalContract,
+          costedExpenditureVsImportedBudget: costedExpenditureFinal - costedExpenditure,
+          actualMarginVsCostedMargin: actualMargin - plannedMargin,
+          liveMarginVsCostedMargin: liveMargin - plannedMargin,
+          overdueExposure: overdueTotal,
+          unbankedExposure: totalContract - inBankTotal,
+          unlinkedMilestones: unlinkedMilestones.length,
+        },
+        approvals: governance.approvals,
+        editRequests: governance.editRequests,
+        microsoft: governance.microsoft,
+        recentChanges: governance.recentChanges,
+      },
+      riskSignals,
     });
   } catch (error) {
     console.error("Revenue tab error:", error);
@@ -2742,10 +3317,17 @@ router.get("/api/revenue-tab/:projectName", async (req, res) => {
 
 router.post("/api/revenue-tab/:projectName/costed", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
-    const { revenue, expenditure } = req.body;
+    const projectName = String(req.params.projectName || "");
+    const { revenue, expenditure, changeReason, changeCategory } = req.body;
     const userId = req.user?.id;
     const userRole = req.user?.role;
+    const existingSummary = await storage.getProjectRevenueSummary(projectName);
+    const auditComment = typeof changeReason === "string" && changeReason.trim().length >= 3
+      ? changeReason.trim()
+      : "Costed values adjusted from the project revenue workspace";
+    const auditCategory = typeof changeCategory === "string" && (OVERRIDE_CATEGORIES as readonly string[]).includes(changeCategory)
+      ? (changeCategory as (typeof OVERRIDE_CATEGORIES)[number])
+      : "RECONCILIATION";
 
     if (isPmOnlyRole(userRole)) {
       const editSummary = `Costed values update: Revenue=${revenue || 'unchanged'}, Expenditure=${expenditure || 'unchanged'} [REVENUE IMPACT]`;
@@ -2777,6 +3359,42 @@ router.post("/api/revenue-tab/:projectName/costed", requireAuth, requireAdminOrF
       voPmLimit: null,
       currentVoTotal: null,
     });
+
+    try {
+      await recordOverride({
+        actorUserId: userId,
+        actorRole: userRole,
+        entityType: "project_revenue_summary",
+        entityId: `${projectName}|costed`,
+        projectName,
+        action: "PROJECT_REVENUE_SUMMARY_OVERRIDE",
+        overrideCategory: auditCategory,
+        overrideComment: auditComment,
+        oldRecord: {
+          plannedRevenue: existingSummary?.plannedRevenue ?? null,
+          plannedExpenditure: existingSummary?.plannedExpenditure ?? null,
+          plannedProfit: existingSummary?.plannedProfit ?? null,
+          plannedMargin: existingSummary?.plannedMargin ?? null,
+        },
+        newRecord: {
+          plannedRevenue: revenue?.toString() ?? null,
+          plannedExpenditure: expenditure?.toString() ?? null,
+          plannedProfit: (revenue && expenditure) ? (parseFloat(revenue) - parseFloat(expenditure)).toString() : null,
+          plannedMargin: (revenue && expenditure && parseFloat(revenue) > 0) ? ((parseFloat(revenue) - parseFloat(expenditure)) / parseFloat(revenue)).toString() : null,
+        },
+      });
+    } catch (auditErr: any) {
+      console.warn("[audit] Costed values audit failed:", auditErr.message);
+    }
+
+    sendExcelSyncNotification({
+      projectName,
+      changedByUserId: userId,
+      changeType: "project_revenue_summary_override",
+      changeDescription: "Project costed revenue/expenditure updated",
+      details: { revenue, expenditure, changeReason: auditComment, changeCategory: auditCategory },
+    });
+
     res.json(saved);
   } catch (error) {
     console.error("Save costed error:", error);
@@ -2847,7 +3465,43 @@ router.post("/api/revenue-tab/:projectName/link-task", requireAuth, requireAdmin
       });
     }
 
+    const existingLinks = await storage.getMilestoneTaskLinks(projectName);
+    const previousLink = existingLinks.find((link: any) => link.milestoneRowNumber === milestoneRowNumber);
     const link = await storage.upsertMilestoneTaskLink(projectName, milestoneRowNumber, taskId);
+
+    try {
+      await recordOverride({
+        actorUserId: userId,
+        actorRole: userRole,
+        entityType: "milestone_task_link",
+        entityId: `${projectName}|milestone${milestoneRowNumber}|task`,
+        projectName,
+        action: "MILESTONE_TASK_LINK",
+        overrideCategory: "DATA_CORRECTION",
+        overrideComment: `Linked milestone ${milestoneRowNumber} to task ${taskId}`,
+        oldRecord: {
+          taskId: previousLink?.taskId ?? null,
+          dateOverride: previousLink?.dateOverride ?? null,
+          dateOverrideReason: previousLink?.dateOverrideReason ?? null,
+        },
+        newRecord: {
+          taskId,
+          dateOverride: previousLink?.dateOverride ?? null,
+          dateOverrideReason: previousLink?.dateOverrideReason ?? null,
+        },
+      });
+    } catch (auditErr: any) {
+      console.warn("[audit] Milestone task link audit failed:", auditErr.message);
+    }
+
+    sendExcelSyncNotification({
+      projectName,
+      changedByUserId: userId,
+      changeType: "milestone_task_linked",
+      changeDescription: `Milestone ${milestoneRowNumber} linked to task ${taskId}`,
+      details: { milestoneRowNumber, taskId },
+    });
+
     res.json(link);
   } catch (error) {
     console.error("Link task error:", error);
@@ -2864,6 +3518,12 @@ router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireA
     }
     const existing = await storage.getMilestoneTaskLinks(projectName);
     const link = existing.find((l: any) => l.milestoneRowNumber === milestoneRowNumber);
+    const previousState = {
+      taskId: link?.taskId ?? 0,
+      dateOverride: link?.dateOverride ?? null,
+      dateOverrideReason: link?.dateOverrideReason ?? null,
+    };
+
     if (link) {
       const updated = await storage.upsertMilestoneTaskLink(projectName, milestoneRowNumber, link.taskId);
       await storage.updateMilestoneDateOverride(projectName, milestoneRowNumber, dateOverride, reason || null);
@@ -2880,6 +3540,27 @@ router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireA
       details: req.body,
     });
 
+    try {
+      await recordOverride({
+        actorUserId: (req as any).user?.id,
+        actorRole: (req as any).user?.role,
+        entityType: "milestone_date_override",
+        entityId: `${projectName}|milestone${milestoneRowNumber}|date`,
+        projectName,
+        action: "MILESTONE_DATE_OVERRIDE",
+        overrideCategory: "TIMING_ADJUSTMENT",
+        overrideComment: reason?.trim() || "Revenue date override applied",
+        oldRecord: previousState,
+        newRecord: {
+          taskId: previousState.taskId,
+          dateOverride,
+          dateOverrideReason: reason || null,
+        },
+      });
+    } catch (auditErr: any) {
+      console.warn("[audit] Milestone date override audit failed:", auditErr.message);
+    }
+
     res.json({ success: true });
   } catch (error) {
     console.error("Date override error:", error);
@@ -2891,7 +3572,35 @@ router.delete("/api/revenue-tab/:projectName/link-task/:milestoneRowNumber", req
   try {
     const projectName = req.params.projectName;
     const milestoneRowNumber = parseInt(req.params.milestoneRowNumber);
+    const existingLinks = await storage.getMilestoneTaskLinks(projectName);
+    const previousLink = existingLinks.find((link: any) => link.milestoneRowNumber === milestoneRowNumber);
     await storage.deleteMilestoneTaskLink(projectName, milestoneRowNumber);
+
+    try {
+      await recordOverride({
+        actorUserId: (req as any).user?.id,
+        actorRole: (req as any).user?.role,
+        entityType: "milestone_task_link",
+        entityId: `${projectName}|milestone${milestoneRowNumber}|task`,
+        projectName,
+        action: "MILESTONE_TASK_UNLINK",
+        overrideCategory: "DATA_CORRECTION",
+        overrideComment: `Unlinked milestone ${milestoneRowNumber} from task`,
+        oldRecord: {
+          taskId: previousLink?.taskId ?? null,
+          dateOverride: previousLink?.dateOverride ?? null,
+          dateOverrideReason: previousLink?.dateOverrideReason ?? null,
+        },
+        newRecord: {
+          taskId: null,
+          dateOverride: null,
+          dateOverrideReason: null,
+        },
+      });
+    } catch (auditErr: any) {
+      console.warn("[audit] Milestone task unlink audit failed:", auditErr.message);
+    }
+
     res.json({ success: true });
   } catch (error) {
     console.error("Unlink task error:", error);
@@ -2971,6 +3680,15 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
     };
 
     const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
+    const baselineExpenseRowsByProject = new Map<string, Map<number, any>>();
+    for (const pn of projectNames) {
+      const expenses = await storage.getProgramExpensesByProject(pn as string);
+      baselineExpenseRowsByProject.set(
+        pn as string,
+        new Map(expenses.map((expense: any) => [expense.rowNumber, expense])),
+      );
+    }
+
     for (const pn of projectNames) {
       const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
       const expenses = await storage.getProgramExpensesByProject(pn as string);
@@ -3012,8 +3730,8 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
           action: "EXPENDITURE_OVERRIDE",
           overrideCategory,
           overrideComment: overrideComment.trim(),
-          oldRecord: {},
-          newRecord: { [o.fieldName]: o.overrideValue },
+          oldRecord: { [o.fieldName]: baselineExpenseRowsByProject.get(o.projectName)?.get(o.rowNumber)?.[o.fieldName] ?? null },
+          newRecord: { [o.fieldName]: normalizeOverrideValue(o.overrideValue) },
         });
       }
     } catch (auditErr: any) {
@@ -3276,16 +3994,33 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
 router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = req.params.projectName;
-    const [expenses, taskLinks, opTasks, planTasks, cosOverrides] = await Promise.all([
+    const [expenses, taskLinks, opTasks, planTasks, cosOverrides, expenditureOverrides, projectRows] = await Promise.all([
       storage.getProgramExpensesByProject(projectName),
       storage.getExpenseTaskLinks(projectName),
       storage.getOperationalTasksByProject(projectName),
       storage.getProjectPlansByProject(projectName),
       db.select().from(cosStatusOverrides).where(eq(cosStatusOverrides.projectName, projectName)),
+      storage.getExpenditureOverridesByProject(projectName),
+      db
+        .select({
+          id: projectInfo.id,
+          projectName: projectInfo.projectName,
+        })
+        .from(projectInfo)
+        .where(eq(projectInfo.projectName, projectName))
+        .limit(1),
     ]);
 
     const cosOverrideByExpenseId = new Map(cosOverrides.map(o => [o.expenseId, o]));
     const cosOverrideByRow = new Map(cosOverrides.map(o => [`${o.projectName}:${o.rowNumber}`, o]));
+    const overrideByFieldKey = new Map(expenditureOverrides.map((row: any) => [`${row.rowNumber}|${row.fieldName}`, row]));
+    const governance = await loadProjectFinanceGovernanceContext(
+      projectName,
+      projectRows[0]?.id ?? null,
+      expenditureOverrides
+        .map((row: any) => row.createdBy)
+        .filter((id: any): id is number => typeof id === "number" && Number.isFinite(id))
+    );
 
     const linkMap = new Map(taskLinks.map(l => [l.expenseId, l]));
 
@@ -3351,7 +4086,80 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
         plannedMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       }
 
-      const cosOverride = cosOverrideByExpenseId.get(exp.id) || cosOverrideByRow.get(`${exp.projectName}:${exp.rowNumber}`);
+      const cosOverride = (cosOverrideByExpenseId.get(exp.id) || cosOverrideByRow.get(`${exp.projectName}:${exp.rowNumber}`)) as any;
+      const fieldAudits = {
+        budgetTotal: buildExpenditureFieldAudit(
+          projectName,
+          exp.rowNumber,
+          "budgetTotal",
+          exp.budgetTotal,
+          overrideByFieldKey.get(`${exp.rowNumber}|budgetTotal`),
+          governance.latestChangeByEntity,
+          governance.userNameById,
+        ),
+        expenseActualTotal: buildExpenditureFieldAudit(
+          projectName,
+          exp.rowNumber,
+          "expenseActualTotal",
+          exp.expenseActualTotal,
+          overrideByFieldKey.get(`${exp.rowNumber}|expenseActualTotal`),
+          governance.latestChangeByEntity,
+          governance.userNameById,
+        ),
+        expensePoNumber: buildExpenditureFieldAudit(
+          projectName,
+          exp.rowNumber,
+          "expensePoNumber",
+          exp.expensePoNumber,
+          overrideByFieldKey.get(`${exp.rowNumber}|expensePoNumber`),
+          governance.latestChangeByEntity,
+          governance.userNameById,
+        ),
+        expenseInvoiceNumber: buildExpenditureFieldAudit(
+          projectName,
+          exp.rowNumber,
+          "expenseInvoiceNumber",
+          exp.expenseInvoiceNumber,
+          overrideByFieldKey.get(`${exp.rowNumber}|expenseInvoiceNumber`),
+          governance.latestChangeByEntity,
+          governance.userNameById,
+        ),
+        expenseInvoicedDate: buildExpenditureFieldAudit(
+          projectName,
+          exp.rowNumber,
+          "expenseInvoicedDate",
+          exp.expenseInvoicedDate,
+          overrideByFieldKey.get(`${exp.rowNumber}|expenseInvoicedDate`),
+          governance.latestChangeByEntity,
+          governance.userNameById,
+        ),
+        expensePaymentDate: buildExpenditureFieldAudit(
+          projectName,
+          exp.rowNumber,
+          "expensePaymentDate",
+          exp.expensePaymentDate,
+          overrideByFieldKey.get(`${exp.rowNumber}|expensePaymentDate`),
+          governance.latestChangeByEntity,
+          governance.userNameById,
+        ),
+        supplierName: buildExpenditureFieldAudit(
+          projectName,
+          exp.rowNumber,
+          "supplierName",
+          (exp as any).supplierName ?? null,
+          overrideByFieldKey.get(`${exp.rowNumber}|supplierName`),
+          governance.latestChangeByEntity,
+          governance.userNameById,
+        ),
+      };
+      const editedFields = Object.values(fieldAudits)
+        .filter((audit) => auditValuesDiffer(audit.sourceValue, audit.managedValue) || audit.overrideValue !== null || audit.overrideComment)
+        .map((audit) => audit.fieldName);
+      const latestFieldAudit = Object.values(fieldAudits).reduce((latest: any, audit: any) => {
+        if (!audit.changedAt) return latest;
+        if (!latest?.changedAt) return audit;
+        return new Date(audit.changedAt).getTime() > new Date(latest.changedAt).getTime() ? audit : latest;
+      }, null);
 
       return {
         ...exp,
@@ -3364,12 +4172,125 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
         hasDateOverride: !!link?.dateOverride,
         dateOverrideReason: link?.dateOverrideReason || null,
         cosOverride: cosOverride ? { reason: cosOverride.reason, overriddenBy: cosOverride.overriddenBy, originalStatus: cosOverride.originalStatus, overrideStatus: cosOverride.overrideStatus } : null,
+        trust: {
+          sourceSheet: "Expenditure Breakdown",
+          sourceRow: exp.rowNumber,
+          hasVariance: editedFields.length > 0 || !!cosOverride || !!link?.dateOverride,
+          editedFields,
+          lastChangedAt: latestFieldAudit?.changedAt || null,
+          lastChangedByName: latestFieldAudit?.changedByName || cosOverride?.overriddenBy || null,
+          fieldAudits,
+        },
       };
     });
 
     const categories = [...new Set(expenses.filter((e: any) => e.rowType === 'category').map((e: any) => e.expenseCategory).filter(Boolean))];
+    const totalBudget = enriched.reduce((sum: number, item: any) => sum + safeNum(item.budgetTotal), 0);
+    const totalActual = enriched.reduce((sum: number, item: any) => sum + safeNum(item.expenseActualTotal), 0);
+    const realisedCos = enriched
+      .filter((item: any) => item.cosStatus === "COS Realised")
+      .reduce((sum: number, item: any) => sum + safeNum(item.expenseActualTotal), 0);
+    const outOfBankTotal = enriched
+      .filter((item: any) => item.paymentStatus === "Out of Bank")
+      .reduce((sum: number, item: any) => sum + safeNum(item.expenseActualTotal), 0);
+    const committedUnpaidTotal = enriched
+      .filter((item: any) => item.cosStatus === "Committed" && item.paymentStatus !== "Out of Bank")
+      .reduce((sum: number, item: any) => sum + safeNum(item.expenseActualTotal), 0);
+    const overriddenRowCount = new Set(expenditureOverrides.map((row: any) => row.rowNumber)).size;
+    const overriddenFieldCount = new Set(expenditureOverrides.map((row: any) => `${row.rowNumber}:${row.fieldName}`)).size;
+    const noRevenueLinkedCount = enriched.filter((item: any) => item.noRevenueLinked).length;
+    const overBudgetItems = enriched.filter((item: any) => safeNum(item.expenseActualTotal) > safeNum(item.budgetTotal));
+    const riskSignals = [
+      totalActual > totalBudget
+        ? {
+            key: "budget_overrun",
+            severity: "warning",
+            label: "Expenditure above budget",
+            amount: totalActual - totalBudget,
+            count: overBudgetItems.length,
+            detail: "Actual or managed expenditure exceeds imported budget.",
+          }
+        : null,
+      committedUnpaidTotal > 0
+        ? {
+            key: "committed_unpaid",
+            severity: "info",
+            label: "Committed supplier exposure",
+            amount: committedUnpaidTotal,
+            count: enriched.filter((item: any) => item.cosStatus === "Committed" && item.paymentStatus !== "Out of Bank").length,
+            detail: "Committed cost not yet out of bank.",
+          }
+        : null,
+      noRevenueLinkedCount > 0
+        ? {
+            key: "no_revenue_linked",
+            severity: "info",
+            label: "Cost lines excluded from revenue linkage",
+            count: noRevenueLinkedCount,
+            detail: "Review whether these lines should remain outside revenue linkage.",
+          }
+        : null,
+      governance.approvals.affectingCashCount > 0
+        ? {
+            key: "cash_approvals",
+            severity: "warning",
+            label: "Approvals affecting cash",
+            count: governance.approvals.affectingCashCount,
+            detail: "Pending approvals may alter payment timing or cost recognition.",
+          }
+        : null,
+      governance.editRequests.pendingCount > 0
+        ? {
+            key: "pending_edits",
+            severity: "info",
+            label: "Pending finance edit requests",
+            count: governance.editRequests.pendingCount,
+            detail: "Approval queue still holds finance changes for this project.",
+          }
+        : null,
+      governance.microsoft.actionRequiredCount > 0
+        ? {
+            key: "microsoft_actions",
+            severity: "info",
+            label: "Linked Microsoft items need action",
+            count: governance.microsoft.actionRequiredCount,
+            detail: "Commercial communications or meetings on this project still need follow-up.",
+          }
+        : null,
+    ].filter(Boolean);
 
-    res.json({ items: enriched, categories });
+    res.json({
+      items: enriched,
+      categories,
+      reconciliation: {
+        source: {
+          sourceSheet: "Expenditure Breakdown",
+          itemCount: enriched.length,
+          importedBudget: totalBudget,
+          importedActual: totalActual,
+        },
+        managed: {
+          overriddenRowCount,
+          overriddenFieldCount,
+          cosOverrideCount: enriched.filter((item: any) => !!item.cosOverride).length,
+          latestChangeAt: governance.recentChanges[0]?.createdAt || null,
+          latestChangeByName: governance.recentChanges[0]?.actorName || null,
+        },
+        variances: {
+          budgetVsActual: totalBudget - totalActual,
+          realisedCos,
+          outOfBankTotal,
+          committedUnpaidTotal,
+          noRevenueLinkedCount,
+          overBudgetCount: overBudgetItems.length,
+        },
+        approvals: governance.approvals,
+        editRequests: governance.editRequests,
+        microsoft: governance.microsoft,
+        recentChanges: governance.recentChanges,
+      },
+      riskSignals,
+    });
   } catch (error) {
     console.error("Expenditure breakdown error:", error);
     res.status(500).json({ error: "Failed to fetch expenditure breakdown" });

@@ -33,6 +33,23 @@ describe("my-work source links", () => {
     expect(result.sourceTypeLabel).toBe("Microsoft Email");
   });
 
+  it("routes Microsoft items linked to quality-backed tasks into the quality workspace", () => {
+    const result = buildMyWorkSourceLinks({
+      source: "microsoft",
+      rawId: 12,
+      projectName: "Solar Gamma",
+      sourceType: "email",
+      linkedTaskId: 77,
+      linkedTaskType: "operational",
+      linkedQualityItemInstanceId: 501,
+      webLink: "https://outlook.office.com/mail/id/12",
+    });
+
+    expect(result.sourceHref).toBe("/project/Solar%20Gamma?mode=execution&section=quality&subTab=quality");
+    expect(result.sourceContextLabel).toBe("Open linked quality item");
+    expect(result.sourceTypeLabel).toBe("Microsoft Email");
+  });
+
   it("falls back to my-work item links for approvals without project context", () => {
     const result = buildMyWorkSourceLinks({
       source: "approvals",

@@ -1,9 +1,41 @@
 import { db } from "./db";
-import { eq, and, ne, desc, sql } from "drizzle-orm";
-import { msObjects, projectLinks, projectInfo, mytoolTasks, operationalTasks, users, communicationFollowUps, projectCommunicationTimelineEvents } from "@shared/schema";
+import { eq, and, ne, desc, sql, inArray } from "drizzle-orm";
+import {
+  msObjects,
+  projectLinks,
+  projectInfo,
+  mytoolTasks,
+  operationalTasks,
+  users,
+  communicationFollowUps,
+  projectCommunicationTimelineEvents,
+  qcChecklist,
+  qcItemEvidence,
+  qcItemInstance,
+  qcTemplateGroup,
+  qcTemplateItem,
+  qcTemplatePhase,
+} from "@shared/schema";
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
 const MANAGER_ROLES = [...ADMIN_ROLES, "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
+type OperationalTaskRow = typeof operationalTasks.$inferSelect;
+type QualityItemRow = typeof qcItemInstance.$inferSelect;
+type QualityChecklistRow = typeof qcChecklist.$inferSelect;
+type QualityTemplateItemRow = typeof qcTemplateItem.$inferSelect;
+type QualityTemplateGroupRow = typeof qcTemplateGroup.$inferSelect;
+type QualityTemplatePhaseRow = typeof qcTemplatePhase.$inferSelect;
+type QualityEvidenceRow = typeof qcItemEvidence.$inferSelect;
+
+function uniqueNumberList(values: Array<number | null | undefined>): number[] {
+  const result = new Set<number>();
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      result.add(value);
+    }
+  }
+  return Array.from(result);
+}
 
 async function canAccessProject(userId: number, projectId: number): Promise<boolean> {
   const [user] = await db.select({ role: users.role, name: users.name }).from(users).where(eq(users.id, userId));
@@ -216,15 +248,108 @@ export async function getProjectLinkedItems(
 
   const isAdmin = ADMIN_ROLES.includes(user.role);
 
-  const items = await db
+  const projectLinkedItems = await db
     .select()
     .from(msObjects)
-    .where(eq(msObjects.linkedProjectId, projectId))
-    .orderBy(desc(msObjects.receivedOrStartDatetime));
+    .where(eq(msObjects.linkedProjectId, projectId));
 
-  if (isAdmin) return items;
+  const items = isAdmin
+    ? projectLinkedItems
+    : projectLinkedItems.filter((item: any) => item.userId === userId);
 
-  return items.filter((item: any) => item.userId === userId);
+  if (items.length === 0) return [];
+
+  const linkedOperationalTaskIds = uniqueNumberList(items.map((item: any) => item.linkedTaskId));
+
+  const taskRows: OperationalTaskRow[] = linkedOperationalTaskIds.length > 0
+    ? await db.select().from(operationalTasks).where(inArray(operationalTasks.id, linkedOperationalTaskIds))
+    : [];
+
+  const taskMap = new Map(taskRows.map((task) => [task.id, task]));
+
+  const linkedQualityItemIds = uniqueNumberList(taskRows.map((task) => task.linkedQualityItemInstanceId));
+
+  const qualityItemRows: QualityItemRow[] = linkedQualityItemIds.length > 0
+    ? await db.select().from(qcItemInstance).where(inArray(qcItemInstance.id, linkedQualityItemIds))
+    : [];
+
+  const checklistIds = uniqueNumberList(qualityItemRows.map((item) => item.checklistId));
+  const templateItemIds = uniqueNumberList(qualityItemRows.map((item) => item.templateItemId));
+
+  const checklistRows: QualityChecklistRow[] = checklistIds.length > 0
+    ? await db.select().from(qcChecklist).where(inArray(qcChecklist.id, checklistIds))
+    : [];
+  const templateItemRows: QualityTemplateItemRow[] = templateItemIds.length > 0
+    ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
+    : [];
+
+  const groupIds = uniqueNumberList(templateItemRows.map((item) => item.templateGroupId));
+  const groupRows: QualityTemplateGroupRow[] = groupIds.length > 0
+    ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.id, groupIds))
+    : [];
+
+  const phaseIds = uniqueNumberList(groupRows.map((group) => group.templatePhaseId));
+  const phaseRows: QualityTemplatePhaseRow[] = phaseIds.length > 0
+    ? await db.select().from(qcTemplatePhase).where(inArray(qcTemplatePhase.id, phaseIds))
+    : [];
+
+  const evidenceRows: QualityEvidenceRow[] = linkedQualityItemIds.length > 0
+    ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, linkedQualityItemIds))
+    : [];
+
+  const checklistMap = new Map(checklistRows.map((row) => [row.id, row]));
+  const templateItemMap = new Map(templateItemRows.map((row) => [row.id, row]));
+  const groupMap = new Map(groupRows.map((row) => [row.id, row]));
+  const phaseMap = new Map(phaseRows.map((row) => [row.id, row]));
+  const qualityItemMap = new Map(qualityItemRows.map((row) => [row.id, row]));
+  const evidenceCountMap = new Map<number, number>();
+
+  for (const evidence of evidenceRows) {
+    evidenceCountMap.set(
+      evidence.itemInstanceId,
+      (evidenceCountMap.get(evidence.itemInstanceId) || 0) + 1,
+    );
+  }
+
+  return items
+    .map((item: any) => {
+      const task = item.linkedTaskId ? taskMap.get(item.linkedTaskId) || null : null;
+      const qualityItem = task?.linkedQualityItemInstanceId
+        ? qualityItemMap.get(task.linkedQualityItemInstanceId) || null
+        : null;
+      const checklist = qualityItem ? checklistMap.get(qualityItem.checklistId) || null : null;
+      const templateItem = qualityItem ? templateItemMap.get(qualityItem.templateItemId) || null : null;
+      const group = templateItem ? groupMap.get(templateItem.templateGroupId) || null : null;
+      const phase = group ? phaseMap.get(group.templatePhaseId) || null : null;
+
+      return {
+        ...item,
+        taskContext: task ? {
+          id: task.id,
+          title: task.title,
+          projectId: task.projectId,
+          projectName: task.projectName,
+          linkedQualityItemInstanceId: task.linkedQualityItemInstanceId,
+        } : null,
+        qualityContext: qualityItem ? {
+          itemInstanceId: qualityItem.id,
+          checklistId: qualityItem.checklistId,
+          projectName: checklist?.projectName || task?.projectName || null,
+          itemName: templateItem?.itemName || "Unknown quality item",
+          qmStatus: qualityItem.qmStatus,
+          approved: qualityItem.approved,
+          approvalComment: qualityItem.approvalComment,
+          phaseId: phase?.id || null,
+          phaseName: phase?.phaseName || null,
+          evidenceCount: evidenceCountMap.get(qualityItem.id) || 0,
+        } : null,
+      };
+    })
+    .sort((a: any, b: any) => {
+      const left = a.receivedOrStartDatetime ? new Date(a.receivedOrStartDatetime).getTime() : 0;
+      const right = b.receivedOrStartDatetime ? new Date(b.receivedOrStartDatetime).getTime() : 0;
+      return right - left;
+    });
 }
 
 export async function getUserMsObjects(

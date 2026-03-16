@@ -30,6 +30,19 @@ async function loginAdmin() {
 }
 
 describe("API: Engineering tasks canonical work_items source", () => {
+  it("GET /api/eng/dashboard/standup loads current standup dashboard data", async () => {
+    const token = await loginAdmin();
+
+    const res = await apiRequest("GET", "/api/eng/dashboard/standup", undefined, token);
+    expect(res.status).toBe(200);
+    expect(res.data?.summary).toBeTruthy();
+    expect(typeof res.data?.summary?.totalTasks).toBe("number");
+    expect(Array.isArray(res.data?.blockers?.hold)).toBe(true);
+    expect(Array.isArray(res.data?.blockers?.overdue)).toBe(true);
+    expect(Array.isArray(res.data?.workload)).toBe(true);
+    expect(res.data?.statusPipeline).toBeTruthy();
+  });
+
   it("POST/PATCH/DELETE /api/eng/tasks operates with canonical identifiers", async () => {
     const token = await loginAdmin();
 
@@ -63,6 +76,67 @@ describe("API: Engineering tasks canonical work_items source", () => {
 
     const deleted = await apiRequest("DELETE", `/api/eng/tasks/${taskId}`, undefined, token);
     expect(deleted.status).toBe(200);
+  });
+
+  it("GET /api/eng/tasks resolves canonical assignment and traceability context", async () => {
+    const token = await loginAdmin();
+
+    const projects = await apiRequest("GET", "/api/projects", undefined, token);
+    expect(projects.status).toBe(200);
+    const projectId = projects.data[0]?.project_info_id || projects.data[0]?.id;
+    expect(projectId).toBeTruthy();
+
+    const title = `Engineering traceability ${Date.now()}`;
+    const created = await apiRequest("POST", "/api/eng/tasks", {
+      title,
+      projectId,
+      status: "IN PROGRESS",
+      priority: "High",
+    }, token);
+    expect(created.status).toBe(200);
+    const taskId = created.data?.workItemId || created.data?.id;
+    expect(taskId).toBeTruthy();
+
+    try {
+      const assignable = await apiRequest("GET", "/api/users/assignable", undefined, token);
+      expect(assignable.status).toBe(200);
+      const target = (assignable.data || []).find((user: any) => user.username === "eon") || (assignable.data || [])[0];
+      expect(target?.id).toBeTruthy();
+
+      const reassigned = await apiRequest(
+        "PATCH",
+        "/api/tasks/reassign",
+        { taskId, taskSource: "plan", assigneeType: "internal_user", assigneeId: target.id },
+        token,
+      );
+      expect(reassigned.status).toBe(200);
+
+      const listing = await apiRequest("GET", `/api/eng/tasks?projectId=${projectId}`, undefined, token);
+      expect(listing.status).toBe(200);
+      const match = (listing.data || []).find((task: any) => (task.workItemId || task.id) === taskId);
+
+      expect(match).toBeTruthy();
+      expect(match.projectId).toBe(projectId);
+      expect(match.assigneeUserIds).toContain(target.id);
+      expect(Array.isArray(match.assignees)).toBe(true);
+      expect(match.assignees.length).toBeGreaterThan(0);
+      expect(Array.isArray(match.resolvedAssignees)).toBe(true);
+      expect(match.resolvedAssignees.some((user: any) => user.id === target.id)).toBe(true);
+      expect(typeof match.isUnassigned).toBe("boolean");
+      expect(typeof match.isBlocked).toBe("boolean");
+      expect(typeof match.isReviewNeeded).toBe("boolean");
+      expect(typeof match.isApprovalPending).toBe("boolean");
+      expect(match.projectHref).toBeTruthy();
+      expect(match.sourceHref).toBeTruthy();
+      expect(typeof match.sourceContextLabel).toBe("string");
+      expect(Array.isArray(match.projectLinkedDeliverables)).toBe(true);
+      expect("deliverableContextHref" in match).toBe(true);
+      expect(typeof match.hasMicrosoftContext).toBe("boolean");
+      expect(typeof match.microsoftActionRequiredCount).toBe("number");
+      expect(Array.isArray(match.relatedMicrosoftItems)).toBe(true);
+    } finally {
+      await apiRequest("DELETE", `/api/eng/tasks/${taskId}`, undefined, token);
+    }
   });
 
   it("GET /api/projects/:projectId/eng-tasks returns project engineering tasks without duplicate merge behavior", async () => {

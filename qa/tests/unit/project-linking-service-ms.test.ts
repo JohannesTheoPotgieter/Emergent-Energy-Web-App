@@ -117,4 +117,62 @@ describe("project linking microsoft follow-ups", () => {
     const timelineInsert = state.inserts.find((i) => (i.values as any)?.eventType === "follow_up_created");
     expect(timelineInsert).toBeTruthy();
   });
+
+  it("enriches project-linked microsoft items with task and quality context", async () => {
+    const mod = await import("../../../server/project-linking-service");
+    state.selectQueue.push([{ role: "PROGRAM_MANAGER" }]);
+    state.selectQueue.push([
+      {
+        id: 90,
+        userId: 7,
+        linkedProjectId: 55,
+        linkedTaskId: 12,
+        type: "email",
+        subjectOrTitle: "QC evidence request",
+        receivedOrStartDatetime: "2026-03-16T08:00:00.000Z",
+      },
+    ]);
+    state.selectQueue.push([
+      {
+        id: 12,
+        projectId: 55,
+        projectName: "Apollo",
+        title: "Close evidence gap",
+        linkedQualityItemInstanceId: 301,
+      },
+    ]);
+    state.selectQueue.push([
+      {
+        id: 301,
+        checklistId: 401,
+        templateItemId: 501,
+        qmStatus: "review",
+        approved: false,
+        approvalComment: "Upload commissioning photos",
+      },
+    ]);
+    state.selectQueue.push([{ id: 401, projectName: "Apollo" }]);
+    state.selectQueue.push([{ id: 501, templateGroupId: 601, itemName: "Commissioning Photos" }]);
+    state.selectQueue.push([{ id: 601, templatePhaseId: 701 }]);
+    state.selectQueue.push([{ id: 701, phaseName: "Commissioning" }]);
+    state.selectQueue.push([{ id: 1, itemInstanceId: 301 }, { id: 2, itemInstanceId: 301 }]);
+
+    const items = await mod.getProjectLinkedItems(55, 7);
+
+    expect(items).toHaveLength(1);
+    expect(items[0].taskContext).toMatchObject({
+      id: 12,
+      projectName: "Apollo",
+      linkedQualityItemInstanceId: 301,
+    });
+    expect(items[0].qualityContext).toMatchObject({
+      itemInstanceId: 301,
+      checklistId: 401,
+      projectName: "Apollo",
+      itemName: "Commissioning Photos",
+      qmStatus: "review",
+      evidenceCount: 2,
+      phaseName: "Commissioning",
+    });
+  });
 });

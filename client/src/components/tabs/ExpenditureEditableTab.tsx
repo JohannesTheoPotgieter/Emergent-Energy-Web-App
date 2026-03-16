@@ -50,6 +50,56 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+interface FinanceFieldAudit {
+  fieldName: string;
+  sourceValue: string | number | null;
+  managedValue: string | number | null;
+  overrideValue: string | number | null;
+  previousValue: string | number | null;
+  changedAt: string | null;
+  changedByUserId: number | null;
+  changedByName: string | null;
+  overrideCategory: string | null;
+  overrideComment: string | null;
+}
+
+interface FinanceRecentChange {
+  id: number;
+  action: string;
+  entityId: string | null;
+  summary: string | null;
+  actorRole: string | null;
+  actorUserId: number | null;
+  actorName: string | null;
+  overrideCategory: string | null;
+  overrideComment: string | null;
+  createdAt: string;
+  changedFields: Array<{ fieldName: string; oldValue: string | null; newValue: string | null }>;
+}
+
+interface FinanceGovernanceGroup {
+  pendingCount: number;
+  affectingCashCount?: number;
+  pending: Array<Record<string, any>>;
+}
+
+interface MicrosoftFinanceSummary {
+  linkedCount: number;
+  actionRequiredCount: number;
+  unreadCount: number;
+  linkedTaskCount: number;
+  recent: Array<Record<string, any>>;
+}
+
+interface FinanceRiskSignal {
+  key: string;
+  severity: "warning" | "info" | "critical";
+  label: string;
+  detail: string;
+  amount?: number;
+  count?: number;
+}
+
 interface EnrichedExpense {
   id: number;
   projectName: string;
@@ -83,6 +133,15 @@ interface EnrichedExpense {
   dateOverrideReason: string | null;
   cosOverride: { reason: string; overriddenBy: string | null; originalStatus: string; overrideStatus: string } | null;
   noRevenueLinked: boolean;
+  trust?: {
+    sourceSheet: string;
+    sourceRow: number;
+    hasVariance: boolean;
+    editedFields: string[];
+    lastChangedAt: string | null;
+    lastChangedByName: string | null;
+    fieldAudits: Record<string, FinanceFieldAudit>;
+  };
 }
 
 interface ExpenditureOverride {
@@ -204,7 +263,7 @@ const getPaymentStatusBadge = (status: string) => {
   );
 };
 
-const OverrideDot = ({ originalValue }: { originalValue: string }) => (
+const OverrideDot = ({ originalValue, audit }: { originalValue: string; audit?: FinanceFieldAudit }) => (
   <TooltipProvider>
     <Tooltip>
       <TooltipTrigger asChild>
@@ -213,7 +272,15 @@ const OverrideDot = ({ originalValue }: { originalValue: string }) => (
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="text-xs bg-blue-50 border-blue-200 text-blue-800">
-        <span>Manual override: {originalValue || "(empty)"}</span>
+        <div className="space-y-1 max-w-[260px]">
+          <p className="font-semibold">{audit?.fieldName || "Managed field"} override</p>
+          <p>Imported/source: {audit?.sourceValue !== undefined ? String(audit.sourceValue ?? "(empty)") : (originalValue || "(empty)")}</p>
+          <p>Current managed: {audit?.managedValue !== undefined ? String(audit.managedValue ?? "(empty)") : "(empty)"}</p>
+          {audit?.changedByName && <p>Changed by: {audit.changedByName}</p>}
+          {audit?.changedAt && <p>Changed at: {new Date(audit.changedAt).toLocaleString("en-ZA", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</p>}
+          {audit?.overrideCategory && <p>Category: {audit.overrideCategory}</p>}
+          {audit?.overrideComment && <p>Reason: {audit.overrideComment}</p>}
+        </div>
       </TooltipContent>
     </Tooltip>
   </TooltipProvider>
@@ -265,7 +332,38 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     return fetch(url, { ...opts, headers, credentials: "include" });
   }, [authHeaders]);
 
-  const { data: breakdownData, isLoading, error } = useQuery<{ items: EnrichedExpense[]; categories: string[] }>({
+  const { data: breakdownData, isLoading, error } = useQuery<{
+    items: EnrichedExpense[];
+    categories: string[];
+    reconciliation?: {
+      source: {
+        sourceSheet: string;
+        itemCount: number;
+        importedBudget: number;
+        importedActual: number;
+      };
+      managed: {
+        overriddenRowCount: number;
+        overriddenFieldCount: number;
+        cosOverrideCount: number;
+        latestChangeAt: string | null;
+        latestChangeByName: string | null;
+      };
+      variances: {
+        budgetVsActual: number;
+        realisedCos: number;
+        outOfBankTotal: number;
+        committedUnpaidTotal: number;
+        noRevenueLinkedCount: number;
+        overBudgetCount: number;
+      };
+      approvals: FinanceGovernanceGroup;
+      editRequests: FinanceGovernanceGroup;
+      microsoft: MicrosoftFinanceSummary;
+      recentChanges: FinanceRecentChange[];
+    };
+    riskSignals?: FinanceRiskSignal[];
+  }>({
     queryKey: breakdownKey,
     queryFn: async () => {
       const res = await authFetch(`/api/expenditure-breakdown/${encodeURIComponent(projectName)}`);
@@ -300,6 +398,20 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   const getOriginalValue = useCallback((rowNumber: number, fieldName: string): string | undefined => {
     return overrideMap.get(`${rowNumber}::${fieldName}`);
   }, [overrideMap]);
+
+  const fieldAuditMap = useMemo(() => {
+    const map = new Map<string, FinanceFieldAudit>();
+    for (const item of breakdownData?.items || []) {
+      for (const audit of Object.values(item.trust?.fieldAudits || {})) {
+        map.set(`${item.rowNumber}::${audit.fieldName}`, audit);
+      }
+    }
+    return map;
+  }, [breakdownData?.items]);
+
+  const getFieldAudit = useCallback((rowNumber: number, fieldName: string): FinanceFieldAudit | undefined => {
+    return fieldAuditMap.get(`${rowNumber}::${fieldName}`);
+  }, [fieldAuditMap]);
 
   const { data: projectTasks = [] } = useQuery<any[]>({
     queryKey: ["all-tasks-for-linking", projectName],
@@ -534,6 +646,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
 
   const items = breakdownData?.items || [];
   const categories = breakdownData?.categories || [];
+  const reconciliation = breakdownData?.reconciliation;
+  const riskSignals = breakdownData?.riskSignals || [];
 
   const supplierNames = useMemo(() => {
     const names = new Set<string>();
@@ -743,7 +857,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     const cellKey = `${rowId}-${field}`;
     const isEditing = isAdmin && editingCell === cellKey;
     const displayValue = type === "currency" ? formatCurrency(value) : (type === "date" ? formatDate(value) : (value || "-"));
-    const showOverride = rowNumber !== undefined && hasOverride(rowNumber, field);
+    const audit = rowNumber !== undefined ? getFieldAudit(rowNumber, field) : undefined;
+    const showOverride = rowNumber !== undefined && (hasOverride(rowNumber, field) || !!audit);
     return isEditing ? (
       <Input
         type={type === "currency" ? "number" : "text"}
@@ -762,7 +877,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         data-testid={`cell-${rowId}-${field}`}
       >
         {displayValue}
-        {showOverride && <OverrideDot originalValue={getOriginalValue(rowNumber, field) || ""} />}
+        {showOverride && <OverrideDot originalValue={getOriginalValue(rowNumber, field) || ""} audit={audit} />}
       </span>
     );
   };
@@ -770,7 +885,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   const SupplierCell = ({ rowId, value, rowNumber }: { rowId: number; value: string | null; rowNumber: number }) => {
     const cellKey = `${rowId}-supplier`;
     const isEditing = isAdmin && editingCell === cellKey;
-    const showOverride = hasOverride(rowNumber, "supplierName");
+    const audit = getFieldAudit(rowNumber, "supplierName");
+    const showOverride = hasOverride(rowNumber, "supplierName") || !!audit;
 
     if (isEditing) {
       const filtered = supplierSearchTerm
@@ -814,7 +930,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         className={`${isAdmin ? "cursor-pointer hover:bg-blue-50" : ""} px-1 py-0.5 rounded inline-flex items-center text-xs truncate`}
       >
         {value || "-"}
-        {showOverride && <OverrideDot originalValue={getOriginalValue(rowNumber, "supplierName") || ""} />}
+        {showOverride && <OverrideDot originalValue={getOriginalValue(rowNumber, "supplierName") || ""} audit={audit} />}
       </span>
     );
   };
@@ -825,7 +941,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     const editedColor = edits.get(rowId)?.[fontColorField];
     const currentColor = editedColor !== undefined ? editedColor : (fontColor || "black");
     const isRed = currentColor === "red";
-    const showOverride = hasOverride(rowNumber, field);
+    const audit = getFieldAudit(rowNumber, field);
+    const showOverride = hasOverride(rowNumber, field) || !!audit;
 
     const parseDate = (val: string | null): Date | undefined => {
       if (!val) return undefined;
@@ -882,7 +999,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       return (
         <span className={`text-xs px-1 py-0.5 inline-flex items-center truncate ${isRed ? "text-red-500 italic" : ""}`}>
           {formatDate(value)}
-          {showOverride && <OverrideDot originalValue={getOriginalValue(rowNumber, field) || ""} />}
+          {showOverride && <OverrideDot originalValue={getOriginalValue(rowNumber, field) || ""} audit={audit} />}
         </span>
       );
     }
@@ -897,7 +1014,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             >
               <CalendarIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
               <span>{selectedDate ? formatDate(format(selectedDate, "yyyy-MM-dd")) : "-"}</span>
-              {showOverride && <OverrideDot originalValue={getOriginalValue(rowNumber, field) || ""} />}
+              {showOverride && <OverrideDot originalValue={getOriginalValue(rowNumber, field) || ""} audit={audit} />}
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0" align="start" side="bottom">
@@ -1006,8 +1123,19 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="max-w-[200px]">
+                <div className="max-w-[200px] space-y-0.5">
                   <EditableCell rowId={exp.id} field="expenseLineItem" value={exp.expenseLineItem} rowNumber={exp.rowNumber} />
+                  {exp.trust && (
+                    <div className="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                      <span>{exp.trust.sourceSheet} row {exp.trust.sourceRow}</span>
+                      {exp.trust.editedFields.length > 0 && <span>{exp.trust.editedFields.length} managed field change(s)</span>}
+                      {exp.trust.lastChangedAt && (
+                        <span>
+                          {exp.trust.lastChangedByName || "Managed edit"} • {new Date(exp.trust.lastChangedAt).toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "numeric" })}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </TooltipTrigger>
               {exp.expenseLineItem && exp.expenseLineItem.length > 30 && (
@@ -1020,7 +1148,12 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         return (
           <span className="text-xs font-mono inline-flex items-center">
             {formatCurrency(exp.budgetTotal)}
-            {hasOverride(exp.rowNumber, "budgetTotal") && <OverrideDot originalValue={getOriginalValue(exp.rowNumber, "budgetTotal") || ""} />}
+            {(hasOverride(exp.rowNumber, "budgetTotal") || !!getFieldAudit(exp.rowNumber, "budgetTotal")) && (
+              <OverrideDot
+                originalValue={getOriginalValue(exp.rowNumber, "budgetTotal") || ""}
+                audit={getFieldAudit(exp.rowNumber, "budgetTotal")}
+              />
+            )}
           </span>
         );
       case "revenueAmount":
@@ -1121,6 +1254,93 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
 
   return (
     <div className="space-y-3">
+      {reconciliation && (
+        <Card className="border-slate-200 bg-slate-50/70">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-slate-600" />
+              Expenditure Trust Snapshot
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Imported cost truth, managed changes, approvals, and linked Microsoft actions stay visible together for reconciliation.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="rounded-md border bg-white p-3">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Imported budget</p>
+                <p className="text-sm font-semibold">{formatCurrency(reconciliation.source.importedBudget)}</p>
+                <p className="text-[10px] text-muted-foreground">{reconciliation.source.itemCount} imported line items</p>
+              </div>
+              <div className="rounded-md border bg-white p-3">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Managed overrides</p>
+                <p className="text-sm font-semibold">{reconciliation.managed.overriddenFieldCount}</p>
+                <p className="text-[10px] text-muted-foreground">{reconciliation.managed.overriddenRowCount} rows edited</p>
+              </div>
+              <div className="rounded-md border bg-white p-3">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Committed exposure</p>
+                <p className="text-sm font-semibold">{formatCurrency(reconciliation.variances.committedUnpaidTotal)}</p>
+                <p className="text-[10px] text-muted-foreground">{formatCurrency(reconciliation.variances.outOfBankTotal)} out of bank</p>
+              </div>
+              <div className="rounded-md border bg-white p-3">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Cash approvals</p>
+                <p className="text-sm font-semibold">{reconciliation.approvals.affectingCashCount || 0}</p>
+                <p className="text-[10px] text-muted-foreground">{reconciliation.editRequests.pendingCount} pending finance edits</p>
+              </div>
+              <div className="rounded-md border bg-white p-3">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Microsoft-linked actions</p>
+                <p className="text-sm font-semibold">{reconciliation.microsoft.actionRequiredCount}</p>
+                <p className="text-[10px] text-muted-foreground">{reconciliation.microsoft.linkedCount} linked item(s)</p>
+              </div>
+            </div>
+
+            {riskSignals.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {riskSignals.slice(0, 5).map((signal) => (
+                  <div
+                    key={signal.key}
+                    className={`rounded-full border px-3 py-1.5 text-[11px] ${
+                      signal.severity === "warning"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : signal.severity === "critical"
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : "border-slate-200 bg-white text-slate-700"
+                    }`}
+                    title={signal.detail}
+                  >
+                    <span className="font-semibold">{signal.label}</span>
+                    {typeof signal.amount === "number" ? ` • ${formatCurrency(signal.amount)}` : ""}
+                    {typeof signal.count === "number" ? ` • ${signal.count}` : ""}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {reconciliation.recentChanges.length > 0 && (
+              <div className="rounded-md border bg-white p-3 space-y-2">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Recent managed changes</p>
+                {reconciliation.recentChanges.slice(0, 3).map((change) => (
+                  <div key={change.id} className="flex items-start justify-between gap-3 text-xs">
+                    <div>
+                      <p className="font-medium text-slate-800">{change.summary || change.action}</p>
+                      <p className="text-muted-foreground">
+                        {(change.actorName || change.actorRole || "System")} • {new Date(change.createdAt).toLocaleString("en-ZA", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                      {change.overrideComment && <p className="text-muted-foreground">{change.overrideComment}</p>}
+                    </div>
+                    {change.changedFields.length > 0 && (
+                      <Badge variant="outline" className="text-[10px]">
+                        {change.changedFields.length} field{change.changedFields.length === 1 ? "" : "s"}
+                      </Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3" data-testid="kpi-summary-strip">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 sm:p-4 hover:shadow-md transition-shadow">
           <div className="flex items-start gap-3">

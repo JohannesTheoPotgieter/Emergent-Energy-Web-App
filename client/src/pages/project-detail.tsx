@@ -51,6 +51,7 @@ import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
 import { PageShell } from "@/components/layout/page-shell";
+import { FinancialIntegrationPanel } from "@/components/FinancialIntegrationPanel";
 import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
 import { usePermission } from "@/hooks/use-permissions";
 import { parseCockpitMode, resolveSummaryDeepLink, toCockpitModeQuery, type CockpitMode } from "@/lib/project-cockpit";
@@ -969,6 +970,36 @@ export default function ProjectDetailPage() {
     enabled: !!projectName,
   });
 
+  const { data: revenueTrustData } = useQuery<any>({
+    queryKey: ["revenue-tab", projectName],
+    queryFn: async () => {
+      const res = await engFetch(`/api/revenue-tab/${encodeURIComponent(projectName)}`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!projectName && canViewTab.finance && (activeSection === "commercial" || activeSection === "overview"),
+  });
+
+  const { data: expenditureTrustData } = useQuery<any>({
+    queryKey: ["expenditure-breakdown", projectName],
+    queryFn: async () => {
+      const res = await engFetch(`/api/expenditure-breakdown/${encodeURIComponent(projectName)}`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!projectName && canViewTab.finance && (activeSection === "commercial" || activeSection === "overview"),
+  });
+
+  const { data: commercialMsObjects = [] } = useQuery<any[]>({
+    queryKey: ["project-ms-objects", projectInfoId],
+    queryFn: async () => {
+      const res = await engFetch(`/api/ms-objects/project/${projectInfoId}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectInfoId && canViewTab.finance && (activeSection === "commercial" || activeSection === "overview"),
+  });
+
   const { data: cashflowData = [] } = useQuery({
     queryKey: ["cashflow", projectName],
     queryFn: async () => {
@@ -1121,6 +1152,24 @@ export default function ProjectDetailPage() {
   const overallRag: "green" | "amber" | "red" = hasRedRag ? "red" : (scheduleRag === "amber" || costRag === "amber" || qualityRag === "amber") ? "amber" : "green";
   const commercialPendingCount = Math.max((revenueData as any[]).filter((r: any) => !isInflowInBank(r)).length, 0);
   const unpaidExpenseCount = Math.max((expenseData as any[]).filter((e: any) => !isExpensePaid(e)).length, 0);
+  const revenueReconciliation = revenueTrustData?.reconciliation;
+  const expenditureReconciliation = expenditureTrustData?.reconciliation;
+  const pendingCashApprovals = revenueReconciliation?.approvals?.affectingCashCount
+    ?? expenditureReconciliation?.approvals?.affectingCashCount
+    ?? 0;
+  const pendingFinanceEdits = revenueReconciliation?.editRequests?.pendingCount
+    ?? expenditureReconciliation?.editRequests?.pendingCount
+    ?? 0;
+  const microsoftActionCount = revenueReconciliation?.microsoft?.actionRequiredCount
+    ?? expenditureReconciliation?.microsoft?.actionRequiredCount
+    ?? commercialMsObjects.filter((item: any) => item.actionRequired).length;
+  const microsoftLinkedCount = revenueReconciliation?.microsoft?.linkedCount
+    ?? expenditureReconciliation?.microsoft?.linkedCount
+    ?? commercialMsObjects.length;
+  const commercialRiskSignals = [
+    ...((revenueTrustData?.riskSignals || []) as any[]),
+    ...((expenditureTrustData?.riskSignals || []) as any[]),
+  ].slice(0, 6);
   const dependencyCount = pdTicketsData.length;
   const overdueEngineeringCount = (engDataForAlerts?.tasks || []).filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "COMPLETE").length;
   const topAlerts = [
@@ -1437,6 +1486,80 @@ export default function ProjectDetailPage() {
               `Revenue realised ${revenueRealisedPct.toFixed(0)}% | COS realised ${cosRealisedPct.toFixed(0)}%`,
             ]}
           />
+          <div className="grid grid-cols-1 xl:grid-cols-[1.8fr,1fr] gap-3">
+            <Card className="shadow-sm" data-testid="commercial-trust-summary">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Finance trust</p>
+                    <h3 className="text-base font-semibold">Imported, managed, and linked truth</h3>
+                  </div>
+                  <Badge variant="outline" className="text-[10px]">
+                    {pendingCashApprovals} cash approvals
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                  <div className="rounded-md border p-2">
+                    <p className="text-[10px] text-muted-foreground">Imported revenue</p>
+                    <p className="font-semibold">{revenueReconciliation ? `R${Math.round(revenueReconciliation.source.importedContractValue).toLocaleString()}` : "Loading..."}</p>
+                  </div>
+                  <div className="rounded-md border p-2">
+                    <p className="text-[10px] text-muted-foreground">Managed revenue edits</p>
+                    <p className="font-semibold">{revenueReconciliation?.managed?.overriddenFieldCount ?? 0}</p>
+                  </div>
+                  <div className="rounded-md border p-2">
+                    <p className="text-[10px] text-muted-foreground">Managed cost edits</p>
+                    <p className="font-semibold">{expenditureReconciliation?.managed?.overriddenFieldCount ?? 0}</p>
+                  </div>
+                  <div className="rounded-md border p-2">
+                    <p className="text-[10px] text-muted-foreground">Microsoft actions</p>
+                    <p className="font-semibold">{microsoftActionCount} / {microsoftLinkedCount}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+                  <div className="rounded-md border p-2">
+                    <p className="text-[10px] text-muted-foreground">Unbanked exposure</p>
+                    <p className="font-semibold">
+                      {revenueReconciliation ? `R${Math.round(revenueReconciliation.variances.unbankedExposure).toLocaleString()}` : "Loading..."}
+                    </p>
+                  </div>
+                  <div className="rounded-md border p-2">
+                    <p className="text-[10px] text-muted-foreground">Committed unpaid cost</p>
+                    <p className="font-semibold">
+                      {expenditureReconciliation ? `R${Math.round(expenditureReconciliation.variances.committedUnpaidTotal).toLocaleString()}` : "Loading..."}
+                    </p>
+                  </div>
+                  <div className="rounded-md border p-2">
+                    <p className="text-[10px] text-muted-foreground">Pending finance edits</p>
+                    <p className="font-semibold">{pendingFinanceEdits}</p>
+                  </div>
+                </div>
+                {commercialRiskSignals.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {commercialRiskSignals.map((signal: any) => (
+                      <button
+                        key={`${signal.key}-${signal.label}`}
+                        onClick={() => navigateToSection("commercial", signal.key?.includes("revenue") || signal.key?.includes("milestone") || signal.key?.includes("cash") ? "revenue-tracking" : "expenditure")}
+                        className={`rounded-full border px-3 py-1.5 text-xs ${
+                          signal.severity === "warning"
+                            ? "border-amber-200 bg-amber-50 text-amber-800"
+                            : signal.severity === "critical"
+                              ? "border-red-200 bg-red-50 text-red-700"
+                              : "border-slate-200 bg-slate-50 text-slate-700"
+                        }`}
+                        title={signal.detail}
+                      >
+                        <span className="font-semibold">{signal.label}</span>
+                        {typeof signal.amount === "number" ? ` • R${Math.round(signal.amount).toLocaleString()}` : ""}
+                        {typeof signal.count === "number" ? ` • ${signal.count}` : ""}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <FinancialIntegrationPanel projectName={projectName} />
+          </div>
           <div className="flex items-center gap-3 flex-wrap border-b pb-2 overflow-x-auto scrollbar-hide" data-testid="commercial-sub-tabs">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Commercial controls</span>
             <Button size="sm" variant={activeSubTab === "procurement" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("procurement")} data-testid="subtab-procurement">

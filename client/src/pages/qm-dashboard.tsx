@@ -84,6 +84,7 @@ interface ChecklistPhase {
 
 interface Checklist {
   id: number;
+  projectId?: number;
   projectName: string;
   templateId: number;
   status: string;
@@ -91,6 +92,13 @@ interface Checklist {
   updatedAt?: string;
   phases?: ChecklistPhase[];
   warningCount?: number;
+  overdueCount?: number;
+  resubmissionCount?: number;
+  evidenceGapCount?: number;
+  pendingReviewCount?: number;
+  blockedHandover?: boolean;
+  qualityRiskScore?: number;
+  qualityRiskLevel?: string;
 }
 
 interface Warning {
@@ -116,8 +124,36 @@ interface QualityItem {
   startDate: string | null;
   endDate: string | null;
   evidenceCount: number;
+  evidenceRequired?: boolean;
+  evidenceMissing?: boolean;
+  overdue?: boolean;
+  daysOverdue?: number;
+  approvalState?: string;
+  resubmissionNeeded?: boolean;
   approved: boolean;
   approvedAt: string | null;
+  approvalComment?: string | null;
+}
+
+interface QualityDashboardSummary {
+  totalChecklists: number;
+  pendingApprovals: number;
+  openWarnings: number;
+  totalWarnings: number;
+  overdueActions?: number;
+  resubmissionNeeded?: number;
+  evidenceRequired?: number;
+  blockedHandovers?: number;
+  atRiskProjects?: number;
+  topRiskProjects?: Array<{
+    projectName: string;
+    riskLevel: string;
+    riskScore: number;
+    blockedHandover: boolean;
+    overdueCount: number;
+    resubmissionCount: number;
+    evidenceGapCount: number;
+  }>;
 }
 
 type ProjectSortKey = "name" | "completion" | "warnings" | "updated";
@@ -137,6 +173,24 @@ function StatusBadge({ status }: { status: string }) {
     <Badge variant="outline" className={`${c.bg} ${c.text} border-0 text-xs gap-1.5`}>
       <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />
       {c.label}
+    </Badge>
+  );
+}
+
+function RiskLevelBadge({ level }: { level?: string }) {
+  const normalized = String(level || "low").toLowerCase();
+  const styles =
+    normalized === "critical"
+      ? "bg-red-50 text-red-700 border-red-200"
+      : normalized === "high"
+        ? "bg-amber-50 text-amber-700 border-amber-200"
+        : normalized === "medium"
+          ? "bg-sky-50 text-sky-700 border-sky-200"
+          : "bg-emerald-50 text-emerald-700 border-emerald-200";
+  const label = normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  return (
+    <Badge variant="outline" className={`text-[10px] ${styles}`}>
+      {label} risk
     </Badge>
   );
 }
@@ -199,6 +253,13 @@ export default function QmDashboardPage() {
   const { data: warnings = [], isLoading: warningsLoading, isError: warningsError, refetch: refetchWarnings } = useQuery<Warning[]>({
     queryKey: ["quality-warnings-all"],
     queryFn: () => qFetch("/api/quality/warnings?status=open"),
+    refetchOnMount: "always",
+    staleTime: 0,
+  });
+
+  const { data: governanceSummary } = useQuery<QualityDashboardSummary>({
+    queryKey: ["quality-dashboard"],
+    queryFn: () => qFetch("/api/quality/dashboard"),
     refetchOnMount: "always",
     staleTime: 0,
   });
@@ -385,7 +446,11 @@ export default function QmDashboardPage() {
   const filteredItems = useMemo(() => {
     let list = [...allItems];
     if (itemsSearch) list = list.filter(i => i.itemName.toLowerCase().includes(itemsSearch.toLowerCase()) || i.projectName.toLowerCase().includes(itemsSearch.toLowerCase()));
-    if (itemsStatusFilter !== "all") list = list.filter(i => i.qmStatus === itemsStatusFilter);
+    if (itemsStatusFilter !== "all") {
+      list = list.filter(i => itemsStatusFilter === "pending"
+        ? !i.qmStatus || i.qmStatus === "not_started"
+        : i.qmStatus === itemsStatusFilter);
+    }
     if (itemsProjectFilter !== "all") list = list.filter(i => i.projectName === itemsProjectFilter);
     if (itemsPhaseFilter !== "all") list = list.filter(i => i.phaseName === itemsPhaseFilter);
 
@@ -412,6 +477,7 @@ export default function QmDashboardPage() {
   const highSeverityWarnings = useMemo(() => warnings.filter(w => w.severity === "High"), [warnings]);
   const mediumWarnings = useMemo(() => warnings.filter(w => w.severity === "Medium"), [warnings]);
   const lowWarnings = useMemo(() => warnings.filter(w => w.severity !== "High" && w.severity !== "Medium"), [warnings]);
+  const topRiskProjects = governanceSummary?.topRiskProjects || [];
 
   const toggleItemSort = (key: string) => {
     if (itemSort === key) {
@@ -423,17 +489,27 @@ export default function QmDashboardPage() {
   };
 
   const qmNextAction = useMemo((): NextAction | null => {
+    const overdueActions = governanceSummary?.overdueActions || 0;
+    const resubmissions = governanceSummary?.resubmissionNeeded || 0;
+    if (overdueActions > 0) return { label: `${overdueActions} overdue quality action${overdueActions !== 1 ? "s" : ""} need attention`, severity: "warning" };
+    if (resubmissions > 0) return { label: `${resubmissions} rejected item${resubmissions !== 1 ? "s" : ""} need resubmission`, severity: "warning" };
     if (activeWarnings > 0) return { label: `${activeWarnings} quality warning${activeWarnings !== 1 ? "s" : ""} to review`, severity: "warning" };
     const incomplete = checklists.filter(c => c.status !== "completed").length;
     if (incomplete > 0) return { label: `${incomplete} checklist${incomplete !== 1 ? "s" : ""} still in progress`, severity: "info" };
     return { label: "All quality checklists complete", severity: "info" };
-  }, [activeWarnings, checklists]);
+  }, [activeWarnings, checklists, governanceSummary?.overdueActions, governanceSummary?.resubmissionNeeded]);
 
   const qmBlockers = useMemo((): BlockerInfo[] => {
     const b: BlockerInfo[] = [];
+    if ((governanceSummary?.blockedHandovers || 0) > 0) {
+      b.push({ label: "Quality-blocked handovers", count: governanceSummary?.blockedHandovers || 0, severity: "warning" });
+    }
+    if ((governanceSummary?.resubmissionNeeded || 0) > 0) {
+      b.push({ label: "Resubmission-needed items", count: governanceSummary?.resubmissionNeeded || 0, severity: "warning" });
+    }
     if (activeWarnings > 0) b.push({ label: "Active quality warnings", count: activeWarnings, severity: "warning" });
     return b;
-  }, [activeWarnings]);
+  }, [activeWarnings, governanceSummary?.blockedHandovers, governanceSummary?.resubmissionNeeded]);
 
   const qmWalkthroughSteps = useMemo(() => [
     { title: "Quality overview", description: "KPI cards at the top show total projects, items passed, warnings, and average QM score." },
@@ -478,29 +554,77 @@ export default function QmDashboardPage() {
       <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} />
       <ActionBar nextAction={qmNextAction} blockers={qmBlockers} />
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Card className="border-amber-100 bg-amber-50/40">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <Card className="border-red-100 bg-red-50/50">
           <CardContent className="p-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Needs review now</p>
-            <p className="text-xl font-bold text-amber-600 tabular-nums mt-1">{activeWarnings}</p>
-            <p className="text-xs text-muted-foreground mt-1">Active warnings requiring resolve or override.</p>
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Overdue actions</p>
+            <p className="text-xl font-bold text-red-600 tabular-nums mt-1">{governanceSummary?.overdueActions ?? 0}</p>
+            <p className="text-xs text-muted-foreground mt-1">Items past due and still unresolved.</p>
           </CardContent>
         </Card>
-        <Card className="border-sky-100 bg-sky-50/40">
+        <Card className="border-amber-100 bg-amber-50/50">
           <CardContent className="p-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">In progress</p>
-            <p className="text-xl font-bold text-sky-600 tabular-nums mt-1">{activeProjectsCount}</p>
-            <p className="text-xs text-muted-foreground mt-1">Projects with active quality checklists.</p>
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Resubmission needed</p>
+            <p className="text-xl font-bold text-amber-600 tabular-nums mt-1">{governanceSummary?.resubmissionNeeded ?? 0}</p>
+            <p className="text-xs text-muted-foreground mt-1">Rejected items waiting for rework and re-approval.</p>
           </CardContent>
         </Card>
-        <Card className="border-emerald-100 bg-emerald-50/40">
+        <Card className="border-sky-100 bg-sky-50/50">
           <CardContent className="p-3">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Risk spread</p>
-            <p className="text-xl font-bold text-emerald-600 tabular-nums mt-1">{projectsWithWarningsCount}/{totalProjects}</p>
-            <p className="text-xs text-muted-foreground mt-1">Projects currently carrying quality warnings.</p>
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Evidence gaps</p>
+            <p className="text-xl font-bold text-sky-600 tabular-nums mt-1">{governanceSummary?.evidenceRequired ?? 0}</p>
+            <p className="text-xs text-muted-foreground mt-1">Evidence-required items still missing proof.</p>
+          </CardContent>
+        </Card>
+        <Card className="border-violet-100 bg-violet-50/50">
+          <CardContent className="p-3">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Blocked handover</p>
+            <p className="text-xl font-bold text-violet-600 tabular-nums mt-1">{governanceSummary?.blockedHandovers ?? 0}</p>
+            <p className="text-xs text-muted-foreground mt-1">Projects where quality is holding execution readiness.</p>
+          </CardContent>
+        </Card>
+        <Card className="border-emerald-100 bg-emerald-50/50">
+          <CardContent className="p-3">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">At-risk projects</p>
+            <p className="text-xl font-bold text-emerald-600 tabular-nums mt-1">{governanceSummary?.atRiskProjects ?? 0}</p>
+            <p className="text-xs text-muted-foreground mt-1">Projects carrying elevated quality governance risk.</p>
           </CardContent>
         </Card>
       </div>
+
+      {topRiskProjects.length > 0 && (
+        <Card className="border-amber-200/70 bg-gradient-to-r from-amber-50 to-background">
+          <CardContent className="p-4">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <p className="text-sm font-semibold">Projects needing the fastest quality intervention</p>
+                <p className="text-xs text-muted-foreground mt-1">Top risk projects blend overdue actions, evidence gaps, resubmissions, and handover blockers.</p>
+              </div>
+              <Badge variant="outline" className="bg-background/80">
+                {topRiskProjects.length} highlighted
+              </Badge>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {topRiskProjects.map((project) => (
+                <button
+                  key={project.projectName}
+                  className="flex items-center gap-2 rounded-lg border bg-background px-3 py-2 text-left hover:border-emerald-300 hover:shadow-sm transition-all"
+                  onClick={() => setLocation(`/project/${encodeURIComponent(project.projectName)}?mode=execution&section=quality&subTab=quality`)}
+                  data-testid={`top-risk-project-${project.projectName}`}
+                >
+                  <span className="text-sm font-medium">{project.projectName}</span>
+                  <RiskLevelBadge level={project.riskLevel} />
+                  {project.blockedHandover && (
+                    <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200">
+                      Handover blocked
+                    </Badge>
+                  )}
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
         <Card className="border-sky-100" data-testid="kpi-quality-progress">
@@ -717,13 +841,36 @@ export default function QmDashboardPage() {
                               className="border-b last:border-0 hover:bg-emerald-50/40 cursor-pointer transition-colors group"
                               role="button"
                               tabIndex={0}
-                              onClick={() => setLocation(`/project/${encodeURIComponent(checklist.projectName)}?tab=quality`)}
-                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setLocation(`/project/${encodeURIComponent(checklist.projectName)}?tab=quality`); }}}
+                              onClick={() => setLocation(`/project/${encodeURIComponent(checklist.projectName)}?mode=execution&section=quality&subTab=quality`)}
+                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setLocation(`/project/${encodeURIComponent(checklist.projectName)}?mode=execution&section=quality&subTab=quality`); }}}
                             >
                               <td className="py-2.5 px-3">
                                 <span className="font-medium text-sm group-hover:text-emerald-600 transition-colors" data-testid={`text-project-name-${checklist.id}`}>
                                   {checklist.projectName}
                                 </span>
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  <RiskLevelBadge level={checklist.qualityRiskLevel} />
+                                  {(checklist.overdueCount ?? 0) > 0 && (
+                                    <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200">
+                                      {checklist.overdueCount} overdue
+                                    </Badge>
+                                  )}
+                                  {(checklist.resubmissionCount ?? 0) > 0 && (
+                                    <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                                      {checklist.resubmissionCount} retry
+                                    </Badge>
+                                  )}
+                                  {(checklist.evidenceGapCount ?? 0) > 0 && (
+                                    <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-200">
+                                      {checklist.evidenceGapCount} evidence
+                                    </Badge>
+                                  )}
+                                  {checklist.blockedHandover && (
+                                    <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200">
+                                      Handover blocked
+                                    </Badge>
+                                  )}
+                                </div>
                               </td>
                               <td className="py-2.5 px-2 text-center">
                                 <Badge
@@ -941,13 +1088,40 @@ export default function QmDashboardPage() {
                           key={item.id}
                           data-testid={`item-row-${item.id}`}
                           className="border-b border-border/40 hover:bg-muted/30 cursor-pointer transition-colors group"
-                          onClick={() => setLocation(`/project/${encodeURIComponent(item.projectName)}?tab=quality`)}
+                          onClick={() => setLocation(`/project/${encodeURIComponent(item.projectName)}?mode=execution&section=quality&subTab=quality&qualityItemId=${item.id}`)}
                         >
                           <td className="py-3 px-4">
                             <div className="font-medium text-sm truncate max-w-[220px]">{item.itemName}</div>
                             <div className="text-[10px] text-muted-foreground truncate max-w-[220px] md:hidden mt-0.5">
                               {item.projectName}
                             </div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {item.resubmissionNeeded && (
+                                <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                                  Resubmission
+                                </Badge>
+                              )}
+                              {item.overdue && (
+                                <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200">
+                                  {item.daysOverdue || 0}d overdue
+                                </Badge>
+                              )}
+                              {item.evidenceMissing && (
+                                <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-200">
+                                  Evidence required
+                                </Badge>
+                              )}
+                              {item.approvalState === "pending_review" && (
+                                <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200">
+                                  Pending review
+                                </Badge>
+                              )}
+                            </div>
+                            {item.resubmissionNeeded && item.approvalComment && (
+                              <div className="text-[10px] text-amber-700 mt-1 truncate max-w-[240px]">
+                                {item.approvalComment}
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 px-4 text-sm hidden md:table-cell">
                             <span className="truncate max-w-[150px] inline-block">{item.projectName}</span>

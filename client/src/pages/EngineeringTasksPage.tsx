@@ -90,7 +90,14 @@ import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/Micro
 import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 import type { Task, Comment, ActivityEntry, TeamMember, EngDefaultView } from "@/components/tasks/types";
 import { formatDate, formatDateShort, isOverdue, isDueThisWeek, daysLabel, getAvatarColor, getInitials, sortTasksForColumn } from "@/lib/task-formatters";
-import { useEngineeringTaskFilters } from "@/hooks/useEngineeringTaskFilters";
+import {
+  deriveEngineeringTaskMetrics,
+  filterEngineeringTasks,
+  type EngineeringDueDateFilter,
+  type EngineeringLinkedSourceFilter,
+  type EngineeringWorkloadStateFilter,
+  useEngineeringTaskFilters,
+} from "@/hooks/useEngineeringTaskFilters";
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 
@@ -108,6 +115,29 @@ async function engFetch(url: string, options?: RequestInit) {
 }
 
 const PRIORITIES = ["Critical", "Urgent", "High", "Medium", "Low"];
+const DUE_DATE_FILTER_OPTIONS: { value: EngineeringDueDateFilter; label: string }[] = [
+  { value: "all", label: "All Due Dates" },
+  { value: "overdue", label: "Overdue" },
+  { value: "today", label: "Due Today" },
+  { value: "this_week", label: "Due In 7 Days" },
+  { value: "no_due_date", label: "No Due Date" },
+];
+const WORKLOAD_STATE_OPTIONS: { value: EngineeringWorkloadStateFilter; label: string }[] = [
+  { value: "all", label: "All Work States" },
+  { value: "unassigned", label: "Unassigned" },
+  { value: "blocked", label: "Blocked" },
+  { value: "review", label: "Review Needed" },
+  { value: "approval", label: "Approval Pending" },
+  { value: "deliverable", label: "Project Deliverables" },
+  { value: "microsoft_action", label: "Microsoft Actions" },
+];
+const LINKED_SOURCE_OPTIONS: { value: EngineeringLinkedSourceFilter; label: string }[] = [
+  { value: "all", label: "All Linked Sources" },
+  { value: "project_linked", label: "Project Linked" },
+  { value: "project_unlinked", label: "No Project Link" },
+  { value: "microsoft_linked", label: "Microsoft Linked" },
+  { value: "microsoft_action_required", label: "Microsoft Action Required" },
+];
 
 const priorityColors: Record<string, string> = {
   Critical: "bg-red-600 text-white",
@@ -125,12 +155,22 @@ const priorityBorderColors: Record<string, string> = {
   Low: "border-l-gray-300",
 };
 
-const SAVED_FILTERS: { label: string; filter: Record<string, string> }[] = [
-  { label: "Overdue", filter: { preset: "overdue" } },
-  { label: "Needs Approval", filter: { status: "NEEDS APPROVAL" } },
-  { label: "Provide Feedback", filter: { status: "PROVIDE FEEDBACK" } },
-  { label: "On Hold", filter: { status: "HOLD" } },
-  { label: "QC Approved", filter: { status: "QC APPROVED" } },
+const SAVED_FILTERS: {
+  label: string;
+  filter: {
+    status?: string;
+    dueDateFilter?: EngineeringDueDateFilter;
+    workloadStateFilter?: EngineeringWorkloadStateFilter;
+    linkedSourceFilter?: EngineeringLinkedSourceFilter;
+  };
+}[] = [
+  { label: "Overdue", filter: { dueDateFilter: "overdue" } },
+  { label: "Unassigned", filter: { workloadStateFilter: "unassigned" } },
+  { label: "Blocked", filter: { workloadStateFilter: "blocked" } },
+  { label: "Review Needed", filter: { workloadStateFilter: "review" } },
+  { label: "Approval Pending", filter: { workloadStateFilter: "approval" } },
+  { label: "Deliverables", filter: { workloadStateFilter: "deliverable" } },
+  { label: "Microsoft Linked", filter: { linkedSourceFilter: "microsoft_linked" } },
 ];
 
 function getSavedMyName(): string {
@@ -249,6 +289,145 @@ function QuickEditPopover({ task, onDueDateChange, onClose }: { task: Task; onDu
   );
 }
 
+function getTaskContextBadges(task: Task): Array<{ label: string; className: string }> {
+  const badges: Array<{ label: string; className: string }> = [];
+  if (task.isBlocked || task.holdReason) {
+    badges.push({ label: "Blocked", className: "bg-red-50 text-red-700 border-red-200" });
+  }
+  if (task.isReviewNeeded) {
+    badges.push({ label: "Review", className: "bg-violet-50 text-violet-700 border-violet-200" });
+  }
+  if (task.isApprovalPending) {
+    badges.push({ label: "Approval", className: "bg-amber-50 text-amber-700 border-amber-200" });
+  }
+  if ((task.projectLinkedDeliverableCount || 0) > 0) {
+    badges.push({
+      label: `${task.projectLinkedDeliverableCount} deliverable${task.projectLinkedDeliverableCount === 1 ? "" : "s"}`,
+      className: "bg-blue-50 text-blue-700 border-blue-200",
+    });
+  }
+  if ((task.microsoftActionRequiredCount || 0) > 0) {
+    badges.push({
+      label: `${task.microsoftActionRequiredCount} MS action${task.microsoftActionRequiredCount === 1 ? "" : "s"}`,
+      className: "bg-cyan-50 text-cyan-700 border-cyan-200",
+    });
+  } else if (task.hasMicrosoftContext) {
+    badges.push({ label: "MS linked", className: "bg-cyan-50 text-cyan-700 border-cyan-200" });
+  }
+  return badges;
+}
+
+function EngineeringWorkloadStrip({
+  totalOpenWork,
+  unassignedCount,
+  blockedCount,
+  reviewCount,
+  approvalCount,
+  deliverableCount,
+  microsoftActionCount,
+  onReset,
+  onSelectWorkloadState,
+}: {
+  totalOpenWork: number;
+  unassignedCount: number;
+  blockedCount: number;
+  reviewCount: number;
+  approvalCount: number;
+  deliverableCount: number;
+  microsoftActionCount: number;
+  onReset: () => void;
+  onSelectWorkloadState: (state: EngineeringWorkloadStateFilter) => void;
+}) {
+  const cards = [
+    {
+      label: "Open Work",
+      value: totalOpenWork,
+      icon: <ListTodo className="w-3.5 h-3.5" />,
+      color: "text-blue-600",
+      bg: "bg-blue-50",
+      onClick: onReset,
+      testId: "summary-open-work",
+    },
+    {
+      label: "Unassigned",
+      value: unassignedCount,
+      icon: <UserCheck className="w-3.5 h-3.5" />,
+      color: unassignedCount > 0 ? "text-slate-700" : "text-muted-foreground",
+      bg: unassignedCount > 0 ? "bg-slate-100" : "bg-muted",
+      onClick: () => onSelectWorkloadState("unassigned"),
+      testId: "summary-unassigned",
+    },
+    {
+      label: "Blocked",
+      value: blockedCount,
+      icon: <PauseCircle className="w-3.5 h-3.5" />,
+      color: blockedCount > 0 ? "text-red-600" : "text-muted-foreground",
+      bg: blockedCount > 0 ? "bg-red-50" : "bg-muted",
+      onClick: () => onSelectWorkloadState("blocked"),
+      testId: "summary-blocked",
+    },
+    {
+      label: "Review",
+      value: reviewCount,
+      icon: <MessageSquare className="w-3.5 h-3.5" />,
+      color: reviewCount > 0 ? "text-violet-600" : "text-muted-foreground",
+      bg: reviewCount > 0 ? "bg-violet-50" : "bg-muted",
+      onClick: () => onSelectWorkloadState("review"),
+      testId: "summary-review",
+    },
+    {
+      label: "Approval",
+      value: approvalCount,
+      icon: <ShieldCheck className="w-3.5 h-3.5" />,
+      color: approvalCount > 0 ? "text-amber-700" : "text-muted-foreground",
+      bg: approvalCount > 0 ? "bg-amber-50" : "bg-muted",
+      onClick: () => onSelectWorkloadState("approval"),
+      testId: "summary-approval-pending",
+    },
+    {
+      label: "Deliverables",
+      value: deliverableCount,
+      icon: <Paperclip className="w-3.5 h-3.5" />,
+      color: deliverableCount > 0 ? "text-blue-700" : "text-muted-foreground",
+      bg: deliverableCount > 0 ? "bg-blue-50" : "bg-muted",
+      onClick: () => onSelectWorkloadState("deliverable"),
+      testId: "summary-deliverables",
+    },
+    {
+      label: "MS Actions",
+      value: microsoftActionCount,
+      icon: <ExternalLink className="w-3.5 h-3.5" />,
+      color: microsoftActionCount > 0 ? "text-cyan-700" : "text-muted-foreground",
+      bg: microsoftActionCount > 0 ? "bg-cyan-50" : "bg-muted",
+      onClick: () => onSelectWorkloadState("microsoft_action"),
+      testId: "summary-microsoft-actions",
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2" data-testid="engineering-workload-strip">
+      {cards.map((card) => (
+        <button
+          key={card.label}
+          onClick={card.onClick}
+          className="rounded-lg border bg-card p-3 text-left transition-all hover:shadow-sm hover:border-border"
+          data-testid={card.testId}
+        >
+          <div className="flex items-center gap-2">
+            <div className={`w-8 h-8 rounded-lg ${card.bg} flex items-center justify-center shrink-0`}>
+              <span className={card.color}>{card.icon}</span>
+            </div>
+            <div className="min-w-0">
+              <p className={`text-lg font-semibold leading-none ${card.color}`}>{card.value}</p>
+              <p className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wider">{card.label}</p>
+            </div>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 
 function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateChange, compact }: {
   task: Task; onClick: () => void; onStatusChange: (id: number, status: string) => void;
@@ -273,6 +452,8 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
   const isViewingOnly = user && task.assigneeUserId && task.assigneeUserId !== user.id;
   const label = daysLabel(task.dueDate);
   const isCritical = task.priority === "Critical" || task.priority === "Urgent";
+  const assigneeNames = task.assignees || task.resolvedAssignees?.map((user) => user.name) || [];
+  const contextBadges = getTaskContextBadges(task);
 
   if (compact) {
     return (
@@ -292,9 +473,9 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
           {isViewingOnly && <span className="shrink-0 inline-flex items-center gap-0.5 px-1 py-0 rounded text-[8px] font-medium border bg-sky-50 border-sky-200 text-sky-700"><Eye className="h-2 w-2" />Viewing</span>}
           {overdue && <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />}
           {!overdue && dueSoon && <Clock className="h-3 w-3 text-amber-500 shrink-0" />}
-          {task.assignees && task.assignees.length > 0 && (
-            <div className={`w-4 h-4 rounded-full ${getAvatarColor(task.assignees[0])} flex items-center justify-center text-[7px] font-bold text-white shrink-0`} title={task.assignees[0]}>
-              {getInitials(task.assignees[0])}
+          {assigneeNames.length > 0 && (
+            <div className={`w-4 h-4 rounded-full ${getAvatarColor(assigneeNames[0])} flex items-center justify-center text-[7px] font-bold text-white shrink-0`} title={assigneeNames[0]}>
+              {getInitials(assigneeNames[0])}
             </div>
           )}
         </div>
@@ -386,23 +567,33 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
         )}
       </div>
 
+      {contextBadges.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-1.5">
+          {contextBadges.map((badge) => (
+            <Badge key={badge.label} variant="outline" className={`text-[9px] px-1.5 py-0 ${badge.className}`}>
+              {badge.label}
+            </Badge>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1 min-w-0">
-          {task.assignees && task.assignees.length > 0 ? (
+          {assigneeNames.length > 0 ? (
             <div className="flex items-center gap-1 min-w-0">
               <div className="flex -space-x-1">
-                {task.assignees.slice(0, 2).map((name, i) => (
+                {assigneeNames.slice(0, 2).map((name, i) => (
                   <div key={i} className={`w-5 h-5 rounded-full ${getAvatarColor(name)} flex items-center justify-center text-[8px] font-bold text-white ring-1 ring-card`} title={name}>
                     {getInitials(name)}
                   </div>
                 ))}
-                {task.assignees.length > 2 && (
+                {assigneeNames.length > 2 && (
                   <div className="w-5 h-5 rounded-full bg-gray-300 flex items-center justify-center text-[8px] font-bold text-muted-foreground ring-1 ring-card">
-                    +{task.assignees.length - 2}
+                    +{assigneeNames.length - 2}
                   </div>
                 )}
               </div>
-              <span className="text-[10px] text-muted-foreground truncate max-w-[70px]">{task.assignees[0]?.split(" ")[0]}</span>
+              <span className="text-[10px] text-muted-foreground truncate max-w-[70px]">{assigneeNames[0]?.split(" ")[0]}</span>
             </div>
           ) : (
             <span className="text-[10px] text-muted-foreground/40 italic">Unassigned</span>
@@ -920,9 +1111,26 @@ function TaskDetailDrawer({
           <div className="p-4 space-y-5">
             <div>
               <h2 className="text-xl font-bold leading-tight" data-testid="text-drawer-title">{task.title}</h2>
-              {task.externalTaskId && (
-                <p className="text-[10px] text-muted-foreground mt-1">Ref: {task.externalTaskId}</p>
-              )}
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                <span className="inline-flex items-center rounded border bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                  Work Item #{task.workItemId || task.id}
+                </span>
+                {task.externalTaskId && (
+                  <span className="inline-flex items-center rounded border bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                    Ref: {task.externalTaskId}
+                  </span>
+                )}
+                {task.projectLinkedDeliverableCount ? (
+                  <span className="inline-flex items-center rounded border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] text-blue-700">
+                    {task.projectLinkedDeliverableCount} project deliverable{task.projectLinkedDeliverableCount === 1 ? "" : "s"}
+                  </span>
+                ) : null}
+                {task.microsoftActionRequiredCount ? (
+                  <span className="inline-flex items-center rounded border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[10px] text-cyan-700">
+                    {task.microsoftActionRequiredCount} Microsoft action{task.microsoftActionRequiredCount === 1 ? "" : "s"}
+                  </span>
+                ) : null}
+              </div>
               {user && task.assigneeUserId && task.assigneeUserId !== user.id && (
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-medium border bg-sky-50 border-sky-200 text-sky-700" data-testid="badge-viewing">
@@ -994,7 +1202,7 @@ function TaskDetailDrawer({
               <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Assignee</Label>
               <UserAssignmentPicker
                 taskId={task.id}
-                taskSource="operational"
+                taskSource="plan"
                 resolvedUsers={task.resolvedAssignees || null}
                 textNames={task.assignees || null}
                 mode="multi"
@@ -1040,6 +1248,110 @@ function TaskDetailDrawer({
                   </Command>
                 </PopoverContent>
               </Popover>
+            </div>
+
+            <div className="space-y-3 p-3 bg-slate-50/70 rounded-lg border">
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                  <FolderKanban className="h-3.5 w-3.5" /> Context & Traceability
+                </Label>
+                <div className="flex gap-1.5">
+                  {task.sourceHref && (
+                    <Button asChild size="sm" variant="outline" className="h-7 text-[10px] gap-1">
+                      <a href={task.sourceHref}>
+                        <ArrowRightLeft className="h-3 w-3" />
+                        Engineering
+                      </a>
+                    </Button>
+                  )}
+                  {task.projectHref && (
+                    <Button asChild size="sm" variant="outline" className="h-7 text-[10px] gap-1">
+                      <a href={task.projectHref}>
+                        <FolderKanban className="h-3 w-3" />
+                        Project
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {task.isUnassigned ? <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700 border-slate-200">Unassigned</Badge> : null}
+                {task.isBlocked ? <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200">Blocked</Badge> : null}
+                {task.isReviewNeeded ? <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200">Review Needed</Badge> : null}
+                {task.isApprovalPending ? <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">Approval Pending</Badge> : null}
+                {task.projectName ? <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">Project Linked</Badge> : <Badge variant="outline" className="text-[10px] bg-slate-50 text-slate-700 border-slate-200">No Project</Badge>}
+              </div>
+
+              {(task.projectLinkedDeliverableCount || 0) > 0 && (
+                <div className="rounded-md border bg-background p-2.5 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-medium text-foreground">Project-linked deliverables</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {task.projectLinkedDeliverableCount} linked to this project
+                        {task.approvalPendingDeliverableCount ? ` · ${task.approvalPendingDeliverableCount} pending approval` : ""}
+                      </p>
+                    </div>
+                    {task.deliverableContextHref && (
+                      <Button asChild size="sm" variant="outline" className="h-7 text-[10px] gap-1">
+                        <a href={task.deliverableContextHref}>
+                          <Paperclip className="h-3 w-3" />
+                          Open flow
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                  {(task.projectLinkedDeliverables || []).map((item) => (
+                    <div key={item.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="truncate text-foreground">{item.title}</span>
+                      <Badge variant="outline" className="text-[9px] px-1.5 py-0">{item.status}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(task.relatedMicrosoftItems?.length || 0) > 0 && (
+                <div className="rounded-md border bg-background p-2.5 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-medium text-foreground">Microsoft-linked context</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {(task.relatedMicrosoftItems || []).length} recent linked item{(task.relatedMicrosoftItems || []).length === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] bg-cyan-50 text-cyan-700 border-cyan-200">
+                      {task.microsoftActionRequiredCount || 0} action{(task.microsoftActionRequiredCount || 0) === 1 ? "" : "s"}
+                    </Badge>
+                  </div>
+                  {(task.relatedMicrosoftItems || []).map((item) => (
+                    <div key={item.id} className="rounded border p-2 text-xs space-y-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-foreground">{item.title || item.type}</p>
+                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{item.type.replace(/_/g, " ")}</p>
+                        </div>
+                        {item.actionRequired ? <Badge className="bg-cyan-100 text-cyan-700 border-cyan-200 text-[9px]">Action</Badge> : null}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {item.sourceHref && (
+                          <Button asChild size="sm" variant="outline" className="h-6 text-[10px] gap-1 px-2">
+                            <a href={item.sourceHref}>{item.sourceContextLabel || "Project context"}</a>
+                          </Button>
+                        )}
+                        {item.externalHref && (
+                          <Button asChild size="sm" variant="outline" className="h-6 text-[10px] gap-1 px-2">
+                            <a href={item.externalHref} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="h-3 w-3" />
+                              Open original
+                            </a>
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="space-y-3 p-3 bg-muted/20 rounded-lg border">
@@ -2159,7 +2471,7 @@ function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }
     <Card>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[700px]">
+          <table className="w-full text-sm min-w-[860px]">
             <thead>
               <tr className="border-b bg-muted/30 text-[11px] text-muted-foreground">
                 <th className="text-left p-2 pl-3">Title</th>
@@ -2167,64 +2479,86 @@ function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }
                 <th className="text-left p-2">Status</th>
                 <th className="text-left p-2">Priority</th>
                 <th className="text-left p-2">Assignee</th>
+                <th className="text-left p-2">Context</th>
                 <th className="text-left p-2">Due Date</th>
                 <th className="text-center p-2">RAG</th>
               </tr>
             </thead>
             <tbody>
-              {tasks.map(task => (
-                <tr
-                  key={task.id}
-                  className="border-b hover:bg-muted/10 transition-colors"
-                  data-testid={`row-task-${task.id}`}
-                >
-                  <td
-                    className="p-2 pl-3 font-medium max-w-[250px] truncate cursor-pointer hover:text-blue-600"
-                    onClick={() => onCardClick(task)}
-                    data-testid={`text-task-title-${task.id}`}
+              {tasks.map(task => {
+                const assigneeNames = task.assignees || task.resolvedAssignees?.map((user) => user.name) || [];
+                const contextBadges = getTaskContextBadges(task);
+
+                return (
+                  <tr
+                    key={task.id}
+                    className="border-b hover:bg-muted/10 transition-colors"
+                    data-testid={`row-task-${task.id}`}
                   >
-                    {task.title}
-                    {task.holdReason && <p className="text-[10px] text-red-500 truncate">{task.blockedType && <span className={`px-1 py-0 rounded text-[9px] font-semibold mr-0.5 ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"}`}>{task.blockedType}</span>}{task.holdReason}</p>}
-                  </td>
-                  <td className="p-2 text-muted-foreground text-xs">
-                    {task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                  </td>
-                  <td className="p-2" onClick={(e) => e.stopPropagation()}>
-                    <SearchableSelect
-                      value={task.status}
-                      onValueChange={(v) => onStatusChange(task.id, v)}
-                      placeholder="Status"
-                      triggerClassName="h-7 text-[10px] w-[130px] border-none shadow-none p-0"
-                      options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
-                      data-testid={`inline-status-${task.id}`}
-                    />
-                  </td>
-                  <td className="p-2" onClick={(e) => e.stopPropagation()}>
-                    <SearchableSelect
-                      value={task.priority}
-                      onValueChange={(v) => onPriorityChange(task.id, v)}
-                      placeholder="Priority"
-                      triggerClassName="h-7 text-[10px] w-[90px] border-none shadow-none p-0"
-                      options={PRIORITIES.map(p => ({ value: p, label: p }))}
-                      data-testid={`inline-priority-${task.id}`}
-                    />
-                  </td>
-                  <td className="p-2 text-xs text-muted-foreground truncate max-w-[120px]">
-                    {task.assignees?.[0] || "—"}
-                  </td>
-                  <td className={`p-2 text-xs ${isOverdue(task.dueDate, task.status) ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
-                    <div className="flex items-center gap-1">
-                      {formatDateShort(task.dueDate)}
-                      {isOverdue(task.dueDate, task.status) && <AlertTriangle className="h-3 w-3" />}
-                    </div>
-                  </td>
-                  <td className="p-2 text-center">
-                    {task.trackingRag && (
-                      <div className={`w-3 h-3 rounded-full mx-auto ${task.trackingRag === "Green" ? "bg-green-500" : task.trackingRag === "Amber" ? "bg-amber-500" : task.trackingRag === "Red" ? "bg-red-500" : "bg-gray-400"}`} />
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    <td
+                      className="p-2 pl-3 font-medium max-w-[250px] truncate cursor-pointer hover:text-blue-600"
+                      onClick={() => onCardClick(task)}
+                      data-testid={`text-task-title-${task.id}`}
+                    >
+                      {task.title}
+                      {task.holdReason && <p className="text-[10px] text-red-500 truncate">{task.blockedType && <span className={`px-1 py-0 rounded text-[9px] font-semibold mr-0.5 ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"}`}>{task.blockedType}</span>}{task.holdReason}</p>}
+                    </td>
+                    <td className="p-2 text-muted-foreground text-xs">
+                      {task.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                    </td>
+                    <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                      <SearchableSelect
+                        value={task.status}
+                        onValueChange={(v) => onStatusChange(task.id, v)}
+                        placeholder="Status"
+                        triggerClassName="h-7 text-[10px] w-[130px] border-none shadow-none p-0"
+                        options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
+                        data-testid={`inline-status-${task.id}`}
+                      />
+                    </td>
+                    <td className="p-2" onClick={(e) => e.stopPropagation()}>
+                      <SearchableSelect
+                        value={task.priority}
+                        onValueChange={(v) => onPriorityChange(task.id, v)}
+                        placeholder="Priority"
+                        triggerClassName="h-7 text-[10px] w-[90px] border-none shadow-none p-0"
+                        options={PRIORITIES.map(p => ({ value: p, label: p }))}
+                        data-testid={`inline-priority-${task.id}`}
+                      />
+                    </td>
+                    <td className="p-2 text-xs text-muted-foreground truncate max-w-[120px]">
+                      {assigneeNames[0] || "—"}
+                    </td>
+                    <td className="p-2">
+                      <div className="flex flex-wrap gap-1">
+                        {task.isUnassigned && (
+                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-slate-50 text-slate-700 border-slate-200">
+                            Unassigned
+                          </Badge>
+                        )}
+                        {contextBadges.length > 0 ? contextBadges.map((badge) => (
+                          <Badge key={badge.label} variant="outline" className={`text-[9px] px-1.5 py-0 ${badge.className}`}>
+                            {badge.label}
+                          </Badge>
+                        )) : (
+                          <span className="text-[10px] text-muted-foreground">Stable</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className={`p-2 text-xs ${isOverdue(task.dueDate, task.status) ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
+                      <div className="flex items-center gap-1">
+                        {formatDateShort(task.dueDate)}
+                        {isOverdue(task.dueDate, task.status) && <AlertTriangle className="h-3 w-3" />}
+                      </div>
+                    </td>
+                    <td className="p-2 text-center">
+                      {task.trackingRag && (
+                        <div className={`w-3 h-3 rounded-full mx-auto ${task.trackingRag === "Green" ? "bg-green-500" : task.trackingRag === "Amber" ? "bg-amber-500" : task.trackingRag === "Red" ? "bg-red-500" : "bg-gray-400"}`} />
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {tasks.length === 0 && (
@@ -2673,6 +3007,7 @@ export default function EngineeringTasksPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const savedDefaults = useMemo(() => getSavedEngDefaultView(user?.id), [user?.id]);
+  const initialUrlParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const [viewMode, setViewMode] = useState<"board" | "list" | "projects" | "mytasks">(savedDefaults?.viewMode || "board");
   const [myTasksOnly, setMyTasksOnly] = useState(false);
   const [myName, setMyName] = useState(() => {
@@ -2685,11 +3020,19 @@ export default function EngineeringTasksPage() {
   const [statusFilter, setStatusFilter] = useState<string>(savedDefaults?.statusFilter || "all");
   const [priorityFilter, setPriorityFilter] = useState<string>(savedDefaults?.priorityFilter || "all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>(savedDefaults?.assigneeFilter || "all");
-  const [projectFilter, setProjectFilter] = useState<string>("all");
+  const [projectFilter, setProjectFilter] = useState<string>(savedDefaults?.projectFilter || "all");
+  const [dueDateFilter, setDueDateFilter] = useState<EngineeringDueDateFilter>(
+    (savedDefaults?.dueDateFilter as EngineeringDueDateFilter) || "all",
+  );
+  const [workloadStateFilter, setWorkloadStateFilter] = useState<EngineeringWorkloadStateFilter>(
+    (savedDefaults?.workloadStateFilter as EngineeringWorkloadStateFilter) || "all",
+  );
+  const [linkedSourceFilter, setLinkedSourceFilter] = useState<EngineeringLinkedSourceFilter>(
+    (savedDefaults?.linkedSourceFilter as EngineeringLinkedSourceFilter) || "all",
+  );
   const [hasCustomDefault, setHasCustomDefault] = useState(!!savedDefaults);
   const [searchTerm, setSearchTerm] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("project") || "";
+    return initialUrlParams.get("project") || "";
   });
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -2744,7 +3087,8 @@ export default function EngineeringTasksPage() {
     if (!myName) return [];
     const nameLower = myName.toLowerCase();
     return tasks.filter(t =>
-      (t.assignees || []).some(a => a && a.toLowerCase().startsWith(nameLower))
+      ((t.assignees || []).length > 0 ? (t.assignees || []) : (t.resolvedAssignees || []).map((user) => user.name))
+        .some((name) => name && name.toLowerCase().startsWith(nameLower))
     );
   }, [tasks, myName]);
 
@@ -2843,29 +3187,150 @@ export default function EngineeringTasksPage() {
     updateDueDateMutation.mutate({ taskId, dueDate });
   }, [updateDueDateMutation]);
 
-  const uniqueAssignees = Array.from(new Set(tasks.flatMap(t => t.assignees || []).filter(Boolean))).sort();
+  const uniqueAssignees = Array.from(
+    new Set(
+      tasks.flatMap((task) =>
+        ((task.assignees || []).length > 0 ? (task.assignees || []) : (task.resolvedAssignees || []).map((user) => user.name)).filter(Boolean),
+      ),
+    ),
+  ).sort();
   const uniqueProjects = useMemo(() => Array.from(new Set(tasks.map(t => t.projectName).filter(Boolean))).sort() as string[], [tasks]);
 
   const basePool = myTasksOnly ? myTasks : tasks;
 
-  const { filtered, overdueTasks, needsApprovalTasks, holdTasks } = useEngineeringTaskFilters({
+  const {
+    filtered,
+    overdueTasks,
+    holdTasks,
+    unassignedTasks,
+    blockedTasks,
+    reviewNeededTasks,
+    approvalPendingTasks,
+    projectLinkedDeliverableTasks,
+    microsoftLinkedTasks,
+    microsoftActionTasks,
+  } = useEngineeringTaskFilters({
     tasks: basePool,
     statusFilter,
     priorityFilter,
     assigneeFilter,
     projectFilter,
     searchTerm,
+    dueDateFilter,
+    workloadStateFilter,
+    linkedSourceFilter,
   });
+
+  const summaryPool = useMemo(
+    () =>
+      filterEngineeringTasks({
+        tasks: basePool,
+        statusFilter,
+        priorityFilter,
+        assigneeFilter,
+        projectFilter,
+        searchTerm,
+        dueDateFilter: "all",
+        workloadStateFilter: "all",
+        linkedSourceFilter: "all",
+      }),
+    [assigneeFilter, basePool, priorityFilter, projectFilter, searchTerm, statusFilter],
+  );
+  const summaryMetrics = useMemo(() => deriveEngineeringTaskMetrics(summaryPool), [summaryPool]);
 
   const applyPreset = (preset: typeof SAVED_FILTERS[0]) => {
     setStatusFilter("all");
     setPriorityFilter("all");
     setAssigneeFilter("all");
     setProjectFilter("all");
+    setDueDateFilter("all");
+    setWorkloadStateFilter("all");
+    setLinkedSourceFilter("all");
     setSearchTerm("");
     setMyTasksOnly(false);
     if (preset.filter.status) setStatusFilter(preset.filter.status);
+    if (preset.filter.dueDateFilter) setDueDateFilter(preset.filter.dueDateFilter);
+    if (preset.filter.workloadStateFilter) setWorkloadStateFilter(preset.filter.workloadStateFilter);
+    if (preset.filter.linkedSourceFilter) setLinkedSourceFilter(preset.filter.linkedSourceFilter);
   };
+
+  const resetFilters = useCallback(() => {
+    setStatusFilter("all");
+    setPriorityFilter("all");
+    setAssigneeFilter("all");
+    setProjectFilter("all");
+    setDueDateFilter("all");
+    setWorkloadStateFilter("all");
+    setLinkedSourceFilter("all");
+    setSearchTerm("");
+    setMyTasksOnly(false);
+  }, []);
+
+  const focusWorkloadState = useCallback((state: EngineeringWorkloadStateFilter) => {
+    setWorkloadStateFilter(state);
+    setDueDateFilter("all");
+    setLinkedSourceFilter("all");
+  }, []);
+
+  const hasActiveFilters = useMemo(() => {
+    return (
+      statusFilter !== "all" ||
+      priorityFilter !== "all" ||
+      assigneeFilter !== "all" ||
+      projectFilter !== "all" ||
+      dueDateFilter !== "all" ||
+      workloadStateFilter !== "all" ||
+      linkedSourceFilter !== "all" ||
+      searchTerm.trim().length > 0 ||
+      myTasksOnly
+    );
+  }, [
+    assigneeFilter,
+    dueDateFilter,
+    linkedSourceFilter,
+    myTasksOnly,
+    priorityFilter,
+    projectFilter,
+    searchTerm,
+    statusFilter,
+    workloadStateFilter,
+  ]);
+
+  const isPresetActive = useCallback((preset: typeof SAVED_FILTERS[0]) => {
+    return (
+      (preset.filter.status || "all") === statusFilter &&
+      (preset.filter.dueDateFilter || "all") === dueDateFilter &&
+      (preset.filter.workloadStateFilter || "all") === workloadStateFilter &&
+      (preset.filter.linkedSourceFilter || "all") === linkedSourceFilter &&
+      priorityFilter === "all" &&
+      assigneeFilter === "all" &&
+      projectFilter === "all" &&
+      searchTerm.trim().length === 0 &&
+      !myTasksOnly
+    );
+  }, [
+    assigneeFilter,
+    dueDateFilter,
+    linkedSourceFilter,
+    myTasksOnly,
+    priorityFilter,
+    projectFilter,
+    searchTerm,
+    statusFilter,
+    workloadStateFilter,
+  ]);
+
+  const presetBadgeCount = useCallback((preset: typeof SAVED_FILTERS[0]) => {
+    if (preset.filter.dueDateFilter === "overdue") return summaryMetrics.overdueTasks.length;
+    if (preset.filter.workloadStateFilter === "unassigned") return summaryMetrics.unassignedTasks.length;
+    if (preset.filter.workloadStateFilter === "blocked") return summaryMetrics.blockedTasks.length;
+    if (preset.filter.workloadStateFilter === "review") return summaryMetrics.reviewNeededTasks.length;
+    if (preset.filter.workloadStateFilter === "approval") return summaryMetrics.approvalPendingTasks.length;
+    if (preset.filter.workloadStateFilter === "deliverable") return summaryMetrics.projectLinkedDeliverableTasks.length;
+    if (preset.filter.linkedSourceFilter === "microsoft_linked") return summaryMetrics.microsoftLinkedTasks.length;
+    if (preset.filter.linkedSourceFilter === "microsoft_action_required") return summaryMetrics.microsoftActionTasks.length;
+    return 0;
+  }, [summaryMetrics]);
 
   const boardStatuses = getVisibleStatusesForView("board");
   const filterStatuses = getVisibleStatusesForView("list");
@@ -2878,16 +3343,40 @@ export default function EngineeringTasksPage() {
 
   const engNextAction = useMemo((): NextAction | null => {
     if (overdueTasks.length > 0) return { label: `${overdueTasks.length} overdue task${overdueTasks.length !== 1 ? "s" : ""} — review and update`, severity: "urgent" };
-    if (needsApprovalTasks.length > 0) return { label: `${needsApprovalTasks.length} task${needsApprovalTasks.length !== 1 ? "s" : ""} awaiting approval`, severity: "warning" };
+    if (approvalPendingTasks.length > 0) return { label: `${approvalPendingTasks.length} task${approvalPendingTasks.length !== 1 ? "s" : ""} awaiting approval`, severity: "warning" };
+    if (reviewNeededTasks.length > 0) return { label: `${reviewNeededTasks.length} task${reviewNeededTasks.length !== 1 ? "s" : ""} need review feedback`, severity: "warning" };
+    if (blockedTasks.length > 0) return { label: `${blockedTasks.length} blocked task${blockedTasks.length !== 1 ? "s" : ""} need unblock decisions`, severity: "warning" };
     if (holdTasks.length > 0) return { label: `${holdTasks.length} task${holdTasks.length !== 1 ? "s" : ""} on hold — check if blockers resolved`, severity: "warning" };
     return { label: "All tasks on track — review board for next priorities", severity: "info" };
-  }, [overdueTasks, needsApprovalTasks, holdTasks]);
+  }, [approvalPendingTasks, blockedTasks, holdTasks, overdueTasks, reviewNeededTasks]);
 
   const handleSaveDefaultView = useCallback(() => {
-    saveEngDefaultView({ viewMode, statusFilter, priorityFilter, assigneeFilter, boardCompact }, user?.id);
+    saveEngDefaultView({
+      viewMode,
+      statusFilter,
+      priorityFilter,
+      assigneeFilter,
+      projectFilter,
+      dueDateFilter,
+      workloadStateFilter,
+      linkedSourceFilter,
+      boardCompact,
+    }, user?.id);
     setHasCustomDefault(true);
     toast({ title: "Default view saved", description: "This page will open with your current view settings next time." });
-  }, [viewMode, statusFilter, priorityFilter, assigneeFilter, boardCompact, toast, user?.id]);
+  }, [
+    assigneeFilter,
+    boardCompact,
+    dueDateFilter,
+    linkedSourceFilter,
+    priorityFilter,
+    projectFilter,
+    statusFilter,
+    toast,
+    user?.id,
+    viewMode,
+    workloadStateFilter,
+  ]);
 
   const handleResetDefaultView = useCallback(() => {
     clearEngDefaultView(user?.id);
@@ -2896,6 +3385,12 @@ export default function EngineeringTasksPage() {
     setStatusFilter("all");
     setPriorityFilter("all");
     setAssigneeFilter("all");
+    setProjectFilter("all");
+    setDueDateFilter("all");
+    setWorkloadStateFilter("all");
+    setLinkedSourceFilter("all");
+    setSearchTerm("");
+    setMyTasksOnly(false);
     setBoardCompact(false);
     toast({ title: "Default view reset", description: "This page will open with the standard board view." });
   }, [toast, user?.id]);
@@ -2903,10 +3398,11 @@ export default function EngineeringTasksPage() {
   const engBlockers = useMemo((): BlockerInfo[] => {
     const b: BlockerInfo[] = [];
     if (overdueTasks.length > 0) b.push({ label: "Overdue tasks", count: overdueTasks.length, severity: "urgent" });
-    if (holdTasks.length > 0) b.push({ label: "Tasks on hold", count: holdTasks.length, severity: "warning" });
-    if (needsApprovalTasks.length > 0) b.push({ label: "Pending approval", count: needsApprovalTasks.length, severity: "warning" });
+    if (blockedTasks.length > 0) b.push({ label: "Blocked tasks", count: blockedTasks.length, severity: "urgent" });
+    if (reviewNeededTasks.length > 0) b.push({ label: "Review needed", count: reviewNeededTasks.length, severity: "warning" });
+    if (approvalPendingTasks.length > 0) b.push({ label: "Pending approval", count: approvalPendingTasks.length, severity: "warning" });
     return b;
-  }, [overdueTasks, holdTasks, needsApprovalTasks]);
+  }, [approvalPendingTasks, blockedTasks, overdueTasks, reviewNeededTasks]);
 
   const engWalkthroughSteps = useMemo(() => [
     { title: "Board or List view", description: "Switch between Kanban board and list view using the toggle buttons in the top bar." },
@@ -3224,12 +3720,66 @@ export default function EngineeringTasksPage() {
                 data-testid="filter-task-project"
               />
             )}
+            <Separator />
+            <SearchableSelect
+              value={dueDateFilter}
+              onValueChange={(value) => setDueDateFilter(value as EngineeringDueDateFilter)}
+              placeholder="Due date"
+              triggerClassName="w-full h-8 text-xs"
+              options={DUE_DATE_FILTER_OPTIONS}
+              data-testid="filter-task-due-date"
+            />
+            <SearchableSelect
+              value={workloadStateFilter}
+              onValueChange={(value) => setWorkloadStateFilter(value as EngineeringWorkloadStateFilter)}
+              placeholder="Workload state"
+              triggerClassName="w-full h-8 text-xs"
+              options={WORKLOAD_STATE_OPTIONS}
+              data-testid="filter-task-workload-state"
+            />
+            <SearchableSelect
+              value={linkedSourceFilter}
+              onValueChange={(value) => setLinkedSourceFilter(value as EngineeringLinkedSourceFilter)}
+              placeholder="Linked source"
+              triggerClassName="w-full h-8 text-xs"
+              options={LINKED_SOURCE_OPTIONS}
+              data-testid="filter-task-linked-source"
+            />
           </PopoverContent>
         </Popover>
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 text-xs gap-1.5 text-muted-foreground"
+            onClick={resetFilters}
+            data-testid="btn-clear-task-filters"
+          >
+            <X className="h-3.5 w-3.5" />
+            Clear
+          </Button>
+        )}
       </div>
+
+      {hasActiveFilters && (
+        <p className="text-xs text-muted-foreground" data-testid="engineering-filter-summary">
+          Showing {filtered.length} of {basePool.length} tasks in scope.
+        </p>
+      )}
 
       <MicroWalkthrough screenId="eng-tasks" steps={engWalkthroughSteps} />
       <ActionBar nextAction={engNextAction} blockers={engBlockers} />
+      <EngineeringWorkloadStrip
+        totalOpenWork={summaryMetrics.openTasks.length}
+        unassignedCount={summaryMetrics.unassignedTasks.length}
+        blockedCount={summaryMetrics.blockedTasks.length}
+        reviewCount={summaryMetrics.reviewNeededTasks.length}
+        approvalCount={summaryMetrics.approvalPendingTasks.length}
+        deliverableCount={summaryMetrics.projectLinkedDeliverableTasks.length}
+        microsoftActionCount={summaryMetrics.microsoftActionTasks.length}
+        onReset={resetFilters}
+        onSelectWorkloadState={focusWorkloadState}
+      />
 
       <div className="flex flex-wrap gap-1.5">
         {SAVED_FILTERS.map(f => (
@@ -3237,13 +3787,15 @@ export default function EngineeringTasksPage() {
             key={f.label}
             variant="outline"
             size="sm"
-            className={`h-6 text-[10px] px-2 ${f.filter.status && statusFilter === f.filter.status ? "bg-primary text-primary-foreground" : ""}`}
+            className={`h-6 text-[10px] px-2 ${isPresetActive(f) ? "bg-primary text-primary-foreground" : ""}`}
             onClick={() => applyPreset(f)}
             data-testid={`preset-${f.label.toLowerCase().replace(/\s+/g, "-")}`}
           >
             {f.label}
-            {f.filter.preset === "overdue" && overdueTasks.length > 0 && (
-              <span className="ml-1 px-1 bg-red-500 text-white rounded-full text-[9px]">{overdueTasks.length}</span>
+            {presetBadgeCount(f) > 0 && (
+              <span className="ml-1 rounded-full bg-black/10 px-1 text-[9px] leading-4">
+                {presetBadgeCount(f)}
+              </span>
             )}
           </Button>
         ))}
@@ -3257,22 +3809,28 @@ export default function EngineeringTasksPage() {
         <>
         <div className="flex items-center gap-2 flex-wrap" data-testid="board-toolbar">
           <div className="flex items-center gap-3 flex-1 min-w-0">
-            {overdueTasks.length > 0 && (
+            {summaryMetrics.overdueTasks.length > 0 && (
               <button onClick={() => applyPreset(SAVED_FILTERS[0])} className="flex items-center gap-1 text-red-600 hover:text-red-700 font-medium text-xs transition-colors" data-testid="summary-overdue">
                 <AlertTriangle className="h-3.5 w-3.5" />
-                <span>{overdueTasks.length} overdue</span>
+                <span>{summaryMetrics.overdueTasks.length} overdue</span>
               </button>
             )}
-            {holdTasks.length > 0 && (
-              <button onClick={() => applyPreset(SAVED_FILTERS[3])} className="flex items-center gap-1 text-amber-600 hover:text-amber-700 font-medium text-xs transition-colors" data-testid="summary-hold">
+            {summaryMetrics.blockedTasks.length > 0 && (
+              <button onClick={() => focusWorkloadState("blocked")} className="flex items-center gap-1 text-amber-600 hover:text-amber-700 font-medium text-xs transition-colors" data-testid="summary-blocked">
                 <PauseCircle className="h-3.5 w-3.5" />
-                <span>{holdTasks.length} hold</span>
+                <span>{summaryMetrics.blockedTasks.length} blocked</span>
               </button>
             )}
-            {needsApprovalTasks.length > 0 && (
-              <button onClick={() => applyPreset(SAVED_FILTERS[1])} className="flex items-center gap-1 text-indigo-600 hover:text-indigo-700 font-medium text-xs transition-colors" data-testid="summary-approval">
+            {summaryMetrics.reviewNeededTasks.length > 0 && (
+              <button onClick={() => focusWorkloadState("review")} className="flex items-center gap-1 text-violet-600 hover:text-violet-700 font-medium text-xs transition-colors" data-testid="summary-review">
+                <MessageSquare className="h-3.5 w-3.5" />
+                <span>{summaryMetrics.reviewNeededTasks.length} review</span>
+              </button>
+            )}
+            {summaryMetrics.approvalPendingTasks.length > 0 && (
+              <button onClick={() => focusWorkloadState("approval")} className="flex items-center gap-1 text-indigo-600 hover:text-indigo-700 font-medium text-xs transition-colors" data-testid="summary-approval">
                 <ShieldCheck className="h-3.5 w-3.5" />
-                <span>{needsApprovalTasks.length} approval</span>
+                <span>{summaryMetrics.approvalPendingTasks.length} approval</span>
               </button>
             )}
           </div>
