@@ -529,12 +529,19 @@ export default function CommandCenterPage() {
     { label: "Create from Microsoft", path: "/pd/tickets/create", icon: ClipboardList },
   ];
 
+  const todayLabel = useMemo(
+    () => new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" }),
+    [],
+  );
+
+  const firstAction = primaryActions[0];
+
   return (
     <PageShell className="p-4 md:p-6" data-testid="command-center-page">
       <SectionHeader
         icon={<Gauge className="h-5 w-5" />}
         title="Command Center"
-        description={`${ROLE_GROUP_LABELS[roleGroup]} · ${user?.name || "User"}`}
+        description={`${todayLabel} · ${ROLE_GROUP_LABELS[roleGroup]} · ${user?.name || "User"}`}
       />
 
       <div className="-mt-2 mb-3 flex items-center gap-2">
@@ -542,9 +549,32 @@ export default function CommandCenterPage() {
         <p className="text-xs text-muted-foreground" data-testid="command-center-data-freshness">{freshnessLabel}</p>
       </div>
 
+      <Card className="mb-4 border-green-200 bg-green-50/60" data-testid="start-here-card">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Target className="h-4 w-4 text-green-700" />
+            Start here
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-medium" data-testid="start-here-title">{firstAction?.label || "Review today\'s actions"}</p>
+            <p className="text-xs text-muted-foreground">{firstAction?.helper || "Work from urgent actions first, then move to monitoring."}</p>
+          </div>
+          {firstAction && (
+            <Link href={firstAction.path}>
+              <Button size="sm" data-testid="start-here-button">Open now <ArrowRight className="ml-1 h-3 w-3" /></Button>
+            </Link>
+          )}
+        </CardContent>
+      </Card>
+
       <Card className="mb-4" data-testid="exception-first-strip">
-        <CardHeader className="pb-2"><CardTitle className="text-base">Exception First</CardTitle></CardHeader>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">1) Exception First — fix these now</CardTitle>
+        </CardHeader>
         <CardContent>
+          <p className="mb-2 text-xs text-muted-foreground">Overdue, blocked, and waiting items are shown first so the day starts with risk removal.</p>
           {exceptionStrip.length === 0 ? <p className="text-sm text-muted-foreground">No cross-department exceptions right now.</p> : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
               {exceptionStrip.map((item) => (
@@ -554,15 +584,6 @@ export default function CommandCenterPage() {
           )}
         </CardContent>
       </Card>
-
-      <Tabs defaultValue="executive" className="mb-4" data-testid="department-command-tabs">
-        <TabsList className="flex flex-wrap h-auto">
-          <TabsTrigger value="executive">Company / Executive</TabsTrigger><TabsTrigger value="pd">Project Development</TabsTrigger><TabsTrigger value="engineering">Engineering</TabsTrigger><TabsTrigger value="quality">Quality</TabsTrigger><TabsTrigger value="pm">Project Management</TabsTrigger><TabsTrigger value="finance">Finance / Procurement</TabsTrigger>
-        </TabsList>
-        {Object.entries(departmentCards).map(([key, v]) => (
-          <TabsContent key={key} value={key}><Card><CardContent className="p-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-xs"><div><p className="text-muted-foreground">Active</p><p className="font-semibold">{(v as any).active}</p></div><div><p className="text-muted-foreground">Blocked</p><p className="font-semibold">{(v as any).blocked}</p></div><div><p className="text-muted-foreground">Overdue</p><p className="font-semibold">{(v as any).overdue}</p></div><div><p className="text-muted-foreground">Waiting on dept</p><p className="font-semibold">{(v as any).waiting}</p></div><div><p className="text-muted-foreground">Next action queue</p><p className="font-semibold">{(v as any).queue}</p></div></CardContent></Card></TabsContent>
-        ))}
-      </Tabs>
 
       {isLoading ? (
         <div className="space-y-4">
@@ -596,33 +617,13 @@ export default function CommandCenterPage() {
             </Card>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3" data-testid="executive-signals">
-            {executiveSignals.map((signal) => (
-              <Link key={signal.label} href={signal.href}>
-                <Card className={`border ${signal.tone} hover:shadow-sm transition-shadow`}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">{signal.label}</p>
-                        <p className="text-2xl font-bold leading-tight">{signal.value}</p>
-                        <p className="text-xs text-muted-foreground mt-1">{signal.subtitle}</p>
-                      </div>
-                      <signal.icon className="h-4 w-4 text-green-700" />
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
-
           <Card data-testid="primary-actions-section">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-2">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Target className="h-4 w-4 text-green-600" />
-                  Primary Actions
+                  2) Primary Actions — do one next
                 </CardTitle>
-                <Badge variant="outline">One-click execution</Badge>
               </div>
             </CardHeader>
             <CardContent>
@@ -638,6 +639,7 @@ export default function CommandCenterPage() {
                         {action.urgent && <Badge variant="destructive">Now</Badge>}
                       </div>
                       <p className="mt-1 text-xs opacity-80">{action.helper}</p>
+                      <p className="mt-2 text-xs font-semibold">Open action →</p>
                     </div>
                   </Link>
                 ))}
@@ -652,7 +654,7 @@ export default function CommandCenterPage() {
                   <div className="flex items-center justify-between gap-2">
                     <CardTitle className="text-base flex items-center gap-2">
                       <AlertTriangle className="h-4 w-4 text-amber-500" />
-                      Immediate Attention Queue
+                      3) Immediate Attention Queue
                     </CardTitle>
                     <Badge variant="secondary">{attentionItems.length}</Badge>
                   </div>
@@ -675,7 +677,7 @@ export default function CommandCenterPage() {
                   <div className="flex items-center justify-between gap-2">
                     <CardTitle className="text-base flex items-center gap-2">
                       <FileCheck className="h-4 w-4 text-green-600" />
-                      Approval Command Queue
+                      Approvals Waiting
                     </CardTitle>
                     <Link href="/my-work/approvals">
                       <Button variant="ghost" size="sm" className="text-xs">Open Approvals <ArrowRight className="h-3 w-3 ml-1" /></Button>
@@ -719,7 +721,7 @@ export default function CommandCenterPage() {
                   <div className="flex items-center justify-between gap-2">
                     <CardTitle className="text-base flex items-center gap-2">
                       <ShieldCheck className="h-4 w-4 text-green-600" />
-                      Risk Hotspots
+                      4) Risk Hotspots
                     </CardTitle>
                     <Link href="/projects"><Button variant="ghost" size="sm" className="text-xs">View Projects <ArrowRight className="h-3 w-3 ml-1" /></Button></Link>
                   </div>
@@ -763,7 +765,7 @@ export default function CommandCenterPage() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Gauge className="h-4 w-4 text-green-600" />
-                    Portfolio & Delivery Health
+                    5) Workload & Delivery Health
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -785,6 +787,37 @@ export default function CommandCenterPage() {
                 </CardContent>
               </Card>
             </div>
+          </div>
+
+          <div className="space-y-4" data-testid="secondary-monitoring-section">
+            <h2 className="text-sm font-semibold text-muted-foreground">6) Monitor & reference (secondary)</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3" data-testid="executive-signals">
+              {executiveSignals.map((signal) => (
+                <Link key={signal.label} href={signal.href}>
+                  <Card className={`border ${signal.tone} hover:shadow-sm transition-shadow`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">{signal.label}</p>
+                          <p className="text-2xl font-bold leading-tight">{signal.value}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{signal.subtitle}</p>
+                        </div>
+                        <signal.icon className="h-4 w-4 text-green-700" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+
+            <Tabs defaultValue="executive" data-testid="department-command-tabs">
+              <TabsList className="flex flex-wrap h-auto">
+                <TabsTrigger value="executive">Company</TabsTrigger><TabsTrigger value="pd">PD</TabsTrigger><TabsTrigger value="engineering">Engineering</TabsTrigger><TabsTrigger value="quality">Quality</TabsTrigger><TabsTrigger value="pm">PM</TabsTrigger><TabsTrigger value="finance">Finance</TabsTrigger>
+              </TabsList>
+              {Object.entries(departmentCards).map(([key, v]) => (
+                <TabsContent key={key} value={key}><Card><CardContent className="p-3 grid grid-cols-2 md:grid-cols-5 gap-2 text-xs"><div><p className="text-muted-foreground">Active</p><p className="font-semibold">{(v as any).active}</p></div><div><p className="text-muted-foreground">Blocked</p><p className="font-semibold">{(v as any).blocked}</p></div><div><p className="text-muted-foreground">Overdue</p><p className="font-semibold">{(v as any).overdue}</p></div><div><p className="text-muted-foreground">Waiting</p><p className="font-semibold">{(v as any).waiting}</p></div><div><p className="text-muted-foreground">Next</p><p className="font-semibold">{(v as any).queue}</p></div></CardContent></Card></TabsContent>
+              ))}
+            </Tabs>
           </div>
 
           <KPIStrip className="grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5" data-testid="kpi-cards-section">
