@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { AdminPageShell, AdminQueryState } from "@/components/admin/admin-shell";
 import { usePermission } from "@/hooks/use-permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +13,6 @@ import {
   ChevronLeft, ChevronRight, Loader2, Search, ArrowRight, Filter, AlertTriangle,
   Download, Calendar, X, User,
 } from "lucide-react";
-import { EnergyLoader } from "@/components/ui/energy-loader";
 
 const SOURCE_ICONS: Record<string, any> = {
   IMPORT: FileUp, MANUAL_EDIT: Edit, OVERRIDE: Shield,
@@ -84,37 +84,45 @@ export default function SystemActivityLogPage() {
   const [selectedChangeSetId, setSelectedChangeSetId] = useState<number | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const activityQuery = useQuery<any, Error>({
     queryKey: ["activity-log", page, sourceFilter, entityTypeFilter, projectNameFilter, actionFilter, userNameFilter, searchQuery, fromDate, toDate],
     queryFn: async () => {
       const params = buildQueryParams({ sourceFilter, entityTypeFilter, projectNameFilter, actionFilter, userNameFilter, searchQuery, fromDate, toDate });
       params.set("page", String(page));
       params.set("limit", "50");
       const res = await authFetch(`/api/audit/activity-log?${params}`);
-      if (!res.ok) throw new Error("Failed to load activity log");
+      if (!res.ok) throw new Error("The audit log could not be loaded.");
       return res.json();
     },
   });
 
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
 
-  const { data: detail, isLoading: detailLoading } = useQuery({
+  const detailQuery = useQuery<any, Error>({
     queryKey: ["changeset-detail", selectedChangeSetId],
     queryFn: async () => {
       if (!selectedChangeSetId) return null;
       const res = await authFetch(`/api/audit/changeset/${selectedChangeSetId}`);
-      if (!res.ok) throw new Error("Failed to load detail");
+      if (!res.ok) throw new Error("The selected audit event detail could not be loaded.");
       return res.json();
     },
     enabled: !!selectedChangeSetId,
   });
 
+  const data = activityQuery.data;
+  const detail = detailQuery.data;
   const items = data?.items || [];
   const pagination = data?.pagination || { page: 1, totalPages: 1, total: 0 };
   const filters = data?.filters || { sources: [], entityTypes: [], actions: [], projectNames: [], userNames: [] };
 
   const activeFilterCount = [sourceFilter, entityTypeFilter, projectNameFilter, actionFilter, userNameFilter].filter(v => v !== "all").length
     + (fromDate ? 1 : 0) + (toDate ? 1 : 0) + (searchQuery ? 1 : 0);
+  const auditStatuses = [
+    { label: "Audit trail active", tone: "success" as const },
+    activeFilterCount > 0
+      ? { label: `${activeFilterCount} filters applied`, tone: "info" as const }
+      : { label: "Showing full audit stream", tone: "neutral" as const },
+  ];
 
   const handleClearFilters = useCallback(() => {
     setSourceFilter("all");
@@ -165,7 +173,18 @@ export default function SystemActivityLogPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-7xl space-y-4">
+    <AdminPageShell
+      surfaceId="audit-log"
+      title="Audit Log"
+      description="Trace governed system activity, filter operational history, and drill into changes without leaving the admin control centre."
+      statuses={auditStatuses}
+      metrics={[
+        { label: "Events", value: pagination.total, helper: "Matching current audit filters" },
+        { label: "Filters", value: activeFilterCount, helper: "Search and governance filters applied" },
+        { label: "Page", value: `${pagination.page}/${pagination.totalPages}`, helper: "Current audit page" },
+      ]}
+    >
+    <div className="space-y-4" data-testid="activity-log-page">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Activity className="h-6 w-6 text-primary" />
@@ -299,84 +318,87 @@ export default function SystemActivityLogPage() {
         </CardContent>
       </Card>
 
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12" data-testid="activity-loading">
-          <EnergyLoader size="md" label="Loading activity log..." />
-        </div>
-      ) : items.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            No activity events found matching your filters.
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="border rounded-lg overflow-x-auto">
-          <table className="w-full text-sm min-w-[800px]" data-testid="activity-log-table">
-            <thead className="bg-muted">
-              <tr>
-                <th className="text-left p-3 font-medium">Time</th>
-                <th className="text-left p-3 font-medium">User</th>
-                <th className="text-left p-3 font-medium">Source</th>
-                <th className="text-left p-3 font-medium">Action</th>
-                <th className="text-left p-3 font-medium">Entity</th>
-                <th className="text-left p-3 font-medium">Project</th>
-                <th className="text-left p-3 font-medium">Summary</th>
-                <th className="text-left p-3 font-medium">Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((cs: any, idx: number) => {
-                const source = cs.source || cs.Source || '';
-                const action = cs.action || '';
-                const entityType = cs.entity_type || cs.entityType || '';
-                const projectName = cs.project_name || cs.projectName || '';
-                const summary = cs.summary || '';
-                const createdAt = cs.created_at || cs.createdAt || '';
-                const recordType = cs.record_type || 'changeset';
-                const userName = cs.user_name || cs.userName || '';
-                const colorClass = SOURCE_COLORS[source] || SOURCE_COLORS.SYSTEM;
-                const uniqueKey = `${recordType}-${cs.id}-${idx}`;
-                return (
-                  <tr key={uniqueKey} className="border-t hover:bg-muted/30" data-testid={`activity-row-${uniqueKey}`}>
-                    <td className="p-3 whitespace-nowrap text-xs text-muted-foreground">
-                      {createdAt ? formatDate(createdAt) : "\u2014"}
-                    </td>
-                    <td className="p-3 text-xs font-medium whitespace-nowrap">
-                      {userName || "\u2014"}
-                    </td>
-                    <td className="p-3">
-                      <Badge variant="outline" className={`text-xs ${colorClass}`}>{source}</Badge>
-                    </td>
-                    <td className="p-3 font-mono text-xs">{action}</td>
-                    <td className="p-3 text-xs">{entityType}</td>
-                    <td className="p-3 text-xs truncate max-w-[150px]">{projectName || "\u2014"}</td>
-                    <td className="p-3 text-xs truncate max-w-[250px]">
-                      {summary || "\u2014"}
-                    </td>
-                    <td className="p-3">
-                      <Button
-                        variant="ghost" size="sm"
-                        onClick={() => {
-                          if (recordType === 'changeset') {
-                            setSelectedChangeSetId(cs.id);
-                            setSelectedRecord(null);
-                          } else {
-                            setSelectedChangeSetId(null);
-                            setSelectedRecord(cs);
-                          }
-                        }}
-                        data-testid={`button-detail-${uniqueKey}`}
-                      >
-                        View
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <AdminQueryState
+        isLoading={activityQuery.isLoading}
+        error={activityQuery.error?.message || null}
+        onRetry={() => void activityQuery.refetch()}
+        loadingLabel="Loading audit activity..."
+      >
+        {items.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center text-muted-foreground">
+              No activity events found matching your filters.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="border rounded-lg overflow-x-auto">
+            <table className="w-full text-sm min-w-[800px]" data-testid="activity-log-table">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="text-left p-3 font-medium">Time</th>
+                  <th className="text-left p-3 font-medium">User</th>
+                  <th className="text-left p-3 font-medium">Source</th>
+                  <th className="text-left p-3 font-medium">Action</th>
+                  <th className="text-left p-3 font-medium">Entity</th>
+                  <th className="text-left p-3 font-medium">Project</th>
+                  <th className="text-left p-3 font-medium">Summary</th>
+                  <th className="text-left p-3 font-medium">Detail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((cs: any, idx: number) => {
+                  const source = cs.source || cs.Source || '';
+                  const action = cs.action || '';
+                  const entityType = cs.entity_type || cs.entityType || '';
+                  const projectName = cs.project_name || cs.projectName || '';
+                  const summary = cs.summary || '';
+                  const createdAt = cs.created_at || cs.createdAt || '';
+                  const recordType = cs.record_type || 'changeset';
+                  const userName = cs.user_name || cs.userName || '';
+                  const colorClass = SOURCE_COLORS[source] || SOURCE_COLORS.SYSTEM;
+                  const uniqueKey = `${recordType}-${cs.id}-${idx}`;
+                  return (
+                    <tr key={uniqueKey} className="border-t hover:bg-muted/30" data-testid={`activity-row-${uniqueKey}`}>
+                      <td className="p-3 whitespace-nowrap text-xs text-muted-foreground">
+                        {createdAt ? formatDate(createdAt) : "\u2014"}
+                      </td>
+                      <td className="p-3 text-xs font-medium whitespace-nowrap">
+                        {userName || "\u2014"}
+                      </td>
+                      <td className="p-3">
+                        <Badge variant="outline" className={`text-xs ${colorClass}`}>{source}</Badge>
+                      </td>
+                      <td className="p-3 font-mono text-xs">{action}</td>
+                      <td className="p-3 text-xs">{entityType}</td>
+                      <td className="p-3 text-xs truncate max-w-[150px]">{projectName || "\u2014"}</td>
+                      <td className="p-3 text-xs truncate max-w-[250px]">
+                        {summary || "\u2014"}
+                      </td>
+                      <td className="p-3">
+                        <Button
+                          variant="ghost" size="sm"
+                          onClick={() => {
+                            if (recordType === 'changeset') {
+                              setSelectedChangeSetId(cs.id);
+                              setSelectedRecord(null);
+                            } else {
+                              setSelectedChangeSetId(null);
+                              setSelectedRecord(cs);
+                            }
+                          }}
+                          data-testid={`button-detail-${uniqueKey}`}
+                        >
+                          View
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </AdminQueryState>
 
       {pagination.totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
@@ -410,7 +432,7 @@ export default function SystemActivityLogPage() {
               Event Detail
             </DialogTitle>
           </DialogHeader>
-          {selectedChangeSetId && detailLoading ? (
+          {selectedChangeSetId && detailQuery.isLoading ? (
             <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin" /></div>
           ) : selectedChangeSetId && detail ? (
             <div className="space-y-4" data-testid="activity-detail">
@@ -467,6 +489,14 @@ export default function SystemActivityLogPage() {
                 </div>
               )}
             </div>
+          ) : selectedChangeSetId && detailQuery.error ? (
+            <AdminQueryState
+              isLoading={false}
+              error={detailQuery.error.message}
+              onRetry={() => void detailQuery.refetch()}
+            >
+              <div />
+            </AdminQueryState>
           ) : selectedRecord ? (
             <div className="space-y-4" data-testid="activity-detail-audit">
               <div className="grid grid-cols-2 gap-2 text-sm">
@@ -506,5 +536,6 @@ export default function SystemActivityLogPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </AdminPageShell>
   );
 }

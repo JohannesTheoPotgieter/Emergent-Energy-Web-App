@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildVisibleTopSections, getBreadcrumbs } from "@/config/app-navigation";
+import { ADMIN_SURFACES } from "@/config/admin-surfaces";
 
 describe("app navigation visibility", () => {
   it("keeps Home secondary navigation limited to Home and My Work", () => {
@@ -77,5 +78,23 @@ describe("app navigation visibility", () => {
 
     expect(projectLifecycle).toBeDefined();
     expect(getBreadcrumbs("/project/Alpha_Site", projectLifecycle!)).toEqual(["Project Lifecycle", "Alpha_Site"]);
+  });
+
+  it("keeps admin navigation aligned to the approved governed surfaces", () => {
+    expect(ADMIN_SURFACES.map((surface) => surface.label)).toEqual([
+      "Control Center",
+      "Smart Import",
+      "Excel Updates",
+      "Roles & Permissions",
+      "System Settings",
+      "Audit Log",
+    ]);
+  });
+
+  it("does not surface Command Center in admin navigation", () => {
+    const sections = buildVisibleTopSections({ canViewPath: () => true });
+    const adminSection = sections.find((section) => section.label === "Admin");
+
+    expect(adminSection?.secondary.some((item) => /command center/i.test(item.label))).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { AdminPageShell, AdminQueryState } from "@/components/admin/admin-shell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +53,15 @@ function useAdminFetch<T>(endpoint: string, queryKey: string[]) {
   });
 }
 
+function getQueryError(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function formatIntegrationStatus(status: string | undefined) {
+  if (!status) return "Not Connected";
+  return status.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 interface HealthData {
   db: { connected: boolean; host: string | null; error: string | null };
   users: number;
@@ -88,6 +98,10 @@ interface IntegrationData {
   sharepoint: boolean;
   teams: boolean;
   objectCount: number;
+  activeAccounts?: number;
+  outlookStatus?: string;
+  sharepointStatus?: string;
+  teamsStatus?: string;
 }
 
 interface SessionData {
@@ -132,6 +146,47 @@ interface IntegrationHealthItem {
   objectCount: number;
   lastSyncTime: string | null;
   status: string;
+  connectedUsers?: number;
+  configured?: boolean;
+}
+
+interface ImportGovernanceData {
+  summary: {
+    previewRuns: number;
+    awaitingReviewRuns: number;
+    committedRuns: number;
+    failedRuns: number;
+    rolledBackRuns: number;
+    supersededRuns: number;
+    reviewBacklog: number;
+    pendingExcelConfirmations: number;
+    unresolvedPlanEdits: number;
+    lastRunAt: string | null;
+  };
+  recentRuns: Array<{
+    id: number;
+    projectName: string;
+    status: string;
+    uploadedAt: string;
+    sourceFileName: string;
+    recordsAttempted: number;
+    recordsSucceeded: number;
+    recordsFailed: number;
+    blockerCount: number;
+    warningCount: number;
+  }>;
+  recentAttentionRuns: Array<{
+    id: number;
+    projectName: string;
+    status: string;
+    uploadedAt: string;
+    sourceFileName: string;
+    recordsAttempted: number;
+    recordsSucceeded: number;
+    recordsFailed: number;
+    blockerCount: number;
+    warningCount: number;
+  }>;
 }
 
 export default function AdminControlCenterPage() {
@@ -140,52 +195,56 @@ export default function AdminControlCenterPage() {
   const [clearDays, setClearDays] = useState("90");
   const [flagOverrideDraft, setFlagOverrideDraft] = useState<{ key: string; value: boolean; suggestedValue: boolean; reason: string } | null>(null);
 
-  const { data: health, isLoading: healthLoading } = useAdminFetch<HealthData>(
+  const healthQuery = useAdminFetch<HealthData>(
     "/api/admin/control-center/health",
     ["admin-control-health"]
   );
 
-  const { data: flags, isLoading: flagsLoading } = useAdminFetch<FeatureFlag[]>(
+  const flagsQuery = useAdminFetch<FeatureFlag[]>(
     "/api/admin/control-center/feature-flags",
     ["admin-control-flags"]
   );
-  const { data: rolloutFoundation } = useAdminFetch<{ flags: RolloutFoundationFlag[] }>(
+  const rolloutFoundationQuery = useAdminFetch<{ flags: RolloutFoundationFlag[] }>(
     "/api/admin/control-center/rollout-foundation",
     ["admin-control-rollout-foundation"]
   );
 
-
-  const { data: enums, isLoading: enumsLoading } = useAdminFetch<EnumData>(
+  const enumsQuery = useAdminFetch<EnumData>(
     "/api/admin/control-center/enums",
     ["admin-control-enums"]
   );
 
-  const { data: integrations, isLoading: integrationsLoading } = useAdminFetch<IntegrationData>(
+  const integrationsQuery = useAdminFetch<IntegrationData>(
     "/api/admin/control-center/integrations",
     ["admin-control-integrations"]
   );
 
-  const { data: activeSessions, isLoading: sessionsLoading } = useAdminFetch<SessionData>(
+  const activeSessionsQuery = useAdminFetch<SessionData>(
     "/api/admin/control-center/active-sessions",
     ["admin-control-sessions"]
   );
 
-  const { data: importFailures, isLoading: importFailuresLoading } = useAdminFetch<ImportFailure[]>(
+  const importFailuresQuery = useAdminFetch<ImportFailure[]>(
     "/api/admin/control-center/recent-import-failures",
     ["admin-control-import-failures"]
   );
 
-  const { data: systemIssues, isLoading: systemIssuesLoading } = useAdminFetch<SystemIssue[]>(
+  const systemIssuesQuery = useAdminFetch<SystemIssue[]>(
     "/api/admin/control-center/recent-issues",
     ["admin-control-system-issues"]
   );
 
-  const { data: integrationHealth, isLoading: integrationHealthLoading } = useAdminFetch<IntegrationHealthItem[]>(
+  const integrationHealthQuery = useAdminFetch<IntegrationHealthItem[]>(
     "/api/admin/control-center/integration-health",
     ["admin-control-integration-health"]
   );
 
-  const { data: permEnforcement, isLoading: permEnforcementLoading } = useAdminFetch<{
+  const importGovernanceQuery = useAdminFetch<ImportGovernanceData>(
+    "/api/admin/control-center/import-governance",
+    ["admin-control-import-governance"]
+  );
+
+  const permEnforcementQuery = useAdminFetch<{
     summary: {
       totalBackendEnforcedRoutes: number;
       totalOwnershipScopedEndpoints: number;
@@ -201,7 +260,7 @@ export default function AdminControlCenterPage() {
     ["admin-control-perm-enforcement"]
   );
 
-  const { data: opsExceptions, isLoading: opsExceptionsLoading } = useAdminFetch<{
+  const opsExceptionsQuery = useAdminFetch<{
     unassignedTasks: number;
     unassignedProjects: number;
     blockedItems: number;
@@ -210,6 +269,78 @@ export default function AdminControlCenterPage() {
     "/api/admin/control-center/operational-exceptions",
     ["admin-control-ops-exceptions"]
   );
+  const health: HealthData = healthQuery.data ?? {
+    db: { connected: false, host: null, error: null },
+    users: 0,
+    projects: { total: 0, active: 0 },
+    imports: { total: 0, committed: 0, failed: 0, lastRun: null },
+    auditEvents: 0,
+  };
+  const flags: FeatureFlag[] = flagsQuery.data ?? [];
+  const rolloutFoundation = rolloutFoundationQuery.data ?? { flags: [] };
+  const enums: EnumData = enumsQuery.data ?? { executionPhases: [], ragValues: [], projectPhases: [], workstreams: [] };
+  const integrations: IntegrationData = integrationsQuery.data ?? { outlook: false, sharepoint: false, teams: false, objectCount: 0, activeAccounts: 0, outlookStatus: "not_connected", sharepointStatus: "not_connected", teamsStatus: "not_connected" };
+  const activeSessions: SessionData = activeSessionsQuery.data ?? { count: 0, sessions: [] };
+  const importFailures: ImportFailure[] = importFailuresQuery.data ?? [];
+  const systemIssues: SystemIssue[] = systemIssuesQuery.data ?? [];
+  const integrationHealth: IntegrationHealthItem[] = integrationHealthQuery.data ?? [];
+  const importGovernance: ImportGovernanceData = importGovernanceQuery.data ?? {
+    summary: {
+      previewRuns: 0,
+      awaitingReviewRuns: 0,
+      committedRuns: 0,
+      failedRuns: 0,
+      rolledBackRuns: 0,
+      supersededRuns: 0,
+      reviewBacklog: 0,
+      pendingExcelConfirmations: 0,
+      unresolvedPlanEdits: 0,
+      lastRunAt: null,
+    },
+    recentRuns: [],
+    recentAttentionRuns: [],
+  };
+  const permEnforcement = permEnforcementQuery.data ?? {
+    summary: {
+      totalBackendEnforcedRoutes: 0,
+      totalOwnershipScopedEndpoints: 0,
+      totalApplicationLogicOnly: 0,
+      recentAccessDenials7d: 0,
+      recentImportIssues7d: 0,
+    },
+    backendEnforced: [],
+    ownershipScoping: [],
+    applicationLogicOnly: [],
+  };
+  const opsExceptions = opsExceptionsQuery.data ?? {
+    unassignedTasks: 0,
+    unassignedProjects: 0,
+    blockedItems: 0,
+    overdueByOwner: [],
+  };
+  const healthLoading = healthQuery.isLoading;
+  const flagsLoading = flagsQuery.isLoading;
+  const enumsLoading = enumsQuery.isLoading;
+  const integrationsLoading = integrationsQuery.isLoading;
+  const sessionsLoading = activeSessionsQuery.isLoading;
+  const importFailuresLoading = importFailuresQuery.isLoading;
+  const systemIssuesLoading = systemIssuesQuery.isLoading;
+  const integrationHealthLoading = integrationHealthQuery.isLoading;
+  const permEnforcementLoading = permEnforcementQuery.isLoading;
+  const opsExceptionsLoading = opsExceptionsQuery.isLoading;
+  const cleanedAdminVisibilityEnabled = flags?.find((flag) => flag.key === "cleaned_admin_visibility")?.value === true;
+  const connectedIntegrationCount = [integrations?.outlook, integrations?.sharepoint, integrations?.teams].filter(Boolean).length;
+  const shellStatuses = [
+    health?.db.connected
+      ? { label: "Database connected", tone: "success" as const }
+      : { label: "Database needs attention", tone: "danger" as const },
+    importGovernance?.summary.reviewBacklog
+      ? { label: `${importGovernance.summary.reviewBacklog} imports awaiting review`, tone: "warning" as const }
+      : { label: "Import review backlog clear", tone: "success" as const },
+    connectedIntegrationCount > 0
+      ? { label: `${connectedIntegrationCount}/3 Microsoft surfaces connected`, tone: connectedIntegrationCount === 3 ? "success" as const : "warning" as const }
+      : { label: "Microsoft connectivity needs attention", tone: "danger" as const },
+  ];
 
   const forceLogout = useMutation({
     mutationFn: async (sid: string) => {
@@ -294,31 +425,25 @@ export default function AdminControlCenterPage() {
 
   const quickLinkSections = [
     {
-      title: "Users & Roles",
-      items: [{ label: "Users & Roles", path: "/admin/roles", icon: Users }],
-    },
-    {
-      title: "Integrations",
-      items: [{ label: "App Settings", path: "/admin/settings", icon: Settings }],
-    },
-    {
-      title: "Data / Import Control",
-      items: [{ label: "Import Control Tower", path: "/admin/import-control-tower", icon: FileUp }],
-    },
-    {
-      title: "KPI / Traceability",
-      items: [{ label: "KPI Traceability", path: "/admin/kpi-traceability", icon: Activity }],
-    },
-    {
-      title: "Recovery / Audit",
+      title: "Governance",
       items: [
-        { label: "Recovery Center", path: "/admin/recovery", icon: ShieldAlert },
-        { label: "Activity Log", path: "/admin/activity-log", icon: Activity },
+        { label: "Roles & Permissions", path: "/admin/roles", icon: Users },
+        { label: "Audit Log", path: "/admin/activity-log", icon: Activity },
+      ],
+    },
+    {
+      title: "Imports",
+      items: [
+        { label: "Smart Import", path: "/admin/smart-import", icon: FileUp },
+        { label: "Excel Updates", path: "/admin/excel-updates", icon: FolderOpen },
       ],
     },
     {
       title: "System Controls",
-      items: [{ label: "Control Center", path: "/admin/control-center", icon: Database }],
+      items: [
+        { label: "System Settings", path: "/admin/settings", icon: Settings },
+        { label: "Control Center", path: "/admin/control-center", icon: Database },
+      ],
     },
   ];
 
@@ -329,9 +454,21 @@ export default function AdminControlCenterPage() {
   ];
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto" data-testid="admin-control-center">
+    <AdminPageShell
+      surfaceId="control-center"
+      title="Control Center"
+      description="Trusted operational cockpit for system governance, import health, Microsoft integration visibility, permissions, and audit-linked recovery controls."
+      statuses={shellStatuses}
+      metrics={[
+        { label: "Active Projects", value: health?.projects.active ?? "—", helper: "Projects currently marked active" },
+        { label: "Import Backlog", value: importGovernance?.summary.reviewBacklog ?? "—", helper: "Preview and review runs awaiting action" },
+        { label: "Pending Excel", value: importGovernance?.summary.pendingExcelConfirmations ?? "—", helper: "Tracker confirmations still outstanding" },
+        { label: "Microsoft Sync", value: `${connectedIntegrationCount}/3`, helper: "Outlook, SharePoint, Teams connectivity" },
+      ]}
+    >
+    <div className="space-y-6" data-testid="admin-control-center">
       <div>
-        <h1 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Admin Control Center / Settings</h1>
+        <h1 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Control Center</h1>
         <p className="text-sm text-muted-foreground mt-1">Primary admin hub for trusted system controls, governance, and recovery</p>
       </div>
 
@@ -344,11 +481,12 @@ export default function AdminControlCenterPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {healthLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading...
-              </div>
-            ) : health ? (
+            <AdminQueryState
+              isLoading={healthLoading}
+              error={healthQuery.error ? getQueryError(healthQuery.error, "System health could not be loaded.") : null}
+              onRetry={() => { void healthQuery.refetch(); }}
+              loadingLabel="Loading system health..."
+            >
               <>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Database</span>
@@ -384,9 +522,7 @@ export default function AdminControlCenterPage() {
                   <span className="text-sm font-medium" data-testid="text-audit-count">{health.auditEvents}</span>
                 </div>
               </>
-            ) : (
-              <p className="text-sm text-muted-foreground">Failed to load health data</p>
-            )}
+            </AdminQueryState>
           </CardContent>
         </Card>
 
@@ -394,42 +530,53 @@ export default function AdminControlCenterPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <FileUp className="h-4 w-4 text-blue-600" />
-              Import Stats
+              Import Governance
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {healthLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading...
-              </div>
-            ) : health ? (
+            <AdminQueryState
+              isLoading={healthLoading || importGovernanceQuery.isLoading}
+              error={(healthQuery.error || importGovernanceQuery.error) ? getQueryError(healthQuery.error || importGovernanceQuery.error, "Import governance could not be loaded.") : null}
+              onRetry={() => { void healthQuery.refetch(); void importGovernanceQuery.refetch(); }}
+              loadingLabel="Loading import governance..."
+            >
               <>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Total Runs</span>
                   <span className="text-sm font-medium">{health.imports.total}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Committed</span>
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                    {health.imports.committed}
+                  <span className="text-sm text-muted-foreground">Awaiting Review</span>
+                  <Badge variant="outline" className={(importGovernance?.summary.reviewBacklog || 0) > 0 ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}>
+                    {importGovernance?.summary.reviewBacklog ?? 0}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Failed</span>
+                  <span className="text-sm text-muted-foreground">Pending Excel Confirmations</span>
+                  <Badge variant="outline" className={(importGovernance?.summary.pendingExcelConfirmations || 0) > 0 ? "bg-amber-50 text-amber-700 border-amber-200" : ""}>
+                    {importGovernance?.summary.pendingExcelConfirmations ?? 0}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Failed Runs</span>
                   <Badge variant="outline" className={health.imports.failed > 0 ? "bg-red-50 text-red-700 border-red-200" : ""}>
                     {health.imports.failed}
                   </Badge>
                 </div>
-                {health.imports.lastRun && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Unresolved Plan Edits</span>
+                  <span className="text-sm font-medium">{importGovernance?.summary.unresolvedPlanEdits ?? 0}</span>
+                </div>
+                {(importGovernance?.summary.lastRunAt || health.imports.lastRun) && (
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Last Run</span>
                     <span className="text-xs text-muted-foreground">
-                      {new Date(health.imports.lastRun).toLocaleDateString()}
+                      {new Date(importGovernance?.summary.lastRunAt || health.imports.lastRun || "").toLocaleString()}
                     </span>
                   </div>
                 )}
               </>
-            ) : null}
+            </AdminQueryState>
           </CardContent>
         </Card>
 
@@ -442,18 +589,19 @@ export default function AdminControlCenterPage() {
             <CardDescription>MS365 connection summary</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {integrationsLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading...
-              </div>
-            ) : integrations ? (
+            <AdminQueryState
+              isLoading={integrationsLoading}
+              error={integrationsQuery.error ? getQueryError(integrationsQuery.error, "Microsoft integration status could not be loaded.") : null}
+              onRetry={() => { void integrationsQuery.refetch(); }}
+              loadingLabel="Loading Microsoft integration status..."
+            >
               <>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground flex items-center gap-1.5">
                     <Mail className="h-3.5 w-3.5" /> Outlook
                   </span>
                   <Badge variant="outline" className={integrations.outlook ? "bg-green-50 text-green-700 border-green-200" : "bg-slate-50 text-slate-500 border-slate-200"}>
-                    {integrations.outlook ? "Active" : "Not Connected"}
+                    {formatIntegrationStatus(integrations.outlookStatus)}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
@@ -461,7 +609,7 @@ export default function AdminControlCenterPage() {
                     <FolderOpen className="h-3.5 w-3.5" /> SharePoint
                   </span>
                   <Badge variant="outline" className={integrations.sharepoint ? "bg-green-50 text-green-700 border-green-200" : "bg-slate-50 text-slate-500 border-slate-200"}>
-                    {integrations.sharepoint ? "Active" : "Not Connected"}
+                    {formatIntegrationStatus(integrations.sharepointStatus)}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between">
@@ -469,7 +617,7 @@ export default function AdminControlCenterPage() {
                     <MessageSquare className="h-3.5 w-3.5" /> Teams
                   </span>
                   <Badge variant="outline" className={integrations.teams ? "bg-green-50 text-green-700 border-green-200" : "bg-slate-50 text-slate-500 border-slate-200"}>
-                    {integrations.teams ? "Active" : "Not Connected"}
+                    {formatIntegrationStatus(integrations.teamsStatus)}
                   </Badge>
                 </div>
                 <Separator />
@@ -477,8 +625,12 @@ export default function AdminControlCenterPage() {
                   <span className="text-sm text-muted-foreground">Synced Objects</span>
                   <span className="text-sm font-medium">{integrations.objectCount}</span>
                 </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Connected Accounts</span>
+                  <span className="text-sm font-medium">{integrations.activeAccounts ?? 0}</span>
+                </div>
               </>
-            ) : null}
+            </AdminQueryState>
           </CardContent>
         </Card>
       </div>
@@ -492,11 +644,12 @@ export default function AdminControlCenterPage() {
           <CardDescription>Live management exceptions requiring attention</CardDescription>
         </CardHeader>
         <CardContent>
-          {opsExceptionsLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading...
-            </div>
-          ) : opsExceptions ? (
+          <AdminQueryState
+            isLoading={opsExceptionsLoading}
+            error={opsExceptionsQuery.error ? getQueryError(opsExceptionsQuery.error, "Operational exceptions could not be loaded.") : null}
+            onRetry={() => { void opsExceptionsQuery.refetch(); }}
+            loadingLabel="Loading operational exceptions..."
+          >
             <div className="space-y-4">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className={`rounded-lg border p-3 text-center ${opsExceptions.unassignedTasks > 0 ? "border-red-200 bg-red-50" : "border-border"}`}>
@@ -530,9 +683,7 @@ export default function AdminControlCenterPage() {
                 </div>
               )}
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Failed to load exceptions</p>
-          )}
+          </AdminQueryState>
         </CardContent>
       </Card>
 
@@ -545,11 +696,12 @@ export default function AdminControlCenterPage() {
           <CardDescription>Backend security enforcement status and recent governance signals</CardDescription>
         </CardHeader>
         <CardContent>
-          {permEnforcementLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading...
-            </div>
-          ) : permEnforcement ? (
+          <AdminQueryState
+            isLoading={permEnforcementLoading}
+            error={permEnforcementQuery.error ? getQueryError(permEnforcementQuery.error, "Permission enforcement coverage could not be loaded.") : null}
+            onRetry={() => { void permEnforcementQuery.refetch(); }}
+            loadingLabel="Loading permission enforcement coverage..."
+          >
             <div className="space-y-4">
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-center">
@@ -609,9 +761,7 @@ export default function AdminControlCenterPage() {
                 </div>
               </details>
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Failed to load enforcement data</p>
-          )}
+          </AdminQueryState>
         </CardContent>
       </Card>
 
@@ -676,11 +826,12 @@ export default function AdminControlCenterPage() {
             <CardDescription>Status lists, phases, and options</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {enumsLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading...
-              </div>
-            ) : enums ? (
+            <AdminQueryState
+              isLoading={enumsLoading}
+              error={enumsQuery.error ? getQueryError(enumsQuery.error, "Reference enums could not be loaded.") : null}
+              onRetry={() => { void enumsQuery.refetch(); }}
+              loadingLabel="Loading system reference data..."
+            >
               <>
                 <div>
                   <p className="text-xs font-medium text-muted-foreground uppercase mb-1.5">Execution Phases</p>
@@ -717,7 +868,7 @@ export default function AdminControlCenterPage() {
                   </div>
                 )}
               </>
-            ) : null}
+            </AdminQueryState>
           </CardContent>
         </Card>
       </div>
@@ -731,11 +882,15 @@ export default function AdminControlCenterPage() {
           <CardDescription>Toggle system features</CardDescription>
         </CardHeader>
         <CardContent>
-          {flagsLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading...
-            </div>
-          ) : flags && flags.length > 0 ? (
+          <AdminQueryState
+            isLoading={flagsLoading}
+            error={flagsQuery.error ? getQueryError(flagsQuery.error, "Feature flag controls could not be loaded.") : null}
+            onRetry={() => { void flagsQuery.refetch(); void rolloutFoundationQuery.refetch(); }}
+            empty={!flags || flags.length === 0}
+            emptyTitle="No feature flags configured"
+            emptyDescription="Feature governance flags will appear here once configured."
+            loadingLabel="Loading feature flags..."
+          >
             <div className="space-y-3">
               {flags.map(flag => (
                 <div key={flag.key} className="flex items-center justify-between p-3 rounded-lg border border-border">
@@ -763,9 +918,7 @@ export default function AdminControlCenterPage() {
                 </div>
               ))}
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No feature flags configured</p>
-          )}
+          </AdminQueryState>
         </CardContent>
       </Card>
 
@@ -781,11 +934,15 @@ export default function AdminControlCenterPage() {
           <CardDescription>Currently logged-in users</CardDescription>
         </CardHeader>
         <CardContent>
-          {sessionsLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading...
-            </div>
-          ) : activeSessions && activeSessions.sessions.length > 0 ? (
+          <AdminQueryState
+            isLoading={sessionsLoading}
+            error={activeSessionsQuery.error ? getQueryError(activeSessionsQuery.error, "Active session data could not be loaded.") : null}
+            onRetry={() => { void activeSessionsQuery.refetch(); }}
+            empty={!activeSessions || activeSessions.sessions.length === 0}
+            emptyTitle="No active sessions found"
+            emptyDescription="When users are signed in, their current sessions will appear here."
+            loadingLabel="Loading active sessions..."
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -846,9 +1003,7 @@ export default function AdminControlCenterPage() {
                 ))}
               </TableBody>
             </Table>
-          ) : (
-            <p className="text-sm text-muted-foreground">No active sessions found</p>
-          )}
+          </AdminQueryState>
         </CardContent>
       </Card>
 
@@ -861,11 +1016,15 @@ export default function AdminControlCenterPage() {
           <CardDescription>Detailed sync status per integration type</CardDescription>
         </CardHeader>
         <CardContent>
-          {integrationHealthLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading...
-            </div>
-          ) : integrationHealth && integrationHealth.length > 0 ? (
+          <AdminQueryState
+            isLoading={integrationHealthLoading}
+            error={integrationHealthQuery.error ? getQueryError(integrationHealthQuery.error, "Detailed integration health could not be loaded.") : null}
+            onRetry={() => { void integrationHealthQuery.refetch(); }}
+            empty={!integrationHealth || integrationHealth.length === 0}
+            emptyTitle="No integration health data available"
+            emptyDescription="Connected Microsoft surfaces will expose detailed sync state here."
+            loadingLabel="Loading detailed integration health..."
+          >
             <div className="space-y-3">
               {integrationHealth.map((item) => (
                 <div key={item.type} className="flex items-center justify-between p-3 rounded-lg border border-border" data-testid={`row-integration-${item.type}`}>
@@ -898,9 +1057,7 @@ export default function AdminControlCenterPage() {
                 </div>
               ))}
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No integration data available</p>
-          )}
+          </AdminQueryState>
         </CardContent>
       </Card>
 
@@ -914,11 +1071,15 @@ export default function AdminControlCenterPage() {
             <CardDescription>Last 10 failed import runs</CardDescription>
           </CardHeader>
           <CardContent>
-            {importFailuresLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading...
-              </div>
-            ) : importFailures && importFailures.length > 0 ? (
+            <AdminQueryState
+              isLoading={importFailuresLoading}
+              error={importFailuresQuery.error ? getQueryError(importFailuresQuery.error, "Recent import failures could not be loaded.") : null}
+              onRetry={() => { void importFailuresQuery.refetch(); }}
+              empty={!importFailures || importFailures.length === 0}
+              emptyTitle="No recent import failures"
+              emptyDescription="Failed runs and blocker-heavy imports will appear here for review."
+              loadingLabel="Loading recent import failures..."
+            >
               <div className="space-y-3">
                 {importFailures.map((failure) => (
                   <div key={failure.id} className="p-3 rounded-lg border border-red-100 bg-red-50/30 space-y-1" data-testid={`row-import-failure-${failure.id}`}>
@@ -952,9 +1113,7 @@ export default function AdminControlCenterPage() {
                   </div>
                 ))}
               </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">No recent import failures</p>
-            )}
+            </AdminQueryState>
           </CardContent>
         </Card>
 
@@ -967,11 +1126,15 @@ export default function AdminControlCenterPage() {
             <CardDescription>Administrative and error events</CardDescription>
           </CardHeader>
           <CardContent>
-            {systemIssuesLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading...
-              </div>
-            ) : systemIssues && systemIssues.length > 0 ? (
+            <AdminQueryState
+              isLoading={systemIssuesLoading}
+              error={systemIssuesQuery.error ? getQueryError(systemIssuesQuery.error, "Recent system events could not be loaded.") : null}
+              onRetry={() => { void systemIssuesQuery.refetch(); }}
+              empty={!systemIssues || systemIssues.length === 0}
+              emptyTitle="No recent system events"
+              emptyDescription="Administrative errors, recovery actions, and system events will appear here."
+              loadingLabel="Loading recent system events..."
+            >
               <div className="space-y-2 max-h-[400px] overflow-y-auto">
                 {systemIssues.map((issue) => (
                   <div key={issue.id} className="p-2.5 rounded-lg border border-border space-y-0.5" data-testid={`row-system-issue-${issue.id}`}>
@@ -992,9 +1155,7 @@ export default function AdminControlCenterPage() {
                   </div>
                 ))}
               </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">No recent system events</p>
-            )}
+            </AdminQueryState>
           </CardContent>
         </Card>
       </div>
@@ -1127,5 +1288,6 @@ export default function AdminControlCenterPage() {
       </Dialog>
 
     </div>
+    </AdminPageShell>
   );
 }

@@ -1,8 +1,17 @@
 import { Router, type Express, type Request, type Response, type NextFunction } from "express";
 import { requireAuth, requireAdmin } from "./departments/shared-middleware";
 import { db } from "./db";
-import { sql, eq } from "drizzle-orm";
-import { appSettings, users, projectInfo, smartImportRuns, auditEvents } from "@shared/schema";
+import { sql, eq, and, desc, inArray } from "drizzle-orm";
+import {
+  appSettings,
+  users,
+  projectInfo,
+  smartImportRuns,
+  auditEvents,
+  importIssues,
+  notifications,
+  planEditNotifications,
+} from "@shared/schema";
 import { getFeatureFlag, getRolloutFeatureFlags, setFeatureFlag } from "./lib/feature-flags";
 import { ROLLOUT_FEATURE_FLAGS } from "@shared/feature-flags";
 import { logAuditFromReq } from "./audit-logger";
@@ -10,6 +19,187 @@ import { getStartupFlags } from "./startup-flags";
 const { rawEnv: startupRawFlags, modes: startupEffectiveModes } = getStartupFlags();
 
 const router = Router();
+
+function countValue(raw: unknown) {
+  const parsed = typeof raw === "number" ? raw : parseInt(String(raw ?? "0"), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseConfigValue(raw: unknown) {
+  if (raw && typeof raw === "object") return raw as Record<string, any>;
+  if (typeof raw !== "string") return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeIsoDate(value: unknown) {
+  if (!value) return null;
+  try {
+    return new Date(String(value)).toISOString();
+  } catch {
+    return null;
+  }
+}
+
+function resolveIntegrationStatus({
+  connected,
+  configured,
+  enabled,
+  objectCount,
+}: {
+  connected: boolean;
+  configured: boolean;
+  enabled?: boolean;
+  objectCount: number;
+}) {
+  if (connected && objectCount > 0) return "connected";
+  if (connected) return "attention";
+  if (enabled || configured || objectCount > 0) return "attention";
+  return "not_connected";
+}
+
+async function buildMicrosoftIntegrationSnapshot() {
+  const config: Record<string, any> = {};
+  try {
+    const rows: any[] = await db.execute(sql`SELECT config_key, config_value FROM ms_integration_settings`).then((r: any) => r.rows || r);
+    for (const row of rows) {
+      config[row.config_key] = parseConfigValue(row.config_value) ?? row.config_value;
+    }
+  } catch {}
+
+  let activeAccounts = 0;
+  let totalAccounts = 0;
+  try {
+    const [row] = await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'active')::int AS active_count,
+        COUNT(*)::int AS total_count
+      FROM ms_accounts
+    `).then((r: any) => r.rows || r);
+    activeAccounts = countValue(row?.active_count);
+    totalAccounts = countValue(row?.total_count);
+  } catch {}
+
+  const objectCounts = {
+    email: 0,
+    event: 0,
+    teams: 0,
+    sharepoint_file: 0,
+  };
+  const objectUsers = {
+    email: 0,
+    event: 0,
+    teams: 0,
+    sharepoint_file: 0,
+  };
+  const lastSyncTimes: Record<string, string | null> = {
+    email: null,
+    event: null,
+    teams: null,
+    sharepoint_file: null,
+  };
+
+  try {
+    const rows: any[] = await db.execute(sql`
+      SELECT
+        type::text AS type,
+        COUNT(*)::int AS count,
+        COUNT(DISTINCT user_id)::int AS user_count,
+        MAX(last_synced_at) AS last_sync
+      FROM ms_objects
+      GROUP BY type
+    `).then((r: any) => r.rows || r);
+
+    for (const row of rows) {
+      const type = String(row.type || "");
+      if (!(type in objectCounts)) continue;
+      objectCounts[type as keyof typeof objectCounts] = countValue(row.count);
+      objectUsers[type as keyof typeof objectUsers] = countValue(row.user_count);
+      lastSyncTimes[type] = normalizeIsoDate(row.last_sync);
+    }
+  } catch {}
+
+  const featureFlags = config.feature_flags || {};
+  const sharepointConfig = config.sharepoint_project_docs || {};
+  const teamsConfig = config.teams_config || {};
+
+  const outlookObjectCount = objectCounts.email + objectCounts.event;
+  const sharepointObjectCount = objectCounts.sharepoint_file;
+  const teamsObjectCount = objectCounts.teams;
+
+  const outlookConfigured = activeAccounts > 0 || outlookObjectCount > 0;
+  const sharepointEnabled = Boolean(featureFlags.feature_ms_sharepoint_docs);
+  const sharepointConfigured = Boolean(
+    sharepointConfig.siteName ||
+      sharepointConfig.siteId ||
+      sharepointConfig.driveId ||
+      sharepointConfig.folderId,
+  );
+  const sharepointConnected = sharepointConfig.connectionStatus === "connected";
+  const teamsEnabled = Boolean(featureFlags.feature_ms_teams);
+  const teamsConfigured = Boolean(
+    teamsEnabled ||
+      (Array.isArray(teamsConfig.tags) && teamsConfig.tags.length > 0) ||
+      teamsConfig.unansweredThresholdHours,
+  );
+
+  const surfaces = [
+    {
+      name: "Outlook",
+      type: "outlook",
+      objectCount: outlookObjectCount,
+      lastSyncTime: lastSyncTimes.email || lastSyncTimes.event,
+      status: resolveIntegrationStatus({
+        connected: activeAccounts > 0,
+        configured: outlookConfigured,
+        objectCount: outlookObjectCount,
+      }),
+      configured: outlookConfigured,
+      connectedUsers: Math.max(objectUsers.email, objectUsers.event, activeAccounts),
+    },
+    {
+      name: "SharePoint",
+      type: "sharepoint",
+      objectCount: sharepointObjectCount,
+      lastSyncTime: lastSyncTimes.sharepoint_file,
+      status: resolveIntegrationStatus({
+        connected: sharepointConnected,
+        configured: sharepointConfigured,
+        enabled: sharepointEnabled,
+        objectCount: sharepointObjectCount,
+      }),
+      configured: sharepointConfigured || sharepointEnabled,
+      connectedUsers: objectUsers.sharepoint_file,
+      siteName: sharepointConfig.siteName || null,
+      driveName: sharepointConfig.driveName || null,
+    },
+    {
+      name: "Teams",
+      type: "teams",
+      objectCount: teamsObjectCount,
+      lastSyncTime: lastSyncTimes.teams,
+      status: resolveIntegrationStatus({
+        connected: teamsEnabled && activeAccounts > 0,
+        configured: teamsConfigured,
+        enabled: teamsEnabled,
+        objectCount: teamsObjectCount,
+      }),
+      configured: teamsConfigured,
+      connectedUsers: Math.max(objectUsers.teams, teamsEnabled ? activeAccounts : 0),
+      tagsConfigured: Array.isArray(teamsConfig.tags) ? teamsConfig.tags.length : 0,
+    },
+  ];
+
+  return {
+    surfaces,
+    totalObjectCount: outlookObjectCount + sharepointObjectCount + teamsObjectCount,
+    activeAccounts,
+    totalAccounts,
+  };
+}
 
 router.get("/api/admin/control-center/health", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
@@ -81,7 +271,7 @@ router.get("/api/admin/control-center/feature-flags", requireAuth, requireAdmin,
 
 router.put("/api/admin/control-center/feature-flags/:key", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const { key } = req.params;
+    const key = Array.isArray(req.params.key) ? req.params.key[0] : req.params.key;
     const { value, reason, suggestedValue } = req.body;
     const normalizedValue = !!value;
     const normalizedSuggestedValue = suggestedValue === undefined || suggestedValue === null ? null : !!suggestedValue;
@@ -165,21 +355,21 @@ router.get("/api/admin/control-center/enums", requireAuth, requireAdmin, async (
 
 router.get("/api/admin/control-center/integrations", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    let msStatus = { outlook: false, sharepoint: false, teams: false, objectCount: 0 };
-    try {
-      const [msCount] = await db.execute(sql`SELECT COUNT(*) as count FROM ms_objects`).then((r: any) => r.rows || r);
-      msStatus.objectCount = parseInt(msCount?.count || "0");
-      const types: any[] = await db.execute(sql`SELECT DISTINCT object_type FROM ms_objects`).then((r: any) => r.rows || r);
-      for (const t of types) {
-        if (t.object_type === "email") msStatus.outlook = true;
-        if (t.object_type === "file" || t.object_type === "folder") msStatus.sharepoint = true;
-        if (t.object_type === "chat" || t.object_type === "channel") msStatus.teams = true;
-      }
-    } catch {}
+    const snapshot = await buildMicrosoftIntegrationSnapshot();
+    const byType = Object.fromEntries(snapshot.surfaces.map((surface) => [surface.type, surface]));
 
-    res.json(msStatus);
+    res.json({
+      outlook: byType.outlook?.status === "connected",
+      sharepoint: byType.sharepoint?.status === "connected",
+      teams: byType.teams?.status === "connected",
+      objectCount: snapshot.totalObjectCount,
+      activeAccounts: snapshot.activeAccounts,
+      outlookStatus: byType.outlook?.status || "not_connected",
+      sharepointStatus: byType.sharepoint?.status || "not_connected",
+      teamsStatus: byType.teams?.status || "not_connected",
+    });
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch integration status" });
+    res.status(500).json({ error: "Failed to fetch integration status", message: err.message });
   }
 });
 
@@ -319,6 +509,118 @@ router.get("/api/admin/control-center/recent-import-failures", requireAuth, requ
   }
 });
 
+router.get("/api/admin/control-center/import-governance", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const [statusRows, pendingExcelRows, unresolvedPlanRows, recentRuns] = await Promise.all([
+      db.execute(sql`
+        SELECT status, COUNT(*)::int AS count
+        FROM smart_import_runs
+        GROUP BY status
+      `).then((r: any) => r.rows || r),
+      db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM notifications
+        WHERE event_type IN ('excel_sync_confirmation', 'plan.change_confirmation')
+          AND confirmed_at IS NULL
+      `).then((r: any) => r.rows || r),
+      db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM plan_edit_notifications
+        WHERE status = 'pending'
+      `).then((r: any) => r.rows || r),
+      db
+        .select({
+          id: smartImportRuns.id,
+          projectName: smartImportRuns.projectName,
+          status: smartImportRuns.status,
+          uploadedAt: smartImportRuns.uploadedAt,
+          sourceFileName: smartImportRuns.sourceFileName,
+          recordsAttempted: smartImportRuns.recordsAttempted,
+          recordsSucceeded: smartImportRuns.recordsSucceeded,
+          recordsFailed: smartImportRuns.recordsFailed,
+        })
+        .from(smartImportRuns)
+        .orderBy(desc(smartImportRuns.uploadedAt))
+        .limit(8),
+    ]);
+
+    const issueRows = recentRuns.length
+      ? await db
+          .select({
+            importRunId: importIssues.importRunId,
+            severity: importIssues.severity,
+            count: sql<number>`COUNT(*)::int`,
+          })
+          .from(importIssues)
+          .where(and(inArray(importIssues.importRunId, recentRuns.map((run) => run.id)), eq(importIssues.resolved, false)))
+          .groupBy(importIssues.importRunId, importIssues.severity)
+      : [];
+
+    const issueCounts = new Map<number, { blockers: number; warnings: number }>();
+    for (const row of issueRows) {
+      const current = issueCounts.get(row.importRunId) || { blockers: 0, warnings: 0 };
+      if (row.severity === "BLOCKER") current.blockers = countValue(row.count);
+      if (row.severity === "WARNING") current.warnings = countValue(row.count);
+      issueCounts.set(row.importRunId, current);
+    }
+
+    const statusCounts = {
+      previewRuns: 0,
+      awaitingReviewRuns: 0,
+      committedRuns: 0,
+      failedRuns: 0,
+      rolledBackRuns: 0,
+      supersededRuns: 0,
+    };
+
+    for (const row of statusRows as any[]) {
+      const count = countValue(row.count);
+      if (row.status === "PREVIEW") statusCounts.previewRuns += count;
+      if (row.status === "AWAITING_REVIEW") statusCounts.awaitingReviewRuns += count;
+      if (row.status === "COMMITTED") statusCounts.committedRuns += count;
+      if (row.status === "FAILED") statusCounts.failedRuns += count;
+      if (row.status === "ROLLED_BACK") statusCounts.rolledBackRuns += count;
+      if (row.status === "SUPERSEDED") statusCounts.supersededRuns += count;
+    }
+
+    const mappedRecentRuns = recentRuns.map((run) => {
+      const issues = issueCounts.get(run.id) || { blockers: 0, warnings: 0 };
+      return {
+        id: run.id,
+        projectName: run.projectName,
+        status: run.status,
+        uploadedAt: normalizeIsoDate(run.uploadedAt),
+        sourceFileName: run.sourceFileName,
+        recordsAttempted: run.recordsAttempted ?? 0,
+        recordsSucceeded: run.recordsSucceeded ?? 0,
+        recordsFailed: run.recordsFailed ?? 0,
+        blockerCount: issues.blockers,
+        warningCount: issues.warnings,
+      };
+    });
+
+    res.json({
+      summary: {
+        ...statusCounts,
+        reviewBacklog: statusCounts.previewRuns + statusCounts.awaitingReviewRuns,
+        pendingExcelConfirmations: countValue((pendingExcelRows as any[])[0]?.count),
+        unresolvedPlanEdits: countValue((unresolvedPlanRows as any[])[0]?.count),
+        lastRunAt: mappedRecentRuns[0]?.uploadedAt || null,
+      },
+      recentRuns: mappedRecentRuns,
+      recentAttentionRuns: mappedRecentRuns.filter(
+        (run) =>
+          run.status !== "COMMITTED" ||
+          run.blockerCount > 0 ||
+          run.warningCount > 0 ||
+          run.recordsFailed > 0,
+      ),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to fetch import governance", message: err.message });
+  }
+});
+
 router.get("/api/admin/control-center/recent-issues", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const rows: any[] = await db.execute(sql`
@@ -349,48 +651,8 @@ router.get("/api/admin/control-center/recent-issues", requireAuth, requireAdmin,
 
 router.get("/api/admin/control-center/integration-health", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const integrations: any[] = [];
-
-    const types = ["email", "file", "folder", "chat", "channel"];
-    const typeLabels: Record<string, string> = {
-      email: "Outlook",
-      file: "SharePoint Files",
-      folder: "SharePoint Folders",
-      chat: "Teams Chat",
-      channel: "Teams Channels",
-    };
-
-    for (const t of types) {
-      try {
-        const [countRow] = await db.execute(
-          sql`SELECT COUNT(*) as count FROM ms_objects WHERE type = ${t}::ms_object_type`
-        ).then((r: any) => r.rows || r);
-        const [lastSync] = await db.execute(
-          sql`SELECT MAX(last_synced_at) as last_sync FROM ms_objects WHERE type = ${t}::ms_object_type`
-        ).then((r: any) => r.rows || r);
-
-        const count = parseInt(countRow?.count || "0");
-        if (count > 0) {
-          integrations.push({
-            name: typeLabels[t] || t,
-            type: t,
-            objectCount: count,
-            lastSyncTime: lastSync?.last_sync || null,
-            status: "connected",
-          });
-        }
-      } catch {}
-    }
-
-    if (integrations.length === 0) {
-      integrations.push(
-        { name: "Outlook", type: "email", objectCount: 0, lastSyncTime: null, status: "not_connected" },
-        { name: "SharePoint", type: "file", objectCount: 0, lastSyncTime: null, status: "not_connected" },
-        { name: "Teams", type: "chat", objectCount: 0, lastSyncTime: null, status: "not_connected" },
-      );
-    }
-
-    res.json(integrations);
+    const snapshot = await buildMicrosoftIntegrationSnapshot();
+    res.json(snapshot.surfaces);
   } catch (err: any) {
     res.status(500).json({ error: "Failed to fetch integration health", message: err.message });
   }
