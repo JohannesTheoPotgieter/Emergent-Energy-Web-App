@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
-import { ENTITY_PERMISSION_DEFAULTS, rolePermissions, type PermissionEntity, type PermissionAction } from "@shared/schema";
+import { rolePermissions, type PermissionEntity, type PermissionAction } from "@shared/schema";
+import { evaluatePermissionForRole } from "@shared/permission-resolver";
 import { verifyToken } from "./jwt";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
@@ -63,26 +64,17 @@ export function requirePermission(entity: PermissionEntity, action: PermissionAc
 
     await loadEntityPermissions();
 
-    const dbPerms = entityPermCache[role];
-    if (dbPerms && dbPerms[entity]) {
-      if (dbPerms[entity][action] === true) return next();
-      if (dbPerms[entity][action] === false) {
-        return res.status(403).json({ error: "forbidden", entity, action });
-      }
-    }
+    const evalResult = evaluatePermissionForRole({
+      role,
+      entity,
+      action,
+      roleRecord: { entityPermissions: entityPermCache[role] as any },
+    });
 
-    const rule = ENTITY_PERMISSION_DEFAULTS.find(r => r.entity === entity);
-    if (!rule) {
-      return res.status(403).json({ error: "forbidden", entity, action });
-    }
-
-    const actionKey = `${action}_roles` as keyof typeof rule;
-    const allowedRoles = rule[actionKey] as string[];
-
-    if (allowedRoles.includes(role)) {
+    if (evalResult.allowed) {
       return next();
     }
 
-    return res.status(403).json({ error: "forbidden", entity, action });
+    return res.status(403).json({ error: "forbidden", entity, action, reason: evalResult.reason });
   };
 }

@@ -1,7 +1,8 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql } from "drizzle-orm";
-import { rolePermissions, users, DEFAULT_ROLE_PERMISSIONS } from "@shared/schema";
+import { rolePermissions, users, DEFAULT_ROLE_PERMISSIONS, ENTITY_PERMISSION_DEFAULTS, type PermissionAction, type PermissionEntity } from "@shared/schema";
+import { evaluatePermissionForRole } from "@shared/permission-resolver";
 import { verifyToken } from "./jwt";
 import { invalidateEntityPermCache } from "./permission-middleware";
 import bcrypt from "bcryptjs";
@@ -55,6 +56,17 @@ const SECTION_MIGRATION: Record<string, string> = {
   FEEDBACK: "INFORMATION",
 };
 
+
+function isRoleProtected(role: { isSystem?: boolean; role: string }) {
+  return Boolean(role.isSystem) || ["COO_ADMIN", "CEO_ADMIN"].includes(role.role);
+}
+
+function countConfiguredResourcePermissions(entityPermissions: unknown): number {
+  if (!entityPermissions || typeof entityPermissions !== "object") return 0;
+  const entries = Object.entries(entityPermissions as Record<string, Record<string, boolean>>);
+  return entries.filter(([, actions]) => Object.values(actions || {}).some(Boolean)).length;
+}
+
 function migrateSections(sections: string[]): string[] {
   const migrated = new Set<string>();
   for (const s of sections) {
@@ -100,6 +112,28 @@ export function registerRoleManagementRoutes(app: Express) {
     try {
       const roles = await db.select().from(rolePermissions);
       res.json(roles);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/roles/control-center", jwtAuth, requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const roles = await db.select().from(rolePermissions);
+      const userCounts = await db
+        .select({ role: users.role, count: sql<number>`count(*)::int` })
+        .from(users)
+        .groupBy(users.role);
+
+      const roleUserCounts = new Map(userCounts.map((row: any) => [mapRole(row.role), Number(row.count || 0)]));
+      const roleSummaries = roles.map((role) => ({
+        ...role,
+        userCount: roleUserCounts.get(role.role) || 0,
+        configuredResources: countConfiguredResourcePermissions(role.entityPermissions),
+        protected: isRoleProtected(role),
+      }));
+
+      res.json({ roles: roleSummaries, entities: ENTITY_PERMISSION_DEFAULTS });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -168,6 +202,87 @@ export function registerRoleManagementRoutes(app: Express) {
       }).returning();
       logAuditFromReq(req, { entityType: "role_permissions", action: "create", entityId: role, changesJson: { description: "New role created", role, label, sections } });
       res.json(created);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+
+  app.post("/api/roles/:role/clone", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const sourceRoleKey = req.params.role as string;
+      const { role: newRole, label } = req.body;
+      if (!newRole || !label) return res.status(400).json({ error: "New role key and label are required" });
+
+      const [source] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, sourceRoleKey));
+      if (!source) return res.status(404).json({ error: "Source role not found" });
+
+      const [existing] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, newRole));
+      if (existing) return res.status(409).json({ error: "Target role already exists" });
+
+      const [created] = await db.insert(rolePermissions).values({
+        role: newRole,
+        label,
+        description: source.description,
+        sections: source.sections,
+        canManageUsers: source.canManageUsers,
+        canManageRoles: source.canManageRoles,
+        canEditData: source.canEditData,
+        entityPermissions: source.entityPermissions,
+        isSystem: false,
+      }).returning();
+
+      logAuditFromReq(req, { entityType: "role_permissions", action: "clone", entityId: newRole, changesJson: { description: "Role cloned", sourceRole: sourceRoleKey, newRole } });
+      res.json(created);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/roles/:role/archive", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const roleKey = req.params.role as string;
+      const { archived } = req.body as { archived?: boolean };
+      const [existing] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, roleKey));
+      if (!existing) return res.status(404).json({ error: "Role not found" });
+      if (isRoleProtected(existing)) {
+        logAuditFromReq(req, { entityType: "role_permissions", action: "protected_edit_attempt", entityId: roleKey, changesJson: { description: "Archive attempted on protected role" } });
+        return res.status(403).json({ error: "Protected role cannot be archived" });
+      }
+
+      const nextLabel = archived ? `${existing.label} (Archived)` : existing.label.replace(/\s*\(Archived\)$/i, "");
+      const [updated] = await db.update(rolePermissions)
+        .set({ canEditData: archived ? false : existing.canEditData, label: nextLabel, updatedAt: new Date() })
+        .where(eq(rolePermissions.role, roleKey))
+        .returning();
+
+      logAuditFromReq(req, { entityType: "role_permissions", action: archived ? "archive" : "unarchive", entityId: roleKey, changesJson: { description: archived ? "Role archived" : "Role unarchived" } });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/roles/effective-access", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { role: roleKey, userId } = req.body as { role?: string; userId?: number };
+      let effectiveRole = roleKey;
+      if (userId && !effectiveRole) {
+        const [user] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId));
+        effectiveRole = user?.role;
+      }
+      if (!effectiveRole) return res.status(400).json({ error: "role or userId is required" });
+
+      const [roleRecord] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, effectiveRole));
+      const actions: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
+
+      const matrix = ENTITY_PERMISSION_DEFAULTS.map((entityRule) => {
+        const entity = entityRule.entity as PermissionEntity;
+        const actionResults = actions.map((action) => ({ action, ...evaluatePermissionForRole({ role: effectiveRole!, entity, action, roleRecord }) }));
+        return { entity, actions: actionResults };
+      });
+
+      res.json({ role: effectiveRole, matrix });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
