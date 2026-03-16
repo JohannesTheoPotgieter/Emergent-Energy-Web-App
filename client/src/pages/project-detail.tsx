@@ -38,6 +38,7 @@ import { GuidancePrompt, getPhaseGuidance } from "@/components/MicroGuidance";
 import { ProjectChatTab } from "@/components/tabs/ProjectChatTab";
 import { LocalFolderTab } from "@/components/tabs/LocalFolderTab";
 import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
+import { ProjectTimelineTab } from "@/components/tabs/ProjectTimelineTab";
 import { ProjectNotificationsTab } from "@/components/tabs/ProjectNotificationsTab";
 import HandoverGatePanel from "@/components/HandoverGatePanel";
 import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
@@ -725,7 +726,7 @@ const SECTION_DEFAULT_SUBTAB: Record<string, string> = {
   commercial: "procurement",
   engineering: "eng-tasks",
   quality: "quality",
-  collaboration: "chat",
+  collaboration: "timeline",
 };
 
 
@@ -1532,6 +1533,7 @@ export default function ProjectDetailPage() {
             <Button size="sm" variant={activeSubTab === "local-files" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("local-files")} data-testid="subtab-local-files">
               <FolderOpen className="h-3 w-3 mr-1" /> Docs & Folders
             </Button>
+            {canViewTab.history && <Button size="sm" variant={activeSubTab === "timeline" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("timeline")} data-testid="subtab-timeline"><History className="h-3 w-3 mr-1" /> Timeline</Button>}
             {canViewTab.history && <Button size="sm" variant={activeSubTab === "history" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("history")} data-testid="subtab-history"><History className="h-3 w-3 mr-1" /> History & Audit</Button>}
           </div>
 
@@ -1539,6 +1541,7 @@ export default function ProjectDetailPage() {
           {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "notifications" && <ProjectNotificationsTab projectName={projectName} />}
           {activeSubTab === "local-files" && <LocalFolderTab projectName={projectName} />}
+          {activeSubTab === "timeline" && canViewTab.history && <ProjectTimelineTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "history" && canViewTab.history && (
             <>
               <WeeklyReviewWizard

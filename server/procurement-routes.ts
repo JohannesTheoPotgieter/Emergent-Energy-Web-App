@@ -5,6 +5,7 @@ import { verifyToken } from "./jwt";
 import { procurementItems, projectInfo, users, counterparties, approvals, invoiceCaptures } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -132,6 +133,19 @@ export function registerProcurementRoutes(app: Express) {
         changesJson: { title, category, projectId, expectedCost },
       });
 
+      const actor = actorFromReq(req);
+      await createProjectEvent({
+        projectId: result[0].projectId,
+        eventType: "procurement.item_created",
+        actorUserId: actor.actorUserId,
+        actorRole: actor.actorRole,
+        sourceEntityType: "procurement_items",
+        sourceEntityId: String(result[0].id),
+        summary: `Procurement item created: ${result[0].title}`,
+        details: { category: result[0].category, expectedCost: result[0].expectedCost, status: result[0].status },
+        idempotencyKey: `procurement-created:${result[0].id}`,
+      });
+
       res.status(201).json(result[0]);
     } catch (err: any) {
       console.error("[Procurement] Create error:", err.message);
@@ -182,6 +196,22 @@ export function registerProcurementRoutes(app: Express) {
       }
 
       const result = await db.update(procurementItems).set(updates).where(eq(procurementItems.id, id)).returning();
+
+      if (updates.status && updates.status !== old.status) {
+        const actor = actorFromReq(req);
+        const eventType = updates.status === "ordered" ? "procurement.po_issued" : updates.status === "received" ? "procurement.delivery_captured" : "procurement.status_changed";
+        await createProjectEvent({
+          projectId: old.projectId,
+          eventType,
+          actorUserId: actor.actorUserId,
+          actorRole: actor.actorRole,
+          sourceEntityType: "procurement_items",
+          sourceEntityId: String(id),
+          summary: `Procurement status changed: ${old.status} → ${updates.status}`,
+          details: { fromStatus: old.status, toStatus: updates.status, title: old.title },
+          idempotencyKey: `procurement-status:${id}:${old.status}:${updates.status}`,
+        });
+      }
 
       logAuditFromReq(req, {
         entityType: "procurement_item",
