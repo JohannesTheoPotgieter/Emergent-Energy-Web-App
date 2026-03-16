@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePermission } from "@/hooks/use-permissions";
 import { useToast } from "@/hooks/use-toast";
@@ -14,6 +14,8 @@ import { AlertCircle, Loader2, Pencil, Save, Search, Users } from "lucide-react"
 import {
   canEditCounterparties,
   COUNTERPARTIES_ROUTE,
+  type CounterpartyContact,
+  type CounterpartyDetail,
   CounterpartySummary,
   deriveCounterpartyStatus,
   filterCounterparties,
@@ -39,7 +41,20 @@ type EditableCounterpartyFields = Pick<
   | "paymentTerms"
   | "notes"
   | "isCore"
->;
+> & {
+  isActive: boolean;
+  roleTagsText: string;
+};
+
+type EditableContactFields = {
+  name: string;
+  email: string;
+  phone: string;
+  title: string;
+  roleTagsText: string;
+  isActive: boolean;
+  notes: string;
+};
 
 const EMPTY_FORM: EditableCounterpartyFields = {
   nameCanonical: "",
@@ -53,6 +68,18 @@ const EMPTY_FORM: EditableCounterpartyFields = {
   paymentTerms: "",
   notes: "",
   isCore: false,
+  isActive: true,
+  roleTagsText: "",
+};
+
+const EMPTY_CONTACT_FORM: EditableContactFields = {
+  name: "",
+  email: "",
+  phone: "",
+  title: "",
+  roleTagsText: "",
+  isActive: true,
+  notes: "",
 };
 
 export default function CounterpartiesPage() {
@@ -68,6 +95,7 @@ export default function CounterpartiesPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<EditableCounterpartyFields>(EMPTY_FORM);
+  const [contactForm, setContactForm] = useState<EditableContactFields>(EMPTY_CONTACT_FORM);
 
   const { data: counterparties = [], isLoading, isError, error } = useQuery<CounterpartySummary[]>({
     queryKey: ["/api/counterparties/summary"],
@@ -84,6 +112,20 @@ export default function CounterpartiesPage() {
     [counterparties, selectedId],
   );
 
+  const { data: counterpartyDetail, isLoading: detailLoading } = useQuery<CounterpartyDetail | null>({
+    queryKey: ["/api/counterparties/detail", selectedId],
+    queryFn: async () => {
+      if (!selectedId) return null;
+      const res = await fetch(`/api/counterparties/${selectedId}`, {
+        headers: getAuthHeaders(),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to load counterparty detail");
+      return res.json();
+    },
+    enabled: !!selectedId,
+  });
+
   const filtered = useMemo(
     () => filterCounterparties(counterparties, search, typeFilter, statusFilter),
     [counterparties, search, typeFilter, statusFilter],
@@ -96,7 +138,10 @@ export default function CounterpartiesPage() {
         method: "PATCH",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          roleTags: payload.roleTagsText.split(",").map((tag) => tag.trim()).filter(Boolean),
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: "Failed to update" }));
@@ -106,12 +151,66 @@ export default function CounterpartiesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/counterparties/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/counterparties/detail", selectedId] });
       queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/summary"] });
       setEditing(false);
       toast({ title: "Counterparty updated", description: "Core counterparty details were saved." });
     },
     onError: (err: any) => {
       toast({ title: "Update failed", description: err?.message || "Could not update counterparty", variant: "destructive" });
+    },
+  });
+
+  const createContactMutation = useMutation({
+    mutationFn: async (payload: EditableContactFields) => {
+      if (!selectedId) throw new Error("No counterparty selected");
+      const res = await fetch(`/api/counterparties/${selectedId}/contacts`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          ...payload,
+          roleTags: payload.roleTagsText.split(",").map((tag) => tag.trim()).filter(Boolean),
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Failed to add contact" }));
+        throw new Error(body.error || "Failed to add contact");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/counterparties/detail", selectedId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/counterparties/summary"] });
+      setContactForm(EMPTY_CONTACT_FORM);
+      toast({ title: "Contact added", description: "The contact can now be reused in assignments." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Add contact failed", description: err?.message || "Could not save contact", variant: "destructive" });
+    },
+  });
+
+  const updateContactMutation = useMutation({
+    mutationFn: async ({ contactId, payload }: { contactId: number; payload: Partial<CounterpartyContact> }) => {
+      if (!selectedId) throw new Error("No counterparty selected");
+      const res = await fetch(`/api/counterparties/${selectedId}/contacts/${contactId}`, {
+        method: "PATCH",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Failed to update contact" }));
+        throw new Error(body.error || "Failed to update contact");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/counterparties/detail", selectedId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/counterparties/summary"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Contact update failed", description: err?.message || "Could not update contact", variant: "destructive" });
     },
   });
 
@@ -130,11 +229,32 @@ export default function CounterpartiesPage() {
       paymentTerms: cp.paymentTerms || "",
       notes: cp.notes || "",
       isCore: !!cp.isCore,
+      isActive: cp.isActive !== false,
+      roleTagsText: (cp.roleTags || []).join(", "),
     });
   };
 
+  useEffect(() => {
+    if (!counterpartyDetail) return;
+    setForm({
+      nameCanonical: counterpartyDetail.nameCanonical || "",
+      typeDefault: counterpartyDetail.typeDefault || "OTHER",
+      contactPerson: counterpartyDetail.contactPerson || "",
+      contactPhone: counterpartyDetail.contactPhone || "",
+      contactEmail: counterpartyDetail.contactEmail || "",
+      address: counterpartyDetail.address || "",
+      vatNumber: counterpartyDetail.vatNumber || "",
+      registrationNumber: counterpartyDetail.registrationNumber || "",
+      paymentTerms: counterpartyDetail.paymentTerms || "",
+      notes: counterpartyDetail.notes || "",
+      isCore: !!counterpartyDetail.isCore,
+      isActive: counterpartyDetail.isActive !== false,
+      roleTagsText: (counterpartyDetail.roleTags || []).join(", "),
+    });
+  }, [counterpartyDetail]);
+
   if (permissionLoading) {
-    return <div className="p-8 text-center text-muted-foreground">Loading permissions…</div>;
+    return <div className="p-8 text-center text-muted-foreground">Loading permissions...</div>;
   }
 
   if (!canView) {
@@ -190,8 +310,8 @@ export default function CounterpartiesPage() {
             onValueChange={(v) => setStatusFilter(v as any)}
             options={[
               { value: "all", label: "All statuses" },
-              { value: "active", label: "Active (has usage)" },
-              { value: "inactive", label: "Inactive (no usage yet)" },
+              { value: "active", label: "Active" },
+              { value: "inactive", label: "Inactive" },
             ]}
             data-testid="select-counterparty-status"
           />
@@ -275,11 +395,30 @@ export default function CounterpartiesPage() {
               </SheetHeader>
               <div className="space-y-4 mt-4">
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">Usage lines</div><div className="font-semibold">{selected.usageCount || 0}</div></CardContent></Card>
-                  <Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">Linked projects</div><div className="font-semibold">{selected.linkedProjectCount || 0}</div></CardContent></Card>
-                  <Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">Total spend</div><div className="font-semibold">R {(selected.totalSpendExVat || 0).toLocaleString()}</div></CardContent></Card>
-                  <Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">Open amount</div><div className="font-semibold">R {(selected.openAmountExVat || 0).toLocaleString()}</div></CardContent></Card>
+                  <Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">Usage lines</div><div className="font-semibold">{counterpartyDetail?.summary?.usageCount ?? selected.usageCount ?? 0}</div></CardContent></Card>
+                  <Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">Linked projects</div><div className="font-semibold">{counterpartyDetail?.summary?.linkedProjectCount ?? selected.linkedProjectCount ?? 0}</div></CardContent></Card>
+                  <Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">Total spend</div><div className="font-semibold">R {((counterpartyDetail?.summary?.totalSpendExVat ?? selected.totalSpendExVat ?? 0)).toLocaleString()}</div></CardContent></Card>
+                  <Card><CardContent className="p-3"><div className="text-xs text-muted-foreground">Open amount</div><div className="font-semibold">R {((counterpartyDetail?.summary?.openAmountExVat ?? selected.openAmountExVat ?? 0)).toLocaleString()}</div></CardContent></Card>
                 </div>
+
+                <Card>
+                  <CardContent className="p-3 space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">Maintenance home</span>
+                      <Badge variant="outline">Canonical counterparty registry</Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge variant={form.isActive ? "default" : "secondary"}>{form.isActive ? "Active" : "Inactive"}</Badge>
+                      <Badge variant="outline">Contacts: {counterpartyDetail?.contacts?.length || 0}</Badge>
+                      <Badge variant="outline">Assignments: {(counterpartyDetail?.summary?.directAssignmentCount || 0) + (counterpartyDetail?.summary?.contactAssignmentCount || 0)}</Badge>
+                    </div>
+                    {!!counterpartyDetail?.summary?.assignmentEntityTypes?.length && (
+                      <p className="text-xs text-muted-foreground">
+                        Used in: {counterpartyDetail.summary.assignmentEntityTypes.join(", ")}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
 
                 <div className="flex justify-between items-center">
                   <p className="text-sm font-medium">Core details</p>
@@ -300,6 +439,7 @@ export default function CounterpartiesPage() {
                         options={[{ value: "SUPPLIER", label: "Supplier" }, { value: "INSTALLER", label: "Subcontractor / Installer" }, { value: "OTHER", label: "Vendor / Other" }]}
                       />
                     </Field>
+                    <Field label="Role tags"><Input value={form.roleTagsText} onChange={(e) => setForm((p) => ({ ...p, roleTagsText: e.target.value }))} placeholder="supplier, installer, landlord" /></Field>
                     <Field label="Contact person"><Input value={form.contactPerson || ""} onChange={(e) => setForm((p) => ({ ...p, contactPerson: e.target.value }))} /></Field>
                     <Field label="Contact phone"><Input value={form.contactPhone || ""} onChange={(e) => setForm((p) => ({ ...p, contactPhone: e.target.value }))} /></Field>
                     <Field label="Contact email"><Input value={form.contactEmail || ""} onChange={(e) => setForm((p) => ({ ...p, contactEmail: e.target.value }))} /></Field>
@@ -310,6 +450,7 @@ export default function CounterpartiesPage() {
                     <Field label="Notes"><Textarea value={form.notes || ""} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} /></Field>
 
                     <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form.isCore} onChange={(e) => setForm((p) => ({ ...p, isCore: e.target.checked }))} />Core counterparty</label>
+                    <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form.isActive} onChange={(e) => setForm((p) => ({ ...p, isActive: e.target.checked }))} />Active for assignment and procurement use</label>
 
                     <Button disabled={!form.nameCanonical.trim() || patchMutation.isPending} onClick={() => patchMutation.mutate(form)} data-testid="btn-save-counterparty-edit">
                       {patchMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}Save changes
@@ -318,17 +459,79 @@ export default function CounterpartiesPage() {
                 ) : (
                   <div className="space-y-2 text-sm">
                     <Display label="Type" value={selected.typeDefault} />
-                    <Display label="Status" value={deriveCounterpartyStatus(selected)} />
-                    <Display label="Contact" value={selected.contactPerson || "—"} />
-                    <Display label="Email" value={selected.contactEmail || "—"} />
-                    <Display label="Phone" value={selected.contactPhone || "—"} />
-                    <Display label="Address" value={selected.address || "—"} />
-                    <Display label="VAT" value={selected.vatNumber || "—"} />
-                    <Display label="Registration" value={selected.registrationNumber || "—"} />
-                    <Display label="Payment terms" value={selected.paymentTerms || "—"} />
-                    <Display label="Notes" value={selected.notes || "—"} />
+                    <Display label="Status" value={form.isActive ? "active" : "inactive"} />
+                    <Display label="Role tags" value={form.roleTagsText || "-"} />
+                    <Display label="Contact" value={selected.contactPerson || "-"} />
+                    <Display label="Email" value={selected.contactEmail || "-"} />
+                    <Display label="Phone" value={selected.contactPhone || "-"} />
+                    <Display label="Address" value={selected.address || "-"} />
+                    <Display label="VAT" value={selected.vatNumber || "-"} />
+                    <Display label="Registration" value={selected.registrationNumber || "-"} />
+                    <Display label="Payment terms" value={selected.paymentTerms || "-"} />
+                    <Display label="Notes" value={selected.notes || "-"} />
                   </div>
                 )}
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">Contacts</p>
+                    {detailLoading && <span className="text-xs text-muted-foreground">Loading...</span>}
+                  </div>
+                  <div className="space-y-2">
+                    {(counterpartyDetail?.contacts || []).map((contact) => (
+                      <Card key={contact.id}>
+                        <CardContent className="p-3 flex items-start justify-between gap-3">
+                          <div className="space-y-1 text-sm">
+                            <div className="font-medium">{contact.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {[contact.title, contact.email, contact.phone].filter(Boolean).join(" | ") || "No contact channels"}
+                            </div>
+                            {!!contact.roleTags?.length && (
+                              <div className="flex flex-wrap gap-1">
+                                {contact.roleTags.map((tag) => <Badge key={tag} variant="outline">{tag}</Badge>)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={contact.isActive ? "default" : "secondary"}>{contact.isActive ? "Active" : "Inactive"}</Badge>
+                            {canEdit && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => updateContactMutation.mutate({ contactId: contact.id, payload: { isActive: !contact.isActive } })}
+                              >
+                                {contact.isActive ? "Deactivate" : "Activate"}
+                              </Button>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                    {!counterpartyDetail?.contacts?.length && (
+                      <p className="text-sm text-muted-foreground">No contacts created yet.</p>
+                    )}
+                  </div>
+
+                  {canEdit && (
+                    <Card>
+                      <CardContent className="p-4 space-y-3">
+                        <p className="text-sm font-medium">Add contact</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <Field label="Name"><Input value={contactForm.name} onChange={(e) => setContactForm((p) => ({ ...p, name: e.target.value }))} /></Field>
+                          <Field label="Title"><Input value={contactForm.title} onChange={(e) => setContactForm((p) => ({ ...p, title: e.target.value }))} /></Field>
+                          <Field label="Email"><Input value={contactForm.email} onChange={(e) => setContactForm((p) => ({ ...p, email: e.target.value }))} /></Field>
+                          <Field label="Phone"><Input value={contactForm.phone} onChange={(e) => setContactForm((p) => ({ ...p, phone: e.target.value }))} /></Field>
+                          <Field label="Role tags"><Input value={contactForm.roleTagsText} onChange={(e) => setContactForm((p) => ({ ...p, roleTagsText: e.target.value }))} placeholder="approver, site contact" /></Field>
+                          <Field label="Notes"><Input value={contactForm.notes} onChange={(e) => setContactForm((p) => ({ ...p, notes: e.target.value }))} /></Field>
+                        </div>
+                        <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={contactForm.isActive} onChange={(e) => setContactForm((p) => ({ ...p, isActive: e.target.checked }))} />Active contact</label>
+                        <Button disabled={!contactForm.name.trim() || createContactMutation.isPending} onClick={() => createContactMutation.mutate(contactForm)}>
+                          {createContactMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}Add contact
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
               </div>
             </>
           )}

@@ -1,7 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, asc, sql, inArray, isNull, lt, gt, or, ne } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -21,11 +20,13 @@ import {
   type ProjectPhase,
 } from "@shared/schema";
 import { applyTemplate } from "./template-routes";
-import { requirePermission } from "./permission-middleware";
+import { requireAuthority, requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { listEngineeringWorkItems, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject } from "./work-items-adapter";
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
+import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import { getAssignmentsForEntity, listAssignableDirectory } from "./services/assignment-service";
 
 const approvalUploadsDir = path.join(process.cwd(), "uploads", "approvals");
 if (!fs.existsSync(approvalUploadsDir)) fs.mkdirSync(approvalUploadsDir, { recursive: true });
@@ -40,30 +41,11 @@ const approvalUpload = multer({
 type AppUser = { id: number; email: string; name: string; role: string; };
 
 function getUser(req: Request): AppUser {
-  return req.user as any as AppUser;
+  return getEffectiveUser(req) as AppUser;
 }
 
 function getUserRole(req: Request): string {
-  return (req.user as any)?.role || "";
-}
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
+  return getEffectiveUser(req)?.role || "";
 }
 
 async function isLocalSyncedSaveFlowEnabled(): Promise<boolean> {
@@ -111,7 +93,7 @@ function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
 }
 
 function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
-  if (getUserRole(req) === "admin") return next();
+  if (["admin", "COO_ADMIN", "CEO_ADMIN"].includes(getUserRole(req))) return next();
   if ((req.session as any)?.epmChallengePassed) return next();
   res.status(403).json({ error: "epm_challenge_required", message: "EPM access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
@@ -264,12 +246,33 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/team-members", requireAuth, async (_req, res) => {
     try {
-      const allUsers = await db.select({
-        id: users.id,
-        name: users.name,
-        email: users.email,
-        role: users.role,
-      }).from(users);
+      const assignable = await listAssignableDirectory();
+      const allUsers = assignable
+        .filter((entry) => entry.assigneeType === "internal_user")
+        .map((entry) => ({
+          id: entry.assigneeId,
+          name: entry.displayLabel,
+          email: entry.secondaryLabel,
+          role: entry.roleTags[0] || "",
+        }));
+      res.json(allUsers);
+    } catch (err: any) {
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/pm-assignable-users", requireAuth, async (_req, res) => {
+    try {
+      const assignable = await listAssignableDirectory();
+      const allUsers = assignable
+        .filter((entry) => entry.assigneeType === "internal_user")
+        .map((entry) => ({
+          id: entry.assigneeId,
+          name: entry.displayLabel,
+          email: entry.secondaryLabel || "",
+          role: entry.roleTags[0] || "",
+        }));
       res.json(allUsers);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
@@ -1361,7 +1364,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== DELIVERABLES ==========
 
-  app.get("/api/deliverables", requireAuth, async (req, res) => {
+  app.get("/api/deliverables", requireAuth, requirePermission("deliverables", "view"), async (req, res) => {
     try {
       const { projectName, status, phase } = req.query;
       const conditions: any[] = [];
@@ -1372,14 +1375,22 @@ export function registerEngineeringRoutes(app: Express) {
       const result = conditions.length > 0
         ? await db.select().from(deliverables).where(and(...conditions)).orderBy(desc(deliverables.updatedAt))
         : await db.select().from(deliverables).orderBy(desc(deliverables.updatedAt));
-      res.json(result);
+      const assignmentEntries = await Promise.all(
+        result.map(async (deliverable) => [deliverable.id, await getAssignmentsForEntity("deliverable", deliverable.id)] as const),
+      );
+      const assignmentMap = new Map(assignmentEntries);
+      res.json(result.map((deliverable) => ({
+        ...deliverable,
+        assignments: assignmentMap.get(deliverable.id) || [],
+        primaryAssignment: (assignmentMap.get(deliverable.id) || [])[0] || null,
+      })));
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
 
-  app.get("/api/deliverables/:id", requireAuth, async (req, res) => {
+  app.get("/api/deliverables/:id", requireAuth, requirePermission("deliverables", "view"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const [del] = await db.select().from(deliverables).where(eq(deliverables.id, id));
@@ -1397,14 +1408,22 @@ export function registerEngineeringRoutes(app: Express) {
         .where(eq(deliverableEvents.deliverableId, id))
         .orderBy(desc(deliverableEvents.createdAt));
 
-      res.json({ ...del, versions, files, events });
+      const assignments = await getAssignmentsForEntity("deliverable", id);
+      res.json({
+        ...del,
+        versions,
+        files,
+        events,
+        assignments,
+        primaryAssignment: assignments[0] || null,
+      });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
 
-  app.post("/api/deliverables", requireAuth, async (req, res) => {
+  app.post("/api/deliverables", requireAuth, requirePermission("deliverables", "create"), async (req, res) => {
     try {
       const data = req.body;
       const projectId = Number(data.projectId);
@@ -1446,6 +1465,16 @@ export function registerEngineeringRoutes(app: Express) {
       const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
       if (!existing) return res.status(404).json({ error: "Deliverable not found" });
 
+      const nextStatus = req.body?.status;
+      const approvalStatuses = new Set(["COMPLETE", "QC APPROVED", "OPERATIONAL APPROVAL", "PROVIDE FEEDBACK"]);
+      const authority = nextStatus && approvalStatuses.has(nextStatus)
+        ? await evaluateAuthorityForRequest(req, "deliverables", "approve")
+        : await evaluateAuthorityForRequest(req, "deliverables", "edit");
+
+      if (!authority.allowed) {
+        return res.status(403).json({ error: "forbidden", reason: authority.reason, scope: authority.scope });
+      }
+
       const updates = { ...req.body, updatedAt: new Date() };
       const [updated] = await db.update(deliverables).set(updates).where(eq(deliverables.id, id)).returning();
 
@@ -1479,7 +1508,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/deliverables/:id/feedback", requireAuth, async (req, res) => {
+  app.post("/api/deliverables/:id/feedback", requireAuth, requireAuthority("deliverables", "approve"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { feedbackText } = req.body;
@@ -1511,7 +1540,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/deliverables/:id/revise", requireAuth, async (req, res) => {
+  app.post("/api/deliverables/:id/revise", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { changeReason, impactJson } = req.body;
@@ -1551,7 +1580,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/deliverables/:id/files", requireAuth, async (req, res) => {
+  app.post("/api/deliverables/:id/files", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
     try {
       const [file] = await db.insert(deliverableFiles).values({
         ...req.body,
@@ -1566,7 +1595,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/deliverables/files/:fileId/approve", requireAuth, async (req, res) => {
+  app.patch("/api/deliverables/files/:fileId/approve", requireAuth, requireAuthority("deliverables", "approve"), async (req, res) => {
     try {
       const [file] = await db.update(deliverableFiles)
         .set({ isApproved: true })

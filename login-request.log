@@ -1,0 +1,9 @@
+Invoke-WebRequest : {"error":"TOKEN_ERROR","code":"TOKEN_ERROR","type":"TOKEN_ERROR","message":"Failed to create auth 
+token","details":{"dbMode":"sqlite"}}
+At line:18 char:714
++ ... s 18; try { Invoke-WebRequest -UseBasicParsing 'http://127.0.0.1:5000 ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (System.Net.HttpWebRequest:HttpWebRequest) [Invoke-WebRequest], WebExc 
+   eption
+    + FullyQualifiedErrorId : WebCmdletWebResponseException,Microsoft.PowerShell.Commands.InvokeWebRequestCommand
+

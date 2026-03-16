@@ -1,5 +1,4 @@
-import type { Express, Request, Response, NextFunction } from "express";
-import { verifyToken } from "./jwt";
+import type { Express, NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { db } from "./db";
 import { eq, and, or, desc, asc, sql, inArray, isNull } from "drizzle-orm";
@@ -8,7 +7,7 @@ import {
   projectEngApprovals, projectEngStages, engStageTemplates,
   qcItemInstance, qcChecklist, qcTemplateItem,
   projectInfo, users, normalizedPlanTasks, engineeringTasks,
-  msAccounts, msObjects, communicationFollowUps, projectCommunicationTimelineEvents, counterparties,
+  msAccounts, msObjects, communicationFollowUps, projectCommunicationTimelineEvents, workItemAssignments,
 } from "@shared/schema";
 import {
   tagToProject,
@@ -20,27 +19,15 @@ import {
   createProjectTimelineEvent,
 } from "./project-linking-service";
 import { syncAllForUser, syncUserCalendar, syncUserEmail, syncUserTeams, getSyncStatus } from "./ms-sync-service";
-import { getAllUsers, getAssignableUsers, resolveNameToUserId, buildUserMap, mergeResolvedWithTextNames, type ResolvedUser } from "./user-resolver";
+import { buildUserMap, mergeResolvedWithTextNames, type ResolvedUser } from "./user-resolver";
 import { logAuditFromReq } from "./audit-logger";
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
+import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import {
+  listAssignableDirectory,
+  listAssignableDirectoryForTaskSource,
+  mapTaskSourceToEntityType,
+  setEntityAssignment,
+} from "./services/assignment-service";
 
 const tagSchema = z.object({
   projectId: z.number(),
@@ -71,7 +58,7 @@ export function registerMsSyncRoutes(app: Express) {
     .object({
       taskId: z.number().int().positive(),
       taskSource: z.string().min(1),
-      assigneeType: z.enum(["internal_user", "external_counterparty"]).nullable().optional(),
+      assigneeType: z.enum(["internal_user", "external_counterparty", "external_contact"]).nullable().optional(),
       assigneeId: z.number().int().positive().nullable().optional(),
       userId: z.number().int().positive().nullable().optional(), // legacy shape
     })
@@ -317,9 +304,32 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.get("/api/users/assignable", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/users/assignable", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const assignable = await getAssignableUsers();
+      const search = typeof req.query.search === "string" ? req.query.search : undefined;
+      const assignable = await listAssignableDirectory(search);
+      const internal = assignable
+        .filter((entry) => entry.assigneeType === "internal_user")
+        .map((entry) => ({
+          id: entry.assigneeId,
+          name: entry.displayLabel,
+          username: entry.displayLabel,
+          role: entry.roleTags[0] || "",
+          email: entry.secondaryLabel || undefined,
+        }));
+      res.json(internal);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/assignables", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const search = typeof req.query.search === "string" ? req.query.search : undefined;
+      const taskSource = typeof req.query.taskSource === "string" ? req.query.taskSource : undefined;
+      const assignable = taskSource
+        ? await listAssignableDirectoryForTaskSource(taskSource, search)
+        : await listAssignableDirectory(search);
       res.json(assignable);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -335,211 +345,108 @@ export function registerMsSyncRoutes(app: Express) {
 
       const { taskId, taskSource } = parsed.data;
       const assigneeType = parsed.data.assigneeType ?? (parsed.data.userId != null ? "internal_user" : null);
-      const assignUserId = assigneeType === "internal_user" ? (parsed.data.assigneeId ?? parsed.data.userId ?? null) : null;
-      const assignCounterpartyId = assigneeType === "external_counterparty" ? (parsed.data.assigneeId ?? null) : null;
+      const assigneeId = parsed.data.assigneeId ?? parsed.data.userId ?? null;
 
-      const currentUser = (req as any).user;
-      const currentUserId = currentUser?.id;
-      const currentRole = currentUser?.role || "";
-      const ADMIN_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
-      const isPrivileged = ADMIN_ROLES.includes(currentRole);
-
-      const userMap = await buildUserMap();
-      const targetUser = assignUserId ? userMap.get(assignUserId) : null;
-      const targetCounterparty = assignCounterpartyId
-        ? (await db.select().from(counterparties).where(eq(counterparties.id, assignCounterpartyId)).limit(1))[0] || null
-        : null;
-
-      if (assigneeType === "internal_user" && assignUserId && !targetUser) {
-        return res.status(404).json({ error: `Internal assignee ${assignUserId} not found` });
-      }
-      if (assigneeType === "external_counterparty" && assignCounterpartyId && !targetCounterparty) {
-        return res.status(404).json({ error: `External assignee ${assignCounterpartyId} not found` });
-      }
-
-      const isViewerOnly = async (workItemId: number, uId: number): Promise<boolean> => {
-        if (isPrivileged) return false;
-        const rows = await db.execute(sql`
-          SELECT role FROM work_item_assignments
-          WHERE work_item_id = ${workItemId} AND user_id = ${uId}
-        `).then((r: any) => Array.isArray(r) ? r : (r.rows || []));
-        if (rows.length === 0) return false;
-        return rows.every((r: any) => r.role === 'VIEWER');
-      };
-
-      const resolveIdsFromNames = (names: string[]): number[] => {
-        const ids: number[] = [];
-        for (const name of names) {
-          const matched = [...userMap.values()].find(
-            u => u.name.toLowerCase() === name.toLowerCase()
-              || u.username.toLowerCase() === name.toLowerCase()
-              || u.name.split(" ")[0].toLowerCase() === name.toLowerCase()
-          );
-          if (matched) ids.push(matched.id);
-        }
-        return ids;
-      };
-
-      switch (taskSource) {
-        case "personal": {
-          if (assigneeType === "external_counterparty") {
-            return res.status(400).json({ error: "Personal tasks only support internal assignees" });
-          }
-          const [task] = await db.select().from(mytoolTasks).where(eq(mytoolTasks.id, taskId));
-          if (!task) return res.status(404).json({ error: "Task not found" });
-          if (!isPrivileged && task.ownerUserId !== currentUserId) {
-            return res.status(403).json({ error: "You can only reassign your own personal tasks" });
-          }
-          if (assignUserId) {
-            await db.execute(sql`UPDATE mytool_tasks SET owner_user_id = ${assignUserId} WHERE id = ${taskId}`);
-          }
-          break;
-        }
-        case "operational": {
-          const [task] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, taskId));
-          if (!task) return res.status(404).json({ error: "Task not found" });
-          if (!isPrivileged && task.ownerUserId !== currentUserId && !(task.assigneeUserIds || []).includes(currentUserId)) {
-            return res.status(403).json({ error: "You don't have permission to reassign this task" });
-          }
-          if (assignUserId && targetUser) {
-            const currentAssignees = task.assignees || [];
-            const currentIds = (task.assigneeUserIds && task.assigneeUserIds.length > 0) ? task.assigneeUserIds : resolveIdsFromNames(currentAssignees);
-            if (!currentIds.includes(assignUserId)) {
-              const newAssignees = [...currentAssignees, targetUser.name];
-              const newIds = [...currentIds, assignUserId];
-              await db.execute(sql`UPDATE operational_tasks SET assignees = ${newAssignees}, assignee_user_ids = ${newIds} WHERE id = ${taskId}`);
-            }
-          } else if (assignCounterpartyId && targetCounterparty) {
-            await db.execute(sql`UPDATE operational_tasks SET assignees = ${[`${"counterparty:"}${assignCounterpartyId}`]}, assignee_user_ids = '{}' WHERE id = ${taskId}`);
-          } else {
-            await db.execute(sql`UPDATE operational_tasks SET assignees = '{}', assignee_user_ids = '{}' WHERE id = ${taskId}`);
-          }
-          break;
-        }
-        case "plan": {
-          if (!isPrivileged) {
-            return res.status(403).json({ error: "Only managers can reassign plan tasks" });
-          }
-          if (currentUserId && await isViewerOnly(taskId, currentUserId)) {
-            return res.status(403).json({ error: "Viewers have read-only access and cannot modify tasks" });
-          }
-          if (assigneeType === "external_counterparty") {
-            return res.status(400).json({ error: "Plan tasks only support internal assignees" });
-          }
-          await db.execute(sql`
-            UPDATE work_items SET owner_user_id = ${assignUserId || null}
-            WHERE id = ${taskId}
-               OR (legacy_table = 'normalized_plan_tasks' AND legacy_id = ${taskId})
-               OR (legacy_table = 'project_plan' AND legacy_id = ${taskId})
-          `);
-          break;
-        }
-        case "engineering_task": {
-          if (assigneeType === "external_counterparty") {
-            return res.status(400).json({ error: "Engineering tasks only support internal assignees" });
-          }
-          if (!isPrivileged) {
-            return res.status(403).json({ error: "Only managers can reassign engineering tasks" });
-          }
-          await db.execute(sql`UPDATE engineering_tasks SET assignee_user_id = ${assignUserId || null}, assignee_name = ${targetUser?.name || null} WHERE id = ${taskId}`);
-          break;
-        }
-        case "quality_task": {
-          if (assigneeType === "external_counterparty") {
-            return res.status(400).json({ error: "Quality tasks only support internal assignees" });
-          }
-          const [qcTask] = await db.execute(sql`SELECT assignee_user_id FROM qc_item_instance WHERE id = ${taskId}`).then((r: any) => Array.isArray(r) ? r : (r.rows || []));
-          if (!qcTask) return res.status(404).json({ error: "QC task not found" });
-          const isOwnQcTask = qcTask.assignee_user_id === currentUserId;
-          const isQualityManager = ["QUALITY_MANAGER", "quality_manager"].includes(currentRole);
-          if (!isPrivileged && !isOwnQcTask && !isQualityManager) {
-            return res.status(403).json({ error: "Only managers or the current assignee can reassign quality tasks" });
-          }
-          await db.execute(sql`UPDATE qc_item_instance SET assignee_user_id = ${assignUserId || null} WHERE id = ${taskId}`);
-          break;
-        }
-        case "tr_register": {
-          if (!isPrivileged) {
-            return res.status(403).json({ error: "Only managers can reassign TR register items" });
-          }
-          if (assignUserId && targetUser) {
-            const [item] = await db.select().from(trItems).where(eq(trItems.id, taskId));
-            if (!item) return res.status(404).json({ error: "TR item not found" });
-            const currentOwners = item.owners || [];
-            const currentIds = (item.ownerUserIds && item.ownerUserIds.length > 0) ? item.ownerUserIds : resolveIdsFromNames(currentOwners);
-            if (!currentIds.includes(assignUserId)) {
-              const newOwners = [...currentOwners, targetUser.name];
-              const newIds = [...currentIds, assignUserId];
-              await db.execute(sql`UPDATE tr_items SET owners = ${newOwners}, owner_user_ids = ${newIds} WHERE id = ${taskId}`);
-            }
-          } else if (assignCounterpartyId && targetCounterparty) {
-            await db.execute(sql`UPDATE tr_items SET owners = ${[`${"counterparty:"}${assignCounterpartyId}`]}, owner_user_ids = '{}' WHERE id = ${taskId}`);
-          } else {
-            await db.execute(sql`UPDATE tr_items SET owners = '{}', owner_user_ids = '{}' WHERE id = ${taskId}`);
-          }
-          break;
-        }
-        case "plan_viewer": {
-          if (!assignUserId) {
-            await db.execute(sql`DELETE FROM work_item_assignments WHERE work_item_id = ${taskId} AND role = 'VIEWER'`);
+      if (taskSource === "plan_viewer" || taskSource === "remove_viewer") {
+        const viewerUserId = assigneeType === "internal_user" ? assigneeId : parsed.data.userId ?? null;
+        if (!viewerUserId) {
+          if (taskSource === "plan_viewer") {
+            await db.delete(workItemAssignments).where(and(eq(workItemAssignments.workItemId, taskId), eq(workItemAssignments.role, "VIEWER")));
             logAuditFromReq(req, {
               entityType: "work_item_assignment",
               entityId: String(taskId),
               action: "remove_all_viewers",
               changesJson: { workItemId: taskId, description: "All viewers removed from work item" },
             });
-          } else {
-            const existing = await db.execute(sql`
-              SELECT id FROM work_item_assignments WHERE work_item_id = ${taskId} AND user_id = ${assignUserId}
-            `).then((r: any) => Array.isArray(r) ? r : (r.rows || []));
-            if (existing.length === 0) {
-              await db.execute(sql`
-                INSERT INTO work_item_assignments (work_item_id, user_id, role, assigned_at)
-                VALUES (${taskId}, ${assignUserId}, 'VIEWER', NOW())
-              `);
-              logAuditFromReq(req, {
-                entityType: "work_item_assignment",
-                entityId: String(taskId),
-                action: "add_viewer",
-                changesJson: { workItemId: taskId, viewerUserId: assignUserId, viewerName: targetUser?.name || null },
-              });
-            }
+            return res.json({ success: true, assignment: null });
           }
-          break;
+          return res.status(400).json({ error: "userId required for viewer updates" });
         }
-        case "remove_viewer": {
-          if (!assignUserId) return res.status(400).json({ error: "userId required for remove_viewer" });
-          await db.execute(sql`DELETE FROM work_item_assignments WHERE work_item_id = ${taskId} AND user_id = ${assignUserId} AND role = 'VIEWER'`);
+
+        if (taskSource === "remove_viewer") {
+          await db.delete(workItemAssignments).where(and(
+            eq(workItemAssignments.workItemId, taskId),
+            eq(workItemAssignments.userId, viewerUserId),
+            eq(workItemAssignments.role, "VIEWER"),
+          ));
           logAuditFromReq(req, {
             entityType: "work_item_assignment",
             entityId: String(taskId),
             action: "remove_viewer",
-            changesJson: { workItemId: taskId, viewerUserId: assignUserId, viewerName: targetUser?.name || null },
+            changesJson: { workItemId: taskId, viewerUserId },
           });
-          break;
+          return res.json({ success: true, assignment: null });
         }
-        default:
-          return res.status(400).json({ error: `Unknown task source: ${taskSource}` });
+
+        const existing = await db.select({ id: workItemAssignments.id })
+          .from(workItemAssignments)
+          .where(and(
+            eq(workItemAssignments.workItemId, taskId),
+            eq(workItemAssignments.userId, viewerUserId),
+            eq(workItemAssignments.role, "VIEWER"),
+          ))
+          .limit(1);
+        if (existing.length === 0) {
+          await db.insert(workItemAssignments).values({
+            workItemId: taskId,
+            userId: viewerUserId,
+            role: "VIEWER",
+            allocationPct: null,
+          });
+        }
+        logAuditFromReq(req, {
+          entityType: "work_item_assignment",
+          entityId: String(taskId),
+          action: "add_viewer",
+          changesJson: { workItemId: taskId, viewerUserId },
+        });
+        return res.json({ success: true, assignment: { assigneeType: "internal_user", assigneeId: viewerUserId } });
       }
+
+      const entityType = mapTaskSourceToEntityType(taskSource);
+      if (!entityType) {
+        return res.status(400).json({ error: `Unknown task source: ${taskSource}` });
+      }
+
+      const mode = ["operational", "tr_register", "plan"].includes(taskSource) && assigneeType ? "append" : "replace";
+      const assignmentRole = taskSource === "tr_register" ? "OWNER" : "ASSIGNEE";
+      const assignments = await setEntityAssignment(req, {
+        entityType,
+        entityId: taskId,
+        assignmentRole,
+        assigneeType,
+        assigneeId,
+        mode: assigneeType ? mode : "clear",
+      });
+
+      const current = assignments.find((assignment) =>
+        assigneeType != null &&
+        assignment.assignmentRole === assignmentRole &&
+        assignment.assigneeType === assigneeType &&
+        assignment.assigneeId === assigneeId,
+      ) || assignments[0] || null;
+
       res.json({
         success: true,
-        assignment: {
-          assigneeType,
-          assigneeId: assignUserId ?? assignCounterpartyId ?? null,
-          displayName: targetUser?.name ?? targetCounterparty?.nameCanonical ?? null,
-          email: targetUser?.email ?? null,
+        assignment: current ? {
+          assigneeType: current.assigneeType,
+          assigneeId: current.assigneeId,
+          displayName: current.displayLabel,
+          email: current.secondaryLabel,
           avatar: null,
-          source: assigneeType === "external_counterparty" ? "external" : assigneeType === "internal_user" ? "internal" : null,
-        },
+          source: current.assigneeType === "internal_user" ? "internal" : "external",
+        } : null,
+        assignments,
       });
     } catch (err: any) {
       console.error("[Reassign] Assignment update failed", {
         error: err?.message,
         stack: err?.stack,
         body: req.body,
-        userId: (req as any).user?.id,
+        userId: getEffectiveUser(req)?.id,
       });
-      res.status(500).json({ error: err.message || "Assignment update failed" });
+      const status = err?.message?.toLowerCase().includes("permission") ? 403 : err?.message?.toLowerCase().includes("not found") ? 404 : err?.message?.toLowerCase().includes("required") ? 400 : 500;
+      res.status(status).json({ error: err.message || "Assignment update failed" });
     }
   });
 

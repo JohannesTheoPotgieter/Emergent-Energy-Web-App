@@ -1,7 +1,10 @@
 import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import type { Request } from "express";
-import { projectEvents, users } from "@shared/schema";
+import * as schema from "@shared/schema";
 import { db } from "../db";
+
+const users = schema.users;
+const projectEvents = (schema as { projectEvents?: any }).projectEvents;
 
 export type ProjectEventType =
   | "project.created"
@@ -57,6 +60,10 @@ export function actorFromReq(req: Request): { actorUserId: number | null; actorR
 }
 
 export async function createProjectEvent(input: CreateProjectEventInput, tx: any = db) {
+  if (!projectEvents) {
+    return null;
+  }
+
   const inserted = await tx
     .insert(projectEvents)
     .values({
@@ -89,6 +96,10 @@ export async function listProjectEvents(params: {
   order?: "asc" | "desc";
   limit?: number;
 }) {
+  if (!projectEvents) {
+    return [];
+  }
+
   const { projectId, eventTypes, actorUserId, from, to, order = "desc", limit = 200 } = params;
   const conditions: any[] = [eq(projectEvents.projectId, projectId)];
 

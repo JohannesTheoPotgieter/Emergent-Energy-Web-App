@@ -50,6 +50,14 @@ describe("strict runtime config validation", () => {
 
   it("fails in strict runtime when JWT_SECRET is missing", async () => {
     setEnv({ NODE_ENV: "production", JWT_SECRET: undefined });
-    await expect(import("../../../server/jwt")).rejects.toThrow(/JWT_SECRET must be set/);
+    const { generateToken } = await import("../../../server/jwt");
+    expect(() =>
+      generateToken({
+        userId: 1,
+        email: "strict@example.com",
+        name: "Strict Runtime",
+        role: "admin",
+      }),
+    ).toThrow(/JWT_SECRET must be set/);
   });
 });

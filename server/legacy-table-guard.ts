@@ -19,7 +19,13 @@ export async function legacyTableExists(tableName: string): Promise<boolean> {
 }
 
 export function isRelationMissingError(err: any): boolean {
-  return err?.code === '42P01' || (err?.message && err.message.includes('does not exist'));
+  const message = String(err?.message || "");
+  return (
+    err?.code === '42P01' ||
+    message.includes('does not exist') ||
+    message.includes('no such table:') ||
+    message.includes('no such column:')
+  );
 }
 
 export async function safeLegacyQuery<T>(fn: () => Promise<T>, fallback: T): Promise<T> {

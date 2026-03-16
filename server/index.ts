@@ -9,6 +9,7 @@ import { getStartupModes } from "./startup-modes";
 import { applySecurityAndParsingMiddleware } from "./bootstrap/security-middleware";
 import { configureSession } from "./bootstrap/session";
 import { configurePassportAuth } from "./bootstrap/auth";
+import { jwtAuth } from "./auth-context";
 import { enforceRuntimeEnvironmentGuards } from "./bootstrap/env-guard";
 import { applyRequestLogging } from "./bootstrap/http-observability";
 import { registerGlobalErrorHandler } from "./bootstrap/error-handling";
@@ -71,6 +72,7 @@ async function bootstrap() {
   const startupSyncEnabled = process.env.STARTUP_ENABLE_PERIODIC_SYNC !== "false";
 
   const { sessionSecret } = enforceRuntimeEnvironmentGuards();
+  await initializeDatabase();
 
   applySecurityAndParsingMiddleware(app);
   configureSession({
@@ -84,11 +86,10 @@ async function bootstrap() {
   configurePassportAuth(storage);
   app.use(passport.initialize());
   app.use(passport.session());
+  app.use(jwtAuth);
   applyRequestLogging(app, log);
 
   app.get("/api/environment/status", async (_req, res) => res.status(200).json(getEnvironmentStatus()));
-
-  await initializeDatabase();
 
   const runtimeMutationPolicy = getRuntimeMutationPolicy(startupModes);
   const report = createStartupReport(dbMode, {
@@ -127,7 +128,15 @@ async function bootstrap() {
   logStartupSummary(report, log);
 
   const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen({ port, host: "0.0.0.0", reusePort: true }, () => {
+  const listenOptions: { port: number; host: string; reusePort?: boolean } = {
+    port,
+    host: "0.0.0.0",
+  };
+  if (process.platform !== "win32") {
+    listenOptions.reusePort = true;
+  }
+
+  httpServer.listen(listenOptions, () => {
     log(`serving on port ${port}`, "Startup");
   });
 }

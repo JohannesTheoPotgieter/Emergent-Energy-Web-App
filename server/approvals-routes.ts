@@ -1,7 +1,7 @@
-import { Express, Request, Response, NextFunction } from "express";
+import { Express, Request, Response } from "express";
 import { db } from "./db";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
-import { verifyToken } from "./jwt";
+import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import {
   projectEngApprovals,
   projectEngStages,
@@ -14,9 +14,11 @@ import {
   users,
   approvals,
 } from "@shared/schema";
-import { requirePermission } from "./permission-middleware";
+import { evaluateAuthorityForRequest, requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
+import { getAssignmentsForEntity, setEntityAssignment } from "./services/assignment-service";
+import { badRequest, forbidden, notFound, sendError } from "./lib/api-error";
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
@@ -28,34 +30,52 @@ const APPROVAL_ROLE_TO_USER_ROLES: Record<string, string[]> = {
   "COO": ["COO_ADMIN"],
 };
 
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
+function isMissingTableError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  return message.includes("no such table") || message.includes("does not exist");
 }
 
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
+function normalizeApprovalAssigneeInput(body: Record<string, any>) {
+  const assigneeType = body.approverAssigneeType ?? (body.assignedApprover != null ? "internal_user" : null);
+  const rawAssigneeId = body.approverAssigneeId ?? body.assignedApprover ?? null;
+  const assigneeId = rawAssigneeId == null ? null : parseInt(String(rawAssigneeId), 10);
+
+  return {
+    assigneeType,
+    assigneeId: Number.isFinite(assigneeId) ? assigneeId : null,
+  };
+}
+
+async function getGeneralApprovalAssignments(approvalId: number) {
+  return getAssignmentsForEntity("approval", approvalId, "APPROVER");
+}
+
+async function canCurrentUserDecideGeneralApproval(req: Request, approvalId: number): Promise<boolean> {
+  const currentUser = getEffectiveUser(req);
+  if (!currentUser?.id) {
+    return false;
+  }
+
+  const authority = await evaluateAuthorityForRequest(req, "approvals", "approve");
+  if (authority.allowed) {
+    return true;
+  }
+
+  const assignments = await getGeneralApprovalAssignments(approvalId);
+  return assignments.some((assignment) =>
+    assignment.assigneeType === "internal_user" && assignment.assigneeId === currentUser.id,
+  );
 }
 
 export function registerApprovalsRoutes(app: Express) {
   app.get("/api/approvals/pending", jwtAuth, requireAuth, async (req: Request, res: Response) => {
-    try {
-      const currentUser = (req as any).user;
-      const userId = currentUser?.id;
-      const userRole = currentUser?.role || "";
-      const isAdmin = ADMIN_ROLES.includes(userRole);
-      const showAll = isAdmin && req.query.showAll === "true";
+    const currentUser = getEffectiveUser(req);
+    const userId = currentUser?.id;
+    const userRole = currentUser?.role || "";
+    const isAdmin = ADMIN_ROLES.includes(userRole);
+    const showAll = isAdmin && req.query.showAll === "true";
 
+    try {
       const engApprovals = await db.select({
         id: projectEngApprovals.id,
         status: projectEngApprovals.status,
@@ -98,7 +118,7 @@ export function registerApprovalsRoutes(app: Express) {
       const engineeringItems = filteredEngApprovals.map(a => ({
         id: `eng-${a.id}`,
         type: "engineering" as const,
-        title: `${a.stageName} — ${a.approverRole}`,
+        title: `${a.stageName} - ${a.approverRole}`,
         projectName: a.projectName,
         projectId: a.projectId,
         status: a.status,
@@ -205,7 +225,71 @@ export function registerApprovalsRoutes(app: Express) {
         meta: { deliverableId: d.id, phase: d.phase },
       }));
 
-      const allItems = [...engineeringItems, ...qualityItems, ...delivItems];
+      const generalApprovals = await db.select({
+        id: approvals.id,
+        title: approvals.title,
+        status: approvals.status,
+        projectId: approvals.projectId,
+        projectName: projectInfo.projectName,
+        requestedAt: approvals.requestedAt,
+        approvalCategory: approvals.approvalCategory,
+        assignedApprover: approvals.assignedApprover,
+      })
+        .from(approvals)
+        .innerJoin(projectInfo, eq(approvals.projectId, projectInfo.id))
+        .where(eq(approvals.status, "pending"))
+        .orderBy(desc(approvals.requestedAt));
+
+      const generalApproverIds = [...new Set(
+        generalApprovals
+          .map((approval) => approval.assignedApprover)
+          .filter((value): value is number => typeof value === "number"),
+      )];
+      let generalApproverMap: Record<number, string> = {};
+      if (generalApproverIds.length > 0) {
+        const rows = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, generalApproverIds));
+        generalApproverMap = Object.fromEntries(rows.map((row) => [row.id, row.name]));
+      }
+
+      const generalAssignments = await Promise.all(
+        generalApprovals.map(async (approval) => [approval.id, await getGeneralApprovalAssignments(approval.id)] as const),
+      );
+      const generalAssignmentMap = new Map(generalAssignments);
+
+      let filteredGeneralApprovals = generalApprovals;
+      if (!isAdmin && !showAll) {
+        filteredGeneralApprovals = generalApprovals.filter((approval) => {
+          const primaryAssignment = (generalAssignmentMap.get(approval.id) || [])[0] || null;
+          return Boolean(
+            approval.assignedApprover === userId ||
+            (primaryAssignment?.assigneeType === "internal_user" && primaryAssignment.assigneeId === userId),
+          );
+        });
+      }
+
+      const generalItems = filteredGeneralApprovals.map((approval) => {
+        const assignments = generalAssignmentMap.get(approval.id) || [];
+        const primaryAssignment = assignments[0] || null;
+        return {
+          id: `gen-${approval.id}`,
+          type: "general" as const,
+          title: approval.title,
+          projectName: approval.projectName,
+          projectId: approval.projectId,
+          status: approval.status,
+          assignee: primaryAssignment?.displayLabel || (approval.assignedApprover ? (generalApproverMap[approval.assignedApprover] || "Assigned approver") : "Unassigned"),
+          createdAt: approval.requestedAt,
+          updatedAt: approval.requestedAt,
+          meta: {
+            generalApprovalId: approval.id,
+            approvalCategory: approval.approvalCategory,
+            assignments,
+            primaryAssignment,
+          },
+        };
+      });
+
+      const allItems = [...engineeringItems, ...qualityItems, ...delivItems, ...generalItems];
       allItems.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
       res.json({
@@ -214,11 +298,25 @@ export function registerApprovalsRoutes(app: Express) {
           engineering: engineeringItems.length,
           quality: qualityItems.length,
           deliverable: delivItems.length,
+          general: generalItems.length,
           total: allItems.length,
         },
         isAdmin,
       });
     } catch (err: any) {
+      if (isMissingTableError(err)) {
+        return res.json({
+          items: [],
+          counts: {
+            engineering: 0,
+            quality: 0,
+            deliverable: 0,
+            total: 0,
+          },
+          isAdmin,
+        });
+      }
+
       console.error("Error fetching pending approvals:", err);
       res.status(500).json({ error: "Failed to fetch approvals" });
     }
@@ -235,14 +333,19 @@ export function registerApprovalsRoutes(app: Express) {
       if (statusFilter) conditions.push(eq(approvals.status, statusFilter as any));
       if (categoryFilter) conditions.push(sql`${approvals.approvalCategory} = ${categoryFilter}`);
 
-      const rows = await db.select().from(approvals)
+      const rows = await db.select({
+        approval: approvals,
+        projectName: projectInfo.projectName,
+      })
+        .from(approvals)
+        .innerJoin(projectInfo, eq(approvals.projectId, projectInfo.id))
         .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(desc(approvals.requestedAt));
 
       const userIds = [...new Set([
-        ...rows.map(r => r.requestedBy),
-        ...rows.map(r => r.decidedBy).filter(Boolean),
-        ...rows.map(r => r.assignedApprover).filter(Boolean),
+        ...rows.map((row) => row.approval.requestedBy),
+        ...rows.map((row) => row.approval.decidedBy).filter(Boolean),
+        ...rows.map((row) => row.approval.assignedApprover).filter(Boolean),
       ])] as number[];
       let userMap: Record<number, string> = {};
       if (userIds.length > 0) {
@@ -250,13 +353,25 @@ export function registerApprovalsRoutes(app: Express) {
         userMap = Object.fromEntries(uRows.map(u => [u.id, u.name]));
       }
 
+      const assignmentEntries = await Promise.all(
+        rows.map(async ({ approval }) => [approval.id, await getGeneralApprovalAssignments(approval.id)] as const),
+      );
+      const assignmentMap = new Map(assignmentEntries);
+
       res.json({
-        approvals: rows.map(r => ({
-          ...r,
-          requestedByName: userMap[r.requestedBy] || "Unknown",
-          decidedByName: r.decidedBy ? (userMap[r.decidedBy] || "Unknown") : null,
-          assignedApproverName: r.assignedApprover ? (userMap[r.assignedApprover] || "Unknown") : null,
-        })),
+        approvals: rows.map(({ approval, projectName }) => {
+          const assignments = assignmentMap.get(approval.id) || [];
+          const primaryAssignment = assignments[0] || null;
+          return {
+            ...approval,
+            projectName,
+            requestedByName: userMap[approval.requestedBy] || "Unknown",
+            decidedByName: approval.decidedBy ? (userMap[approval.decidedBy] || "Unknown") : null,
+            assignedApproverName: primaryAssignment?.displayLabel || (approval.assignedApprover ? (userMap[approval.assignedApprover] || "Unknown") : null),
+            assignments,
+            primaryAssignment,
+          };
+        }),
       });
     } catch (err: any) {
       console.error("Error fetching general approvals:", err);
@@ -266,10 +381,11 @@ export function registerApprovalsRoutes(app: Express) {
 
   app.post("/api/approvals/general", jwtAuth, requireAuth, requirePermission("approvals", "edit"), async (req: Request, res: Response) => {
     try {
-      const userId = (req as any).user?.id;
+      const userId = getEffectiveUser(req)?.id;
       if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
-      const { type, title, description, assignedApprover, dueDate, projectId, approvalCategory, relatedEntityType, relatedEntityId } = req.body;
+      const { type, title, description, dueDate, projectId, approvalCategory, relatedEntityType, relatedEntityId } = req.body;
+      const { assigneeType, assigneeId } = normalizeApprovalAssigneeInput(req.body || {});
       if (!type || !title) return res.status(400).json({ error: "type and title are required" });
       if (!projectId) return res.status(400).json({ error: "projectId is required" });
 
@@ -279,7 +395,7 @@ export function registerApprovalsRoutes(app: Express) {
         description: description || null,
         status: "pending",
         requestedBy: userId,
-        assignedApprover: assignedApprover ? parseInt(assignedApprover) : null,
+        assignedApprover: assigneeType === "internal_user" ? assigneeId : null,
         dueDate: dueDate ? new Date(dueDate) : null,
         projectId: parseInt(projectId),
         approvalCategory: approvalCategory || null,
@@ -288,7 +404,23 @@ export function registerApprovalsRoutes(app: Express) {
       }).returning();
 
       const created = (Array.isArray(result) ? result : (result as any).rows || [])[0];
-      logAuditFromReq(req, "approval_created", "approvals", created?.id, { type, title, projectId, approvalCategory });
+      const assignments = assigneeType && assigneeId
+        ? await setEntityAssignment(req, {
+          entityType: "approval",
+          entityId: created.id,
+          assignmentRole: "APPROVER",
+          assigneeType,
+          assigneeId,
+          mode: "replace",
+        })
+        : [];
+
+      logAuditFromReq(req, {
+        entityType: "approvals",
+        entityId: created?.id ? String(created.id) : undefined,
+        action: "approval_created",
+        changesJson: { type, title, projectId, approvalCategory, assigneeType, assigneeId },
+      });
       if (created?.projectId) {
         const actor = actorFromReq(req);
         await createProjectEvent({
@@ -303,39 +435,113 @@ export function registerApprovalsRoutes(app: Express) {
           idempotencyKey: `approval-requested:${created.id}`,
         });
       }
-      res.status(201).json(created);
+      res.status(201).json({
+        ...created,
+        assignments,
+        primaryAssignment: assignments[0] || null,
+      });
     } catch (err: any) {
       console.error("Error creating approval:", err);
       res.status(500).json({ error: "Failed to create approval" });
     }
   });
 
-  app.patch("/api/approvals/general/:id", jwtAuth, requireAuth, requirePermission("approvals", "edit"), async (req: Request, res: Response) => {
+  app.patch("/api/approvals/general/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
-      const userId = (req as any).user?.id;
+      const id = parseInt(String(req.params.id), 10);
+      if (isNaN(id)) {
+        throw badRequest("Invalid approval ID");
+      }
+      const userId = getEffectiveUser(req)?.id;
+      if (!userId) {
+        throw forbidden("Authentication required");
+      }
 
-      const { status, decisionNote } = req.body;
+      const [existing] = await db.select().from(approvals).where(eq(approvals.id, id)).limit(1);
+      if (!existing) {
+        throw notFound("Approval");
+      }
+
+      const {
+        status,
+        decisionNote,
+        title,
+        description,
+        dueDate,
+        approvalCategory,
+      } = req.body || {};
       const validStatuses = ["pending", "approved", "rejected", "cancelled"];
       if (status && !validStatuses.includes(status)) {
-        return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
+        throw badRequest(`Invalid status. Must be one of: ${validStatuses.join(", ")}`);
+      }
+
+      const { assigneeType, assigneeId } = normalizeApprovalAssigneeInput(req.body || {});
+      const assignmentRequested =
+        Object.prototype.hasOwnProperty.call(req.body || {}, "approverAssigneeType") ||
+        Object.prototype.hasOwnProperty.call(req.body || {}, "approverAssigneeId") ||
+        Object.prototype.hasOwnProperty.call(req.body || {}, "assignedApprover");
+
+      const decisionRequested = status === "approved" || status === "rejected";
+      const metadataRequested =
+        title !== undefined ||
+        description !== undefined ||
+        dueDate !== undefined ||
+        approvalCategory !== undefined ||
+        status === "pending" ||
+        status === "cancelled";
+
+      if (decisionRequested) {
+        const canDecide = await canCurrentUserDecideGeneralApproval(req, id);
+        if (!canDecide) {
+          throw forbidden("You are not allowed to approve or reject this approval");
+        }
+      }
+
+      if (metadataRequested) {
+        const editAuthority = await evaluateAuthorityForRequest(req, "approvals", "edit");
+        if (!editAuthority.allowed) {
+          throw forbidden(editAuthority.reason || "You do not have permission to update approvals");
+        }
       }
 
       const updates: Record<string, any> = {};
       if (status) updates.status = status;
       if (decisionNote !== undefined) updates.decisionNote = decisionNote;
+      if (title !== undefined) updates.title = title;
+      if (description !== undefined) updates.description = description;
+      if (dueDate !== undefined) updates.dueDate = dueDate ? new Date(dueDate) : null;
+      if (approvalCategory !== undefined) updates.approvalCategory = approvalCategory || null;
       if (status === "approved" || status === "rejected") {
         updates.decidedBy = userId;
         updates.decidedAt = new Date();
       }
 
-      const result = await db.update(approvals).set(updates).where(eq(approvals.id, id)).returning();
+      const result = Object.keys(updates).length > 0
+        ? await db.update(approvals).set(updates).where(eq(approvals.id, id)).returning()
+        : [existing];
       const updated = (Array.isArray(result) ? result : (result as any).rows || [])[0];
-      if (!updated) return res.status(404).json({ error: "Approval not found" });
+      if (!updated) {
+        throw notFound("Approval");
+      }
 
-      logAuditFromReq(req, `approval_${status || "updated"}`, "approvals", id, { status, decisionNote });
-      if (updated.projectId && (status === "approved" || status === "rejected")) {
+      const assignments = assignmentRequested
+        ? await setEntityAssignment(req, {
+          entityType: "approval",
+          entityId: id,
+          assignmentRole: "APPROVER",
+          assigneeType,
+          assigneeId,
+          mode: assigneeType && assigneeId ? "replace" : "clear",
+        })
+        : await getGeneralApprovalAssignments(id);
+
+      logAuditFromReq(req, {
+        entityType: "approvals",
+        entityId: String(id),
+        action: `approval_${status || "updated"}`,
+        changesJson: { status, decisionNote, assigneeType, assigneeId },
+      });
+      if (updated.projectId && decisionRequested) {
         const actor = actorFromReq(req);
         await createProjectEvent({
           projectId: updated.projectId,
@@ -349,20 +555,28 @@ export function registerApprovalsRoutes(app: Express) {
           idempotencyKey: `approval-decision:${updated.id}:${updated.status}`,
         });
       }
-      res.json(updated);
+      res.json({
+        ...updated,
+        assignments,
+        primaryAssignment: assignments[0] || null,
+      });
     } catch (err: any) {
-      console.error("Error updating approval:", err);
-      res.status(500).json({ error: "Failed to update approval" });
+      sendError(res, err);
     }
   });
 
   app.delete("/api/approvals/general/:id", jwtAuth, requireAuth, requirePermission("approvals", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
       await db.delete(approvals).where(eq(approvals.id, id));
-      logAuditFromReq(req, "approval_deleted", "approvals", id, {});
+      logAuditFromReq(req, {
+        entityType: "approvals",
+        entityId: String(id),
+        action: "approval_deleted",
+        changesJson: {},
+      });
       res.json({ success: true });
     } catch (err: any) {
       console.error("Error deleting approval:", err);

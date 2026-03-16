@@ -54,6 +54,7 @@ interface ApprovalsResponse {
     engineering: number;
     quality: number;
     deliverable: number;
+    general?: number;
     total: number;
   };
   isAdmin?: boolean;
@@ -121,6 +122,22 @@ export default function AdminApprovalsPage() {
 
   const actionMutation = useMutation({
     mutationFn: async ({ item, action, comment }: { item: ApprovalItem; action: "approve" | "reject"; comment: string }) => {
+      if (item.type === "general") {
+        const approvalId = item.meta.generalApprovalId || item.id.replace("gen-", "");
+        const res = await fetch(`/api/approvals/general/${approvalId}`, {
+          method: "PATCH",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            status: action === "approve" ? "approved" : "rejected",
+            decisionNote: comment || undefined,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || err.message || "Failed to update general approval");
+        }
+        return res.json();
+      }
       if (item.type === "engineering") {
         const approvalId = item.meta.approvalId;
         const res = await fetch(`/api/eng-stages/approvals/${approvalId}`, {
@@ -186,7 +203,7 @@ export default function AdminApprovalsPage() {
   });
 
   const items = data?.items || [];
-  const counts = data?.counts || { engineering: 0, quality: 0, deliverable: 0, total: 0 };
+  const counts = data?.counts || { engineering: 0, quality: 0, deliverable: 0, general: 0, total: 0 };
   const filtered = filter === "all" ? items : items.filter(i => i.type === filter);
 
   function openAction(item: ApprovalItem, action: "approve" | "reject", e: { stopPropagation: () => void }) {
@@ -210,6 +227,8 @@ export default function AdminApprovalsPage() {
     } else if (item.type === "quality") {
       navigate(`/quality?project=${encodeURIComponent(item.projectName)}`);
     } else if (item.type === "deliverable") {
+      navigate(`/project/${encodeURIComponent(item.projectName)}`);
+    } else if (item.type === "general") {
       navigate(`/project/${encodeURIComponent(item.projectName)}`);
     }
   }
@@ -258,7 +277,7 @@ export default function AdminApprovalsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card
           className={`cursor-pointer transition-colors ${filter === "engineering" ? "ring-2 ring-purple-400" : ""}`}
           onClick={() => setFilter(filter === "engineering" ? "all" : "engineering")}
@@ -301,6 +320,21 @@ export default function AdminApprovalsPage() {
             <div>
               <div className="text-2xl font-bold">{counts.deliverable}</div>
               <div className="text-xs text-muted-foreground">Deliverables</div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card
+          className={`cursor-pointer transition-colors ${filter === "general" ? "ring-2 ring-violet-400" : ""}`}
+          onClick={() => setFilter(filter === "general" ? "all" : "general")}
+          data-testid="card-general-count"
+        >
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-violet-50">
+              <Clock className="w-5 h-5 text-violet-600" />
+            </div>
+            <div>
+              <div className="text-2xl font-bold">{counts.general || 0}</div>
+              <div className="text-xs text-muted-foreground">General Approvals</div>
             </div>
           </CardContent>
         </Card>

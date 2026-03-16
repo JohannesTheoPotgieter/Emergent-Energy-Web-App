@@ -1,6 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   AUTHORITY_ACTIONS,
   ENTITY_PERMISSION_DEFAULTS,
@@ -13,7 +13,7 @@ import {
   type PermissionEntity,
 } from "@shared/schema";
 import { evaluateAuthorityForRole, evaluatePermissionForRole } from "@shared/permission-resolver";
-import { verifyToken } from "./jwt";
+import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { invalidateEntityPermCache } from "./permission-middleware";
 import bcrypt from "bcryptjs";
 import { logAuditFromReq } from "./audit-logger";
@@ -29,24 +29,8 @@ function mapRole(raw: string): string {
   return normalizeRoleForPermissions(LEGACY_ROLE_MAP[raw] || raw);
 }
 
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith("Bearer ")) {
-    const payload = verifyToken(authHeader.substring(7));
-    if (payload) {
-      (req as any).user = payload;
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  res.status(401).json({ error: "Authentication required" });
-}
-
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const user = (req as any).user;
+  const user = getEffectiveUser(req);
   if (!user) return res.status(401).json({ error: "Authentication required" });
   const role = mapRole(user.role);
   const adminRoles = ["COO_ADMIN", "CEO_ADMIN"];
@@ -77,12 +61,108 @@ function countConfiguredResourcePermissions(entityPermissions: unknown): number 
   return entries.filter(([, actions]) => Object.values(actions || {}).some(Boolean)).length;
 }
 
+function isMissingRolePermissionsStorage(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return message.includes("no such table") && message.includes("role_permissions");
+}
+
+function parseJsonObject(value: unknown): Record<string, unknown> | null {
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseSections(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry));
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map((entry) => String(entry));
+      }
+    } catch {
+      return value
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+    }
+  }
+
+  return [];
+}
+
+function toBoolean(value: unknown, fallback = false): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "t", "yes"].includes(normalized)) return true;
+    if (["0", "false", "f", "no"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
+function normalizeRolePermissionRecord(role: any) {
+  return {
+    ...role,
+    sections: migrateSections(parseSections(role.sections)),
+    entityPermissions: parseJsonObject(role.entityPermissions),
+    authorityModel: parseJsonObject(role.authorityModel),
+    canManageUsers: toBoolean(role.canManageUsers),
+    canManageRoles: toBoolean(role.canManageRoles),
+    canEditData: toBoolean(role.canEditData, true),
+    isSystem: toBoolean(role.isSystem),
+  };
+}
+
+function buildDefaultRolePermissionsSnapshot() {
+  return DEFAULT_ROLE_PERMISSIONS.map((perm, index) =>
+    normalizeRolePermissionRecord({
+      id: index + 1,
+      role: perm.role,
+      label: perm.label,
+      description: perm.description || null,
+      sections: perm.sections,
+      canManageUsers: perm.canManageUsers ?? false,
+      canManageRoles: perm.canManageRoles ?? false,
+      canEditData: perm.canEditData ?? true,
+      entityPermissions: null,
+      authorityModel: null,
+      isSystem: perm.isSystem ?? false,
+      createdAt: null,
+      updatedAt: null,
+    }),
+  );
+}
+
 
 async function ensureRolePermissionsSeeded() {
-  const existing = await db.select().from(rolePermissions);
-  if (existing.length > 0) return existing;
-  await seedRolePermissions();
-  return db.select().from(rolePermissions);
+  try {
+    const existing = (await db.select().from(rolePermissions)).map(normalizeRolePermissionRecord);
+    if (existing.length > 0) return existing;
+    await seedRolePermissions();
+    const seeded = (await db.select().from(rolePermissions)).map(normalizeRolePermissionRecord);
+    return seeded.length > 0 ? seeded : buildDefaultRolePermissionsSnapshot();
+  } catch (error) {
+    if (isMissingRolePermissionsStorage(error)) {
+      return buildDefaultRolePermissionsSnapshot();
+    }
+    throw error;
+  }
 }
 
 function migrateSections(sections: string[]): string[] {
@@ -107,11 +187,11 @@ export async function seedRolePermissions() {
         await db.insert(rolePermissions).values(perm);
       } else {
         const defaultSections = perm.sections as string[];
-        const currentSections = migrateSections((exists.sections || []) as string[]);
+        const currentSections = migrateSections(parseSections(exists.sections));
         const missingSections = defaultSections.filter(s => !currentSections.includes(s));
         const merged = [...new Set([...currentSections, ...missingSections])];
-        const needsUpdate = merged.length !== (exists.sections as string[]).length ||
-          merged.some(s => !(exists.sections as string[]).includes(s));
+        const needsUpdate = merged.length !== currentSections.length ||
+          merged.some(s => !currentSections.includes(s));
         if (needsUpdate) {
           await db.update(rolePermissions)
             .set({ sections: merged, updatedAt: new Date() })
@@ -138,17 +218,37 @@ export function registerRoleManagementRoutes(app: Express) {
   app.get("/api/roles/control-center", jwtAuth, requireAuth, requireAdmin, async (_req: Request, res: Response) => {
     try {
       const roles = await ensureRolePermissionsSeeded();
-      const userCounts = await db
-        .select({ role: users.role, count: sql<number>`count(*)::int` })
-        .from(users)
-        .groupBy(users.role);
+      const allUsers = await db.select({ role: users.role }).from(users);
+      const roleUserCounts = new Map<string, number>();
 
-      const roleUserCounts = new Map(userCounts.map((row: any) => [mapRole(row.role), Number(row.count || 0)]));
+      for (const user of allUsers) {
+        const mappedRole = mapRole(user.role);
+        roleUserCounts.set(mappedRole, (roleUserCounts.get(mappedRole) || 0) + 1);
+      }
+
       const roleSummaries = roles.map((role) => ({
         ...role,
         userCount: roleUserCounts.get(role.role) || 0,
         configuredResources: countConfiguredResourcePermissions(role.entityPermissions),
         protected: isRoleProtected(role),
+        authoritySummary: ENTITY_PERMISSION_DEFAULTS.map((rule) => ({
+          entity: rule.entity,
+          actions: AUTHORITY_ACTIONS.map((action) => {
+            const evaluation = evaluateAuthorityForRole({
+              role: role.role,
+              entity: rule.entity as PermissionEntity,
+              action: action as AuthorityAction,
+              roleRecord: role as any,
+            });
+            return {
+              action,
+              allowed: evaluation.allowed,
+              scope: evaluation.scope,
+              reason: evaluation.reason,
+              source: evaluation.source,
+            };
+          }),
+        })),
       }));
 
       res.json({
@@ -489,7 +589,7 @@ export function registerRoleManagementRoutes(app: Express) {
   app.delete("/api/admin/users/:userId", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const userId = parseInt(req.params.userId as string);
-      const currentUser = (req as any).user;
+      const currentUser = getEffectiveUser(req);
       if (currentUser?.id === userId) {
         return res.status(400).json({ error: "Cannot delete your own account" });
       }
@@ -507,7 +607,7 @@ export function registerRoleManagementRoutes(app: Express) {
   app.get("/api/auth/permissions", jwtAuth, async (req: Request, res: Response) => {
     try {
       const companyRole = req.headers["x-company-role"] as string;
-      const userRole = (req as any).user?.role;
+      const userRole = getEffectiveUser(req)?.role;
       const raw = companyRole || userRole;
 
       if (!raw) {
@@ -516,7 +616,16 @@ export function registerRoleManagementRoutes(app: Express) {
 
       const activeRole = mapRole(raw);
 
-      const [perm] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, activeRole));
+      let perm = null as any;
+      try {
+        const [found] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, activeRole));
+        perm = found ? normalizeRolePermissionRecord(found) : null;
+      } catch (error) {
+        if (!isMissingRolePermissionsStorage(error)) {
+          throw error;
+        }
+        perm = buildDefaultRolePermissionsSnapshot().find((entry) => entry.role === activeRole) || null;
+      }
       if (!perm) {
         return res.json({ sections: ["PROJECTS"], canManageUsers: false, canManageRoles: false, canEditData: false });
       }
@@ -529,6 +638,25 @@ export function registerRoleManagementRoutes(app: Express) {
         canManageRoles: perm.canManageRoles,
         canEditData: perm.canEditData,
         entityPermissions: perm.entityPermissions || null,
+        authorityModel: perm.authorityModel || null,
+        authoritySummary: ENTITY_PERMISSION_DEFAULTS.map((rule) => ({
+          entity: rule.entity,
+          actions: AUTHORITY_ACTIONS.map((action) => {
+            const evaluation = evaluateAuthorityForRole({
+              role: perm.role,
+              entity: rule.entity as PermissionEntity,
+              action: action as AuthorityAction,
+              roleRecord: perm as any,
+            });
+            return {
+              action,
+              allowed: evaluation.allowed,
+              scope: evaluation.scope,
+              reason: evaluation.reason,
+              source: evaluation.source,
+            };
+          }),
+        })),
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

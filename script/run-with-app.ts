@@ -17,6 +17,7 @@ const appEnv = {
   NODE_ENV: process.env.NODE_ENV || 'development',
   PORT: process.env.PORT || '5000',
   API_URL: process.env.API_URL || APP_URL,
+  JWT_SECRET: process.env.JWT_SECRET || 'test-jwt-secret',
   SESSION_SECRET: process.env.SESSION_SECRET || 'test-session-secret',
   ENABLE_STARTUP_MAINTENANCE: process.env.ENABLE_STARTUP_MAINTENANCE || 'false',
   ENABLE_STARTUP_SCHEMA_REPAIR: process.env.ENABLE_STARTUP_SCHEMA_REPAIR || 'false',

@@ -5,6 +5,8 @@ export type CounterpartySummary = {
   nameCanonical: string;
   typeDefault: "SUPPLIER" | "INSTALLER" | "OTHER";
   isCore: boolean;
+  isActive?: boolean;
+  roleTags?: string[];
   contactPerson?: string | null;
   contactPhone?: string | null;
   contactEmail?: string | null;
@@ -18,10 +20,49 @@ export type CounterpartySummary = {
   usageCount?: number;
   totalSpendExVat?: number;
   openAmountExVat?: number;
+  activeContactCount?: number;
+  directAssignmentCount?: number;
+  contactAssignmentCount?: number;
+  assignmentEntityTypes?: string[];
+};
+
+export type CounterpartyContact = {
+  id: number;
+  counterpartyId: number;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  title?: string | null;
+  roleTags?: string[];
+  isActive: boolean;
+  notes?: string | null;
+};
+
+export type CounterpartyDetail = CounterpartySummary & {
+  summary?: {
+    usageCount: number;
+    linkedProjectCount: number;
+    totalSpendExVat: number;
+    openAmountExVat: number;
+    directAssignmentCount: number;
+    contactAssignmentCount: number;
+    assignmentEntityTypes: string[];
+  };
+  contacts: CounterpartyContact[];
+  activeAssignments?: Array<{
+    id: number;
+    entityType: string;
+    entityId: number;
+    assignmentRole: string;
+    assigneeType: string;
+    assigneeId: number;
+    displayLabelSnapshot: string;
+    assignedAt: string;
+  }>;
 };
 
 export function deriveCounterpartyStatus(counterparty: CounterpartySummary): "active" | "inactive" {
-  return (counterparty.usageCount || 0) > 0 ? "active" : "inactive";
+  return counterparty.isActive === false ? "inactive" : "active";
 }
 
 export function filterCounterparties(
@@ -43,6 +84,7 @@ export function filterCounterparties(
     const fields = [
       cp.nameCanonical,
       cp.typeDefault,
+      ...(cp.roleTags || []),
       cp.contactPerson,
       cp.contactEmail,
       cp.contactPhone,

@@ -1,12 +1,14 @@
-import { type Express, type Request, type Response, type NextFunction } from "express";
+import { type Express, type Request, type Response } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { db } from "./db";
 import { sql, eq, and, isNull, asc } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import { deliverables, projectInfo, normalizedCostLines, normalizedRevenueLines, workItems } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
+import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import { requirePermission } from "./permission-middleware";
+import { getAssignmentsForEntity, setEntityAssignment } from "./services/assignment-service";
 
 const uploadDir = path.join(process.cwd(), "uploads", "_private_deliverables");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -24,25 +26,7 @@ const deliverableUpload = multer({
 });
 
 function getUser(req: Request): any {
-  return (req as any).user;
-}
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith("Bearer ")) {
-    const payload = verifyToken(authHeader.substring(7));
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
+  return getEffectiveUser(req);
 }
 
 
@@ -120,11 +104,22 @@ export function registerDeliverableCaptureRoutes(app: Express) {
     }
   });
 
-  app.post("/api/deliverable-capture/upload", jwtAuth, requireAuth, deliverableUpload.single("file"), async (req: Request, res: Response) => {
+  app.post("/api/deliverable-capture/upload", jwtAuth, requireAuth, requirePermission("deliverables", "create"), deliverableUpload.single("file"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const file = req.file;
-      const { projectId, projectName, title, linkType, linkId, deliverableType, description, ownerUserId: bodyOwnerUserId } = req.body;
+      const {
+        projectId,
+        projectName,
+        title,
+        linkType,
+        linkId,
+        deliverableType,
+        description,
+        ownerUserId: legacyOwnerUserId,
+        ownerAssigneeType,
+        ownerAssigneeId,
+      } = req.body;
 
       if (!file) {
         return res.status(400).json({ error: "A file is required" });
@@ -139,6 +134,8 @@ export function registerDeliverableCaptureRoutes(app: Express) {
       const linkedWorkItemId = linkType === "work_item" ? lId : null;
       const linkedCostLineId = linkType === "cost_line" ? lId : null;
       const linkedRevenueLineId = linkType === "revenue_line" ? lId : null;
+      const ownerAssignmentType = ownerAssigneeType || (legacyOwnerUserId ? "internal_user" : "internal_user");
+      const ownerAssignmentId = ownerAssigneeId ? parseInt(String(ownerAssigneeId), 10) : legacyOwnerUserId ? parseInt(String(legacyOwnerUserId), 10) : user.id;
 
       const [deliv] = await db.insert(deliverables).values({
         projectId: pId,
@@ -146,9 +143,18 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         title,
         deliverableType: deliverableType || "document",
         description: description || null,
-        ownerUserId: bodyOwnerUserId ? parseInt(bodyOwnerUserId) : user.id,
+        ownerUserId: ownerAssignmentType === "internal_user" ? ownerAssignmentId : null,
         status: "UPLOADED",
       }).returning();
+
+      const assignments = await setEntityAssignment(req, {
+        entityType: "deliverable",
+        entityId: deliv.id,
+        assignmentRole: "OWNER",
+        assigneeType: ownerAssignmentType,
+        assigneeId: ownerAssignmentId,
+        mode: "replace",
+      });
 
       await db.execute(sql`
         UPDATE deliverables
@@ -184,12 +190,16 @@ export function registerDeliverableCaptureRoutes(app: Express) {
           linkType,
           linkId: lId,
           fileName: file?.originalname,
+          ownerAssignmentType,
+          ownerAssignmentId,
           invoiceNumberSet: file && (linkType === "cost_line" || linkType === "revenue_line") ? path.parse(file.originalname).name : null,
         },
       });
 
       res.json({
         ...deliv,
+        assignments,
+        primaryAssignment: assignments.find((assignment) => assignment.assignmentRole === "OWNER") || assignments[0] || null,
         linkedWorkItemId,
         linkedCostLineId,
         linkedRevenueLineId,
@@ -225,7 +235,17 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         ORDER BY d.created_at DESC
       `);
 
-      res.json(rows.rows || []);
+      const serializedRows = (rows.rows || []) as any[];
+      const assignmentEntries = await Promise.all(
+        serializedRows.map(async (row) => [Number(row.id), await getAssignmentsForEntity("deliverable", Number(row.id))] as const),
+      );
+      const assignmentMap = new Map(assignmentEntries);
+
+      res.json(serializedRows.map((row) => ({
+        ...row,
+        assignments: assignmentMap.get(Number(row.id)) || [],
+        primaryAssignment: (assignmentMap.get(Number(row.id)) || [])[0] || null,
+      })));
     } catch (err: any) {
       console.error("[Deliverable Capture] List error:", err);
       res.status(500).json({ error: "Internal server error" });

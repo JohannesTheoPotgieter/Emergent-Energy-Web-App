@@ -12,7 +12,11 @@ export interface ProjectOperationalStatus {
 }
 
 export function deriveProjectOperationalStatus(project: any): ProjectOperationalStatus {
-  const stage = project.phase || project.executionPhase || "Unstaged";
+  const stage = project.shared_summary?.project?.lifecycleStageLabel
+    || project.shared_summary?.project?.lifecycleStage
+    || project.phase
+    || project.executionPhase
+    || "Unstaged";
   const handoverStatus = project.pd_pm_handover_status || project.pdPmHandoverStatus || "DRAFT";
   const trackerLinked = Boolean(project.has_tracker_import || project.hasTrackerImport || project.excel_tracker_link || project.excelTrackerLink);
   const pmOwner = project.pm || project.pm_owner || "Unassigned";
@@ -34,7 +38,7 @@ export function deriveProjectOperationalStatus(project: any): ProjectOperational
 
   return {
     lifecycleStage: stage,
-    currentGate: "PD→PM Handover",
+    currentGate: "PD -> PM Handover",
     gateStatus: handoverStatus,
     gateOwner: handoverStatus === "SUBMITTED_FOR_PM_REVIEW" ? (pmOwner || "PM") : (project.pd || project.pd_owner || "PD"),
     trackerStatus: trackerLinked ? "linked" : "missing",
@@ -42,6 +46,6 @@ export function deriveProjectOperationalStatus(project: any): ProjectOperational
     nextAction,
     nextActionOwner,
     nextKeyDate: project.client_handover_date || project.om_handover_date || project.commissioning_date || null,
-    latestUpdate: project.latest_update || project.comments || null,
+    latestUpdate: project.shared_summary?.latestUpdate?.text || project.latest_update || project.comments || null,
   };
 }

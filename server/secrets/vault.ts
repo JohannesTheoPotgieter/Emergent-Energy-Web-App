@@ -1,3 +1,6 @@
+import { SecretClient } from "@azure/keyvault-secrets";
+import { DefaultAzureCredential } from "@azure/identity";
+
 type SecretName =
   | "DATABASE_URL"
   | "SESSION_SECRET"
@@ -23,65 +26,63 @@ const SECRET_RESOLUTIONS: SecretResolution[] = [
   { envName: "THIRD_PARTY_SERVICE_TOKEN", vaultName: "third-party-service-token", requiredInStrictRuntime: false },
 ];
 
-const strictRuntime = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
+let secretClient: SecretClient | null = null;
 
-let secretClient: any = null;
+function isStrictRuntime(): boolean {
+  return process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
+}
 
-async function getVaultClient(): Promise<any | null> {
+function getMissingRequiredSecretNames(): SecretName[] {
+  return SECRET_RESOLUTIONS
+    .filter((secret) => secret.requiredInStrictRuntime && !process.env[secret.envName])
+    .map((secret) => secret.envName);
+}
+
+function getVaultClient(): SecretClient | null {
   if (secretClient) return secretClient;
 
   const keyVaultUri = process.env.KEY_VAULT_URI;
   if (!keyVaultUri) return null;
 
-  try {
-    const { SecretClient } = await import("@azure/keyvault-secrets");
-    const { DefaultAzureCredential } = await import("@azure/identity");
-    const credential = new DefaultAzureCredential();
-    secretClient = new SecretClient(keyVaultUri, credential);
-    return secretClient;
-  } catch {
-    if (strictRuntime) {
-      throw new Error("[Secrets] @azure/keyvault-secrets or @azure/identity packages not installed.");
-    }
-    return null;
-  }
+  const credential = new DefaultAzureCredential();
+  secretClient = new SecretClient(keyVaultUri, credential);
+  return secretClient;
 }
 
-async function readVaultSecret(client: any, vaultName: string): Promise<string | null> {
+async function readVaultSecret(vaultName: string): Promise<string | null> {
+  const client = getVaultClient();
+  if (!client) return null;
+
   const response = await client.getSecret(vaultName);
   return response.value || null;
 }
 
 export async function preloadRuntimeSecrets(): Promise<void> {
-  const client = await getVaultClient();
-  if (!client) {
-    if (strictRuntime) {
-      throw new Error("[Secrets] KEY_VAULT_URI must be configured in staging/production.");
-    }
-    return;
-  }
+  const strictRuntime = isStrictRuntime();
+  const client = getVaultClient();
+  if (client) {
+    for (const secret of SECRET_RESOLUTIONS) {
+      if (process.env[secret.envName]) continue;
 
-  for (const secret of SECRET_RESOLUTIONS) {
-    if (process.env[secret.envName]) continue;
-
-    try {
-      const value = await readVaultSecret(client, secret.vaultName);
-      if (value) {
-        process.env[secret.envName] = value;
+      try {
+        const value = await readVaultSecret(secret.vaultName);
+        if (value) {
+          process.env[secret.envName] = value;
+        }
+      } catch (err) {
+        const e = err as Error;
+        throw new Error(`[Secrets] Failed to retrieve required runtime secrets (name=${secret.vaultName}): ${e.message}`);
       }
-    } catch (err) {
-      const e = err as Error;
-      throw new Error(`[Secrets] Failed to retrieve required runtime secrets (name=${secret.vaultName}): ${e.message}`);
     }
   }
 
-  const missingRequiredSecrets = SECRET_RESOLUTIONS.filter(
-    (secret) => secret.requiredInStrictRuntime && !process.env[secret.envName],
-  );
+  const missingRequiredSecrets = getMissingRequiredSecretNames();
 
   if (strictRuntime && missingRequiredSecrets.length > 0) {
-    const missingNames = missingRequiredSecrets.map((secret) => secret.envName).join(", ");
-    throw new Error(`[Secrets] Missing required runtime secrets: ${missingNames}.`);
+    const sourceHint = client
+      ? "Check KEY_VAULT_URI access and secret contents."
+      : "Set them as environment variables in the host (for example Replit Secrets) or configure KEY_VAULT_URI.";
+    throw new Error(`[Secrets] Missing required runtime secrets: ${missingRequiredSecrets.join(", ")}. ${sourceHint}`);
   }
 }
 
