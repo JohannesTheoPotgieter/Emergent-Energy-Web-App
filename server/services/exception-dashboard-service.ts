@@ -86,12 +86,25 @@ function shouldIncludeByRole(cluster: RoleCluster, category: ExceptionCategory):
 
 
 export function buildExceptionLink(sourceType: string, sourceId: number, project?: string) {
-  if (sourceType === "work_item") return `/my-work/tasks?taskId=${sourceId}`;
-  if (sourceType === "approval") return "/my-work/approvals";
+  const projectHref = project ? `/project/${encodeURIComponent(project)}` : null;
+  const projectExecutionHref = (section: string, subTab?: string) => {
+    if (!projectHref) return null;
+    const params = new URLSearchParams({ mode: "execution", section });
+    if (subTab) params.set("subTab", subTab);
+    return `${projectHref}?${params.toString()}`;
+  };
+
+  if (sourceType === "work_item") {
+    return projectExecutionHref("delivery", "task-grid") || `/my-work/tasks?itemKey=${encodeURIComponent(`plan-${sourceId}`)}`;
+  }
+  if (sourceType === "approval") {
+    return projectExecutionHref("collaboration", "approvals") || `/my-work/tasks?itemKey=${encodeURIComponent(`approval-gen-${sourceId}`)}`;
+  }
   if (sourceType === "procurement") return `/subcontractor-dashboard?itemId=${sourceId}`;
   if (sourceType === "raid") return `/project/${encodeURIComponent(project || "")}?tab=raid`;
-  if (sourceType === "quality_warning") return "/quality";
-  if (sourceType === "project_gate" || sourceType === "deliverable") return `/project/${encodeURIComponent(project || "")}`;
+  if (sourceType === "quality_warning") return projectExecutionHref("quality", "quality") || "/quality";
+  if (sourceType === "deliverable") return projectExecutionHref("collaboration", "approvals") || `/my-work/tasks?itemKey=${encodeURIComponent(`del-${sourceId}`)}`;
+  if (sourceType === "project_gate") return `/project/${encodeURIComponent(project || "")}`;
   return "/exceptions";
 }
 
@@ -117,9 +130,9 @@ export async function getExceptionDashboard(params: { userId: number; role?: str
   const finalProjectIds = params.projectId ? projectIdsByRole.filter((id) => id === params.projectId) : projectIdsByRole;
   if (!finalProjectIds.length) return { roleCluster: cluster, items: [] as ExceptionItem[] };
 
-  const projectNameById = new Map(scopedProjects.map((p) => [p.id, p.projectName]));
+  const projectNameById = new Map<number, string>(scopedProjects.map((p) => [p.id, p.projectName]));
   const userRows = await db.select({ id: users.id, name: users.name }).from(users);
-  const userNameById = new Map(userRows.map((u) => [u.id, u.name || `User #${u.id}`]));
+  const userNameById = new Map<number, string>(userRows.map((u) => [u.id, u.name || `User #${u.id}`]));
 
   const openWorkItems = await db.select().from(workItems).where(and(inArray(workItems.projectId, finalProjectIds), isNull(workItems.deletedAt), notInArray(workItems.status, ["Done", "Closed", "Completed"])));
   const pendingApprovals = await db.select().from(approvals).where(and(eq(approvals.status, "pending"), inArray(approvals.projectId, finalProjectIds)));
@@ -144,7 +157,7 @@ export async function getExceptionDashboard(params: { userId: number; role?: str
       owner: userNameById.get(task.ownerUserId || -1) || task.ownerName || "Unassigned",
       dueDate: task.endDate,
       project: projectNameById.get(task.projectId) || "Unknown Project",
-      sourceLink: buildExceptionLink("work_item", task.id),
+      sourceLink: buildExceptionLink("work_item", task.id, projectNameById.get(task.projectId) || undefined),
       sourceType: "work_item",
       sourceId: task.id,
       reason: category === "blocked_tasks" ? "Task is blocked and requires intervention" : "Task due date has passed",
@@ -181,7 +194,7 @@ export async function getExceptionDashboard(params: { userId: number; role?: str
       owner: userNameById.get(approval.assignedApprover || -1) || "Unassigned approver",
       dueDate: approval.dueDate ? approval.dueDate.toISOString().slice(0, 10) : null,
       project: projectNameById.get(approval.projectId || -1) || "Shared",
-      sourceLink: buildExceptionLink("approval", approval.id),
+      sourceLink: buildExceptionLink("approval", approval.id, projectNameById.get(approval.projectId || -1) || undefined),
       sourceType: "approval",
       sourceId: approval.id,
       reason: "Approval waiting for decision",
@@ -202,7 +215,7 @@ export async function getExceptionDashboard(params: { userId: number; role?: str
   for (const invoice of invoices) {
     if (!shouldIncludeByRole(cluster, "invoice_payment_exceptions")) continue;
     if (invoice.status !== "approved" || !invoice.linkedProcurementItemId || !invoice.invoiceNumber) {
-      items.push({ id: `invoice-${invoice.id}`, category: "invoice_payment_exceptions", severity: computeSeverity({ category: "invoice_payment_exceptions", status: invoice.status }), title: `Invoice ${invoice.invoiceNumber || `#${invoice.id}`}`, owner: userNameById.get(invoice.capturedByUserId || -1) || "Finance queue", dueDate: invoice.invoiceDate, project: projectNameById.get(invoice.projectId) || "Unknown", sourceLink: buildExceptionLink("approval", invoice.id), sourceType: "invoice", sourceId: invoice.id, reason: "Invoice missing commercial linkage or approval" });
+      items.push({ id: `invoice-${invoice.id}`, category: "invoice_payment_exceptions", severity: computeSeverity({ category: "invoice_payment_exceptions", status: invoice.status }), title: `Invoice ${invoice.invoiceNumber || `#${invoice.id}`}`, owner: userNameById.get(invoice.capturedByUserId || -1) || "Finance queue", dueDate: invoice.invoiceDate, project: projectNameById.get(invoice.projectId) || "Unknown", sourceLink: buildExceptionLink("approval", invoice.id, projectNameById.get(invoice.projectId) || undefined), sourceType: "invoice", sourceId: invoice.id, reason: "Invoice missing commercial linkage or approval" });
     }
   }
 
@@ -216,7 +229,7 @@ export async function getExceptionDashboard(params: { userId: number; role?: str
   for (const warning of warnings) {
     if (!shouldIncludeByRole(cluster, "missing_evidence")) continue;
     if ((warning.warningType || "").includes("missing_evidence")) {
-      items.push({ id: `qcw-${warning.id}`, category: "missing_evidence", severity: computeSeverity({ category: "missing_evidence", dueDate: warning.dueDate, priority: warning.severity }), title: warning.title, owner: userNameById.get(warning.ownerUserId || -1) || "Quality team", dueDate: warning.dueDate, project: warning.projectName, sourceLink: buildExceptionLink("quality_warning", warning.id), sourceType: "quality_warning", sourceId: warning.id, reason: warning.description || "Evidence missing for quality record" });
+      items.push({ id: `qcw-${warning.id}`, category: "missing_evidence", severity: computeSeverity({ category: "missing_evidence", dueDate: warning.dueDate, priority: warning.severity }), title: warning.title, owner: userNameById.get(warning.ownerUserId || -1) || "Quality team", dueDate: warning.dueDate, project: warning.projectName, sourceLink: buildExceptionLink("quality_warning", warning.id, warning.projectName || undefined), sourceType: "quality_warning", sourceId: warning.id, reason: warning.description || "Evidence missing for quality record" });
     }
   }
 

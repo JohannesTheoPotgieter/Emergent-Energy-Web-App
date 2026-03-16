@@ -81,7 +81,7 @@ describe("home launchpad logic", () => {
     expect(preview.summary.total).toBe(4);
     expect(preview.items).toEqual([
       expect.objectContaining({ modelLabel: "Blocked task", href: "/my-work/tasks?itemKey=plan-12" }),
-      expect.objectContaining({ modelLabel: "Late approval", href: "/my-work/approvals" }),
+      expect.objectContaining({ modelLabel: "Late approval", href: "/my-work/tasks?itemKey=approval-gen-77" }),
       expect.objectContaining({ modelLabel: "Missing deliverable", href: "/my-work/tasks?itemKey=del-3" }),
     ]);
   });
@@ -143,5 +143,29 @@ describe("home launchpad logic", () => {
     expect(preview[0]).toEqual(expect.objectContaining({ itemKey: "personal-1", reason: "overdue" }));
     expect(preview.some((item) => item.itemKey === "approval-eng-9")).toBe(true);
     expect(preview.find((item) => item.itemKey === "approval-eng-9")?.href).toBe("/my-work/tasks?itemKey=approval-eng-9");
+  });
+
+  it("includes general approvals in the my-work preview queue", () => {
+    const allTaskData = {
+      approvals: {
+        general: [
+          {
+            id: 17,
+            title: "Client approval package",
+            status: "pending",
+            requestedAt: "2026-03-16T08:00:00.000Z",
+            projectName: "Solar Delta",
+          },
+        ],
+      },
+    };
+
+    const preview = buildMyWorkPreviewItems(allTaskData, 3);
+
+    expect(preview[0]).toEqual(expect.objectContaining({
+      itemKey: "approval-gen-17",
+      reason: "approval",
+      href: "/my-work/tasks?itemKey=approval-gen-17",
+    }));
   });
 });

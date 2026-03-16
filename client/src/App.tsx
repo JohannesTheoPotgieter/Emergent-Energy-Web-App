@@ -9,7 +9,6 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NetworkStatus } from "@/components/NetworkStatus";
 import AppLayout from "@/components/layout/AppLayout";
 import LoginPage from "@/pages/login";
-import Home from "@/pages/home";
 import Dashboard from "@/pages/dashboard";
 import ProjectsSummary from "@/pages/projects";
 import CashflowPage from "@/pages/cashflow";
@@ -297,7 +296,7 @@ function ProtectedPages() {
     <RoleGuard>
     <AppLayout>
       <Switch>
-        <Route path="/">{() => <Home />}</Route>
+        <Route path="/">{() => <Redirect to="/my-work" />}</Route>
         {APP_ROUTES.map((route) => {
           if (route.redirectTo) {
             return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;

@@ -29,12 +29,17 @@ import {
   X,
   RefreshCw,
 } from "lucide-react";
+import { useLocation } from "wouter";
 
 function authHeaders() {
   const token = localStorage.getItem("auth_token");
   const h: Record<string, string> = {};
   if (token) h["Authorization"] = `Bearer ${token}`;
   return h;
+}
+
+function isExternalHref(value?: string | null) {
+  return typeof value === "string" && /^https?:\/\//i.test(value);
 }
 
 interface OutlookEvent {
@@ -69,6 +74,11 @@ interface CalendarTask {
   lifecyclePhase?: string | null;
   ragStatus?: string | null;
   department?: string | null;
+  sourceHref?: string | null;
+  projectHref?: string | null;
+  externalHref?: string | null;
+  sourceContextLabel?: string | null;
+  sourceTypeLabel?: string | null;
 }
 
 const TASK_TYPE_COLORS: Record<string, { bg: string; border: string; text: string; subText: string; hoverBg: string; bgLight: string; hoverLight: string; legendBg: string; legendBorder: string }> = {
@@ -182,6 +192,7 @@ const CAL_SOURCE_FILTERS = [
 ];
 
 export default function MyWorkCalendarPage() {
+  const [, navigate] = useLocation();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<"week" | "day">("week");
   const [showUnscheduled, setShowUnscheduled] = useState(true);
@@ -267,12 +278,27 @@ export default function MyWorkCalendarPage() {
     },
   });
 
+  const microsoftItems = useMemo(() => {
+    if (Array.isArray(allTaskData?.microsoftItems) && allTaskData.microsoftItems.length > 0) {
+      return allTaskData.microsoftItems;
+    }
+    return msActionItems;
+  }, [allTaskData?.microsoftItems, msActionItems]);
+
   const calendarTasks: CalendarTask[] = useMemo(() => {
     if (!allTaskData) return [];
     const tasks: CalendarTask[] = [];
+    const withSourceContext = (task: CalendarTask, raw?: Record<string, any> | null): CalendarTask => ({
+      ...task,
+      sourceHref: raw?.sourceHref || null,
+      projectHref: raw?.projectHref || null,
+      externalHref: raw?.externalHref || null,
+      sourceContextLabel: raw?.sourceContextLabel || null,
+      sourceTypeLabel: raw?.sourceTypeLabel || null,
+    });
 
     for (const t of (allTaskData.personal || [])) {
-      tasks.push({
+      tasks.push(withSourceContext({
         id: t.id,
         taskType: "mytool",
         title: t.title || "",
@@ -285,11 +311,11 @@ export default function MyWorkCalendarPage() {
         scheduledDate: t.scheduledDate || null,
         scheduledStartTime: t.scheduledStartTime || null,
         scheduledEndTime: t.scheduledEndTime || null,
-      });
+      }, t));
     }
 
     for (const t of (allTaskData.operational || [])) {
-      tasks.push({
+      tasks.push(withSourceContext({
         id: t.id,
         taskType: "operational",
         title: t.title || "",
@@ -302,11 +328,11 @@ export default function MyWorkCalendarPage() {
         scheduledDate: t.scheduledDate || null,
         scheduledStartTime: t.scheduledStartTime || null,
         scheduledEndTime: t.scheduledEndTime || null,
-      });
+      }, t));
     }
 
     for (const t of (allTaskData.planTasks || [])) {
-      tasks.push({
+      tasks.push(withSourceContext({
         id: t.id,
         taskType: "plan",
         title: t.title || "",
@@ -322,11 +348,11 @@ export default function MyWorkCalendarPage() {
         pctComplete: t.pctComplete,
         phase: t.phase,
         owner: t.owner,
-      });
+      }, t));
     }
 
     for (const t of (allTaskData.engineeringTasks || [])) {
-      tasks.push({
+      tasks.push(withSourceContext({
         id: t.id,
         taskType: "engineering",
         title: t.title || "",
@@ -340,11 +366,11 @@ export default function MyWorkCalendarPage() {
         scheduledStartTime: t.scheduledStartTime || null,
         scheduledEndTime: t.scheduledEndTime || null,
         lifecyclePhase: t.lifecyclePhase,
-      });
+      }, t));
     }
 
     for (const t of (allTaskData.qualityTasks || [])) {
-      tasks.push({
+      tasks.push(withSourceContext({
         id: t.id,
         taskType: "quality",
         title: t.title || "",
@@ -357,12 +383,12 @@ export default function MyWorkCalendarPage() {
         scheduledDate: t.scheduledDate || null,
         scheduledStartTime: t.scheduledStartTime || null,
         scheduledEndTime: t.scheduledEndTime || null,
-      });
+      }, t));
     }
 
     for (const t of (allTaskData.trRegister || [])) {
       const dueDateStr = t.dueDate ? (typeof t.dueDate === "string" ? t.dueDate.split("T")[0] : null) : null;
-      tasks.push({
+      tasks.push(withSourceContext({
         id: t.id,
         taskType: "tr_register",
         title: t.actionDescription || "",
@@ -377,11 +403,11 @@ export default function MyWorkCalendarPage() {
         scheduledEndTime: t.scheduledEndTime || null,
         ragStatus: t.ragStatus || null,
         department: t.department || null,
-      });
+      }, t));
     }
 
     for (const d of (allTaskData.deliverables || [])) {
-      tasks.push({
+      tasks.push(withSourceContext({
         id: d.id,
         taskType: "deliverable",
         title: d.title || "",
@@ -394,11 +420,11 @@ export default function MyWorkCalendarPage() {
         scheduledDate: d.scheduledDate || d.scheduled_date || null,
         scheduledStartTime: d.scheduledStartTime || d.scheduled_start_time || null,
         scheduledEndTime: d.scheduledEndTime || d.scheduled_end_time || null,
-      });
+      }, d));
     }
 
     for (const a of (allTaskData.approvals?.engineering || [])) {
-      tasks.push({
+      tasks.push(withSourceContext({
         id: a.id,
         taskType: "approval",
         title: a.title || "",
@@ -411,10 +437,10 @@ export default function MyWorkCalendarPage() {
         scheduledDate: null,
         scheduledStartTime: null,
         scheduledEndTime: null,
-      });
+      }, a));
     }
     for (const a of (allTaskData.approvals?.quality || [])) {
-      tasks.push({
+      tasks.push(withSourceContext({
         id: a.id,
         taskType: "approval",
         title: a.title || "",
@@ -427,28 +453,44 @@ export default function MyWorkCalendarPage() {
         scheduledDate: null,
         scheduledStartTime: null,
         scheduledEndTime: null,
-      });
+      }, a));
     }
-
-    for (const item of msActionItems) {
-      tasks.push({
-        id: `ms-${item.id}`,
-        taskType: "ms_object",
-        title: item.subject_or_title || "",
-        status: "action_required",
-        priority: "Medium",
-        projectName: null,
+    for (const a of (allTaskData.approvals?.general || [])) {
+      tasks.push(withSourceContext({
+        id: a.id,
+        taskType: "approval",
+        title: a.title || "",
+        status: a.status || "pending",
+        priority: "High",
+        projectName: a.projectName || null,
         plannedForDate: null,
-        dueDate: item.received_or_start_datetime ? item.received_or_start_datetime.split("T")[0] : null,
+        dueDate: null,
         startDate: null,
         scheduledDate: null,
         scheduledStartTime: null,
         scheduledEndTime: null,
-      });
+      }, a));
+    }
+
+    for (const item of microsoftItems) {
+      tasks.push(withSourceContext({
+        id: `ms-${item.id}`,
+        taskType: "ms_object",
+        title: item.subjectOrTitle || item.subject_or_title || "",
+        status: "action_required",
+        priority: "Medium",
+        projectName: item.linkedProjectName || null,
+        plannedForDate: null,
+        dueDate: (item.receivedOrStartDatetime || item.received_or_start_datetime)?.split("T")[0] || null,
+        startDate: null,
+        scheduledDate: null,
+        scheduledStartTime: null,
+        scheduledEndTime: null,
+      }, item));
     }
 
     for (const n of (unreadNotifs.items || [])) {
-      tasks.push({
+      tasks.push(withSourceContext({
         id: `notif-${n.id}`,
         taskType: "notification",
         title: n.title || "",
@@ -461,11 +503,11 @@ export default function MyWorkCalendarPage() {
         scheduledDate: null,
         scheduledStartTime: null,
         scheduledEndTime: null,
-      });
+      }, n));
     }
 
     return tasks;
-  }, [allTaskData, msActionItems, unreadNotifs]);
+  }, [allTaskData, microsoftItems, unreadNotifs]);
 
   const scheduleMutation = useMutation({
     mutationFn: async (payload: {
@@ -495,6 +537,15 @@ export default function MyWorkCalendarPage() {
       });
     },
   });
+
+  const handleOpenTaskContext = useCallback((task: CalendarTask) => {
+    const href = task.sourceHref || task.projectHref || task.externalHref || "/my-work/tasks";
+    if (isExternalHref(href)) {
+      window.open(href, "_blank", "noopener,noreferrer");
+      return;
+    }
+    navigate(href);
+  }, [navigate]);
 
   const days = viewMode === "week"
     ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
@@ -577,6 +628,7 @@ export default function MyWorkCalendarPage() {
     setDropTarget(null);
 
     if (!draggedTask) return;
+    if (typeof draggedTask.id !== "number") return;
 
     let durationMins = 60;
     if (draggedTask.scheduledStartTime && draggedTask.scheduledEndTime) {
@@ -600,6 +652,7 @@ export default function MyWorkCalendarPage() {
   }, [draggedTask, scheduleMutation]);
 
   const handleUnschedule = useCallback((task: CalendarTask) => {
+    if (typeof task.id !== "number") return;
     scheduleMutation.mutate({
       taskType: task.taskType,
       taskId: task.id,
@@ -804,6 +857,7 @@ export default function MyWorkCalendarPage() {
                   onDrop={handleDrop}
                   onUnschedule={handleUnschedule}
                   onDragStartScheduled={handleDragStart}
+                  onOpenTask={handleOpenTaskContext}
                 />
               </div>
 
@@ -843,6 +897,7 @@ export default function MyWorkCalendarPage() {
                             key={`${task.taskType}-${task.id}`}
                             task={task}
                             onDragStart={handleDragStart}
+                            onOpen={handleOpenTaskContext}
                           />
                         ))
                       )}
@@ -863,9 +918,11 @@ const NON_SCHEDULABLE_TYPES = new Set(["approval", "ms_object", "notification"])
 function DraggableTaskCard({
   task,
   onDragStart,
+  onOpen,
 }: {
   task: CalendarTask;
   onDragStart: (task: CalendarTask) => void;
+  onOpen: (task: CalendarTask) => void;
 }) {
   const colors = TASK_TYPE_COLORS[task.taskType] || TASK_TYPE_COLORS.mytool;
   const borderColor = colors.border.replace("border-", "border-").replace("-300", "-200");
@@ -883,6 +940,7 @@ function DraggableTaskCard({
         e.dataTransfer.setData("text/plain", `${task.taskType}:${task.id}`);
         onDragStart(task);
       } : undefined}
+      onClick={() => onOpen(task)}
       className={`rounded border ${borderColor} ${bgColor} ${hoverColor} px-2 py-1.5 text-xs ${canSchedule ? "cursor-grab active:cursor-grabbing" : "cursor-default opacity-80"} transition-colors group`}
       data-testid={`unscheduled-task-${task.taskType}-${task.id}`}
     >
@@ -895,10 +953,13 @@ function DraggableTaskCard({
         <span className={`font-medium ${textColor} truncate flex-1`}>
           {task.title}
         </span>
+        {(task.sourceHref || task.externalHref) && (
+          <ExternalLink className="h-3 w-3 shrink-0 opacity-50 group-hover:opacity-100" />
+        )}
       </div>
       <div className="flex items-center gap-1 ml-5">
         <span className={`${subTextColor} text-[9px] font-medium uppercase`}>
-          {TASK_TYPE_LABELS[task.taskType]}
+          {task.sourceTypeLabel || TASK_TYPE_LABELS[task.taskType]}
         </span>
         {task.projectName && (
           <span className={`${subTextColor} text-[10px] truncate`}>
@@ -926,6 +987,7 @@ function TimeGridView({
   onDrop,
   onUnschedule,
   onDragStartScheduled,
+  onOpenTask,
 }: {
   days: Date[];
   viewMode: "week" | "day";
@@ -937,6 +999,7 @@ function TimeGridView({
   onDrop: (e: React.DragEvent, dayKey: string, hour: number) => void;
   onUnschedule: (task: CalendarTask) => void;
   onDragStartScheduled: (task: CalendarTask) => void;
+  onOpenTask: (task: CalendarTask) => void;
 }) {
   const slotHeight = viewMode === "day" ? 64 : 48;
 
@@ -1078,6 +1141,7 @@ function TimeGridView({
                         e.dataTransfer.setData("text/plain", `${task.taskType}:${task.id}`);
                         onDragStartScheduled(task);
                       }}
+                      onClick={() => onOpenTask(task)}
                       className={`absolute left-0.5 right-0.5 rounded ${bg} border ${border} px-1.5 py-0.5 text-[10px] cursor-grab active:cursor-grabbing ${hoverBg} transition-colors overflow-hidden z-20 group`}
                       style={{ top: topOffset, height, minHeight: 20 }}
                       title={`${task.title}\n${formatTimeDisplay(task.scheduledStartTime)} – ${task.scheduledEndTime ? formatTimeDisplay(task.scheduledEndTime) : ""}`}
@@ -1091,6 +1155,9 @@ function TimeGridView({
                         <span className={`font-medium ${textColor} truncate flex-1 leading-tight`}>
                           {task.title}
                         </span>
+                        {(task.sourceHref || task.externalHref) && (
+                          <ExternalLink className="h-2.5 w-2.5 shrink-0 opacity-40 group-hover:opacity-100" />
+                        )}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

@@ -42,6 +42,12 @@ interface TaskItem {
   source?: string;
   sourceLabel?: string;
   link?: string;
+  projectId?: number | null;
+  projectHref?: string | null;
+  externalHref?: string | null;
+  sourceContextLabel?: string | null;
+  sourceTypeLabel?: string | null;
+  assigneeDisplay?: string | null;
 }
 
 interface CalendarEvent {
@@ -59,13 +65,24 @@ interface CalendarEvent {
 
 interface MsObject {
   id: number;
-  type: string;
-  subject_or_title: string;
+  type?: string;
+  subject_or_title?: string;
+  subjectOrTitle?: string;
   preview: string | null;
-  web_link: string | null;
-  received_or_start_datetime: string | null;
-  action_required: boolean;
-  linked_project_id: number | null;
+  web_link?: string | null;
+  webLink?: string | null;
+  received_or_start_datetime?: string | null;
+  receivedOrStartDatetime?: string | null;
+  action_required?: boolean;
+  actionRequired?: boolean;
+  linked_project_id?: number | null;
+  linkedProjectId?: number | null;
+  linkedProjectName?: string | null;
+  sourceHref?: string | null;
+  projectHref?: string | null;
+  externalHref?: string | null;
+  sourceContextLabel?: string | null;
+  sourceTypeLabel?: string | null;
 }
 
 const today = format(new Date(), "yyyy-MM-dd");
@@ -88,6 +105,10 @@ function authHeaders() {
   const h: Record<string, string> = {};
   if (token) h["Authorization"] = `Bearer ${token}`;
   return h;
+}
+
+function isExternalTarget(value?: string | null) {
+  return typeof value === "string" && /^https?:\/\//i.test(value);
 }
 
 function PriorityDot({ priority }: { priority: string }) {
@@ -251,6 +272,13 @@ export default function MyWorkHomePage() {
     },
   });
 
+  const microsoftItems = useMemo<MsObject[]>(() => {
+    if (Array.isArray(allTaskData?.microsoftItems) && allTaskData.microsoftItems.length > 0) {
+      return allTaskData.microsoftItems;
+    }
+    return msActionItems;
+  }, [allTaskData?.microsoftItems, msActionItems]);
+
   interface ActionItem {
     id: string;
     title: string;
@@ -260,69 +288,95 @@ export default function MyWorkHomePage() {
     sourceColor: string;
     projectName?: string;
     link?: string;
+    projectHref?: string | null;
+    externalHref?: string | null;
+    sourceContextLabel?: string | null;
+    sourceTypeLabel?: string | null;
+    assigneeDisplay?: string | null;
     createdAt?: string;
   }
 
   const actionItems: ActionItem[] = useMemo(() => {
     const items: ActionItem[] = [];
+    const withActionSource = (item: ActionItem, raw?: Record<string, any> | null): ActionItem => ({
+      ...item,
+      link: raw?.sourceHref || item.link,
+      projectHref: raw?.projectHref || null,
+      externalHref: raw?.externalHref || null,
+      sourceContextLabel: raw?.sourceContextLabel || null,
+      sourceTypeLabel: raw?.sourceTypeLabel || null,
+      assigneeDisplay: raw?.assigneeDisplay || null,
+    });
 
     for (const a of (allTaskData?.approvals?.engineering || [])) {
-      items.push({
+      items.push(withActionSource({
         id: `eng-${a.id}`,
         title: a.title,
         subtitle: a.projectName,
         source: "approval",
-        sourceLabel: "Approval",
+        sourceLabel: a.sourceTypeLabel || "Approval",
         sourceColor: "bg-amber-50 text-amber-700 border-amber-200",
         projectName: a.projectName,
         createdAt: a.createdAt,
-      });
+      }, a));
     }
     for (const a of (allTaskData?.approvals?.quality || [])) {
-      items.push({
+      items.push(withActionSource({
         id: `qc-${a.id}`,
         title: a.title,
         subtitle: a.projectName,
         source: "approval",
-        sourceLabel: "QC Review",
+        sourceLabel: a.sourceTypeLabel || "QC Review",
         sourceColor: "bg-amber-50 text-amber-700 border-amber-200",
         projectName: a.projectName,
         createdAt: a.createdAt,
-      });
+      }, a));
+    }
+    for (const a of (allTaskData?.approvals?.general || [])) {
+      items.push(withActionSource({
+        id: `approval-gen-${a.id}`,
+        title: a.title,
+        subtitle: a.projectName || a.approvalCategory || undefined,
+        source: "approval",
+        sourceLabel: a.sourceTypeLabel || "Approval",
+        sourceColor: "bg-amber-50 text-amber-700 border-amber-200",
+        projectName: a.projectName,
+        createdAt: a.createdAt || a.requestedAt,
+      }, a));
     }
 
     for (const d of (allTaskData?.deliverables || [])) {
       const status = d.status || "";
       if (["NEEDS APPROVAL", "QC APPROVED", "OPERATIONAL APPROVAL", "IN REVIEW"].includes(status)) {
-        items.push({
+        items.push(withActionSource({
           id: `del-${d.id}`,
           title: d.title,
           subtitle: `${d.deliverableType || "Deliverable"} — ${status}`,
           source: "deliverable",
-          sourceLabel: "Deliverable",
+          sourceLabel: d.sourceTypeLabel || "Deliverable",
           sourceColor: "bg-rose-50 text-rose-700 border-rose-200",
           projectName: d.projectName || d.project_name,
           createdAt: d.createdAt || d.created_at,
-        });
+        }, d));
       }
     }
 
     for (const tr of (allTaskData?.trRegister || [])) {
       if (tr.status !== "Completed" && tr.status !== "Closed") {
-        items.push({
+        items.push(withActionSource({
           id: `tr-${tr.id}`,
           title: tr.actionDescription,
           subtitle: `${tr.department || ""} — ${tr.ragStatus || ""}`,
           source: "tr_register",
-          sourceLabel: "TR Register",
+          sourceLabel: tr.sourceTypeLabel || "TR Register",
           sourceColor: "bg-purple-50 text-purple-700 border-purple-200",
           createdAt: tr.createdAt || tr.created_at,
-        });
+        }, tr));
       }
     }
 
     for (const n of (unreadNotifs.items || [])) {
-      items.push({
+      items.push(withActionSource({
         id: `notif-${n.id}`,
         title: n.title,
         subtitle: n.body || n.projectName || "",
@@ -330,29 +384,30 @@ export default function MyWorkHomePage() {
         sourceLabel: "Notification",
         sourceColor: "bg-blue-50 text-blue-700 border-blue-200",
         projectName: n.projectName || n.project_name,
+        link: n.link || n.href || n.sourceLink || undefined,
         createdAt: n.createdAt || n.created_at,
-      });
+      }, n));
     }
 
-    for (const item of msActionItems) {
-      if (contextualMsSurfacesEnabled && item.linked_project_id) continue;
-      items.push({
+    for (const item of microsoftItems) {
+      items.push(withActionSource({
         id: `ms-${item.id}`,
-        title: item.subject_or_title,
+        title: item.subjectOrTitle || item.subject_or_title || "",
         subtitle: item.preview || undefined,
         source: "ms_object",
-        sourceLabel: "MS 365",
+        sourceLabel: item.sourceTypeLabel || "MS 365",
         sourceColor: "bg-indigo-50 text-indigo-700 border-indigo-200",
-        link: item.web_link || undefined,
-        createdAt: item.received_or_start_datetime || undefined,
-      });
+        projectName: item.linkedProjectName || undefined,
+        link: item.sourceHref || item.webLink || item.web_link || undefined,
+        createdAt: item.receivedOrStartDatetime || item.received_or_start_datetime || undefined,
+      }, item));
     }
 
     items.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     return items;
-  }, [allTaskData, unreadNotifs, msActionItems, contextualMsSurfacesEnabled]);
+  }, [allTaskData, microsoftItems, unreadNotifs]);
 
-  const actionsLoading = msActionsLoading;
+  const actionsLoading = allTasksLoading || (!Array.isArray(allTaskData?.microsoftItems) && msActionsLoading);
 
   const { data: escalatedItems = [] } = useQuery<Array<{
     id: string; type: string; title: string; projectName: string;
@@ -366,13 +421,23 @@ export default function MyWorkHomePage() {
   const tasks: TaskItem[] = useMemo(() => {
     const items: TaskItem[] = [];
     const seen = new Set<string>();
+    const withTaskSource = (item: TaskItem, raw?: Record<string, any> | null): TaskItem => ({
+      ...item,
+      projectId: raw?.projectId ?? raw?.project_id ?? null,
+      link: raw?.sourceHref || item.link,
+      projectHref: raw?.projectHref || null,
+      externalHref: raw?.externalHref || null,
+      sourceContextLabel: raw?.sourceContextLabel || null,
+      sourceTypeLabel: raw?.sourceTypeLabel || null,
+      assigneeDisplay: raw?.assigneeDisplay || null,
+    });
 
     if (allTaskData) {
       for (const t of (allTaskData.personal || [])) {
         const key = `personal-${t.id}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        items.push({
+        items.push(withTaskSource({
           id: t.id,
           title: t.title || "",
           status: t.status || "inbox",
@@ -384,14 +449,14 @@ export default function MyWorkHomePage() {
           department: t.department || null,
           source: "personal",
           sourceLabel: "Personal",
-        });
+        }, t));
       }
 
       for (const t of (allTaskData.operational || [])) {
         const key = `op-${t.id}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        items.push({
+        items.push(withTaskSource({
           id: t.id,
           title: t.title || "",
           status: (t.status || "TO DO").toLowerCase().replace(/\s+/g, "_"),
@@ -403,7 +468,7 @@ export default function MyWorkHomePage() {
           department: null,
           source: "operational",
           sourceLabel: "Operational",
-        });
+        }, t));
       }
 
       for (const t of (allTaskData.planTasks || [])) {
@@ -411,7 +476,7 @@ export default function MyWorkHomePage() {
         if (seen.has(key)) continue;
         seen.add(key);
         const pct = t.pctComplete != null ? Number(t.pctComplete) : 0;
-        items.push({
+        items.push(withTaskSource({
           id: t.id,
           title: t.title || "",
           status: pct >= 100 ? "done" : pct > 0 ? "in_progress" : "inbox",
@@ -423,14 +488,14 @@ export default function MyWorkHomePage() {
           department: null,
           source: "plan",
           sourceLabel: "Plan",
-        });
+        }, t));
       }
 
       for (const t of (allTaskData.engineeringTasks || [])) {
         const key = `eng-${t.id}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        items.push({
+        items.push(withTaskSource({
           id: t.id,
           title: t.title || "",
           status: (t.status || "open").toLowerCase().replace(/\s+/g, "_"),
@@ -442,14 +507,14 @@ export default function MyWorkHomePage() {
           department: null,
           source: "engineering",
           sourceLabel: "Engineering",
-        });
+        }, t));
       }
 
       for (const t of (allTaskData.qualityTasks || [])) {
         const key = `qc-${t.id}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        items.push({
+        items.push(withTaskSource({
           id: t.id,
           title: t.title || "",
           status: (t.status || "not_started").toLowerCase().replace(/\s+/g, "_"),
@@ -461,14 +526,14 @@ export default function MyWorkHomePage() {
           department: null,
           source: "quality",
           sourceLabel: "Quality",
-        });
+        }, t));
       }
 
       for (const a of (allTaskData.approvals?.engineering || [])) {
         const key = `approval-eng-${a.id}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        items.push({
+        items.push(withTaskSource({
           id: `approval-eng-${a.id}`,
           title: a.title || "",
           status: (a.status || "pending").toLowerCase(),
@@ -479,14 +544,14 @@ export default function MyWorkHomePage() {
           projectName: a.projectName || null,
           department: null,
           source: "approval",
-          sourceLabel: "Approval",
-        });
+          sourceLabel: a.sourceTypeLabel || "Approval",
+        }, a));
       }
       for (const a of (allTaskData.approvals?.quality || [])) {
         const key = `approval-qc-${a.id}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        items.push({
+        items.push(withTaskSource({
           id: `approval-qc-${a.id}`,
           title: a.title || "",
           status: (a.status || "review").toLowerCase(),
@@ -497,8 +562,27 @@ export default function MyWorkHomePage() {
           projectName: a.projectName || null,
           department: null,
           source: "approval",
-          sourceLabel: "QC Review",
-        });
+          sourceLabel: a.sourceTypeLabel || "QC Review",
+        }, a));
+      }
+      for (const a of (allTaskData.approvals?.general || [])) {
+        const key = `approval-gen-${a.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push(withTaskSource({
+          id: `approval-gen-${a.id}`,
+          title: a.title || "",
+          status: (a.status || "pending").toLowerCase(),
+          priority: "high",
+          plannedForDate: null,
+          dueAt: a.createdAt || a.requestedAt || null,
+          sortOrder: 0,
+          projectName: a.projectName || null,
+          department: null,
+          source: "approval",
+          sourceLabel: a.sourceTypeLabel || "Approval",
+          assigneeDisplay: a.assigneeDisplay || null,
+        }, a));
       }
 
       for (const d of (allTaskData.deliverables || [])) {
@@ -506,7 +590,7 @@ export default function MyWorkHomePage() {
         if (seen.has(key)) continue;
         seen.add(key);
         const status = (d.status || "TO DO").toLowerCase().replace(/\s+/g, "_");
-        items.push({
+        items.push(withTaskSource({
           id: `del-${d.id}`,
           title: d.title || "",
           status,
@@ -517,15 +601,15 @@ export default function MyWorkHomePage() {
           projectName: d.projectName || d.project_name || null,
           department: null,
           source: "deliverable",
-          sourceLabel: "Deliverable",
-        });
+          sourceLabel: d.sourceTypeLabel || "Deliverable",
+        }, d));
       }
 
       for (const tr of (allTaskData.trRegister || [])) {
         const key = `tr-${tr.id}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        items.push({
+        items.push(withTaskSource({
           id: `tr-${tr.id}`,
           title: tr.actionDescription || tr.title || "",
           status: (tr.status || "Active").toLowerCase().replace(/\s+/g, "_"),
@@ -537,36 +621,35 @@ export default function MyWorkHomePage() {
           department: tr.department || null,
           source: "tr_register",
           sourceLabel: "Action Item",
-        });
+        }, tr));
       }
     }
 
-    for (const item of msActionItems) {
-      if (contextualMsSurfacesEnabled && item.linked_project_id) continue;
+    for (const item of microsoftItems) {
       const key = `ms-${item.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      items.push({
+      items.push(withTaskSource({
         id: `ms-${item.id}`,
-        title: item.subject_or_title || "",
+        title: item.subjectOrTitle || item.subject_or_title || "",
         status: "action_required",
         priority: "normal",
         plannedForDate: null,
-        dueAt: item.received_or_start_datetime || null,
+        dueAt: item.receivedOrStartDatetime || item.received_or_start_datetime || null,
         sortOrder: 999,
-        projectName: null,
+        projectName: item.linkedProjectName || null,
         department: null,
         source: "ms365",
-        sourceLabel: "MS 365",
-        link: item.web_link || undefined,
-      });
+        sourceLabel: item.sourceTypeLabel || "MS 365",
+        link: item.sourceHref || item.webLink || item.web_link || undefined,
+      }, item));
     }
 
     for (const n of (unreadNotifs.items || [])) {
       const key = `notif-${n.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      items.push({
+      items.push(withTaskSource({
         id: `notif-${n.id}`,
         title: n.title || "",
         status: "unread",
@@ -578,39 +661,30 @@ export default function MyWorkHomePage() {
         department: null,
         source: "notification",
         sourceLabel: "Notification",
-      });
+        link: n.link || n.href || n.sourceLink || undefined,
+      }, n));
     }
 
     return items;
-  }, [allTaskData, msActionItems, unreadNotifs, contextualMsSurfacesEnabled]);
+  }, [allTaskData, microsoftItems, unreadNotifs]);
 
   const tasksLoading = allTasksLoading;
-
-  const handleTaskClick = (task: TaskItem) => {
-    if (task.link) {
-      window.open(task.link, "_blank", "noopener,noreferrer");
+  const openTarget = (href?: string | null, fallback?: string) => {
+    const target = href || fallback;
+    if (!target) return;
+    if (isExternalTarget(target)) {
+      window.open(target, "_blank", "noopener,noreferrer");
       return;
     }
-    navigate("/my-work/tasks");
+    navigate(target);
+  };
+
+  const handleTaskClick = (task: TaskItem) => {
+    openTarget(task.link, "/my-work/tasks");
   };
 
   const handleActionClick = (item: ActionItem) => {
-    if (item.link) {
-      window.open(item.link, "_blank", "noopener,noreferrer");
-      return;
-    }
-    if (item.source === "ms_object") {
-      return;
-    }
-    if (item.source === "tr_register") {
-      navigate("/tr-register");
-      return;
-    }
-    if (item.projectName) {
-      navigate(`/project/${encodeURIComponent(item.projectName)}`);
-      return;
-    }
-    navigate("/my-work/tasks");
+    openTarget(item.link || item.projectHref || item.externalHref, "/my-work/tasks");
   };
 
   const openTasks = useMemo(() =>
@@ -1031,7 +1105,7 @@ export default function MyWorkHomePage() {
                             <p className="text-[10px] text-muted-foreground truncate">{item.subtitle}</p>
                           )}
                         </div>
-                        {item.link ? (
+                        {isExternalTarget(item.link) ? (
                           <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-purple-600 shrink-0 mt-0.5" />
                         ) : (
                           <ChevronRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-purple-600 shrink-0 mt-0.5 transition-colors" />

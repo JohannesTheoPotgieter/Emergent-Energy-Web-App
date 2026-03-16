@@ -87,6 +87,7 @@ type AllTaskData = {
   approvals?: {
     engineering?: Array<Record<string, any>>;
     quality?: Array<Record<string, any>>;
+    general?: Array<Record<string, any>>;
   };
   trRegister?: Array<Record<string, any>>;
   deliverables?: Array<Record<string, any>>;
@@ -252,7 +253,7 @@ function getExceptionHref(item: HomeExceptionItem) {
     case "deliverable":
       return `/my-work/tasks?itemKey=${encodeURIComponent(`del-${item.sourceId}`)}`;
     case "approval":
-      return "/my-work/approvals";
+      return `/my-work/tasks?itemKey=${encodeURIComponent(`approval-gen-${item.sourceId}`)}`;
     default:
       return "/my-work/tasks";
   }
@@ -442,6 +443,19 @@ function buildHomeCandidates(allTaskData?: AllTaskData) {
       status: item.status || "review",
       dueAt: item.dueDate || null,
       createdAt: item.createdAt || null,
+    }, seen);
+  }
+
+  for (const item of data.approvals?.general || []) {
+    pushUnique(candidates, {
+      itemKey: `approval-gen-${item.id}`,
+      title: item.title || `Approval #${item.id}`,
+      projectName: item.projectName || null,
+      sourceLabel: "Approval",
+      priority: "high",
+      status: item.status || "review",
+      dueAt: item.dueDate || null,
+      createdAt: item.createdAt || item.requestedAt || null,
     }, seen);
   }
 
