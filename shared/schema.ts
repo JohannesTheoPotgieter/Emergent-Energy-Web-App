@@ -5231,6 +5231,7 @@ export type RaidItem = typeof raidItems.$inferSelect;
 
 export const procurementCategoryEnum = pgEnum('procurement_category', ['material', 'equipment', 'service', 'subcontract', 'other']);
 export const procurementStatusEnum = pgEnum('procurement_status', ['requested', 'quoted', 'approved', 'ordered', 'partially_received', 'received', 'invoiced', 'closed']);
+export const procurementPaymentStatusEnum = pgEnum('procurement_payment_status', ['not_applicable', 'pending_approval', 'approved', 'scheduled', 'paid', 'on_hold']);
 
 export const procurementItems = pgTable("procurement_items", {
   id: serial("id").primaryKey(),
@@ -5249,6 +5250,13 @@ export const procurementItems = pgTable("procurement_items", {
   requiredDate: text("required_date"),
   poId: integer("po_id"),
   invoiceRef: text("invoice_ref"),
+  linkedInvoiceCaptureId: integer("linked_invoice_capture_id").references(() => invoiceCaptures.id),
+  budgetLine: text("budget_line"),
+  linkedDeliverableId: integer("linked_deliverable_id"),
+  linkedMilestone: text("linked_milestone"),
+  progressPercent: real("progress_percent"),
+  receiptRef: text("receipt_ref"),
+  paymentStatus: procurementPaymentStatusEnum("payment_status").notNull().default('not_applicable'),
   linkedTaskId: integer("linked_task_id"),
   approvalId: integer("approval_id"),
   notes: text("notes"),

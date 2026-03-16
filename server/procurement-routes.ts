@@ -2,7 +2,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { procurementItems, projectInfo, users, counterparties, approvals } from "@shared/schema";
+import { procurementItems, projectInfo, users, counterparties, approvals, invoiceCaptures } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 
@@ -26,7 +26,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   requested: ['quoted', 'approved', 'closed'],
-  quoted: ['approved', 'rejected', 'closed'],
+  quoted: ['approved', 'closed'],
   approved: ['ordered', 'closed'],
   ordered: ['partially_received', 'received', 'closed'],
   partially_received: ['received', 'closed'],
@@ -54,12 +54,15 @@ export function registerProcurementRoutes(app: Express) {
           u1.name as requested_by_name,
           u2.name as owner_name,
           c.name_canonical as supplier_name,
-          p.project_name
+          p.project_name,
+          ic.invoice_number as linked_invoice_number,
+          ic.status as linked_invoice_status
         FROM procurement_items pi2
         LEFT JOIN users u1 ON pi2.requested_by_user_id = u1.id
         LEFT JOIN users u2 ON pi2.owner_user_id = u2.id
         LEFT JOIN counterparties c ON pi2.supplier_id = c.id
         LEFT JOIN project_info p ON pi2.project_id = p.id
+        LEFT JOIN invoice_captures ic ON pi2.linked_invoice_capture_id = ic.id
         ${whereClause}
         ORDER BY pi2.created_at DESC
       `));
@@ -76,12 +79,13 @@ export function registerProcurementRoutes(app: Express) {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const rows = await db.execute(sql.raw(`
-        SELECT pi2.*, u1.name as requested_by_name, u2.name as owner_name, c.name_canonical as supplier_name, p.project_name
+        SELECT pi2.*, u1.name as requested_by_name, u2.name as owner_name, c.name_canonical as supplier_name, p.project_name, ic.invoice_number as linked_invoice_number, ic.status as linked_invoice_status
         FROM procurement_items pi2
         LEFT JOIN users u1 ON pi2.requested_by_user_id = u1.id
         LEFT JOIN users u2 ON pi2.owner_user_id = u2.id
         LEFT JOIN counterparties c ON pi2.supplier_id = c.id
         LEFT JOIN project_info p ON pi2.project_id = p.id
+        LEFT JOIN invoice_captures ic ON pi2.linked_invoice_capture_id = ic.id
         WHERE pi2.id = ${id}
       `));
       const items = Array.isArray(rows) ? rows : (rows as any).rows || [];
@@ -95,7 +99,7 @@ export function registerProcurementRoutes(app: Express) {
   app.post("/api/procurement", jwtAuth, requireAuth, requirePermission("procurement", "create"), async (req: Request, res: Response) => {
     try {
       const user = (req as any).user;
-      const { projectId, title, description, category, quantity, unit, expectedCost, supplierId, ownerUserId, requiredDate, linkedTaskId, notes } = req.body;
+      const { projectId, title, description, category, quantity, unit, expectedCost, supplierId, ownerUserId, requiredDate, linkedTaskId, notes, budgetLine, linkedDeliverableId, linkedMilestone, progressPercent, receiptRef, paymentStatus } = req.body;
       if (!projectId || !title) return res.status(400).json({ error: "projectId and title required" });
 
       const result = await db.insert(procurementItems).values({
@@ -113,6 +117,12 @@ export function registerProcurementRoutes(app: Express) {
         requiredDate: requiredDate || null,
         linkedTaskId: linkedTaskId || null,
         notes: notes || null,
+        budgetLine: budgetLine || null,
+        linkedDeliverableId: linkedDeliverableId || null,
+        linkedMilestone: linkedMilestone || null,
+        progressPercent: progressPercent || null,
+        receiptRef: receiptRef || null,
+        paymentStatus: paymentStatus || 'not_applicable',
       }).returning();
 
       logAuditFromReq(req, {
@@ -139,7 +149,7 @@ export function registerProcurementRoutes(app: Express) {
       const old = existing[0];
 
       const updates: any = { updatedAt: new Date() };
-      const fields = ['title', 'description', 'category', 'quantity', 'unit', 'expectedCost', 'actualCost', 'supplierId', 'ownerUserId', 'requiredDate', 'poId', 'invoiceRef', 'linkedTaskId', 'notes'];
+      const fields = ['title', 'description', 'category', 'quantity', 'unit', 'expectedCost', 'actualCost', 'supplierId', 'ownerUserId', 'requiredDate', 'poId', 'invoiceRef', 'linkedTaskId', 'notes', 'budgetLine', 'linkedDeliverableId', 'linkedMilestone', 'progressPercent', 'receiptRef', 'paymentStatus', 'linkedInvoiceCaptureId'];
       for (const f of fields) {
         if (req.body[f] !== undefined) updates[f] = req.body[f];
       }
