@@ -51,35 +51,47 @@
 }
 
 :root {
+  /* EE design tokens */
   --background: 0 0% 100%;
   --foreground: 222 47% 11%;
 
-  --card: 210 40% 98%;
+  --card: 0 0% 100%;
   --card-foreground: 222 47% 11%;
 
   --popover: 0 0% 100%;
   --popover-foreground: 222 47% 11%;
 
-  --primary: 142 76% 36%;
+  --primary: 145 72% 32%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 210 40% 96%;
+  --secondary: 210 20% 96%;
   --secondary-foreground: 222 47% 11%;
 
-  --muted: 210 40% 96%;
+  --muted: 210 20% 96%;
   --muted-foreground: 215 16% 47%;
 
-  --accent: 210 40% 96%;
+  --accent: 210 20% 95%;
   --accent-foreground: 222 47% 11%;
 
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;
 
-  --border: 214 32% 91%;
-  --input: 214 32% 91%;
-  --ring: 142 76% 36%;
+  --border: 215 22% 88%;
+  --input: 215 22% 88%;
+  --ring: 145 72% 32%;
 
-  --radius: 0.5rem;
+  --radius: 0.625rem;
+
+  --surface: 210 25% 99%;
+  --surface-strong: 210 25% 97%;
+  --success: 142 64% 36%;
+  --warning: 35 92% 45%;
+  --danger: 0 72% 51%;
+  --info: 214 78% 48%;
+
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 6px 16px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.05);
 
   --sidebar: 0 0% 100%;
   --sidebar-foreground: 215 16% 47%;
@@ -126,9 +138,64 @@
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
   }
+
+  h1 { @apply text-2xl; }
+  h2 { @apply text-xl; }
+  h3 { @apply text-lg; }
+
+  th {
+    @apply text-[11px] uppercase tracking-wide font-semibold text-muted-foreground;
+  }
+
+  td {
+    @apply text-sm;
+  }
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading font-semibold tracking-tight;
   }
+}
+
+@layer components {
+  .ee-shell {
+    @apply bg-[hsl(var(--surface))] text-foreground;
+  }
+
+  .ee-page {
+    @apply mx-auto w-full max-w-[1800px] space-y-6;
+  }
+
+  .ee-page-header {
+    @apply flex flex-col gap-3 md:flex-row md:items-start md:justify-between;
+  }
+
+  .ee-section-title {
+    @apply text-base font-semibold tracking-tight;
+  }
+
+  .ee-helper-text {
+    @apply text-sm text-muted-foreground;
+  }
+
+  .ee-empty-state {
+    @apply flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/40 px-6 py-8 text-center;
+  }
+
+  .ee-loading-state {
+    @apply animate-pulse rounded-md bg-muted;
+  }
+
+  .ee-error-state {
+    @apply rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700;
+  }
+
+  .ee-chip {
+    @apply inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium;
+  }
+
+  .ee-status-success { @apply border-emerald-200 bg-emerald-50 text-emerald-700; }
+  .ee-status-warning { @apply border-amber-200 bg-amber-50 text-amber-700; }
+  .ee-status-danger { @apply border-red-200 bg-red-50 text-red-700; }
+  .ee-status-info { @apply border-blue-200 bg-blue-50 text-blue-700; }
 }
 
 @layer utilities {
