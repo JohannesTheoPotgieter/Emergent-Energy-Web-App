@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { createMilestoneFlow, invalidateMilestoneCreationQueries } from "@/lib/milestone-create-flow";
 import { useToast } from "@/hooks/use-toast";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -207,6 +208,9 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [milestoneDialogOpen, setMilestoneDialogOpen] = useState(false);
   const [milestoneTitle, setMilestoneTitle] = useState("");
+  const [milestoneCreateError, setMilestoneCreateError] = useState<string | null>(null);
+  const [milestoneCreateSuccess, setMilestoneCreateSuccess] = useState<string | null>(null);
+  const [isCreatingMilestone, setIsCreatingMilestone] = useState(false);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [chosenMilestoneId, setChosenMilestoneId] = useState<number | null>(null);
@@ -332,12 +336,30 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
     },
   });
 
-  const handleCreateMilestone = () => {
-    if (!milestoneTitle.trim()) return;
-    structureMutation.mutate(
-      { operation: "createMilestone", data: { title: milestoneTitle.trim() } },
-      { onSuccess: () => { setMilestoneDialogOpen(false); setMilestoneTitle(""); } }
-    );
+  const handleCreateMilestone = async () => {
+    setMilestoneCreateError(null);
+    setMilestoneCreateSuccess(null);
+    setIsCreatingMilestone(true);
+
+    const result = await createMilestoneFlow({
+      title: milestoneTitle,
+      projectName,
+      request: apiRequest,
+    });
+
+    setIsCreatingMilestone(false);
+    if (!result.ok) {
+      setMilestoneCreateError(result.message);
+      return;
+    }
+
+    invalidateMilestoneCreationQueries((queryKey) => qc.invalidateQueries({ queryKey }), projectName);
+    setSelectedIds(new Set());
+    setMilestoneCreateSuccess("Milestone created successfully.");
+    setMilestoneDialogOpen(false);
+    setMilestoneTitle("");
+    setShowRenumberPrompt(true);
+    toast({ title: "Milestone created" });
   };
 
   const milestones = useMemo(() => {
@@ -360,24 +382,22 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
 
   const createAndGroupMutation = useMutation({
     mutationFn: async (title: string) => {
-      const res = await apiRequest("POST", "/api/project-plan/structure", {
-        operation: "createMilestone",
-        projectName,
-        data: { title },
-      }) as any;
-      const { rowNumber } = res;
       const selected = Array.from(selectedIds);
       const rowNumbers = selected
         .map(id => tasks.find((t: any) => t.id === id))
         .filter(Boolean)
         .map((t: any) => t.rowNumber)
         .filter((rn: any) => rn != null);
-      if (rowNumbers.length > 0 && rowNumber != null) {
-        await apiRequest("POST", "/api/project-plan/structure", {
-          operation: "setParent",
-          projectName,
-          data: { taskRowNumbers: rowNumbers, parentRowNumber: rowNumber },
-        });
+
+      const result = await createMilestoneFlow({
+        title,
+        projectName,
+        request: apiRequest,
+        selectedRowNumbers: rowNumbers,
+      });
+
+      if (!result.ok) {
+        throw new Error(result.message);
       }
     },
     onSuccess: () => {
@@ -387,6 +407,14 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
       setGroupDialogOpen(false);
       setGroupNewMilestoneTitle("");
       setShowRenumberPrompt(true);
+      toast({ title: "Milestone created and tasks grouped" });
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Create milestone failed",
+        description: err?.message || "Could not create milestone",
+        variant: "destructive",
+      });
     },
   });
 
@@ -1184,20 +1212,26 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
               placeholder="e.g. DC Scope - Ground Mount"
               value={milestoneTitle}
               onChange={e => setMilestoneTitle(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") handleCreateMilestone(); }}
+              onKeyDown={e => { if (e.key === "Enter" && !isCreatingMilestone) handleCreateMilestone(); }}
               data-testid="input-milestone-title"
               autoFocus
             />
             <p className="text-xs text-muted-foreground">
               Milestones group related tasks together. Dates and progress are rolled up automatically from subtasks.
             </p>
+            {milestoneCreateError && (
+              <p className="text-xs text-red-600" data-testid="milestone-create-error">{milestoneCreateError}</p>
+            )}
+            {milestoneCreateSuccess && (
+              <p className="text-xs text-emerald-700" data-testid="milestone-create-success">{milestoneCreateSuccess}</p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setMilestoneDialogOpen(false)}>Cancel</Button>
             <Button size="sm" onClick={handleCreateMilestone}
-              disabled={!milestoneTitle.trim() || structureMutation.isPending}
+              disabled={isCreatingMilestone}
               data-testid="button-save-milestone">
-              {structureMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Milestone className="h-3 w-3 mr-1" />}
+              {isCreatingMilestone ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Milestone className="h-3 w-3 mr-1" />}
               Create
             </Button>
           </DialogFooter>
@@ -1311,7 +1345,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
             <Button size="sm" onClick={handleConvertToMilestone}
               disabled={chosenMilestoneId == null || structureMutation.isPending}
               data-testid="button-confirm-convert">
-              {structureMutation.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Milestone className="h-3 w-3 mr-1" />}
+              {isCreatingMilestone ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Milestone className="h-3 w-3 mr-1" />}
               Convert
             </Button>
           </DialogFooter>
