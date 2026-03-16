@@ -1800,7 +1800,7 @@ export async function registerRoutes(
       ]);
       const usePromotedProjectDetail = rolloutFlags.promoted_core_project_detail_read;
 
-      const [allProjectInfo, allExpenses, rawInflows, rawPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans, allPlanOverrides, lastImportRows, allClientsData] = await Promise.all([
+      const [allProjectInfo, allExpenses, rawInflows, rawPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans, allPlanOverrides, lastImportRows, allClientsData, handoverRows] = await Promise.all([
         usePromotedProjectDetail ? listProjectInfoFromPromotedCoreCompat() : storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -1895,6 +1895,7 @@ export async function registerRoutes(
           .where(eq(smartImportRuns.status, 'COMMITTED'))
           .groupBy(smartImportRuns.projectName),
         usePromotedProjectDetail ? listClientsFromPromotedCoreCompat() : db.select().from(clients),
+        db.execute(sql.raw(`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`)),
       ]);
       const allPlans = applyProjectPlanOverrides(rawPlans, allPlanOverrides);
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
@@ -1952,6 +1953,16 @@ export async function registerRoutes(
       }
 
       const editableMap = new Map(allEditableFields.map(f => [f.projectName, f]));
+      const handoverMap = new Map<number, { status: string | null; rejection_reason: string | null }>();
+      for (const row of ((handoverRows as any)?.rows || handoverRows || [])) {
+        const handover = row as any;
+        if (handover?.project_id != null) {
+          handoverMap.set(Number(handover.project_id), {
+            status: handover.status || null,
+            rejection_reason: handover.rejection_reason || null,
+          });
+        }
+      }
 
       const normCostsByProject = new Map<string, typeof allNormCosts>();
       for (const c of allNormCosts) {
@@ -2128,6 +2139,7 @@ export async function registerRoutes(
         const projectInflows = lookupAll(inflowsByProject);
         const projectPlans = lookupAll(plansByProject);
         const editable = editableMap.get(projectName) || editableMap.get(cleanName);
+        const handover = info?.id ? handoverMap.get(info.id) : null;
 
         const normCosts = lookupAll(normCostsByProject);
         const normRev = lookupAll(normRevByProject);
@@ -2413,6 +2425,8 @@ export async function registerRoutes(
           has_tracker_import: nameVariants.some(v => importedProjectNames.has(v)) || importedProjectNames.has(cleanName),
           last_import_at: nameVariants.reduce<string | null>((acc, v) => acc || lastImportByProject.get(v) || null, null) || lastImportByProject.get(cleanName) || null,
           is_active: info?.isActive !== false && info?.phase?.toLowerCase() !== "gone",
+          pd_pm_handover_status: handover?.status || "DRAFT",
+          pd_pm_handover_rejection_reason: handover?.rejection_reason || null,
           _user_is_pm: info?.pmUserId === currentUserId,
           _user_is_pd: info?.pd === currentUserName,
           _user_has_tasks: !isFullOversight ? userAssignedProjectNames.has(projectName) || nameVariants.some(v => userAssignedProjectNames.has(v)) : false,

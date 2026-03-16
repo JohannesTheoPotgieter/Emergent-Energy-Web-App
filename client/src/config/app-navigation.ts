@@ -27,11 +27,10 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Project Lifecycle",
     path: "/project-lifecycle",
-    match: (pathname) => startsWithAny(pathname, ["/project-lifecycle", "/lifecycle-board", "/projects", "/project", "/clients", "/handover-control"]),
+    match: (pathname) => startsWithAny(pathname, ["/project-lifecycle", "/lifecycle-board", "/project", "/clients"]),
     secondary: [
       { label: "Overview", path: "/project-lifecycle" },
       { label: "Lifecycle", path: "/lifecycle-board" },
-      { label: "Project List", path: "/projects" },
       { label: "Stage Gates", path: "/project-lifecycle/stage-gates" },
       { label: "Latest Updates", path: "/project-lifecycle/latest-updates" },
       { label: "Clients", path: "/clients" },
@@ -50,14 +49,14 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Project Management",
     path: "/pm-dashboard",
-    match: (pathname) => startsWithAny(pathname, ["/pm-dashboard", "/pm/on-the-go", "/execution-board", "/weekly-reviews", "/pm/handover-review", "/portfolios"]),
+    match: (pathname) => startsWithAny(pathname, ["/pm-dashboard", "/projects", "/execution-board", "/pm/approvals", "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/weekly-reviews", "/pm/handover-review", "/portfolios"]),
     secondary: [
-      { label: "Portfolios", path: "/portfolios" },
-      { label: "PM Dashboard", path: "/pm-dashboard" },
-      { label: "Execution Board", path: "/execution-board" },
-      { label: "PM On-The-Go", path: "/pm/on-the-go" },
-      { label: "Weekly Reviews", path: "/weekly-reviews" },
-      { label: "PM Handover Review", path: "/pm/handover-review" },
+      { label: "Execution Overview", path: "/pm-dashboard" },
+      { label: "Project List", path: "/projects" },
+      { label: "Work Plan / Board", path: "/execution-board" },
+      { label: "Deliverables", path: "/pm/deliverables" },
+      { label: "Approvals", path: "/pm/approvals" },
+      { label: "Site / Execution Controls", path: "/handover-control" },
     ],
   },
   {

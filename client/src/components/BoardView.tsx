@@ -5,12 +5,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus, User, Flag, GripVertical, Clock, AlertCircle, Eye } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
+import { withDeliverableRequirementTag } from "@shared/task-deliverable-requirement";
 
 interface BoardViewProps {
   projectName: string;
@@ -44,6 +46,8 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
   const { toast } = useToast();
   const [addingToColumn, setAddingToColumn] = useState<string | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskApprovalRequired, setNewTaskApprovalRequired] = useState(false);
+  const [newTaskDeliverableRequired, setNewTaskDeliverableRequired] = useState(false);
   const [draggedTaskId, setDraggedTaskId] = useState<number | null>(null);
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
   const dragStartedRef = useRef(false);
@@ -67,7 +71,17 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
   });
 
   const createTaskMutation = useMutation({
-    mutationFn: async ({ title, status }: { title: string; status: string }) => {
+    mutationFn: async ({
+      title,
+      status,
+      approvalRequired,
+      deliverableRequired,
+    }: {
+      title: string;
+      status: string;
+      approvalRequired: boolean;
+      deliverableRequired: boolean;
+    }) => {
       await apiRequest("POST", "/api/operational-tasks", {
         projectName,
         title,
@@ -75,14 +89,22 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
         priority: "Normal",
         percentComplete: 0,
         sortOrder: tasks.length,
+        approvalRequired,
+        tags: withDeliverableRequirementTag(null, deliverableRequired),
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["operational-tasks", projectName] });
-      setNewTaskTitle("");
+      resetQuickAdd();
       setAddingToColumn(null);
     },
   });
+
+  const resetQuickAdd = () => {
+    setNewTaskTitle("");
+    setNewTaskApprovalRequired(false);
+    setNewTaskDeliverableRequired(false);
+  };
 
   const handleDragStart = (e: React.DragEvent, taskId: number) => {
     dragStartedRef.current = true;
@@ -116,7 +138,12 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
 
   const handleQuickAdd = (status: string) => {
     if (newTaskTitle.trim()) {
-      createTaskMutation.mutate({ title: newTaskTitle.trim(), status });
+      createTaskMutation.mutate({
+        title: newTaskTitle.trim(),
+        status,
+        approvalRequired: newTaskApprovalRequired,
+        deliverableRequired: newTaskDeliverableRequired,
+      });
     }
   };
 
@@ -131,7 +158,12 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
 
   const openGlobalQuickAdd = () => {
     setAddingToColumn("Not Started");
-    setNewTaskTitle("");
+    resetQuickAdd();
+  };
+
+  const openQuickAddForColumn = (status: string) => {
+    setAddingToColumn(status);
+    resetQuickAdd();
   };
 
   if (isLoading) {
@@ -180,7 +212,7 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
                 {columnTasks.length === 0 && (
                   <div className="text-center text-muted-foreground text-xs py-8 space-y-2" data-testid={`empty-column-${col.status.toLowerCase().replace(/\s+/g, "-")}`}>
                     <p>No tasks</p>
-                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setAddingToColumn(col.status); setNewTaskTitle(""); }} data-testid={`empty-add-task-${col.status.toLowerCase().replace(/\s+/g, "-")}`}>
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openQuickAddForColumn(col.status)} data-testid={`empty-add-task-${col.status.toLowerCase().replace(/\s+/g, "-")}`}>
                       <Plus className="h-3 w-3 mr-1" /> Add Task
                     </Button>
                   </div>
@@ -272,6 +304,24 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
                     }}
                     data-testid={`quick-add-input-${col.status.toLowerCase().replace(/\s+/g, "-")}`}
                   />
+                  <div className="space-y-2 rounded-md border bg-muted/40 p-2">
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Checkbox
+                        checked={newTaskApprovalRequired}
+                        onCheckedChange={(checked) => setNewTaskApprovalRequired(checked === true)}
+                        data-testid={`quick-add-approval-toggle-${col.status.toLowerCase().replace(/\s+/g, "-")}`}
+                      />
+                      Approval required
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Checkbox
+                        checked={newTaskDeliverableRequired}
+                        onCheckedChange={(checked) => setNewTaskDeliverableRequired(checked === true)}
+                        data-testid={`quick-add-deliverable-toggle-${col.status.toLowerCase().replace(/\s+/g, "-")}`}
+                      />
+                      Deliverable required
+                    </label>
+                  </div>
                   <div className="flex gap-1">
                     <Button
                       size="sm"
@@ -288,7 +338,7 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
                       className="h-7 text-xs"
                       onClick={() => {
                         setAddingToColumn(null);
-                        setNewTaskTitle("");
+                        resetQuickAdd();
                       }}
                       data-testid={`quick-add-cancel-${col.status.toLowerCase().replace(/\s+/g, "-")}`}
                     >
@@ -301,10 +351,7 @@ export default function BoardView({ projectName, onTaskClick }: BoardViewProps) 
                   variant="ghost"
                   size="sm"
                   className="w-full h-7 text-xs text-muted-foreground"
-                  onClick={() => {
-                    setAddingToColumn(col.status);
-                    setNewTaskTitle("");
-                  }}
+                  onClick={() => openQuickAddForColumn(col.status)}
                   data-testid={`quick-add-button-${col.status.toLowerCase().replace(/\s+/g, "-")}`}
                 >
                   <Plus className="h-3.5 w-3.5 mr-1" />

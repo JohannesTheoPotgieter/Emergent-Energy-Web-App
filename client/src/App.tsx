@@ -67,12 +67,12 @@ import MyWorkHomePage from "@/pages/my-work-home";
 import MyWorkTasksPage from "@/pages/my-work-tasks";
 import MyWorkCalendarPage from "@/pages/my-work-calendar";
 import ApprovalsPage from "@/pages/admin-approvals";
+import PMDeliverablesPage from "@/pages/pm-deliverables";
 import DatabaseMigrationPage from "@/pages/database-migration";
 import ClientsPage from "@/pages/clients";
 import ImportControlTowerPage from "@/pages/import-control-tower";
 import KpiTraceabilityPage from "@/pages/kpi-traceability";
 import AdminRecoveryPage from "@/pages/admin-recovery";
-import CommandCenterPage from "@/pages/command-center";
 import AdminControlCenterPage from "@/pages/admin-control-center";
 import ActionLaunchpadPage from "@/pages/action-launchpad";
 import PdPmHandoverPage from "@/pages/pd-pm-handover";
@@ -89,7 +89,7 @@ import { isSuperAdmin } from "@/lib/access-control";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 
 const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
-const PM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm-dashboard", "/pm/on-the-go", "/projects", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
+const PM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm-dashboard", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
 
 type RouteConfig = { path: string; component?: React.ComponentType<any>; redirectTo?: string };
 
@@ -155,12 +155,12 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   MyWorkCalendarPage,
   MyWorkTasksPage,
   ApprovalsPage,
+  PMDeliverablesPage,
   DatabaseMigrationPage,
   KpiTraceabilityPage,
   ImportControlTowerPage,
   AdminRecoveryPage,
   AdminControlCenterPage,
-  CommandCenterPage,
   ClientsPage,
   ActionLaunchpadPage,
   PdPmHandoverPage,

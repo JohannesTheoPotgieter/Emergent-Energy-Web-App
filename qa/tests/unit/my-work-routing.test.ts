@@ -7,9 +7,11 @@ describe("my-work routing consolidation", () => {
   it("keeps approvals and exceptions navigation routed into my-work", () => {
     const approvalsPage = PAGE_REGISTRY.find((page) => page.id === "myWorkApprovals");
     const exceptionsPage = PAGE_REGISTRY.find((page) => page.id === "exceptions");
+    const commandCenterPage = PAGE_REGISTRY.find((page) => page.id === "commandCenter");
 
     expect(approvalsPage?.redirectTo).toBe("/my-work/tasks?source=approvals");
     expect(exceptionsPage?.redirectTo).toBe("/my-work");
+    expect(commandCenterPage?.redirectTo).toBe("/my-work");
   });
 
   it("routes the root home path into my-work", () => {

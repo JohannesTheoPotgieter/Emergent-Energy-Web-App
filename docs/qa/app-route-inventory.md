@@ -26,9 +26,10 @@ API dependencies are inferred from `/api/...` calls in each page component and s
 | `/collaboration` | CollaborationPage | `collaboration_hub` | `/api/admin/sp-settings`, `/api/ms-objects/`, `/api/ms-objects/mine` | Create, Save, Approve, Export | `collaboration` |
 | `/collaboration/email` | CollabEmailPage | `collaboration_hub` | `/api/ms-objects/mine`, `/api/ms-sync/trigger` | Export, Import, Filter, Search | `collabEmail` |
 | `/collaboration/teams` | CollabTeamsPage | `teams_chat` | `/api/chat-groups/mine`, `/api/ms-objects/mine`, `/api/ms-sync/trigger` | Export, Import | `collabTeams` |
-| `/command-center` | CommandCenterPage | `my_work` | `/api/financial-headline`, `/api/my-work/all-tasks`, `/api/pd-pm-handover/control` | Create, Approve, Reject, Upload | `commandCenter` |
+| `/command-center` | redirect to `/my-work` | `my_work` | redirect only | Redirect to `/my-work` and verify Command Center is not a live workspace. | `commandCenter` |
 | `/company-priorities` | MyToolPrioritiesPage | `company_priorities` | `/api/mytool/company-priorities`, `/api/mytool/company-priorities/`, `/api/mytool/priority-links/` | Create, Save, Export, Import | `companyPriorities` |
 | `/cos` | CostTracker | `cos` | `/api/cos-tracker`, `/api/cos-tracker/month-detail`, `/api/cos-tracker/toggle-realised/` | Export, Import, Filter, Search | `cos` |
+| `/counterparties` | CounterpartiesPage | `subcontractors` | `/api/counterparties`, `/api/counterparties/`, `/api/subcontractor-dashboard/counterparty/` | Create, Save, Export, Import | `counterparties` |
 | `/dashboard` | Dashboard | `execution_board` | `/api/program-dashboard` | Export, Import, Filter, Search | `dashboard` |
 | `/department-scores` | DepartmentScoresPage | `department_scores` | `/api/gamification/leaderboard` | Export, Import | `departmentScores` |
 | `/ee-info` | EeInfoPage | `ee_info` | `/api/ee-info/os/departments`, `/api/ee-info/os/departments/`, `/api/ee-info/os/lifecycle` | Create, Save, Approve, Reject | `eeInfo` |
@@ -37,6 +38,7 @@ API dependencies are inferred from `/api/...` calls in each page component and s
 | `/excel-updates` | ExcelUpdatesPage | `excel_updates` | `/api/excel-updates`, `/api/excel-updates/bulk-confirm`, `/api/notifications/` | Create, Export, Import, Filter | `excelUpdates` |
 | `/execution-board` | ExecutionBoardPage | `execution_board` | `/api/lifecycle-board/execution-dashboard` | Export, Import, Filter, Search | `executionBoard` |
 | `/execution-dashboard` | Alias → `/execution-board` | `execution_board` | redirect only | Navigate alias and confirm redirect to `/execution-board`. | alias of `executionBoard` |
+| `/exceptions` | redirect to `/my-work` | `my_work` | redirect only | Redirect to `/my-work` and validate no duplicate exception workspace exists outside My Work. | `exceptions` |
 | `/feedback` | FeedbackPage | `feedback` | `/api/feedback`, `/api/feedback/` | Create, Save, Export, Import | `feedback` |
 | `/gp-tracker` | GpTrackerPage | `gp_tracker` | `/api/gp-tracker` | Export, Import, Filter, Search | `gpTracker` |
 | `/handover-control` | HandoverControlPage | `projects` | `/api/pd-pm-handover/control` | Reject, Export, Import, Filter | `handoverControl` |
@@ -72,7 +74,13 @@ API dependencies are inferred from `/api/...` calls in each page component and s
 | `/portfolios/:id` | PortfolioDetailPage | `none` | `/api/eng/team-members`, `/api/portfolios`, `/api/portfolios/` | Create, Save, Approve, Reject | `portfolioDetail` |
 | `/project/:projectName` | ProjectDetailPage | `none` | `/api/cashflow`, `/api/eng/tasks`, `/api/eng/tasks/` | Create, Save, Approve, Export | `projectDetail` |
 | `/project/:projectName/financial-linking` | FinancialLinkingPage | `none` | `/api/expense-task-links/`, `/api/financial-integration/rules`, `/api/financial-integration/suggested-rules/` | Reject, Export, Import, Filter | `projectFinancialLinking` |
+| `/project-lifecycle` | ProjectLifecyclePage | `projects` | `/api/project-lifecycle/workspace`, `/api/pd-pm-handover/control`, `/api/project-events/project/` | Filter, Search, Open project, Review lifecycle state | `projectLifecycle` |
+| `/project-lifecycle/client-overview` | ProjectLifecyclePage | `pd_clients` | `/api/project-lifecycle/workspace`, `/api/pd/clients`, `/api/project-events/project/` | Filter, Search, Review client-linked lifecycle state | `projectLifecycleClientOverview` |
+| `/project-lifecycle/latest-updates` | ProjectLifecyclePage | `projects` | `/api/project-lifecycle/workspace`, `/api/projects-summary`, `/api/project-events/project/` | Filter, Search, Review canonical latest updates | `projectLifecycleLatestUpdates` |
+| `/project-lifecycle/stage-gates` | ProjectLifecyclePage | `lifecycle` | `/api/project-lifecycle/workspace`, `/api/lifecycle-board/projects`, `/api/project-events/project/` | Filter, Search, Review stage gates | `projectLifecycleStageGates` |
 | `/projects` | ProjectsSummary | `projects` | `/api/export/projects-summary`, `/api/financial-close/files/`, `/api/financial-close/upload` | Save, Reject, Upload, Export | `projects` |
+| `/pm/approvals` | ApprovalsPage | `approvals` | `/api/approvals/pending`, `/api/deliverables/`, `/api/eng-stages/approvals/` | Approve, Reject, Open project, Filter | `pmApprovals` |
+| `/pm/deliverables` | PMDeliverablesPage | `deliverables` | `/api/projects-summary`, `/api/deliverable-capture/list/`, `/api/ms-objects/project/` | Capture Deliverable, Download, Open approvals, Open project | `pmDeliverables` |
 | `/quality` | QmDashboardPage | `quality` | `/api/projects-summary`, `/api/quality/all-items`, `/api/quality/checklists` | Create, Approve, Export, Import | `quality` |
 | `/revenue` | RevenueTracker | `none` | `/api/rev-tracker`, `/api/tracker-monthly` | Export, Import, Edit | `revenue` |
 | `/revenue-tracker` | RevenueTrackerPage | `revenue_tracker` | `/api/revenue-tracker`, `/api/revenue-tracker/month-detail`, `/api/tracker-monthly` | Export, Import, Filter, Search | `revenueTracker` |

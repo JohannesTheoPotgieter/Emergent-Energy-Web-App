@@ -172,7 +172,8 @@ export default function ExecutionBoard() {
   }, [actionRows]);
 
   const openProject = (project: ExecutionDashboardProject, tab?: string) => {
-    setLocation(tab ? `/projects/${project.projectId}?tab=${tab}` : `/projects/${project.projectId}`);
+    const projectPath = `/project/${encodeURIComponent(project.projectName)}`;
+    setLocation(tab ? `${projectPath}?tab=${tab}` : projectPath);
   };
 
   const toggleQueue = (queue: string) => {
@@ -183,7 +184,7 @@ export default function ExecutionBoard() {
     });
   };
 
-  if (loading) return <div className="flex flex-col items-center justify-center py-24 gap-3"><EnergyLoader size="lg" label="Loading execution dashboard..." /></div>;
+  if (loading) return <div className="flex flex-col items-center justify-center py-24 gap-3"><EnergyLoader size="lg" label="Loading work plan / board..." /></div>;
   if (error) return <div className="flex flex-col items-center justify-center py-24 gap-4"><AlertCircle className="w-8 h-8 text-red-500" /><p>{error}</p><Button onClick={loadData}><RefreshCw className="w-3.5 h-3.5 mr-1" />Retry</Button></div>;
   if (!canView) return <div className="flex items-center justify-center min-h-[60vh]"><Card><CardContent className="py-8 text-center"><AlertTriangle className="mx-auto mb-2" /><p>Access Denied</p></CardContent></Card></div>;
 
@@ -197,10 +198,10 @@ export default function ExecutionBoard() {
             <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center">
               <Activity className="w-5 h-5 text-emerald-600" />
             </div>
-            Execution Dashboard
+            Work Plan / Board
           </h1>
           <p className="text-muted-foreground text-sm mt-1.5 ml-[46px]">
-            Operational view for <span className="font-medium text-foreground">{fyLabel}</span> ({dashboard?.financialYear.start} to {dashboard?.financialYear.end})
+            Post-handover execution view for <span className="font-medium text-foreground">{fyLabel}</span> ({dashboard?.financialYear.start} to {dashboard?.financialYear.end})
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">

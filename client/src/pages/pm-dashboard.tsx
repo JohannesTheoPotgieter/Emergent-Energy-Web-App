@@ -67,7 +67,7 @@ async function pmFetch(url: string) {
   });
   if (!res.ok) {
     const msg = await res.text();
-    throw new Error(msg || "Could not load PM dashboard data. Likely reason: server/network issue or permission mismatch. Refresh and retry. If it persists, contact your admin.");
+    throw new Error(msg || "Could not load execution overview data. Likely reason: server or permission mismatch. Refresh and retry. If it persists, contact your admin.");
   }
   return res.json();
 }
@@ -792,8 +792,8 @@ export default function PMDashboard() {
       <PageShell className="p-4 md:p-6" data-testid="pm-dashboard">
         <SectionHeader
           icon={<Briefcase className="h-5 w-5" />}
-          title="PM Dashboard"
-          description="Select a project manager to view their portfolio"
+          title="Execution Overview"
+          description="Select a project manager to review the post-handover execution workspace."
         />
         <div className="max-w-xs">
           <SearchableSelect
@@ -814,7 +814,7 @@ export default function PMDashboard() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]" data-testid="pm-loading">
-        <EnergyLoader size="lg" label="Loading PM dashboard..." />
+        <EnergyLoader size="lg" label="Loading execution overview..." />
       </div>
     );
   }
@@ -823,7 +823,7 @@ export default function PMDashboard() {
     return (
       <div className="flex items-center justify-center min-h-[60vh] text-destructive" data-testid="pm-error">
         <AlertTriangle className="h-5 w-5 mr-2" />
-        Could not load PM dashboard. Likely reason: server/network issue or PM access mismatch. Refresh and retry. If it persists, contact your admin.
+        Could not load the execution overview. Likely reason: server or PM access mismatch. Refresh and retry. If it persists, contact your admin.
       </div>
     );
   }
@@ -842,8 +842,8 @@ export default function PMDashboard() {
     <PageShell className="p-4 md:p-6" data-testid="pm-dashboard">
       <SectionHeader
         icon={<Briefcase className="h-5 w-5" />}
-        title={isCooView ? "PM Dashboard" : "My Projects"}
-        description={`${isCooView && selectedPmName ? `${selectedPmName} — ` : user?.name ? `${user.name} — ` : ""}${summary.totalProjects} project${summary.totalProjects !== 1 ? "s" : ""} assigned`}
+        title="Execution Overview"
+        description={`${isCooView && selectedPmName ? `${selectedPmName} - ` : user?.name ? `${user.name} - ` : ""}${summary.totalProjects} project${summary.totalProjects !== 1 ? "s" : ""} in the execution workspace after PD handover`}
         actions={<div className="flex items-center gap-2">
           {isCooView ? (
             <div className="w-56">
@@ -860,7 +860,7 @@ export default function PMDashboard() {
               />
             </div>
           ) : null}
-          <Button variant="outline" size="sm" onClick={() => navigate('/pm/handover-review')}>PM Handover Review</Button>
+          <Button variant="outline" size="sm" onClick={() => navigate("/handover-control")}>Site / Execution Controls</Button>
         </div>}
       />
 
@@ -911,7 +911,7 @@ export default function PMDashboard() {
       </Tabs>
 
       <DataSourceDebug
-        pageName="PM Dashboard"
+        pageName="Execution Overview"
         dataSources={[
           { endpoint: "/api/pm/dashboard", tables: ["project_info", "normalized_cost_lines", "normalized_plan_tasks", "engineering_tasks"], description: "PM projects, financials, task counts" },
           { endpoint: "/api/pm/priority-items", tables: ["engineering_tasks", "normalized_cost_lines", "project_info"], description: "Priority items: overdue, holds, approvals" },

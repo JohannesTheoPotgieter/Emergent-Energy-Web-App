@@ -4,6 +4,11 @@ import { apiRequest, invalidateProjectQueries } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import { format, formatDistanceToNow, differenceInDays } from "date-fns";
+import {
+  hasDeliverableRequirementFlag,
+  hasDeliverableRequirementTag,
+  withDeliverableRequirementTag,
+} from "@shared/task-deliverable-requirement";
 import type {
   OperationalTask,
   TaskComment,
@@ -467,6 +472,9 @@ function TaskDetailContent({
   const baselineStartDate = taskAny.baselineStartDate || null;
   const baselineEndDate = taskAny.baselineEndDate || null;
   const rowNumber = taskAny.rowNumber ?? null;
+  const deliverableRequired = hasDeliverableRequirementFlag(taskAny);
+  const explicitDeliverableRequirement = hasDeliverableRequirementTag(taskAny.tags);
+  const deliverableRequirementLocked = !!task.linkedDeliverableId;
 
   const ragDotColor = ragStatus === "green"
     ? "bg-emerald-500"
@@ -823,6 +831,51 @@ function TaskDetailContent({
             />
           )}
         </div>
+
+        {!isPlanTask && (
+          <div className="col-span-2 rounded-lg border bg-muted/30 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium text-foreground">Workflow Rules</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Approval-required work must use Send for Approval. Deliverable-required work must use Send Deliverable.
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-xs text-muted-foreground">
+                <Checkbox
+                  checked={!!task.approvalRequired}
+                  onCheckedChange={(checked) => updateTask({ approvalRequired: checked === true })}
+                  data-testid="checkbox-approval-required"
+                />
+                Approval required
+              </label>
+              <label className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-xs text-muted-foreground">
+                <Checkbox
+                  checked={deliverableRequired}
+                  disabled={deliverableRequirementLocked}
+                  onCheckedChange={(checked) =>
+                    updateTask({
+                      tags: withDeliverableRequirementTag(taskAny.tags, checked === true),
+                    })
+                  }
+                  data-testid="checkbox-deliverable-required"
+                />
+                Deliverable required
+              </label>
+            </div>
+            {deliverableRequirementLocked ? (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                A linked deliverable already makes this task deliverable-required.
+              </p>
+            ) : explicitDeliverableRequirement ? (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                This task is explicitly marked as deliverable-required.
+              </p>
+            ) : null}
+          </div>
+        )}
 
         <div>
           <label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
