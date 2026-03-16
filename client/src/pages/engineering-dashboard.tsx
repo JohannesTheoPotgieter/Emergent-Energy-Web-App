@@ -1378,14 +1378,6 @@ export default function EngineeringDashboard() {
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
-      {!standupMode && (
-        <SectionHeader
-          icon={<Wrench className="h-5 w-5" />}
-          title={showAllTasks ? "Engineering Overview & Team Ops" : `${firstName}'s Dashboard`}
-          description={todayFormatted}
-        />
-      )}
-
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center shadow-md">
