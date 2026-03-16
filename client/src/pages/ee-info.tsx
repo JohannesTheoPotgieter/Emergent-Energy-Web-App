@@ -1209,10 +1209,10 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
     dashboards: [
       { label: "Execution Board", path: "/dashboard" },
       { label: "Engineering Dashboard", path: "/engineering" },
-      { label: "COS Control", path: "/cos-control" },
+      { label: "COS Tracker", path: "/cos" },
       { label: "Lifecycle Board", path: "/lifecycle-board" },
       { label: "Weekly Reviews", path: "/weekly-reviews" },
-      { label: "Cashflow Forecast", path: "/cashflow-forecast" },
+      { label: "Cashflow", path: "/cashflow" },
       { label: "Quality Dashboard", path: "/quality" },
     ],
     topActions: [
@@ -1368,10 +1368,10 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
       { role: "Project Manager", when: "Missing invoices or payment documentation" },
     ],
     dashboards: [
-      { label: "COS Control", path: "/cos-control" },
+      { label: "COS Tracker", path: "/cos" },
       { label: "Cashflow", path: "/cashflow" },
-      { label: "Cashflow Forecast", path: "/cashflow-forecast" },
-      { label: "Revenue Tracking", path: "/revenue" },
+      { label: "Cashflow", path: "/cashflow" },
+      { label: "Revenue Tracking", path: "/revenue-tracker" },
       { label: "Budget", path: "/budget" },
     ],
     topActions: [
@@ -1621,8 +1621,8 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
       { role: "Project Manager", when: "Invoice queries or PO mismatches" },
     ],
     dashboards: [
-      { label: "COS Control", path: "/cos-control" },
-      { label: "Revenue Tracking", path: "/revenue" },
+      { label: "COS Tracker", path: "/cos" },
+      { label: "Revenue Tracking", path: "/revenue-tracker" },
       { label: "Cashflow", path: "/cashflow" },
     ],
     topActions: [

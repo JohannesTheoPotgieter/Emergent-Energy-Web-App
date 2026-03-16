@@ -13,7 +13,7 @@
     "migrate:clickup-engineering": "tsx scripts/migrate-clickup-engineering.ts",
     "test": "vitest run -c qa/vitest.config.ts",
     "test:api": "tsx script/run-with-app.ts \"vitest run -c qa/vitest.config.ts qa/tests/api\"",
-    "test:smoke": "tsx script/run-with-app.ts \"playwright test qa/tests/e2e/smoke.spec.ts\"",
+    "test:smoke": "tsx script/run-with-app.ts \"playwright test -c qa/playwright.config.ts qa/tests/e2e/smoke.spec.ts\"",
     "test:routes": "tsx script/test-routes.ts",
     "qa:report": "tsx script/qa-report.ts",
     "test:route-proof": "vitest run -c qa/vitest.config.ts qa/tests/unit/route-proof.test.ts",

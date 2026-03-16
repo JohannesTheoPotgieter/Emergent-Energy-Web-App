@@ -1,0 +1,71 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - link "Emergent Energy Project Management" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - img "Emergent Energy" [ref=e7]
+          - paragraph [ref=e9]: Project Management
+        - generic [ref=e10]:
+          - img [ref=e11]
+          - textbox "Search projects, work items, finance, documents, people" [ref=e14]
+        - button "Quick Create" [ref=e15]:
+          - img
+          - text: Quick Create
+        - button [ref=e16]:
+          - img
+        - button [ref=e17]:
+          - img
+        - button "EE User" [ref=e18]:
+          - generic [ref=e20]: EE
+          - generic [ref=e21]: User
+      - navigation [ref=e22]:
+        - link "Home" [ref=e23] [cursor=pointer]:
+          - /url: /
+        - link "Project Lifecycle" [ref=e24] [cursor=pointer]:
+          - /url: /project-lifecycle
+        - link "Project Development" [ref=e25] [cursor=pointer]:
+          - /url: /pd
+        - link "Project Management" [ref=e26] [cursor=pointer]:
+          - /url: /pm-dashboard
+        - link "Engineering" [ref=e27] [cursor=pointer]:
+          - /url: /engineering
+        - link "Quality" [ref=e28] [cursor=pointer]:
+          - /url: /quality
+        - link "Finance" [ref=e29] [cursor=pointer]:
+          - /url: /cashflow
+        - link "Knowledge" [ref=e30] [cursor=pointer]:
+          - /url: /ee-info
+        - link "Admin" [ref=e31] [cursor=pointer]:
+          - /url: /admin/control-center
+      - generic [ref=e32]:
+        - generic [ref=e33]:
+          - generic [ref=e35]: Project Management
+          - generic [ref=e36]:
+            - img [ref=e37]
+            - generic [ref=e39]: Project List
+        - generic [ref=e40]:
+          - link "Execution Overview" [ref=e41] [cursor=pointer]:
+            - /url: /pm-dashboard
+          - link "Project List" [ref=e42] [cursor=pointer]:
+            - /url: /projects
+          - link "Work Plan / Board" [ref=e43] [cursor=pointer]:
+            - /url: /execution-board
+          - link "Deliverables" [ref=e44] [cursor=pointer]:
+            - /url: /pm/deliverables
+          - link "Approvals" [ref=e45] [cursor=pointer]:
+            - /url: /pm/approvals
+          - link "Site / Execution Controls" [ref=e46] [cursor=pointer]:
+            - /url: /handover-control
+    - main [ref=e47]:
+      - generic [ref=e50]:
+        - img [ref=e52]
+        - generic [ref=e54]:
+          - heading "Project List" [level=1] [ref=e55]
+          - paragraph [ref=e56]: Loading execution data...
+  - region "Notifications (F8)":
+    - list
+```
