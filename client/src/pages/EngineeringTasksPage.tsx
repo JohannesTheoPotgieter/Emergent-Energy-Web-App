@@ -760,7 +760,7 @@ function TaskDetailDrawer({
     const projectSuggestion = task.projectName || "";
     setApprovalProjectSuggestion(projectSuggestion);
     if (!approvalProjectFinal) setApprovalProjectFinal(projectSuggestion);
-    const routeSuggestion = task.ownerUserId ? String(task.ownerUserId) : "owner";
+    const routeSuggestion = task.ownerUserId ? String(task.ownerUserId) : "";
     setApprovalRouteSuggestion(routeSuggestion);
     if (!approvalRouteFinal) setApprovalRouteFinal(routeSuggestion);
   }, [showSendForApproval, task.id]);
@@ -1199,7 +1199,14 @@ function TaskDetailDrawer({
                         </div>
                         <div className="space-y-1.5">
                           <Label className="text-xs font-medium">Suggested approval route</Label>
-                          <Input value={approvalRouteFinal} onChange={(e) => setApprovalRouteFinal(e.target.value)} className="h-8 text-xs" />
+                          <SearchableSelect
+                            value={approvalRouteFinal}
+                            onValueChange={(v) => setApprovalRouteFinal(v)}
+                            placeholder="Select approver..."
+                            triggerClassName="h-8 text-xs"
+                            options={teamMembers.map((m: TeamMember) => ({ value: String(m.id), label: m.fullName }))}
+                            data-testid="select-approval-route"
+                          />
                           {approvalRouteSuggestion && approvalRouteSuggestion !== approvalRouteFinal && (
                             <Input value={approvalRouteOverrideReason} onChange={(e) => setApprovalRouteOverrideReason(e.target.value)} placeholder="Reason for overriding suggested route (required)" className="h-8 text-xs border-amber-300" />
                           )}
