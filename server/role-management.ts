@@ -1,7 +1,18 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql } from "drizzle-orm";
-import { normalizeRoleForPermissions, rolePermissions, users, DEFAULT_ROLE_PERMISSIONS } from "@shared/schema";
+import {
+  AUTHORITY_ACTIONS,
+  ENTITY_PERMISSION_DEFAULTS,
+  normalizeRoleForPermissions,
+  rolePermissions,
+  users,
+  DEFAULT_ROLE_PERMISSIONS,
+  type AuthorityAction,
+  type PermissionAction,
+  type PermissionEntity,
+} from "@shared/schema";
+import { evaluateAuthorityForRole, evaluatePermissionForRole } from "@shared/permission-resolver";
 import { verifyToken } from "./jwt";
 import { invalidateEntityPermCache } from "./permission-middleware";
 import bcrypt from "bcryptjs";
@@ -132,7 +143,12 @@ export function registerRoleManagementRoutes(app: Express) {
         protected: isRoleProtected(role),
       }));
 
-      res.json({ roles: roleSummaries, entities: ENTITY_PERMISSION_DEFAULTS });
+      res.json({
+        roles: roleSummaries,
+        entities: ENTITY_PERMISSION_DEFAULTS,
+        actionCatalog: AUTHORITY_ACTIONS,
+        scopeCatalog: ["own", "department", "assigned_projects", "all_projects", "company_admin"],
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -152,7 +168,7 @@ export function registerRoleManagementRoutes(app: Express) {
   app.put("/api/roles/:role", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const roleKey = req.params.role as string;
-      const { label, description, sections, canManageUsers, canManageRoles, canEditData, entityPermissions: ep } = req.body;
+      const { label, description, sections, canManageUsers, canManageRoles, canEditData, entityPermissions: ep, authorityModel } = req.body;
       const [existing] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, roleKey));
       if (!existing) return res.status(404).json({ error: "Role not found" });
 
@@ -168,13 +184,16 @@ export function registerRoleManagementRoutes(app: Express) {
       if (ep !== undefined) {
         updateData.entityPermissions = ep;
       }
+      if (authorityModel !== undefined) {
+        updateData.authorityModel = authorityModel;
+      }
 
       const [updated] = await db.update(rolePermissions)
         .set(updateData)
         .where(eq(rolePermissions.role, roleKey))
         .returning();
       invalidateEntityPermCache();
-      logAuditFromReq(req, { entityType: "role_permissions", action: "update", entityId: roleKey, changesJson: { description: "Role permissions updated", role: roleKey, sections, canManageUsers, canManageRoles, canEditData, hasEntityPermChanges: ep !== undefined } });
+      logAuditFromReq(req, { entityType: "role_permissions", action: "update", entityId: roleKey, changesJson: { description: "Role permissions updated", role: roleKey, sections, canManageUsers, canManageRoles, canEditData, hasEntityPermChanges: ep !== undefined, hasAuthorityModelChanges: authorityModel !== undefined } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -183,7 +202,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.post("/api/roles", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { role, label, description, sections, canManageUsers, canManageRoles, canEditData } = req.body;
+      const { role, label, description, sections, canManageUsers, canManageRoles, canEditData, authorityModel } = req.body;
       if (!role || !label) return res.status(400).json({ error: "Role key and label are required" });
 
       const [existing] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, role));
@@ -197,6 +216,7 @@ export function registerRoleManagementRoutes(app: Express) {
         canManageUsers: canManageUsers || false,
         canManageRoles: canManageRoles || false,
         canEditData: canEditData ?? true,
+        authorityModel: authorityModel || null,
         isSystem: false,
       }).returning();
       logAuditFromReq(req, { entityType: "role_permissions", action: "create", entityId: role, changesJson: { description: "New role created", role, label, sections } });
@@ -228,6 +248,7 @@ export function registerRoleManagementRoutes(app: Express) {
         canManageRoles: source.canManageRoles,
         canEditData: source.canEditData,
         entityPermissions: source.entityPermissions,
+        authorityModel: source.authorityModel,
         isSystem: false,
       }).returning();
 
@@ -275,13 +296,67 @@ export function registerRoleManagementRoutes(app: Express) {
       const [roleRecord] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, effectiveRole));
       const actions: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
 
-      const matrix = ENTITY_PERMISSION_DEFAULTS.map((entityRule) => {
+      const legacyMatrix = ENTITY_PERMISSION_DEFAULTS.map((entityRule) => {
         const entity = entityRule.entity as PermissionEntity;
         const actionResults = actions.map((action) => ({ action, ...evaluatePermissionForRole({ role: effectiveRole!, entity, action, roleRecord }) }));
         return { entity, actions: actionResults };
       });
 
-      res.json({ role: effectiveRole, matrix });
+      const authorityMatrix = ENTITY_PERMISSION_DEFAULTS.map((entityRule) => {
+        const entity = entityRule.entity as PermissionEntity;
+        const actionResults = AUTHORITY_ACTIONS.map((action) => ({
+          action,
+          ...evaluateAuthorityForRole({
+            role: effectiveRole!,
+            entity,
+            action: action as AuthorityAction,
+            roleRecord: roleRecord as any,
+          }),
+        }));
+        return { entity, actions: actionResults };
+      });
+
+      res.json({ role: effectiveRole, matrix: legacyMatrix, authorityMatrix });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+
+  app.get("/api/roles/effective-summary", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const userId = req.query.userId ? Number(req.query.userId) : null;
+      const roleFilter = req.query.role ? String(req.query.role) : null;
+
+      let targetRole = roleFilter;
+      if (userId && !targetRole) {
+        const [u] = await db.select({ role: users.role }).from(users).where(eq(users.id, userId));
+        targetRole = u?.role || null;
+      }
+
+      const roles = targetRole
+        ? await db.select().from(rolePermissions).where(eq(rolePermissions.role, targetRole))
+        : await db.select().from(rolePermissions);
+
+      const byRole = roles.map((roleRow) => ({
+        role: roleRow.role,
+        label: roleRow.label,
+        effective: ENTITY_PERMISSION_DEFAULTS.map((entityRule) => ({
+          entity: entityRule.entity,
+          actions: AUTHORITY_ACTIONS.map((action) => evaluateAuthorityForRole({
+            role: roleRow.role,
+            entity: entityRule.entity as PermissionEntity,
+            action: action as AuthorityAction,
+            roleRecord: roleRow as any,
+          })),
+        })),
+      }));
+
+      res.json({
+        byRole,
+        requestedUserId: userId,
+        requestedRole: targetRole,
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
