@@ -5,6 +5,7 @@ import { verifyToken } from "./jwt";
 import { commissioningItems, projectInfo, users, approvals } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -134,6 +135,47 @@ export function registerCommissioningRoutes(app: Express) {
         updates.status = req.body.status;
 
         if (req.body.status === 'approved' || req.body.status === 'closed') {
+          const user = (req as any).user as any;
+          const overrideReason = String(req.body?.evidenceOverrideReason || "").trim();
+          const wantsOverride = !!overrideReason;
+
+          const evidence = await evaluateEvidence({
+            projectId: old.projectId,
+            completionType: "commissioning_item_close",
+            sourceType: "commissioning_item",
+            sourceRef: String(id),
+            additionalEvidence: old.evidenceNotes ? [{ evidenceType: "form", requirementKey: "evidence_notes" }] : [],
+            evaluatorUserId: user?.id,
+            evaluatorName: user?.name,
+          });
+
+          if (!evidence.pass) {
+            if (!wantsOverride) {
+              return res.status(400).json({
+                error: "Completion blocked: evidence score below threshold.",
+                evidence,
+              });
+            }
+            if (!isEvidenceOverrideAuthorized(user?.role)) {
+              return res.status(403).json({ error: "Evidence override requires authorized role." });
+            }
+
+            await db.execute(sql.raw(`
+              INSERT INTO evidence_override_records
+                (project_id, completion_type, source_type, source_ref, score_percent, threshold_percent, reason, authorized_by_user_id, authorized_by_name, authorized_by_role)
+              VALUES
+                (${old.projectId}, 'commissioning_item_close', 'commissioning_item', '${id}', ${evidence.score}, ${evidence.threshold}, '${overrideReason.replace(/'/g, "''")}', ${user?.id || "NULL"}, ${user?.name ? `'${String(user.name).replace(/'/g, "''")}'` : "NULL"}, ${user?.role ? `'${String(user.role).replace(/'/g, "''")}'` : "NULL"})
+            `));
+
+            logAuditFromReq(req, {
+              entityType: "project_timeline",
+              entityId: String(old.projectId),
+              action: "evidence.override",
+              projectName: undefined,
+              changesJson: { sourceType: "commissioning_item", sourceRef: String(id), overrideReason, evidence },
+            });
+          }
+
           updates.completedAt = new Date();
         }
 
@@ -215,6 +257,75 @@ export function registerCommissioningRoutes(app: Express) {
       res.json(items);
     } catch (err: any) {
       res.status(500).json({ error: "Failed to fetch progress" });
+    }
+  });
+
+  app.post("/api/commissioning/:id/evidence", jwtAuth, requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+      const [item] = await db.select().from(commissioningItems).where(eq(commissioningItems.id, id));
+      if (!item) return res.status(404).json({ error: "Not found" });
+      const user = (req as any).user as any;
+
+      const payload = req.body || {};
+      await upsertEvidenceItem({
+        projectId: item.projectId,
+        completionType: "commissioning_item_close",
+        sourceType: "commissioning_item",
+        sourceRef: String(id),
+        requirementKey: payload.requirementKey || null,
+        evidenceType: payload.evidenceType || "document",
+        title: payload.title || null,
+        valueRef: payload.valueRef || null,
+        valueJson: payload.valueJson,
+        uploadedByUserId: user?.id,
+        uploadedByName: user?.name,
+      });
+
+      const evidence = await evaluateEvidence({
+        projectId: item.projectId,
+        completionType: "commissioning_item_close",
+        sourceType: "commissioning_item",
+        sourceRef: String(id),
+        additionalEvidence: item.evidenceNotes ? [{ evidenceType: "form", requirementKey: "evidence_notes" }] : [],
+        evaluatorUserId: user?.id,
+        evaluatorName: user?.name,
+      });
+
+      logAuditFromReq(req, {
+        entityType: "project_timeline",
+        entityId: String(item.projectId),
+        action: "evidence.collected",
+        changesJson: { sourceType: "commissioning_item", sourceRef: String(id), payload },
+      });
+
+      res.status(201).json({ success: true, evidence });
+    } catch (err: any) {
+      console.error("[Commissioning] evidence add error:", err.message);
+      res.status(500).json({ error: "Failed to add evidence" });
+    }
+  });
+
+  app.get("/api/commissioning/:id/evidence-evaluation", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+      const [item] = await db.select().from(commissioningItems).where(eq(commissioningItems.id, id));
+      if (!item) return res.status(404).json({ error: "Not found" });
+      const user = (req as any).user as any;
+      const evidence = await evaluateEvidence({
+        projectId: item.projectId,
+        completionType: "commissioning_item_close",
+        sourceType: "commissioning_item",
+        sourceRef: String(id),
+        additionalEvidence: item.evidenceNotes ? [{ evidenceType: "form", requirementKey: "evidence_notes" }] : [],
+        evaluatorUserId: user?.id,
+        evaluatorName: user?.name,
+      });
+      res.json(evidence);
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to evaluate evidence" });
     }
   });
 }
