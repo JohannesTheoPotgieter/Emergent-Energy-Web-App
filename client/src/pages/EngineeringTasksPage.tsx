@@ -1204,7 +1204,7 @@ function TaskDetailDrawer({
                             onValueChange={(v) => setApprovalRouteFinal(v)}
                             placeholder="Select approver..."
                             triggerClassName="h-8 text-xs"
-                            options={teamMembers.map((m: TeamMember) => ({ value: String(m.id), label: m.fullName }))}
+                            options={teamMembers.map((m: any) => ({ value: String(m.id), label: m.fullName || m.name || `User ${m.id}` }))}
                             data-testid="select-approval-route"
                           />
                           {approvalRouteSuggestion && approvalRouteSuggestion !== approvalRouteFinal && (
