@@ -4948,6 +4948,44 @@ export const insertProjectLinkSchema = createInsertSchema(projectLinks).omit({ i
 export type InsertProjectLink = z.infer<typeof insertProjectLinkSchema>;
 export type ProjectLink = typeof projectLinks.$inferSelect;
 
+export const projectCommunicationTimelineEvents = pgTable("project_communication_timeline_events", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull(),
+  msObjectId: integer("ms_object_id"),
+  eventType: text("event_type").notNull(),
+  eventTitle: text("event_title").notNull(),
+  eventDetail: text("event_detail"),
+  relatedTaskId: integer("related_task_id"),
+  actorUserId: integer("actor_user_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertProjectCommunicationTimelineEventSchema = createInsertSchema(projectCommunicationTimelineEvents).omit({ id: true, createdAt: true } as any);
+export type InsertProjectCommunicationTimelineEvent = z.infer<typeof insertProjectCommunicationTimelineEventSchema>;
+export type ProjectCommunicationTimelineEvent = typeof projectCommunicationTimelineEvents.$inferSelect;
+
+export const communicationFollowUpStatusEnum = pgEnum('communication_follow_up_status', ['pending', 'completed', 'dismissed']);
+
+export const communicationFollowUps = pgTable("communication_follow_ups", {
+  id: serial("id").primaryKey(),
+  msObjectId: integer("ms_object_id").notNull(),
+  projectId: integer("project_id"),
+  taskId: integer("task_id").notNull(),
+  taskType: text("task_type").notNull(),
+  dedupeKey: text("dedupe_key").notNull().unique(),
+  dueAt: timestamp("due_at"),
+  reminderAt: timestamp("reminder_at"),
+  reminderSentAt: timestamp("reminder_sent_at"),
+  status: communicationFollowUpStatusEnum("status").notNull().default('pending'),
+  createdBy: integer("created_by").notNull(),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertCommunicationFollowUpSchema = createInsertSchema(communicationFollowUps).omit({ id: true, createdAt: true } as any);
+export type InsertCommunicationFollowUp = z.infer<typeof insertCommunicationFollowUpSchema>;
+export type CommunicationFollowUp = typeof communicationFollowUps.$inferSelect;
+
 export const msCreateItemLinks = pgTable("ms_create_item_links", {
   id: serial("id").primaryKey(),
   sourceType: text("source_type").notNull(),

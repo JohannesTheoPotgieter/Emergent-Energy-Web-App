@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { eq, and, ne, desc, sql } from "drizzle-orm";
-import { msObjects, projectLinks, projectInfo, mytoolTasks, operationalTasks, users } from "@shared/schema";
+import { msObjects, projectLinks, projectInfo, mytoolTasks, operationalTasks, users, communicationFollowUps, projectCommunicationTimelineEvents } from "@shared/schema";
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
 const MANAGER_ROLES = [...ADMIN_ROLES, "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
@@ -61,7 +61,126 @@ export async function tagToProject(
     })
     .returning();
 
+  await createProjectTimelineEvent({
+    projectId,
+    msObjectId,
+    actorUserId: userId,
+    eventType: obj.type === "event" ? "meeting_linked" : obj.type === "email" ? "email_linked" : "communication_linked",
+    eventTitle: `Linked ${obj.type} to project`,
+    eventDetail: obj.subjectOrTitle || undefined,
+  });
+
   return { msObject: updatedObj, projectLink: link };
+}
+
+export function buildFollowUpDedupeKey(msObjectId: number, projectId: number | null, title: string): string {
+  return `${msObjectId}:${projectId ?? "none"}:${title.trim().toLowerCase()}`;
+}
+
+export async function createProjectTimelineEvent(params: {
+  projectId: number;
+  msObjectId?: number;
+  eventType: string;
+  eventTitle: string;
+  eventDetail?: string;
+  relatedTaskId?: number;
+  actorUserId: number;
+}) {
+  await db.insert(projectCommunicationTimelineEvents).values({
+    projectId: params.projectId,
+    msObjectId: params.msObjectId ?? null,
+    eventType: params.eventType,
+    eventTitle: params.eventTitle,
+    eventDetail: params.eventDetail ?? null,
+    relatedTaskId: params.relatedTaskId ?? null,
+    actorUserId: params.actorUserId,
+  });
+}
+
+export async function createFollowUpTaskFromCommunication(input: {
+  msObjectId: number;
+  userId: number;
+  title?: string;
+  dueAt?: string;
+  notes?: string;
+}) {
+  const [obj] = await db.select().from(msObjects).where(eq(msObjects.id, input.msObjectId));
+  if (!obj) throw new Error("MS object not found");
+  if (obj.userId !== input.userId) throw new Error("You can only create follow-up tasks from your own items");
+
+  const dedupeKey = buildFollowUpDedupeKey(input.msObjectId, obj.linkedProjectId ?? null, input.title || obj.subjectOrTitle || "Follow-up");
+  const [existing] = await db.select().from(communicationFollowUps).where(eq(communicationFollowUps.dedupeKey, dedupeKey));
+  if (existing) {
+    throw new Error("Follow-up already exists for this communication");
+  }
+
+  const taskTitle = input.title || `Follow-up: ${obj.subjectOrTitle || "Communication"}`;
+  const taskNotes = [
+    input.notes || "",
+    obj.webLink ? `Source: ${obj.webLink}` : "",
+    obj.senderOrOrganizer ? `From/Organizer: ${obj.senderOrOrganizer}` : "",
+  ].filter(Boolean).join("\n");
+
+  if (obj.linkedProjectId) {
+    const [project] = await db.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, obj.linkedProjectId));
+    const [task] = await db.insert(operationalTasks).values({
+      projectId: obj.linkedProjectId,
+      projectName: project?.projectName || "Unknown",
+      title: taskTitle,
+      description: taskNotes || null,
+      status: "TO DO",
+      priority: "Med",
+      ownerUserId: input.userId,
+      createdBy: input.userId,
+      dueDate: input.dueAt || null,
+    }).returning();
+
+    const dueAt = input.dueAt ? new Date(input.dueAt) : null;
+    await db.insert(communicationFollowUps).values({
+      msObjectId: obj.id,
+      projectId: obj.linkedProjectId,
+      taskId: task.id,
+      taskType: "operational",
+      dedupeKey,
+      dueAt,
+      reminderAt: dueAt,
+      createdBy: input.userId,
+    });
+
+    await createProjectTimelineEvent({
+      projectId: obj.linkedProjectId,
+      msObjectId: obj.id,
+      relatedTaskId: task.id,
+      actorUserId: input.userId,
+      eventType: "follow_up_created",
+      eventTitle: "Follow-up task created from communication",
+      eventDetail: taskTitle,
+    });
+    return { task, type: "operational" as const };
+  }
+
+  const [task] = await db.insert(mytoolTasks).values({
+    ownerUserId: input.userId,
+    title: taskTitle,
+    notes: taskNotes || null,
+    status: "inbox",
+    priority: "normal",
+    bucket: "company_ops",
+    dueAt: input.dueAt ? new Date(input.dueAt) : null,
+  }).returning();
+
+  await db.insert(communicationFollowUps).values({
+    msObjectId: obj.id,
+    projectId: null,
+    taskId: task.id,
+    taskType: "mytool",
+    dedupeKey,
+    dueAt: input.dueAt ? new Date(input.dueAt) : null,
+    reminderAt: input.dueAt ? new Date(input.dueAt) : null,
+    createdBy: input.userId,
+  });
+
+  return { task, type: "mytool" as const };
 }
 
 export async function untagFromProject(
