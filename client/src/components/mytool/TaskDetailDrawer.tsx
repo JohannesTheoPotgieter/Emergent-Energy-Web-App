@@ -85,6 +85,13 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
     startDate: "",
     pinnedToday: false,
     pinnedWeek: false,
+    taskType: "task" as "task" | "milestone",
+    milestoneId: "",
+    isRecurring: false,
+    recurrenceFrequency: "weekly",
+    recurrenceInterval: 1,
+    recurrenceDaysOfWeek: "",
+    recurrenceEndDate: "",
   });
 
   const [dodRequired, setDodRequired] = useState(false);
@@ -108,6 +115,13 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
         startDate: (task as any).startDate || "",
         pinnedToday: task.pinnedToday || false,
         pinnedWeek: task.pinnedWeek || false,
+        taskType: ((task as any).taskType || "task") as "task" | "milestone",
+        milestoneId: (task as any).milestoneId ? String((task as any).milestoneId) : "",
+        isRecurring: (task as any).isRecurring || false,
+        recurrenceFrequency: (task as any).recurrenceFrequency || "weekly",
+        recurrenceInterval: Number((task as any).recurrenceInterval || 1),
+        recurrenceDaysOfWeek: (task as any).recurrenceDaysOfWeek || "",
+        recurrenceEndDate: (task as any).recurrenceEndDate || "",
       });
       setDodRequired(false);
     }
@@ -116,6 +130,15 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
   const { data: allProjects = [] } = useQuery<Array<{ project_name: string }>>({
     queryKey: ["/api/projects-summary"],
     select: (data: any[]) => data.map((p: any) => ({ project_name: p.project_name })),
+    enabled: open,
+  });
+
+  const { data: milestones = [] } = useQuery<any[]>({
+    queryKey: ["/api/mytool/tasks", "milestones"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/mytool/tasks");
+      return (await res.json()).filter((t: any) => (t.taskType || "task") === "milestone");
+    },
     enabled: open,
   });
 
@@ -187,6 +210,13 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
     if (form.plannedForDate !== (task.plannedForDate || "")) updates.plannedForDate = form.plannedForDate || null;
     if (form.pinnedToday !== task.pinnedToday) updates.pinnedToday = form.pinnedToday;
     if (form.pinnedWeek !== task.pinnedWeek) updates.pinnedWeek = form.pinnedWeek;
+    if (form.taskType !== ((task as any).taskType || "task")) updates.taskType = form.taskType;
+    if (form.milestoneId !== String((task as any).milestoneId || "")) updates.milestoneId = form.milestoneId ? Number(form.milestoneId) : null;
+    if (form.isRecurring !== ((task as any).isRecurring || false)) updates.isRecurring = form.isRecurring;
+    if (form.recurrenceFrequency !== ((task as any).recurrenceFrequency || "weekly")) updates.recurrenceFrequency = form.recurrenceFrequency;
+    if (form.recurrenceInterval !== Number((task as any).recurrenceInterval || 1)) updates.recurrenceInterval = form.recurrenceInterval;
+    if (form.recurrenceDaysOfWeek !== ((task as any).recurrenceDaysOfWeek || "")) updates.recurrenceDaysOfWeek = form.recurrenceDaysOfWeek || null;
+    if (form.recurrenceEndDate !== ((task as any).recurrenceEndDate || "")) updates.recurrenceEndDate = form.recurrenceEndDate || null;
 
     if (form.dueAt !== (task.dueAt ? task.dueAt.slice(0, 10) : "")) {
       updates.dueAt = form.dueAt ? new Date(form.dueAt).toISOString() : null;
@@ -378,6 +408,63 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
               </div>
             )}
           </div>
+
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Type</Label>
+              <SearchableSelect
+                value={form.taskType}
+                onValueChange={(v) => setForm((f) => ({ ...f, taskType: v as "task" | "milestone" }))}
+                triggerClassName="h-8 text-sm"
+                options={[{ value: "task", label: "Task" }, { value: "milestone", label: "Milestone" }]}
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Milestone Link</Label>
+              <SearchableSelect
+                value={form.milestoneId || "__none__"}
+                onValueChange={(v) => setForm((f) => ({ ...f, milestoneId: v === "__none__" ? "" : v }))}
+                triggerClassName="h-8 text-sm"
+                options={[{ value: "__none__", label: "None" }, ...milestones.filter((m: any) => m.id !== task.id).map((m: any) => ({ value: String(m.id), label: m.title }))]}
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">Dependency Blockers</Label>
+            <p className="text-xs text-muted-foreground" data-testid="text-dependency-blockers">
+              {(task as any).blockedByCount ? `${(task as any).blockedByCount} predecessor(s) incomplete` : "No active blockers"}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+              <input type="checkbox" checked={form.isRecurring} onChange={(e) => setForm((f) => ({ ...f, isRecurring: e.target.checked }))} className="rounded border-border" />
+              Recurring
+            </label>
+            {form.isRecurring && (
+              <SearchableSelect
+                value={form.recurrenceFrequency}
+                onValueChange={(v) => setForm((f) => ({ ...f, recurrenceFrequency: v }))}
+                triggerClassName="h-8 text-sm"
+                options={[{ value: "daily", label: "Daily" }, { value: "weekly", label: "Weekly" }, { value: "monthly", label: "Monthly" }]}
+              />
+            )}
+          </div>
+
+          {form.isRecurring && (
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">Interval</Label>
+                <Input type="number" min={1} value={String(form.recurrenceInterval)} onChange={(e) => setForm((f) => ({ ...f, recurrenceInterval: Number(e.target.value || 1) }))} className="h-8 text-sm" />
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs text-muted-foreground mb-1 block">Weekly Days (0-6)</Label>
+                <Input value={form.recurrenceDaysOfWeek} onChange={(e) => setForm((f) => ({ ...f, recurrenceDaysOfWeek: e.target.value }))} placeholder="1,3,5" className="h-8 text-sm" />
+              </div>
+            </div>
+          )}
 
           <Separator />
 
