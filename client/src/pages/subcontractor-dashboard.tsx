@@ -538,13 +538,16 @@ export default function SubcontractorDashboardPage() {
 
   return (
     <div className="space-y-6" data-testid="subcontractor-dashboard-page">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex flex-col gap-2">
           <h2 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Procurement Hub</h2>
           <p className="text-muted-foreground text-sm">
-            Aggregated view of installer and supplier accounts with spend, usage, and upcoming payments.
+            Aggregated view of installer and supplier accounts with spend, usage, and upcoming payments. Maintain core master data in Counterparties.
           </p>
         </div>
+        <Button asChild variant="outline" size="sm" data-testid="btn-open-counterparties">
+          <a href="/counterparties">Open Counterparties</a>
+        </Button>
       </div>
 
       {patternStats && (patternStats.taggedLines > 0 || patternStats.eligibleLines > 0) && (
@@ -963,10 +966,13 @@ export default function SubcontractorDashboardPage() {
             {counterpartiesList.length === 0 ? (
               <>
                 <p className="text-sm font-semibold text-foreground">No procurement counterparties yet</p>
-                <p className="text-xs mt-1">Import expenditure lines in Smart Import to generate supplier and installer visibility.</p>
+                <p className="text-xs mt-1">Import expenditure lines in Smart Import to generate supplier and installer visibility, then maintain canonical details in Counterparties.</p>
                 <div className="mt-4 flex items-center justify-center gap-2">
                   <Button asChild size="sm" data-testid="btn-procurement-empty-smart-import">
                     <a href="/admin/smart-import">Open Smart Import</a>
+                  </Button>
+                  <Button asChild variant="outline" size="sm" data-testid="btn-procurement-empty-counterparties">
+                    <a href="/counterparties">Open Counterparties</a>
                   </Button>
                   <Button asChild variant="outline" size="sm" data-testid="btn-procurement-empty-import-runs">
                     <a href="/admin/import-control-tower">View import runs</a>
