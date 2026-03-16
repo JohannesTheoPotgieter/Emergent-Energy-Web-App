@@ -25,6 +25,7 @@ import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { listEngineeringWorkItems, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject } from "./work-items-adapter";
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
+import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
 
 const approvalUploadsDir = path.join(process.cwd(), "uploads", "approvals");
 if (!fs.existsSync(approvalUploadsDir)) fs.mkdirSync(approvalUploadsDir, { recursive: true });
@@ -437,6 +438,18 @@ export function registerEngineeringRoutes(app: Express) {
         return res.status(400).json({ error: `Invalid status. Must be one of: ${TASK_STATUSES.join(", ")}` });
       }
 
+      if (updates.status) {
+        try {
+          const context = await buildTaskWorkflowContext(id, existing.status as string);
+          assertTaskWorkflowTransition(context, updates.status, "status_update");
+        } catch (err: any) {
+          if (err instanceof TaskWorkflowGuardError) {
+            return res.status(err.statusCode).json({ error: err.message });
+          }
+          throw err;
+        }
+      }
+
       if (updates.status === "HOLD" && !updates.holdReason) {
         return res.status(400).json({ error: "Hold reason required when setting status to HOLD" });
       }
@@ -500,6 +513,16 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const [existing] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
       if (!existing) return res.status(404).json({ error: "Task not found" });
+
+      try {
+        const context = await buildTaskWorkflowContext(id, existing.status);
+        assertTaskWorkflowTransition(context, "NEEDS APPROVAL", "send_for_approval");
+      } catch (err: any) {
+        if (err instanceof TaskWorkflowGuardError) {
+          return res.status(err.statusCode).json({ error: err.message });
+        }
+        throw err;
+      }
 
       logAuditFromReq(req, {
         entityType: "approval_send_flow",
@@ -1099,6 +1122,22 @@ export function registerEngineeringRoutes(app: Express) {
       }
       const updatedTasks = [];
       for (const taskId of taskIds) {
+        if (updates.status) {
+          const [task] = await db.select({ id: operationalTasks.id, status: operationalTasks.status })
+            .from(operationalTasks)
+            .where(eq(operationalTasks.id, taskId));
+          if (!task) continue;
+          try {
+            const context = await buildTaskWorkflowContext(taskId, task.status);
+            assertTaskWorkflowTransition(context, updates.status, "bulk_status_update");
+          } catch (err: any) {
+            if (err instanceof TaskWorkflowGuardError) {
+              return res.status(err.statusCode).json({ error: err.message, taskId });
+            }
+            throw err;
+          }
+        }
+
         const bulkSet: Record<string, any> = { ...updates, updatedAt: new Date() };
         if (updates.status === "COMPLETE") bulkSet.completedAt = new Date();
         const [updated] = await db.update(operationalTasks)

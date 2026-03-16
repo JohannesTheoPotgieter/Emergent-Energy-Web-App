@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { createTaskRequestId } from "@/lib/idempotency";
 import { useToast } from "@/hooks/use-toast";
+import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import { useAuth } from "@/hooks/use-auth";
 import { format, isPast, parseISO, formatDistanceToNow, differenceInCalendarDays, startOfDay } from "date-fns";
 import TaskDetailDrawer from "@/components/mytool/TaskDetailDrawer";
@@ -509,6 +510,8 @@ export default function MyWorkTasksPage() {
         const res = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify(newStatus === "complete" ? {} : { status: trStatus }) });
         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       } else if (task._source === "operational") {
+        const blockedReason = getTaskWorkflowBlockReason(task as any, newStatus);
+        if (blockedReason) throw new Error(blockedReason);
         const res = await fetch(`/api/operational-tasks/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ status: newStatus }) });
         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       } else if (task._source === "engineering_task") {
@@ -1465,6 +1468,8 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
         const res = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify(newStatus === "complete" ? {} : { status: trStatus }) });
         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       } else if (task._source === "operational") {
+        const blockedReason = getTaskWorkflowBlockReason(task as any, newStatus);
+        if (blockedReason) throw new Error(blockedReason);
         const res = await fetch(`/api/operational-tasks/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ status: newStatus }) });
         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       } else if (task._source === "approvals" && task._key.startsWith("approval-qc-")) {

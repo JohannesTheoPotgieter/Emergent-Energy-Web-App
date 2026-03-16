@@ -1,3 +1,4 @@
+import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
@@ -10968,6 +10969,20 @@ export async function registerRoutes(
       if (updates.status) updates.status = normalizeStatus(updates.status);
       if (updates.priority) updates.priority = normalizePriority(updates.priority);
 
+      if (updates.status && id > 0) {
+        const oldTaskForGuard = await storage.getOperationalTask(id);
+        if (!oldTaskForGuard) return sendError(res, notFound("Operational task"));
+        try {
+          const context = await buildTaskWorkflowContext(id, oldTaskForGuard.status);
+          assertTaskWorkflowTransition(context, updates.status, "status_update");
+        } catch (err: any) {
+          if (err instanceof TaskWorkflowGuardError) {
+            return res.status(err.statusCode).json({ error: err.message });
+          }
+          throw err;
+        }
+      }
+
       if (id < 0) {
         const planId = -id;
         const planTasks = await storage.getProjectPlansByProject("");
@@ -11126,6 +11141,17 @@ export async function registerRoutes(
         }
         const oldTask = await storage.getOperationalTask(taskId);
         if (!oldTask) continue;
+        if (updates.status) {
+          try {
+            const context = await buildTaskWorkflowContext(taskId, oldTask.status);
+            assertTaskWorkflowTransition(context, updates.status, "bulk_status_update");
+          } catch (err: any) {
+            if (err instanceof TaskWorkflowGuardError) {
+              return res.status(err.statusCode).json({ error: err.message, taskId });
+            }
+            throw err;
+          }
+        }
         const updated = await storage.updateOperationalTask(taskId, updates);
         for (const [key, value] of Object.entries(updates)) {
           if ((oldTask as any)[key] !== value) {
