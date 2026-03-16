@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq, and, desc, asc, sql } from "drizzle-orm";
+import { eq, and, desc, asc, sql, ilike } from "drizzle-orm";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import {
   users, projectInfo, projectPhaseHistory, operationalTasks,
@@ -9,6 +9,7 @@ import {
   PROJECT_PHASES, PROJECT_PHASE_LABELS, LIFECYCLE_PHASES, PHASE_TO_ENG_STAGES,
   type ProjectPhase,
   TEMPLATE_ITEM_TYPES, TEMPLATE_WORKSTREAMS, TEMPLATE_LINK_TARGET_TYPES,
+  clients,
   qcWarning,
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
@@ -42,6 +43,49 @@ interface ApplyResult {
   viewShortcutsSkipped: number;
   warningsCreated: string[];
   details: { itemKey: string; action: string; type: string; title: string }[];
+}
+
+async function resolveLinkedClient(params: {
+  requestedClientId?: number | null;
+  requestedClientName?: string | null;
+}) {
+  if (params.requestedClientId != null && Number.isFinite(params.requestedClientId)) {
+    const [client] = await db
+      .select({
+        id: clients.id,
+        name: clients.name,
+        clientCode: clients.clientId,
+      })
+      .from(clients)
+      .where(eq(clients.id, params.requestedClientId));
+    return {
+      client: client || null,
+      status: client ? "linked_by_id" : "client_id_not_found",
+    } as const;
+  }
+
+  const requestedClientName = params.requestedClientName?.trim();
+  if (!requestedClientName) {
+    return {
+      client: null,
+      status: "not_provided",
+    } as const;
+  }
+
+  const [client] = await db
+    .select({
+      id: clients.id,
+      name: clients.name,
+      clientCode: clients.clientId,
+    })
+    .from(clients)
+    .where(ilike(clients.name, requestedClientName))
+    .limit(1);
+
+  return {
+    client: client || null,
+    status: client ? "linked_by_name" : "name_not_matched",
+  } as const;
 }
 
 async function buildPreview(
@@ -651,7 +695,7 @@ export function registerTemplateRoutes(app: Express) {
   app.post("/api/projects", jwtAuth, requireAuth, requirePermission('create_project', 'edit'), async (req, res) => {
     try {
       const user = getUser(req);
-      const { projectName, clientName, projectCode, location, initialPhase } = req.body;
+      const { projectName, clientId, clientName, projectCode, location, initialPhase } = req.body;
       if (!projectName || typeof projectName !== "string" || projectName.trim().length === 0) {
         return res.status(400).json({ error: "projectName is required" });
       }
@@ -664,14 +708,19 @@ export function registerTemplateRoutes(app: Express) {
       }
 
       const phase = initialPhase && PROJECT_PHASES.includes(initialPhase as any) ? initialPhase : "P0_FIRST_ASSESSMENT";
+      const resolvedClient = await resolveLinkedClient({
+        requestedClientId: typeof clientId === "number" ? clientId : null,
+        requestedClientName: typeof clientName === "string" ? clientName : null,
+      });
 
       const [created] = await db.insert(projectInfo).values({
         projectName: projectName.trim(),
+        clientId: resolvedClient.client?.id ?? null,
         phase,
         phaseUpdatedAt: new Date(),
         phaseUpdatedByUserId: user.id,
         phaseNotes: `Project created at ${PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase}`,
-        pd: clientName || null,
+        pd: null,
       }).returning();
 
       await db.insert(projectPhaseHistory).values({
@@ -702,12 +751,24 @@ export function registerTemplateRoutes(app: Express) {
       }
 
       res.json({
+        id: created.id,
+        projectName: created.projectName,
+        clientId: created.clientId ?? null,
+        clientName: resolvedClient.client?.name ?? null,
         project: created,
         phaseLabel,
         templateApplied: !!applyResult,
         applyResult,
         engStagesGenerated: !!engStagesResult,
         engStagesResult,
+        clientResolution: {
+          status: resolvedClient.status,
+          requestedClientId: typeof clientId === "number" ? clientId : null,
+          requestedClientName: typeof clientName === "string" ? clientName.trim() || null : null,
+          linkedClientId: resolvedClient.client?.id ?? null,
+          linkedClientName: resolvedClient.client?.name ?? null,
+          linkedClientCode: resolvedClient.client?.clientCode ?? null,
+        },
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
