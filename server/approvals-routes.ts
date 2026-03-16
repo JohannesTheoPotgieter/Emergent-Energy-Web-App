@@ -271,6 +271,7 @@ export function registerApprovalsRoutes(app: Express) {
 
       const { type, title, description, assignedApprover, dueDate, projectId, approvalCategory, relatedEntityType, relatedEntityId } = req.body;
       if (!type || !title) return res.status(400).json({ error: "type and title are required" });
+      if (!projectId) return res.status(400).json({ error: "projectId is required" });
 
       const result = await db.insert(approvals).values({
         type,
@@ -280,7 +281,7 @@ export function registerApprovalsRoutes(app: Express) {
         requestedBy: userId,
         assignedApprover: assignedApprover ? parseInt(assignedApprover) : null,
         dueDate: dueDate ? new Date(dueDate) : null,
-        projectId: projectId ? parseInt(projectId) : null,
+        projectId: parseInt(projectId),
         approvalCategory: approvalCategory || null,
         relatedEntityType: relatedEntityType || null,
         relatedEntityId: relatedEntityId ? parseInt(relatedEntityId) : null,

@@ -12,10 +12,20 @@ import { AlertTriangle, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type Deliverable = { reference: string; uploadedBy: string; uploadedDate: string };
+type EvidenceEval = {
+  totalRequired: number;
+  totalPresent: number;
+  missingItems: Array<{ requirementKey: string; label: string; missingBy: number }>;
+  score: number;
+  threshold: number;
+  pass: boolean;
+};
+
 type HandoverData = {
   project: any;
   handover: any;
   blockers: string[];
+  evidence?: EvidenceEval;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -45,6 +55,8 @@ export default function PdPmHandoverPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [rejectInlineError, setRejectInlineError] = useState<string | null>(null);
   const [excelTrackerDraft, setExcelTrackerDraft] = useState("");
+  const [evidenceOverrideReason, setEvidenceOverrideReason] = useState("");
+  const [newEvidence, setNewEvidence] = useState({ requirementKey: "", evidenceType: "document", title: "", valueRef: "" });
 
   const { data, isLoading, error: handoverLoadError, refetch } = useQuery<HandoverData>({
     queryKey: ["pd-pm-handover", projectId],
@@ -112,10 +124,34 @@ export default function PdPmHandoverPage() {
       }),
   });
 
+  const addEvidence = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/pd-pm-handover/${projectId}/evidence`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newEvidence),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Could not attach evidence.");
+    },
+    onSuccess: () => {
+      toast({ title: "Evidence attached" });
+      setNewEvidence({ requirementKey: "", evidenceType: "document", title: "", valueRef: "" });
+      qc.invalidateQueries({ queryKey: ["pd-pm-handover", projectId] });
+    },
+    onError: (e: any) => toast({ title: "Evidence failed", description: e.message, variant: "destructive" }),
+  });
+
   const submit = useMutation({
     mutationFn: async () => {
       setSubmitError(null);
-      const res = await fetch(`/api/pd-pm-handover/${projectId}/submit`, { method: "POST", credentials: "include" });
+      const res = await fetch(`/api/pd-pm-handover/${projectId}/submit`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ evidenceOverrideReason: evidenceOverrideReason.trim() || undefined }),
+      });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "Could not submit handover. Refresh and retry.");
     },
@@ -271,13 +307,19 @@ export default function PdPmHandoverPage() {
           <CardTitle>PD to PM Handover — {data.project.projectName}</CardTitle>
           <p className="text-sm text-muted-foreground">Status: <strong>{STATUS_LABELS[status] || status}</strong> · PD: {data.project.pd || "—"} · PM: {data.project.pm || "—"}</p>
           <p className="text-xs text-muted-foreground">Blockers: {data.blockers.length} · Mandatory deliverables complete: {3 - deliverables.filter((d) => !(form.deliverables?.[d.key]?.reference)).length}/3</p>
+          <p className="text-xs text-muted-foreground">Evidence score: <strong>{data.evidence?.score ?? 0}%</strong> (threshold {data.evidence?.threshold ?? 0}%)</p>
         </CardHeader>
       </Card>
 
       <Card>
         <CardHeader><CardTitle>Handover checklist</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          {data.blockers.length > 0 && <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">Cannot submit handover. Missing items: {blockersText}. Complete these fields/documents, then retry.</div>}
+          {(data.blockers.length > 0 || (data.evidence && !data.evidence.pass)) && <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">Cannot submit handover. Missing items: {blockersText || data.evidence?.missingItems?.map((m) => m.label).join(", ")}. Complete these fields/documents, then retry.</div>}
+          {!!data.evidence?.missingItems?.length && (
+            <ul className="text-xs text-red-700 list-disc pl-4">
+              {data.evidence.missingItems.map((m) => (<li key={m.requirementKey}>{m.label} (missing {m.missingBy})</li>))}
+            </ul>
+          )}
           {!!submitError && <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">{submitError}</div>}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div><Label>PD Owner</Label><Input value={form.pdOwner || ""} onChange={(e) => setForm({ ...form, pdOwner: e.target.value })} disabled={!pdCanEdit} /></div>
@@ -289,6 +331,25 @@ export default function PdPmHandoverPage() {
             <div><Label>Engineering Status</Label><Input value={form.engineeringStatus || ""} onChange={(e) => setForm({ ...form, engineeringStatus: e.target.value })} disabled={!pdCanEdit} /></div>
             <div><Label>Quality Check Status</Label><Input value={form.qualityStatus || ""} onChange={(e) => setForm({ ...form, qualityStatus: e.target.value })} disabled={!pdCanEdit} /></div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Evidence checklist</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+            <Input placeholder="Requirement key (optional)" value={newEvidence.requirementKey} onChange={(e) => setNewEvidence((v) => ({ ...v, requirementKey: e.target.value }))} />
+            <Input placeholder="Evidence type (document/photo/form/sign_off...)" value={newEvidence.evidenceType} onChange={(e) => setNewEvidence((v) => ({ ...v, evidenceType: e.target.value }))} />
+            <Input placeholder="Title" value={newEvidence.title} onChange={(e) => setNewEvidence((v) => ({ ...v, title: e.target.value }))} />
+            <Input placeholder="Reference / URL" value={newEvidence.valueRef} onChange={(e) => setNewEvidence((v) => ({ ...v, valueRef: e.target.value }))} />
+          </div>
+          <Button type="button" variant="outline" onClick={() => addEvidence.mutate()} disabled={addEvidence.isPending}>{addEvidence.isPending ? "Attaching..." : "Attach evidence"}</Button>
+          {user?.role && ["PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"].includes(user.role) && (
+            <div className="space-y-1">
+              <Label>Override reason (required only if score is below threshold)</Label>
+              <Textarea value={evidenceOverrideReason} onChange={(e) => setEvidenceOverrideReason(e.target.value)} placeholder="Explain why completion is still allowed despite missing evidence" />
+            </div>
+          )}
         </CardContent>
       </Card>
 

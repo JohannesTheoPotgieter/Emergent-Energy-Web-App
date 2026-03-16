@@ -8,7 +8,7 @@ import {
   projectEngApprovals, projectEngStages, engStageTemplates,
   qcItemInstance, qcChecklist, qcTemplateItem,
   projectInfo, users, normalizedPlanTasks, engineeringTasks,
-  msAccounts, msObjects,
+  msAccounts, msObjects, communicationFollowUps, projectCommunicationTimelineEvents,
 } from "@shared/schema";
 import {
   tagToProject,
@@ -16,6 +16,8 @@ import {
   getProjectLinkedItems,
   getUserMsObjects,
   convertToTask,
+  createFollowUpTaskFromCommunication,
+  createProjectTimelineEvent,
 } from "./project-linking-service";
 import { syncAllForUser, syncUserCalendar, syncUserEmail, syncUserTeams, getSyncStatus } from "./ms-sync-service";
 import { getAllUsers, getAssignableUsers, resolveNameToUserId, buildUserMap, mergeResolvedWithTextNames, type ResolvedUser } from "./user-resolver";
@@ -150,6 +152,88 @@ export function registerMsSyncRoutes(app: Express) {
     } catch (err: any) {
       const status = err.message?.includes("not found") ? 404 : err.message?.includes("only") ? 403 : 500;
       res.status(status).json({ error: err.message });
+    }
+  });
+
+
+
+  app.post("/api/ms-objects/:id/create-follow-up", jwtAuth, requireAuth, requireUnifiedWorkFlag, async (req: Request, res: Response) => {
+    try {
+      const msObjectId = parseInt(String(req.params.id));
+      if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
+
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "auth_required" });
+
+      const result = await createFollowUpTaskFromCommunication({
+        msObjectId,
+        userId,
+        title: req.body?.title,
+        dueAt: req.body?.dueAt,
+        notes: req.body?.notes,
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      const msg = err.message || "Failed to create follow-up";
+      const status = msg.includes("not found") ? 404 : msg.includes("only") ? 403 : msg.includes("already exists") ? 409 : 500;
+      res.status(status).json({ error: msg });
+    }
+  });
+
+  app.get("/api/ms-objects/follow-ups/overdue", jwtAuth, requireAuth, requireUnifiedWorkFlag, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "auth_required" });
+
+      const now = new Date();
+      const rows = await db
+        .select({
+          id: communicationFollowUps.id,
+          msObjectId: communicationFollowUps.msObjectId,
+          projectId: communicationFollowUps.projectId,
+          dueAt: communicationFollowUps.dueAt,
+          taskId: communicationFollowUps.taskId,
+          taskType: communicationFollowUps.taskType,
+          status: communicationFollowUps.status,
+          reminderSentAt: communicationFollowUps.reminderSentAt,
+          createdAt: communicationFollowUps.createdAt,
+          subjectOrTitle: msObjects.subjectOrTitle,
+          webLink: msObjects.webLink,
+        })
+        .from(communicationFollowUps)
+        .leftJoin(msObjects, eq(msObjects.id, communicationFollowUps.msObjectId))
+        .where(and(
+          eq(msObjects.userId, userId),
+          eq(communicationFollowUps.status, "pending"),
+          sql`${communicationFollowUps.dueAt} is not null and ${communicationFollowUps.dueAt} < ${now}`
+        ))
+        .orderBy(asc(communicationFollowUps.dueAt));
+
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/projects/:projectId/communication-timeline", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(String(req.params.projectId));
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project id" });
+
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "auth_required" });
+
+      const items = await db
+        .select()
+        .from(projectCommunicationTimelineEvents)
+        .where(eq(projectCommunicationTimelineEvents.projectId, projectId))
+        .orderBy(desc(projectCommunicationTimelineEvents.createdAt))
+        .limit(100);
+
+      res.json(items);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 

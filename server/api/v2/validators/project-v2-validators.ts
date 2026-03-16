@@ -3,7 +3,11 @@ import { z } from "zod";
 export const projectIdParamSchema = z.object({ projectId: z.coerce.number().int().positive() });
 export const idParamSchema = z.object({ id: z.coerce.number().int().positive() });
 
-export const workItemCreateSchema = z.object({
+const projectContextSchema = z.object({
+  projectId: z.number().int().positive().optional(),
+});
+
+export const workItemCreateSchema = projectContextSchema.extend({
   title: z.string().min(1),
   description: z.string().optional(),
   workstream: z.enum(["PD", "ENG", "QUALITY", "PM", "FINANCE", "PERSONAL", "GOVERNANCE"]),
@@ -22,7 +26,7 @@ export const milestoneCreateSchema = workItemCreateSchema.extend({
 });
 export const milestonePatchSchema = milestoneCreateSchema.partial();
 
-export const procurementItemCreateSchema = z.object({
+export const procurementItemCreateSchema = projectContextSchema.extend({
   title: z.string().min(1),
   category: z.enum(["material", "equipment", "service", "subcontract", "other"]).default("other"),
   expectedCost: z.number().nonnegative().optional(),
@@ -34,7 +38,7 @@ export const procurementItemCreateSchema = z.object({
 
 export const procurementItemPatchSchema = procurementItemCreateSchema.partial();
 
-export const procurementPoCreateSchema = z.object({
+export const procurementPoCreateSchema = projectContextSchema.extend({
   title: z.string().min(1),
   poId: z.number().int().positive(),
   supplierId: z.number().int().positive().optional(),
@@ -47,7 +51,7 @@ export const procurementPoPatchSchema = procurementPoCreateSchema.partial().exte
   status: z.enum(["quoted", "approved", "ordered", "partially_received", "received", "invoiced", "closed"]).optional(),
 });
 
-export const invoiceCreateSchema = z.object({
+export const invoiceCreateSchema = projectContextSchema.extend({
   invoiceNumber: z.string().optional(),
   invoiceDate: z.string().optional(),
   amount: z.number().nonnegative().optional(),
@@ -57,7 +61,7 @@ export const invoiceCreateSchema = z.object({
   notes: z.string().optional(),
 });
 
-export const engineeringDesignCreateSchema = z.object({
+export const engineeringDesignCreateSchema = projectContextSchema.extend({
   projectEngStageId: z.number().int().positive(),
   fileName: z.string().min(1),
   storageRef: z.string().min(1),
@@ -66,7 +70,7 @@ export const engineeringDesignCreateSchema = z.object({
 });
 export const engineeringDesignPatchSchema = engineeringDesignCreateSchema.partial().extend({ id: z.number().int().positive() });
 
-export const qualityCheckCreateSchema = z.object({
+export const qualityCheckCreateSchema = projectContextSchema.extend({
   checklistId: z.number().int().positive(),
   templateItemId: z.number().int().positive(),
   qmStatus: z.string().optional(),
@@ -75,7 +79,7 @@ export const qualityCheckCreateSchema = z.object({
 });
 export const qualityCheckPatchSchema = qualityCheckCreateSchema.partial().extend({ id: z.number().int().positive() });
 
-export const financeVariationCreateSchema = z.object({
+export const financeVariationCreateSchema = projectContextSchema.extend({
   title: z.string().min(1),
   description: z.string().optional(),
   expectedCost: z.number().nonnegative().default(0),

@@ -53,6 +53,7 @@ import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
 import { PageShell } from "@/components/layout/page-shell";
 import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
 import { usePermission } from "@/hooks/use-permissions";
+import { parseCockpitMode, resolveSummaryDeepLink, toCockpitModeQuery, type CockpitMode } from "@/lib/project-cockpit";
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", border: "border-border" },
@@ -728,6 +729,7 @@ const SECTION_DEFAULT_SUBTAB: Record<string, string> = {
   collaboration: "timeline",
 };
 
+
 function RagDot({ color }: { color: "green" | "amber" | "red" }) {
   const cls = color === "green" ? "bg-emerald-500" : color === "amber" ? "bg-amber-500" : "bg-red-500";
   return <span className={`inline-block w-2.5 h-2.5 rounded-full ${cls}`} />;
@@ -826,6 +828,7 @@ export default function ProjectDetailPage() {
 
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
   const urlTab = searchParams.get("tab");
+  const urlMode = searchParams.get("mode");
   const highlightId = searchParams.get("highlightId") ? Number(searchParams.get("highlightId")) : null;
   const highlightType = searchParams.get("highlightType");
 
@@ -838,6 +841,7 @@ export default function ProjectDetailPage() {
 
   const [activeSection, setActiveSection] = useState<string>(resolvedFromUrl?.section || "overview");
   const [activeSubTab, setActiveSubTab] = useState<string>(resolvedFromUrl?.subTab || "");
+  const [cockpitMode, setCockpitMode] = useState<CockpitMode>(parseCockpitMode(urlMode));
 
   useEffect(() => {
     if (urlTab) {
@@ -849,6 +853,10 @@ export default function ProjectDetailPage() {
     }
   }, [urlTab]);
 
+  useEffect(() => {
+    setCockpitMode(parseCockpitMode(urlMode));
+  }, [urlMode]);
+
   const navigateToSection = (section: string, subTab?: string) => {
     if (section === "engineering" && !canViewTab.engineering) { setActiveSection("overview"); return; }
     if (section === "quality" && !canViewTab.quality) { setActiveSection("overview"); return; }
@@ -856,6 +864,19 @@ export default function ProjectDetailPage() {
     if (section === "collaboration" && !canViewSubTab.collaboration) { setActiveSection("overview"); return; }
     setActiveSection(section);
     setActiveSubTab(subTab || SECTION_DEFAULT_SUBTAB[section] || "");
+  };
+
+  const switchCockpitMode = (mode: CockpitMode) => {
+    setCockpitMode(mode);
+    const nextQuery = toCockpitModeQuery(searchParams, mode);
+    setLocation(`/project/${encodeURIComponent(projectName)}${nextQuery ? `?${nextQuery}` : ""}`, { replace: true });
+  };
+
+  const openExecutionArea = (section: string, subTab?: string) => {
+    if (cockpitMode !== "execution") {
+      switchCockpitMode("execution");
+    }
+    navigateToSection(section, subTab);
   };
 
   const queryClient = useQueryClient();
@@ -965,6 +986,16 @@ export default function ProjectDetailPage() {
       return res.json();
     },
     enabled: !!projectInfo?.project_info_id,
+  });
+
+  const { data: projectExceptions } = useQuery<{ items: Array<{ id: string; title: string; severity: string; sourceLink: string; reason: string }>; summary?: { total: number; bySeverity: Record<string, number> } }>({
+    queryKey: ["project-exceptions", projectInfoId],
+    queryFn: async () => {
+      const res = await engFetch(`/api/exceptions?projectId=${projectInfoId}`);
+      if (!res.ok) return { items: [], summary: { total: 0, bySeverity: {} } };
+      return res.json();
+    },
+    enabled: !!projectInfoId,
   });
 
   const { data: qualityData } = useQuery({
@@ -1091,6 +1122,12 @@ export default function ProjectDetailPage() {
   const unpaidExpenseCount = Math.max((expenseData as any[]).filter((e: any) => !isExpensePaid(e)).length, 0);
   const dependencyCount = pdTicketsData.length;
   const overdueEngineeringCount = (engDataForAlerts?.tasks || []).filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "COMPLETE").length;
+  const topAlerts = [
+    { label: "Overdue plan tasks", count: overduePlanTasks.length, action: () => openExecutionArea("delivery", "task-grid") },
+    { label: "Overdue engineering tasks", count: overdueEngineeringCount, action: () => openExecutionArea("engineering", "eng-tasks") },
+    { label: "Pending quality approvals", count: Math.max(qualityTotalItems - qualityApprovedItems, 0), action: () => openExecutionArea("quality", "quality") },
+    { label: "Unpaid supplier costs", count: unpaidExpenseCount, action: () => openExecutionArea("commercial", "expenditure") },
+  ].filter((alert) => alert.count > 0);
   const collaborationSignals = {
     hasHistory: !!projectInfoId,
     hasApprovals: !!projectInfoId,
@@ -1155,6 +1192,65 @@ export default function ProjectDetailPage() {
         ) : null;
       })()}
 
+      <Card className="shadow-sm" data-testid="cockpit-command-header">
+        <CardContent className="p-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Project cockpit</p>
+            <h2 className="text-base font-semibold">{displayName}</h2>
+          </div>
+          <div className="inline-flex items-center rounded-lg border p-1 bg-muted/30" data-testid="cockpit-mode-toggle">
+            <Button size="sm" variant={cockpitMode === "executive" ? "default" : "ghost"} className="h-8" onClick={() => switchCockpitMode("executive")} data-testid="cockpit-mode-executive">
+              Executive Summary
+            </Button>
+            <Button size="sm" variant={cockpitMode === "execution" ? "default" : "ghost"} className="h-8" onClick={() => switchCockpitMode("execution")} data-testid="cockpit-mode-execution">
+              Execution Mode
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {topAlerts.length > 0 && (
+        <div className="flex flex-wrap gap-2" data-testid="cockpit-exception-strip">
+          {topAlerts.map((alert) => (
+            <button key={alert.label} onClick={alert.action} className="text-xs rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 hover:bg-amber-100">
+              <span className="font-semibold text-amber-800">{alert.count}</span> {alert.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {cockpitMode === "executive" && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3" data-testid="executive-summary-cards">
+          <Card className="shadow-sm lg:col-span-2">
+            <CardContent className="p-4 space-y-2">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Executive signal</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                <div><p className="text-xs text-muted-foreground">Lifecycle stage</p><p className="font-semibold">{getPhaseLabel(phase)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Next milestone</p><p className="font-semibold">{nextMilestone || "Not set"}</p></div>
+                <div><p className="text-xs text-muted-foreground">Gate status</p><p className="font-semibold">{projectInfo?.execution_gate_status || "NOT_ELIGIBLE"}</p></div>
+                <div><p className="text-xs text-muted-foreground">Completion</p><p className="font-semibold">{completion}</p></div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm pt-2 border-t">
+                <div><p className="text-xs text-muted-foreground">Budget</p><p className="font-semibold">R{budgetTotal.toLocaleString()}</p></div>
+                <div><p className="text-xs text-muted-foreground">COS</p><p className="font-semibold">{cosRealisedPct.toFixed(1)}%</p></div>
+                <div><p className="text-xs text-muted-foreground">Revenue</p><p className="font-semibold">{revenueRealisedPct.toFixed(1)}%</p></div>
+                <div><p className="text-xs text-muted-foreground">GP delta</p><p className="font-semibold">{marginDelta.toFixed(1)}%</p></div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="shadow-sm">
+            <CardContent className="p-4 space-y-2">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Deep links</p>
+              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => { const t = resolveSummaryDeepLink("plan"); openExecutionArea(t.section, t.subTab); }}>Plan / Board</Button>
+              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => { const t = resolveSummaryDeepLink("procurement"); openExecutionArea(t.section, t.subTab); }}>Procurement / Finance</Button>
+              {canViewTab.quality && <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => { const t = resolveSummaryDeepLink("quality"); openExecutionArea(t.section, t.subTab); }}>Quality highlights</Button>}
+              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => { const t = resolveSummaryDeepLink("history"); openExecutionArea(t.section, t.subTab); }}>Timeline / History</Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {cockpitMode === "execution" && (
       <div className="flex items-center gap-2 rounded-lg bg-muted/50 p-1 overflow-x-auto scrollbar-hide" data-testid="project-major-tabs">
         {[
           { key: "overview", label: "Overview", icon: Eye, visible: true },
@@ -1180,8 +1276,9 @@ export default function ProjectDetailPage() {
           );
         })}
       </div>
+      )}
 
-      {activeSection === "overview" && (
+      {activeSection === "overview" && cockpitMode === "execution" && (
         <div className="space-y-4" data-testid="overview-section">
           <Card className="shadow-sm" data-testid="overview-truth-center">
             <CardContent className="p-4 space-y-4">
@@ -1211,6 +1308,21 @@ export default function ProjectDetailPage() {
                     <p className={`text-sm font-semibold ${ragColor(qualityRag)}`}>{qualityRag.toUpperCase()}</p>
                   </div>
                 </div>
+              </div>
+
+              <div className="rounded-lg border border-red-100 bg-red-50/30 p-3 space-y-2" data-testid="overview-project-exceptions">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Project exceptions</p>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <Badge className="bg-red-100 text-red-700">Critical: {projectExceptions?.summary?.bySeverity?.critical || 0}</Badge>
+                  <Badge className="bg-orange-100 text-orange-700">High: {projectExceptions?.summary?.bySeverity?.high || 0}</Badge>
+                </div>
+                {(projectExceptions?.items || []).slice(0, 3).map((item) => (
+                  <a key={item.id} href={item.sourceLink} className="block rounded-md border bg-white px-2 py-1 text-xs hover:bg-slate-50">
+                    <span className="font-medium">{item.title}</span>
+                    <span className="ml-2 text-muted-foreground">{item.reason}</span>
+                  </a>
+                ))}
+                {!(projectExceptions?.items || []).length ? <p className="text-xs text-emerald-700">No active exceptions.</p> : null}
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">

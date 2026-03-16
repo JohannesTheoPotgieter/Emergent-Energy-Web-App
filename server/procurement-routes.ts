@@ -186,6 +186,7 @@ export function registerProcurementRoutes(app: Express) {
               requestedBy: old.requestedByUserId || user.id,
               decidedBy: user.id,
               decidedAt: new Date(),
+              projectId: old.projectId,
             }).returning();
             updates.approvalId = approvalResult[0].id;
           } catch (approvalErr: any) {
