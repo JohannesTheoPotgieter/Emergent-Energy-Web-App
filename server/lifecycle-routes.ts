@@ -8,6 +8,7 @@ import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
 import { requirePermission } from "./permission-middleware";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
+import { createStageGateOverride, evaluateStageGate } from "./services/lifecycle-stage-gate-service";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -29,6 +30,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER", "admin"];
+const STAGE_GATE_OVERRIDE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER", "admin"];
+
 
 function requireExecRole(req: Request, res: Response, next: NextFunction) {
   const role = ((req as any).user as any)?.role || "";
@@ -1148,7 +1151,6 @@ export function registerLifecycleRoutes(app: Express) {
       }
 
       logAuditFromReq(req, { entityType: "lifecycle", entityId: String(created.id), action: "create", projectName: cleanName, changesJson: { description: "Engineering project promoted (new)", phase: targetPhase } });
-      const actor = actorFromReq(req);
       await createProjectEvent({
         projectId: created.id,
         eventType: "project.created",
@@ -1206,6 +1208,95 @@ export function registerLifecycleRoutes(app: Express) {
     }
   });
 
+  app.get("/api/lifecycle-board/projects/:id/stage-gates/evaluate", requireAuth, requirePermission('projects', 'view'), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid project id" });
+      const targetStage = String(req.query.targetStage || "").trim();
+      if (!targetStage) {
+        return res.status(400).json({ error: "targetStage query parameter is required" });
+      }
+      const actor = actorFromReq(req);
+      const evaluation = await evaluateStageGate({
+        projectId: id,
+        targetStage,
+        actorUserId: actor.actorUserId,
+        actorRole: actor.actorRole,
+      });
+      res.json(evaluation);
+    } catch (err: any) {
+      console.error("[lifecycle-board] GET stage-gates/evaluate error:", err);
+      res.status(500).json({ error: err.message || "Failed to evaluate stage gate" });
+    }
+  });
+
+  app.post("/api/lifecycle-board/projects/:id/stage-gates/override", requireAuth, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id as string);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid project id" });
+
+      const user = (req as any).user as any;
+      const role = user?.role || "";
+      if (!STAGE_GATE_OVERRIDE_ROLES.includes(role)) {
+        return res.status(403).json({ error: "forbidden", message: "Your role is not authorized to submit stage gate overrides" });
+      }
+
+      const { gateName, targetStage, overrideReason, expiryDate, note } = req.body || {};
+      if (!gateName || !targetStage || !overrideReason || typeof overrideReason !== "string" || overrideReason.trim().length < 8) {
+        return res.status(400).json({
+          error: "validation_error",
+          message: "gateName, targetStage, and overrideReason (min 8 chars) are required",
+        });
+      }
+
+      const expiresAt = expiryDate ? new Date(expiryDate) : null;
+      if (expiryDate && Number.isNaN(expiresAt?.getTime())) {
+        return res.status(400).json({ error: "validation_error", message: "expiryDate must be a valid date" });
+      }
+
+      const override = await createStageGateOverride({
+        projectId: id,
+        gateName: String(gateName),
+        targetStage: String(targetStage),
+        overrideReason: overrideReason.trim(),
+        overriddenBy: user?.id || null,
+        overriddenByRole: role,
+        expiresAt,
+        note: note ? String(note) : null,
+      });
+
+      logAuditFromReq(req, {
+        entityType: "lifecycle",
+        entityId: String(id),
+        action: "override",
+        projectName: null,
+        changesJson: {
+          description: "Stage gate override granted",
+          gateName,
+          targetStage,
+          overrideReason: overrideReason.trim(),
+          expiryDate: expiresAt,
+          note: note || null,
+        },
+      });
+
+      res.status(201).json({
+        id: override.id,
+        project_id: override.projectId,
+        gate_name: override.gateName,
+        target_stage: override.targetStage,
+        override_reason: override.overrideReason,
+        overridden_by: override.overriddenBy,
+        timestamp: override.createdAt,
+        expiry_date: override.expiresAt,
+        note: override.note,
+      });
+    } catch (err: any) {
+      console.error("[lifecycle-board] POST stage-gates/override error:", err);
+      res.status(500).json({ error: err.message || "Failed to create override" });
+    }
+  });
+
   app.patch("/api/lifecycle-board/projects/:id/phase", requireAuth, requireExecRole, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
     try {
       const idParam = req.params.id as string;
@@ -1220,7 +1311,30 @@ export function registerLifecycleRoutes(app: Express) {
       const [existing] = await db.select().from(projectInfo).where(eq(projectInfo.id, id));
       if (!existing) return res.status(404).json({ error: "Project not found" });
 
-      const userId = ((req as any).user as any)?.id || null;
+      const actor = actorFromReq(req);
+      const userId = actor.actorUserId || null;
+
+      const evaluation = await evaluateStageGate({
+        projectId: id,
+        targetStage: phase.trim(),
+        actorUserId: actor.actorUserId,
+        actorRole: actor.actorRole,
+      });
+
+      if (!evaluation.allowed) {
+        return res.status(409).json({
+          error: "stage_gate_failed",
+          message: "Stage transition blocked because required gate checks are incomplete",
+          gate: {
+            projectId: id,
+            gateName: evaluation.gateName,
+            fromStage: evaluation.fromStage,
+            targetStage: evaluation.targetStage,
+            missingItems: evaluation.missingItems,
+            canOverride: STAGE_GATE_OVERRIDE_ROLES.includes(actor.actorRole || ""),
+          },
+        });
+      }
 
       const [updated] = await db.update(projectInfo).set({
         phase: phase.trim(),
@@ -1243,7 +1357,6 @@ export function registerLifecycleRoutes(app: Express) {
       }
 
       logAuditFromReq(req, { entityType: "project_lifecycle", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Phase changed", fromPhase: existing.phase, toPhase: phase.trim() } });
-      const actor = actorFromReq(req);
       await createProjectEvent({
         projectId: id,
         eventType: "project.stage_changed",
