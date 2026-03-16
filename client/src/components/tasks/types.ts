@@ -15,6 +15,7 @@ export interface Task {
   percentComplete: number;
   holdReason: string | null;
   blockedType: string | null;
+  approvalRequired?: boolean | null;
   trackingRag: string | null;
   summaryText: string | null;
   taskTypeTag: string | null;

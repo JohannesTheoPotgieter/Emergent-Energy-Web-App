@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, invalidateProjectQueries } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import { format, formatDistanceToNow, differenceInDays } from "date-fns";
 import type {
   OperationalTask,
@@ -335,6 +336,18 @@ export default function TaskDetailDrawer({
     },
   });
 
+
+  const guardedUpdateTask = (updates: Record<string, unknown>) => {
+    if (typeof updates.status === "string" && data) {
+      const blockedReason = getTaskWorkflowBlockReason(data as any, updates.status);
+      if (blockedReason) {
+        toast({ title: "Status change blocked", description: blockedReason, variant: "destructive" });
+        return;
+      }
+    }
+    updateTaskMutation.mutate(updates);
+  };
+
   if (!open || taskId === null) return null;
 
   return (
@@ -361,7 +374,7 @@ export default function TaskDetailDrawer({
             ) : (
               <TaskDetailContent
                 data={data}
-                updateTask={updateTaskMutation.mutate}
+                updateTask={guardedUpdateTask}
                 addComment={addCommentMutation.mutate}
                 addChecklist={addChecklistMutation.mutate}
                 addChecklistItem={addChecklistItemMutation.mutate}
