@@ -71,6 +71,8 @@ interface UserAssignmentPickerProps {
   onSuccess?: () => void;
   invalidateKeys?: string[];
   showUnassignedLabel?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 export default function UserAssignmentPicker({
@@ -83,6 +85,8 @@ export default function UserAssignmentPicker({
   onSuccess,
   invalidateKeys = ["/api/my-work/all-tasks"],
   showUnassignedLabel = true,
+  disabled = false,
+  disabledReason,
 }: UserAssignmentPickerProps) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -199,14 +203,15 @@ export default function UserAssignmentPicker({
         <span className={`${isXs ? 'text-[10px]' : 'text-xs'} text-muted-foreground italic`}>Unassigned</span>
       )}
 
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={(next) => { if (!disabled) setOpen(next); }}>
         <PopoverTrigger asChild>
           <Button
             variant="ghost"
             size="icon"
             className={`${isXs ? 'h-5 w-5' : 'h-6 w-6'} rounded-full hover:bg-blue-50 text-muted-foreground hover:text-blue-600`}
             data-testid={`btn-assign-${taskSource}-${taskId}`}
-            title="Assign user"
+            title={disabled ? (disabledReason || "You do not have permission to assign this task") : "Assign user"}
+            disabled={disabled}
           >
             <UserPlus className={isXs ? "h-3 w-3" : "h-3.5 w-3.5"} />
           </Button>
