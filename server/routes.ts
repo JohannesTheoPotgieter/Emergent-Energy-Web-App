@@ -8182,13 +8182,14 @@ export async function registerRoutes(
   app.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
     try {
       const projectName = req.params.projectName;
-      const [rawExpenses, taskLinks, opTasks, planTasks, cosOverrides, expenditureOverrides] = await Promise.all([
+      const [rawExpenses, taskLinks, opTasks, planTasks, cosOverrides, expenditureOverrides, revSummary] = await Promise.all([
         storage.getProgramExpensesByProject(projectName),
         storage.getExpenseTaskLinks(projectName),
         storage.getOperationalTasksByProject(projectName),
         storage.getProjectPlansByProject(projectName),
         db.select().from(cosStatusOverrides).where(eq(cosStatusOverrides.projectName, projectName)),
         storage.getExpenditureOverridesByProject(projectName),
+        storage.getProjectRevenueSummary(projectName),
       ]);
 
       const expenses = applyExpenditureOverridesWithConfirmed(rawExpenses, expenditureOverrides);
@@ -8279,6 +8280,25 @@ export async function registerRoutes(
       });
 
       const categories = [...new Set(expenses.filter((e: any) => e.rowType === 'category').map((e: any) => e.expenseCategory).filter(Boolean))];
+
+      const importedBudgetRaw = enriched.reduce((s: number, e: any) => s + safeNum(e.budgetTotal), 0);
+      const costedExpenditure = safeNum(revSummary?.plannedExpenditure);
+      if (costedExpenditure > 0 && importedBudgetRaw === 0) {
+        const totalAct = enriched.reduce((s: number, e: any) => s + safeNum(e.expenseActualTotal), 0);
+        if (totalAct > 0) {
+          let allocated = 0;
+          for (let i = 0; i < enriched.length; i++) {
+            const actual = safeNum(enriched[i].expenseActualTotal);
+            if (i === enriched.length - 1) {
+              enriched[i].budgetTotal = (costedExpenditure - allocated).toFixed(2);
+            } else {
+              const share = Math.round((actual / totalAct) * costedExpenditure * 100) / 100;
+              enriched[i].budgetTotal = share.toFixed(2);
+              allocated += share;
+            }
+          }
+        }
+      }
 
       res.json({ items: enriched, categories });
     } catch (error) {

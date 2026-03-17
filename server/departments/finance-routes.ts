@@ -3996,7 +3996,7 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
 router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = req.params.projectName;
-    const [expenses, taskLinks, opTasks, planTasks, cosOverrides, expenditureOverrides, projectRows] = await Promise.all([
+    const [expenses, taskLinks, opTasks, planTasks, cosOverrides, expenditureOverrides, projectRows, revSummary] = await Promise.all([
       storage.getProgramExpensesByProject(projectName),
       storage.getExpenseTaskLinks(projectName),
       storage.getOperationalTasksByProject(projectName),
@@ -4011,6 +4011,7 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
         .from(projectInfo)
         .where(eq(projectInfo.projectName, projectName))
         .limit(1),
+      storage.getProjectRevenueSummary(projectName),
     ]);
 
     const cosOverrideByExpenseId = new Map(cosOverrides.map(o => [o.expenseId, o]));
@@ -4187,6 +4188,27 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
     });
 
     const categories = [...new Set(expenses.filter((e: any) => e.rowType === 'category').map((e: any) => e.expenseCategory).filter(Boolean))];
+
+    const importedBudgetRaw = enriched.reduce((sum: number, item: any) => sum + safeNum(item.budgetTotal), 0);
+    const costedExpenditure = safeNum(revSummary?.plannedExpenditure);
+    if (costedExpenditure > 0 && importedBudgetRaw === 0) {
+      const totalAct = enriched.reduce((s: number, e: any) => s + safeNum(e.expenseActualTotal), 0);
+      if (totalAct > 0) {
+        let allocated = 0;
+        for (let i = 0; i < enriched.length; i++) {
+          const actual = safeNum(enriched[i].expenseActualTotal);
+          if (i === enriched.length - 1) {
+            (enriched[i] as any).budgetTotal = (costedExpenditure - allocated).toFixed(2);
+          } else {
+            const share = Math.round((actual / totalAct) * costedExpenditure * 100) / 100;
+            (enriched[i] as any).budgetTotal = share.toFixed(2);
+            allocated += share;
+          }
+          (enriched[i] as any)._budgetFromCosted = true;
+        }
+      }
+    }
+
     const totalBudget = enriched.reduce((sum: number, item: any) => sum + safeNum(item.budgetTotal), 0);
     const totalActual = enriched.reduce((sum: number, item: any) => sum + safeNum(item.expenseActualTotal), 0);
     const realisedCos = enriched
@@ -4268,7 +4290,8 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
         source: {
           sourceSheet: "Expenditure Breakdown",
           itemCount: enriched.length,
-          importedBudget: totalBudget,
+          importedBudget: importedBudgetRaw,
+          allocatedBudget: totalBudget,
           importedActual: totalActual,
         },
         managed: {
@@ -4278,6 +4301,7 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
           latestChangeAt: governance.recentChanges[0]?.createdAt || null,
           latestChangeByName: governance.recentChanges[0]?.actorName || null,
         },
+        costedExpenditure,
         variances: {
           budgetVsActual: totalBudget - totalActual,
           realisedCos,
