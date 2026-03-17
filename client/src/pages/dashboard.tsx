@@ -69,6 +69,148 @@ function queueMeta(key: string) {
   }
 }
 
+type UpcomingEvent = { type: string; date: string; projectName: string; projectId: number | null; detail: string; amount?: string };
+
+const PROJECT_EVENT_TYPES = new Set(["site_establishment", "commissioning", "handover_om", "handover_client", "practical_completion", "pd_handover", "construction_start"]);
+const PAYMENT_EVENT_TYPES = new Set(["payment_in", "payment_out"]);
+
+function eventIcon(type: string) {
+  switch (type) {
+    case "site_establishment": return <HardHat className="w-4 h-4 text-orange-500" />;
+    case "construction_start": return <HardHat className="w-4 h-4 text-orange-500" />;
+    case "commissioning": return <Wrench className="w-4 h-4 text-blue-500" />;
+    case "practical_completion": return <Shield className="w-4 h-4 text-teal-500" />;
+    case "handover_om": return <HandshakeIcon className="w-4 h-4 text-violet-500" />;
+    case "handover_client": return <HandshakeIcon className="w-4 h-4 text-emerald-500" />;
+    case "pd_handover": return <FolderOpen className="w-4 h-4 text-sky-500" />;
+    case "payment_in": return <TrendingUp className="w-4 h-4 text-emerald-600" />;
+    case "payment_out": return <TrendingDown className="w-4 h-4 text-red-500" />;
+    default: return <CalendarDays className="w-4 h-4 text-gray-500" />;
+  }
+}
+
+function eventLabel(type: string) {
+  switch (type) {
+    case "site_establishment": return "Site Establishment";
+    case "construction_start": return "Construction Start";
+    case "commissioning": return "Commissioning";
+    case "practical_completion": return "Practical Completion";
+    case "handover_om": return "Handover to O&M";
+    case "handover_client": return "Handover to Client";
+    case "pd_handover": return "PD Handover";
+    case "payment_in": return "Payment Coming In";
+    case "payment_out": return "Payment Going Out";
+    default: return "Event";
+  }
+}
+
+function eventBadgeStyle(type: string) {
+  switch (type) {
+    case "site_establishment": case "construction_start": return "bg-orange-50 text-orange-700 border-orange-200";
+    case "commissioning": return "bg-blue-50 text-blue-700 border-blue-200";
+    case "practical_completion": return "bg-teal-50 text-teal-700 border-teal-200";
+    case "handover_om": return "bg-violet-50 text-violet-700 border-violet-200";
+    case "handover_client": return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    case "pd_handover": return "bg-sky-50 text-sky-700 border-sky-200";
+    case "payment_in": return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    case "payment_out": return "bg-red-50 text-red-700 border-red-200";
+    default: return "bg-gray-50 text-gray-700 border-gray-200";
+  }
+}
+
+function formatEventDate(d: string) {
+  const dt = new Date(d + "T00:00:00");
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+  const dayLabel = d === todayStr ? "Today" : d === tomorrowStr ? "Tomorrow" : dt.toLocaleDateString("en-ZA", { weekday: "short" });
+  return `${dayLabel}, ${dt.toLocaleDateString("en-ZA", { day: "numeric", month: "short" })}`;
+}
+
+function UpcomingEventsSection({ events }: { events: UpcomingEvent[] }) {
+  const [showPayments, setShowPayments] = useState(false);
+
+  const filtered = useMemo(() => {
+    if (showPayments) return events;
+    return events.filter((ev) => PROJECT_EVENT_TYPES.has(ev.type));
+  }, [events, showPayments]);
+
+  const paymentCount = useMemo(() => events.filter((ev) => PAYMENT_EVENT_TYPES.has(ev.type)).length, [events]);
+
+  if (filtered.length === 0 && !showPayments && paymentCount === 0) return null;
+
+  const grouped = filtered.reduce<Record<string, UpcomingEvent[]>>((acc, ev) => {
+    (acc[ev.date] = acc[ev.date] || []).push(ev);
+    return acc;
+  }, {});
+
+  return (
+    <Card className="border-border" data-testid="upcoming-events-card">
+      <CardContent className="p-4 md:p-5">
+        <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+              <CalendarDays className="w-4 h-4 text-emerald-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold">Upcoming This Week</h2>
+              <p className="text-xs text-muted-foreground">{filtered.length} event{filtered.length !== 1 ? "s" : ""} in the next 5 working days</p>
+            </div>
+          </div>
+          {paymentCount > 0 && (
+            <Button
+              size="sm"
+              variant={showPayments ? "default" : "outline"}
+              className={`text-xs h-7 ${showPayments ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
+              onClick={() => setShowPayments(!showPayments)}
+              data-testid="toggle-payments"
+            >
+              <DollarSign className="w-3.5 h-3.5 mr-1" />
+              Payments ({paymentCount})
+            </Button>
+          )}
+        </div>
+        {filtered.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">No project milestones in the next 5 working days</p>
+        ) : (
+          <div className="space-y-4">
+            {Object.entries(grouped).map(([date, evts]) => (
+              <div key={date}>
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{formatEventDate(date)}</div>
+                <div className="space-y-1.5">
+                  {evts.map((ev, idx) => (
+                    <div key={idx} className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5 hover:bg-muted/20 transition-colors">
+                      {eventIcon(ev.type)}
+                      <Badge variant="outline" className={`text-[10px] shrink-0 ${eventBadgeStyle(ev.type)}`}>{eventLabel(ev.type)}</Badge>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{ev.projectName}</p>
+                        <p className="text-xs text-muted-foreground truncate">{ev.detail}</p>
+                      </div>
+                      {ev.amount && (
+                        <span className={`text-sm font-semibold shrink-0 ${ev.type === "payment_in" ? "text-emerald-600" : ev.type === "payment_out" ? "text-red-600" : "text-gray-700"}`}>
+                          R {Number(ev.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </span>
+                      )}
+                      {ev.projectId && (
+                        <Link href={`/projects/${ev.projectId}`}>
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600 shrink-0">
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ragBadge(rag: string) {
   if (rag === "Red") return "bg-red-100 text-red-700 border-red-200";
   if (rag === "Amber") return "bg-amber-100 text-amber-700 border-amber-200";
@@ -117,7 +259,6 @@ export default function DashboardPage() {
     },
   });
 
-  type UpcomingEvent = { type: string; date: string; projectName: string; projectId: number | null; detail: string; amount?: string };
   const { data: upcomingData } = useQuery<{ rangeStart: string; rangeEnd: string; events: UpcomingEvent[] }>({
     queryKey: ["/api/upcoming-events"],
     queryFn: async () => {
@@ -397,102 +538,7 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {upcomingData && upcomingData.events.length > 0 && (() => {
-        const eventIcon = (type: string) => {
-          switch (type) {
-            case "site_establishment": return <HardHat className="w-4 h-4 text-orange-500" />;
-            case "commissioning": return <Wrench className="w-4 h-4 text-blue-500" />;
-            case "handover_om": return <HandshakeIcon className="w-4 h-4 text-violet-500" />;
-            case "handover_client": return <HandshakeIcon className="w-4 h-4 text-emerald-500" />;
-            case "payment_in": return <TrendingUp className="w-4 h-4 text-emerald-600" />;
-            case "payment_out": return <TrendingDown className="w-4 h-4 text-red-500" />;
-            default: return <CalendarDays className="w-4 h-4 text-gray-500" />;
-          }
-        };
-        const eventLabel = (type: string) => {
-          switch (type) {
-            case "site_establishment": return "Site Establishment";
-            case "commissioning": return "Commissioning";
-            case "handover_om": return "Handover to O&M";
-            case "handover_client": return "Handover to Client";
-            case "payment_in": return "Payment Coming In";
-            case "payment_out": return "Payment Going Out";
-            default: return "Event";
-          }
-        };
-        const eventBadgeStyle = (type: string) => {
-          switch (type) {
-            case "site_establishment": return "bg-orange-50 text-orange-700 border-orange-200";
-            case "commissioning": return "bg-blue-50 text-blue-700 border-blue-200";
-            case "handover_om": return "bg-violet-50 text-violet-700 border-violet-200";
-            case "handover_client": return "bg-emerald-50 text-emerald-700 border-emerald-200";
-            case "payment_in": return "bg-emerald-50 text-emerald-700 border-emerald-200";
-            case "payment_out": return "bg-red-50 text-red-700 border-red-200";
-            default: return "bg-gray-50 text-gray-700 border-gray-200";
-          }
-        };
-        const formatDate = (d: string) => {
-          const dt = new Date(d + "T00:00:00");
-          const todayStr = new Date().toISOString().slice(0, 10);
-          const tomorrow = new Date();
-          tomorrow.setDate(tomorrow.getDate() + 1);
-          const tomorrowStr = tomorrow.toISOString().slice(0, 10);
-          const dayLabel = d === todayStr ? "Today" : d === tomorrowStr ? "Tomorrow" : dt.toLocaleDateString("en-ZA", { weekday: "short" });
-          return `${dayLabel}, ${dt.toLocaleDateString("en-ZA", { day: "numeric", month: "short" })}`;
-        };
-
-        const grouped = upcomingData.events.reduce<Record<string, UpcomingEvent[]>>((acc, ev) => {
-          (acc[ev.date] = acc[ev.date] || []).push(ev);
-          return acc;
-        }, {});
-
-        return (
-          <Card className="border-border" data-testid="upcoming-events-card">
-            <CardContent className="p-4 md:p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
-                  <CalendarDays className="w-4 h-4 text-emerald-600" />
-                </div>
-                <div>
-                  <h2 className="text-base font-semibold">Upcoming This Week</h2>
-                  <p className="text-xs text-muted-foreground">{upcomingData.events.length} event{upcomingData.events.length !== 1 ? "s" : ""} in the next 5 working days</p>
-                </div>
-              </div>
-              <div className="space-y-4">
-                {Object.entries(grouped).map(([date, evts]) => (
-                  <div key={date}>
-                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{formatDate(date)}</div>
-                    <div className="space-y-1.5">
-                      {evts.map((ev, idx) => (
-                        <div key={idx} className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5 hover:bg-muted/20 transition-colors">
-                          {eventIcon(ev.type)}
-                          <Badge variant="outline" className={`text-[10px] shrink-0 ${eventBadgeStyle(ev.type)}`}>{eventLabel(ev.type)}</Badge>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium truncate">{ev.projectName}</p>
-                            <p className="text-xs text-muted-foreground truncate">{ev.detail}</p>
-                          </div>
-                          {ev.amount && (
-                            <span className={`text-sm font-semibold shrink-0 ${ev.type === "payment_in" ? "text-emerald-600" : ev.type === "payment_out" ? "text-red-600" : "text-gray-700"}`}>
-                              R {Number(ev.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                            </span>
-                          )}
-                          {ev.projectId && (
-                            <Link href={`/projects/${ev.projectId}`}>
-                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600 shrink-0">
-                                <ArrowRight className="w-3.5 h-3.5" />
-                              </Button>
-                            </Link>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })()}
+      <UpcomingEventsSection events={upcomingData?.events || []} />
 
       {(() => {
         const planned = Number(data?.kpis?.cosPlannedMonth || 0);

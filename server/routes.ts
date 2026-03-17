@@ -3676,22 +3676,53 @@ export async function registerRoutes(
       const rangeStart = workDays[0];
       const rangeEnd = workDays[workDays.length - 1];
 
-      const events: Array<{ type: string; date: string; projectName: string; projectId: number | null; detail: string; amount?: string }> = [];
+      type UpcomingEvent = { type: string; date: string; projectName: string; projectId: number | null; detail: string; amount?: string };
+      const events: UpcomingEvent[] = [];
 
-      const allProjects = await storage.getAllProjectInfo();
-      for (const p of allProjects) {
-        const name = p.projectName || "Unnamed";
-        const pid = p.id ?? null;
-        const check = (dateVal: string | null | undefined, type: string, detail: string) => {
-          if (!dateVal) return;
+      const planTasks = await getAllPMWorkItemsAsProjectPlan();
+
+      const milestoneMatchers: Array<{ type: string; detail: string; patterns: string[]; mode: "end" | "start" }> = [
+        { type: "site_establishment", detail: "Site Establishment", patterns: ["site establishment"], mode: "start" },
+        { type: "commissioning", detail: "Commissioning", patterns: ["commissioning"], mode: "end" },
+        { type: "handover_om", detail: "Handover to O&M", patterns: ["handover to matriarch"], mode: "end" },
+        { type: "handover_client", detail: "Handover to Client", patterns: ["handover to client"], mode: "end" },
+        { type: "practical_completion", detail: "Practical Completion", patterns: ["practical completion"], mode: "end" },
+        { type: "pd_handover", detail: "PD Handover", patterns: ["bd handover", "project charter handover"], mode: "end" },
+        { type: "construction_start", detail: "Construction Start", patterns: ["site establishment"], mode: "start" },
+      ];
+
+      const projectMilestones = new Map<string, UpcomingEvent>();
+
+      for (const task of planTasks) {
+        const desc = (task.highLevelProgramme || "").toLowerCase();
+        for (const m of milestoneMatchers) {
+          const matches = m.patterns.some((p) => desc.includes(p));
+          if (!matches) continue;
+
+          const dateVal = m.mode === "start"
+            ? (task.actualStart || "")
+            : (task.actualEnd || "");
+          if (!dateVal || !/^\d{4}-\d{2}-\d{2}/.test(dateVal)) continue;
           const dt = dateVal.slice(0, 10);
-          if (dt >= rangeStart && dt <= rangeEnd) events.push({ type, date: dt, projectName: name, projectId: pid, detail });
-        };
-        check(p.constructionStartDate, "site_establishment", "Site Establishment");
-        check(p.commissioningDate, "commissioning", "Commissioning");
-        check(p.omHandoverDate, "handover_om", "Handover to O&M");
-        check(p.clientHandoverDate, "handover_client", "Handover to Client");
+          if (dt < rangeStart || dt > rangeEnd) continue;
+
+          const key = `${task.projectId}-${m.type}`;
+          const existing = projectMilestones.get(key);
+          if (!existing ||
+            (m.mode === "end" && dt > existing.date) ||
+            (m.mode === "start" && dt < existing.date)) {
+            projectMilestones.set(key, {
+              type: m.type,
+              date: dt,
+              projectName: task.projectName || "Unnamed",
+              projectId: task.projectId || null,
+              detail: m.detail,
+            });
+          }
+        }
       }
+
+      events.push(...projectMilestones.values());
 
       const inflowRows = await db.select({
         projectName: normalizedRevenueLines.projectName,
