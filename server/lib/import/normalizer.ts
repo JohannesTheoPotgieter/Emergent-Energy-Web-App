@@ -77,6 +77,12 @@ export interface NormalizationResult {
     phaseDate: string | null;
   }>;
   counterpartyNames: string[];
+  costedSummary: {
+    plannedRevenue: number | null;
+    plannedExpenditure: number | null;
+    plannedProfit: number | null;
+    plannedMargin: number | null;
+  } | null;
   issues: Array<{
     severity: "INFO" | "WARNING" | "BLOCKER";
     section: "PLAN" | "REVENUE" | "EXPENDITURE" | "GENERAL";
@@ -93,6 +99,62 @@ type IssueEntry = NormalizationResult["issues"][number];
 
 function makeFingerprint(issueType: string, section: string, key: string): string {
   return `${issueType}::${section}::${key}`;
+}
+
+function extractCostedSummary(
+  data: any[][],
+  headerRowIndex: number
+): NormalizationResult["costedSummary"] {
+  let plannedRevenue: number | null = null;
+  let plannedExpenditure: number | null = null;
+  let plannedProfit: number | null = null;
+  let plannedMargin: number | null = null;
+
+  const scanEnd = Math.min(headerRowIndex, data.length);
+  for (let i = 0; i < scanEnd; i++) {
+    const row = data[i];
+    if (!row) continue;
+
+    for (let c = 0; c < Math.min(row.length, 6); c++) {
+      const cellVal = String(row[c] || "").toLowerCase().trim();
+      if (!cellVal) continue;
+
+      const valueCol = findNumericValueInRow(row, c + 1);
+
+      if (cellVal.includes("planned revenue") || (cellVal.includes("planned") && cellVal.includes("revenue"))) {
+        if (valueCol !== null) plannedRevenue = valueCol;
+      } else if (cellVal.includes("planned expenditure") || (cellVal.includes("planned") && cellVal.includes("expend"))) {
+        if (valueCol !== null) plannedExpenditure = valueCol;
+      } else if (cellVal.includes("planned profit") || (cellVal.includes("planned") && cellVal.includes("profit"))) {
+        if (valueCol !== null) plannedProfit = valueCol;
+      } else if (cellVal.includes("planned margin") || (cellVal.includes("planned") && cellVal.includes("margin"))) {
+        if (valueCol !== null) plannedMargin = valueCol;
+      }
+    }
+  }
+
+  if (plannedRevenue === null && plannedExpenditure === null) return null;
+
+  if (plannedRevenue !== null && plannedExpenditure !== null) {
+    if (plannedProfit === null) {
+      plannedProfit = plannedRevenue - plannedExpenditure;
+    }
+    if (plannedMargin === null && plannedRevenue > 0) {
+      plannedMargin = (plannedRevenue - plannedExpenditure) / plannedRevenue;
+    }
+  }
+
+  return { plannedRevenue, plannedExpenditure, plannedProfit, plannedMargin };
+}
+
+function findNumericValueInRow(row: any[], startCol: number): number | null {
+  for (let c = startCol; c < Math.min(row.length, startCol + 5); c++) {
+    const v = row[c];
+    if (v == null) continue;
+    const n = typeof v === "number" ? v : parseFloat(String(v).replace(/[\s,R]/g, ""));
+    if (!isNaN(n) && n !== 0) return n;
+  }
+  return null;
 }
 
 function getColIndex(mappings: MappingResult, canonicalField: string): number {
@@ -720,6 +782,7 @@ export function normalizeData(
   let costLines: NormalizationResult["costLines"] = [];
   let executionPhases: NormalizationResult["executionPhases"] = [];
   let counterpartyNames: string[] = [];
+  let costedSummary: NormalizationResult["costedSummary"] = null;
 
   for (const section of detection.sections) {
     const mapping = mappings.find(m => m.section === section.section);
@@ -759,6 +822,9 @@ export function normalizeData(
           data, mapping, section.sheetName,
           section.dataStartRowIndex, section.dataEndRowIndex, issues, ws
         );
+        if (!costedSummary) {
+          costedSummary = extractCostedSummary(data, section.headerRowIndex);
+        }
         break;
       }
       case "EXPENDITURE": {
@@ -779,6 +845,7 @@ export function normalizeData(
     costLines,
     executionPhases,
     counterpartyNames,
+    costedSummary,
     issues,
   };
 }
