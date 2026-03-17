@@ -882,9 +882,10 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   }, [filtered, collapsedParents, taskMap]);
 
   const kpis = useMemo(() => {
-    const leafTasks = tasks.filter(t => !t.isParent && !t.childCount);
-    const total = tasks.length;
-    const done = tasks.filter(t => t.status === "Done").length;
+    const source = filtered;
+    const leafTasks = source.filter(t => !t.isParent && !t.childCount);
+    const total = source.length;
+    const done = source.filter(t => t.status === "Done").length;
     const avgPct = leafTasks.length > 0 ? Math.round(leafTasks.reduce((s, t) => s + (t.percentComplete || 0), 0) / leafTasks.length) : 0;
     const expLeafs = leafTasks.filter(t => t.computedExpectedPct !== null && t.computedExpectedPct !== undefined);
     const avgExpectedPct = expLeafs.length > 0 ? Math.round(expLeafs.reduce((s, t) => s + (t.computedExpectedPct ?? 0), 0) / expLeafs.length) : null;
@@ -893,7 +894,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     let elapsedDays: number | null = null;
     let earliestStart: Date | null = null;
     let latestEnd: Date | null = null;
-    for (const t of tasks) {
+    for (const t of source) {
       const s = t.actualStartDate || t.startDate;
       const e = t.actualEndDate || t.dueDate;
       if (s) {
@@ -913,7 +914,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
     }
 
     return { total, done, avgPct, avgExpectedPct, totalProjectDays, elapsedDays };
-  }, [tasks]);
+  }, [filtered]);
 
   const ganttRange = useMemo(() => {
     let minDate: Date | null = null;
