@@ -471,8 +471,8 @@ function RolesControlCenter() {
   }, [resources]);
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-[280px,minmax(0,1fr)]">
-      <div className="space-y-4 md:sticky md:top-4 md:self-start md:max-h-[calc(100vh-6rem)] md:overflow-hidden">
+    <div className="flex gap-4" style={{ minHeight: 'calc(100vh - 10rem)' }}>
+      <div className="w-[280px] shrink-0 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-hidden">
         <Card className="border-gray-200 shadow-sm">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
@@ -530,7 +530,7 @@ function RolesControlCenter() {
               ))}
             </div>
 
-            <div className="space-y-1.5 max-h-[45vh] lg:max-h-[calc(100vh-22rem)] overflow-auto pr-1">
+            <div className="space-y-1.5 max-h-[calc(100vh-20rem)] overflow-auto pr-1">
               {filteredRoles.map((r) => {
                 const isSelected = selectedRole === r.role;
                 return (
@@ -584,7 +584,7 @@ function RolesControlCenter() {
         </Card>
       </div>
 
-      <div className="space-y-4">
+      <div className="flex-1 min-w-0 space-y-4">
         <AdminQueryState
           isLoading={viewState === "loading"}
           error={viewState === "error" ? loadError : null}
