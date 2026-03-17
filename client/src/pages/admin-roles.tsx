@@ -32,7 +32,17 @@ const DEPARTMENTS = [
 const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
 const AUTHORITY_ACTIONS: AuthorityAction[] = ["view", "create", "edit", "delete", "approve", "assign", "reassign", "close_complete", "export", "manage_settings"];
 const AUTHORITY_SCOPES = ["own", "department", "assigned_projects", "all_projects", "company_admin"] as const;
-const NAV_SECTIONS = ["MY_WORK", "PROJECTS", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "MONEY", "INFORMATION", "SETTINGS"];
+const NAV_SECTIONS = [
+  { key: "HOME", label: "Home", description: "Dashboard & My Work" },
+  { key: "PROJECT_LIFECYCLE", label: "Project Lifecycle", description: "Lifecycle stages & clients" },
+  { key: "PROJECT_DEVELOPMENT", label: "Project Development", description: "PD dashboard & tickets" },
+  { key: "PROJECT_MANAGEMENT", label: "Project Management", description: "Execution & project controls" },
+  { key: "ENGINEERING", label: "Engineering", description: "Engineering tasks & overview" },
+  { key: "QUALITY", label: "Quality", description: "Quality workspace" },
+  { key: "FINANCE", label: "Finance", description: "Cashflow, COS, revenue & GP" },
+  { key: "KNOWLEDGE", label: "Knowledge", description: "SOPs, training & feedback" },
+  { key: "ADMIN", label: "Admin", description: "System settings & tools" },
+];
 
 const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
   core: {
@@ -788,20 +798,20 @@ function RolesControlCenter() {
                       </TabsContent>
 
                       <TabsContent value="navigation" className="mt-4">
-                        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50/50 px-4 py-3">
-                          <p className="text-sm text-blue-800">
-                            <strong>Navigation access:</strong> Toggle which sections of the app this role can see in the sidebar.
-                            Checked sections will appear in the user's navigation menu.
+                        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-3">
+                          <p className="text-sm text-emerald-800">
+                            <strong>Navigation access:</strong> Toggle which sections of the app this role can see in the top navigation bar.
+                            These match the navigation tabs shown at the top of the screen.
                           </p>
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
-                          {NAV_SECTIONS.map((s) => {
-                            const checked = Boolean((effectiveRole.sections || []).includes(s));
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {NAV_SECTIONS.map((section) => {
+                            const checked = Boolean((effectiveRole.sections || []).includes(section.key));
                             return (
                               <label
-                                key={s}
-                                className={`flex items-center gap-2.5 rounded-lg border p-3 cursor-pointer transition-colors ${
-                                  checked ? "border-emerald-200 bg-emerald-50" : "border-gray-200 bg-white hover:bg-gray-50"
+                                key={section.key}
+                                className={`flex items-start gap-3 rounded-lg border p-3.5 cursor-pointer transition-colors ${
+                                  checked ? "border-emerald-300 bg-emerald-50 shadow-sm" : "border-gray-200 bg-white hover:bg-gray-50"
                                 }`}
                               >
                                 <input
@@ -809,14 +819,17 @@ function RolesControlCenter() {
                                   checked={checked}
                                   onChange={(e) => {
                                     const next = new Set(effectiveRole.sections || []);
-                                    if (e.target.checked) next.add(s); else next.delete(s);
+                                    if (e.target.checked) next.add(section.key); else next.delete(section.key);
                                     setDraft((d) => ({ ...d, sections: [...next] }));
                                   }}
                                   disabled={!canManageRoles}
-                                  className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                                  data-testid={`checkbox-nav-${s}`}
+                                  className="h-4 w-4 mt-0.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                  data-testid={`checkbox-nav-${section.key}`}
                                 />
-                                <span className={`text-sm font-medium ${checked ? "text-emerald-800" : "text-gray-700"}`}>{s.replace(/_/g, " ")}</span>
+                                <div className="min-w-0">
+                                  <span className={`text-sm font-semibold block ${checked ? "text-emerald-800" : "text-gray-700"}`}>{section.label}</span>
+                                  <span className="text-xs text-muted-foreground">{section.description}</span>
+                                </div>
                               </label>
                             );
                           })}
