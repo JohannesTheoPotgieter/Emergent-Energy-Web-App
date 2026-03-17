@@ -471,8 +471,8 @@ function RolesControlCenter() {
   }, [resources]);
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px,minmax(0,1fr)]">
-      <div className="space-y-4 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-[280px,minmax(0,1fr)]">
+      <div className="space-y-4 md:sticky md:top-4 md:self-start md:max-h-[calc(100vh-6rem)] md:overflow-hidden">
         <Card className="border-gray-200 shadow-sm">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
