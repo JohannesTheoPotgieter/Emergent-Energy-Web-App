@@ -1146,6 +1146,8 @@ export class DatabaseStorage implements IStorage {
       actualPctComplete: wi.percentComplete != null ? wi.percentComplete : null,
       expectedPctComplete: wi.expectedPctComplete || null,
       createdAt: wi.createdAt,
+      trueActualStart: wi.actualStart || wi.startDate || null,
+      trueActualEnd: wi.actualEnd || wi.endDate || null,
     } as ProjectPlan;
   }
 

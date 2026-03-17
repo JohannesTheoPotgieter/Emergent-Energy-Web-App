@@ -580,7 +580,7 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   const qc = useQueryClient();
   const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState("All");
-  const [workstreamFilter, setWorkstreamFilter] = useState("All");
+  const [workstreamFilter, setWorkstreamFilter] = useState("Project");
   const [searchText, setSearchText] = useState("");
   const [collapsedParents, setCollapsedParents] = useState<Set<number>>(new Set());
   const [newTaskTitle, setNewTaskTitle] = useState("");
