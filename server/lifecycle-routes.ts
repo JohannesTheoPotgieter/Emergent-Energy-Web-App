@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
-import { db } from "./db";
+import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns } from "@shared/schema";
@@ -168,6 +168,11 @@ export function registerLifecycleRoutes(app: Express) {
   app.use("/api/lifecycle-board", jwtAuth);
 
   (async () => {
+    if (getDbMode() === "sqlite") {
+      console.log("[Lifecycle] Postgres-only additive migrations skipped for SQLite");
+      return;
+    }
+
     try {
       await db.execute(sql.raw(`
         ALTER TABLE project_info ADD COLUMN IF NOT EXISTS rag_comment TEXT;
