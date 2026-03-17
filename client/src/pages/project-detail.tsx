@@ -34,28 +34,23 @@ import UnifiedPlanTab from "@/components/tabs/UnifiedPlanTab";
 import { QualityTab } from "@/components/tabs/QualityTab";
 import { ProjectHistoryTab } from "@/components/tabs/ProjectHistoryTab";
 import { WeeklyReviewWizard } from "@/components/WeeklyReviewWizard";
-import { GuidancePrompt, getPhaseGuidance } from "@/components/MicroGuidance";
 import { ProjectChatTab } from "@/components/tabs/ProjectChatTab";
 import { LocalFolderTab } from "@/components/tabs/LocalFolderTab";
 import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
 import { ProjectTimelineTab } from "@/components/tabs/ProjectTimelineTab";
 import { ProjectNotificationsTab } from "@/components/tabs/ProjectNotificationsTab";
-import HandoverGatePanel from "@/components/HandoverGatePanel";
 import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
 import { ProjectChangeControlTab } from "@/components/tabs/ProjectChangeControlTab";
 import { ProjectProcurementTab } from "@/components/tabs/ProjectProcurementTab";
 import { ProjectCommissioningTab } from "@/components/tabs/ProjectCommissioningTab";
-import { ModuleContext } from "@/components/ModuleContext";
 import { useProgramData } from "@/hooks/use-program-data";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
 import { PageShell } from "@/components/layout/page-shell";
-import { FinancialIntegrationPanel } from "@/components/FinancialIntegrationPanel";
 import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
 import { usePermission } from "@/hooks/use-permissions";
-import { parseCockpitMode, resolveSummaryDeepLink, toCockpitModeQuery, type CockpitMode } from "@/lib/project-cockpit";
-import { formatNextMilestoneSummary, type NextMilestoneSummary } from "@/lib/next-milestone";
+import { type NextMilestoneSummary } from "@/lib/next-milestone";
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", border: "border-border" },
@@ -728,7 +723,7 @@ const SECTION_DEFAULT_SUBTAB: Record<string, string> = {
   commercial: "procurement",
   engineering: "eng-tasks",
   quality: "quality",
-  collaboration: "timeline",
+  collaboration: "chat",
 };
 
 
@@ -737,23 +732,6 @@ function RagDot({ color }: { color: "green" | "amber" | "red" }) {
   return <span className={`inline-block w-2.5 h-2.5 rounded-full ${cls}`} />;
 }
 
-function SectionBrief({ title, subtitle, points }: { title: string; subtitle: string; points: string[] }) {
-  return (
-    <Card className="shadow-sm">
-      <CardContent className="p-3 md:p-4">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{subtitle}</p>
-        <h3 className="text-sm md:text-base font-semibold mt-1">{title}</h3>
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-2">
-          {points.map((point) => (
-            <div key={point} className="rounded-md border bg-muted/20 px-2.5 py-2 text-xs md:text-sm">
-              {point}
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 export default function ProjectDetailPage() {
   const [, params] = useRoute("/project/:projectName");
@@ -830,7 +808,6 @@ export default function ProjectDetailPage() {
 
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
   const urlTab = searchParams.get("tab");
-  const urlMode = searchParams.get("mode");
   const highlightId = searchParams.get("highlightId") ? Number(searchParams.get("highlightId")) : null;
   const highlightType = searchParams.get("highlightType");
 
@@ -841,43 +818,31 @@ export default function ProjectDetailPage() {
     return null;
   }, [urlTab]);
 
-  const [activeSection, setActiveSection] = useState<string>(resolvedFromUrl?.section || "overview");
-  const [activeSubTab, setActiveSubTab] = useState<string>(resolvedFromUrl?.subTab || "");
-  const [cockpitMode, setCockpitMode] = useState<CockpitMode>(parseCockpitMode(urlMode));
-
+  const [activeSection, setActiveSection] = useState<string>(resolvedFromUrl?.section === "overview" ? "delivery" : resolvedFromUrl?.section || "delivery");
+  const [activeSubTab, setActiveSubTab] = useState<string>(resolvedFromUrl?.subTab || "task-grid");
   useEffect(() => {
     if (urlTab) {
       const mapped = OLD_TAB_TO_SECTION[urlTab];
       if (mapped) {
-        setActiveSection(mapped.section);
+        const section = mapped.section === "overview" ? "delivery" : mapped.section;
+        setActiveSection(section);
         if (mapped.subTab) setActiveSubTab(mapped.subTab);
+        else if (section === "delivery") setActiveSubTab("task-grid");
       }
     }
   }, [urlTab]);
 
-  useEffect(() => {
-    setCockpitMode(parseCockpitMode(urlMode));
-  }, [urlMode]);
-
   const navigateToSection = (section: string, subTab?: string) => {
-    if (section === "engineering" && !canViewTab.engineering) { setActiveSection("overview"); return; }
-    if (section === "quality" && !canViewTab.quality) { setActiveSection("overview"); return; }
-    if (section === "commercial" && !canViewTab.finance) { setActiveSection("overview"); return; }
-    if (section === "collaboration" && !canViewSubTab.collaboration) { setActiveSection("overview"); return; }
+    if (section === "overview") { section = "delivery"; }
+    if (section === "engineering" && !canViewTab.engineering) { setActiveSection("delivery"); setActiveSubTab("task-grid"); return; }
+    if (section === "quality" && !canViewTab.quality) { setActiveSection("delivery"); setActiveSubTab("task-grid"); return; }
+    if (section === "commercial" && !canViewTab.finance) { setActiveSection("delivery"); setActiveSubTab("task-grid"); return; }
+    if (section === "collaboration" && !canViewSubTab.collaboration) { setActiveSection("delivery"); setActiveSubTab("task-grid"); return; }
     setActiveSection(section);
     setActiveSubTab(subTab || SECTION_DEFAULT_SUBTAB[section] || "");
   };
 
-  const switchCockpitMode = (mode: CockpitMode) => {
-    setCockpitMode(mode);
-    const nextQuery = toCockpitModeQuery(searchParams, mode);
-    setLocation(`/project/${encodeURIComponent(projectName)}${nextQuery ? `?${nextQuery}` : ""}`, { replace: true });
-  };
-
   const openExecutionArea = (section: string, subTab?: string) => {
-    if (cockpitMode !== "execution") {
-      switchCockpitMode("execution");
-    }
     navigateToSection(section, subTab);
   };
 
@@ -1203,7 +1168,7 @@ export default function ProjectDetailPage() {
   const ragColor = (rag: "green" | "amber" | "red") => rag === "green" ? "text-emerald-600" : rag === "amber" ? "text-amber-600" : "text-red-600";
 
   return (
-    <PageShell className="p-4 md:p-6">
+    <PageShell className="p-3 md:p-4">
       <ProjectCommandHeader
         projectName={projectName}
         displayName={displayName}
@@ -1230,85 +1195,23 @@ export default function ProjectDetailPage() {
         onPhaseChangeClick={() => setPhaseModalOpen(true)}
       />
 
-      {(() => {
-        const phaseGuide = getPhaseGuidance(phase);
-        return phaseGuide ? (
-          <GuidancePrompt
-            type={phaseGuide.type}
-            title={phaseGuide.title}
-            message={phaseGuide.message}
-            learnMoreText={phaseGuide.learnMoreText}
-          />
-        ) : null;
-      })()}
-
-      <Card className="shadow-sm" data-testid="cockpit-command-header">
-        <CardContent className="p-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Project cockpit</p>
-            <h2 className="text-base font-semibold">{displayName}</h2>
-          </div>
-          <div className="inline-flex items-center rounded-lg border p-1 bg-muted/30" data-testid="cockpit-mode-toggle">
-            <Button size="sm" variant={cockpitMode === "executive" ? "default" : "ghost"} className="h-8" onClick={() => switchCockpitMode("executive")} data-testid="cockpit-mode-executive">
-              Executive Summary
-            </Button>
-            <Button size="sm" variant={cockpitMode === "execution" ? "default" : "ghost"} className="h-8" onClick={() => switchCockpitMode("execution")} data-testid="cockpit-mode-execution">
-              Execution Mode
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
       {topAlerts.length > 0 && (
-        <div className="flex flex-wrap gap-2" data-testid="cockpit-exception-strip">
+        <div className="flex flex-wrap gap-1.5" data-testid="cockpit-exception-strip">
           {topAlerts.map((alert) => (
-            <button key={alert.label} onClick={alert.action} className="text-xs rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 hover:bg-amber-100">
+            <button key={alert.label} onClick={alert.action} className="text-xs rounded-md border border-amber-200 bg-amber-50 px-2 py-1 hover:bg-amber-100">
               <span className="font-semibold text-amber-800">{alert.count}</span> {alert.label}
             </button>
           ))}
         </div>
       )}
 
-      {cockpitMode === "executive" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3" data-testid="executive-summary-cards">
-          <Card className="shadow-sm lg:col-span-2">
-            <CardContent className="p-4 space-y-2">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Executive signal</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                <div><p className="text-xs text-muted-foreground">Lifecycle stage</p><p className="font-semibold">{getPhaseLabel(phase)}</p></div>
-                <div><p className="text-xs text-muted-foreground">Next milestone</p><p className="font-semibold">{formatNextMilestoneSummary(nextMilestone, { fallbackLabel: "Not set" }).label}</p></div>
-                <div><p className="text-xs text-muted-foreground">Gate status</p><p className="font-semibold">{projectInfo?.execution_gate_status || "NOT_ELIGIBLE"}</p></div>
-                <div><p className="text-xs text-muted-foreground">Completion</p><p className="font-semibold">{completion}</p></div>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm pt-2 border-t">
-                <div><p className="text-xs text-muted-foreground">Budget</p><p className="font-semibold">R{budgetTotal.toLocaleString()}</p></div>
-                <div><p className="text-xs text-muted-foreground">COS</p><p className="font-semibold">{cosRealisedPct.toFixed(1)}%</p></div>
-                <div><p className="text-xs text-muted-foreground">Revenue</p><p className="font-semibold">{revenueRealisedPct.toFixed(1)}%</p></div>
-                <div><p className="text-xs text-muted-foreground">GP delta</p><p className="font-semibold">{marginDelta.toFixed(1)}%</p></div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm">
-            <CardContent className="p-4 space-y-2">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Deep links</p>
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => { const t = resolveSummaryDeepLink("plan"); openExecutionArea(t.section, t.subTab); }}>Plan / Board</Button>
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => { const t = resolveSummaryDeepLink("procurement"); openExecutionArea(t.section, t.subTab); }}>Procurement / Finance</Button>
-              {canViewTab.quality && <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => { const t = resolveSummaryDeepLink("quality"); openExecutionArea(t.section, t.subTab); }}>Quality highlights</Button>}
-              <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => { const t = resolveSummaryDeepLink("history"); openExecutionArea(t.section, t.subTab); }}>Timeline / History</Button>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {cockpitMode === "execution" && (
-      <div className="flex items-center gap-2 rounded-lg bg-muted/50 p-1 overflow-x-auto scrollbar-hide" data-testid="project-major-tabs">
+      <div className="flex items-center gap-1.5 rounded-lg bg-muted/40 p-1 overflow-x-auto scrollbar-hide" data-testid="project-major-tabs">
         {[
-          { key: "overview", label: "Overview", icon: Eye, visible: true },
           { key: "delivery", label: "Delivery", icon: CalendarDays, visible: canViewTab.overview },
           { key: "commercial", label: "Commercial", icon: DollarSign, visible: canViewTab.finance },
           { key: "engineering", label: "Engineering", icon: Wrench, visible: canViewTab.engineering },
           { key: "quality", label: "Quality", icon: ShieldCheck, visible: canViewTab.quality },
-          { key: "collaboration", label: "Collaboration & Records", icon: Users, visible: canViewSubTab.collaboration },
+          { key: "collaboration", label: "Records", icon: Users, visible: canViewSubTab.collaboration },
         ].filter(t => t.visible).map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSection === tab.key;
@@ -1317,7 +1220,7 @@ export default function ProjectDetailPage() {
               key={tab.key}
               onClick={() => navigateToSection(tab.key)}
               style={isActive ? { backgroundColor: "#16A34A", color: "#fff", borderColor: "#16A34A", boxShadow: "0 1px 3px rgba(0,0,0,0.12)" } : { backgroundColor: "#fff", color: "#6b7280", borderColor: "#e5e7eb" }}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-md text-xs font-semibold whitespace-nowrap shrink-0 transition-all border hover:opacity-90"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap shrink-0 transition-all border hover:opacity-90"
               data-testid={`major-tab-${tab.key}`}
             >
               <Icon className="h-3.5 w-3.5" />
@@ -1326,341 +1229,89 @@ export default function ProjectDetailPage() {
           );
         })}
       </div>
-      )}
-
-      {activeSection === "overview" && cockpitMode === "execution" && (
-        <div className="space-y-4" data-testid="overview-section">
-          <Card className="shadow-sm" data-testid="overview-truth-center">
-            <CardContent className="p-4 space-y-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Project truth center</p>
-                  <h2 className="text-lg font-semibold">{displayName}</h2>
-                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <PhaseBadge phase={phase} />
-                    <span className="inline-flex items-center gap-1"><RagDot color={overallRag} />Overall: {overallRag.toUpperCase()}</span>
-                    <span>Execution: {getPhaseLabel(executionPhase)}</span>
-                    <span>•</span>
-                    <span>Size: {sizeKwp}</span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-center min-w-[260px]">
-                  <div className="rounded-md border p-2">
-                    <p className="text-[10px] text-muted-foreground">Schedule</p>
-                    <p className={`text-sm font-semibold ${ragColor(scheduleRag)}`}>{scheduleRag.toUpperCase()}</p>
-                  </div>
-                  <div className="rounded-md border p-2">
-                    <p className="text-[10px] text-muted-foreground">Cost</p>
-                    <p className={`text-sm font-semibold ${ragColor(costRag)}`}>{costRag.toUpperCase()}</p>
-                  </div>
-                  <div className="rounded-md border p-2">
-                    <p className="text-[10px] text-muted-foreground">Quality</p>
-                    <p className={`text-sm font-semibold ${ragColor(qualityRag)}`}>{qualityRag.toUpperCase()}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-red-100 bg-red-50/30 p-3 space-y-2" data-testid="overview-project-exceptions">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Project exceptions</p>
-                <div className="flex flex-wrap gap-2 text-xs">
-                  <Badge className="bg-red-100 text-red-700">Critical: {projectExceptions?.summary?.bySeverity?.critical || 0}</Badge>
-                  <Badge className="bg-orange-100 text-orange-700">High: {projectExceptions?.summary?.bySeverity?.high || 0}</Badge>
-                </div>
-                {(projectExceptions?.items || []).slice(0, 3).map((item) => (
-                  <a key={item.id} href={item.sourceLink} className="block rounded-md border bg-white px-2 py-1 text-xs hover:bg-slate-50">
-                    <span className="font-medium">{item.title}</span>
-                    <span className="ml-2 text-muted-foreground">{item.reason}</span>
-                  </a>
-                ))}
-                {!(projectExceptions?.items || []).length ? <p className="text-xs text-emerald-700">No active exceptions.</p> : null}
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                <div className="rounded-lg border p-3 space-y-2" data-testid="overview-key-facts">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Key facts & owners</p>
-                  <div className="space-y-1 text-sm">
-                    <p><span className="text-muted-foreground">PD:</span> {pd}</p>
-                    <p><span className="text-muted-foreground">PM:</span> {pm}</p>
-                    <p><span className="text-muted-foreground">Completion:</span> {completion}</p>
-                    <p><span className="text-muted-foreground">Contract value:</span> R{contractValue.toLocaleString()}</p>
-                    <p><span className="text-muted-foreground">Budget total:</span> R{budgetTotal.toLocaleString()}</p>
-                  </div>
-                </div>
-
-                <div className="rounded-lg border p-3 space-y-2" data-testid="overview-urgent-blockers">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Urgent blockers</p>
-                  {(() => {
-                    const overdueEng = engBoardTasks.filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "COMPLETE").length;
-                    const blockers = [
-                      { label: "Overdue plan tasks", count: overduePlanTasks.length, onClick: () => navigateToSection("delivery", "task-grid") },
-                      { label: "Overdue engineering tasks", count: overdueEng, onClick: () => navigateToSection("engineering", "eng-tasks") },
-                      { label: "Unapproved quality items", count: Math.max(qualityTotalItems - qualityApprovedItems, 0), onClick: () => navigateToSection("quality", "quality") },
-                    ].filter((b) => b.count > 0);
-                    if (blockers.length === 0) return <p className="text-sm text-emerald-600">No urgent blockers detected.</p>;
-                    return blockers.map((b) => (
-                      <button key={b.label} onClick={b.onClick} className="w-full text-left rounded-md border border-red-100 bg-red-50 px-2 py-1.5 text-xs hover:bg-red-100">
-                        <span className="font-semibold text-red-700">{b.count}</span> {b.label}
-                      </button>
-                    ));
-                  })()}
-                </div>
-
-                <div className="rounded-lg border p-3 space-y-2" data-testid="overview-next-actions">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Latest critical actions</p>
-                  <div className="space-y-1 text-xs">
-                    <button onClick={() => navigateToSection("delivery", "raid")} className="w-full rounded-md border px-2 py-1.5 text-left hover:bg-muted/60">Update RAID log and close top risks.</button>
-                    <button onClick={() => navigateToSection("commercial", "procurement")} className="w-full rounded-md border px-2 py-1.5 text-left hover:bg-muted/60">Confirm procurement and invoice commitments.</button>
-                    <button onClick={() => navigateToSection("collaboration", "approvals")} className="w-full rounded-md border px-2 py-1.5 text-left hover:bg-muted/60">Capture latest approvals and deliverable evidence.</button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-2" data-testid="overview-linked-statuses">
-                <Button variant="outline" size="sm" onClick={() => navigateToSection("delivery", "task-grid")} className="justify-start">Delivery</Button>
-                <Button variant="outline" size="sm" onClick={() => navigateToSection("commercial", "procurement")} className="justify-start">Commercial</Button>
-                {canViewTab.engineering && <Button variant="outline" size="sm" onClick={() => navigateToSection("engineering", "eng-tasks")} className="justify-start">Engineering</Button>}
-                {canViewTab.quality && <Button variant="outline" size="sm" onClick={() => navigateToSection("quality", "quality")} className="justify-start">Quality</Button>}
-                <Button variant="outline" size="sm" onClick={() => navigateToSection("collaboration", "chat")} className="justify-start">Collaboration & Records</Button>
-              </div>
-            </CardContent>
-          </Card>
-
-          {projectInfoId && <PhaseHistoryTimeline projectId={projectInfoId} />}
-          {projectInfoId && <HandoverGatePanel projectId={projectInfoId} />}
-          {!projectInfo && (
-            <Card>
-              <CardContent className="p-4 text-sm text-muted-foreground">
-                Project summary data is still syncing. Core tabs are available and will populate as data arrives.
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
 
       {activeSection === "delivery" && (
-        <div className="space-y-4" data-testid="delivery-section">
-          <SectionBrief
-            title="Delivery control room"
-            subtitle="Near-term movement"
-            points={[
-              `${planTasks.length} plan tasks (${Math.round(planCompletionPct)}% complete)`,
-              `${overduePlanTasks.length} overdue tasks + ${overdueEngineeringCount} overdue engineering tasks`,
-              `${dependencyCount} linked PD ticket dependencies`,
-            ]}
-          />
-          <div className="flex items-center gap-3 flex-wrap border-b pb-2 overflow-x-auto scrollbar-hide" data-testid="delivery-sub-tabs">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Operational movement</span>
-            <Button size="sm" variant={activeSubTab === "task-grid" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("task-grid")} data-testid="subtab-task-grid">
-              <ListTodo className="h-3 w-3 mr-1" /> Milestones & Plan
-            </Button>
-            <Button size="sm" variant={activeSubTab === "board" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("board")} data-testid="subtab-board">
-              <Columns className="h-3 w-3 mr-1" /> Board
-            </Button>
-            <Button size="sm" variant={activeSubTab === "calendar" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("calendar")} data-testid="subtab-calendar">
-              <CalendarDays className="h-3 w-3 mr-1" /> Calendar
-            </Button>
-            <Button size="sm" variant={activeSubTab === "raid" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("raid")} data-testid="subtab-raid">
-              <AlertTriangle className="h-3 w-3 mr-1" /> Blockers / RAID
-            </Button>
-            <Button size="sm" variant={activeSubTab === "commissioning" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("commissioning")} data-testid="subtab-commissioning">
-              <CheckCircle className="h-3 w-3 mr-1" /> Commissioning
-            </Button>
+        <div className="space-y-2" data-testid="delivery-section">
+          <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="delivery-sub-tabs">
+            {[
+              { key: "task-grid", label: "Plan", icon: ListTodo },
+              { key: "board", label: "Board", icon: Columns },
+              { key: "calendar", label: "Calendar", icon: CalendarDays },
+              { key: "raid", label: "RAID", icon: AlertTriangle },
+              { key: "commissioning", label: "Commissioning", icon: CheckCircle },
+            ].map(st => (
+              <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab(st.key)} data-testid={`subtab-${st.key}`}>
+                <st.icon className="h-3 w-3 mr-1" /> {st.label}
+              </Button>
+            ))}
           </div>
-
-          {activeSubTab === "task-grid" && canViewTab.overview && <><ModuleContext module="task-grid" projectId={projectInfoId!} /><UnifiedPlanTab projectName={projectName} onTaskClick={handleTaskClick} /></>}
+          {activeSubTab === "task-grid" && canViewTab.overview && <UnifiedPlanTab projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "board" && canViewTab.overview && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "calendar" && canViewTab.overview && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
-          {activeSubTab === "raid" && projectInfoId && <><ModuleContext module="raid" projectId={projectInfoId} /><ProjectRaidTab projectId={projectInfoId} projectName={projectName} /></>}
-          {activeSubTab === "commissioning" && projectInfoId && <><ModuleContext module="commissioning" projectId={projectInfoId} /><ProjectCommissioningTab projectId={projectInfoId} projectName={projectName} /></>}
+          {activeSubTab === "raid" && projectInfoId && <ProjectRaidTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "commissioning" && projectInfoId && <ProjectCommissioningTab projectId={projectInfoId} projectName={projectName} />}
         </div>
       )}
 
       {activeSection === "commercial" && canViewTab.finance && (
-        <div className="space-y-4" data-testid="commercial-section">
-          <SectionBrief
-            title="Commercial controls"
-            subtitle="Cash, commitments, and approvals"
-            points={[
-              `Contract value R${contractValue.toLocaleString()} | Budget R${budgetTotal.toLocaleString()}`,
-              `${commercialPendingCount} inflows pending, ${unpaidExpenseCount} expense payments pending`,
-              `Revenue realised ${revenueRealisedPct.toFixed(0)}% | COS realised ${cosRealisedPct.toFixed(0)}%`,
-            ]}
-          />
-          <div className="grid grid-cols-1 xl:grid-cols-[1.8fr,1fr] gap-3">
-            <Card className="shadow-sm" data-testid="commercial-trust-summary">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Finance trust</p>
-                    <h3 className="text-base font-semibold">Imported, managed, and linked truth</h3>
-                  </div>
-                  <Badge variant="outline" className="text-[10px]">
-                    {pendingCashApprovals} cash approvals
-                  </Badge>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                  <div className="rounded-md border p-2">
-                    <p className="text-[10px] text-muted-foreground">Imported revenue</p>
-                    <p className="font-semibold">{revenueReconciliation ? `R${Math.round(revenueReconciliation.source.importedContractValue).toLocaleString()}` : "Loading..."}</p>
-                  </div>
-                  <div className="rounded-md border p-2">
-                    <p className="text-[10px] text-muted-foreground">Managed revenue edits</p>
-                    <p className="font-semibold">{revenueReconciliation?.managed?.overriddenFieldCount ?? 0}</p>
-                  </div>
-                  <div className="rounded-md border p-2">
-                    <p className="text-[10px] text-muted-foreground">Managed cost edits</p>
-                    <p className="font-semibold">{expenditureReconciliation?.managed?.overriddenFieldCount ?? 0}</p>
-                  </div>
-                  <div className="rounded-md border p-2">
-                    <p className="text-[10px] text-muted-foreground">Microsoft actions</p>
-                    <p className="font-semibold">{microsoftActionCount} / {microsoftLinkedCount}</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
-                  <div className="rounded-md border p-2">
-                    <p className="text-[10px] text-muted-foreground">Unbanked exposure</p>
-                    <p className="font-semibold">
-                      {revenueReconciliation ? `R${Math.round(revenueReconciliation.variances.unbankedExposure).toLocaleString()}` : "Loading..."}
-                    </p>
-                  </div>
-                  <div className="rounded-md border p-2">
-                    <p className="text-[10px] text-muted-foreground">Committed unpaid cost</p>
-                    <p className="font-semibold">
-                      {expenditureReconciliation ? `R${Math.round(expenditureReconciliation.variances.committedUnpaidTotal).toLocaleString()}` : "Loading..."}
-                    </p>
-                  </div>
-                  <div className="rounded-md border p-2">
-                    <p className="text-[10px] text-muted-foreground">Pending finance edits</p>
-                    <p className="font-semibold">{pendingFinanceEdits}</p>
-                  </div>
-                </div>
-                {commercialRiskSignals.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {commercialRiskSignals.map((signal: any) => (
-                      <button
-                        key={`${signal.key}-${signal.label}`}
-                        onClick={() => navigateToSection("commercial", signal.key?.includes("revenue") || signal.key?.includes("milestone") || signal.key?.includes("cash") ? "revenue-tracking" : "expenditure")}
-                        className={`rounded-full border px-3 py-1.5 text-xs ${
-                          signal.severity === "warning"
-                            ? "border-amber-200 bg-amber-50 text-amber-800"
-                            : signal.severity === "critical"
-                              ? "border-red-200 bg-red-50 text-red-700"
-                              : "border-slate-200 bg-slate-50 text-slate-700"
-                        }`}
-                        title={signal.detail}
-                      >
-                        <span className="font-semibold">{signal.label}</span>
-                        {typeof signal.amount === "number" ? ` • R${Math.round(signal.amount).toLocaleString()}` : ""}
-                        {typeof signal.count === "number" ? ` • ${signal.count}` : ""}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            <FinancialIntegrationPanel projectName={projectName} />
+        <div className="space-y-2" data-testid="commercial-section">
+          <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="commercial-sub-tabs">
+            {[
+              { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
+              { key: "revenue-tracking", label: "Inflows", icon: DollarSign, visible: canViewSubTab.revenue },
+              { key: "expenditure", label: "COS / Costs", icon: CreditCard, visible: canViewSubTab.expenditure },
+              { key: "monthly-realisation", label: "COS Tracker", icon: TrendingUp, visible: canViewSubTab.cosTracker },
+              { key: "revenue-tracker", label: "Revenue", icon: TrendingUp, visible: canViewSubTab.cosTracker },
+              { key: "gp-tracker", label: "GP", icon: BarChart3, visible: canViewSubTab.cosTracker },
+              { key: "cashflow", label: "Cashflow", icon: Activity, visible: canViewSubTab.cashflow },
+              { key: "change-control", label: "Changes", icon: FileCheck, visible: true },
+              { key: "subcontractors", label: "Subs", icon: Users, visible: canViewSubTab.subcontractors },
+            ].filter(st => st.visible).map(st => (
+              <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab(st.key)} data-testid={`subtab-${st.key}`}>
+                <st.icon className="h-3 w-3 mr-1" /> {st.label}
+              </Button>
+            ))}
           </div>
-          <div className="flex items-center gap-3 flex-wrap border-b pb-2 overflow-x-auto scrollbar-hide" data-testid="commercial-sub-tabs">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mr-1">Commercial controls</span>
-            <Button size="sm" variant={activeSubTab === "procurement" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("procurement")} data-testid="subtab-procurement">
-              <CreditCard className="h-3 w-3 mr-1" /> Procurement
-            </Button>
-            {canViewSubTab.revenue && <Button size="sm" variant={activeSubTab === "revenue-tracking" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("revenue-tracking")} data-testid="subtab-revenue"><DollarSign className="h-3 w-3 mr-1" /> Invoices / Inflows</Button>}
-            {canViewSubTab.expenditure && <Button size="sm" variant={activeSubTab === "expenditure" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("expenditure")} data-testid="subtab-expenditure"><CreditCard className="h-3 w-3 mr-1" /> Commitments / COS</Button>}
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Tracking</span>
-            {canViewSubTab.cosTracker && <Button size="sm" variant={activeSubTab === "monthly-realisation" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("monthly-realisation")} data-testid="subtab-monthly-realisation"><TrendingUp className="h-3 w-3 mr-1" /> COS Tracker</Button>}
-            {canViewSubTab.cosTracker && <Button size="sm" variant={activeSubTab === "revenue-tracker" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("revenue-tracker")} data-testid="subtab-revenue-tracker"><TrendingUp className="h-3 w-3 mr-1" /> Revenue Tracker</Button>}
-            {canViewSubTab.cosTracker && <Button size="sm" variant={activeSubTab === "gp-tracker" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("gp-tracker")} data-testid="subtab-gp-tracker"><BarChart3 className="h-3 w-3 mr-1" /> GP</Button>}
-            {canViewSubTab.cashflow && <Button size="sm" variant={activeSubTab === "cashflow" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("cashflow")} data-testid="subtab-cashflow"><Activity className="h-3 w-3 mr-1" /> Cashflow</Button>}
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Controls</span>
-            <Button size="sm" variant={activeSubTab === "change-control" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("change-control")} data-testid="subtab-change-control"><FileCheck className="h-3 w-3 mr-1" /> VO / Changes</Button>
-            {canViewTab.finance && canViewSubTab.subcontractors && <Button size="sm" variant={activeSubTab === "subcontractors" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("subcontractors")} data-testid="subtab-subcontractors"><Users className="h-3 w-3 mr-1" /> Subcontractors</Button>}
-          </div>
-
-          {activeSubTab === "revenue-tracking" && canViewTab.finance && canViewSubTab.revenue && <><ModuleContext module="revenue-tracking" projectId={projectInfoId!} /><RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} /></>}
-          {activeSubTab === "expenditure" && canViewTab.finance && canViewSubTab.expenditure && <><ModuleContext module="expenditure" projectId={projectInfoId!} /><ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} /></>}
-          {activeSubTab === "monthly-realisation" && canViewTab.finance && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
-          {activeSubTab === "revenue-tracker" && canViewTab.finance && canViewSubTab.cosTracker && <RevenueTrackerTab projectName={projectName} />}
-          {activeSubTab === "gp-tracker" && canViewTab.finance && canViewSubTab.cosTracker && <GpTrackerTab projectName={projectName} />}
-          {activeSubTab === "cashflow" && canViewTab.finance && canViewSubTab.cashflow && <><ModuleContext module="cashflow" projectId={projectInfoId!} /><CashflowTab projectName={projectName} /></>}
-          {activeSubTab === "subcontractors" && canViewTab.finance && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
-          {activeSubTab === "change-control" && projectInfoId && <><ModuleContext module="change-control" projectId={projectInfoId} /><ProjectChangeControlTab projectId={projectInfoId} projectName={projectName} /></>}
-          {activeSubTab === "procurement" && projectInfoId && <><ModuleContext module="procurement" projectId={projectInfoId} /><ProjectProcurementTab projectId={projectInfoId} projectName={projectName} /></>}
+          {activeSubTab === "revenue-tracking" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
+          {activeSubTab === "expenditure" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
+          {activeSubTab === "monthly-realisation" && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
+          {activeSubTab === "revenue-tracker" && canViewSubTab.cosTracker && <RevenueTrackerTab projectName={projectName} />}
+          {activeSubTab === "gp-tracker" && canViewSubTab.cosTracker && <GpTrackerTab projectName={projectName} />}
+          {activeSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} />}
+          {activeSubTab === "subcontractors" && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
+          {activeSubTab === "change-control" && projectInfoId && <ProjectChangeControlTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "procurement" && projectInfoId && <ProjectProcurementTab projectId={projectInfoId} projectName={projectName} />}
         </div>
       )}
 
       {activeSection === "engineering" && canViewTab.engineering && (
-        <div className="space-y-4" data-testid="eng-section">
-          <SectionBrief
-            title="Engineering execution"
-            subtitle="Design and task flow"
-            points={[
-              `${engTotalTasks} tracked engineering tasks`,
-              `${Math.round(engStagePct)}% complete across stages + board`,
-              `${overdueEngineeringCount} overdue engineering tasks requiring action`,
-            ]}
-          />
-          <Button variant="ghost" size="sm" onClick={() => navigateToSection("overview")} className="gap-2 -ml-2" data-testid="button-back-overview">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Overview
-          </Button>
-
+        <div className="space-y-2" data-testid="eng-section">
           {canViewSubTab.engTasks && <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} projectName={projectName} />}
         </div>
       )}
 
       {activeSection === "quality" && canViewTab.quality && (
-        <div className="space-y-4" data-testid="quality-section">
-          <SectionBrief
-            title="Quality readiness"
-            subtitle="Gates and evidence"
-            points={[
-              `${qualityGatesPassed}/${qualityGatesTotal} quality gates passed`,
-              `${Math.round(qualityProgressPct)}% checklist item completion`,
-              `${Math.max(qualityTotalItems - qualityApprovedItems, 0)} quality items pending approval`,
-            ]}
-          />
-          <Button variant="ghost" size="sm" onClick={() => navigateToSection("overview")} className="gap-2 -ml-2" data-testid="button-back-overview">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Overview
-          </Button>
+        <div className="space-y-2" data-testid="quality-section">
           <QualityTab projectName={projectName} />
         </div>
       )}
 
       {activeSection === "collaboration" && canViewSubTab.collaboration && (
-        <div className="space-y-4" data-testid="collaboration-section">
-          <SectionBrief
-            title="Collaboration & records"
-            subtitle="Project communications and audit trail"
-            points={[
-              collaborationSignals.hasComms ? "Linked communication threads available" : "No linked communications detected yet",
-              collaborationSignals.hasApprovals ? "Approvals and notification records enabled" : "Approvals unavailable until project sync completes",
-              collaborationSignals.hasHistory ? "History and weekly review records available" : "History will appear once project id resolves",
-            ]}
-          />
-          <Button variant="ghost" size="sm" onClick={() => navigateToSection("overview")} className="gap-2 -ml-2" data-testid="button-back-overview">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Overview
-          </Button>
-
-          <div className="flex gap-1.5 flex-nowrap border-b pb-2 overflow-x-auto scrollbar-hide" data-testid="collab-sub-tabs">
-            <Button size="sm" variant={activeSubTab === "chat" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("chat")} data-testid="subtab-chat">
-              <MessageSquare className="h-3 w-3 mr-1" /> Linked Comms
-            </Button>
-            <Button size="sm" variant={activeSubTab === "approvals" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("approvals")} data-testid="subtab-approvals">
-              <FileCheck className="h-3 w-3 mr-1" /> Approvals
-            </Button>
-            <Button size="sm" variant={activeSubTab === "notifications" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("notifications")} data-testid="subtab-notifications">
-              <Bell className="h-3 w-3 mr-1" /> Notifications
-            </Button>
-            <Button size="sm" variant={activeSubTab === "local-files" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("local-files")} data-testid="subtab-local-files">
-              <FolderOpen className="h-3 w-3 mr-1" /> Docs & Folders
-            </Button>
-            {canViewTab.history && <Button size="sm" variant={activeSubTab === "timeline" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("timeline")} data-testid="subtab-timeline"><History className="h-3 w-3 mr-1" /> Timeline</Button>}
-            {canViewTab.history && <Button size="sm" variant={activeSubTab === "history" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("history")} data-testid="subtab-history"><History className="h-3 w-3 mr-1" /> History & Audit</Button>}
+        <div className="space-y-2" data-testid="collaboration-section">
+          <div className="flex gap-1.5 flex-nowrap overflow-x-auto scrollbar-hide" data-testid="collab-sub-tabs">
+            {[
+              { key: "chat", label: "Comms", icon: MessageSquare, visible: true },
+              { key: "approvals", label: "Approvals", icon: FileCheck, visible: true },
+              { key: "notifications", label: "Alerts", icon: Bell, visible: true },
+              { key: "local-files", label: "Docs", icon: FolderOpen, visible: true },
+              { key: "timeline", label: "Timeline", icon: History, visible: canViewTab.history },
+              { key: "history", label: "Audit", icon: History, visible: canViewTab.history },
+            ].filter(st => st.visible).map(st => (
+              <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab(st.key)} data-testid={`subtab-${st.key}`}>
+                <st.icon className="h-3 w-3 mr-1" /> {st.label}
+              </Button>
+            ))}
           </div>
-
           {activeSubTab === "chat" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "notifications" && <ProjectNotificationsTab projectName={projectName} />}
