@@ -291,12 +291,24 @@ function InlineDateEditor({ value, onCommit }: { value: string | null; onCommit:
   const [editing, setEditing] = useState(false);
   const displayVal = value ? value.substring(0, 10) : "";
   const [localVal, setLocalVal] = useState(displayVal);
+  const latestVal = useRef(displayVal);
 
-  useEffect(() => { setLocalVal(value ? value.substring(0, 10) : ""); }, [value]);
+  useEffect(() => {
+    const v = value ? value.substring(0, 10) : "";
+    setLocalVal(v);
+    latestVal.current = v;
+  }, [value]);
 
   const commit = () => {
     setEditing(false);
-    if (localVal !== displayVal && localVal) onCommit(localVal);
+    const cur = latestVal.current;
+    if (cur !== displayVal && cur) onCommit(cur);
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    setLocalVal(v);
+    latestVal.current = v;
   };
 
   if (editing) {
@@ -306,9 +318,9 @@ function InlineDateEditor({ value, onCommit }: { value: string | null; onCommit:
         className="w-full h-5 text-[10px] tabular-nums text-center border border-primary/40 rounded bg-background outline-none focus:ring-1 focus:ring-primary/30"
         type="date"
         value={localVal}
-        onChange={(e) => setLocalVal(e.target.value)}
+        onChange={handleChange}
         onBlur={commit}
-        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setLocalVal(displayVal); setEditing(false); } }}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { latestVal.current = displayVal; setLocalVal(displayVal); setEditing(false); } }}
         onClick={(e) => e.stopPropagation()}
         autoFocus
       />
