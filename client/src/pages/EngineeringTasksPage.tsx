@@ -3622,7 +3622,7 @@ export default function EngineeringTasksPage() {
           </div>
           <Link href="/engineering">
             <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="btn-open-engineering-overview">
-              <ArrowLeftRight className="h-3.5 w-3.5" />
+              <ArrowRightLeft className="h-3.5 w-3.5" />
               Back to Engineering Overview
             </Button>
           </Link>
