@@ -3762,6 +3762,10 @@ export async function registerRoutes(
         if (!received && dateKey && dateKey < today) row._inflowRisk += amt;
       }
 
+      const currentMonthKey = today.slice(0, 7);
+      let cosPlannedMonth = 0;
+      let cosRealisedMonth = 0;
+
       for (const c of costRows) {
         const proj = c.projectId ? projectById.get(c.projectId) : projectByName.get((c.projectName || '').toLowerCase());
         if (!proj) continue;
@@ -3773,6 +3777,11 @@ export async function registerRoutes(
         const paid = hasText(c.invoiceNumber) && hasText(c.paidDate) && isBlack(c.paidDateFontColor);
         if (paid) row.paidExpenditureFy += amt;
         if (!paid && dateKey && dateKey < today) row._outflowRisk += amt;
+
+        if (dateKey && dateKey.slice(0, 7) === currentMonthKey) {
+          cosPlannedMonth += amt;
+          if (c.cosRealised === true) cosRealisedMonth += amt;
+        }
       }
 
       for (const e of engRows) {
@@ -4352,6 +4361,9 @@ export async function registerRoutes(
           openQualityWarnings: sum('_qualityOpen'),
           pendingApprovals: sum('_approvalsPending'),
           staleImports: projects.filter((p: any) => p.importFreshness !== 'Fresh').length,
+          cosPlannedMonth,
+          cosRealisedMonth,
+          currentMonth: currentMonthKey,
         },
         actionCenter: {
           projectsBehindPlan: behind,

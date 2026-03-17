@@ -55,9 +55,7 @@ export const TOP_SECTIONS: TopSection[] = [
     secondary: [
       { label: "Execution Dashboard", path: "/dashboard" },
       { label: "Project List", path: "/projects" },
-      { label: "Work Plan / Board", path: "/execution-board" },
       { label: "Deliverables", path: "/pm/deliverables" },
-      { label: "Approvals", path: "/pm/approvals" },
       { label: "Site / Execution Controls", path: "/handover-control" },
       { label: "PM On-The-Go", path: "/pm/on-the-go" },
       { label: "Project Manager Dashboard", path: "/pm-dashboard" },
