@@ -211,7 +211,6 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
     if (form.pinnedToday !== task.pinnedToday) updates.pinnedToday = form.pinnedToday;
     if (form.pinnedWeek !== task.pinnedWeek) updates.pinnedWeek = form.pinnedWeek;
     if (form.taskType !== ((task as any).taskType || "task")) updates.taskType = form.taskType;
-    if (form.milestoneId !== String((task as any).milestoneId || "")) updates.milestoneId = form.milestoneId ? Number(form.milestoneId) : null;
     if (form.isRecurring !== ((task as any).isRecurring || false)) updates.isRecurring = form.isRecurring;
     if (form.recurrenceFrequency !== ((task as any).recurrenceFrequency || "weekly")) updates.recurrenceFrequency = form.recurrenceFrequency;
     if (form.recurrenceInterval !== Number((task as any).recurrenceInterval || 1)) updates.recurrenceInterval = form.recurrenceInterval;

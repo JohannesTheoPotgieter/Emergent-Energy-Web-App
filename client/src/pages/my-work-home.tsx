@@ -1063,6 +1063,119 @@ export default function MyWorkHomePage() {
             </CardContent>
           </Card>
 
+          <Card data-testid="card-meetings">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-indigo-600" />
+                  Meetings
+                </CardTitle>
+                <Link href="/my-work/meetings">
+                  <Button variant="ghost" size="sm" className="h-6 text-xs" data-testid="link-all-meetings">
+                    View All <ChevronRight className="h-3 w-3 ml-0.5" />
+                  </Button>
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {calLoading ? (
+                <div className="space-y-2">
+                  {[1, 2].map(i => (
+                    <Skeleton key={i} className="h-10 w-full rounded-lg" />
+                  ))}
+                </div>
+              ) : sortedEvents.length === 0 ? (
+                <div className="flex flex-col items-center py-6 text-center" data-testid="empty-meetings">
+                  <Calendar className="h-6 w-6 text-muted-foreground/50 mb-2" />
+                  <p className="text-xs text-muted-foreground">No upcoming meetings today</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {sortedEvents.slice(0, 4).map((ev, idx) => {
+                    let timeLabel = "";
+                    try {
+                      if (ev.isAllDay) {
+                        timeLabel = "All day";
+                      } else if (ev.start) {
+                        timeLabel = format(parseISO(ev.start), "h:mm a");
+                      }
+                    } catch {}
+                    return (
+                      <div
+                        key={ev.id || idx}
+                        className="flex items-center gap-2 p-2 rounded-md border border-indigo-100 hover:bg-indigo-50/40 transition-colors"
+                        data-testid={`meeting-item-${ev.id || idx}`}
+                      >
+                        <div className="w-1 h-8 rounded-full bg-indigo-500 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium truncate">{ev.subject || "No Subject"}</p>
+                          <p className="text-[10px] text-muted-foreground">{timeLabel}</p>
+                        </div>
+                        {ev.webLink && (
+                          <a href={ev.webLink} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                            <ExternalLink className="h-3 w-3 text-muted-foreground hover:text-indigo-600" />
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {sortedEvents.length > 4 && (
+                    <Link href="/my-work/meetings">
+                      <p className="text-[10px] text-indigo-600 pl-2 cursor-pointer hover:underline">
+                        +{sortedEvents.length - 4} more meetings
+                      </p>
+                    </Link>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-chat">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-blue-600" />
+                  Chat & Messages
+                </CardTitle>
+                <Link href="/my-work/teams">
+                  <Button variant="ghost" size="sm" className="h-6 text-xs" data-testid="link-chat">
+                    Open <ChevronRight className="h-3 w-3 ml-0.5" />
+                  </Button>
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <Badge variant="outline" className={teamsStatus?.connected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600 border-slate-200"}>
+                    Teams {teamsStatus?.connected ? "Connected" : "Not Connected"}
+                  </Badge>
+                  <Badge variant="outline" className={outlookStatus?.connected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600 border-slate-200"}>
+                    Outlook {outlookStatus?.connected ? "Connected" : "Not Connected"}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Link href="/my-work/email">
+                    <Button variant="outline" size="sm" className="w-full justify-start h-8 text-xs" data-testid="link-email">
+                      <Mail className="h-3 w-3 mr-1.5" /> Email
+                    </Button>
+                  </Link>
+                  <Link href="/my-work/teams">
+                    <Button variant="outline" size="sm" className="w-full justify-start h-8 text-xs" data-testid="link-teams">
+                      <ExternalLink className="h-3 w-3 mr-1.5" /> Teams
+                    </Button>
+                  </Link>
+                </div>
+                {microsoftItems.length > 0 && (
+                  <p className="text-[10px] text-muted-foreground">
+                    {microsoftItems.length} item{microsoftItems.length !== 1 ? "s" : ""} needing attention from email & Teams
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
