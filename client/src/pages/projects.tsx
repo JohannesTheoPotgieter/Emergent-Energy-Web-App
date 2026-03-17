@@ -120,6 +120,7 @@ interface ProjectSummary {
   pd_pm_handover_status?: string;
   pd_pm_handover_rejection_reason?: string | null;
   shared_summary?: PlatformProjectSummaryContract | null;
+  next_open_inflow_milestone?: string | null;
 }
 
 type SortDir = "asc" | "desc";
@@ -1012,19 +1013,9 @@ function getExecutionAttention(project: ProjectSummary): ExecutionAttention {
   const pendingDeliverables = (project.shared_summary?.workflow.deliverables.pending || 0) + (project.shared_summary?.workflow.deliverables.inReview || 0);
   const nextKeyDate = getNextKeyDate(project);
 
-  let nextStep = "Execution flowing";
+  let nextStep = project.next_open_inflow_milestone || "Execution flowing";
   if (project.pd_pm_handover_status && project.pd_pm_handover_status !== "ACCEPTED") {
-    nextStep = project.pd_pm_handover_status === "SUBMITTED_FOR_PM_REVIEW" ? "Close PD to PM handover review" : "Complete PD to PM handover";
-  } else if (blocked > 0) {
-    nextStep = `${blocked} blocked item${blocked !== 1 ? "s" : ""} need action`;
-  } else if (overdue > 0) {
-    nextStep = `${overdue} overdue task${overdue !== 1 ? "s" : ""} need recovery`;
-  } else if (pendingApprovals > 0) {
-    nextStep = `${pendingApprovals} approval${pendingApprovals !== 1 ? "s" : ""} waiting`;
-  } else if (pendingDeliverables > 0) {
-    nextStep = `${pendingDeliverables} deliverable${pendingDeliverables !== 1 ? "s" : ""} in flow`;
-  } else if (nextKeyDate) {
-    nextStep = `Prepare for ${formatDate(nextKeyDate)}`;
+    nextStep = project.pd_pm_handover_status === "SUBMITTED_FOR_PM_REVIEW" ? "Close PD to PM handover review" : "Complete PD";
   }
 
   return {

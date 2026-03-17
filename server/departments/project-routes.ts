@@ -1036,6 +1036,14 @@ router.get("/api/projects-summary", async (req, res) => {
         is_active: info?.isActive !== false && info?.phase?.toLowerCase() !== "gone",
         pd_pm_handover_status: handover?.status || "DRAFT",
         pd_pm_handover_rejection_reason: handover?.rejection_reason || null,
+        next_open_inflow_milestone: (() => {
+          const displayName = projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
+          const pInflows = inflowsByProject.get(projectName) || inflowsByProject.get(displayName) || [];
+          const open = pInflows
+            .filter((inf: any) => !inf.paymentReceivedDate && inf.milestoneName)
+            .sort((a: any, b: any) => (a.rowNumber || 0) - (b.rowNumber || 0));
+          return open.length > 0 ? open[0].milestoneName : null;
+        })(),
       };
     });
 
