@@ -147,7 +147,8 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
 
   const projectMatch = pathname.match(/^\/project\/([^/]+)/);
   if (projectMatch) return [
-    { label: "Project Lifecycle", path: "/project-lifecycle" },
+    { label: "Project Management", path: "/dashboard" },
+    { label: "Project List", path: "/projects" },
     { label: decodeURIComponent(projectMatch[1]) },
   ];
 
