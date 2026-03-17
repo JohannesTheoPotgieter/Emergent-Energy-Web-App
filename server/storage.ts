@@ -6,7 +6,7 @@ import { WorkManagementRepository } from "./repositories/work-management-reposit
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
-  projectInfo, normalizedCostLines, normalizedRevenueLines, workItems,
+  projectInfo, normalizedCostLines, normalizedRevenueLines, workItems, programExpense,
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
   cashflowPlanningOverrides, projectPlanOverrides, revenueTrackingOverrides,
   expenditureOverrides, financeRevenueOverrides, financeCosOverrides,
@@ -1024,7 +1024,28 @@ export class DatabaseStorage implements IStorage {
     const { adaptCostToExpense } = await import("./lib/data-merge");
     const costLines = await this.dbInstance.select().from(normalizedCostLines)
       .where(eq(normalizedCostLines.projectName, projectName));
-    return costLines.map(c => adaptCostToExpense(c, projectName));
+    const adapted = costLines.map(c => adaptCostToExpense(c, projectName));
+
+    const peRows = await this.dbInstance.select().from(programExpense)
+      .where(eq(programExpense.projectName, projectName));
+    if (peRows.length === 0) return adapted;
+
+    const budgetByRow = new Map<number, any>();
+    for (const pe of peRows) {
+      if (pe.rowNumber != null) budgetByRow.set(pe.rowNumber, pe);
+    }
+
+    for (const item of adapted) {
+      const pe = budgetByRow.get(item.rowNumber);
+      if (pe) {
+        if (pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
+        if (pe.budgetQty != null) item.budgetQty = String(pe.budgetQty);
+        if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
+        if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
+        if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
+      }
+    }
+    return adapted;
   }
 
   async createManyProgramExpenses(expenseList: InsertProgramExpense[]): Promise<ProgramExpense[]> {
