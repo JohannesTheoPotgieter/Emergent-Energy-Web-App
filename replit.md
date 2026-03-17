@@ -38,6 +38,7 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Data Handling**: Multer for uploads, `exceljs` for parsing, `pdfkit` for PDF generation.
 -   **Data Storage**: PostgreSQL with Drizzle ORM.
 -   **Canonical Data Model**: All data reads/writes exclusively use `work_items` for tasks, `normalized_cost_lines` for costs, and `normalized_revenue_lines` for revenue as the single source of truth. Smart Import also writes to `program_expense` (budget fields), `program_inflows` (revenue milestones), and `project_revenue_summary` (costed summary) during commit. Uses Excel `sourceRow` as stable `rowNumber` for override compatibility. On re-import, `expense_task_links` and `cos_status_overrides` are remapped to new `program_expense` IDs; `inBank` values are preserved on `program_inflows` rebuild; orphaned links/overrides are cleaned up.
+-   **Task Resolution**: Revenue-tab and task-alerts endpoints resolve linked tasks using canonical `work_items` (via `getWorkItemsAsOperationalTasks`) with fallback to legacy `operational_tasks` for mixed-mode compatibility.
 -   **Core Logic**: Pure-function modules, automated backfill for computed columns, audit trails, and transactional logging.
 -   **Task Management**: Dual-write operations for engineering tasks to `operational_tasks` and `work_items`; direct sync for plan task edits to `work_items`. Supports bulk operations and summary rollups.
 -   **Engineering & Quality**: 5-stage checklist system with templating and SharePoint integration.
