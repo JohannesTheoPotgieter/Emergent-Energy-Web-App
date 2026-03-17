@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
-import { StatusChip } from "@/components/ui/status-chip";
 
 type SearchResult = { id: string; title: string; subtitle?: string; type: string; url?: string | null };
 
@@ -81,8 +80,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [searchTerm]);
 
   const breadcrumbs = useMemo(() => getBreadcrumbs(location, activeSection), [activeSection, location]);
-  const displayRole = user?.role ? user.role.replace(/_/g, " ") : null;
-
 
   const retrySearch = async () => {
     const trimmed = searchTerm.trim();
@@ -160,10 +157,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <img src="/emergent-logo.png" alt="Emergent Energy" className="h-7 w-auto object-contain" />
             <div className="hidden lg:block min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Operating Workspace</p>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-foreground truncate">{activeSection.label}</p>
-                {displayRole ? <StatusChip status="neutral" size="sm">{displayRole}</StatusChip> : null}
-              </div>
             </div>
           </Link>
 
@@ -289,12 +282,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="px-4 lg:px-6 border-t border-border/70 bg-muted/30">
-          <div className="flex flex-wrap items-center gap-2 py-2 text-xs text-muted-foreground">
-            {breadcrumbs.map((crumb, idx) => (
-              <span key={crumb + idx} className="flex items-center gap-2">{idx > 0 ? <ChevronRight className="h-3 w-3" /> : null}<span>{crumb}</span></span>
-            ))}
-          </div>
-          <div className="flex gap-1.5 overflow-x-auto pb-2.5">
+          {breadcrumbs.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 py-2 text-xs text-muted-foreground">
+              <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
+              {breadcrumbs.map((crumb, idx) => (
+                <span key={crumb.label + idx} className="flex items-center gap-1.5">
+                  <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
+                  {crumb.path ? (
+                    <Link href={crumb.path} className="hover:text-foreground transition-colors">{crumb.label}</Link>
+                  ) : (
+                    <span className="text-foreground font-medium">{crumb.label}</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-1.5 overflow-x-auto pb-2.5 pt-1">
             {activeSection.secondary.map((item) => (
               item.disabled ? (
                 <span
