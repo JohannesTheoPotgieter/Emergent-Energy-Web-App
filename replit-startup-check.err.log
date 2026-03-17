@@ -1,0 +1,3 @@
+[Lifecycle] Migration error: near "EXISTS": syntax error
+[Milestones] Notification check error: no such column: pi.pm_user_id
+[SharePoint] Scheduled import error: no such table: sp_settings
