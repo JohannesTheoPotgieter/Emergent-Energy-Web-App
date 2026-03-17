@@ -20,30 +20,81 @@ import {
   type RoleSummary,
   type UserSummary,
 } from "./admin-roles.utils";
-import { AlertTriangle, Check, ChevronRight, Plus, Save, Search, Shield, ShieldAlert, ShieldCheck, Users, UserCheck, Crown, Lock } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Eye, EyeOff, Pencil, Plus, Save, Search, Shield, ShieldCheck, Trash2, Users, UserCheck, Lock, X, ToggleLeft, ToggleRight } from "lucide-react";
 import type { AuthorityAction, PermissionAction } from "@shared/schema";
 
 const DEPARTMENTS = [
-  "Executive",
-  "Engineering",
-  "Finance",
-  "Operations",
-  "Project Development",
-  "Project Management",
-  "Quality",
-  "Procurement",
-  "Commercial",
-  "Construction",
-  "Health & Safety",
-  "IT",
-  "HR",
-  "Legal",
+  "Executive", "Engineering", "Finance", "Operations", "Project Development",
+  "Project Management", "Quality", "Procurement", "Commercial", "Construction",
+  "Health & Safety", "IT", "HR", "Legal",
 ];
 
 const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
 const AUTHORITY_ACTIONS: AuthorityAction[] = ["view", "create", "edit", "delete", "approve", "assign", "reassign", "close_complete", "export", "manage_settings"];
 const AUTHORITY_SCOPES = ["own", "department", "assigned_projects", "all_projects", "company_admin"] as const;
 const NAV_SECTIONS = ["MY_WORK", "PROJECTS", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "MONEY", "INFORMATION", "SETTINGS"];
+
+const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
+  core: {
+    label: "Core Access",
+    entities: ["projects", "my_work", "notifications", "deliverables", "activity_log", "audit_trail"],
+  },
+  engineering: {
+    label: "Engineering",
+    entities: ["engineering", "eng_tasks", "eng_stages"],
+  },
+  quality: {
+    label: "Quality",
+    entities: ["quality"],
+  },
+  finance: {
+    label: "Finance & Commercial",
+    entities: ["financials", "procurement"],
+  },
+  project_dev: {
+    label: "Project Development",
+    entities: ["pd_dashboard", "pd_overview", "pd_plan", "pd_gantt", "pd_finance", "pd_revenue", "pd_cashflow", "pd_cos_tracker", "pd_expenditure", "pd_history", "pd_key_dates", "pd_quality", "pd_engineering", "pd_eng_tasks", "pd_eng_stages", "pd_collaboration", "pd_subcontractors"],
+  },
+  collaboration: {
+    label: "Collaboration & Comms",
+    entities: ["teams_chat", "project_chat", "collaboration_hub", "sharepoint_files", "meetings"],
+  },
+  admin: {
+    label: "Administration",
+    entities: ["admin", "admin_roles", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync"],
+  },
+  other: {
+    label: "Other",
+    entities: ["approvals", "leaderboard", "feedback", "portfolio_detail", "weekly_review_wizard", "create_project"],
+  },
+};
+
+function formatEntityName(entity: string): string {
+  return entity
+    .replace(/^pd_/, "PD ")
+    .replace(/^eng_/, "Eng ")
+    .replace(/^ms_/, "MS ")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+const ACTION_ICONS: Record<string, React.ReactNode> = {
+  view: <Eye className="h-3.5 w-3.5" />,
+  create: <Plus className="h-3.5 w-3.5" />,
+  edit: <Pencil className="h-3.5 w-3.5" />,
+  approve: <Check className="h-3.5 w-3.5" />,
+  override: <ShieldCheck className="h-3.5 w-3.5" />,
+  delete: <Trash2 className="h-3.5 w-3.5" />,
+};
+
+const ACTION_COLORS_ON: Record<string, string> = {
+  view: "bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-200",
+  create: "bg-emerald-100 text-emerald-700 border-emerald-300 hover:bg-emerald-200",
+  edit: "bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-200",
+  approve: "bg-violet-100 text-violet-700 border-violet-300 hover:bg-violet-200",
+  override: "bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200",
+  delete: "bg-red-100 text-red-700 border-red-300 hover:bg-red-200",
+};
 
 type RoleRow = RoleSummary;
 type UserRow = UserSummary;
@@ -112,6 +163,171 @@ export default function AdminRolesPage() {
         </Tabs>
       </div>
     </AdminPageShell>
+  );
+}
+
+function PermissionToggle({ entity, action, isOn, disabled, onChange }: {
+  entity: string; action: string; isOn: boolean; disabled: boolean;
+  onChange: (entity: string, action: string, value: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onChange(entity, action, !isOn)}
+      className={`
+        inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition-all duration-150 min-w-[80px] justify-center
+        ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
+        ${isOn
+          ? ACTION_COLORS_ON[action] || "bg-emerald-100 text-emerald-700 border-emerald-300"
+          : "bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100 hover:text-gray-500"
+        }
+      `}
+      title={`${isOn ? "Revoke" : "Grant"} ${action} on ${formatEntityName(entity)}`}
+      aria-label={`${action} permission for ${formatEntityName(entity)}: ${isOn ? "enabled" : "disabled"}`}
+      data-testid={`toggle-${entity}-${action}`}
+    >
+      {ACTION_ICONS[action] || (isOn ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />)}
+      <span className="capitalize">{action}</span>
+    </button>
+  );
+}
+
+function PermissionMatrixCategory({ categoryKey, category, currentEp, canManageRoles, updateEp }: {
+  categoryKey: string;
+  category: { label: string; entities: string[] };
+  currentEp: Record<string, Record<string, boolean>>;
+  canManageRoles: boolean;
+  updateEp: (entity: string, action: string, value: boolean) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const entitiesWithPerms = category.entities.filter((e) => currentEp[e] !== undefined);
+  if (entitiesWithPerms.length === 0) return null;
+
+  const totalGrants = entitiesWithPerms.reduce((sum, e) => {
+    return sum + Object.values(currentEp[e] || {}).filter(Boolean).length;
+  }, 0);
+  const totalPossible = entitiesWithPerms.reduce((sum, e) => {
+    return sum + Object.keys(currentEp[e] || {}).length;
+  }, 0);
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden" data-testid={`perm-category-${categoryKey}`}>
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50/80 hover:bg-gray-100/80 transition-colors"
+        data-testid={`toggle-category-${categoryKey}`}
+      >
+        <div className="flex items-center gap-2">
+          {expanded ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronRight className="h-4 w-4 text-gray-500" />}
+          <span className="text-sm font-semibold text-gray-800">{category.label}</span>
+          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5 bg-gray-200/70 text-gray-600">
+            {entitiesWithPerms.length} {entitiesWithPerms.length === 1 ? "entity" : "entities"}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">
+            {totalGrants}/{totalPossible} granted
+          </span>
+          <div className="w-16 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-emerald-500 transition-all"
+              style={{ width: totalPossible > 0 ? `${(totalGrants / totalPossible) * 100}%` : "0%" }}
+            />
+          </div>
+        </div>
+      </button>
+      {expanded && (
+        <div className="divide-y divide-gray-100">
+          {entitiesWithPerms.map((entity) => {
+            const perms = currentEp[entity] || {};
+            const actions = Object.keys(perms);
+            const grantedCount = Object.values(perms).filter(Boolean).length;
+            return (
+              <div key={entity} className="px-4 py-3 hover:bg-gray-50/50 transition-colors" data-testid={`perm-row-${entity}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-900">{formatEntityName(entity)}</span>
+                    <span className="text-[11px] text-muted-foreground">
+                      {grantedCount}/{actions.length} active
+                    </span>
+                  </div>
+                  {canManageRoles && (
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => actions.forEach((a) => updateEp(entity, a, true))}
+                        className="text-[10px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 font-medium"
+                        title="Grant all permissions"
+                        data-testid={`grant-all-${entity}`}
+                      >
+                        Grant All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => actions.forEach((a) => updateEp(entity, a, false))}
+                        className="text-[10px] px-2 py-0.5 rounded bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-medium"
+                        title="Revoke all permissions"
+                        data-testid={`revoke-all-${entity}`}
+                      >
+                        Revoke All
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {actions.sort((a, b) => ACTIONS.indexOf(a as PermissionAction) - ACTIONS.indexOf(b as PermissionAction)).map((action) => (
+                    <PermissionToggle
+                      key={action}
+                      entity={entity}
+                      action={action}
+                      isOn={Boolean(perms[action])}
+                      disabled={!canManageRoles}
+                      onChange={updateEp}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PermissionsSummaryBar({ currentEp }: { currentEp: Record<string, Record<string, boolean>> }) {
+  const entities = Object.keys(currentEp).filter((k) => !k.startsWith("_"));
+  const totals: Record<string, { granted: number; total: number }> = {};
+  ACTIONS.forEach((a) => { totals[a] = { granted: 0, total: 0 }; });
+
+  entities.forEach((entity) => {
+    const perms = currentEp[entity] || {};
+    Object.entries(perms).forEach(([action, value]) => {
+      if (totals[action]) {
+        totals[action].total++;
+        if (value) totals[action].granted++;
+      }
+    });
+  });
+
+  return (
+    <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4" data-testid="permissions-summary">
+      {ACTIONS.map((action) => {
+        const { granted, total } = totals[action] || { granted: 0, total: 0 };
+        if (total === 0) return null;
+        return (
+          <div key={action} className="rounded-lg border border-gray-200 bg-white p-2.5 text-center">
+            <div className="flex items-center justify-center gap-1 mb-1">
+              {ACTION_ICONS[action]}
+              <span className="text-xs font-semibold capitalize text-gray-700">{action}</span>
+            </div>
+            <p className="text-lg font-bold text-gray-900">{granted}<span className="text-sm font-normal text-gray-400">/{total}</span></p>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -228,8 +444,21 @@ function RolesControlCenter() {
   const getRoleIcon = (r: RoleRow) => {
     if (r.protected) return <Lock className="h-4 w-4 text-amber-500" />;
     if (r.isSystem) return <ShieldCheck className="h-4 w-4 text-emerald-500" />;
-    return <Shield className="h-4 w-4 text-blue-500" />;
+    return <Shield className="h-4 w-4 text-emerald-500" />;
   };
+
+  const categorizedEntities = useMemo(() => {
+    const assigned = new Set<string>();
+    const result: { key: string; label: string; entities: string[] }[] = [];
+    Object.entries(ENTITY_CATEGORIES).forEach(([key, cat]) => {
+      const matching = cat.entities.filter((e) => resources.includes(e));
+      matching.forEach((e) => assigned.add(e));
+      if (matching.length > 0) result.push({ key, label: cat.label, entities: matching });
+    });
+    const uncategorized = resources.filter((e) => !assigned.has(e));
+    if (uncategorized.length > 0) result.push({ key: "uncategorized", label: "Other Permissions", entities: uncategorized });
+    return result;
+  }, [resources]);
 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-[360px,minmax(0,1fr)]">
@@ -447,31 +676,12 @@ function RolesControlCenter() {
                     </div>
                   </CardHeader>
                   <CardContent className="pt-5">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
-                      {authorityCategories.map((category) => (
-                        <div key={category.label} className="rounded-lg border border-gray-200 bg-gray-50/50 p-3">
-                          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{category.label}</h4>
-                          {category.items.length > 0 ? (
-                            <div className="flex flex-wrap gap-1.5">
-                              {category.items.map((item) => (
-                                <Badge key={item} variant="outline" className="text-xs bg-white border-gray-200 text-gray-700 font-medium">
-                                  {item}
-                                </Badge>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-muted-foreground italic">No authority configured</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    <Tabs defaultValue="overview">
+                    <Tabs defaultValue="permissions">
                       <TabsList className="bg-gray-100/80 p-1 h-auto flex-wrap gap-0.5">
                         {[
+                          { value: "permissions", label: "Permissions" },
                           { value: "overview", label: "Overview" },
                           { value: "navigation", label: "Navigation" },
-                          { value: "resources", label: "Permissions" },
                           { value: "authority", label: "Authority Model" },
                           { value: "users", label: "Users" },
                           { value: "effective", label: "Effective Access" },
@@ -486,6 +696,41 @@ function RolesControlCenter() {
                           </TabsTrigger>
                         ))}
                       </TabsList>
+
+                      <TabsContent value="permissions" className="mt-4">
+                        {resources.length === 0 ? (
+                          <div className="py-12 text-center rounded-lg border border-dashed border-gray-200 bg-gray-50/50">
+                            <ToggleLeft className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                            <p className="text-sm font-medium text-gray-600">No permissions configured for this role</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              This role has no entity permissions set. Permissions are typically configured during role setup.
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-3">
+                              <p className="text-sm text-emerald-800">
+                                <strong>How it works:</strong> Click any permission button to toggle it on or off.
+                                Color-coded buttons show the current state — colored means granted, gray means revoked.
+                                Use "Grant All" or "Revoke All" for bulk changes.
+                              </p>
+                            </div>
+                            <PermissionsSummaryBar currentEp={currentEp} />
+                            <div className="space-y-3 max-h-[60vh] overflow-auto pr-1">
+                              {categorizedEntities.map((cat) => (
+                                <PermissionMatrixCategory
+                                  key={cat.key}
+                                  categoryKey={cat.key}
+                                  category={cat}
+                                  currentEp={currentEp}
+                                  canManageRoles={canManageRoles}
+                                  updateEp={updateEp}
+                                />
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </TabsContent>
 
                       <TabsContent value="overview" className="space-y-4 mt-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -521,9 +766,34 @@ function RolesControlCenter() {
                             <strong>Assigned users:</strong> {selected?.userCount || 0}
                           </span>
                         </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {authorityCategories.map((category) => (
+                            <div key={category.label} className="rounded-lg border border-gray-200 bg-gray-50/50 p-3">
+                              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{category.label}</h4>
+                              {category.items.length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {category.items.map((item) => (
+                                    <Badge key={item} variant="outline" className="text-xs bg-white border-gray-200 text-gray-700 font-medium">
+                                      {item}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-xs text-muted-foreground italic">No authority configured</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </TabsContent>
 
                       <TabsContent value="navigation" className="mt-4">
+                        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50/50 px-4 py-3">
+                          <p className="text-sm text-blue-800">
+                            <strong>Navigation access:</strong> Toggle which sections of the app this role can see in the sidebar.
+                            Checked sections will appear in the user's navigation menu.
+                          </p>
+                        </div>
                         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
                           {NAV_SECTIONS.map((s) => {
                             const checked = Boolean((effectiveRole.sections || []).includes(s));
@@ -544,6 +814,7 @@ function RolesControlCenter() {
                                   }}
                                   disabled={!canManageRoles}
                                   className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                  data-testid={`checkbox-nav-${s}`}
                                 />
                                 <span className={`text-sm font-medium ${checked ? "text-emerald-800" : "text-gray-700"}`}>{s.replace(/_/g, " ")}</span>
                               </label>
@@ -552,72 +823,60 @@ function RolesControlCenter() {
                         </div>
                       </TabsContent>
 
-                      <TabsContent value="resources" className="mt-4">
-                        <div className="space-y-2 max-h-[60vh] overflow-auto pr-1">
-                          {resources.map((entity) => (
-                            <div key={entity} className="rounded-lg border border-gray-200 p-3 bg-white">
-                              <div className="font-semibold text-sm text-gray-900 mb-2">{entity}</div>
-                              <div className="flex gap-2 flex-wrap">
-                                {ACTIONS.map((a) => {
-                                  const isOn = Boolean(currentEp[entity]?.[a]);
-                                  return (
-                                    <label
-                                      key={a}
-                                      className={`text-xs rounded-md px-2.5 py-1.5 flex items-center gap-1.5 cursor-pointer border transition-colors ${
-                                        isOn ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-gray-50 border-gray-200 text-gray-500"
-                                      }`}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={isOn}
-                                        onChange={(e) => updateEp(entity, a, e.target.checked)}
-                                        disabled={!canManageRoles}
-                                        className="h-3 w-3 rounded text-emerald-600"
-                                      />
-                                      <span className="font-medium">{a}</span>
-                                    </label>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </TabsContent>
-
                       <TabsContent value="authority" className="mt-4 space-y-3">
-                        <p className="text-sm text-muted-foreground px-1">
-                          Operational authority model with scopes, assignment controls, and approval workflow hooks.
-                        </p>
-                        <div className="space-y-2 max-h-[60vh] overflow-auto pr-1">
-                          {resources.map((entity) => (
-                            <div key={entity} className="rounded-lg border border-gray-200 p-4 bg-white space-y-3">
-                              <div className="font-semibold text-sm text-gray-900 pb-2 border-b border-gray-100">{entity}</div>
-                              {AUTHORITY_ACTIONS.map((action) => {
-                                const key = `${entity}.${action}`;
-                                const rule = authorityRules[key] || {};
-                                return (
-                                  <div key={key} className="grid grid-cols-[1fr,auto,1fr,auto] gap-3 items-center text-sm py-1">
-                                    <span className="text-gray-700 font-medium">{action}</span>
-                                    <Switch
-                                      checked={Boolean(rule.enabled)}
-                                      onCheckedChange={(v) => updateAuthorityRule(entity, action, { enabled: v })}
-                                      disabled={!canManageRoles}
-                                    />
-                                    <select
-                                      className="border border-gray-200 rounded-md h-8 px-2 text-sm bg-gray-50 focus:bg-white focus:border-emerald-300 focus:ring-1 focus:ring-emerald-200"
-                                      value={rule.scope || "assigned_projects"}
-                                      onChange={(e) => updateAuthorityRule(entity, action, { scope: e.target.value })}
-                                      disabled={!canManageRoles}
-                                    >
-                                      {AUTHORITY_SCOPES.map((scope) => <option key={scope} value={scope}>{scope.replace(/_/g, " ")}</option>)}
-                                    </select>
-                                    <Badge variant="outline" className="text-[10px] text-gray-400 border-gray-200">auditable</Badge>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ))}
+                        <div className="rounded-lg border border-violet-200 bg-violet-50/50 px-4 py-3">
+                          <p className="text-sm text-violet-800">
+                            <strong>Authority model:</strong> Fine-grained operational authority with scope controls.
+                            Enable actions per entity and set the scope (own items, department, assigned projects, all projects, or company-wide).
+                          </p>
                         </div>
+                        {resources.length === 0 ? (
+                          <div className="py-12 text-center rounded-lg border border-dashed border-gray-200 bg-gray-50/50">
+                            <Shield className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                            <p className="text-sm font-medium text-gray-600">No authority rules configured</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2 max-h-[60vh] overflow-auto pr-1">
+                            {resources.map((entity) => (
+                              <div key={entity} className="rounded-lg border border-gray-200 p-4 bg-white space-y-3">
+                                <div className="font-semibold text-sm text-gray-900 pb-2 border-b border-gray-100">{formatEntityName(entity)}</div>
+                                <div className="space-y-2">
+                                  {AUTHORITY_ACTIONS.map((action) => {
+                                    const key = `${entity}.${action}`;
+                                    const rule = authorityRules[key] || {};
+                                    const isEnabled = Boolean(rule.enabled);
+                                    return (
+                                      <div key={key} className={`grid grid-cols-[1fr,auto,1fr] gap-3 items-center text-sm py-1.5 px-2 rounded-md transition-colors ${isEnabled ? "bg-emerald-50/50" : ""}`}>
+                                        <span className="text-gray-700 font-medium capitalize">{action.replace(/_/g, " ")}</span>
+                                        <Switch
+                                          checked={isEnabled}
+                                          onCheckedChange={(v) => updateAuthorityRule(entity, action, { enabled: v })}
+                                          disabled={!canManageRoles}
+                                          aria-label={`${action} authority for ${formatEntityName(entity)}`}
+                                          data-testid={`switch-authority-${entity}-${action}`}
+                                        />
+                                        <select
+                                          className={`border rounded-md h-8 px-2 text-sm transition-colors ${
+                                            isEnabled
+                                              ? "border-emerald-200 bg-emerald-50 text-emerald-800 focus:border-emerald-300 focus:ring-1 focus:ring-emerald-200"
+                                              : "border-gray-200 bg-gray-50 text-gray-400 focus:bg-white focus:border-gray-300"
+                                          }`}
+                                          value={rule.scope || "assigned_projects"}
+                                          onChange={(e) => updateAuthorityRule(entity, action, { scope: e.target.value })}
+                                          disabled={!canManageRoles || !isEnabled}
+                                          aria-label={`Scope for ${action} on ${formatEntityName(entity)}`}
+                                          data-testid={`select-scope-${entity}-${action}`}
+                                        >
+                                          {AUTHORITY_SCOPES.map((scope) => <option key={scope} value={scope}>{scope.replace(/_/g, " ")}</option>)}
+                                        </select>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </TabsContent>
 
                       <TabsContent value="users" className="mt-4">
@@ -653,33 +912,43 @@ function RolesControlCenter() {
                           Refresh effective access
                         </Button>
                         <div className="space-y-3 max-h-[55vh] overflow-auto pr-1">
-                          {effective.length > 0 && <h4 className="text-sm font-semibold text-gray-700">Legacy Permissions</h4>}
-                          {effective.map((row: any) => (
-                            <div key={`legacy-${row.entity}`} className="rounded-lg border border-gray-200 p-3 bg-white">
-                              <div className="font-semibold text-sm mb-2 text-gray-900">{row.entity}</div>
-                              <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5">
+                          {effective.length === 0 && authorityEffective.length === 0 && (
+                            <div className="py-8 text-center text-sm text-muted-foreground">
+                              Click "Refresh effective access" to see what this role can actually do.
+                            </div>
+                          )}
+                          {effective.length > 0 && <h4 className="text-sm font-semibold text-gray-700">Entity Permissions</h4>}
+                          {effective.map((row: any, idx: number) => (
+                            <div key={`legacy-${row.entity}-${idx}`} className="rounded-lg border border-gray-200 p-3 bg-white">
+                              <div className="font-semibold text-sm mb-2 text-gray-900">{formatEntityName(row.entity)}</div>
+                              <div className="flex flex-wrap gap-1.5">
                                 {row.actions.map((a: any) => (
-                                  <div key={a.action} className={`text-xs rounded-md p-2 font-medium flex items-center gap-1.5 ${
-                                    a.allowed ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"
+                                  <div key={a.action} className={`text-xs rounded-lg px-3 py-1.5 font-semibold flex items-center gap-1.5 ${
+                                    a.allowed
+                                      ? ACTION_COLORS_ON[a.action] || "bg-emerald-100 text-emerald-700 border border-emerald-300"
+                                      : "bg-gray-100 text-gray-400 border border-gray-200"
                                   }`}>
-                                    {a.allowed ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
-                                    {a.action}
+                                    {a.allowed ? (ACTION_ICONS[a.action] || <Check className="h-3 w-3" />) : <X className="h-3 w-3" />}
+                                    <span className="capitalize">{a.action}</span>
                                   </div>
                                 ))}
                               </div>
                             </div>
                           ))}
                           {authorityEffective.length > 0 && <h4 className="text-sm font-semibold text-gray-700 pt-2">Authority Permissions</h4>}
-                          {authorityEffective.map((row: any) => (
-                            <div key={`auth-${row.entity}`} className="rounded-lg border border-gray-200 p-3 bg-white">
-                              <div className="font-semibold text-sm mb-2 text-gray-900">{row.entity}</div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+                          {authorityEffective.map((row: any, idx: number) => (
+                            <div key={`auth-${row.entity}-${idx}`} className="rounded-lg border border-gray-200 p-3 bg-white">
+                              <div className="font-semibold text-sm mb-2 text-gray-900">{formatEntityName(row.entity)}</div>
+                              <div className="flex flex-wrap gap-1.5">
                                 {row.actions.map((a: any) => (
-                                  <div key={a.action} className={`text-xs rounded-md p-2 font-medium flex items-center gap-1.5 ${
-                                    a.allowed ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"
+                                  <div key={a.action} className={`text-xs rounded-lg px-3 py-1.5 font-semibold flex items-center gap-1.5 ${
+                                    a.allowed
+                                      ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
+                                      : "bg-gray-100 text-gray-400 border border-gray-200"
                                   }`}>
-                                    {a.allowed ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
-                                    {a.action} ({a.scope})
+                                    {a.allowed ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                                    <span className="capitalize">{a.action}</span>
+                                    <span className="text-[10px] opacity-70">({a.scope})</span>
                                   </div>
                                 ))}
                               </div>
@@ -774,8 +1043,8 @@ function GlobalUsersView() {
       <CardHeader className="border-b border-gray-100">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-lg bg-violet-100 flex items-center justify-center">
-              <Users className="h-5 w-5 text-violet-600" />
+            <div className="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center">
+              <Users className="h-5 w-5 text-emerald-600" />
             </div>
             <div>
               <CardTitle className="text-lg font-semibold text-gray-900">User Management</CardTitle>
