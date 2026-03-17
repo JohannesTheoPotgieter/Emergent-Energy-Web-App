@@ -13470,7 +13470,9 @@ export async function registerRoutes(
           const desc = (task.highLevelProgramme || '').toLowerCase();
           const matches = mapping.patterns.some(p => desc.includes(p));
           if (matches) {
-            const dateVal = mapping.dateField === 'actualStart' ? task.actualStart : task.actualEnd;
+            const trueActual = mapping.dateField === 'actualStart' ? task.trueActualStart : task.trueActualEnd;
+            const fallback = mapping.dateField === 'actualStart' ? task.actualStart : task.actualEnd;
+            const dateVal = trueActual || fallback;
             if (dateVal && /^\d{4}-\d{2}-\d{2}/.test(dateVal)) {
               const dateStr = dateVal.substring(0, 10);
               if (mapping.dateField === 'actualStart') {
@@ -13488,8 +13490,8 @@ export async function registerRoutes(
           }
         }
 
-        const plannedStart = matchedTask?.baselineStart?.substring(0, 10) || null;
-        const plannedEnd = matchedTask?.baselineEnd?.substring(0, 10) || null;
+        const plannedStart = matchedTask?.actualStart?.substring(0, 10) || matchedTask?.baselineStart?.substring(0, 10) || null;
+        const plannedEnd = matchedTask?.actualEnd?.substring(0, 10) || matchedTask?.baselineEnd?.substring(0, 10) || null;
         const plannedDate = mapping.dateField === 'actualStart' ? plannedStart : plannedEnd;
 
         return {
