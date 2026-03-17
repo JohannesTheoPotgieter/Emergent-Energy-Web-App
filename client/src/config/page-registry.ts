@@ -63,7 +63,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "eeInfo", path: "/ee-info", label: "Emergent Energy Info", iconKey: "Leaf", navGroup: "KNOWLEDGE", permissionEntity: "ee_info", showInSidebar: true, routeComponentKey: "EeInfoPage" },
   { id: "training", path: "/training", label: "Training", iconKey: "GraduationCap", navGroup: "KNOWLEDGE", permissionEntity: "training", showInSidebar: true, routeComponentKey: "TrainingPage" },
   { id: "departmentScores", path: "/department-scores", label: "Department Scores", iconKey: "BarChart3", navGroup: "KNOWLEDGE", permissionEntity: "department_scores", showInSidebar: false, redirectTo: "/leaderboard?tab=departments" },
-  { id: "pmDashboard", path: "/pm-dashboard", label: "Per Project Manager Dashboard", iconKey: "Briefcase", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pm_dashboard", showInSidebar: true, routeComponentKey: "PMDashboard", roleLandingEligibility: ["PROJECT_MANAGER_SITE"] },
+  { id: "pmDashboard", path: "/pm-dashboard", label: "Project Manager Dashboard", iconKey: "Briefcase", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pm_dashboard", showInSidebar: true, routeComponentKey: "PMDashboard", roleLandingEligibility: ["PROJECT_MANAGER_SITE"] },
   { id: "excelUpdates", path: "/admin/excel-updates", label: "Excel Updates", iconKey: "ClipboardCheck", navGroup: "SYSTEM", permissionEntity: "excel_updates", showInSidebar: false, routeComponentKey: "ExcelUpdatesPage" },
   { id: "smartImportLegacyRedirect", path: "/smart-import", label: "Smart Import Legacy Redirect", redirectTo: "/admin/smart-import" },
   { id: "excelUpdatesLegacyRedirect", path: "/excel-updates", label: "Excel Updates Legacy Redirect", redirectTo: "/admin/excel-updates" },

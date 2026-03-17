@@ -60,7 +60,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Approvals", path: "/pm/approvals" },
       { label: "Site / Execution Controls", path: "/handover-control" },
       { label: "PM On-The-Go", path: "/pm/on-the-go" },
-      { label: "Per Project Manager Dashboard", path: "/pm-dashboard" },
+      { label: "Project Manager Dashboard", path: "/pm-dashboard" },
     ],
   },
   {
