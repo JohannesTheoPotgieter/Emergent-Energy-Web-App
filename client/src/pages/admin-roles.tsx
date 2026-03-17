@@ -967,52 +967,111 @@ function RolesControlCenter() {
 }
 
 function GlobalUsersView() {
+  const { toast } = useToast();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [search, setSearch] = useState("");
-  const [savingDepartmentId, setSavingDepartmentId] = useState<number | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState<UserRow | null>(null);
+  const [showPasswordDialog, setShowPasswordDialog] = useState<UserRow | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [createForm, setCreateForm] = useState({ username: "", name: "", email: "", password: "", role: "", department: "" });
 
-  useEffect(() => {
-    (async () => {
-      const [u, r] = await Promise.all([
-        fetch("/api/admin/users", { headers: authHeaders(), credentials: "include" }),
-        fetch("/api/roles", { headers: authHeaders(), credentials: "include" }),
-      ]);
-      const usersData = await parseJsonSafe<UserRow[] | { error?: string }>(u);
-      const roleData = await parseJsonSafe<RoleRow[] | { error?: string }>(r);
-      setUsers(Array.isArray(usersData) ? usersData : []);
-      setRoles(Array.isArray(roleData) ? roleData : []);
-    })();
-  }, []);
+  const loadUsers = async () => {
+    const [u, r] = await Promise.all([
+      fetch("/api/admin/users", { headers: authHeaders(), credentials: "include" }),
+      fetch("/api/roles", { headers: authHeaders(), credentials: "include" }),
+    ]);
+    const usersData = await parseJsonSafe<UserRow[] | { error?: string }>(u);
+    const roleData = await parseJsonSafe<RoleRow[] | { error?: string }>(r);
+    setUsers(Array.isArray(usersData) ? usersData : []);
+    setRoles(Array.isArray(roleData) ? roleData : []);
+  };
+
+  useEffect(() => { void loadUsers(); }, []);
 
   const updateRole = async (id: number, role: string) => {
     if (!role) return;
-    const res = await fetch(`/api/admin/users/${id}/role`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role }) });
-    if (res.ok) {
-      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
-    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/users/${id}/role`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role }) });
+      if (res.ok) {
+        setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
+        toast({ title: "Role updated", description: `Role changed to ${roles.find(r => r.role === role)?.label || role}` });
+      }
+    } finally { setSaving(false); }
   };
 
   const updateDepartment = async (id: number, department: string) => {
-    setSavingDepartmentId(id);
+    setSaving(true);
     try {
-      const res = await fetch(`/api/admin/users/${id}/department`, {
-        method: "PATCH",
-        headers: authHeaders(),
-        credentials: "include",
-        body: JSON.stringify({ department }),
-      });
-      const data = await parseJsonSafe<UserRow | { error?: string }>(res);
-      if (!res.ok || !data || Array.isArray(data)) return;
-      setUsers((prev) =>
-        prev.map((u) => (u.id === id ? { ...u, department: "department" in data ? (data as UserRow).department ?? null : department || null } : u)),
-      );
-    } finally {
-      setSavingDepartmentId(null);
-    }
+      const res = await fetch(`/api/admin/users/${id}/department`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ department }) });
+      if (res.ok) {
+        const data = await parseJsonSafe<UserRow>(res);
+        setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, department: ((data as any)?.department ?? department) || null } : u)));
+        toast({ title: "Department updated" });
+      }
+    } finally { setSaving(false); }
   };
 
-  const filtered = users.filter((u) => `${u.name} ${u.email} ${u.department || ""}`.toLowerCase().includes(search.toLowerCase()));
+  const handleCreate = async () => {
+    if (!createForm.username || !createForm.name || !createForm.email || !createForm.password) {
+      toast({ title: "Missing fields", description: "Please fill in all required fields", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/users", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify(createForm) });
+      const data = await parseJsonSafe<any>(res);
+      if (res.ok && data && !data.error) {
+        setUsers((prev) => [...prev, data]);
+        setShowCreateDialog(false);
+        setCreateForm({ username: "", name: "", email: "", password: "", role: "", department: "" });
+        toast({ title: "User created", description: `${data.name} has been added` });
+      } else {
+        toast({ title: "Failed to create user", description: data?.error || "Unknown error", variant: "destructive" });
+      }
+    } finally { setSaving(false); }
+  };
+
+  const handleDelete = async () => {
+    if (!showDeleteDialog) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/users/${showDeleteDialog.id}`, { method: "DELETE", headers: authHeaders(), credentials: "include" });
+      if (res.ok) {
+        setUsers((prev) => prev.filter((u) => u.id !== showDeleteDialog.id));
+        if (expandedId === showDeleteDialog.id) setExpandedId(null);
+        toast({ title: "User deleted", description: `${showDeleteDialog.name} has been removed` });
+      } else {
+        const data = await parseJsonSafe<any>(res);
+        toast({ title: "Failed to delete", description: data?.error || "Unknown error", variant: "destructive" });
+      }
+    } finally { setSaving(false); setShowDeleteDialog(null); }
+  };
+
+  const handleResetPassword = async () => {
+    if (!showPasswordDialog || !newPassword) return;
+    if (newPassword.length < 4) {
+      toast({ title: "Password too short", description: "Must be at least 4 characters", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/admin/users/${showPasswordDialog.id}/password`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ password: newPassword }) });
+      if (res.ok) {
+        toast({ title: "Password reset", description: `Password updated for ${showPasswordDialog.name}` });
+      } else {
+        const data = await parseJsonSafe<any>(res);
+        toast({ title: "Failed", description: data?.error || "Unknown error", variant: "destructive" });
+      }
+    } finally { setSaving(false); setShowPasswordDialog(null); setNewPassword(""); setShowPassword(false); }
+  };
+
+  const filtered = users.filter((u) => `${u.name} ${u.email} ${u.role} ${u.department || ""}`.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <Card className="border-gray-200 shadow-sm">
@@ -1027,6 +1086,9 @@ function GlobalUsersView() {
               <p className="text-xs text-muted-foreground mt-0.5">{users.length} total users · {filtered.length} shown</p>
             </div>
           </div>
+          <Button onClick={() => setShowCreateDialog(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2" data-testid="button-add-user">
+            <Plus className="h-4 w-4" /> Add User
+          </Button>
         </div>
       </CardHeader>
       <CardContent className="pt-4 space-y-3">
@@ -1034,7 +1096,7 @@ function GlobalUsersView() {
           <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="pl-9 h-10 bg-gray-50 border-gray-200 focus:bg-white"
-            placeholder="Search users by name, email, or department..."
+            placeholder="Search users by name, email, role, or department..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             data-testid="input-search-users"
@@ -1043,44 +1105,229 @@ function GlobalUsersView() {
         </div>
 
         <div className="space-y-2">
-          {filtered.map((u) => (
-            <div key={u.id} className="border border-gray-200 rounded-lg p-4 grid gap-4 lg:grid-cols-[minmax(0,1fr),220px,220px] lg:items-center bg-white hover:bg-gray-50/50 transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-sm shrink-0">
-                  {(u.name || "?").charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <div className="font-semibold text-sm text-gray-900">{u.name}</div>
-                  <div className="text-xs text-muted-foreground truncate">{u.email}</div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    Dept: <span className="font-medium text-gray-700">{u.department || "Unassigned"}</span>
+          {filtered.map((u) => {
+            const isExpanded = expandedId === u.id;
+            const roleLabel = roles.find((r) => r.role === u.role)?.label || u.role;
+            return (
+              <div key={u.id} className={`border rounded-lg bg-white transition-colors ${isExpanded ? "border-emerald-300 shadow-sm" : "border-gray-200 hover:border-gray-300"}`}>
+                <div
+                  className="p-4 flex items-center gap-3 cursor-pointer"
+                  onClick={() => setExpandedId(isExpanded ? null : u.id)}
+                  data-testid={`row-user-${u.id}`}
+                >
+                  <div className="h-10 w-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-sm shrink-0">
+                    {(u.name || "?").charAt(0).toUpperCase()}
                   </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold text-sm text-gray-900">{u.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{u.email}</div>
+                  </div>
+                  <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs shrink-0 hidden sm:inline-flex">
+                    {roleLabel}
+                  </Badge>
+                  {u.department && (
+                    <Badge variant="outline" className="text-xs shrink-0 hidden sm:inline-flex">
+                      {u.department}
+                    </Badge>
+                  )}
+                  {isExpanded ? <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />}
                 </div>
+
+                {isExpanded && (
+                  <div className="border-t border-gray-100 px-4 py-4 space-y-4 bg-gray-50/50">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <Label className="text-xs font-medium text-gray-600 mb-1.5 block">Role</Label>
+                        <SearchableSelect
+                          options={roles.map((r) => ({ value: r.role, label: r.label }))}
+                          value={u.role}
+                          onValueChange={(val) => updateRole(u.id, val)}
+                          placeholder="Select role"
+                          searchPlaceholder="Search roles..."
+                          data-testid={`select-role-${u.id}`}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs font-medium text-gray-600 mb-1.5 block">Department</Label>
+                        <SearchableSelect
+                          options={[
+                            ...DEPARTMENTS.map((d) => ({ value: d, label: d })),
+                            ...(u.department && !DEPARTMENTS.includes(u.department) ? [{ value: u.department, label: u.department }] : []),
+                          ]}
+                          value={u.department || ""}
+                          onValueChange={(val) => { if (val) void updateDepartment(u.id, val); }}
+                          placeholder="Select department"
+                          searchPlaceholder="Search departments..."
+                          data-testid={`select-department-${u.id}`}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 text-xs"
+                        onClick={(e) => { e.stopPropagation(); setShowPasswordDialog(u); }}
+                        data-testid={`button-reset-password-${u.id}`}
+                      >
+                        <Lock className="h-3.5 w-3.5" /> Reset Password
+                      </Button>
+                      <div className="flex-1" />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 text-xs text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                        onClick={(e) => { e.stopPropagation(); setShowDeleteDialog(u); }}
+                        data-testid={`button-delete-user-${u.id}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete User
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
-              <SearchableSelect
-                options={roles.map((r) => ({ value: r.role, label: r.label }))}
-                value={u.role}
-                onValueChange={(val) => updateRole(u.id, val)}
-                placeholder="Select role"
-                searchPlaceholder="Search roles..."
-                data-testid={`select-role-${u.id}`}
-              />
-              <SearchableSelect
-                options={[
-                  ...DEPARTMENTS.map((d) => ({ value: d, label: d })),
-                  ...(u.department && !DEPARTMENTS.includes(u.department) ? [{ value: u.department, label: u.department }] : []),
-                ]}
-                value={u.department || ""}
-                onValueChange={(val) => { if (val) void updateDepartment(u.id, val); }}
-                placeholder="Select department"
-                searchPlaceholder="Search departments..."
-                disabled={savingDepartmentId === u.id}
-                data-testid={`select-department-${u.id}`}
-              />
+            );
+          })}
+          {filtered.length === 0 && (
+            <div className="text-center py-12 text-muted-foreground text-sm">
+              {search ? "No users match your search" : "No users found"}
             </div>
-          ))}
+          )}
         </div>
       </CardContent>
+
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5 text-emerald-600" /> Add New User
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label className="text-xs font-medium text-gray-600">Full Name *</Label>
+              <Input
+                value={createForm.name}
+                onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. John Smith"
+                data-testid="input-create-name"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-medium text-gray-600">Username *</Label>
+              <Input
+                value={createForm.username}
+                onChange={(e) => setCreateForm((f) => ({ ...f, username: e.target.value }))}
+                placeholder="e.g. johnsmith"
+                data-testid="input-create-username"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-medium text-gray-600">Email *</Label>
+              <Input
+                type="email"
+                value={createForm.email}
+                onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
+                placeholder="e.g. john@company.com"
+                data-testid="input-create-email"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-medium text-gray-600">Password *</Label>
+              <Input
+                type="password"
+                value={createForm.password}
+                onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
+                placeholder="Set a password"
+                data-testid="input-create-password"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-medium text-gray-600">Role</Label>
+              <SearchableSelect
+                options={roles.map((r) => ({ value: r.role, label: r.label }))}
+                value={createForm.role}
+                onValueChange={(val) => setCreateForm((f) => ({ ...f, role: val }))}
+                placeholder="Select role"
+                searchPlaceholder="Search roles..."
+                data-testid="select-create-role"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-medium text-gray-600">Department</Label>
+              <SearchableSelect
+                options={DEPARTMENTS.map((d) => ({ value: d, label: d }))}
+                value={createForm.department}
+                onValueChange={(val) => setCreateForm((f) => ({ ...f, department: val }))}
+                placeholder="Select department"
+                searchPlaceholder="Search departments..."
+                data-testid="select-create-department"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowCreateDialog(false)} data-testid="button-cancel-create-user">Cancel</Button>
+            <Button onClick={handleCreate} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700" data-testid="button-confirm-create-user">
+              {saving ? "Creating..." : "Create User"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!showDeleteDialog} onOpenChange={() => setShowDeleteDialog(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-5 w-5" /> Delete User
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600 py-2">
+            Are you sure you want to permanently delete <span className="font-semibold">{showDeleteDialog?.name}</span>? This action cannot be undone.
+          </p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDeleteDialog(null)} data-testid="button-cancel-delete">Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={saving} data-testid="button-confirm-delete">
+              {saving ? "Deleting..." : "Delete User"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!showPasswordDialog} onOpenChange={() => { setShowPasswordDialog(null); setNewPassword(""); setShowPassword(false); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock className="h-5 w-5 text-emerald-600" /> Reset Password
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            Set a new password for <span className="font-semibold">{showPasswordDialog?.name}</span>
+          </p>
+          <div className="relative py-2">
+            <Input
+              type={showPassword ? "text" : "password"}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Enter new password (min 4 characters)"
+              data-testid="input-new-password"
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => { setShowPasswordDialog(null); setNewPassword(""); setShowPassword(false); }} data-testid="button-cancel-password">Cancel</Button>
+            <Button onClick={handleResetPassword} disabled={saving || newPassword.length < 4} className="bg-emerald-600 hover:bg-emerald-700" data-testid="button-confirm-password">
+              {saving ? "Saving..." : "Reset Password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
