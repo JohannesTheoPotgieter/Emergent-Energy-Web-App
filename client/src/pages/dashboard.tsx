@@ -211,6 +211,106 @@ function UpcomingEventsSection({ events }: { events: UpcomingEvent[] }) {
   );
 }
 
+type FinancialEvent = { type: "inflow" | "outflow"; date: string; projectName: string; projectId: number | null; detail: string; amount: string | null; invoiceNumber?: string | null };
+type FinancialsResponse = { rangeStart: string; rangeEnd: string; events: FinancialEvent[]; totalInflow: number; totalOutflow: number; netCashflow: number };
+
+function UpcomingFinancialsSection({ data }: { data: FinancialsResponse | undefined }) {
+  if (!data || data.events.length === 0) return null;
+
+  const grouped = data.events.reduce<Record<string, FinancialEvent[]>>((acc, ev) => {
+    (acc[ev.date] = acc[ev.date] || []).push(ev);
+    return acc;
+  }, {});
+
+  const inflowCount = data.events.filter(e => e.type === "inflow").length;
+  const outflowCount = data.events.filter(e => e.type === "outflow").length;
+
+  return (
+    <Card className="border-border" data-testid="upcoming-financials-card">
+      <CardContent className="p-4 md:p-5">
+        <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+              <DollarSign className="w-4 h-4 text-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold">Upcoming Financials</h2>
+              <p className="text-xs text-muted-foreground">
+                {data.events.length} item{data.events.length !== 1 ? "s" : ""} in the next 10 working days
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 text-xs">
+            {inflowCount > 0 && (
+              <span className="flex items-center gap-1 text-emerald-600 font-medium">
+                <TrendingUp className="w-3.5 h-3.5" />
+                {inflowCount} inflow{inflowCount !== 1 ? "s" : ""}: R {data.totalInflow.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </span>
+            )}
+            {outflowCount > 0 && (
+              <span className="flex items-center gap-1 text-red-600 font-medium">
+                <TrendingDown className="w-3.5 h-3.5" />
+                {outflowCount} outflow{outflowCount !== 1 ? "s" : ""}: R {data.totalOutflow.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="rounded-lg border p-3 bg-emerald-50/50">
+            <p className="text-[10px] text-emerald-600 font-medium uppercase tracking-wider">Total Inflows</p>
+            <p className="text-lg font-bold text-emerald-700">R {data.totalInflow.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+          </div>
+          <div className="rounded-lg border p-3 bg-red-50/50">
+            <p className="text-[10px] text-red-600 font-medium uppercase tracking-wider">Total Outflows</p>
+            <p className="text-lg font-bold text-red-700">R {data.totalOutflow.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+          </div>
+          <div className={`rounded-lg border p-3 ${data.netCashflow >= 0 ? "bg-emerald-50/50" : "bg-amber-50/50"}`}>
+            <p className={`text-[10px] font-medium uppercase tracking-wider ${data.netCashflow >= 0 ? "text-emerald-600" : "text-amber-600"}`}>Net Cashflow</p>
+            <p className={`text-lg font-bold ${data.netCashflow >= 0 ? "text-emerald-700" : "text-amber-700"}`}>R {data.netCashflow.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {Object.entries(grouped).map(([date, evts]) => (
+            <div key={date}>
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{formatEventDate(date)}</div>
+              <div className="space-y-1.5">
+                {evts.map((ev, idx) => (
+                  <div key={idx} className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2.5 hover:bg-muted/20 transition-colors">
+                    {ev.type === "inflow"
+                      ? <TrendingUp className="w-4 h-4 text-emerald-600 shrink-0" />
+                      : <TrendingDown className="w-4 h-4 text-red-500 shrink-0" />}
+                    <Badge variant="outline" className={`text-[10px] shrink-0 ${ev.type === "inflow" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+                      {ev.type === "inflow" ? "Inflow" : "Outflow"}
+                    </Badge>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{ev.projectName}</p>
+                      <p className="text-xs text-muted-foreground truncate">{ev.detail}</p>
+                    </div>
+                    {ev.amount != null && (
+                      <span className={`text-sm font-semibold shrink-0 ${ev.type === "inflow" ? "text-emerald-600" : "text-red-600"}`}>
+                        R {Number(ev.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                    )}
+                    {ev.projectId && (
+                      <Link href={`/project/${encodeURIComponent(ev.projectName)}`}>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600 shrink-0" data-testid={`financial-nav-${idx}`}>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function ragBadge(rag: string) {
   if (rag === "Red") return "bg-red-100 text-red-700 border-red-200";
   if (rag === "Amber") return "bg-amber-100 text-amber-700 border-amber-200";
@@ -263,6 +363,15 @@ export default function DashboardPage() {
     queryKey: ["/api/upcoming-events"],
     queryFn: async () => {
       const res = await fetch("/api/upcoming-events", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  const { data: financialsData } = useQuery<FinancialsResponse>({
+    queryKey: ["/api/upcoming-financials"],
+    queryFn: async () => {
+      const res = await fetch("/api/upcoming-financials", { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -539,6 +648,7 @@ export default function DashboardPage() {
       </Card>
 
       <UpcomingEventsSection events={upcomingData?.events || []} />
+      <UpcomingFinancialsSection data={financialsData} />
 
       {(() => {
         const planned = Number(data?.kpis?.cosPlannedMonth || 0);

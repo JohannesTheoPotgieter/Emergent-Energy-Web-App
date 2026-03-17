@@ -3815,6 +3815,97 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/upcoming-financials", requireAuth, requirePermission("financials", "view"), async (req, res) => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const workDays: string[] = [];
+      let d = new Date(today);
+      while (workDays.length < 10) {
+        const dow = d.getDay();
+        if (dow !== 0 && dow !== 6) workDays.push(d.toISOString().slice(0, 10));
+        d.setDate(d.getDate() + 1);
+      }
+      const rangeStart = workDays[0];
+      const rangeEnd = workDays[workDays.length - 1];
+
+      type FinancialEvent = { type: "inflow" | "outflow"; date: string; projectName: string; projectId: number | null; detail: string; amount: string | null; invoiceNumber?: string | null };
+      const events: FinancialEvent[] = [];
+
+      const inflowRows = await db.select({
+        projectName: normalizedRevenueLines.projectName,
+        projectId: normalizedRevenueLines.projectId,
+        expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
+        invoiceDate: normalizedRevenueLines.invoiceDate,
+        amountExVat: normalizedRevenueLines.amountExVat,
+        description: normalizedRevenueLines.description,
+        milestoneName: normalizedRevenueLines.milestoneName,
+        invoiceNumber: normalizedRevenueLines.invoiceNumber,
+        paidDate: normalizedRevenueLines.paidDate,
+      }).from(normalizedRevenueLines);
+
+      for (const r of inflowRows) {
+        if (r.paidDate) continue;
+        const dt = (r.expectedPaymentDate || r.invoiceDate || "").slice(0, 10);
+        if (!dt || !/^\d{4}-\d{2}-\d{2}/.test(dt)) continue;
+        if (dt >= rangeStart && dt <= rangeEnd) {
+          events.push({
+            type: "inflow",
+            date: dt,
+            projectName: r.projectName,
+            projectId: r.projectId,
+            detail: r.milestoneName || r.description || "Inflow expected",
+            amount: r.amountExVat || null,
+            invoiceNumber: r.invoiceNumber || null,
+          });
+        }
+      }
+
+      const outflowRows = await db.select({
+        projectName: normalizedCostLines.projectName,
+        projectId: normalizedCostLines.projectId,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        amountExVat: normalizedCostLines.amountExVat,
+        description: normalizedCostLines.description,
+        counterpartyName: normalizedCostLines.counterpartyName,
+        paidDate: normalizedCostLines.paidDate,
+        invoiceNumber: normalizedCostLines.invoiceNumber,
+      }).from(normalizedCostLines);
+
+      for (const c of outflowRows) {
+        if (c.paidDate) continue;
+        const dt = (c.invoiceDate || "").slice(0, 10);
+        if (!dt || !/^\d{4}-\d{2}-\d{2}/.test(dt)) continue;
+        if (dt >= rangeStart && dt <= rangeEnd) {
+          events.push({
+            type: "outflow",
+            date: dt,
+            projectName: c.projectName,
+            projectId: c.projectId,
+            detail: c.counterpartyName || c.description || "Outflow due",
+            amount: c.amountExVat || null,
+            invoiceNumber: c.invoiceNumber || null,
+          });
+        }
+      }
+
+      events.sort((a, b) => a.date.localeCompare(b.date));
+
+      let totalInflow = 0, totalOutflow = 0;
+      for (const ev of events) {
+        const amt = Number(ev.amount) || 0;
+        if (ev.type === "inflow") totalInflow += amt;
+        else totalOutflow += amt;
+      }
+
+      res.json({ rangeStart, rangeEnd, events, totalInflow, totalOutflow, netCashflow: totalInflow - totalOutflow });
+    } catch (err: any) {
+      console.error("upcoming-financials error:", err);
+      res.status(500).json({ error: "Failed to load upcoming financials" });
+    }
+  });
+
   // ==================== PROGRAM DASHBOARD API ====================
 
   app.get("/api/program-dashboard", requireAuth, async (req, res) => {
