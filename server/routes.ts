@@ -2409,9 +2409,13 @@ export async function registerRoutes(
           pd_pm_handover_rejection_reason: handover?.rejection_reason || null,
           next_open_inflow_milestone: (() => {
             const open = projectInflows
-              .filter((inf: any) => !inf.paymentReceivedDate && inf.milestoneName)
+              .filter((inf: any) => (!inf.paymentReceivedDate || inf.paymentReceivedDate.trim() === '') && inf.milestoneName)
               .sort((a: any, b: any) => (a.rowNumber || 0) - (b.rowNumber || 0));
-            return open.length > 0 ? open[0].milestoneName : null;
+            if (open.length === 0) return null;
+            const next = open[0];
+            const plannedDate = next.effectiveDate || next.computedForecastReceiptDate || next.plannedPaymentDate || null;
+            const isOverdue = plannedDate && /^\d{4}-\d{2}-\d{2}/.test(plannedDate) && plannedDate < today;
+            return { name: next.milestoneName, plannedDate, overdue: !!isOverdue, openCount: open.length };
           })(),
           _user_is_pm: info?.pmUserId === currentUserId,
           _user_is_pd: info?.pd === currentUserName,

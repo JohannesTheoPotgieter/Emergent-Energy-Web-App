@@ -120,7 +120,7 @@ interface ProjectSummary {
   pd_pm_handover_status?: string;
   pd_pm_handover_rejection_reason?: string | null;
   shared_summary?: PlatformProjectSummaryContract | null;
-  next_open_inflow_milestone?: string | null;
+  next_open_inflow_milestone?: { name: string; plannedDate: string | null; overdue: boolean; openCount: number } | null;
 }
 
 type SortDir = "asc" | "desc";
@@ -1002,6 +1002,7 @@ type ExecutionAttention = {
   pendingApprovals: number;
   pendingDeliverables: number;
   nextStep: string;
+  nextStepOverdue: boolean;
   trackerLine: string;
   updateLine: string;
 };
@@ -1013,9 +1014,16 @@ function getExecutionAttention(project: ProjectSummary): ExecutionAttention {
   const pendingDeliverables = (project.shared_summary?.workflow.deliverables.pending || 0) + (project.shared_summary?.workflow.deliverables.inReview || 0);
   const nextKeyDate = getNextKeyDate(project);
 
-  let nextStep = project.next_open_inflow_milestone || "Execution flowing";
+  const inflowInfo = project.next_open_inflow_milestone;
+  let nextStep = "All milestones paid";
+  let nextStepOverdue = false;
+  if (inflowInfo) {
+    nextStep = inflowInfo.name;
+    nextStepOverdue = inflowInfo.overdue;
+  }
   if (project.pd_pm_handover_status && project.pd_pm_handover_status !== "ACCEPTED") {
     nextStep = project.pd_pm_handover_status === "SUBMITTED_FOR_PM_REVIEW" ? "Close PD to PM handover review" : "Complete PD";
+    nextStepOverdue = false;
   }
 
   return {
@@ -1024,6 +1032,7 @@ function getExecutionAttention(project: ProjectSummary): ExecutionAttention {
     pendingApprovals,
     pendingDeliverables,
     nextStep,
+    nextStepOverdue,
     trackerLine: project.last_import_at ? `Tracker ${formatDateTime(project.last_import_at)}` : (project.has_tracker_import ? "Tracker linked" : "No tracker import"),
     updateLine: project.latest_update_at ? `Latest Update ${formatDateTime(project.latest_update_at)}` : "Latest Update pending",
   };
@@ -1042,8 +1051,9 @@ function ExecutionAttentionCell({ project, compact = false }: { project: Project
         {attention.pendingDeliverables > 0 ? <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">{attention.pendingDeliverables} deliverables</Badge> : null}
         {!hasSignals ? <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">Stable</Badge> : null}
       </div>
-      <p className="text-[10px] text-foreground">
+      <p className={`text-[10px] ${attention.nextStepOverdue ? "text-red-600 font-semibold" : "text-foreground"}`}>
         <span className="font-semibold">Next:</span> {attention.nextStep}
+        {attention.nextStepOverdue && <span className="ml-1 text-[9px] bg-red-100 text-red-700 px-1 rounded">OVERDUE</span>}
       </p>
       <p className="text-[9px] text-muted-foreground">
         {attention.trackerLine}
