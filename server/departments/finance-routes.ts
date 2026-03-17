@@ -901,11 +901,16 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       const balanceDelta = hasManualOverride ? openingBalance - computedOpening : 0;
 
       const mk = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`;
-      const monthlyOpex = opexMonthlyMap.get(mk) || 0;
-      const weeksCount = weeksInMonth.get(mk) || 1;
-      const computedOpex = monthlyOpex / weeksCount;
-      const hasOpexOverride = opexWeeklyMap.has(weekStart);
-      const opexOutflows = hasOpexOverride ? opexWeeklyMap.get(weekStart)! : computedOpex;
+      let opexOutflows = 0;
+      let computedOpex = 0;
+      let hasOpexOverride = false;
+      if (!isFiltered) {
+        const monthlyOpex = opexMonthlyMap.get(mk) || 0;
+        const weeksCount = weeksInMonth.get(mk) || 1;
+        computedOpex = monthlyOpex / weeksCount;
+        hasOpexOverride = opexWeeklyMap.has(weekStart);
+        opexOutflows = hasOpexOverride ? opexWeeklyMap.get(weekStart)! : computedOpex;
+      }
 
       const closingBalance = openingBalance + projectInflowsSum - opexOutflows - projectOutflowsSum;
       const availablePayment = openingBalance + projectInflowsSum;
