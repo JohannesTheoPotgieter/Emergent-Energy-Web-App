@@ -424,11 +424,14 @@ router.get("/api/admin/control-center/active-sessions", requireAuth, requireAdmi
     const userIds = sessions.map((s: any) => s.userId).filter(Boolean);
     let userMap: Record<number, { name: string; username: string; role: string }> = {};
     if (userIds.length > 0) {
-      const userRows: any[] = await db.execute(
-        sql`SELECT id, name, username, role FROM users WHERE id = ANY(${userIds}::int[])`
-      ).then((r: any) => r.rows || r);
-      for (const u of userRows) {
-        userMap[u.id] = { name: u.name, username: u.username, role: u.role };
+      const idList = userIds.map((id: number) => Number(id)).filter((n: number) => !isNaN(n));
+      if (idList.length > 0) {
+        const userRows: any[] = await db.execute(
+          sql.raw(`SELECT id, name, username, role FROM users WHERE id IN (${idList.join(",")})`)
+        ).then((r: any) => r.rows || r);
+        for (const u of userRows) {
+          userMap[u.id] = { name: u.name, username: u.username, role: u.role };
+        }
       }
     }
 
@@ -665,7 +668,7 @@ router.get("/api/admin/control-center/operational-exceptions", requireAuth, requ
         SELECT COUNT(*) as count FROM work_items
         WHERE deleted_at IS NULL
         AND (status IS NULL OR LOWER(status) NOT IN ('complete','done','completed','cancelled','canceled'))
-        AND (assigned_to IS NULL OR assigned_to = '')
+        AND owner_user_id IS NULL
       `).then((r: any) => ((r.rows || r)[0]) || { count: 0 }),
       db.execute(sql`
         SELECT COUNT(*) as count FROM project_info
@@ -673,12 +676,13 @@ router.get("/api/admin/control-center/operational-exceptions", requireAuth, requ
         AND (pm IS NULL OR pm = '')
       `).then((r: any) => ((r.rows || r)[0]) || { count: 0 }),
       db.execute(sql`
-        SELECT COALESCE(wi.assigned_to, 'Unassigned') as owner, COUNT(*) as count
+        SELECT COALESCE(u.name, wi.owner_name, 'Unassigned') as owner, COUNT(*) as count
         FROM work_items wi
+        LEFT JOIN users u ON u.id = wi.owner_user_id
         WHERE wi.deleted_at IS NULL
         AND LOWER(wi.status) NOT IN ('complete','done','completed','cancelled','canceled')
-        AND wi.due_date IS NOT NULL AND wi.due_date < NOW()
-        GROUP BY COALESCE(wi.assigned_to, 'Unassigned')
+        AND wi.end_date IS NOT NULL AND wi.end_date::date < CURRENT_DATE
+        GROUP BY COALESCE(u.name, wi.owner_name, 'Unassigned')
         ORDER BY count DESC
         LIMIT 10
       `).then((r: any) => (r.rows || r) || []),
