@@ -2407,6 +2407,12 @@ export async function registerRoutes(
           is_active: info?.isActive !== false && info?.phase?.toLowerCase() !== "gone",
           pd_pm_handover_status: handover?.status || "DRAFT",
           pd_pm_handover_rejection_reason: handover?.rejection_reason || null,
+          next_open_inflow_milestone: (() => {
+            const open = projectInflows
+              .filter((inf: any) => !inf.paymentReceivedDate && inf.milestoneName)
+              .sort((a: any, b: any) => (a.rowNumber || 0) - (b.rowNumber || 0));
+            return open.length > 0 ? open[0].milestoneName : null;
+          })(),
           _user_is_pm: info?.pmUserId === currentUserId,
           _user_is_pd: info?.pd === currentUserName,
           _user_has_tasks: !isFullOversight ? userAssignedProjectNames.has(projectName) || nameVariants.some(v => userAssignedProjectNames.has(v)) : false,
