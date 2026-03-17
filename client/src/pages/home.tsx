@@ -1,29 +1,26 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import {
   LayoutDashboard,
   FolderOpen,
-  Activity,
   TrendingUp,
   CheckCircle2,
-  Clock,
   AlertTriangle,
-  ChevronRight,
-  Users,
   DollarSign,
   Wrench,
   ShieldCheck,
   Briefcase,
-  ArrowRight,
+  BarChart3,
+  Clock,
 } from "lucide-react";
 
 const token = () => localStorage.getItem("auth_token") || "";
+const money = (n: number | null | undefined) => `R ${(Number(n || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
 function QuickLink({ href, icon, label, description, color }: { href: string; icon: React.ReactNode; label: string; description: string; color: string }) {
   return (
@@ -40,6 +37,35 @@ function QuickLink({ href, icon, label, description, color }: { href: string; ic
         </CardContent>
       </Card>
     </Link>
+  );
+}
+
+function StatCard({ value, label, color, loading, testId }: { value: string | number; label: string; color?: string; loading: boolean; testId: string }) {
+  return (
+    <Card className="border-border/60">
+      <CardContent className="p-4 text-center">
+        {loading ? <Skeleton className="h-8 w-12 mx-auto" /> : (
+          <p className={`text-2xl font-bold ${color || "text-foreground"}`} data-testid={testId}>{value}</p>
+        )}
+        <p className="text-xs text-muted-foreground mt-1">{label}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function KpiCard({ icon, label, value, loading, testId }: { icon: React.ReactNode; label: string; value: string; loading: boolean; testId: string }) {
+  return (
+    <Card className="border-border/60">
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2 text-muted-foreground mb-1">
+          {icon}
+          <span className="text-xs">{label}</span>
+        </div>
+        {loading ? <Skeleton className="h-6 w-20" /> : (
+          <p className="text-lg font-bold text-foreground" data-testid={testId}>{value}</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -71,12 +97,20 @@ export default function HomePage() {
   const stats = useMemo(() => {
     const projects = Array.isArray(summaryData) ? summaryData : summaryData?.projects || [];
     const totalProjects = projects.length;
-    const activeProjects = projects.filter((p: any) => p.status === "active" || p.executionPhase === "In Execution").length;
-    const greenProjects = projects.filter((p: any) => p.ragStatus === "Green").length;
-    const amberProjects = projects.filter((p: any) => p.ragStatus === "Amber").length;
-    const redProjects = projects.filter((p: any) => p.ragStatus === "Red").length;
+    const activeProjects = projects.filter((p: any) => p.is_active === true).length;
+    const greenProjects = projects.filter((p: any) => p.rag_status === "Green").length;
+    const amberProjects = projects.filter((p: any) => p.rag_status === "Amber").length;
+    const redProjects = projects.filter((p: any) => p.rag_status === "Red").length;
     return { totalProjects, activeProjects, greenProjects, amberProjects, redProjects };
   }, [summaryData]);
+
+  const dashStats = useMemo(() => {
+    const projects = dashData?.projects || [];
+    const greenCount = projects.filter((p: any) => p.rag === "Green").length;
+    const amberCount = projects.filter((p: any) => p.rag === "Amber").length;
+    const redCount = projects.filter((p: any) => p.rag === "Red").length;
+    return { greenCount, amberCount, redCount };
+  }, [dashData]);
 
   const kpis = dashData?.kpis || {};
 
@@ -87,7 +121,13 @@ export default function HomePage() {
     return "Good evening";
   }, []);
 
-  const displayName = user?.username ? user.username.charAt(0).toUpperCase() + user.username.slice(1) : "User";
+  const displayName = (user as any)?.name || (user?.username ? user.username.charAt(0).toUpperCase() + user.username.slice(1) : "User");
+  const isLoading = summaryLoading || dashLoading;
+
+  const activeCount = kpis.activeDashboardProjects ?? stats.activeProjects;
+  const greenCount = dashStats.greenCount || stats.greenProjects;
+  const amberCount = dashStats.amberCount || stats.amberProjects;
+  const redCount = dashStats.redCount || stats.redProjects;
 
   return (
     <PageShell data-testid="home-page">
@@ -98,96 +138,74 @@ export default function HomePage() {
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-6">
-        <Card className="border-border/60">
-          <CardContent className="p-4 text-center">
-            {summaryLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : (
-              <p className="text-2xl font-bold text-foreground" data-testid="text-total-projects">{stats.totalProjects}</p>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">Total Projects</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/60">
-          <CardContent className="p-4 text-center">
-            {summaryLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : (
-              <p className="text-2xl font-bold text-foreground" data-testid="text-active-projects">{stats.activeProjects}</p>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">Active</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/60">
-          <CardContent className="p-4 text-center">
-            {summaryLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : (
-              <p className="text-2xl font-bold text-emerald-600" data-testid="text-green-projects">{stats.greenProjects}</p>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">Green RAG</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/60">
-          <CardContent className="p-4 text-center">
-            {summaryLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : (
-              <p className="text-2xl font-bold text-amber-600" data-testid="text-amber-projects">{stats.amberProjects}</p>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">Amber RAG</p>
-          </CardContent>
-        </Card>
-        <Card className="border-border/60">
-          <CardContent className="p-4 text-center">
-            {summaryLoading ? <Skeleton className="h-8 w-12 mx-auto" /> : (
-              <p className="text-2xl font-bold text-red-600" data-testid="text-red-projects">{stats.redProjects}</p>
-            )}
-            <p className="text-xs text-muted-foreground mt-1">Red RAG</p>
-          </CardContent>
-        </Card>
+        <StatCard value={stats.totalProjects} label="Total Projects" loading={summaryLoading} testId="text-total-projects" />
+        <StatCard value={activeCount} label="Active" loading={isLoading} testId="text-active-projects" />
+        <StatCard value={greenCount} label="Green RAG" color="text-emerald-600" loading={isLoading} testId="text-green-projects" />
+        <StatCard value={amberCount} label="Amber RAG" color="text-amber-600" loading={isLoading} testId="text-amber-projects" />
+        <StatCard value={redCount} label="Red RAG" color="text-red-600" loading={isLoading} testId="text-red-projects" />
       </div>
 
-      {dashData?.kpis && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-          <Card className="border-border/60">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                <DollarSign className="w-4 h-4" />
-                <span className="text-xs">Revenue YTD</span>
-              </div>
-              <p className="text-lg font-bold text-foreground" data-testid="text-revenue-ytd">
-                R {(Number(kpis.revenueYtd || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="border-border/60">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                <TrendingUp className="w-4 h-4" />
-                <span className="text-xs">GP %</span>
-              </div>
-              <p className="text-lg font-bold text-foreground" data-testid="text-gp-pct">
-                {kpis.gpPct != null ? `${Number(kpis.gpPct).toFixed(1)}%` : "—"}
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="border-border/60">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                <CheckCircle2 className="w-4 h-4" />
-                <span className="text-xs">Tasks Complete</span>
-              </div>
-              <p className="text-lg font-bold text-foreground" data-testid="text-tasks-complete">
-                {kpis.tasksCompletePct != null ? `${Number(kpis.tasksCompletePct).toFixed(0)}%` : "—"}
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="border-border/60">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                <AlertTriangle className="w-4 h-4" />
-                <span className="text-xs">Exceptions</span>
-              </div>
-              <p className="text-lg font-bold text-foreground" data-testid="text-exceptions">
-                {kpis.exceptionCount ?? "—"}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+        <KpiCard
+          icon={<DollarSign className="w-4 h-4" />}
+          label="Inflow Received (FY)"
+          value={money(kpis.receivedInflowFy)}
+          loading={dashLoading}
+          testId="text-inflow-received"
+        />
+        <KpiCard
+          icon={<TrendingUp className="w-4 h-4" />}
+          label="Gross Margin"
+          value={kpis.grossMarginPctFy != null ? `${(Number(kpis.grossMarginPctFy) * 100).toFixed(1)}%` : "—"}
+          loading={dashLoading}
+          testId="text-gp-pct"
+        />
+        <KpiCard
+          icon={<BarChart3 className="w-4 h-4" />}
+          label="Avg Progress"
+          value={kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "—"}
+          loading={dashLoading}
+          testId="text-avg-progress"
+        />
+        <KpiCard
+          icon={<Clock className="w-4 h-4" />}
+          label="Behind Plan"
+          value={kpis.projectsBehindPlan ?? "—"}
+          loading={dashLoading}
+          testId="text-behind-plan"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+        <KpiCard
+          icon={<DollarSign className="w-4 h-4" />}
+          label="Planned Revenue (FY)"
+          value={money(kpis.plannedRevenueFy)}
+          loading={dashLoading}
+          testId="text-planned-revenue"
+        />
+        <KpiCard
+          icon={<DollarSign className="w-4 h-4" />}
+          label="Gross Profit (FY)"
+          value={money(kpis.grossProfitFy)}
+          loading={dashLoading}
+          testId="text-gross-profit"
+        />
+        <KpiCard
+          icon={<AlertTriangle className="w-4 h-4" />}
+          label="Stale Imports"
+          value={kpis.staleImports ?? "—"}
+          loading={dashLoading}
+          testId="text-stale-imports"
+        />
+        <KpiCard
+          icon={<CheckCircle2 className="w-4 h-4" />}
+          label="Pending Approvals"
+          value={kpis.pendingApprovals ?? "—"}
+          loading={dashLoading}
+          testId="text-pending-approvals"
+        />
+      </div>
 
       <h2 className="text-base font-semibold text-foreground mt-8 mb-3">Quick Access</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
