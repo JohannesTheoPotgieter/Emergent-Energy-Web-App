@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Request } from "express";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {

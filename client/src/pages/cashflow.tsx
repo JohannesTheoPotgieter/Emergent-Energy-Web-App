@@ -55,7 +55,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
-import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import { usePermission } from "@/hooks/use-permissions";
 
 interface CashflowWeek {
@@ -728,6 +728,13 @@ export default function CashflowPage() {
   );
 
   const isProjectFiltered = selectedProjects.length > 0;
+  const overrideWeeks = cashflowData.filter((week) => week.hasManualOverride || week.hasOpexOverride || week.hasAvailPayOverride).length;
+  const varianceWeeks = cashflowData.filter((week) => Math.abs(week.balanceDelta || 0) > 0).length;
+  const scopeLabel = isProjectFiltered
+    ? selectedProjects.length === 1
+      ? selectedProjects[0]
+      : `${selectedProjects.length} projects`
+    : "Portfolio scope";
 
   const chartData = useMemo(() => {
     return cashflowData.map((w) => ({
@@ -762,8 +769,38 @@ export default function CashflowPage() {
       <SectionHeader
         icon={<Wallet className="h-5 w-5" />}
         title="Cashflow FY26"
-        description="Weekly cashflow timeline — Sep 2025 to Aug 2026"
+        description="Weekly cashflow timeline for Sep 2025 to Aug 2026 with visible source, override, and variance relationships."
+        badges={[
+          { label: scopeLabel, icon: <Wallet className="h-3.5 w-3.5" /> },
+          { label: canEditCashflow ? "Manual overrides enabled" : "Read-only finance view", icon: <ArrowRight className="h-3.5 w-3.5" /> },
+          { label: `${overrideWeeks} override weeks`, icon: <Eye className="h-3.5 w-3.5" /> },
+        ]}
       />
+      <WorkspaceNotice
+        title="Finance trust stays visible without adding clutter"
+        description="Cashflow shows where values come from, when a number changed, and where manual intervention affects the computed position."
+        icon={<DollarSign className="h-4 w-4" />}
+        tone="finance"
+      >
+        <Badge variant="secondary">Computed cascade</Badge>
+        <Badge variant="secondary">Override history</Badge>
+        <Badge variant="secondary">Source-aware scope</Badge>
+        <Badge variant="secondary">Variance visibility</Badge>
+      </WorkspaceNotice>
+      <div className="ee-data-trust-grid -mt-2">
+        <div className="ee-data-trust-card" data-testid="cashflow-trust-sources">
+          <span className="ee-data-trust-label">Source</span>
+          <span className="ee-data-trust-value">{isProjectFiltered ? "Filtered project inflows and outflows" : "Portfolio inflows with OPEX and project outflows"}</span>
+        </div>
+        <div className="ee-data-trust-card" data-testid="cashflow-trust-change">
+          <span className="ee-data-trust-label">Change</span>
+          <span className="ee-data-trust-value">{overrideWeeks} weeks carry a manual opening, OPEX, or available payment override.</span>
+        </div>
+        <div className="ee-data-trust-card" data-testid="cashflow-trust-variance">
+          <span className="ee-data-trust-label">Variance</span>
+          <span className="ee-data-trust-value">{varianceWeeks} weeks show a balance delta versus the computed opening position.</span>
+        </div>
+      </div>
       <div className="flex flex-wrap items-center gap-2 -mt-2">
               <Popover open={projectPickerOpen} onOpenChange={setProjectPickerOpen}>
                 <PopoverTrigger asChild>

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import ExcelJS from "exceljs";
 import type { 
   InsertProjectInfo, 

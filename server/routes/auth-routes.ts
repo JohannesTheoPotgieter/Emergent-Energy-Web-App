@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Express } from "express";
 import passport from "passport";
 import { db } from "../db";

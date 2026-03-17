@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
@@ -2076,145 +2077,117 @@ export default function CollaborationPage() {
     refetchInterval: 30_000,
   });
 
+  const tabLabels: Record<string, string> = {
+    calendar: "Calendar",
+    email: "Email",
+    teams: "Teams Chat",
+    sharepoint: "SharePoint",
+    notifications: "Notifications",
+  };
+  const collaborationTitle = unifiedFlag ? "Collaboration" : "Collaboration Hub";
+  const collaborationDescription = unifiedFlag
+    ? `Microsoft 365 communications stay tied to project context, conversion rules, and action ownership${user?.displayName ? ` for ${user.displayName}` : ""}.`
+    : `Your Microsoft 365 tools, files, and notifications stay in one app-managed workspace${user?.displayName ? ` for ${user.displayName}` : ""}.`;
+
   if (permLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
+      <PageShell className="p-4 md:p-6">
+        <div className="flex min-h-[16rem] items-center justify-center rounded-2xl border border-border/80 bg-background/90">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Loading collaboration surfaces...
+          </div>
+        </div>
+      </PageShell>
     );
   }
 
   if (!allowed) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-center">
-        <AlertTriangle className="h-10 w-10 text-amber-500 mb-3" />
-        <h3 className="text-lg font-semibold">Access Restricted</h3>
-        <p className="text-muted-foreground text-sm">You don't have permission to access the Collaboration hub.</p>
-      </div>
-    );
-  }
-
-  if (unifiedFlag) {
-    return (
-      <div className="p-6 max-w-7xl mx-auto space-y-6" data-testid="collaboration-page">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight" data-testid="text-collaboration-title">Collaboration</h1>
-            <p className="text-muted-foreground text-sm mt-1">
-              Microsoft 365 communications — tag to projects or convert to tasks
-              {user?.displayName && <span> — signed in as <strong>{user.displayName}</strong></span>}
-            </p>
-          </div>
+      <PageShell className="p-4 md:p-6">
+        <div className="flex min-h-[16rem] flex-col items-center justify-center rounded-2xl border border-amber-200 bg-amber-50/70 px-6 text-center">
+          <AlertTriangle className="mb-3 h-10 w-10 text-amber-500" />
+          <h3 className="text-lg font-semibold">Access Restricted</h3>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">You do not have permission to access the Collaboration hub.</p>
         </div>
-
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="calendar" className="flex items-center gap-1.5" data-testid="tab-calendar">
-              <Calendar className="h-4 w-4" />
-              <span className="hidden sm:inline">Calendar</span>
-            </TabsTrigger>
-            <TabsTrigger value="email" className="flex items-center gap-1.5" data-testid="tab-email">
-              <Mail className="h-4 w-4" />
-              <span className="hidden sm:inline">Email</span>
-            </TabsTrigger>
-            <TabsTrigger value="teams" className="flex items-center gap-1.5" data-testid="tab-teams">
-              <MessageSquare className="h-4 w-4" />
-              <span className="hidden sm:inline">Teams Chat</span>
-            </TabsTrigger>
-            <TabsTrigger value="sharepoint" className="flex items-center gap-1.5" data-testid="tab-sharepoint">
-              <FolderOpen className="h-4 w-4" />
-              <span className="hidden sm:inline">SharePoint</span>
-            </TabsTrigger>
-            <TabsTrigger value="notifications" className="relative flex items-center gap-1.5" data-testid="tab-notifications">
-              <Bell className="h-4 w-4" />
-              <span className="hidden sm:inline">Notifications</span>
-              {(unreadCount?.count || 0) > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full h-4 w-4 flex items-center justify-center">
-                  {unreadCount!.count > 99 ? "99+" : unreadCount!.count}
-                </span>
-              )}
-            </TabsTrigger>
-          </TabsList>
-
-          <div className="mt-6">
-            <TabsContent value="calendar">
-              <CalendarTab />
-            </TabsContent>
-            <TabsContent value="email">
-              <SyncedEmailTab />
-            </TabsContent>
-            <TabsContent value="teams">
-              <CombinedTeamsTab />
-            </TabsContent>
-            <TabsContent value="sharepoint">
-              <SyncedSharePointTab />
-            </TabsContent>
-            <TabsContent value="notifications">
-              <SyncedNotificationsTab />
-            </TabsContent>
-          </div>
-        </Tabs>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6" data-testid="collaboration-page">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight" data-testid="text-collaboration-title">Collaboration Hub</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Your Microsoft 365 tools and notifications in one place
-          {user?.displayName && <span> — signed in as <strong>{user.displayName}</strong></span>}
-        </p>
-      </div>
+    <PageShell className="p-4 md:p-6" data-testid="collaboration-page">
+      <SectionHeader
+        icon={<MessageSquare className="h-5 w-5" />}
+        eyebrow="Microsoft Work"
+        title={collaborationTitle}
+        description={collaborationDescription}
+        badges={[
+          { label: tabLabels[activeTab] || "Email", icon: <MessageSquare className="h-3.5 w-3.5" /> },
+          { label: `${unreadCount?.count || 0} unread alerts`, icon: <Bell className="h-3.5 w-3.5" /> },
+          { label: unifiedFlag ? "Unified work enabled" : "Classic hub mode", icon: <Link2 className="h-3.5 w-3.5" /> },
+        ]}
+      />
+      <span className="sr-only" data-testid="text-collaboration-title">{collaborationTitle}</span>
+
+      <WorkspaceNotice
+        title="Microsoft-linked work stays inside the app's operating model"
+        description="Tag messages and files to projects, convert conversations into tasks, and keep notifications visible in the same role-aware workspace."
+        icon={<Link2 className="h-4 w-4" />}
+        tone="microsoft"
+      >
+        <Badge variant="secondary">Project tagging</Badge>
+        <Badge variant="secondary">Task conversion</Badge>
+        <Badge variant="secondary">Role-aware notifications</Badge>
+        <Badge variant="secondary">Native Microsoft actions</Badge>
+      </WorkspaceNotice>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="calendar" className="flex items-center gap-1.5" data-testid="tab-calendar">
+        <TabsList className="grid w-full grid-cols-5 rounded-xl bg-muted/60 p-1">
+          <TabsTrigger value="calendar" className="flex items-center gap-1.5 rounded-lg" data-testid="tab-calendar">
             <Calendar className="h-4 w-4" />
             <span className="hidden sm:inline">Calendar</span>
           </TabsTrigger>
-          <TabsTrigger value="email" className="flex items-center gap-1.5" data-testid="tab-email">
+          <TabsTrigger value="email" className="flex items-center gap-1.5 rounded-lg" data-testid="tab-email">
             <Mail className="h-4 w-4" />
             <span className="hidden sm:inline">Email</span>
           </TabsTrigger>
-          <TabsTrigger value="teams" className="flex items-center gap-1.5" data-testid="tab-teams">
+          <TabsTrigger value="teams" className="flex items-center gap-1.5 rounded-lg" data-testid="tab-teams">
             <MessageSquare className="h-4 w-4" />
             <span className="hidden sm:inline">Teams Chat</span>
           </TabsTrigger>
-          <TabsTrigger value="sharepoint" className="flex items-center gap-1.5" data-testid="tab-sharepoint">
+          <TabsTrigger value="sharepoint" className="flex items-center gap-1.5 rounded-lg" data-testid="tab-sharepoint">
             <FolderOpen className="h-4 w-4" />
             <span className="hidden sm:inline">SharePoint</span>
           </TabsTrigger>
-          <TabsTrigger value="notifications" className="relative flex items-center gap-1.5" data-testid="tab-notifications">
+          <TabsTrigger value="notifications" className="relative flex items-center gap-1.5 rounded-lg" data-testid="tab-notifications">
             <Bell className="h-4 w-4" />
             <span className="hidden sm:inline">Notifications</span>
             {(unreadCount?.count || 0) > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full h-4 w-4 flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
                 {unreadCount!.count > 99 ? "99+" : unreadCount!.count}
               </span>
             )}
           </TabsTrigger>
         </TabsList>
 
-        <div className="mt-6">
+        <div className="mt-4">
           <TabsContent value="calendar">
             <CalendarTab />
           </TabsContent>
           <TabsContent value="email">
-            <EmailTab />
+            {unifiedFlag ? <SyncedEmailTab /> : <EmailTab />}
           </TabsContent>
           <TabsContent value="teams">
             <CombinedTeamsTab />
           </TabsContent>
           <TabsContent value="sharepoint">
-            <SharePointTab />
+            {unifiedFlag ? <SyncedSharePointTab /> : <SharePointTab />}
           </TabsContent>
           <TabsContent value="notifications">
-            <NotificationsTab />
+            {unifiedFlag ? <SyncedNotificationsTab /> : <NotificationsTab />}
           </TabsContent>
         </div>
       </Tabs>
-    </div>
+    </PageShell>
   );
 }

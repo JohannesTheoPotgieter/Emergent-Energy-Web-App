@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { cn } from "@/lib/utils";
+import { StatusChip } from "@/components/ui/status-chip";
 import {
   ADMIN_SURFACES,
   type AdminSurfaceId,
@@ -25,12 +26,9 @@ type AdminShellMetric = {
   helper?: string;
 };
 
-function statusClass(tone: StatusTone = "neutral") {
-  if (tone === "success") return "ee-chip ee-status-success";
-  if (tone === "warning") return "ee-chip ee-status-warning";
-  if (tone === "danger") return "ee-chip ee-status-danger";
-  if (tone === "info") return "ee-chip ee-status-info";
-  return "ee-chip border-border bg-background text-foreground";
+function mapToneToStatus(tone: StatusTone = "neutral") {
+  if (tone === "danger") return "error" as const;
+  return tone;
 }
 
 function SurfaceLinkCard({
@@ -112,9 +110,9 @@ export function AdminPageShell({
           {statuses && statuses.length > 0 ? (
             <div className="flex flex-wrap gap-2">
               {statuses.map((status) => (
-                <span key={status.label} className={statusClass(status.tone)}>
+                <StatusChip key={status.label} status={mapToneToStatus(status.tone)} dot>
                   {status.label}
-                </span>
+                </StatusChip>
               ))}
             </div>
           ) : null}

@@ -10,6 +10,7 @@ import {
   Mail, Loader2, Search, Inbox, AlertTriangle,
   CheckCheck, Link2, RefreshCw, ShieldAlert,
 } from "lucide-react";
+import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import {
   authHeaders, TagToProjectDialog, ConvertToTaskDialog, MsObjectActions,
 } from "./collaboration";
@@ -87,31 +88,45 @@ export default function CollabEmailPage() {
       (item.preview || "").toLowerCase().includes(q)
     );
   }, [items, searchQuery]);
+  const actionRequiredCount = filtered.filter((item: any) => item.actionRequired).length;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6" data-testid="collab-email-page">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="text-email-title">
-            <Mail className="h-6 w-6 text-blue-600" />
-            Outlook Email
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Synced emails — tag to projects or convert to tasks
-            {user?.displayName && <span> — {user.displayName}</span>}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => syncMutation.mutate()}
-          disabled={syncMutation.isPending}
-          data-testid="sync-email-button"
-        >
-          <RefreshCw className={`h-4 w-4 mr-1 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-          {syncMutation.isPending ? "Syncing..." : "Sync Now"}
-        </Button>
-      </div>
+    <PageShell className="max-w-5xl p-4 md:p-6" data-testid="collab-email-page">
+      <SectionHeader
+        icon={<Mail className="h-5 w-5" />}
+        eyebrow="Microsoft Work"
+        title="Outlook Email"
+        description={`Synced email stays inside the operating model so you can tag messages to projects or convert them into tasks${user?.displayName ? ` for ${user.displayName}` : ""}.`}
+        badges={[
+          { label: `${filtered.length} visible`, icon: <Mail className="h-3.5 w-3.5" /> },
+          { label: `${actionRequiredCount} action required`, icon: <AlertTriangle className="h-3.5 w-3.5" /> },
+          { label: "Project-aware conversion", icon: <Link2 className="h-3.5 w-3.5" /> },
+        ]}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            data-testid="sync-email-button"
+          >
+            <RefreshCw className={`h-4 w-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+            {syncMutation.isPending ? "Syncing..." : "Sync Now"}
+          </Button>
+        }
+      />
+      <span className="sr-only" data-testid="text-email-title">Outlook Email</span>
+
+      <WorkspaceNotice
+        title="Microsoft-linked items behave like app work, not a separate inbox"
+        description="Use the same project tagging, task conversion, and action-required cues that appear across My Work and collaboration surfaces."
+        icon={<Link2 className="h-4 w-4" />}
+        tone="microsoft"
+      >
+        <Badge variant="secondary">Project tag</Badge>
+        <Badge variant="secondary">Convert to task</Badge>
+        <Badge variant="secondary">Action-required visibility</Badge>
+      </WorkspaceNotice>
 
       <div className="flex items-center gap-3">
         <div className="relative flex-1">
@@ -227,6 +242,6 @@ export default function CollabEmailPage() {
           item={convertTarget}
         />
       )}
-    </div>
+    </PageShell>
   );
 }

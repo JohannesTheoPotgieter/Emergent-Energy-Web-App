@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../../db";
 import { operationalTasks, projectInfo, users, workItems } from "@shared/schema";

@@ -16,6 +16,7 @@ import {
   parseISO,
 } from "date-fns";
 import {
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -30,6 +31,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useLocation } from "wouter";
+import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 
 function authHeaders() {
   const token = localStorage.getItem("auth_token");
@@ -702,28 +704,42 @@ export default function MyWorkCalendarPage() {
   const isLoading = outlookLoading || tasksLoading;
 
   return (
-    <div className="space-y-4 h-full flex flex-col" data-testid="my-work-calendar">
-      <div className="flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground" data-testid="text-calendar-title">
-            Calendar
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Outlook events and tasks combined
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => syncMutation.mutate()}
-          disabled={syncMutation.isPending}
-          data-testid="button-refresh-connection"
-          className="gap-1.5"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-          {syncMutation.isPending ? "Syncing..." : "Refresh Connection"}
-        </Button>
-      </div>
+    <PageShell className="space-y-4 h-full flex flex-col" data-testid="my-work-calendar">
+      <SectionHeader
+        icon={<CalendarDays className="h-5 w-5" />}
+        title="Calendar"
+        eyebrow="My Work"
+        description="One planning view for Outlook events and your app work so day-to-day scheduling stays practical."
+        badges={[
+          { label: `${outlookEvents.length} Outlook item${outlookEvents.length === 1 ? "" : "s"}`, variant: "outline" },
+          { label: `${unscheduledTasks.length} unscheduled task${unscheduledTasks.length === 1 ? "" : "s"}`, variant: "secondary" },
+          { label: viewMode === "week" ? "Week view" : "Day view", variant: "outline" },
+        ]}
+        actions={(
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            data-testid="button-refresh-connection"
+            className="gap-1.5"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+            {syncMutation.isPending ? "Syncing..." : "Refresh Connection"}
+          </Button>
+        )}
+      />
+
+      <WorkspaceNotice
+        title="Microsoft-linked scheduling"
+        description="Outlook remains the source for meetings while app tasks can be scheduled alongside it. Drag work into time slots without leaving My Work."
+        tone="microsoft"
+        icon={<Clock className="h-4 w-4" />}
+      >
+        <Badge variant="outline">Outlook events</Badge>
+        <Badge variant="outline">My Work tasks</Badge>
+        <Badge variant="outline">Drag to schedule</Badge>
+      </WorkspaceNotice>
 
       <Card className="flex-1 flex flex-col min-h-0">
         <CardHeader className="pb-3 shrink-0">
@@ -909,7 +925,7 @@ export default function MyWorkCalendarPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }
 

@@ -1,6 +1,7 @@
 import { useState, useMemo, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search, Plus, Users, Building2, Pencil, X, Check, ChevronDown, ChevronRight, Link2, Unlink, ChevronsUpDown } from "lucide-react";
+import { Search, Plus, Users, Building2, Pencil, X, Check, ChevronDown, ChevronRight, Link2, Unlink, ChevronsUpDown, FolderKanban, Workflow } from "lucide-react";
+import { Link } from "wouter";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +35,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 
 async function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
@@ -119,6 +121,10 @@ export default function ClientsPage() {
     if (expandedId === null) return [];
     return allProjects.filter(p => p.client_id === expandedId);
   }, [expandedId, allProjects]);
+
+  const assignedProjects = useMemo(() => {
+    return allProjects.filter((project) => project.client_id !== null);
+  }, [allProjects]);
 
   const unassignedProjects = useMemo(() => {
     return allProjects
@@ -222,30 +228,53 @@ export default function ClientsPage() {
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center shadow-lg">
-            <Building2 className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold" data-testid="text-page-title">
-              Clients
-            </h1>
-            <p className="text-sm text-muted-foreground" data-testid="text-client-count">
-              {clients.length} client{clients.length !== 1 ? "s" : ""}
-            </p>
-          </div>
-        </div>
-        <Button
-          onClick={() => setCreateOpen(true)}
-          data-testid="button-new-client"
-          className="gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          New Client
-        </Button>
-      </div>
+    <PageShell className="max-w-6xl p-4 md:p-6" data-testid="clients-page">
+      <SectionHeader
+        icon={<Building2 className="h-5 w-5" />}
+        title="Clients"
+        eyebrow="Project Lifecycle"
+        description="Create and maintain the client master record used by Project Lifecycle, Client Overview, and project linkage."
+        badges={[
+          { label: `${clients.length} client${clients.length === 1 ? "" : "s"}`, variant: "outline" },
+          { label: `${assignedProjects.length} linked project${assignedProjects.length === 1 ? "" : "s"}`, variant: "secondary" },
+        ]}
+        actions={(
+          <>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/project-lifecycle">
+                <Workflow className="h-4 w-4 mr-1.5" />
+                Project Lifecycle
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/projects">
+                <FolderKanban className="h-4 w-4 mr-1.5" />
+                Project List
+              </Link>
+            </Button>
+            <Button
+              onClick={() => setCreateOpen(true)}
+              data-testid="button-new-client"
+              className="gap-2"
+              size="sm"
+            >
+              <Plus className="w-4 h-4" />
+              New Client
+            </Button>
+          </>
+        )}
+      />
+
+      <WorkspaceNotice
+        title="Lifecycle client control"
+        description="Client records here are the canonical linkage layer for the lifecycle spine. Assignments flow through to Project Lifecycle and Client Overview without creating a parallel system."
+        tone="warning"
+        icon={<Link2 className="h-4 w-4" />}
+      >
+        <Badge variant="outline">Canonical client master</Badge>
+        <Badge variant="outline">Project linkage visible</Badge>
+        <Badge variant="outline">No duplicate client surfaces</Badge>
+      </WorkspaceNotice>
 
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -554,6 +583,6 @@ export default function ClientsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }

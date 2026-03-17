@@ -41,7 +41,7 @@ import {
   LayoutGrid,
   Table2,
 } from "lucide-react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import type { PlatformProjectSummaryContract } from "@shared/platform-contracts";
@@ -56,7 +56,7 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import { isSuperAdmin } from "@/lib/access-control";
 
 interface ProjectSummary {
@@ -1545,6 +1545,7 @@ export default function ProjectsSummary() {
       <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
         <SectionHeader
           icon={<BarChart3 className="h-5 w-5" />}
+          eyebrow="Project Management"
           title="Project List"
           description="Execution project management list"
         />
@@ -1567,6 +1568,7 @@ export default function ProjectsSummary() {
       <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
         <SectionHeader
           icon={<BarChart3 className="h-5 w-5" />}
+          eyebrow="Project Management"
           title="Project List"
           description="Loading execution data..."
         />
@@ -1583,6 +1585,7 @@ export default function ProjectsSummary() {
       <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
         <SectionHeader
           icon={<BarChart3 className="h-5 w-5" />}
+          eyebrow="Project Management"
           title="Project List"
           description="Execution project management list"
         />
@@ -2040,6 +2043,7 @@ export default function ProjectsSummary() {
     <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
       <SectionHeader
         icon={<BarChart3 className="h-5 w-5" />}
+        eyebrow="Project Management"
         title="Project List"
         description={`${sorted.length} of ${currentProjects.length} ${viewTab === "active" ? "active" : "archived"} projects${(pmFilter !== "all" || phaseFilter !== "all" || searchTerm) ? " (filtered)" : ""}`}
         actions={
@@ -2055,6 +2059,26 @@ export default function ProjectsSummary() {
           </Button>
         }
       />
+
+      <WorkspaceNotice
+        title="Project List is the execution directory inside Project Management"
+        description="Use this list with Execution Overview and the Work Plan / Board to move from portfolio scanning into action, latest updates, and tracker-fed delivery signals."
+        icon={<BarChart3 className="h-4 w-4" />}
+        actions={
+          <>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/pm-dashboard">Execution Overview</Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/execution-board">Open Work Plan / Board</Link>
+            </Button>
+          </>
+        }
+      >
+        <Badge variant="secondary">Latest Update stays canonical</Badge>
+        <Badge variant="secondary">Tracker-fed dates stay authoritative</Badge>
+        <Badge variant="secondary">Execution-first scanning</Badge>
+      </WorkspaceNotice>
 
       <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
         Tracker-fed schedule and finance fields remain authoritative here. Latest Update stays app-managed, text only, and visible for execution scanning.

@@ -1,0 +1,222 @@
+{
+  "config": {
+    "configFile": "C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\playwright.config.ts",
+    "rootDir": "C:/Users/johan/OneDrive/Documents/Codex/Emergent-Energy-Web-App/qa/tests/e2e",
+    "forbidOnly": true,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "C:/Users/johan/OneDrive/Documents/Codex/Emergent-Energy-Web-App/qa/artifacts/e2e/results",
+        "repeatEach": 1,
+        "retries": 1,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "C:/Users/johan/OneDrive/Documents/Codex/Emergent-Energy-Web-App/qa/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "html",
+        {
+          "outputFolder": "artifacts/e2e/report"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "reports/e2e-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "runAgents": "none",
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.58.2",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "smoke.spec.ts",
+      "file": "smoke.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Expanded Route Smoke Coverage",
+          "file": "smoke.spec.ts",
+          "line": 267,
+          "column": 6,
+          "specs": [],
+          "suites": [
+            {
+              "title": "Role: admin",
+              "file": "smoke.spec.ts",
+              "line": 269,
+              "column": 10,
+              "specs": [
+                {
+                  "title": "admin route smoke: /admin/control-center",
+                  "ok": false,
+                  "tags": [],
+                  "tests": [
+                    {
+                      "timeout": 30000,
+                      "annotations": [],
+                      "expectedStatus": "passed",
+                      "projectId": "chromium",
+                      "projectName": "chromium",
+                      "results": [
+                        {
+                          "workerIndex": 0,
+                          "parallelIndex": 0,
+                          "status": "failed",
+                          "duration": 2851,
+                          "error": {
+                            "message": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:5000/auth/login\nCall log:\n\u001b[2m  - navigating to \"http://localhost:5000/auth/login\", waiting until \"load\"\u001b[22m\n",
+                            "stack": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:5000/auth/login\nCall log:\n\u001b[2m  - navigating to \"http://localhost:5000/auth/login\", waiting until \"load\"\u001b[22m\n\n    at login (C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\tests\\e2e\\smoke.spec.ts:202:14)\n    at C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\tests\\e2e\\smoke.spec.ts:273:15",
+                            "location": {
+                              "file": "C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\tests\\e2e\\smoke.spec.ts",
+                              "column": 14,
+                              "line": 202
+                            },
+                            "snippet": "\u001b[0m \u001b[90m 200 |\u001b[39m\n \u001b[90m 201 |\u001b[39m \u001b[36masync\u001b[39m \u001b[36mfunction\u001b[39m login(page\u001b[33m:\u001b[39m \u001b[33mPage\u001b[39m\u001b[33m,\u001b[39m username\u001b[33m:\u001b[39m string\u001b[33m,\u001b[39m password\u001b[33m:\u001b[39m string) {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 202 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m\"/auth/login\"\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m              \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 203 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'[data-testid=\"input-username\"], input[name=\"username\"], input[type=\"text\"]'\u001b[39m\u001b[33m,\u001b[39m username)\u001b[33m;\u001b[39m\n \u001b[90m 204 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'[data-testid=\"input-password\"], input[name=\"password\"], input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m password)\u001b[33m;\u001b[39m\n \u001b[90m 205 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'[data-testid=\"button-login\"], button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                          },
+                          "errors": [
+                            {
+                              "location": {
+                                "file": "C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\tests\\e2e\\smoke.spec.ts",
+                                "column": 14,
+                                "line": 202
+                              },
+                              "message": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:5000/auth/login\nCall log:\n\u001b[2m  - navigating to \"http://localhost:5000/auth/login\", waiting until \"load\"\u001b[22m\n\n\n  200 |\n  201 | async function login(page: Page, username: string, password: string) {\n> 202 |   await page.goto(\"/auth/login\");\n      |              ^\n  203 |   await page.fill('[data-testid=\"input-username\"], input[name=\"username\"], input[type=\"text\"]', username);\n  204 |   await page.fill('[data-testid=\"input-password\"], input[name=\"password\"], input[type=\"password\"]', password);\n  205 |   await page.click('[data-testid=\"button-login\"], button[type=\"submit\"]');\n    at login (C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\tests\\e2e\\smoke.spec.ts:202:14)\n    at C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\tests\\e2e\\smoke.spec.ts:273:15"
+                            }
+                          ],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 0,
+                          "startTime": "2026-03-16T22:11:01.775Z",
+                          "annotations": [],
+                          "attachments": [
+                            {
+                              "name": "screenshot",
+                              "contentType": "image/png",
+                              "path": "C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\artifacts\\e2e\\results\\smoke-Expanded-Route-Smoke-0627d--smoke-admin-control-center-chromium\\test-failed-1.png"
+                            },
+                            {
+                              "name": "video",
+                              "contentType": "video/webm",
+                              "path": "C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\artifacts\\e2e\\results\\smoke-Expanded-Route-Smoke-0627d--smoke-admin-control-center-chromium\\video.webm"
+                            }
+                          ],
+                          "errorLocation": {
+                            "file": "C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\tests\\e2e\\smoke.spec.ts",
+                            "column": 14,
+                            "line": 202
+                          }
+                        },
+                        {
+                          "workerIndex": 1,
+                          "parallelIndex": 0,
+                          "status": "failed",
+                          "duration": 2882,
+                          "error": {
+                            "message": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:5000/auth/login\nCall log:\n\u001b[2m  - navigating to \"http://localhost:5000/auth/login\", waiting until \"load\"\u001b[22m\n",
+                            "stack": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:5000/auth/login\nCall log:\n\u001b[2m  - navigating to \"http://localhost:5000/auth/login\", waiting until \"load\"\u001b[22m\n\n    at login (C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\tests\\e2e\\smoke.spec.ts:202:14)\n    at C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\tests\\e2e\\smoke.spec.ts:273:15",
+                            "location": {
+                              "file": "C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\tests\\e2e\\smoke.spec.ts",
+                              "column": 14,
+                              "line": 202
+                            },
+                            "snippet": "\u001b[0m \u001b[90m 200 |\u001b[39m\n \u001b[90m 201 |\u001b[39m \u001b[36masync\u001b[39m \u001b[36mfunction\u001b[39m login(page\u001b[33m:\u001b[39m \u001b[33mPage\u001b[39m\u001b[33m,\u001b[39m username\u001b[33m:\u001b[39m string\u001b[33m,\u001b[39m password\u001b[33m:\u001b[39m string) {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 202 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mgoto(\u001b[32m\"/auth/login\"\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m              \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 203 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'[data-testid=\"input-username\"], input[name=\"username\"], input[type=\"text\"]'\u001b[39m\u001b[33m,\u001b[39m username)\u001b[33m;\u001b[39m\n \u001b[90m 204 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mfill(\u001b[32m'[data-testid=\"input-password\"], input[name=\"password\"], input[type=\"password\"]'\u001b[39m\u001b[33m,\u001b[39m password)\u001b[33m;\u001b[39m\n \u001b[90m 205 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mclick(\u001b[32m'[data-testid=\"button-login\"], button[type=\"submit\"]'\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                          },
+                          "errors": [
+                            {
+                              "location": {
+                                "file": "C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\tests\\e2e\\smoke.spec.ts",
+                                "column": 14,
+                                "line": 202
+                              },
+                              "message": "Error: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:5000/auth/login\nCall log:\n\u001b[2m  - navigating to \"http://localhost:5000/auth/login\", waiting until \"load\"\u001b[22m\n\n\n  200 |\n  201 | async function login(page: Page, username: string, password: string) {\n> 202 |   await page.goto(\"/auth/login\");\n      |              ^\n  203 |   await page.fill('[data-testid=\"input-username\"], input[name=\"username\"], input[type=\"text\"]', username);\n  204 |   await page.fill('[data-testid=\"input-password\"], input[name=\"password\"], input[type=\"password\"]', password);\n  205 |   await page.click('[data-testid=\"button-login\"], button[type=\"submit\"]');\n    at login (C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\tests\\e2e\\smoke.spec.ts:202:14)\n    at C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\tests\\e2e\\smoke.spec.ts:273:15"
+                            }
+                          ],
+                          "stdout": [],
+                          "stderr": [],
+                          "retry": 1,
+                          "startTime": "2026-03-16T22:11:06.713Z",
+                          "annotations": [],
+                          "attachments": [
+                            {
+                              "name": "screenshot",
+                              "contentType": "image/png",
+                              "path": "C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\artifacts\\e2e\\results\\smoke-Expanded-Route-Smoke-0627d--smoke-admin-control-center-chromium-retry1\\test-failed-1.png"
+                            },
+                            {
+                              "name": "video",
+                              "contentType": "video/webm",
+                              "path": "C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\artifacts\\e2e\\results\\smoke-Expanded-Route-Smoke-0627d--smoke-admin-control-center-chromium-retry1\\video.webm"
+                            },
+                            {
+                              "name": "trace",
+                              "contentType": "application/zip",
+                              "path": "C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\artifacts\\e2e\\results\\smoke-Expanded-Route-Smoke-0627d--smoke-admin-control-center-chromium-retry1\\trace.zip"
+                            }
+                          ],
+                          "errorLocation": {
+                            "file": "C:\\Users\\johan\\OneDrive\\Documents\\Codex\\Emergent-Energy-Web-App\\qa\\tests\\e2e\\smoke.spec.ts",
+                            "column": 14,
+                            "line": 202
+                          }
+                        }
+                      ],
+                      "status": "unexpected"
+                    }
+                  ],
+                  "id": "4219922fea2e2bd3c691-c8ce11ccdcd0fdf8b5e9",
+                  "file": "smoke.spec.ts",
+                  "line": 277,
+                  "column": 9
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-03-16T22:11:00.252Z",
+    "duration": 9721.972000000002,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

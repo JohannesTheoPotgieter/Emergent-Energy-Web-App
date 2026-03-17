@@ -1,0 +1,43 @@
+
+> rest-express@1.0.0 dev
+> node script/with-node-env.cjs development tsx server/index.ts
+
+[DB] No DATABASE_URL found, using SQLite for reliability
+[DB] No DATABASE_URL found, using SQLite for reliability
+[DB] Using SQLite file: C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\data\app.sqlite
+[DB] Startup schema repair disabled - running additive SQLite compatibility bootstrap
+[DB] Ensuring SQLite schema exists...
+[DB] ✓ SQLite schema verified
+[DB] SQLite schema verified
+12:10:28 AM [express] Using in-memory session store (dbMode=sqlite)
+[Lifecycle] Migration error: near "EXISTS": syntax error
+12:10:29 AM [Startup:Routes] All route groups registered
+[Milestones] Notification checker started (6h interval)
+[MS Sync] Periodic sync started (every 15 minutes)
+12:10:29 AM [Startup] [Startup] dbMode=sqlite
+12:10:29 AM [Startup] [Startup] flags={"startupMaintenanceEnabled":false,"startupSchemaRepairEnabled":false,"startupDataSeedEnabled":false,"startupBackfillEnabled":false,"startupSessionResetEnabled":false,"startupSyncEnabled":true,"runtimeMaintenanceEnabled":false,"runtimeMutationsActive":false}
+12:10:29 AM [Startup] [Startup] maintenance=skipped
+12:10:29 AM [Startup] [Startup] backfills=skipped
+12:10:29 AM [Startup] [Startup] seeds=skipped
+12:10:29 AM [Startup] [Startup] routes=registered
+12:10:29 AM [Startup] [Startup] runtime=import-scheduler, milestone-checker, periodic-sync
+12:10:29 AM [Startup] serving on port 5000
+12:10:31 AM [express] GET /api/health 200 in 25ms
+[Milestones] Notification check error: no such column: pi.pm_user_id
+[2m00:10:45[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\client\src\pages\my-work-tasks.tsx: Expected corresponding JSX closing tag for <PageShell>. (1342:4)
+
+[0m [90m 1340 |[39m         [33m<[39m[33m/[39m[33mDialogContent[39m[33m>[39m
+ [90m 1341 |[39m       [33m<[39m[33m/[39m[33mDialog[39m[33m>[39m
+[31m[1m>[22m[39m[90m 1342 |[39m     [33m<[39m[33m/[39m[33mdiv[39m[33m>[39m
+ [90m      |[39m     [31m[1m^[22m[39m
+ [90m 1343 |[39m   )[33m;[39m
+ [90m 1344 |[39m }
+ [90m 1345 |[39m[0m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mC:/Users/johan/OneDrive/Documents/Codex/Emergent-Energy-Web-App/client/src/pages/my-work-tasks.tsx[39m:1342:4
+[33m  1340 |          </DialogContent>
+  1341 |        </Dialog>
+  1342 |      </div>
+       |      ^
+  1343 |    );
+  1344 |  }[39m

@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
+import { StatusChip } from "@/components/ui/status-chip";
 
 type SearchResult = { id: string; title: string; subtitle?: string; type: string; url?: string | null };
 
@@ -80,6 +81,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [searchTerm]);
 
   const breadcrumbs = useMemo(() => getBreadcrumbs(location, activeSection), [activeSection, location]);
+  const displayRole = user?.role ? user.role.replace(/_/g, " ") : null;
 
 
   const retrySearch = async () => {
@@ -122,8 +124,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen ee-shell">
-      <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
-        <div className="px-4 lg:px-6 py-2.5 flex items-center gap-2.5">
+      <header className="sticky top-0 z-50 border-b border-border/80 bg-background/92 backdrop-blur-xl shadow-[var(--shadow-xs)]">
+        <div className="px-4 lg:px-6 py-3 flex items-center gap-2.5">
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="lg:hidden"><Menu className="h-5 w-5" /></Button>
@@ -156,8 +158,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
           <Link href="/" className="flex items-center gap-3 min-w-fit">
             <img src="/emergent-logo.png" alt="Emergent Energy" className="h-7 w-auto object-contain" />
-            <div className="hidden lg:block">
-              <p className="text-xs text-muted-foreground">{activeSection.label}</p>
+            <div className="hidden lg:block min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Operating Workspace</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-foreground truncate">{activeSection.label}</p>
+                {displayRole ? <StatusChip status="neutral" size="sm">{displayRole}</StatusChip> : null}
+              </div>
             </div>
           </Link>
 
@@ -165,7 +171,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60" />
             <Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search projects, work items, finance, documents, people" className="pl-9 border-input focus-visible:ring-ring/30" />
             {searchTerm.trim().length >= 2 && (
-              <div className="absolute left-0 right-0 top-[105%] rounded-lg border border-border bg-background shadow-[var(--shadow-md)] p-2 max-h-96 overflow-auto">
+              <div className="absolute left-0 right-0 top-[105%] rounded-2xl border border-border/80 bg-background/98 shadow-[var(--shadow-md)] p-2 max-h-96 overflow-auto">
                 {loadingSearch ? (
                   <p className="text-xs text-muted-foreground p-2">Searching across projects, work items, and finance…</p>
                 ) : searchError ? (
@@ -209,7 +215,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {quickCreateActions.length > 0 ? (
             <DropdownMenu open={quickCreateOpen} onOpenChange={setQuickCreateOpen}>
               <DropdownMenuTrigger asChild>
-                <Button onClick={() => setQuickCreateOpen((prev) => !prev)} onMouseEnter={() => setQuickCreateOpen(true)}><Plus className="h-4 w-4 mr-1" />Quick Create</Button>
+                <Button onClick={() => setQuickCreateOpen((prev) => !prev)} onMouseEnter={() => setQuickCreateOpen(true)} className="hidden sm:inline-flex"><Plus className="h-4 w-4 mr-1" />Quick Create</Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-72">
                 <DropdownMenuLabel>Create</DropdownMenuLabel>
@@ -225,7 +231,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {microsoftShortcuts.length > 0 ? (
             <DropdownMenu open={microsoftMenuOpen} onOpenChange={setMicrosoftMenuOpen}>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={() => setMicrosoftMenuOpen((prev) => !prev)}><CalendarClock className="h-4 w-4" /></Button>
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setMicrosoftMenuOpen((prev) => !prev)}>
+                  <CalendarClock className="h-4 w-4" />
+                  <span className="hidden xl:inline">Microsoft</span>
+                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>Microsoft Shortcuts</DropdownMenuLabel>
@@ -261,7 +270,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </DropdownMenu>
         </div>
 
-        <nav className="hidden lg:flex px-6 border-t border-border overflow-x-auto">
+        <nav className="hidden lg:flex px-6 py-2 gap-1 border-t border-border/70 bg-background/72 overflow-x-auto">
           {visibleSections.map((section) => {
             const active = section.label === activeSection.label;
             return (
@@ -269,8 +278,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 key={section.label}
                 href={section.path}
                 className={cn(
-                  "px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors",
-                  active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground",
+                  "rounded-full px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors",
+                  active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-background hover:text-foreground",
                 )}
               >
                 {section.label}
@@ -279,26 +288,34 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="px-4 lg:px-6 border-t border-border bg-muted/40">
-          <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+        <div className="px-4 lg:px-6 border-t border-border/70 bg-muted/30">
+          <div className="flex flex-wrap items-center gap-2 py-2 text-xs text-muted-foreground">
             {breadcrumbs.map((crumb, idx) => (
               <span key={crumb + idx} className="flex items-center gap-2">{idx > 0 ? <ChevronRight className="h-3 w-3" /> : null}<span>{crumb}</span></span>
             ))}
           </div>
           <div className="flex gap-1.5 overflow-x-auto pb-2.5">
             {activeSection.secondary.map((item) => (
-              <Link
-                key={item.path}
-                href={item.path}
-                className={cn(
-                  "px-3.5 py-1.5 rounded-md border text-sm whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  linkIsActive(location, item.path)
-                    ? "border-primary/30 bg-primary/15 text-primary"
-                    : "border-transparent text-muted-foreground hover:border-border hover:bg-background",
-                )}
-              >
-                {item.label}
-              </Link>
+              item.disabled ? (
+                <span
+                  key={item.path}
+                  className="ee-subnav-pill cursor-not-allowed whitespace-nowrap opacity-55"
+                  aria-disabled="true"
+                >
+                  {item.label}
+                </span>
+              ) : (
+                <Link
+                  key={item.path}
+                  href={item.path}
+                  className={cn(
+                    "ee-subnav-pill whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    linkIsActive(location, item.path) ? "ee-subnav-pill-active" : "",
+                  )}
+                >
+                  {item.label}
+                </Link>
+              )
             ))}
           </div>
         </div>

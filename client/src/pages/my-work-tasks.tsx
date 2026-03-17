@@ -28,6 +28,7 @@ import {
   Target, Activity,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import { canReassignTask as canReassignTaskByRole, getTaskAssigneeNames, isTaskDueSoon, isTaskOverdue as isTaskOverdueLogic } from "@/pages/my-work-tasks-logic";
 import { useLocation } from "wouter";
@@ -882,32 +883,61 @@ export default function MyWorkTasksPage() {
 
   if (isLoading) {
     return (
-      <div className="p-4 space-y-2 flex-1" data-testid="loading-skeleton">
-        <Skeleton className="h-10 w-full rounded-lg" />
-        <Skeleton className="h-8 w-full rounded-lg" />
-        <div className="space-y-1">{[1, 2, 3, 4, 5, 6, 7, 8].map(i => (<Skeleton key={i} className="h-10 w-full rounded" />))}</div>
-      </div>
+      <PageShell className="max-w-6xl p-4 md:p-6" data-testid="my-work-tasks-page">
+        <SectionHeader
+          icon={<ListTodo className="h-5 w-5" />}
+          eyebrow="My Work"
+          title="My Tasks"
+          description="Loading personal, project, and Microsoft-linked tasks..."
+        />
+        <div className="space-y-2" data-testid="loading-skeleton">
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-8 w-full rounded-lg" />
+          <div className="space-y-1">{[1, 2, 3, 4, 5, 6, 7, 8].map(i => (<Skeleton key={i} className="h-10 w-full rounded" />))}</div>
+        </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="flex flex-col min-h-0 flex-1 max-w-6xl mx-auto w-full" data-testid="my-work-tasks-page">
+    <PageShell className="max-w-6xl p-4 md:p-6" data-testid="my-work-tasks-page">
 
       <div className="shrink-0 mb-3" data-testid="tasks-header">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <h2 className="text-lg font-bold tracking-tight text-foreground" data-testid="text-tasks-title">My Tasks</h2>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <div className="flex items-center border rounded-md overflow-hidden">
-              <button onClick={() => setViewMode("list")} className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-list" title="List view"><LayoutList className="h-3.5 w-3.5" /></button>
-              <button onClick={() => setViewMode("board")} className={`p-1.5 transition-colors ${viewMode === "board" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-board" title="Board view"><Columns3 className="h-3.5 w-3.5" /></button>
+        <SectionHeader
+          icon={<ListTodo className="h-5 w-5" />}
+          eyebrow="My Work"
+          title="My Tasks"
+          description="Your single action workspace for personal work, project delivery items, and Microsoft-linked follow-ups."
+          badges={[
+            { label: `${filteredTasks.length} visible`, icon: <ListTodo className="h-3.5 w-3.5" /> },
+            { label: `${kpiStats.overdue} overdue`, icon: <AlertCircle className="h-3.5 w-3.5" /> },
+            { label: `${microsoftItems.length} Microsoft items`, icon: <Link2 className="h-3.5 w-3.5" /> },
+          ]}
+          actions={
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <div className="flex items-center border rounded-md overflow-hidden">
+                <button onClick={() => setViewMode("list")} className={`p-1.5 transition-colors ${viewMode === "list" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-list" title="List view"><LayoutList className="h-3.5 w-3.5" /></button>
+                <button onClick={() => setViewMode("board")} className={`p-1.5 transition-colors ${viewMode === "board" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`} data-testid="btn-view-board" title="Board view"><Columns3 className="h-3.5 w-3.5" /></button>
+              </div>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 hidden sm:inline-flex" onClick={handleSaveDefaultView} data-testid="btn-save-default-view" title="Save default"><Save className="h-3 w-3" /></Button>
+              {hasCustomDefault && <Button variant="ghost" size="sm" className="h-7 px-1.5 text-xs text-muted-foreground hidden sm:inline-flex" onClick={handleResetDefaultView} data-testid="btn-reset-default-view" title="Reset default"><RotateCw className="h-3 w-3" /></Button>}
+              <Button variant={showCompleted ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 gap-1 hidden sm:inline-flex ${showCompleted ? "bg-emerald-500 hover:bg-emerald-600 text-white" : ""}`} onClick={() => setShowCompleted(!showCompleted)} data-testid="button-show-completed"><CheckCircle2 className="h-3 w-3" /><span>{showCompleted ? `Done (${kpiStats.done})` : "Show Done"}</span></Button>
+              <Button variant={groomMode ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 gap-1 hidden sm:inline-flex ${groomMode ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}`} onClick={() => setGroomMode(!groomMode)} data-testid="button-groom-mode"><Eye className="h-3 w-3" /><span>{groomMode ? "Grooming" : "Groom"}</span></Button>
+              <Button size="sm" className="h-7 gap-1 text-xs shadow-sm" onClick={() => setCreateDialogOpen(true)} data-testid="button-new-task"><Plus className="h-3.5 w-3.5" /> <span className="hidden xs:inline">New</span></Button>
             </div>
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 hidden sm:inline-flex" onClick={handleSaveDefaultView} data-testid="btn-save-default-view" title="Save default"><Save className="h-3 w-3" /></Button>
-            {hasCustomDefault && <Button variant="ghost" size="sm" className="h-7 px-1.5 text-xs text-muted-foreground hidden sm:inline-flex" onClick={handleResetDefaultView} data-testid="btn-reset-default-view" title="Reset default"><RotateCw className="h-3 w-3" /></Button>}
-            <Button variant={showCompleted ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 gap-1 hidden sm:inline-flex ${showCompleted ? "bg-emerald-500 hover:bg-emerald-600 text-white" : ""}`} onClick={() => setShowCompleted(!showCompleted)} data-testid="button-show-completed"><CheckCircle2 className="h-3 w-3" /><span>{showCompleted ? `Done (${kpiStats.done})` : "Show Done"}</span></Button>
-            <Button variant={groomMode ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 gap-1 hidden sm:inline-flex ${groomMode ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}`} onClick={() => setGroomMode(!groomMode)} data-testid="button-groom-mode"><Eye className="h-3 w-3" /><span>{groomMode ? "Grooming" : "Groom"}</span></Button>
-            <Button size="sm" className="h-7 gap-1 text-xs shadow-sm" onClick={() => setCreateDialogOpen(true)} data-testid="button-new-task"><Plus className="h-3.5 w-3.5" /> <span className="hidden xs:inline">New</span></Button>
-          </div>
-        </div>
+          }
+        />
+        <span className="sr-only" data-testid="text-tasks-title">My Tasks</span>
+        <WorkspaceNotice
+          title="My Work is the single personal action workspace"
+          description="Personal tasks, project work, approvals, deliverables, and Microsoft follow-ups all appear in one place with the same ownership and source cues."
+          icon={<Link2 className="h-4 w-4" />}
+          tone="microsoft"
+        >
+          <Badge variant="secondary">Unified sources</Badge>
+          <Badge variant="secondary">Microsoft follow-ups</Badge>
+          <Badge variant="secondary">Project-linked context</Badge>
+        </WorkspaceNotice>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" data-testid="kpi-cards">
           <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-blue-500 to-blue-600 p-3 text-white shadow-sm" data-testid="kpi-active">
@@ -1309,7 +1339,7 @@ export default function MyWorkTasksPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }
 

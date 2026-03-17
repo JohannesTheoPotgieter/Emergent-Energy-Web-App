@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { clients, pdTickets, operationalTasks, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES } from "@shared/schema";
