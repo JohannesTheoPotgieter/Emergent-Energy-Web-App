@@ -898,9 +898,68 @@ function persistActiveView(name: string | null) {
 }
 
 function LatestUpdateCell({ project }: { project: ProjectSummary }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(project.latest_update || "");
+  const queryClient = useQueryClient();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setValue(project.latest_update || "");
+  }, [project.latest_update]);
+
+  useEffect(() => {
+    if (editing && inputRef.current) inputRef.current.focus();
+  }, [editing]);
+
+  const save = async () => {
+    const trimmed = value.trim();
+    if (trimmed === (project.latest_update || "")) { setEditing(false); return; }
+    try {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      await fetch(`/api/projects-summary/${encodeURIComponent(project.project_name)}/latest-update`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ latestUpdate: trimmed || null }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+    } catch (e) {
+      console.error("Failed to save latest update:", e);
+    }
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <Input
+          ref={inputRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+          className="h-6 text-[10px] px-1.5 py-0"
+          data-testid={`input-latest-update-${project.project_name}`}
+        />
+        <Button size="sm" variant="ghost" onClick={save} className="h-5 w-5 p-0 shrink-0">
+          <Check className="h-3 w-3 text-emerald-600" />
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => { setValue(project.latest_update || ""); setEditing(false); }} className="h-5 w-5 p-0 shrink-0">
+          <X className="h-3 w-3 text-muted-foreground" />
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <span className="block truncate text-[10px] text-muted-foreground" title={project.latest_update || "No update"}>
+    <span
+      className="block truncate text-[10px] text-muted-foreground cursor-pointer hover:text-foreground group"
+      title={project.latest_update ? `${project.latest_update} (click to edit)` : "Click to add update"}
+      onClick={() => setEditing(true)}
+      data-testid={`text-latest-update-${project.project_name}`}
+    >
       {project.latest_update || "—"}
+      <Pencil className="inline-block ml-1 h-2.5 w-2.5 opacity-0 group-hover:opacity-60" />
     </span>
   );
 }
