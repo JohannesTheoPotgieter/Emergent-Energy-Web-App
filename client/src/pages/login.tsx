@@ -295,7 +295,7 @@ export default function LoginPage() {
             data-testid="button-version-info"
           >
             <Info className="w-3.5 h-3.5" />
-            v{versionInfo.version}{versionInfo.buildNumber ? ` (${versionInfo.buildNumber})` : ""} — The one where permissions stop taking up half your screen
+            v{versionInfo.version}{versionInfo.buildNumber ? ` (${versionInfo.buildNumber})` : ""} — The Production Hardening Update
           </button>
         </div>
       </div>
