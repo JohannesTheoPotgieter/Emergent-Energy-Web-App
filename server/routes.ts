@@ -13441,77 +13441,116 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/key-dates/:projectName", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const projectName = decodeURIComponent(req.params.projectName);
-      const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
+  async function resolveKeyDates(projectId: number | null, projectName: string): Promise<any[]> {
+    let planTasks: any[] = [];
 
+    if (projectId) {
+      const rows = await db.select().from(workItems)
+        .where(and(
+          eq(workItems.projectId, projectId),
+          sql`${workItems.workstream} IN ('PM')`,
+          eq(workItems.source, "SMART_IMPORT"),
+          isNull(workItems.deletedAt),
+        ));
+      planTasks = rows.map((wi: any) => ({
+        id: wi.id,
+        highLevelProgramme: wi.title,
+        actualStart: wi.startDate || null,
+        actualEnd: wi.endDate || null,
+        trueActualStart: wi.actualStart || wi.startDate || null,
+        trueActualEnd: wi.actualEnd || wi.endDate || null,
+        taskNo: wi.wbsCode || null,
+        baselineStart: null,
+        baselineEnd: null,
+      }));
+    }
+
+    if (planTasks.length === 0 && projectName) {
+      const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
       const [planTasksDirect, planTasksTracker] = await Promise.all([
         storage.getProjectPlansByProject(projectName),
         projectName !== trackerName ? storage.getProjectPlansByProject(trackerName) : Promise.resolve([]),
       ]);
+      planTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
+    }
 
-      const planTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
+    const autoMappings = [
+      { keyDateName: "PD Handover", patterns: ['bd handover', 'project charter handover'], dateField: 'actualEnd' as const, sortOrder: 1 },
+      { keyDateName: "Construction Start", patterns: ['site establishment'], dateField: 'actualStart' as const, sortOrder: 2 },
+      { keyDateName: "Commissioning", patterns: ['commissioning'], dateField: 'actualEnd' as const, sortOrder: 3 },
+      { keyDateName: "Practical Completion", patterns: ['practical completion'], dateField: 'actualEnd' as const, sortOrder: 4 },
+      { keyDateName: "O&M Handover", patterns: ['handover to matriarch'], dateField: 'actualEnd' as const, sortOrder: 5 },
+      { keyDateName: "Client Handover", patterns: ['handover to client'], dateField: 'actualEnd' as const, sortOrder: 6 },
+    ];
 
-      const autoMappings = [
-        { keyDateName: "PD Handover", patterns: ['bd handover', 'project charter handover'], dateField: 'actualEnd' as const, sortOrder: 1 },
-        { keyDateName: "Construction Start", patterns: ['site establishment'], dateField: 'actualStart' as const, sortOrder: 2 },
-        { keyDateName: "Commissioning", patterns: ['commissioning'], dateField: 'actualEnd' as const, sortOrder: 3 },
-        { keyDateName: "Practical Completion", patterns: ['practical completion'], dateField: 'actualEnd' as const, sortOrder: 4 },
-        { keyDateName: "O&M Handover", patterns: ['handover to matriarch'], dateField: 'actualEnd' as const, sortOrder: 5 },
-        { keyDateName: "Client Handover", patterns: ['handover to client'], dateField: 'actualEnd' as const, sortOrder: 6 },
-      ];
+    return autoMappings.map(mapping => {
+      let matchedTask: any = null;
+      let effectiveDate: string | null = null;
 
-      const results = autoMappings.map(mapping => {
-        let matchedTask: any = null;
-        let effectiveDate: string | null = null;
-
-        for (const task of planTasks) {
-          const desc = (task.highLevelProgramme || '').toLowerCase();
-          const matches = mapping.patterns.some(p => desc.includes(p));
-          if (matches) {
-            const trueActual = mapping.dateField === 'actualStart' ? task.trueActualStart : task.trueActualEnd;
-            const fallback = mapping.dateField === 'actualStart' ? task.actualStart : task.actualEnd;
-            const dateVal = trueActual || fallback;
-            if (dateVal && /^\d{4}-\d{2}-\d{2}/.test(dateVal)) {
-              const dateStr = dateVal.substring(0, 10);
-              if (mapping.dateField === 'actualStart') {
-                if (!effectiveDate || dateStr < effectiveDate) {
-                  effectiveDate = dateStr;
-                  matchedTask = task;
-                }
-              } else {
-                if (!effectiveDate || dateStr > effectiveDate) {
-                  effectiveDate = dateStr;
-                  matchedTask = task;
-                }
+      for (const task of planTasks) {
+        const desc = (task.highLevelProgramme || '').toLowerCase();
+        const matches = mapping.patterns.some(p => desc.includes(p));
+        if (matches) {
+          const trueActual = mapping.dateField === 'actualStart' ? task.trueActualStart : task.trueActualEnd;
+          const fallback = mapping.dateField === 'actualStart' ? task.actualStart : task.actualEnd;
+          const dateVal = trueActual || fallback;
+          if (dateVal && /^\d{4}-\d{2}-\d{2}/.test(dateVal)) {
+            const dateStr = dateVal.substring(0, 10);
+            if (mapping.dateField === 'actualStart') {
+              if (!effectiveDate || dateStr < effectiveDate) {
+                effectiveDate = dateStr;
+                matchedTask = task;
+              }
+            } else {
+              if (!effectiveDate || dateStr > effectiveDate) {
+                effectiveDate = dateStr;
+                matchedTask = task;
               }
             }
           }
         }
+      }
 
-        const plannedStart = matchedTask?.actualStart?.substring(0, 10) || matchedTask?.baselineStart?.substring(0, 10) || null;
-        const plannedEnd = matchedTask?.actualEnd?.substring(0, 10) || matchedTask?.baselineEnd?.substring(0, 10) || null;
-        const plannedDate = mapping.dateField === 'actualStart' ? plannedStart : plannedEnd;
+      const plannedStart = matchedTask?.actualStart?.substring(0, 10) || matchedTask?.baselineStart?.substring(0, 10) || null;
+      const plannedEnd = matchedTask?.actualEnd?.substring(0, 10) || matchedTask?.baselineEnd?.substring(0, 10) || null;
+      const plannedDate = mapping.dateField === 'actualStart' ? plannedStart : plannedEnd;
 
-        return {
-          id: mapping.sortOrder,
-          keyDateName: mapping.keyDateName,
-          sourceTaskNameMatch: mapping.patterns.join(' / '),
-          dateField: mapping.dateField === 'actualStart' ? 'startDate' : 'dueDate',
-          sortOrder: mapping.sortOrder,
-          matchedTaskId: matchedTask?.id || null,
-          matchedTaskTitle: matchedTask?.highLevelProgramme || null,
-          matchedTaskNumber: matchedTask?.taskNo || null,
-          plannedDate,
-          actualDate: effectiveDate,
-          effectiveDate,
-          mappingValid: !!matchedTask,
-          source: 'auto',
-        };
-      });
+      return {
+        id: mapping.sortOrder,
+        keyDateName: mapping.keyDateName,
+        sourceTaskNameMatch: mapping.patterns.join(' / '),
+        dateField: mapping.dateField === 'actualStart' ? 'startDate' : 'dueDate',
+        sortOrder: mapping.sortOrder,
+        matchedTaskId: matchedTask?.id || null,
+        matchedTaskTitle: matchedTask?.highLevelProgramme || null,
+        matchedTaskNumber: matchedTask?.taskNo || null,
+        plannedDate,
+        actualDate: effectiveDate,
+        effectiveDate,
+        mappingValid: !!matchedTask,
+        source: 'auto',
+      };
+    });
+  }
 
-      res.json(results);
+  app.get("/api/key-dates/by-id/:projectId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.projectId, 10);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      const [piRow] = await db.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId)).limit(1);
+      const pName = piRow?.projectName || "";
+      res.json(await resolveKeyDates(projectId, pName));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/key-dates/:projectName", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectName = decodeURIComponent(req.params.projectName);
+      const [piRow] = await db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, projectName)).limit(1);
+      const projectId = piRow?.id || null;
+      res.json(await resolveKeyDates(projectId, projectName));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

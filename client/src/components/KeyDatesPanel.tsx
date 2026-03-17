@@ -7,6 +7,7 @@ import {
 
 interface KeyDatesPanelProps {
   projectName: string;
+  projectId?: number | null;
 }
 
 interface ResolvedKeyDate {
@@ -34,23 +35,26 @@ const formatDate = (d: string | null): string => {
   }
 };
 
-export default function KeyDatesPanel({ projectName }: KeyDatesPanelProps) {
+export default function KeyDatesPanel({ projectName, projectId }: KeyDatesPanelProps) {
   const { data: keyDates = [], isLoading } = useQuery<ResolvedKeyDate[]>({
-    queryKey: ["key-dates", projectName],
+    queryKey: ["key-dates", projectId || projectName],
     queryFn: async () => {
       const headers: Record<string, string> = {};
       const token = localStorage.getItem('auth_token');
       if (token) {
         headers["Authorization"] = `Bearer ${token}`;
       }
-      const res = await fetch(`/api/key-dates/${encodeURIComponent(projectName)}`, {
+      const url = projectId
+        ? `/api/key-dates/by-id/${projectId}`
+        : `/api/key-dates/${encodeURIComponent(projectName)}`;
+      const res = await fetch(url, {
         credentials: 'include',
         headers,
       });
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: !!projectName,
+    enabled: !!(projectId || projectName),
   });
 
   const validCount = keyDates.filter(d => d.mappingValid).length;
