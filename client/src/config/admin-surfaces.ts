@@ -4,7 +4,6 @@ import {
   FileSpreadsheet,
   Gauge,
   ScrollText,
-  Settings2,
   ShieldCheck,
 } from "lucide-react";
 
@@ -13,7 +12,6 @@ export type AdminSurfaceId =
   | "smart-import"
   | "excel-updates"
   | "roles"
-  | "settings"
   | "audit-log";
 
 export interface AdminSurfaceMeta {
@@ -52,13 +50,6 @@ export const ADMIN_SURFACES: AdminSurfaceMeta[] = [
     path: "/admin/roles",
     description: "Backend-aligned access, authority, and role assignment control.",
     icon: ShieldCheck,
-  },
-  {
-    id: "settings",
-    label: "System Settings",
-    path: "/admin/settings",
-    description: "Microsoft connectivity, role passwords, and admin tools.",
-    icon: Settings2,
   },
   {
     id: "audit-log",

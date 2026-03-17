@@ -36,7 +36,19 @@ import {
   Clock,
   Wifi,
   WifiOff,
+  Plug,
+  KeyRound,
+  PackageSearch,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
+import {
+  ConnectionsSection,
+  RolePasswordsSection,
+  UserMappingSection,
+  TeamsSettingsSection,
+  ProcurementAnalysisSection,
+} from "./role-settings";
 
 function useAdminFetch<T>(endpoint: string, queryKey: string[]) {
   return useQuery<T>({
@@ -194,6 +206,8 @@ export default function AdminControlCenterPage() {
   const queryClient = useQueryClient();
   const [clearDays, setClearDays] = useState("90");
   const [flagOverrideDraft, setFlagOverrideDraft] = useState<{ key: string; value: boolean; suggestedValue: boolean; reason: string } | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activeSettingsTab, setActiveSettingsTab] = useState<"connections" | "teams" | "users" | "passwords" | "procurement">("connections");
 
   const healthQuery = useAdminFetch<HealthData>(
     "/api/admin/control-center/health",
@@ -441,7 +455,6 @@ export default function AdminControlCenterPage() {
     {
       title: "System Controls",
       items: [
-        { label: "System Settings", path: "/admin/settings", icon: Settings },
         { label: "Control Center", path: "/admin/control-center", icon: Database },
       ],
     },
@@ -1154,6 +1167,52 @@ export default function AdminControlCenterPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card data-testid="card-system-settings">
+        <CardHeader className="pb-3 cursor-pointer" onClick={() => setSettingsOpen(!settingsOpen)}>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Settings className="h-4 w-4 text-emerald-600" />
+            System Settings
+            {settingsOpen ? <ChevronDown className="h-4 w-4 ml-auto text-muted-foreground" /> : <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground" />}
+          </CardTitle>
+          <CardDescription>Microsoft 365 connectivity, role passwords, and admin tools.</CardDescription>
+        </CardHeader>
+        {settingsOpen && (
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap gap-1.5">
+              {([
+                { id: "connections" as const, label: "Connections", icon: Plug },
+                { id: "teams" as const, label: "Teams", icon: MessageSquare },
+                { id: "users" as const, label: "MS Accounts", icon: Users },
+                { id: "passwords" as const, label: "Passwords", icon: KeyRound },
+                { id: "procurement" as const, label: "Procurement", icon: PackageSearch },
+              ]).map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setActiveSettingsTab(id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-all border ${
+                    activeSettingsTab === id
+                      ? "bg-primary/8 text-foreground font-medium border-primary/20"
+                      : "bg-background text-muted-foreground hover:bg-muted/50 border-border/70"
+                  }`}
+                  data-testid={`settings-tab-${id}`}
+                >
+                  <Icon className={`h-3.5 w-3.5 ${activeSettingsTab === id ? "text-primary" : "text-gray-400"}`} />
+                  {label}
+                </button>
+              ))}
+            </div>
+            <Separator />
+            <div className="min-h-[200px]">
+              {activeSettingsTab === "connections" && <ConnectionsSection />}
+              {activeSettingsTab === "teams" && <TeamsSettingsSection />}
+              {activeSettingsTab === "users" && <UserMappingSection />}
+              {activeSettingsTab === "passwords" && <RolePasswordsSection />}
+              {activeSettingsTab === "procurement" && <ProcurementAnalysisSection />}
+            </div>
+          </CardContent>
+        )}
+      </Card>
 
       <Card className="border-red-200" data-testid="card-dangerous-actions">
         <CardHeader className="pb-3">

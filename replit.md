@@ -25,7 +25,7 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Company Lifecycle Map**: Interactive lifecycle management with Story Mode and Explore Mode.
 -   **Mobile Experience**: PM On-The-Go Mode for mobile-first site management with procurement, commissioning, and approval quick actions.
 -   **Permission Gating**: Both sidebar items and routes are permission-gated based on entity-level view permissions.
--   **Admin Tools**: Recovery Center, KPI Traceability Panel, Smart Import Control Tower, Control Center for system health, and Operational Exceptions.
+-   **Admin Tools**: Recovery Center, KPI Traceability Panel, Smart Import Control Tower, Control Center (consolidated with System Settings), and Operational Exceptions.
 -   **Workflow Management**: 4-gate handover system with checklists and progress tracking.
 -   **Grouped Tab Navigation**: Project detail page tabs organized into DELIVERY (Plan, Board, Calendar, Commissioning), COMMERCIAL (Procurement, Inflows, Expenditure, COS, Revenue, GP, Cashflow), CONTROL (RAID, Changes, History), PARTNERS (Subcontractors).
 -   **Procurement Hub**: Enhanced procurement tab with internal sub-tabs: Overview (KPIs), Items (pipeline), Purchase Orders (PO generation), Deliveries (with CaptureDeliverable), Invoices (capture + list), Traceability (lifecycle flow visualization).
