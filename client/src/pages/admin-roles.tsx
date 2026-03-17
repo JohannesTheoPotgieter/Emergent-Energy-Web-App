@@ -358,9 +358,6 @@ function RolesControlCenter() {
           <CardHeader className="pb-3 shrink-0">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base font-semibold text-gray-900">Roles</CardTitle>
-              <Button size="sm" onClick={() => setShowCreate(true)} disabled={!canManageRoles} className="bg-emerald-600 hover:bg-emerald-700 text-white h-7 px-2.5 text-xs" data-testid="button-create-role">
-                <Plus className="h-3.5 w-3.5 mr-1" /> New Role
-              </Button>
             </div>
             <div className="flex gap-2 mt-2 text-xs text-muted-foreground">
               <span>{roles.length} total</span>
@@ -421,7 +418,6 @@ function RolesControlCenter() {
                 <Shield className="h-10 w-10 text-gray-300 mx-auto mb-3" />
                 <p className="text-lg font-semibold text-gray-900">No roles configured</p>
                 <p className="text-sm text-muted-foreground mt-1">Seeded roles appear automatically on startup.</p>
-                {canManageRoles && <Button size="sm" onClick={() => setShowCreate(true)} className="mt-4 bg-emerald-600 hover:bg-emerald-700"><Plus className="h-3.5 w-3.5 mr-1" />Create Role</Button>}
               </CardContent>
             </Card>
           ) : viewState === "ready" && (
