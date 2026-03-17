@@ -205,21 +205,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
-          {quickCreateActions.length > 0 ? (
-            <DropdownMenu open={quickCreateOpen} onOpenChange={setQuickCreateOpen}>
-              <DropdownMenuTrigger asChild>
-                <Button onClick={() => setQuickCreateOpen((prev) => !prev)} onMouseEnter={() => setQuickCreateOpen(true)} className="hidden sm:inline-flex"><Plus className="h-4 w-4 mr-1" />Quick Create</Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-72">
-                <DropdownMenuLabel>Create</DropdownMenuLabel>
-                {quickCreateActions.map((action) => (
-                  <DropdownMenuItem key={action.id} asChild>
-                    <Link href={action.path}>{action.label}</Link>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
 
           {microsoftShortcuts.length > 0 ? (
             <DropdownMenu open={microsoftMenuOpen} onOpenChange={setMicrosoftMenuOpen}>
