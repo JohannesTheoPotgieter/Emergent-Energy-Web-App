@@ -281,54 +281,55 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="px-4 lg:px-6 border-t border-border/70 bg-muted/30">
-          {breadcrumbs.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 py-2 text-xs text-muted-foreground">
-              <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
-              {breadcrumbs.map((crumb, idx) => (
-                <span key={crumb.label + idx} className="flex items-center gap-1.5">
-                  <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
-                  {crumb.path ? (
-                    <Link href={crumb.path} className="hover:text-foreground transition-colors">{crumb.label}</Link>
+        {(breadcrumbs.length > 0 || activeSection.secondary.length > 0) && (
+          <div className="px-4 lg:px-6 border-t border-border/70 bg-muted/30">
+            {breadcrumbs.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 py-2 text-xs text-muted-foreground">
+                <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
+                {breadcrumbs.map((crumb, idx) => (
+                  <span key={crumb.label + idx} className="flex items-center gap-1.5">
+                    <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
+                    {crumb.path ? (
+                      <Link href={crumb.path} className="hover:text-foreground transition-colors">{crumb.label}</Link>
+                    ) : (
+                      <span className="text-foreground font-medium">{crumb.label}</span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
+            {activeSection.secondary.length > 0 && (
+              <div className="flex gap-1.5 overflow-x-auto pb-2.5 pt-1">
+                {activeSection.secondary.map((item) => (
+                  item.disabled ? (
+                    <span
+                      key={item.path}
+                      className="ee-subnav-pill cursor-not-allowed whitespace-nowrap opacity-55"
+                      aria-disabled="true"
+                    >
+                      {item.label}
+                    </span>
                   ) : (
-                    <span className="text-foreground font-medium">{crumb.label}</span>
-                  )}
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-1.5 overflow-x-auto pb-2.5 pt-1">
-            {activeSection.secondary.map((item) => (
-              item.disabled ? (
-                <span
-                  key={item.path}
-                  className="ee-subnav-pill cursor-not-allowed whitespace-nowrap opacity-55"
-                  aria-disabled="true"
-                >
-                  {item.label}
-                </span>
-              ) : (
-                <Link
-                  key={item.path}
-                  href={item.path}
-                  className={cn(
-                    "ee-subnav-pill whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    linkIsActive(location, item.path) ? "ee-subnav-pill-active" : "",
-                  )}
-                >
-                  {item.label}
-                </Link>
-              )
-            ))}
+                    <Link
+                      key={item.path}
+                      href={item.path}
+                      className={cn(
+                        "ee-subnav-pill whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        linkIsActive(location, item.path) ? "ee-subnav-pill-active" : "",
+                      )}
+                    >
+                      {item.label}
+                    </Link>
+                  )
+                ))}
+              </div>
+            )}
           </div>
-        </div>
+        )}
       </header>
 
       <main className="p-4 lg:p-6">{children}</main>
 
-      <div className="fixed bottom-4 right-4 lg:hidden">
-        <Badge className="bg-primary"><Bell className="h-3 w-3 mr-1" />Actions Active</Badge>
-      </div>
     </div>
   );
 }
