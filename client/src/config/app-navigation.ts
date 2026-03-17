@@ -20,7 +20,7 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Home",
     path: "/",
-    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/dashboard", "/my-work", "/my-tool"]),
+    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/my-tool"]),
     secondary: [
       { label: "Home", path: "/" },
       { label: "My Work", path: "/my-work" },
@@ -50,15 +50,17 @@ export const TOP_SECTIONS: TopSection[] = [
   },
   {
     label: "Project Management",
-    path: "/pm-dashboard",
-    match: (pathname) => startsWithAny(pathname, ["/pm-dashboard", "/projects", "/execution-board", "/pm/approvals", "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/weekly-reviews", "/pm/handover-review", "/portfolios"]),
+    path: "/dashboard",
+    match: (pathname) => startsWithAny(pathname, ["/dashboard", "/pm-dashboard", "/projects", "/execution-board", "/pm/approvals", "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/weekly-reviews", "/pm/handover-review", "/portfolios"]),
     secondary: [
-      { label: "Execution Overview", path: "/pm-dashboard" },
+      { label: "Execution Dashboard", path: "/dashboard" },
       { label: "Project List", path: "/projects" },
       { label: "Work Plan / Board", path: "/execution-board" },
       { label: "Deliverables", path: "/pm/deliverables" },
       { label: "Approvals", path: "/pm/approvals" },
       { label: "Site / Execution Controls", path: "/handover-control" },
+      { label: "PM On-The-Go", path: "/pm/on-the-go" },
+      { label: "Per Project Manager Dashboard", path: "/pm-dashboard" },
     ],
   },
   {

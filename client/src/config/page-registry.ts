@@ -19,7 +19,7 @@ export interface PageRegistryEntry {
 }
 
 export const PAGE_REGISTRY: PageRegistryEntry[] = [
-  { id: "dashboard", path: "/dashboard", label: "Execution Board", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "Dashboard", labels: { legacy: "Execution Board" } },
+  { id: "dashboard", path: "/dashboard", label: "Execution Dashboard", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "Dashboard", labels: { legacy: "Execution Board", redesigned: "Execution Dashboard" } },
   { id: "projectLifecycle", path: "/project-lifecycle", label: "Project Lifecycle", iconKey: "Layers", navGroup: "PROJECTS", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleStageGates", path: "/project-lifecycle/stage-gates", label: "Stage Gates", permissionEntity: "lifecycle", routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleLatestUpdates", path: "/project-lifecycle/latest-updates", label: "Latest Updates", permissionEntity: "projects", routeComponentKey: "ProjectLifecyclePage" },
@@ -63,7 +63,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "eeInfo", path: "/ee-info", label: "Emergent Energy Info", iconKey: "Leaf", navGroup: "KNOWLEDGE", permissionEntity: "ee_info", showInSidebar: true, routeComponentKey: "EeInfoPage" },
   { id: "training", path: "/training", label: "Training", iconKey: "GraduationCap", navGroup: "KNOWLEDGE", permissionEntity: "training", showInSidebar: true, routeComponentKey: "TrainingPage" },
   { id: "departmentScores", path: "/department-scores", label: "Department Scores", iconKey: "BarChart3", navGroup: "KNOWLEDGE", permissionEntity: "department_scores", showInSidebar: false, redirectTo: "/leaderboard?tab=departments" },
-  { id: "pmDashboard", path: "/pm-dashboard", label: "Execution Overview", iconKey: "Briefcase", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pm_dashboard", showInSidebar: true, routeComponentKey: "PMDashboard", roleLandingEligibility: ["PROJECT_MANAGER_SITE"] },
+  { id: "pmDashboard", path: "/pm-dashboard", label: "Per Project Manager Dashboard", iconKey: "Briefcase", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pm_dashboard", showInSidebar: true, routeComponentKey: "PMDashboard", roleLandingEligibility: ["PROJECT_MANAGER_SITE"] },
   { id: "excelUpdates", path: "/admin/excel-updates", label: "Excel Updates", iconKey: "ClipboardCheck", navGroup: "SYSTEM", permissionEntity: "excel_updates", showInSidebar: false, routeComponentKey: "ExcelUpdatesPage" },
   { id: "smartImportLegacyRedirect", path: "/smart-import", label: "Smart Import Legacy Redirect", redirectTo: "/admin/smart-import" },
   { id: "excelUpdatesLegacyRedirect", path: "/excel-updates", label: "Excel Updates Legacy Redirect", redirectTo: "/admin/excel-updates" },
@@ -80,7 +80,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "collaboration", path: "/collaboration", label: "Collaboration Hub", permissionEntity: "collaboration_hub", routeComponentKey: "CollaborationPage" },
   { id: "collabEmail", path: "/collaboration/email", label: "Collaboration Email", permissionEntity: "collaboration_hub", routeComponentKey: "CollabEmailPage" },
   { id: "collabTeams", path: "/collaboration/teams", label: "Collaboration Teams", permissionEntity: "teams_chat", routeComponentKey: "CollabTeamsPage" },
-  { id: "pmOnTheGo", path: "/pm/on-the-go", label: "On-The-Go", iconKey: "Smartphone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pm_on_the_go", showInSidebar: true, routeComponentKey: "PMOnTheGoHome" },
+  { id: "pmOnTheGo", path: "/pm/on-the-go", label: "PM On-The-Go", iconKey: "Smartphone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pm_on_the_go", showInSidebar: true, routeComponentKey: "PMOnTheGoHome" },
   { id: "pmOnTheGoProject", path: "/pm/on-the-go/project/:projectId", label: "On-The-Go Project", routeComponentKey: "PMOnTheGoProject" },
   { id: "myWork", path: "/my-work", label: "My Work", iconKey: "Home", navGroup: "MY_WORK", permissionEntity: "home", showInSidebar: true, routeComponentKey: "MyWorkHomePage", matchSubRoutes: true },
   { id: "myWorkCalendar", path: "/my-work/calendar", label: "Calendar", iconKey: "CalendarCheck", navGroup: "MY_WORK", permissionEntity: "my_work", showInSidebar: true, routeComponentKey: "MyWorkCalendarPage" },
