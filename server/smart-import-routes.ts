@@ -34,6 +34,8 @@ import {
   workItemDependencies,
   projectPlanOverrides,
   planEditNotifications,
+  projectRevenueSummary,
+  programExpense,
   users,
 } from "@shared/schema";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
@@ -1838,6 +1840,48 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         }
       }
 
+      if (Array.isArray(norm.costLines) && projectName) {
+        await tx.delete(programExpense).where(eq(programExpense.projectName, projectName));
+        if (norm.costLines.length > 0) {
+          const costIgnored = ignoredRows.get("EXPENDITURE") || new Set();
+          const costOverrides = overrideRows.get("EXPENDITURE") || new Map();
+          let currentCategory = "";
+          let rowNum = 0;
+          const toStr = (v: any): string | null => v != null ? String(v) : null;
+          const peValues = norm.costLines
+            .filter((c: any) => !costIgnored.has(c.sourceRow))
+            .map((c: any) => {
+              const ov = costOverrides.get(c.sourceRow);
+              const m = ov ? { ...c, ...ov } : c;
+              rowNum++;
+              if (m.costCategory && m.costCategory !== currentCategory) currentCategory = m.costCategory;
+              return {
+                projectName,
+                rowNumber: rowNum,
+                rowType: "item" as const,
+                expenseCategory: currentCategory || m.costCategory || null,
+                expenseLineItem: m.description || null,
+                budgetQty: toStr(m.budgetQty),
+                budgetRateUnit: toStr(m.budgetRate),
+                budgetTotal: toStr(m.budgetTotal),
+                budgetCosTotal: toStr(m.budgetCos),
+                forecastPaymentDate: m.forecastPaymentDate || null,
+                expenseActualTotal: toStr(m.amountExVat),
+                expensePoNumber: m.poNumber || null,
+                expenseInvoiceNumber: m.invoiceNumber || null,
+                expenseInvoicedDate: m.invoiceDate || null,
+                invoiceDateFontColor: m.invoiceDateFontColor || null,
+                expensePaymentDate: m.paidDate || null,
+                paymentDateFontColor: m.paidDateFontColor || null,
+              };
+            });
+          if (peValues.length > 0) {
+            await tx.insert(programExpense).values(peValues);
+            console.log(`[SmartImport] Wrote ${peValues.length} program_expense rows for "${projectName}"`);
+          }
+        }
+      }
+
       if (norm.executionPhases && norm.executionPhases.length > 0) {
         const phaseValues = norm.executionPhases.map((p: any) => ({
           projectId,
@@ -1849,6 +1893,28 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         }));
         await tx.insert(normalizedExecutionPhases).values(phaseValues);
         counts.executionPhases = phaseValues.length;
+      }
+
+      if (norm.costedSummary && projectName) {
+        const cs = norm.costedSummary;
+        const hasData = cs.plannedRevenue != null || cs.plannedExpenditure != null;
+        if (hasData) {
+          const [existing] = await tx.select({ id: projectRevenueSummary.id })
+            .from(projectRevenueSummary)
+            .where(eq(projectRevenueSummary.projectName, projectName))
+            .limit(1);
+          const vals: Record<string, any> = {};
+          if (cs.plannedRevenue != null) vals.plannedRevenue = String(cs.plannedRevenue);
+          if (cs.plannedExpenditure != null) vals.plannedExpenditure = String(cs.plannedExpenditure);
+          if (cs.plannedProfit != null) vals.plannedProfit = String(cs.plannedProfit);
+          if (cs.plannedMargin != null) vals.plannedMargin = String(cs.plannedMargin);
+          if (existing) {
+            await tx.update(projectRevenueSummary).set(vals).where(eq(projectRevenueSummary.id, existing.id));
+          } else {
+            await tx.insert(projectRevenueSummary).values({ projectName, ...vals } as any);
+          }
+          console.log(`[SmartImport] Saved costedSummary for "${projectName}":`, JSON.stringify(vals));
+        }
       }
 
       const detectedInfo = summary.detection?.projectInfo;

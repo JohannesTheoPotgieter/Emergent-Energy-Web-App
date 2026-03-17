@@ -1772,22 +1772,25 @@ export async function registerRoutes(
     for (const task of plans) {
       const desc = (task.highLevelProgramme || '').toLowerCase();
       const matches = patterns.some(p => desc.includes(p.toLowerCase()));
-      if (matches && task.actualEnd && /^\d{4}-\d{2}-\d{2}/.test(task.actualEnd)) {
-        const dateStr = task.actualEnd.substring(0, 10);
+      if (!matches) continue;
+      const dateVal = task.trueActualEnd || task.actualEnd;
+      if (dateVal && /^\d{4}-\d{2}-\d{2}/.test(dateVal)) {
+        const dateStr = dateVal.substring(0, 10);
         if (!maxDate || dateStr > maxDate) maxDate = dateStr;
       }
     }
     return maxDate;
   }
 
-  // Helper: find min ActualStart from plan tasks matching a description pattern
   function findMinStartDate(plans: any[], patterns: string[]): string | null {
     let minDate: string | null = null;
     for (const task of plans) {
       const desc = (task.highLevelProgramme || '').toLowerCase();
       const matches = patterns.some(p => desc.includes(p.toLowerCase()));
-      if (matches && task.actualStart && /^\d{4}-\d{2}-\d{2}/.test(task.actualStart)) {
-        const dateStr = task.actualStart.substring(0, 10);
+      if (!matches) continue;
+      const dateVal = task.trueActualStart || task.actualStart;
+      if (dateVal && /^\d{4}-\d{2}-\d{2}/.test(dateVal)) {
+        const dateStr = dateVal.substring(0, 10);
         if (!minDate || dateStr < minDate) minDate = dateStr;
       }
     }
@@ -2160,10 +2163,10 @@ export async function registerRoutes(
         const planLikeRows = useNormPlans ? normPlans.map(np => ({
           taskNo: null as string | null,
           highLevelProgramme: np.taskName,
-          actualStart: np.startDate || np.actualStartDate,
-          actualEnd: np.endDate || np.actualEndDate,
-          trueActualStart: np.actualStartDate,
-          trueActualEnd: np.actualEndDate,
+          actualStart: np.actualStartDate || np.startDate,
+          actualEnd: np.actualEndDate || np.endDate,
+          trueActualStart: np.actualStartDate || np.startDate,
+          trueActualEnd: np.actualEndDate || np.endDate,
           durationDays: np.durationDays,
           actualPctComplete: np.pctComplete,
           expectedPctComplete: null as number | null,

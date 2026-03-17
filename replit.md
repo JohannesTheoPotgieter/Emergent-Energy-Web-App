@@ -37,7 +37,7 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Authentication & Authorization**: Passport.js with local strategy and Microsoft 365 SSO via `@azure/msal-node`. PostgreSQL for sessions (max 3 per user, enforced at login), RBAC, and granular entity-level permissions.
 -   **Data Handling**: Multer for uploads, `exceljs` for parsing, `pdfkit` for PDF generation.
 -   **Data Storage**: PostgreSQL with Drizzle ORM.
--   **Canonical Data Model**: All data reads/writes exclusively use `work_items` for tasks, `normalized_cost_lines` for costs, and `normalized_revenue_lines` for revenue as the single source of truth.
+-   **Canonical Data Model**: All data reads/writes exclusively use `work_items` for tasks, `normalized_cost_lines` for costs, and `normalized_revenue_lines` for revenue as the single source of truth. Smart Import also writes to `program_expense` (budget fields) and `project_revenue_summary` (costed summary) during commit to feed the Expenditure Breakdown budget split logic.
 -   **Core Logic**: Pure-function modules, automated backfill for computed columns, audit trails, and transactional logging.
 -   **Task Management**: Dual-write operations for engineering tasks to `operational_tasks` and `work_items`; direct sync for plan task edits to `work_items`. Supports bulk operations and summary rollups.
 -   **Engineering & Quality**: 5-stage checklist system with templating and SharePoint integration.
