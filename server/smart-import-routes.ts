@@ -1121,7 +1121,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     const preserveManualEdits = req.body?.preserveManualEdits === true;
     const conflictResolutions = req.body?.conflictResolutions as Record<string, "keep" | "import"> | undefined;
 
-    if (!acknowledgeManualEdits && !preserveManualEdits && run.projectId) {
+    const hasConflictResolutions = conflictResolutions && Object.keys(conflictResolutions).length > 0;
+
+    if (!acknowledgeManualEdits && !preserveManualEdits && !hasConflictResolutions && run.projectId) {
       const existingCostLines = await db.select().from(normalizedCostLines)
         .where(eq(normalizedCostLines.projectId, run.projectId));
 
