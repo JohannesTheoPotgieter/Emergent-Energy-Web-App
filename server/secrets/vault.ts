@@ -56,7 +56,13 @@ export async function preloadRuntimeSecrets(): Promise<void> {
   const client = await getVaultClient();
   if (!client) {
     if (strictRuntime) {
-      throw new Error("[Secrets] KEY_VAULT_URI must be configured in staging/production.");
+      const requiredSecrets = SECRET_RESOLUTIONS.filter((s) => s.requiredInStrictRuntime);
+      const allPresent = requiredSecrets.every((s) => !!process.env[s.envName]);
+      if (allPresent) {
+        console.log("[Secrets] KEY_VAULT_URI not set, but all required secrets found in environment. Skipping vault.");
+        return;
+      }
+      throw new Error("[Secrets] KEY_VAULT_URI must be configured in staging/production, or set all required secrets as environment variables.");
     }
     return;
   }
