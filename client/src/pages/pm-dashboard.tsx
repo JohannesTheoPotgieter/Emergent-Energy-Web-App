@@ -792,7 +792,7 @@ export default function PMDashboard() {
       <PageShell className="p-4 md:p-6" data-testid="pm-dashboard">
         <SectionHeader
           icon={<Briefcase className="h-5 w-5" />}
-          title="Execution Overview"
+          title="Project Manager Dashboard"
           description="Select a project manager to review the post-handover execution workspace."
         />
         <div className="max-w-xs">
@@ -842,7 +842,7 @@ export default function PMDashboard() {
     <PageShell className="p-4 md:p-6" data-testid="pm-dashboard">
       <SectionHeader
         icon={<Briefcase className="h-5 w-5" />}
-        title="Execution Overview"
+        title="Project Manager Dashboard"
         description={`${isCooView && selectedPmName ? `${selectedPmName} - ` : user?.name ? `${user.name} - ` : ""}${summary.totalProjects} project${summary.totalProjects !== 1 ? "s" : ""} in the execution workspace after PD handover`}
         actions={<div className="flex items-center gap-2">
           {isCooView ? (
@@ -911,7 +911,7 @@ export default function PMDashboard() {
       </Tabs>
 
       <DataSourceDebug
-        pageName="Execution Overview"
+        pageName="Project Manager Dashboard"
         dataSources={[
           { endpoint: "/api/pm/dashboard", tables: ["project_info", "normalized_cost_lines", "normalized_plan_tasks", "engineering_tasks"], description: "PM projects, financials, task counts" },
           { endpoint: "/api/pm/priority-items", tables: ["engineering_tasks", "normalized_cost_lines", "project_info"], description: "Priority items: overdue, holds, approvals" },

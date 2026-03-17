@@ -576,119 +576,108 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-3">
-        <Card className="border-border">
+      <p className="text-sm text-muted-foreground -mt-1 mb-3">Start here first: unresolved execution and cash-risk items that need intervention.</p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Card className="border-red-200 bg-red-50" data-testid="kpi-urgent-risk">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
-                <FolderOpen className="w-4 h-4 text-blue-600" />
-              </div>
-              <span className="text-xs text-muted-foreground font-medium">Portfolio</span>
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-              <div>
-                <p className="text-[10px] text-muted-foreground">Active Projects</p>
-                <p className="text-lg font-bold">{Number(data?.kpis?.activeDashboardProjects || 0)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground">Behind Plan</p>
-                <p className="text-lg font-bold text-red-700">{Number(data?.kpis?.projectsBehindPlan || 0)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground">Avg. Actual</p>
-                <p className="text-sm font-semibold">{pct(data?.kpis?.averageActualProgressPct)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground">Avg. Expected</p>
-                <p className="text-sm font-semibold">{pct(data?.kpis?.averageExpectedProgressPct)}</p>
-              </div>
-            </div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-red-700 mb-1">Urgent Execution Risk</p>
+            <p className="text-3xl font-bold text-red-800">{Number(data?.kpis?.projectsBehindPlan || 0) + Number(data?.kpis?.openEngineeringBlockers || 0) + Number(data?.kpis?.staleImports || 0)}</p>
+            <p className="text-xs text-red-600 mt-1">Behind-plan projects, engineering blockers, stale imports</p>
           </CardContent>
         </Card>
 
-        <Card className="border-border">
+        <Card className="border-amber-200 bg-amber-50" data-testid="kpi-financial-intervention">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
-                <TrendingUp className="w-4 h-4 text-emerald-600" />
-              </div>
-              <span className="text-xs text-muted-foreground font-medium">Revenue & Inflow</span>
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-              <div>
-                <p className="text-[10px] text-muted-foreground">Planned Revenue</p>
-                <p className="text-sm font-semibold">{money(data?.kpis?.plannedRevenueFy)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground">Received</p>
-                <p className="text-sm font-semibold text-emerald-600">{money(data?.kpis?.receivedInflowFy)}</p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-[10px] text-muted-foreground">Open Inflow</p>
-                <p className="text-lg font-bold text-amber-600">{money(data?.kpis?.openInflowFy)}</p>
-              </div>
-            </div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700 mb-1">Financial Intervention</p>
+            <p className="text-3xl font-bold text-amber-800">{money(data?.kpis?.openInflowFy)}</p>
+            <p className="text-xs text-amber-600 mt-1">Outstanding receivables requiring follow-up</p>
           </CardContent>
         </Card>
 
-        <Card className="border-border">
+        <Card className="border-orange-200 bg-orange-50" data-testid="kpi-cash-protection">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
-                <TrendingDown className="w-4 h-4 text-orange-600" />
-              </div>
-              <span className="text-xs text-muted-foreground font-medium">Expenditure</span>
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-              <div>
-                <p className="text-[10px] text-muted-foreground">Planned</p>
-                <p className="text-sm font-semibold">{money(data?.kpis?.plannedExpenditureFy)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground">Paid</p>
-                <p className="text-sm font-semibold text-emerald-600">{money(data?.kpis?.paidExpenditureFy)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground">Open</p>
-                <p className="text-sm font-semibold text-amber-600">{money(data?.kpis?.openExpenditureFy)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground">GP Margin</p>
-                <p className="text-sm font-semibold">{pct(data?.kpis?.grossMarginPctFy ? data.kpis.grossMarginPctFy * 100 : null)}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center">
-                <AlertTriangle className="w-4 h-4 text-red-700" />
-              </div>
-              <span className="text-xs text-muted-foreground font-medium">Risks & Actions</span>
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-              <div>
-                <p className="text-[10px] text-muted-foreground">Eng. Blockers</p>
-                <p className="text-sm font-semibold">{Number(data?.kpis?.openEngineeringBlockers || 0)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground">Quality Issues</p>
-                <p className="text-sm font-semibold">{Number(data?.kpis?.openQualityWarnings || 0)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground">Pending Approvals</p>
-                <p className="text-sm font-semibold">{Number(data?.kpis?.pendingApprovals || 0)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] text-muted-foreground">Stale Imports</p>
-                <p className="text-sm font-semibold">{Number(data?.kpis?.staleImports || 0)}</p>
-              </div>
-            </div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-orange-700 mb-1">Cash Protection</p>
+            <p className="text-3xl font-bold text-orange-800">{money(data?.kpis?.openExpenditureFy)}</p>
+            <p className="text-xs text-orange-600 mt-1">Open supplier expenditure outstanding this FY</p>
           </CardContent>
         </Card>
       </div>
+
+      <Card className="border-border" data-testid="immediate-intervention-queue">
+        <CardContent className="p-4 md:p-5">
+          <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <AlertCircle className="w-5 h-5 text-red-500" />
+                <h2 className="text-lg font-semibold">Immediate Intervention Queue</h2>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {totalActionItems} action items &middot; Overdue expenses &middot; Revenue outstanding &middot; Projects behind plan &middot; Upcoming milestones &middot; Overdue tasks
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {queueKeys.map(([k, title]) => {
+              const rows = data?.actionCenter?.[k] || [];
+              const isCollapsed = collapsedQueues.has(k);
+              const meta = queueMeta(k);
+              const showMax = 5;
+              const visibleRows = isCollapsed ? [] : rows.slice(0, showMax);
+
+              return (
+                <div key={k} className="rounded-lg border border-border overflow-hidden">
+                  <button
+                    onClick={() => toggleQueue(k)}
+                    className="w-full flex items-center gap-2 px-4 py-3 text-left bg-muted/20 hover:bg-muted/40 transition-colors"
+                    data-testid={`queue-toggle-${k}`}
+                  >
+                    {meta.icon}
+                    <span className="text-sm font-semibold flex-1">{title}</span>
+                    <Badge variant="outline" className="text-xs font-medium">{rows.length}</Badge>
+                    {isCollapsed ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronUp className="w-4 h-4 text-muted-foreground" />}
+                  </button>
+                  {!isCollapsed && (
+                    <div className="divide-y divide-border/40">
+                      {rows.length === 0 ? (
+                        <div className="px-4 py-4 text-sm text-muted-foreground">All clear — no items</div>
+                      ) : (
+                        <>
+                          {visibleRows.map((r: any, idx: number) => {
+                            const sev = severityStyle(r.severity);
+                            return (
+                              <div key={idx} className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/20 transition-colors">
+                                <Badge className={`text-[10px] shrink-0 ${sev.bg} ${sev.text}`}>{r.severity}</Badge>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium truncate">{r.projectName || r.project}</p>
+                                  <p className="text-xs text-muted-foreground truncate">{r.issueTitle}</p>
+                                </div>
+                                {r.owner && <span className="text-xs text-muted-foreground shrink-0">{r.owner}</span>}
+                                {(r.link || r.links?.project) && (
+                                  <Link href={r.link || r.links?.project}>
+                                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600 shrink-0">
+                                      <ArrowRight className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </Link>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {rows.length > showMax && (
+                            <div className="px-4 py-2 text-xs text-emerald-600 cursor-pointer hover:underline">
+                              Show {rows.length - showMax} more...
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="flex gap-1 border-b pb-0">
         {tabs.map((t) => (
@@ -885,103 +874,46 @@ export default function DashboardPage() {
       )}
 
       {activeTab === "COO" && (
-        <Card className="border-border">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-red-500" />
-                <h2 className="text-base font-semibold">Action Center</h2>
-                <Badge variant="outline" className="text-xs ml-1">
-                  {totalActionItems} items
-                </Badge>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {queueKeys.map(([k, title]) => {
-                const rows = data?.actionCenter?.[k] || [];
-                if (rows.length === 0) return null;
-                const meta = queueMeta(k);
-                const isCollapsed = collapsedQueues.has(k);
-                const criticalCount = rows.filter((r: any) => r.severity?.toLowerCase() === "critical").length;
-
-                return (
-                  <div key={k} className={`rounded-lg border border-l-4 overflow-hidden ${meta.border} ${meta.bg}`}>
-                    <button
-                      onClick={() => toggleQueue(k)}
-                      className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/40 transition-colors"
-                      data-testid={`queue-toggle-${k}`}
-                    >
-                      {meta.icon}
-                      <span className="text-sm font-semibold flex-1">{title}</span>
-                      <Badge variant="outline" className="text-[10px] font-medium">
-                        {rows.length} {rows.length === 1 ? "issue" : "issues"}
-                      </Badge>
-                      {criticalCount > 0 && (
-                        <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">{criticalCount} critical</Badge>
-                      )}
-                      {isCollapsed ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronUp className="w-4 h-4 text-muted-foreground" />}
-                    </button>
-
-                    {!isCollapsed && (
-                      <div className="bg-white/60 border-t">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                              <th className="text-left py-2 px-4 font-medium">Project</th>
-                              <th className="text-left py-2 px-4 font-medium">Issue</th>
-                              <th className="text-left py-2 px-4 font-medium">Severity</th>
-                              <th className="text-left py-2 px-4 font-medium">Owner</th>
-                              <th className="text-left py-2 px-4 font-medium">Due</th>
-                              <th className="text-right py-2 px-4 font-medium w-16"></th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {rows.map((r: any, idx: number) => {
-                              const sev = severityStyle(r.severity);
-                              return (
-                                <tr key={idx} className="border-t border-border/40 hover:bg-white/80 transition-colors">
-                                  <td className="py-2.5 px-4 font-medium text-foreground">{r.project}</td>
-                                  <td className="py-2.5 px-4 text-muted-foreground max-w-[300px] truncate">{r.issueTitle}</td>
-                                  <td className="py-2.5 px-4">
-                                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium border ${sev.bg} ${sev.text}`}>
-                                      <span className={`w-1.5 h-1.5 rounded-md ${sev.dot}`} />
-                                      {r.severity}
-                                    </span>
-                                  </td>
-                                  <td className="py-2.5 px-4 text-muted-foreground">{r.owner || "-"}</td>
-                                  <td className="py-2.5 px-4 text-muted-foreground tabular-nums">{r.dueDate || "-"}</td>
-                                  <td className="py-2.5 px-4 text-right">
-                                    {r.links?.project && (
-                                      <Link href={r.links.project}>
-                                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600">
-                                          <ArrowRight className="w-4 h-4" />
-                                        </Button>
-                                      </Link>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {totalActionItems === 0 && (
-                <div className="text-center py-8">
-                  <div className="w-12 h-12 rounded-md bg-emerald-50 flex items-center justify-center mx-auto mb-3">
-                    <Activity className="w-6 h-6 text-emerald-500" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">No action items to review</p>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Active Projects</p>
+                <p className="text-2xl font-bold mt-1">{Number(data?.kpis?.activeDashboardProjects || 0)}</p>
+                <p className="text-xs text-muted-foreground">{Number(data?.kpis?.projectsBehindPlan || 0)} behind plan</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Avg. Progress</p>
+                <p className="text-2xl font-bold mt-1">{pct(data?.kpis?.averageActualProgressPct)}</p>
+                <p className="text-xs text-muted-foreground">Expected: {pct(data?.kpis?.averageExpectedProgressPct)}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Revenue (FY)</p>
+                <p className="text-2xl font-bold mt-1">{money(data?.kpis?.plannedRevenueFy)}</p>
+                <p className="text-xs text-emerald-600">Received: {money(data?.kpis?.receivedInflowFy)}</p>
+              </CardContent>
+            </Card>
+            <Card className="border-border">
+              <CardContent className="p-4">
+                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">GP Margin</p>
+                <p className="text-2xl font-bold mt-1">{pct(data?.kpis?.grossMarginPctFy ? data.kpis.grossMarginPctFy * 100 : null)}</p>
+                <p className="text-xs text-muted-foreground">Profit: {money(data?.kpis?.grossProfitFy)}</p>
+              </CardContent>
+            </Card>
+          </div>
+          <Card className="border-border">
+            <CardContent className="p-4">
+              <p className="text-sm text-muted-foreground">
+                The Immediate Intervention Queue above shows all {totalActionItems} action items across queues.
+                Use the filters at the top to narrow down by portfolio, PM, phase, or RAG status.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {activeTab === "Finance" && (
