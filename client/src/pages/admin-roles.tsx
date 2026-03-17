@@ -46,6 +46,56 @@ const NAV_SECTIONS = [
   { key: "ADMIN", label: "Admin", description: "System settings & tools" },
 ];
 
+const ENTITY_DESCRIPTIONS: Record<string, string> = {
+  projects: "Projects list & overview page",
+  my_work: "My Work task dashboard",
+  notifications: "Notification bell & inbox",
+  deliverables: "Project deliverables tracker",
+  activity_log: "Activity feed on projects",
+  audit_trail: "System-wide audit history",
+  engineering: "Engineering tab on projects",
+  eng_tasks: "Engineering task management",
+  eng_stages: "Engineering 5-stage checklist",
+  quality: "Quality tab & dashboard",
+  financials: "Finance tab & reports",
+  procurement: "Procurement hub & POs",
+  pd_dashboard: "Project detail command center",
+  pd_overview: "Project overview summary",
+  pd_plan: "Project plan / WBS grid",
+  pd_gantt: "Gantt chart view",
+  pd_finance: "Project finance tab",
+  pd_revenue: "Revenue tracker",
+  pd_cashflow: "Cashflow forecasting",
+  pd_cos_tracker: "Cost of Sales tracker",
+  pd_expenditure: "Expenditure breakdown",
+  pd_history: "Project change history",
+  pd_key_dates: "Key dates & milestones",
+  pd_quality: "Project quality tab",
+  pd_engineering: "Project engineering tab",
+  pd_eng_tasks: "Project eng task list",
+  pd_eng_stages: "Project eng stages",
+  pd_collaboration: "Project files & chat",
+  pd_subcontractors: "Subcontractor management",
+  teams_chat: "MS Teams chat integration",
+  project_chat: "In-app project messaging",
+  collaboration_hub: "Shared documents & notes",
+  sharepoint_files: "SharePoint file browser",
+  meetings: "Meeting notes & actions",
+  admin: "Admin panel access",
+  admin_roles: "Roles & permissions config",
+  data_import: "Smart Excel import",
+  data_export: "Data export tools",
+  database_migration: "DB migration tools",
+  ms_integration: "Microsoft 365 setup",
+  ms_sync: "MS Graph sync controls",
+  approvals: "Approval workflows",
+  leaderboard: "Team leaderboard",
+  feedback: "User feedback system",
+  portfolio_detail: "Portfolio-level views",
+  weekly_review_wizard: "Weekly review wizard",
+  create_project: "Create new projects",
+};
+
 const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
   core: {
     label: "Core Access",
@@ -244,11 +294,11 @@ function RolesControlCenter() {
   const bulkUpdateCategory = (entities: string[], value: boolean) => {
     const next = { ...currentEp };
     entities.forEach((entity) => {
-      if (next[entity]) {
-        const updated = { ...next[entity] };
-        Object.keys(updated).forEach((a) => { updated[a] = value; });
-        next[entity] = updated;
-      }
+      const existing = next[entity] || {};
+      const actions = Object.keys(existing).length > 0 ? Object.keys(existing) : ACTIONS.map(String);
+      const updated: Record<string, boolean> = {};
+      actions.forEach((a) => { updated[a] = value; });
+      next[entity] = updated;
     });
     setDraft((d) => ({ ...d, entityPermissions: next }));
   };
@@ -294,9 +344,8 @@ function RolesControlCenter() {
     const assigned = new Set<string>();
     const result: { key: string; label: string; entities: string[] }[] = [];
     Object.entries(ENTITY_CATEGORIES).forEach(([key, cat]) => {
-      const matching = cat.entities.filter((e) => resources.includes(e));
-      matching.forEach((e) => assigned.add(e));
-      if (matching.length > 0) result.push({ key, label: cat.label, entities: matching });
+      cat.entities.forEach((e) => assigned.add(e));
+      result.push({ key, label: cat.label, entities: cat.entities });
     });
     const uncategorized = resources.filter((e) => !assigned.has(e));
     if (uncategorized.length > 0) result.push({ key: "uncategorized", label: "Other Permissions", entities: uncategorized });
@@ -312,8 +361,8 @@ function RolesControlCenter() {
     })).filter((cat) => cat.entities.length > 0);
   }, [categorizedEntities, permSearch]);
 
-  const totalGranted = resources.reduce((s, e) => s + Object.values(currentEp[e] || {}).filter(Boolean).length, 0);
-  const totalPossible = resources.reduce((s, e) => s + Object.keys(currentEp[e] || {}).length, 0);
+  const totalGranted = allEntities.reduce((s, e) => s + Object.values(currentEp[e] || {}).filter(Boolean).length, 0);
+  const totalPossible = allEntities.length * ACTIONS.length;
 
   return (
     <div className="flex gap-4" style={{ minHeight: 'calc(100vh - 10rem)' }}>
@@ -446,14 +495,6 @@ function RolesControlCenter() {
                   <div className="p-4">
                     {activeTab === "permissions" && (
                       <>
-                        {resources.length === 0 ? (
-                          <div className="py-12 text-center">
-                            <ToggleLeft className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                            <p className="text-sm font-medium text-gray-600">No permissions configured</p>
-                            <p className="text-xs text-muted-foreground mt-1">This role has no entity permissions set yet.</p>
-                          </div>
-                        ) : (
-                          <>
                             <div className="flex items-center gap-2 mb-3">
                               <div className="relative flex-1">
                                 <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -461,8 +502,8 @@ function RolesControlCenter() {
                               </div>
                               {canManageRoles && (
                                 <div className="flex gap-1.5">
-                                  <Button size="sm" variant="outline" className="h-8 text-xs text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => bulkUpdateCategory(resources, true)} data-testid="button-grant-all-global">Grant All</Button>
-                                  <Button size="sm" variant="outline" className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => bulkUpdateCategory(resources, false)} data-testid="button-revoke-all-global">Revoke All</Button>
+                                  <Button size="sm" variant="outline" className="h-8 text-xs text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => bulkUpdateCategory(allEntities, true)} data-testid="button-grant-all-global">Grant All</Button>
+                                  <Button size="sm" variant="outline" className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => bulkUpdateCategory(allEntities, false)} data-testid="button-revoke-all-global">Revoke All</Button>
                                 </div>
                               )}
                             </div>
@@ -503,10 +544,11 @@ function RolesControlCenter() {
                                         const perms = currentEp[entity] || {};
                                         return (
                                           <tr key={entity} className="border-t border-gray-100 hover:bg-gray-50/50" data-testid={`perm-row-${entity}`}>
-                                            <td className="px-3 py-2 text-xs font-medium text-gray-800">{formatEntityName(entity)}</td>
+                                            <td className="px-3 py-2">
+                                              <div className="text-xs font-medium text-gray-800">{formatEntityName(entity)}</div>
+                                              {ENTITY_DESCRIPTIONS[entity] && <div className="text-[10px] text-muted-foreground leading-tight">{ENTITY_DESCRIPTIONS[entity]}</div>}
+                                            </td>
                                             {ACTIONS.map((action) => {
-                                              const exists = action in perms;
-                                              if (!exists) return <td key={action} className="text-center px-1.5 py-2"><span className="text-gray-200">-</span></td>;
                                               const isOn = Boolean(perms[action]);
                                               return (
                                                 <td key={action} className="text-center px-1.5 py-2">
@@ -525,8 +567,8 @@ function RolesControlCenter() {
                                             {canManageRoles && (
                                               <td className="text-center px-1.5 py-2">
                                                 <div className="flex gap-0.5 justify-center">
-                                                  <button type="button" onClick={() => Object.keys(perms).forEach((a) => updateEp(entity, a, true))} className="text-[9px] px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100" title="Grant all" data-testid={`grant-all-${entity}`}>All</button>
-                                                  <button type="button" onClick={() => Object.keys(perms).forEach((a) => updateEp(entity, a, false))} className="text-[9px] px-1 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100" title="Revoke all" data-testid={`revoke-all-${entity}`}>None</button>
+                                                  <button type="button" onClick={() => ACTIONS.forEach((a) => updateEp(entity, a, true))} className="text-[9px] px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100" title="Grant all" data-testid={`grant-all-${entity}`}>All</button>
+                                                  <button type="button" onClick={() => ACTIONS.forEach((a) => updateEp(entity, a, false))} className="text-[9px] px-1 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100" title="Revoke all" data-testid={`revoke-all-${entity}`}>None</button>
                                                 </div>
                                               </td>
                                             )}
@@ -538,8 +580,6 @@ function RolesControlCenter() {
                                 </tbody>
                               </table>
                             </div>
-                          </>
-                        )}
                       </>
                     )}
 
@@ -629,7 +669,10 @@ function RolesControlCenter() {
                                     const firstEnabledScope = enabledActions.length > 0 ? (authorityRules[`${entity}.${enabledActions[0]}`]?.scope || "assigned_projects") : "assigned_projects";
                                     return (
                                       <tr key={entity} className="border-t border-gray-100 hover:bg-gray-50/50">
-                                        <td className="px-3 py-1.5 text-xs font-medium text-gray-800">{formatEntityName(entity)}</td>
+                                        <td className="px-3 py-1.5">
+                                          <div className="text-xs font-medium text-gray-800">{formatEntityName(entity)}</div>
+                                          {ENTITY_DESCRIPTIONS[entity] && <div className="text-[10px] text-muted-foreground leading-tight">{ENTITY_DESCRIPTIONS[entity]}</div>}
+                                        </td>
                                         {AUTHORITY_ACTIONS.map((action) => {
                                           const key = `${entity}.${action}`;
                                           const rule = authorityRules[key] || {};
