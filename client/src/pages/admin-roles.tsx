@@ -33,14 +33,16 @@ const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "overr
 const AUTHORITY_ACTIONS: AuthorityAction[] = ["view", "create", "edit", "delete", "approve", "assign", "reassign", "close_complete", "export", "manage_settings"];
 const AUTHORITY_SCOPES = ["own", "department", "assigned_projects", "all_projects", "company_admin"] as const;
 const NAV_SECTIONS = [
-  { key: "HOME", label: "Home", description: "Dashboard & My Work" },
-  { key: "PROJECT_LIFECYCLE", label: "Project Lifecycle", description: "Lifecycle stages & clients" },
+  { key: "COCKPIT", label: "Home", description: "Dashboard & My Work" },
+  { key: "PROJECTS", label: "Project Lifecycle", description: "Lifecycle stages & clients" },
   { key: "PROJECT_DEVELOPMENT", label: "Project Development", description: "PD dashboard & tickets" },
-  { key: "PROJECT_MANAGEMENT", label: "Project Management", description: "Execution & project controls" },
+  { key: "DELIVERY", label: "Project Management", description: "Execution & project controls" },
   { key: "ENGINEERING", label: "Engineering", description: "Engineering tasks & overview" },
   { key: "QUALITY", label: "Quality", description: "Quality workspace" },
-  { key: "FINANCE", label: "Finance", description: "Cashflow, COS, revenue & GP" },
-  { key: "KNOWLEDGE", label: "Knowledge", description: "SOPs, training & feedback" },
+  { key: "MONEY", label: "Finance", description: "Cashflow, COS, revenue & GP" },
+  { key: "INFORMATION", label: "Knowledge", description: "SOPs, training & feedback" },
+  { key: "COLLABORATION", label: "Collaboration", description: "Teams chat, project chat & meetings" },
+  { key: "GOVERNANCE", label: "Governance", description: "RAID, changes & approvals" },
   { key: "ADMIN", label: "Admin", description: "System settings & tools" },
 ];
 
