@@ -1040,9 +1040,13 @@ router.get("/api/projects-summary", async (req, res) => {
           const displayName = projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
           const pInflows = inflowsByProject.get(projectName) || inflowsByProject.get(displayName) || [];
           const open = pInflows
-            .filter((inf: any) => !inf.paymentReceivedDate && inf.milestoneName)
+            .filter((inf: any) => (!inf.paymentReceivedDate || String(inf.paymentReceivedDate).trim() === '') && inf.milestoneName)
             .sort((a: any, b: any) => (a.rowNumber || 0) - (b.rowNumber || 0));
-          return open.length > 0 ? open[0].milestoneName : null;
+          if (open.length === 0) return null;
+          const next = open[0];
+          const plannedDate = next.effectiveDate || next.computedForecastReceiptDate || next.plannedPaymentDate || null;
+          const isOverdue = plannedDate && /^\d{4}-\d{2}-\d{2}/.test(plannedDate) && plannedDate < today;
+          return { name: next.milestoneName, plannedDate, overdue: !!isOverdue, openCount: open.length };
         })(),
       };
     });
