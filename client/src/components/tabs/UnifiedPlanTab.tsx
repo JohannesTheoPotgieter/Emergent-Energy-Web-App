@@ -105,6 +105,7 @@ const countWorkingDays = (startDate: Date, endDate: Date): number => {
 
 interface UnifiedPlanTabProps {
   projectName: string;
+  projectId?: number | null;
   onTaskClick?: (taskId: number, assignmentRole?: string | null) => void;
 }
 
@@ -575,7 +576,7 @@ function saveSavedViews(views: SavedView[]) {
   localStorage.setItem(STORAGE_KEY_VIEWS, JSON.stringify(views));
 }
 
-export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlanTabProps) {
+export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: UnifiedPlanTabProps) {
   const { isAdmin } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -694,16 +695,19 @@ export default function UnifiedPlanTab({ projectName, onTaskClick }: UnifiedPlan
   const unlinkedOperationalCount = planData?.unlinkedOperationalCount ?? 0;
 
   const { data: keyDates = [] } = useQuery<ResolvedKeyDate[]>({
-    queryKey: ["key-dates", projectName],
+    queryKey: ["key-dates", projectId || projectName],
     queryFn: async () => {
       const token = localStorage.getItem('auth_token');
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(`/api/key-dates/${encodeURIComponent(projectName)}`, { credentials: 'include', headers });
+      const url = projectId
+        ? `/api/key-dates/by-id/${projectId}`
+        : `/api/key-dates/${encodeURIComponent(projectName)}`;
+      const res = await fetch(url, { credentials: 'include', headers });
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: !!projectName,
+    enabled: !!(projectId || projectName),
   });
 
   const { data: projectDependencies = [] } = useQuery<DependencyRecord[]>({

@@ -1245,7 +1245,7 @@ export default function ProjectDetailPage() {
               </Button>
             ))}
           </div>
-          {activeSubTab === "task-grid" && canViewTab.overview && <UnifiedPlanTab projectName={projectName} onTaskClick={handleTaskClick} />}
+          {activeSubTab === "task-grid" && canViewTab.overview && <UnifiedPlanTab projectName={projectName} projectId={projectInfoId} onTaskClick={handleTaskClick} />}
           {activeSubTab === "board" && canViewTab.overview && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "calendar" && canViewTab.overview && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "raid" && projectInfoId && <ProjectRaidTab projectId={projectInfoId} projectName={projectName} />}
