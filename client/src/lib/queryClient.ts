@@ -95,16 +95,23 @@ export function invalidateDashboardQueries(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ["/api/portfolio-dashboard"] });
   qc.invalidateQueries({ queryKey: ["/api/lifecycle-board/projects"] });
   qc.invalidateQueries({ queryKey: ["/api/financial-headline"] });
+  qc.invalidateQueries({ queryKey: ["/api/home/summary"] });
   qc.invalidateQueries({ queryKey: ["dashboard"] });
   qc.invalidateQueries({ queryKey: ["overview"] });
   qc.invalidateQueries({ queryKey: ["projects-summary"] });
   qc.invalidateQueries({ queryKey: ["/api/revenue-tracker"] });
+  qc.invalidateQueries({ queryKey: ["gp-tracker-portfolio"] });
   qc.invalidateQueries({ predicate: (query) => {
     const key = query.queryKey[0];
     if (typeof key === 'string') {
       return key.startsWith('/api/revenue-tracker') ||
              key.startsWith('/api/revenue-tab/') ||
              key.startsWith('/api/revenue-tracking/') ||
+             key.startsWith('/api/cashflow-2026') ||
+             key.startsWith('/api/cashflow') ||
+             key.startsWith('/api/expenditure-breakdown') ||
+             key.startsWith('/api/cos-tracker') ||
+             key.startsWith('/api/gp-tracker') ||
              key === 'revenue-tracker-project' ||
              key === 'revenue-tab' ||
              key === 'finance-revenue';
