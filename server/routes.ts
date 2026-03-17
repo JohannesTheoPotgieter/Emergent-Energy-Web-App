@@ -2160,8 +2160,10 @@ export async function registerRoutes(
         const planLikeRows = useNormPlans ? normPlans.map(np => ({
           taskNo: null as string | null,
           highLevelProgramme: np.taskName,
-          actualStart: np.actualStartDate,
-          actualEnd: np.actualEndDate,
+          actualStart: np.startDate || np.actualStartDate,
+          actualEnd: np.endDate || np.actualEndDate,
+          trueActualStart: np.actualStartDate,
+          trueActualEnd: np.actualEndDate,
           durationDays: np.durationDays,
           actualPctComplete: np.pctComplete,
           expectedPctComplete: null as number | null,
@@ -2300,8 +2302,8 @@ export async function registerRoutes(
               weightedExpSum += task.expectedPctComplete * dur;
               continue;
             }
-            const tStart = task.actualStart?.substring(0, 10);
-            const tEnd = task.actualEnd?.substring(0, 10);
+            const tStart = (task.trueActualStart || task.actualStart || "").substring(0, 10);
+            const tEnd = (task.trueActualEnd || task.actualEnd || "").substring(0, 10);
             if (!tStart || !tEnd || !/^\d{4}-\d{2}-\d{2}/.test(tStart) || !/^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
               continue;
             }
@@ -12158,8 +12160,8 @@ export async function registerRoutes(
 
             let computedExpPct: number = pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : 0;
             if (pt.expectedPctComplete == null && !pt.isVirtual) {
-              const tStart = (pt.actualStart || "").substring(0, 10);
-              const tEnd = (pt.actualEnd || "").substring(0, 10);
+              const tStart = (pt.trueActualStart || pt.actualStart || "").substring(0, 10);
+              const tEnd = (pt.trueActualEnd || pt.actualEnd || "").substring(0, 10);
               if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
                 const todayStr = new Date().toISOString().split("T")[0];
                 if (todayStr >= tEnd) {
@@ -12200,8 +12202,8 @@ export async function registerRoutes(
               blockerReason: null,
               plannedHours: null,
               actualHours: null,
-              actualStartDate: pt.actualStart || null,
-              actualEndDate: pt.actualEnd || null,
+              actualStartDate: pt.trueActualStart || pt.actualStart || null,
+              actualEndDate: pt.trueActualEnd || pt.actualEnd || null,
               actualDurationDays: pt.durationDays || null,
               comment: null as string | null,
               sortOrder: pt.sortOrder ?? pt.rowNumber ?? 0,
