@@ -155,6 +155,52 @@ function extractProjectNameFromFilename(fileName: string): string {
   return name || "Untitled Project";
 }
 
+function sanitizeUploadFileName(fileName: string): string {
+  return fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
+}
+
+function extractStoredUploadTimestamp(fileName: string): number {
+  const match = fileName.match(/^(\d+)_/);
+  return match ? Number(match[1]) : 0;
+}
+
+async function pruneStoredUploadFiles(originalFileName: string, keepLatest = 2): Promise<void> {
+  const sanitizedOriginal = sanitizeUploadFileName(originalFileName);
+  const suffix = `_${sanitizedOriginal}`;
+  const files = await fs.promises.readdir(uploadDir, { withFileTypes: true });
+  const matchingFiles = files
+    .filter((entry) => entry.isFile() && entry.name.endsWith(suffix))
+    .map((entry) => entry.name)
+    .sort((left, right) => extractStoredUploadTimestamp(right) - extractStoredUploadTimestamp(left));
+
+  const filesToDelete = matchingFiles.slice(keepLatest);
+  await Promise.all(
+    filesToDelete.map(async (fileName) => {
+      try {
+        await fs.promises.unlink(path.join(uploadDir, fileName));
+      } catch (error: any) {
+        if (error?.code !== "ENOENT") {
+          console.warn(`[SmartImport] Failed to prune stored upload ${fileName}:`, error?.message || error);
+        }
+      }
+    }),
+  );
+}
+
+function formatImportIssueForCommit(issue: any) {
+  const payload = issue?.payloadJson && typeof issue.payloadJson === "object" ? issue.payloadJson as Record<string, any> : {};
+  return {
+    id: issue.id,
+    section: issue.section,
+    message: issue.message,
+    issueType: issue.issueType || null,
+    rowReference: payload.rowNumber ?? payload.row ?? payload.sourceRow ?? payload.lineNumber ?? null,
+    field: payload.field ?? payload.column ?? payload.canonicalField ?? payload.header ?? null,
+    reason: payload.reason ?? payload.errorReason ?? issue.suggestedAction ?? null,
+    expected: payload.expected ?? payload.expectedType ?? payload.expectedValue ?? null,
+  };
+}
+
 const router = Router();
 
 const uploadDir = path.join(process.cwd(), "uploads");
@@ -167,7 +213,7 @@ const upload = multer({
     destination: (_req, _file, cb) => cb(null, uploadDir),
     filename: (_req, file, cb) => {
       const timestamp = Date.now();
-      const sanitized = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, "_");
+      const sanitized = sanitizeUploadFileName(file.originalname);
       cb(null, `${timestamp}_${sanitized}`);
     },
   }),
@@ -378,6 +424,8 @@ router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_im
       source: "IMPORT",
       changesJson: { fileName, fileHash, sections: preview.detection.sections.length, issues: preview.normalization.issues.length, autoMappedProjectId, rerunDetected: !!rerunWarning },
     });
+
+    await pruneStoredUploadFiles(fileName, 2);
 
     res.json({
       runId: run.id,
@@ -1181,8 +1229,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     const unresolvedBlockers = issues.filter((i: any) => i.severity === "BLOCKER" && !i.resolved);
     if (unresolvedBlockers.length > 0) {
       return res.status(400).json({
-        error: "Unresolved blocker issues must be resolved before committing",
-        unresolvedBlockers: unresolvedBlockers.map((b: any) => ({ id: b.id, message: b.message, section: b.section })),
+        error: "unresolved_blockers",
+        message: "Unresolved blocker issues must be resolved before committing.",
+        unresolvedBlockers: unresolvedBlockers.map((issue: any) => formatImportIssueForCommit(issue)),
       });
     }
 
@@ -1910,52 +1959,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       });
     } catch (auditErr: any) {
       console.warn("[smart-import] Audit logging failed (non-blocking):", auditErr.message);
-    }
-
-    // Auto-archive projects whose last committed import is stale (>90 days old)
-    try {
-      const STALE_DAYS = 90;
-      const cutoff = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000);
-
-      const allCommittedRuns = await db
-        .select({
-          projectName: smartImportRuns.projectName,
-          committedAt: smartImportRuns.committedAt,
-          projectId: smartImportRuns.projectId,
-        })
-        .from(smartImportRuns)
-        .where(eq(smartImportRuns.status, "COMMITTED"));
-
-      const latestByProject = new Map<number, { projectName: string; latestCommit: Date }>();
-      for (const r of allCommittedRuns) {
-        if (!r.projectId || !r.committedAt) continue;
-        const commitDate = new Date(r.committedAt);
-        const existing = latestByProject.get(r.projectId);
-        if (!existing || commitDate > existing.latestCommit) {
-          latestByProject.set(r.projectId, { projectName: r.projectName || '', latestCommit: commitDate });
-        }
-      }
-
-      const activeProjects = await db
-        .select({ id: projectInfo.id, projectName: projectInfo.projectName })
-        .from(projectInfo)
-        .where(eq(projectInfo.archivedStatus, "ACTIVE"));
-
-      const toArchive = activeProjects.filter(p => {
-        const importRecord = latestByProject.get(p.id);
-        if (!importRecord) return false;
-        return importRecord.latestCommit < cutoff;
-      });
-
-      if (toArchive.length > 0) {
-        const archiveIds = toArchive.map(p => p.id);
-        await db.update(projectInfo)
-          .set({ archivedStatus: "ARCHIVED", executionPhase: "Completed", isActive: false, updatedAt: new Date() })
-          .where(inArray(projectInfo.id, archiveIds));
-        console.log(`[SmartImport] Auto-archived ${toArchive.length} projects with stale imports (>${STALE_DAYS} days): ${toArchive.map(p => p.projectName).join(", ")}`);
-      }
-    } catch (archiveErr: any) {
-      console.warn("[SmartImport] Auto-archive check failed (non-blocking):", archiveErr.message);
     }
 
     logAuditFromReq(req, {

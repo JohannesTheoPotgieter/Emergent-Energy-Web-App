@@ -20,7 +20,7 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Home",
     path: "/",
-    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/my-tool"]),
+    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/dashboard", "/my-work", "/my-tool"]),
     secondary: [
       { label: "Home", path: "/" },
       { label: "My Work", path: "/my-work" },
@@ -92,13 +92,11 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Knowledge",
     path: "/ee-info",
-    match: (pathname) => startsWithAny(pathname, ["/ee-info", "/leaderboard", "/feedback", "/training", "/knowledge-game", "/department-scores"]),
+    match: (pathname) => startsWithAny(pathname, ["/ee-info", "/leaderboard", "/feedback", "/training", "/department-scores"]),
     secondary: [
       { label: "Lifecycle & SOP", path: "/ee-info" },
       { label: "Leaderboard", path: "/leaderboard" },
       { label: "Training", path: "/training" },
-      { label: "Knowledge Game", path: "/knowledge-game" },
-      { label: "Department Scores", path: "/department-scores" },
       { label: "Feedback", path: "/feedback" },
     ],
   },

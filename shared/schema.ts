@@ -38,6 +38,7 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   name: text("name").notNull(),
   role: text("role").notNull().default('member'),
+  department: text("department"),
   microsoft_id: text("microsoft_id").unique(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

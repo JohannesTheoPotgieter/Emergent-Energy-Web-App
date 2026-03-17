@@ -2051,6 +2051,19 @@ function PreviewCommitStep({
   const [conflictResolutions, setConflictResolutions] = useState<Record<string, "keep" | "import">>({});
   const [previouslyDeletedWarning, setPreviouslyDeletedWarning] = useState<{ message: string; deletedBy: string; deletedAt: string } | null>(null);
   const [recencyWarning, setRecencyWarning] = useState<{ message: string; error: string } | null>(null);
+  const [blockerWarning, setBlockerWarning] = useState<{
+    message: string;
+    unresolvedBlockers: Array<{
+      id: number;
+      section: string;
+      message: string;
+      issueType?: string | null;
+      rowReference?: string | number | null;
+      field?: string | null;
+      reason?: string | null;
+      expected?: string | null;
+    }>;
+  } | null>(null);
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
@@ -2081,6 +2094,8 @@ function PreviewCommitStep({
         setCommitResult(data);
         setManualEditsWarning(null);
         setPreviouslyDeletedWarning(null);
+        setRecencyWarning(null);
+        setBlockerWarning(null);
         toast({ title: "Import Committed!", description: "Data has been imported successfully" });
       } else {
         const err = await res.json().catch(() => ({ error: "Commit failed" }));
@@ -2097,6 +2112,11 @@ function PreviewCommitStep({
           setPreviouslyDeletedWarning({ message: err.message, deletedBy: err.deletedBy, deletedAt: err.deletedAt });
         } else if (err.error === "import_older_than_existing" || err.error === "import_equal_date") {
           setRecencyWarning({ message: err.message, error: err.error });
+        } else if (err.error === "unresolved_blockers") {
+          setBlockerWarning({
+            message: err.message || "Resolve the remaining blocker rows before committing.",
+            unresolvedBlockers: err.unresolvedBlockers || [],
+          });
         } else {
           toast({ title: "Error", description: err.message || err.error || "Commit failed", variant: "destructive" });
         }
@@ -2514,6 +2534,42 @@ function PreviewCommitStep({
                   )}
                 </div>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {blockerWarning && (
+        <Card className="border-red-300 bg-red-50" data-testid="blocker-warning">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <XCircle className="w-5 h-5 text-red-600 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-red-800">{blockerWarning.message}</p>
+                <p className="text-xs text-red-600">Fix these rows in the Issues step, then retry the commit.</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {blockerWarning.unresolvedBlockers.map((blocker) => (
+                <div key={blocker.id} className="rounded-lg border border-red-200 bg-white p-3 text-xs text-slate-700">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">{blocker.section}</Badge>
+                    {blocker.rowReference != null ? <Badge variant="outline">Row {blocker.rowReference}</Badge> : null}
+                    {blocker.field ? <Badge variant="outline">{blocker.field}</Badge> : null}
+                  </div>
+                  <p className="mt-2 font-medium text-slate-900">{blocker.message}</p>
+                  {blocker.reason ? <p className="mt-1">Reason: {blocker.reason}</p> : null}
+                  {blocker.expected ? <p className="mt-1">Expected: {blocker.expected}</p> : null}
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between">
+              <Button variant="outline" size="sm" onClick={() => setBlockerWarning(null)}>
+                Dismiss
+              </Button>
+              <Button size="sm" onClick={onBack}>
+                Return to Issues
+              </Button>
             </div>
           </CardContent>
         </Card>

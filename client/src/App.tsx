@@ -43,8 +43,6 @@ import AdminRolesPage from "@/pages/admin-roles";
 import LeaderboardPage from "@/pages/leaderboard";
 import FeedbackPage from "@/pages/feedback";
 import EeInfoPage from "@/pages/ee-info";
-import KnowledgeGamePage from "@/pages/knowledge-game";
-import DepartmentScoresPage from "@/pages/department-scores";
 import TrainingPage from "@/pages/training";
 import PMDashboard from "@/pages/pm-dashboard";
 import ExcelUpdatesPage from "@/pages/excel-updates";
@@ -77,13 +75,12 @@ import ActionLaunchpadPage from "@/pages/action-launchpad";
 import PdPmHandoverPage from "@/pages/pd-pm-handover";
 import PmHandoverReviewPage from "@/pages/pm-handover-review";
 import HandoverControlPage from "@/pages/handover-control";
-import ExceptionsPage from "@/pages/exceptions";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { checkPermission, normalizeRoleForPermissions } from "@shared/schema";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { PAGE_REGISTRY, getPermissionEntityForPath } from "@/config/page-registry";
+import { PAGE_REGISTRY, ROLE_LANDING_PAGE, getPermissionEntityForPath } from "@/config/page-registry";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 
 const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
@@ -132,8 +129,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   FeedbackPage,
   EeInfoPage,
   TrainingPage,
-  KnowledgeGamePage,
-  DepartmentScoresPage,
   PMDashboard,
   ExcelUpdatesPage,
   PortfoliosPage,
@@ -163,8 +158,18 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   PdPmHandoverPage,
   PmHandoverReviewPage,
   HandoverControlPage,
-  ExceptionsPage,
 };
+
+function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
+  const effectiveRole = normalizeRoleForPermissions(userRole || companyRole);
+  return ROLE_LANDING_PAGE[effectiveRole] || "/dashboard";
+}
+
+function HomeRedirect() {
+  const { user } = useAuth();
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  return <Redirect to={resolveHomePath(user?.role, companyRole)} />;
+}
 
 const APP_ROUTES: RouteConfig[] = PAGE_REGISTRY.filter((page) => page.routeComponentKey || page.redirectTo).flatMap((page) => {
   const routes: RouteConfig[] = [];
@@ -290,7 +295,7 @@ function ProtectedPages() {
     <RoleGuard>
     <AppLayout>
       <Switch>
-        <Route path="/">{() => <Redirect to="/my-work" />}</Route>
+        <Route path="/">{() => <HomeRedirect />}</Route>
         {APP_ROUTES.map((route) => {
           if (route.redirectTo) {
             return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;

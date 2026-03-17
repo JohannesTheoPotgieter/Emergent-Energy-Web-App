@@ -56,6 +56,27 @@ const PENALTY_VALUES: Record<string, number> = {
   overdue_qm_task: -7,
 };
 
+const ROLE_DEPARTMENT_FALLBACKS: Record<string, string> = {
+  QUALITY_MANAGER: "Quality",
+  ENGINEER: "Engineering",
+  ENGINEERING_MANAGER: "Engineering",
+  PROJECT_MANAGER_SITE: "Project Delivery",
+  CONSTRUCTION_MANAGER: "Project Delivery",
+  PROJECT_DEVELOPER: "Project Development",
+  ACCOUNTANT: "Finance",
+  PROGRAM_FINANCE_MANAGER: "Finance",
+  CFO: "Finance",
+  COO_ADMIN: "Leadership",
+  CEO_ADMIN: "Leadership",
+};
+
+function resolveDepartment(user: { department?: string | null; role?: string | null }) {
+  const explicit = typeof user.department === "string" ? user.department.trim() : "";
+  if (explicit) return explicit;
+  const role = String(user.role || "").trim();
+  return ROLE_DEPARTMENT_FALLBACKS[role] || "Operations";
+}
+
 interface UserActivityCounts {
   userId: number;
   userName: string;
@@ -346,7 +367,7 @@ export function registerGamificationRoutes(app: Express) {
   app.get("/api/gamification/leaderboard", jwtAuth, requireAuth, requirePermission("leaderboard", "view"), async (_req: Request, res: Response) => {
     try {
       const activities = await computeUserActivities();
-      const allUsers = await db.select({ id: users.id, name: users.name, role: users.role }).from(users);
+      const allUsers = await db.select({ id: users.id, name: users.name, role: users.role, department: users.department }).from(users);
       const userMap = Object.fromEntries(allUsers.map(u => [u.id, u]));
 
       const existingBadges = await db.select().from(userBadges);
@@ -368,6 +389,7 @@ export function registerGamificationRoutes(app: Express) {
           userId: act.userId,
           name: u.name,
           role: u.role,
+          department: resolveDepartment(u),
           points: total,
           pointsEarned: earned,
           pointsPenalty: penalties,
@@ -422,8 +444,49 @@ export function registerGamificationRoutes(app: Express) {
         }
       }
 
+      const departmentSummaryMap = new Map<string, {
+        department: string;
+        members: number;
+        totalPoints: number;
+        totalEarned: number;
+        totalPenalty: number;
+        topPerformer: { name: string; points: number } | null;
+      }>();
+      for (const entry of leaderboard) {
+        if (!entry) continue;
+        const department = entry.department || "Operations";
+        const existing = departmentSummaryMap.get(department) || {
+          department,
+          members: 0,
+          totalPoints: 0,
+          totalEarned: 0,
+          totalPenalty: 0,
+          topPerformer: null,
+        };
+        existing.members += 1;
+        existing.totalPoints += entry.points;
+        existing.totalEarned += entry.pointsEarned;
+        existing.totalPenalty += entry.pointsPenalty;
+        if (!existing.topPerformer || entry.points > existing.topPerformer.points) {
+          existing.topPerformer = { name: entry.name, points: entry.points };
+        }
+        departmentSummaryMap.set(department, existing);
+      }
+      const departmentSummary = Array.from(departmentSummaryMap.values())
+        .map((department) => ({
+          department: department.department,
+          members: department.members,
+          totalPoints: department.totalPoints,
+          totalEarned: department.totalEarned,
+          totalPenalty: department.totalPenalty,
+          averagePoints: department.members > 0 ? Math.round(department.totalPoints / department.members) : 0,
+          topPerformer: department.topPerformer?.name || null,
+        }))
+        .sort((a, b) => b.averagePoints - a.averagePoints || b.totalPoints - a.totalPoints);
+
       res.json({
         leaderboard,
+        departmentSummary,
         pointValues: POINT_VALUES,
         penaltyValues: PENALTY_VALUES,
         badgeDefinitions: BADGE_DEFINITIONS,
