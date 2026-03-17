@@ -12,7 +12,7 @@ describe("app navigation visibility", () => {
 
   it("filters inaccessible sections and secondary items by permission", () => {
     const sections = buildVisibleTopSections({
-      canViewPath: (path) => ["/", "/my-work", "/project-lifecycle", "/projects", "/pm-dashboard"].includes(path),
+      canViewPath: (path) => ["/", "/my-work", "/project-lifecycle", "/dashboard", "/projects", "/pm-dashboard"].includes(path),
     });
 
     expect(sections.some((section) => section.label === "Admin")).toBe(false);
@@ -22,7 +22,11 @@ describe("app navigation visibility", () => {
     expect(projectLifecycle?.secondary.map((item) => item.label)).toEqual(["Overview"]);
 
     const projectManagement = sections.find((section) => section.label === "Project Management");
-    expect(projectManagement?.secondary.map((item) => item.label)).toEqual(["Execution Overview", "Project List"]);
+    expect(projectManagement?.secondary.map((item) => item.label)).toEqual([
+      "Execution Dashboard",
+      "Project List",
+      "Per Project Manager Dashboard",
+    ]);
   });
 
   it("retargets a section link to the first visible child when the root page is not permitted", () => {
@@ -63,12 +67,14 @@ describe("app navigation visibility", () => {
     const projectManagement = sections.find((section) => section.label === "Project Management");
 
     expect(projectManagement?.secondary.map((item) => item.label)).toEqual([
-      "Execution Overview",
+      "Execution Dashboard",
       "Project List",
       "Work Plan / Board",
       "Deliverables",
       "Approvals",
       "Site / Execution Controls",
+      "PM On-The-Go",
+      "Per Project Manager Dashboard",
     ]);
   });
 

@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -7,11 +7,73 @@ import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Link } from "wouter";
 import {
-  Activity, AlertCircle, AlertTriangle, ChevronDown, ChevronUp,
-  TrendingUp, TrendingDown, DollarSign, Clock, Shield, FileWarning,
-  Users, FolderOpen, ArrowRight, Filter, RotateCcw, ExternalLink,
-  BarChart3
+  Activity,
+  AlertCircle,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  Clock,
+  Shield,
+  FileWarning,
+  Users,
+  FolderOpen,
+  ArrowRight,
+  Filter,
+  RotateCcw,
+  ExternalLink,
+  BarChart3,
+  SlidersHorizontal,
+  Layers3,
 } from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ComposedChart,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
+type ChartType = "line" | "area" | "bar" | "composed";
+
+type ChartMetric = {
+  key: string;
+  label: string;
+  format: "currency" | "percent" | "number";
+  color: string;
+};
+
+type ChartDataset = {
+  id: string;
+  label: string;
+  description: string;
+  dimensionKey: string;
+  dimensionLabel: string;
+  defaultChartType: ChartType;
+  allowedChartTypes: ChartType[];
+  metrics: ChartMetric[];
+  rows: Array<Record<string, string | number | null>>;
+};
+
+type ChartPreset = {
+  id: string;
+  title: string;
+  description: string;
+  datasetId: string;
+  chartType: ChartType;
+  metricKeys: string[];
+  stacked?: boolean;
+};
 
 type DashboardResponse = {
   meta: { fyStart: string; fyEnd: string };
@@ -19,12 +81,40 @@ type DashboardResponse = {
   options: { portfolios: string[]; pms: string[]; pds: string[]; executionPhases: string[]; rags: string[] };
   projects: any[];
   actionCenter: Record<string, any[]>;
+  charts?: {
+    supportedChartTypes: ChartType[];
+    presets: ChartPreset[];
+    datasets: ChartDataset[];
+  };
 };
 
-const tabs = ["COO", "Program", "Finance", "Construction"] as const;
+type BuilderState = {
+  datasetId: string;
+  chartType: ChartType;
+  metricKeys: string[];
+};
 
-const money = (n: number | null | undefined) => `R ${(Number(n || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-const pct = (n: number | null | undefined) => (n == null ? "—" : `${Number(n).toFixed(1)}%`);
+const GRAPH_BUILDER_STORAGE_KEY = "execution-dashboard-graph-builder-v1";
+const tabs = ["Program", "COO", "Finance", "Construction"] as const;
+
+const money = (n: number | null | undefined) =>
+  `R ${(Number(n || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+const pct = (n: number | null | undefined) => (n == null ? "-" : `${Number(n).toFixed(1)}%`);
+
+function formatMetricValue(value: number | null | undefined, format: ChartMetric["format"]) {
+  const numeric = Number(value || 0);
+  if (format === "currency") return `R ${numeric.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  if (format === "percent") return `${numeric.toFixed(1)}%`;
+  return numeric.toLocaleString(undefined, { maximumFractionDigits: 1 });
+}
+
+function compactAxisTick(value: number) {
+  if (!Number.isFinite(value)) return "";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}m`;
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(0)}k`;
+  return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
 
 function severityStyle(severity: string) {
   const s = severity?.toLowerCase();
@@ -60,14 +150,195 @@ function ragBadge(rag: string) {
   return "bg-slate-100 text-slate-500 border-slate-200";
 }
 
+function ensureMetricKeys(dataset: ChartDataset | undefined, metricKeys: string[]) {
+  if (!dataset) return [];
+  const available = new Set(dataset.metrics.map((metric) => metric.key));
+  const valid = metricKeys.filter((metricKey) => available.has(metricKey));
+  if (valid.length > 0) return valid.slice(0, 3);
+  return dataset.metrics.slice(0, Math.min(2, dataset.metrics.length)).map((metric) => metric.key);
+}
+
+function ExecutionChartCard({
+  dataset,
+  title,
+  description,
+  chartType,
+  metricKeys,
+  stacked = false,
+  testId,
+}: {
+  dataset?: ChartDataset;
+  title: string;
+  description: string;
+  chartType: ChartType;
+  metricKeys: string[];
+  stacked?: boolean;
+  testId: string;
+}) {
+  const selectedMetrics = useMemo(
+    () => (dataset?.metrics || []).filter((metric) => metricKeys.includes(metric.key)),
+    [dataset, metricKeys],
+  );
+
+  if (!dataset || dataset.rows.length === 0 || selectedMetrics.length === 0) {
+    return (
+      <Card className="border-border" data-testid={testId}>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">{title}</CardTitle>
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-lg border border-dashed border-border/80 bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground">
+            No imported data is available for this chart with the current filters.
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const firstMetric = selectedMetrics[0];
+  const tooltipFormatter = (value: number, name: string) => {
+    const metric = selectedMetrics.find((item) => item.label === name || item.key === name) || firstMetric;
+    return [formatMetricValue(value, metric?.format || "number"), metric?.label || name];
+  };
+  const tooltipLabelFormatter = (label: string) => `${dataset.dimensionLabel}: ${label}`;
+
+  const commonChildren = (
+    <>
+      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(148, 163, 184, 0.2)" />
+      <XAxis dataKey={dataset.dimensionKey} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={24} height={42} />
+      <YAxis tickLine={false} axisLine={false} width={68} tickFormatter={compactAxisTick} />
+      <Tooltip formatter={tooltipFormatter} labelFormatter={tooltipLabelFormatter} />
+      <Legend />
+    </>
+  );
+
+  const chartProps = {
+    data: dataset.rows,
+    margin: { top: 8, right: 12, bottom: 0, left: 0 },
+  };
+
+  return (
+    <Card className="border-border" data-testid={testId}>
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">{title}</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">{description}</p>
+          </div>
+          <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+            {dataset.label}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="h-[320px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            {chartType === "area" ? (
+              <AreaChart {...chartProps}>
+                {commonChildren}
+                {selectedMetrics.map((metric) => (
+                  <Area
+                    key={metric.key}
+                    type="monotone"
+                    dataKey={metric.key}
+                    name={metric.label}
+                    stroke={metric.color}
+                    fill={metric.color}
+                    fillOpacity={0.18}
+                    strokeWidth={2}
+                    stackId={stacked ? "stack" : undefined}
+                  />
+                ))}
+              </AreaChart>
+            ) : chartType === "bar" ? (
+              <BarChart {...chartProps}>
+                {commonChildren}
+                {selectedMetrics.map((metric) => (
+                  <Bar
+                    key={metric.key}
+                    dataKey={metric.key}
+                    name={metric.label}
+                    fill={metric.color}
+                    radius={[6, 6, 0, 0]}
+                    stackId={stacked ? "stack" : undefined}
+                  />
+                ))}
+              </BarChart>
+            ) : chartType === "composed" ? (
+              <ComposedChart {...chartProps}>
+                {commonChildren}
+                <Bar dataKey={selectedMetrics[0].key} name={selectedMetrics[0].label} fill={selectedMetrics[0].color} radius={[6, 6, 0, 0]} />
+                {selectedMetrics.slice(1).map((metric) => (
+                  <Line
+                    key={metric.key}
+                    type="monotone"
+                    dataKey={metric.key}
+                    name={metric.label}
+                    stroke={metric.color}
+                    strokeWidth={2.5}
+                    dot={false}
+                  />
+                ))}
+              </ComposedChart>
+            ) : (
+              <LineChart {...chartProps}>
+                {commonChildren}
+                {selectedMetrics.map((metric) => (
+                  <Line
+                    key={metric.key}
+                    type="monotone"
+                    dataKey={metric.key}
+                    name={metric.label}
+                    stroke={metric.color}
+                    strokeWidth={2.5}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                ))}
+              </LineChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("COO");
+  const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Program");
   const [expanded, setExpanded] = useState<number | null>(null);
   const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState({
-    search: "", portfolio: "all", pm: "all", pd: "all", executionPhase: "all", rag: "all",
-    exceptionOnly: false, behindPlanOnly: false, inflowRiskOnly: false, outflowRiskOnly: false,
-    engineeringBlockersOnly: false, qualityIssuesOnly: false, pendingApprovalsOnly: false, staleImportsOnly: false,
+    search: "",
+    portfolio: "all",
+    pm: "all",
+    pd: "all",
+    executionPhase: "all",
+    rag: "all",
+    exceptionOnly: false,
+    behindPlanOnly: false,
+    inflowRiskOnly: false,
+    outflowRiskOnly: false,
+    engineeringBlockersOnly: false,
+    qualityIssuesOnly: false,
+    pendingApprovalsOnly: false,
+    staleImportsOnly: false,
+  });
+  const [activePresetId, setActivePresetId] = useState<string>("forecast-2026");
+  const [builderState, setBuilderState] = useState<BuilderState>(() => {
+    if (typeof window === "undefined") {
+      return { datasetId: "monthlyForecast", chartType: "line", metricKeys: ["plannedRevenue", "plannedCos"] };
+    }
+    try {
+      const raw = window.localStorage.getItem(GRAPH_BUILDER_STORAGE_KEY);
+      if (!raw) {
+        return { datasetId: "monthlyForecast", chartType: "line", metricKeys: ["plannedRevenue", "plannedCos"] };
+      }
+      return JSON.parse(raw) as BuilderState;
+    } catch {
+      return { datasetId: "monthlyForecast", chartType: "line", metricKeys: ["plannedRevenue", "plannedCos"] };
+    }
   });
 
   const query = useMemo(() => {
@@ -75,7 +346,9 @@ export default function DashboardPage() {
     Object.entries(filters).forEach(([k, v]) => {
       if (typeof v === "boolean") {
         if (v) params.set(k, "true");
-      } else if (v && v !== "all") params.set(k, v);
+      } else if (v && v !== "all") {
+        params.set(k, v);
+      }
     });
     return params.toString();
   }, [filters]);
@@ -90,11 +363,53 @@ export default function DashboardPage() {
   });
 
   const opts = data?.options || { portfolios: [], pms: [], pds: [], executionPhases: [], rags: [] };
+  const chartDatasets = data?.charts?.datasets || [];
+  const chartPresets = data?.charts?.presets || [];
+  const datasetMap = useMemo(() => new Map(chartDatasets.map((dataset) => [dataset.id, dataset])), [chartDatasets]);
+  const presetMap = useMemo(() => new Map(chartPresets.map((preset) => [preset.id, preset])), [chartPresets]);
+
+  useEffect(() => {
+    if (chartPresets.length === 0) return;
+    if (!presetMap.has(activePresetId)) {
+      setActivePresetId(chartPresets[0].id);
+    }
+  }, [activePresetId, chartPresets, presetMap]);
+
+  useEffect(() => {
+    if (chartDatasets.length === 0) return;
+    const dataset = datasetMap.get(builderState.datasetId) || chartDatasets[0];
+    const nextMetricKeys = ensureMetricKeys(dataset, builderState.metricKeys);
+    const nextChartType = dataset.allowedChartTypes.includes(builderState.chartType)
+      ? builderState.chartType
+      : dataset.defaultChartType;
+
+    if (
+      dataset.id !== builderState.datasetId ||
+      nextChartType !== builderState.chartType ||
+      nextMetricKeys.join("|") !== builderState.metricKeys.join("|")
+    ) {
+      setBuilderState({
+        datasetId: dataset.id,
+        chartType: nextChartType,
+        metricKeys: nextMetricKeys,
+      });
+    }
+  }, [builderState, chartDatasets, datasetMap]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(GRAPH_BUILDER_STORAGE_KEY, JSON.stringify(builderState));
+  }, [builderState]);
+
+  const activePreset = presetMap.get(activePresetId) || chartPresets[0];
+  const activePresetDataset = activePreset ? datasetMap.get(activePreset.datasetId) : undefined;
+  const builderDataset = datasetMap.get(builderState.datasetId) || chartDatasets[0];
 
   const toggleQueue = (queue: string) => {
-    setCollapsedQueues(prev => {
+    setCollapsedQueues((prev) => {
       const next = new Set(prev);
-      if (next.has(queue)) next.delete(queue); else next.add(queue);
+      if (next.has(queue)) next.delete(queue);
+      else next.add(queue);
       return next;
     });
   };
@@ -108,12 +423,33 @@ export default function DashboardPage() {
     ["pendingApprovalsDecisions", "Pending Approvals / Decisions"],
   ];
 
-  const hasActiveFilters = filters.search || filters.portfolio !== "all" || filters.pm !== "all" || filters.pd !== "all" || filters.executionPhase !== "all" || filters.rag !== "all" || filters.exceptionOnly || filters.behindPlanOnly || filters.inflowRiskOnly || filters.outflowRiskOnly || filters.engineeringBlockersOnly || filters.qualityIssuesOnly || filters.pendingApprovalsOnly || filters.staleImportsOnly;
+  const hasActiveFilters =
+    filters.search ||
+    filters.portfolio !== "all" ||
+    filters.pm !== "all" ||
+    filters.pd !== "all" ||
+    filters.executionPhase !== "all" ||
+    filters.rag !== "all" ||
+    filters.exceptionOnly ||
+    filters.behindPlanOnly ||
+    filters.inflowRiskOnly ||
+    filters.outflowRiskOnly ||
+    filters.engineeringBlockersOnly ||
+    filters.qualityIssuesOnly ||
+    filters.pendingApprovalsOnly ||
+    filters.staleImportsOnly;
 
   const totalActionItems = useMemo(() => {
     if (!data?.actionCenter) return 0;
     return queueKeys.reduce((sum, [k]) => sum + (data.actionCenter[k]?.length || 0), 0);
   }, [data?.actionCenter]);
+
+  const financeDataset = datasetMap.get("monthlyForecast");
+  const cashflowDataset = datasetMap.get("weeklyCashflow");
+  const phaseDataset = datasetMap.get("phaseSummary");
+  const timelineDataset = datasetMap.get("milestonePipeline");
+  const constructionWindowDataset = datasetMap.get("constructionWindow");
+  const pmDataset = datasetMap.get("pmSummary");
 
   return (
     <div className="ee-page p-0 pb-8" data-testid="execution-dashboard-page">
@@ -127,36 +463,39 @@ export default function DashboardPage() {
           </h1>
           {data?.meta && (
             <p className="text-muted-foreground text-sm mt-1.5 ml-[46px]">
-              Financial year <span className="font-medium text-foreground">{data.meta.fyStart}</span> to <span className="font-medium text-foreground">{data.meta.fyEnd}</span>
+              Financial year <span className="font-medium text-foreground">{data.meta.fyStart}</span> to{" "}
+              <span className="font-medium text-foreground">{data.meta.fyEnd}</span>
             </p>
           )}
         </div>
         {hasActiveFilters && (
-          <Button variant="outline" size="sm" onClick={() => setFilters({
-            search: "", portfolio: "all", pm: "all", pd: "all", executionPhase: "all", rag: "all",
-            exceptionOnly: false, behindPlanOnly: false, inflowRiskOnly: false, outflowRiskOnly: false,
-            engineeringBlockersOnly: false, qualityIssuesOnly: false, pendingApprovalsOnly: false, staleImportsOnly: false,
-          })} className="gap-1.5 text-muted-foreground">
-            <RotateCcw className="w-3.5 h-3.5" />Clear filters
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setFilters({
+                search: "",
+                portfolio: "all",
+                pm: "all",
+                pd: "all",
+                executionPhase: "all",
+                rag: "all",
+                exceptionOnly: false,
+                behindPlanOnly: false,
+                inflowRiskOnly: false,
+                outflowRiskOnly: false,
+                engineeringBlockersOnly: false,
+                qualityIssuesOnly: false,
+                pendingApprovalsOnly: false,
+                staleImportsOnly: false,
+              })
+            }
+            className="gap-1.5 text-muted-foreground"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Clear filters
           </Button>
         )}
-      </div>
-
-      <div className="flex gap-1 border-b pb-0">
-        {tabs.map((t) => (
-          <button
-            key={t}
-            onClick={() => setActiveTab(t)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === t
-                ? "border-emerald-600 text-emerald-700"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
-            }`}
-            data-testid={`tab-${t}`}
-          >
-            {t}
-          </button>
-        ))}
       </div>
 
       <Card className="border-border">
@@ -166,24 +505,57 @@ export default function DashboardPage() {
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Filters</span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">
-            <Input placeholder="Search projects..." value={filters.search} onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))} className="h-9" data-testid="input-filter-search" />
-            <SearchableSelect value={filters.portfolio} onValueChange={(v) => setFilters((f) => ({ ...f, portfolio: v }))} placeholder="Portfolio" options={[{ value: "all", label: "All Portfolios" }, ...opts.portfolios.map((v) => ({ value: v, label: v }))]} />
-            <SearchableSelect value={filters.pm} onValueChange={(v) => setFilters((f) => ({ ...f, pm: v }))} placeholder="Project Manager" options={[{ value: "all", label: "All PMs" }, ...opts.pms.map((v) => ({ value: v, label: v }))]} />
-            <SearchableSelect value={filters.pd} onValueChange={(v) => setFilters((f) => ({ ...f, pd: v }))} placeholder="Project Developer" options={[{ value: "all", label: "All PDs" }, ...opts.pds.map((v) => ({ value: v, label: v }))]} />
-            <SearchableSelect value={filters.executionPhase} onValueChange={(v) => setFilters((f) => ({ ...f, executionPhase: v }))} placeholder="Execution Phase" options={[{ value: "all", label: "All Phases" }, ...opts.executionPhases.map((v) => ({ value: v, label: v }))]} />
-            <SearchableSelect value={filters.rag} onValueChange={(v) => setFilters((f) => ({ ...f, rag: v }))} placeholder="RAG Status" options={[{ value: "all", label: "All RAG" }, ...opts.rags.map((v) => ({ value: v, label: v }))]} />
+            <Input
+              placeholder="Search projects..."
+              value={filters.search}
+              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+              className="h-9"
+              data-testid="input-filter-search"
+            />
+            <SearchableSelect
+              value={filters.portfolio}
+              onValueChange={(v) => setFilters((f) => ({ ...f, portfolio: v }))}
+              placeholder="Portfolio"
+              options={[{ value: "all", label: "All Portfolios" }, ...opts.portfolios.map((v) => ({ value: v, label: v }))]}
+            />
+            <SearchableSelect
+              value={filters.pm}
+              onValueChange={(v) => setFilters((f) => ({ ...f, pm: v }))}
+              placeholder="Project Manager"
+              options={[{ value: "all", label: "All PMs" }, ...opts.pms.map((v) => ({ value: v, label: v }))]}
+            />
+            <SearchableSelect
+              value={filters.pd}
+              onValueChange={(v) => setFilters((f) => ({ ...f, pd: v }))}
+              placeholder="Project Developer"
+              options={[{ value: "all", label: "All PDs" }, ...opts.pds.map((v) => ({ value: v, label: v }))]}
+            />
+            <SearchableSelect
+              value={filters.executionPhase}
+              onValueChange={(v) => setFilters((f) => ({ ...f, executionPhase: v }))}
+              placeholder="Execution Phase"
+              options={[{ value: "all", label: "All Phases" }, ...opts.executionPhases.map((v) => ({ value: v, label: v }))]}
+            />
+            <SearchableSelect
+              value={filters.rag}
+              onValueChange={(v) => setFilters((f) => ({ ...f, rag: v }))}
+              placeholder="RAG Status"
+              options={[{ value: "all", label: "All RAG" }, ...opts.rags.map((v) => ({ value: v, label: v }))]}
+            />
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {([
-              ["exceptionOnly", "Exceptions"],
-              ["behindPlanOnly", "Behind plan"],
-              ["inflowRiskOnly", "Inflow risk"],
-              ["outflowRiskOnly", "Outflow risk"],
-              ["engineeringBlockersOnly", "Eng. blockers"],
-              ["qualityIssuesOnly", "Quality issues"],
-              ["pendingApprovalsOnly", "Pending approvals"],
-              ["staleImportsOnly", "Stale imports"],
-            ] as const).map(([key, label]) => {
+            {(
+              [
+                ["exceptionOnly", "Exceptions"],
+                ["behindPlanOnly", "Behind plan"],
+                ["inflowRiskOnly", "Inflow risk"],
+                ["outflowRiskOnly", "Outflow risk"],
+                ["engineeringBlockersOnly", "Eng. blockers"],
+                ["qualityIssuesOnly", "Quality issues"],
+                ["pendingApprovalsOnly", "Pending approvals"],
+                ["staleImportsOnly", "Stale imports"],
+              ] as const
+            ).map(([key, label]) => {
               const active = Boolean((filters as any)[key]);
               return (
                 <button
@@ -214,10 +586,22 @@ export default function DashboardPage() {
               <span className="text-xs text-muted-foreground font-medium">Portfolio</span>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-              <div><p className="text-[10px] text-muted-foreground">Active Projects</p><p className="text-lg font-bold">{Number(data?.kpis?.activeDashboardProjects || 0)}</p></div>
-              <div><p className="text-[10px] text-muted-foreground">Behind Plan</p><p className="text-lg font-bold text-red-700">{Number(data?.kpis?.projectsBehindPlan || 0)}</p></div>
-              <div><p className="text-[10px] text-muted-foreground">Avg. Actual</p><p className="text-sm font-semibold">{pct(data?.kpis?.averageActualProgressPct)}</p></div>
-              <div><p className="text-[10px] text-muted-foreground">Avg. Expected</p><p className="text-sm font-semibold">{pct(data?.kpis?.averageExpectedProgressPct)}</p></div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">Active Projects</p>
+                <p className="text-lg font-bold">{Number(data?.kpis?.activeDashboardProjects || 0)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">Behind Plan</p>
+                <p className="text-lg font-bold text-red-700">{Number(data?.kpis?.projectsBehindPlan || 0)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">Avg. Actual</p>
+                <p className="text-sm font-semibold">{pct(data?.kpis?.averageActualProgressPct)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">Avg. Expected</p>
+                <p className="text-sm font-semibold">{pct(data?.kpis?.averageExpectedProgressPct)}</p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -231,9 +615,18 @@ export default function DashboardPage() {
               <span className="text-xs text-muted-foreground font-medium">Revenue & Inflow</span>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-              <div><p className="text-[10px] text-muted-foreground">Planned Revenue</p><p className="text-sm font-semibold">{money(data?.kpis?.plannedRevenueFy)}</p></div>
-              <div><p className="text-[10px] text-muted-foreground">Received</p><p className="text-sm font-semibold text-emerald-600">{money(data?.kpis?.receivedInflowFy)}</p></div>
-              <div className="col-span-2"><p className="text-[10px] text-muted-foreground">Open Inflow</p><p className="text-lg font-bold text-amber-600">{money(data?.kpis?.openInflowFy)}</p></div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">Planned Revenue</p>
+                <p className="text-sm font-semibold">{money(data?.kpis?.plannedRevenueFy)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">Received</p>
+                <p className="text-sm font-semibold text-emerald-600">{money(data?.kpis?.receivedInflowFy)}</p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-[10px] text-muted-foreground">Open Inflow</p>
+                <p className="text-lg font-bold text-amber-600">{money(data?.kpis?.openInflowFy)}</p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -247,10 +640,22 @@ export default function DashboardPage() {
               <span className="text-xs text-muted-foreground font-medium">Expenditure</span>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-              <div><p className="text-[10px] text-muted-foreground">Planned</p><p className="text-sm font-semibold">{money(data?.kpis?.plannedExpenditureFy)}</p></div>
-              <div><p className="text-[10px] text-muted-foreground">Paid</p><p className="text-sm font-semibold text-emerald-600">{money(data?.kpis?.paidExpenditureFy)}</p></div>
-              <div><p className="text-[10px] text-muted-foreground">Open</p><p className="text-sm font-semibold text-amber-600">{money(data?.kpis?.openExpenditureFy)}</p></div>
-              <div><p className="text-[10px] text-muted-foreground">GP Margin</p><p className="text-sm font-semibold">{pct(data?.kpis?.grossMarginPctFy)}</p></div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">Planned</p>
+                <p className="text-sm font-semibold">{money(data?.kpis?.plannedExpenditureFy)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">Paid</p>
+                <p className="text-sm font-semibold text-emerald-600">{money(data?.kpis?.paidExpenditureFy)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">Open</p>
+                <p className="text-sm font-semibold text-amber-600">{money(data?.kpis?.openExpenditureFy)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">GP Margin</p>
+                <p className="text-sm font-semibold">{pct(data?.kpis?.grossMarginPctFy ? data.kpis.grossMarginPctFy * 100 : null)}</p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -264,14 +669,220 @@ export default function DashboardPage() {
               <span className="text-xs text-muted-foreground font-medium">Risks & Actions</span>
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-              <div><p className="text-[10px] text-muted-foreground">Eng. Blockers</p><p className="text-sm font-semibold">{Number(data?.kpis?.openEngineeringBlockers || 0)}</p></div>
-              <div><p className="text-[10px] text-muted-foreground">Quality Issues</p><p className="text-sm font-semibold">{Number(data?.kpis?.openQualityWarnings || 0)}</p></div>
-              <div><p className="text-[10px] text-muted-foreground">Pending Approvals</p><p className="text-sm font-semibold">{Number(data?.kpis?.pendingApprovals || 0)}</p></div>
-              <div><p className="text-[10px] text-muted-foreground">Stale Imports</p><p className="text-sm font-semibold">{Number(data?.kpis?.staleImports || 0)}</p></div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">Eng. Blockers</p>
+                <p className="text-sm font-semibold">{Number(data?.kpis?.openEngineeringBlockers || 0)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">Quality Issues</p>
+                <p className="text-sm font-semibold">{Number(data?.kpis?.openQualityWarnings || 0)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">Pending Approvals</p>
+                <p className="text-sm font-semibold">{Number(data?.kpis?.pendingApprovals || 0)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground">Stale Imports</p>
+                <p className="text-sm font-semibold">{Number(data?.kpis?.staleImports || 0)}</p>
+              </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      <div className="flex gap-1 border-b pb-0">
+        {tabs.map((t) => (
+          <button
+            key={t}
+            onClick={() => setActiveTab(t)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === t
+                ? "border-emerald-600 text-emerald-700"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+            }`}
+            data-testid={`tab-${t}`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "Program" && (
+        <div className="space-y-4">
+          <Card className="border-border bg-gradient-to-br from-emerald-50 via-white to-blue-50">
+            <CardContent className="p-4 md:p-5">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="flex items-center gap-2 text-emerald-700 mb-1">
+                    <Layers3 className="w-4 h-4" />
+                    <span className="text-xs font-semibold uppercase tracking-[0.18em]">Workbook-aligned Program Dashboard</span>
+                  </div>
+                  <h2 className="text-lg font-semibold text-foreground">Program Dashboard Views</h2>
+                  <p className="text-sm text-muted-foreground mt-1 max-w-3xl">
+                    These preset charts mirror the live program dashboard logic from imported execution, finance, and milestone data.
+                    Use them as the fast operational view, then switch to the graph builder below for custom combinations.
+                  </p>
+                </div>
+                <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                  Imported data only
+                </Badge>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {chartPresets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => setActivePresetId(preset.id)}
+                    className={`rounded-lg border px-3 py-2 text-left transition-all ${
+                      activePreset?.id === preset.id
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-800 shadow-sm"
+                        : "border-border bg-background hover:bg-muted/50 text-foreground"
+                    }`}
+                    data-testid={`preset-${preset.id}`}
+                  >
+                    <div className="text-sm font-medium">{preset.title}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{preset.description}</div>
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <ExecutionChartCard
+            dataset={activePresetDataset}
+            title={activePreset?.title || "Program dashboard chart"}
+            description={activePreset?.description || "Live chart from imported program data."}
+            chartType={activePreset?.chartType || "line"}
+            metricKeys={activePreset?.metricKeys || []}
+            stacked={Boolean(activePreset?.stacked)}
+            testId="program-preset-chart"
+          />
+
+          <Card className="border-border" data-testid="execution-graph-builder">
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="flex items-center gap-2 text-blue-700 mb-1">
+                    <SlidersHorizontal className="w-4 h-4" />
+                    <span className="text-xs font-semibold uppercase tracking-[0.18em]">Graph Builder</span>
+                  </div>
+                  <CardTitle className="text-base">Build graphs from imported execution data</CardTitle>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Choose the dataset, chart type, and up to three metrics. The builder stays tied to the same filtered project population above.
+                  </p>
+                </div>
+                {activePreset && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const presetDataset = datasetMap.get(activePreset.datasetId);
+                      if (!presetDataset) return;
+                      setBuilderState({
+                        datasetId: presetDataset.id,
+                        chartType: activePreset.chartType,
+                        metricKeys: ensureMetricKeys(presetDataset, activePreset.metricKeys),
+                      });
+                    }}
+                    className="gap-1.5"
+                  >
+                    <ArrowRight className="w-3.5 h-3.5" />
+                    Load current preset
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                <SearchableSelect
+                  value={builderState.datasetId}
+                  onValueChange={(value) => {
+                    const nextDataset = datasetMap.get(value);
+                    if (!nextDataset) return;
+                    setBuilderState({
+                      datasetId: nextDataset.id,
+                      chartType: nextDataset.defaultChartType,
+                      metricKeys: ensureMetricKeys(nextDataset, []),
+                    });
+                  }}
+                  placeholder="Dataset"
+                  options={chartDatasets.map((dataset) => ({ value: dataset.id, label: dataset.label }))}
+                />
+                <SearchableSelect
+                  value={builderState.chartType}
+                  onValueChange={(value) => setBuilderState((current) => ({ ...current, chartType: value as ChartType }))}
+                  placeholder="Chart Type"
+                  options={(builderDataset?.allowedChartTypes || data?.charts?.supportedChartTypes || ["line", "area", "bar", "composed"]).map((type) => ({
+                    value: type,
+                    label: type[0].toUpperCase() + type.slice(1),
+                  }))}
+                />
+                <div className="rounded-lg border border-border px-3 py-2">
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground font-medium">Dataset Source</div>
+                  <div className="text-sm font-medium mt-1">{builderDataset?.label || "No dataset selected"}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{builderDataset?.description}</div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div>
+                    <p className="text-sm font-medium">Metrics</p>
+                    <p className="text-xs text-muted-foreground">Select up to 3 metrics for the chart.</p>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                    {builderState.metricKeys.length}/3 selected
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(builderDataset?.metrics || []).map((metric) => {
+                    const selected = builderState.metricKeys.includes(metric.key);
+                    return (
+                      <button
+                        key={metric.key}
+                        onClick={() => {
+                          setBuilderState((current) => {
+                            const exists = current.metricKeys.includes(metric.key);
+                            if (exists) {
+                              if (current.metricKeys.length === 1) return current;
+                              return { ...current, metricKeys: current.metricKeys.filter((metricKey) => metricKey !== metric.key) };
+                            }
+                            if (current.metricKeys.length >= 3) {
+                              return { ...current, metricKeys: [...current.metricKeys.slice(1), metric.key] };
+                            }
+                            return { ...current, metricKeys: [...current.metricKeys, metric.key] };
+                          });
+                        }}
+                        className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-all ${
+                          selected
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                            : "border-border bg-background text-foreground hover:bg-muted/50"
+                        }`}
+                        data-testid={`builder-metric-${metric.key}`}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: metric.color }} />
+                        {metric.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <ExecutionChartCard
+                dataset={builderDataset}
+                title={builderDataset?.label || "Custom graph"}
+                description={
+                  builderDataset
+                    ? `${builderDataset.description} X-axis: ${builderDataset.dimensionLabel}.`
+                    : "Choose a dataset to build a custom graph."
+                }
+                chartType={builderState.chartType}
+                metricKeys={builderState.metricKeys}
+                testId="execution-builder-chart"
+              />
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {activeTab === "COO" && (
         <Card className="border-border">
@@ -280,7 +891,9 @@ export default function DashboardPage() {
               <div className="flex items-center gap-2">
                 <AlertCircle className="w-5 h-5 text-red-500" />
                 <h2 className="text-base font-semibold">Action Center</h2>
-                <Badge variant="outline" className="text-xs ml-1">{totalActionItems} items</Badge>
+                <Badge variant="outline" className="text-xs ml-1">
+                  {totalActionItems} items
+                </Badge>
               </div>
             </div>
 
@@ -301,7 +914,9 @@ export default function DashboardPage() {
                     >
                       {meta.icon}
                       <span className="text-sm font-semibold flex-1">{title}</span>
-                      <Badge variant="outline" className="text-[10px] font-medium">{rows.length} {rows.length === 1 ? "issue" : "issues"}</Badge>
+                      <Badge variant="outline" className="text-[10px] font-medium">
+                        {rows.length} {rows.length === 1 ? "issue" : "issues"}
+                      </Badge>
                       {criticalCount > 0 && (
                         <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">{criticalCount} critical</Badge>
                       )}
@@ -334,8 +949,8 @@ export default function DashboardPage() {
                                       {r.severity}
                                     </span>
                                   </td>
-                                  <td className="py-2.5 px-4 text-muted-foreground">{r.owner || "—"}</td>
-                                  <td className="py-2.5 px-4 text-muted-foreground tabular-nums">{r.dueDate || "—"}</td>
+                                  <td className="py-2.5 px-4 text-muted-foreground">{r.owner || "-"}</td>
+                                  <td className="py-2.5 px-4 text-muted-foreground tabular-nums">{r.dueDate || "-"}</td>
                                   <td className="py-2.5 px-4 text-right">
                                     {r.links?.project && (
                                       <Link href={r.links.project}>
@@ -369,16 +984,73 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {activeTab === "Program" && <Card className="border-border"><CardContent className="p-6 text-sm text-muted-foreground">Phase flow, PM load, delivery exceptions, and schedule behavior all use the same canonical progress source for the visible project set.</CardContent></Card>}
-      {activeTab === "Finance" && <Card className="border-border"><CardContent className="p-6 text-sm text-muted-foreground">Planned/received/open inflow and planned/paid/open expenditure are FY-only and reconcile with the main table and KPI strip.</CardContent></Card>}
-      {activeTab === "Construction" && <Card className="border-border"><CardContent className="p-6 text-sm text-muted-foreground">Phase, dates, site readiness and execution timing for the same visible project population.</CardContent></Card>}
+      {activeTab === "Finance" && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <ExecutionChartCard
+            dataset={financeDataset}
+            title="2026 Forecast"
+            description="Monthly forecast built from imported finance pivots, with tracker fallback when monthly pivots are unavailable."
+            chartType="line"
+            metricKeys={["plannedRevenue", "plannedCos", "grossProfit"]}
+            testId="finance-forecast-chart"
+          />
+          <ExecutionChartCard
+            dataset={cashflowDataset}
+            title="Cashflow Current & Forecast"
+            description="Weekly actual vs planned cashflow from imported cashflow series and finance-line fallback."
+            chartType="line"
+            metricKeys={["actualCashflow", "plannedCashflow"]}
+            testId="finance-cashflow-chart"
+          />
+        </div>
+      )}
+
+      {activeTab === "Construction" && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <ExecutionChartCard
+            dataset={timelineDataset}
+            title="Portfolio Timeline"
+            description="Month-by-month milestone pipeline for PD handover, site establishment, commissioning, O&M handover, and client handover."
+            chartType="bar"
+            metricKeys={["pdHandovers", "siteEstablishment", "commissioning", "omHandover", "clientHandover"]}
+            stacked
+            testId="construction-timeline-chart"
+          />
+          <ExecutionChartCard
+            dataset={constructionWindowDataset}
+            title="Construction Window"
+            description="Next 10 days, overdue, and completed milestone counts from imported project dates."
+            chartType="bar"
+            metricKeys={["next10Days", "overdue", "completed"]}
+            testId="construction-window-chart"
+          />
+          <ExecutionChartCard
+            dataset={phaseDataset}
+            title="Count of Project Name by Phase"
+            description="Execution phase mix for the currently visible project population."
+            chartType="bar"
+            metricKeys={["projectCount", "averageProgress"]}
+            testId="construction-phase-chart"
+          />
+          <ExecutionChartCard
+            dataset={pmDataset}
+            title="PM Delivery Breakdown"
+            description="Operational PM view of on-schedule rate and slipping projects."
+            chartType="bar"
+            metricKeys={["onScheduleRate", "behindPlanCount"]}
+            testId="construction-pm-chart"
+          />
+        </div>
+      )}
 
       <Card className="border-border">
         <CardContent className="p-4">
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 className="w-5 h-5 text-blue-500" />
             <h2 className="text-base font-semibold">Project Portfolio</h2>
-            <Badge variant="outline" className="text-xs ml-1">{(data?.projects || []).length} projects</Badge>
+            <Badge variant="outline" className="text-xs ml-1">
+              {(data?.projects || []).length} projects
+            </Badge>
           </div>
           {isLoading ? (
             <div className="text-center py-10 text-sm text-muted-foreground">Loading projects...</div>
@@ -412,11 +1084,11 @@ export default function DashboardPage() {
                         >
                           <td className="py-2.5 px-3">
                             <div className="font-medium text-foreground truncate max-w-[200px]">{p.projectName}</div>
-                            <div className="text-[11px] text-muted-foreground lg:hidden">{p.pm || "—"}</div>
+                            <div className="text-[11px] text-muted-foreground lg:hidden">{p.pm || "-"}</div>
                           </td>
-                          <td className="py-2.5 px-2 text-muted-foreground text-xs hidden lg:table-cell">{p.pm || "—"}</td>
+                          <td className="py-2.5 px-2 text-muted-foreground text-xs hidden lg:table-cell">{p.pm || "-"}</td>
                           <td className="py-2.5 px-2 text-center">
-                            <Badge className={`text-[10px] ${ragBadge(p.rag || "Unknown")}`}>{p.rag || "—"}</Badge>
+                            <Badge className={`text-[10px] ${ragBadge(p.rag || "Unknown")}`}>{p.rag || "-"}</Badge>
                           </td>
                           <td className="py-2.5 px-2 text-right">
                             <span className="tabular-nums font-medium text-sm">{pct(p.actualProgressPct)}</span>
@@ -446,10 +1118,10 @@ export default function DashboardPage() {
                                 <div className="bg-white rounded-lg border p-3">
                                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Project Details</p>
                                   <div className="space-y-1.5 text-sm">
-                                    <p><span className="text-muted-foreground">Portfolio:</span> <span className="font-medium">{p.portfolio || "—"}</span></p>
-                                    <p><span className="text-muted-foreground">PM:</span> {p.pm || "—"}</p>
-                                    <p><span className="text-muted-foreground">PD:</span> {p.pd || "—"}</p>
-                                    <p><span className="text-muted-foreground">Phase:</span> {p.executionPhase || "—"}</p>
+                                    <p><span className="text-muted-foreground">Portfolio:</span> <span className="font-medium">{p.portfolio || "-"}</span></p>
+                                    <p><span className="text-muted-foreground">PM:</span> {p.pm || "-"}</p>
+                                    <p><span className="text-muted-foreground">PD:</span> {p.pd || "-"}</p>
+                                    <p><span className="text-muted-foreground">Phase:</span> {p.executionPhase || "-"}</p>
                                   </div>
                                 </div>
                                 <div className="bg-white rounded-lg border p-3">
@@ -485,18 +1157,13 @@ export default function DashboardPage() {
                               <div className="flex gap-2 mt-3 flex-wrap">
                                 <Link href={`/project/${encodeURIComponent(p.projectName)}`}>
                                   <Button size="sm" className="gap-1.5 bg-emerald-600 hover:bg-emerald-700">
-                                    <ExternalLink className="w-3.5 h-3.5" />Open Project
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                    Open Project
                                   </Button>
                                 </Link>
-                                <Link href={`/project/${encodeURIComponent(p.projectName)}?tab=plan`}>
-                                  <Button size="sm" variant="outline">Plan</Button>
-                                </Link>
-                                <Link href={`/project/${encodeURIComponent(p.projectName)}?tab=revenue-tracking`}>
-                                  <Button size="sm" variant="outline">Revenue</Button>
-                                </Link>
-                                <Link href={`/project/${encodeURIComponent(p.projectName)}?tab=expenditure`}>
-                                  <Button size="sm" variant="outline">Expenditure</Button>
-                                </Link>
+                                <Link href={`/project/${encodeURIComponent(p.projectName)}?tab=plan`}><Button size="sm" variant="outline">Plan</Button></Link>
+                                <Link href={`/project/${encodeURIComponent(p.projectName)}?tab=revenue-tracking`}><Button size="sm" variant="outline">Revenue</Button></Link>
+                                <Link href={`/project/${encodeURIComponent(p.projectName)}?tab=expenditure`}><Button size="sm" variant="outline">Expenditure</Button></Link>
                               </div>
                             </td>
                           </tr>

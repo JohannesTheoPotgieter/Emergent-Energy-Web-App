@@ -7,7 +7,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata } from "@shared/schema";
+import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly } from "@shared/schema";
 import { db } from "./db";
 import { safeLegacyQuery } from "./legacy-table-guard";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -3679,7 +3679,7 @@ export async function registerRoutes(
       const fyEnd = `${fyStartYear + 1}-08-31`;
       const today = now.toISOString().slice(0, 10);
 
-      const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, canonicalPlanTasks, qualityResult, usersResult] = await Promise.all([
+      const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, canonicalPlanTasks, qualityResult, usersResult, cashflowPointRows, financeRevenueRows, financeCosRows] = await Promise.all([
         storage.getAllProjectInfo(),
         db.select().from(normalizedRevenueLines),
         db.select().from(normalizedCostLines),
@@ -3689,6 +3689,9 @@ export async function registerRoutes(
         getAllPMWorkItemsAsProjectPlan(),
         db.execute(sql`SELECT id, project_name, severity, status, title, owner_user_id, due_date FROM qc_warning`),
         db.execute(sql`SELECT id, name FROM users`),
+        db.select().from(cashflowPoints),
+        db.select().from(financeRevenueMonthly),
+        db.select().from(financeCosMonthly),
       ]);
 
       const userNameById = new Map<number, string>((usersResult.rows as any[]).map((u: any) => [Number(u.id), u.name || `User ${u.id}`]));
@@ -3863,6 +3866,461 @@ export async function registerRoutes(
         return true;
       });
 
+      const visibleProjectNames = new Set(projects.map((p: any) => String(p.projectName || '').toLowerCase()));
+      const visibleProjectIds = new Set(projects.map((p: any) => Number(p.projectId)).filter((id: number) => Number.isFinite(id)));
+      const visibleProjectInfo = allProjectInfo.filter((info: any) => visibleProjectIds.has(Number(info.id)));
+      const monthLabel = (monthKey: string) => {
+        try {
+          return format(new Date(`${monthKey}-01T00:00:00`), "MMM yyyy");
+        } catch {
+          return monthKey;
+        }
+      };
+      const weekLabel = (dateKey: string) => {
+        try {
+          return format(new Date(`${dateKey}T00:00:00`), "dd MMM");
+        } catch {
+          return dateKey;
+        }
+      };
+      const toDateKey = (value: any) => {
+        if (typeof value !== 'string') return null;
+        const trimmed = value.trim();
+        return /^\d{4}-\d{2}-\d{2}/.test(trimmed) ? trimmed.slice(0, 10) : null;
+      };
+      const toMonthKey = (value: any) => {
+        const dateKey = toDateKey(value);
+        return dateKey ? dateKey.slice(0, 7) : null;
+      };
+      const toWeekStartKey = (value: any) => {
+        const dateKey = toDateKey(value);
+        if (!dateKey) return null;
+        const date = new Date(`${dateKey}T00:00:00`);
+        if (Number.isNaN(date.getTime())) return null;
+        const day = date.getDay();
+        const diff = day === 0 ? -6 : 1 - day;
+        date.setDate(date.getDate() + diff);
+        return date.toISOString().slice(0, 10);
+      };
+      const ensureBucket = (map: Map<string, any>, key: string, factory: () => any) => {
+        if (!map.has(key)) map.set(key, factory());
+        return map.get(key);
+      };
+
+      const chartDatasets = (() => {
+        const monthlyForecastMap = new Map<string, any>();
+        for (const row of financeRevenueRows) {
+          if (!visibleProjectNames.has(String(row.projectName || '').toLowerCase())) continue;
+          const monthKey = toMonthKey(row.monthEndDate);
+          if (!monthKey || monthKey < fyStart.slice(0, 7) || monthKey > fyEnd.slice(0, 7)) continue;
+          const bucket = ensureBucket(monthlyForecastMap, monthKey, () => ({
+            periodKey: monthKey,
+            period: monthLabel(monthKey),
+            plannedRevenue: 0,
+            plannedCos: 0,
+            grossProfit: 0,
+          }));
+          bucket.plannedRevenue += toNum(row.value);
+        }
+        for (const row of financeCosRows) {
+          if (!visibleProjectNames.has(String(row.projectName || '').toLowerCase())) continue;
+          const monthKey = toMonthKey(row.monthEndDate);
+          if (!monthKey || monthKey < fyStart.slice(0, 7) || monthKey > fyEnd.slice(0, 7)) continue;
+          const bucket = ensureBucket(monthlyForecastMap, monthKey, () => ({
+            periodKey: monthKey,
+            period: monthLabel(monthKey),
+            plannedRevenue: 0,
+            plannedCos: 0,
+            grossProfit: 0,
+          }));
+          bucket.plannedCos += toNum(row.value);
+        }
+        if (monthlyForecastMap.size === 0) {
+          for (const row of revenueRows) {
+            if (!visibleProjectNames.has(String(row.projectName || '').toLowerCase())) continue;
+            const monthKey = toMonthKey(row.expectedPaymentDate || row.invoiceDate || row.paidDate);
+            if (!monthKey || monthKey < fyStart.slice(0, 7) || monthKey > fyEnd.slice(0, 7)) continue;
+            const bucket = ensureBucket(monthlyForecastMap, monthKey, () => ({
+              periodKey: monthKey,
+              period: monthLabel(monthKey),
+              plannedRevenue: 0,
+              plannedCos: 0,
+              grossProfit: 0,
+            }));
+            bucket.plannedRevenue += toNum(row.amountExVat);
+          }
+          for (const row of costRows) {
+            if (!visibleProjectNames.has(String(row.projectName || '').toLowerCase())) continue;
+            const monthKey = toMonthKey(row.approvedDate || row.invoiceDate || row.paidDate);
+            if (!monthKey || monthKey < fyStart.slice(0, 7) || monthKey > fyEnd.slice(0, 7)) continue;
+            const bucket = ensureBucket(monthlyForecastMap, monthKey, () => ({
+              periodKey: monthKey,
+              period: monthLabel(monthKey),
+              plannedRevenue: 0,
+              plannedCos: 0,
+              grossProfit: 0,
+            }));
+            bucket.plannedCos += toNum(row.amountExVat);
+          }
+        }
+        const monthlyForecastRows = Array.from(monthlyForecastMap.values())
+          .sort((left: any, right: any) => left.periodKey.localeCompare(right.periodKey))
+          .map((row: any) => ({ ...row, grossProfit: row.plannedRevenue - row.plannedCos }));
+
+        const weeklyCashflowMap = new Map<string, any>();
+        const cashflowMetricMap: Record<string, string> = {
+          "planned revenue": "plannedRevenue",
+          "planned expenditure": "plannedExpenditure",
+          "planned cashflow": "plannedCashflow",
+          "actual cashflow": "actualCashflow",
+          "actual + planned revenue": "forecastRevenue",
+          "actual + planned expenditure": "forecastExpenditure",
+        };
+        for (const row of cashflowPointRows) {
+          if (!visibleProjectNames.has(String(row.projectName || '').toLowerCase())) continue;
+          const pointKey = toDateKey(row.pointDate);
+          if (!pointKey || pointKey < fyStart || pointKey > fyEnd) continue;
+          const bucket = ensureBucket(weeklyCashflowMap, pointKey, () => ({
+            periodKey: pointKey,
+            period: weekLabel(pointKey),
+            plannedRevenue: 0,
+            plannedExpenditure: 0,
+            plannedCashflow: 0,
+            actualCashflow: 0,
+            forecastRevenue: 0,
+            forecastExpenditure: 0,
+          }));
+          const metricKey = cashflowMetricMap[String(row.seriesName || '').toLowerCase()];
+          if (metricKey) bucket[metricKey] += toNum(row.value);
+        }
+        if (weeklyCashflowMap.size === 0) {
+          for (const row of revenueRows) {
+            if (!visibleProjectNames.has(String(row.projectName || '').toLowerCase())) continue;
+            const plannedWeekKey = toWeekStartKey(row.expectedPaymentDate || row.invoiceDate || row.paidDate);
+            if (plannedWeekKey && plannedWeekKey >= fyStart && plannedWeekKey <= fyEnd) {
+              const bucket = ensureBucket(weeklyCashflowMap, plannedWeekKey, () => ({
+                periodKey: plannedWeekKey,
+                period: weekLabel(plannedWeekKey),
+                plannedRevenue: 0,
+                plannedExpenditure: 0,
+                plannedCashflow: 0,
+                actualCashflow: 0,
+                forecastRevenue: 0,
+                forecastExpenditure: 0,
+              }));
+              bucket.plannedRevenue += toNum(row.amountExVat);
+              if (hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor)) {
+                bucket.actualCashflow += toNum(row.amountExVat);
+              }
+            }
+          }
+          for (const row of costRows) {
+            if (!visibleProjectNames.has(String(row.projectName || '').toLowerCase())) continue;
+            const plannedWeekKey = toWeekStartKey(row.approvedDate || row.invoiceDate || row.paidDate);
+            if (plannedWeekKey && plannedWeekKey >= fyStart && plannedWeekKey <= fyEnd) {
+              const bucket = ensureBucket(weeklyCashflowMap, plannedWeekKey, () => ({
+                periodKey: plannedWeekKey,
+                period: weekLabel(plannedWeekKey),
+                plannedRevenue: 0,
+                plannedExpenditure: 0,
+                plannedCashflow: 0,
+                actualCashflow: 0,
+                forecastRevenue: 0,
+                forecastExpenditure: 0,
+              }));
+              bucket.plannedExpenditure += toNum(row.amountExVat);
+              if (hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor)) {
+                bucket.actualCashflow -= toNum(row.amountExVat);
+              }
+            }
+          }
+        }
+        const weeklyCashflowRows = Array.from(weeklyCashflowMap.values())
+          .sort((left: any, right: any) => left.periodKey.localeCompare(right.periodKey))
+          .map((row: any) => ({
+            ...row,
+            plannedCashflow: row.plannedCashflow || (row.plannedRevenue - row.plannedExpenditure),
+            forecastRevenue: row.forecastRevenue || row.plannedRevenue,
+            forecastExpenditure: row.forecastExpenditure || row.plannedExpenditure,
+          }));
+
+        const phaseSummaryMap = new Map<string, any>();
+        for (const project of projects) {
+          const key = String(project.executionPhase || project.rag || 'Unspecified');
+          const bucket = ensureBucket(phaseSummaryMap, key, () => ({
+            phase: key,
+            projectCount: 0,
+            contractValue: 0,
+            openInflow: 0,
+            openExpenditure: 0,
+            averageProgress: 0,
+            _progressSum: 0,
+          }));
+          const info = projectById.get(Number(project.projectId));
+          bucket.projectCount += 1;
+          bucket.contractValue += toNum(info?.contractValue);
+          bucket.openInflow += toNum(project.openInflowFy);
+          bucket.openExpenditure += toNum(project.openExpenditureFy);
+          bucket._progressSum += toNum(project.actualProgressPct);
+        }
+        const phaseSummaryRows = Array.from(phaseSummaryMap.values())
+          .sort((left: any, right: any) => right.projectCount - left.projectCount)
+          .map((row: any) => ({
+            phase: row.phase,
+            projectCount: row.projectCount,
+            contractValue: row.contractValue,
+            openInflow: row.openInflow,
+            openExpenditure: row.openExpenditure,
+            averageProgress: row.projectCount ? row._progressSum / row.projectCount : 0,
+          }));
+
+        const pmSummaryMap = new Map<string, any>();
+        for (const project of projects) {
+          const key = String(project.pm || 'Unassigned');
+          const bucket = ensureBucket(pmSummaryMap, key, () => ({
+            owner: key,
+            projectCount: 0,
+            contractValue: 0,
+            behindPlanCount: 0,
+            onScheduleRate: 0,
+            openInflow: 0,
+            openExpenditure: 0,
+            averageProgress: 0,
+            _onScheduleCount: 0,
+            _progressSum: 0,
+          }));
+          const info = projectById.get(Number(project.projectId));
+          bucket.projectCount += 1;
+          bucket.contractValue += toNum(info?.contractValue);
+          bucket.behindPlanCount += project.actualProgressPct < project.expectedProgressPct - 5 ? 1 : 0;
+          bucket._onScheduleCount += project.actualProgressPct >= project.expectedProgressPct - 5 ? 1 : 0;
+          bucket.openInflow += toNum(project.openInflowFy);
+          bucket.openExpenditure += toNum(project.openExpenditureFy);
+          bucket._progressSum += toNum(project.actualProgressPct);
+        }
+        const pmSummaryRows = Array.from(pmSummaryMap.values())
+          .sort((left: any, right: any) => right.contractValue - left.contractValue)
+          .map((row: any) => ({
+            owner: row.owner,
+            projectCount: row.projectCount,
+            contractValue: row.contractValue,
+            behindPlanCount: row.behindPlanCount,
+            onScheduleRate: row.projectCount ? (row._onScheduleCount / row.projectCount) * 100 : 0,
+            openInflow: row.openInflow,
+            openExpenditure: row.openExpenditure,
+            averageProgress: row.projectCount ? row._progressSum / row.projectCount : 0,
+          }));
+
+        const milestonePipelineMap = new Map<string, any>();
+        const milestoneFields = [
+          { key: "pdHandovers", label: "PD Handover", planned: "pdHandoverDate", actual: "pdHandoverActual" },
+          { key: "siteEstablishment", label: "Site Establishment", planned: "constructionStartDate", actual: "constructionStartActual" },
+          { key: "commissioning", label: "Commissioning", planned: "commissioningDate", actual: "commissioningActual" },
+          { key: "omHandover", label: "O&M Handover", planned: "omHandoverDate", actual: null },
+          { key: "clientHandover", label: "Client Handover", planned: "clientHandoverDate", actual: "clientHandoverActual" },
+        ];
+        for (const info of visibleProjectInfo) {
+          for (const field of milestoneFields) {
+            const milestoneDate = toDateKey(field.actual ? info[field.actual] || info[field.planned] : info[field.planned]);
+            if (!milestoneDate || milestoneDate < fyStart || milestoneDate > fyEnd) continue;
+            const monthKey = milestoneDate.slice(0, 7);
+            const bucket = ensureBucket(milestonePipelineMap, monthKey, () => ({
+              periodKey: monthKey,
+              period: monthLabel(monthKey),
+              pdHandovers: 0,
+              siteEstablishment: 0,
+              commissioning: 0,
+              omHandover: 0,
+              clientHandover: 0,
+            }));
+            bucket[field.key] += 1;
+          }
+        }
+        const milestonePipelineRows = Array.from(milestonePipelineMap.values()).sort((left: any, right: any) => left.periodKey.localeCompare(right.periodKey));
+
+        const nextTenDays = new Date(`${today}T00:00:00`);
+        nextTenDays.setDate(nextTenDays.getDate() + 10);
+        const constructionWindowRows = milestoneFields.map((field) => {
+          let next10DaysCount = 0;
+          let overdueCount = 0;
+          let completedCount = 0;
+          for (const info of visibleProjectInfo) {
+            const plannedDate = toDateKey(info[field.planned]);
+            const actualDate = field.actual ? toDateKey(info[field.actual]) : null;
+            const effectiveDate = actualDate || plannedDate;
+            if (actualDate) completedCount += 1;
+            if (plannedDate && !actualDate && plannedDate < today) overdueCount += 1;
+            if (effectiveDate) {
+              const date = new Date(`${effectiveDate}T00:00:00`);
+              if (!Number.isNaN(date.getTime()) && date >= new Date(`${today}T00:00:00`) && date <= nextTenDays) {
+                next10DaysCount += 1;
+              }
+            }
+          }
+          return {
+            milestone: field.label,
+            next10Days: next10DaysCount,
+            overdue: overdueCount,
+            completed: completedCount,
+          };
+        });
+
+        const datasets = [
+          {
+            id: "monthlyForecast",
+            label: "2026 Forecast",
+            description: "Monthly revenue, COS, and GP from imported finance pivots with tracker fallback.",
+            dimensionKey: "period",
+            dimensionLabel: "Month",
+            defaultChartType: "line",
+            allowedChartTypes: ["line", "area", "bar", "composed"],
+            metrics: [
+              { key: "plannedRevenue", label: "Revenue", format: "currency", color: "#0f766e" },
+              { key: "plannedCos", label: "COS", format: "currency", color: "#ea580c" },
+              { key: "grossProfit", label: "GP", format: "currency", color: "#1d4ed8" },
+            ],
+            rows: monthlyForecastRows,
+          },
+          {
+            id: "weeklyCashflow",
+            label: "Cashflow Current & Forecast",
+            description: "Weekly cashflow built from imported cashflow sheet series with finance-line fallback.",
+            dimensionKey: "period",
+            dimensionLabel: "Week",
+            defaultChartType: "line",
+            allowedChartTypes: ["line", "area", "bar", "composed"],
+            metrics: [
+              { key: "actualCashflow", label: "Actual Cashflow", format: "currency", color: "#047857" },
+              { key: "plannedCashflow", label: "Planned Cashflow", format: "currency", color: "#2563eb" },
+              { key: "plannedRevenue", label: "Planned Revenue", format: "currency", color: "#14b8a6" },
+              { key: "plannedExpenditure", label: "Planned Expenditure", format: "currency", color: "#f97316" },
+            ],
+            rows: weeklyCashflowRows,
+          },
+          {
+            id: "phaseSummary",
+            label: "Count of Project Name by Phase",
+            description: "Visible project population grouped by execution phase.",
+            dimensionKey: "phase",
+            dimensionLabel: "Phase",
+            defaultChartType: "bar",
+            allowedChartTypes: ["bar", "line", "area", "composed"],
+            metrics: [
+              { key: "projectCount", label: "Projects", format: "number", color: "#2563eb" },
+              { key: "contractValue", label: "Contract Value", format: "currency", color: "#0f766e" },
+              { key: "averageProgress", label: "Avg Progress", format: "percent", color: "#7c3aed" },
+            ],
+            rows: phaseSummaryRows,
+          },
+          {
+            id: "pmSummary",
+            label: "PM Delivery Breakdown",
+            description: "Operational PM view built from the filtered project population.",
+            dimensionKey: "owner",
+            dimensionLabel: "PM",
+            defaultChartType: "bar",
+            allowedChartTypes: ["bar", "line", "area", "composed"],
+            metrics: [
+              { key: "projectCount", label: "Projects", format: "number", color: "#2563eb" },
+              { key: "onScheduleRate", label: "On Schedule Rate", format: "percent", color: "#0f766e" },
+              { key: "behindPlanCount", label: "Slipping Projects", format: "number", color: "#dc2626" },
+              { key: "contractValue", label: "Contract Value", format: "currency", color: "#7c3aed" },
+            ],
+            rows: pmSummaryRows,
+          },
+          {
+            id: "milestonePipeline",
+            label: "Portfolio Timeline",
+            description: "Month-by-month milestone pipeline from imported project dates.",
+            dimensionKey: "period",
+            dimensionLabel: "Month",
+            defaultChartType: "bar",
+            allowedChartTypes: ["bar", "area", "line", "composed"],
+            metrics: [
+              { key: "pdHandovers", label: "PD Handover", format: "number", color: "#0f766e" },
+              { key: "siteEstablishment", label: "Site Establishment", format: "number", color: "#2563eb" },
+              { key: "commissioning", label: "Commissioning", format: "number", color: "#f97316" },
+              { key: "omHandover", label: "O&M Handover", format: "number", color: "#7c3aed" },
+              { key: "clientHandover", label: "Client Handover", format: "number", color: "#dc2626" },
+            ],
+            rows: milestonePipelineRows,
+          },
+          {
+            id: "constructionWindow",
+            label: "Construction Window",
+            description: "Upcoming, overdue, and completed milestones from the current execution population.",
+            dimensionKey: "milestone",
+            dimensionLabel: "Milestone",
+            defaultChartType: "bar",
+            allowedChartTypes: ["bar", "line", "area", "composed"],
+            metrics: [
+              { key: "next10Days", label: "Next 10 Days", format: "number", color: "#2563eb" },
+              { key: "overdue", label: "Overdue", format: "number", color: "#dc2626" },
+              { key: "completed", label: "Completed", format: "number", color: "#0f766e" },
+            ],
+            rows: constructionWindowRows,
+          },
+        ];
+
+        const presets = [
+          {
+            id: "forecast-2026",
+            title: "2026 Forecast",
+            description: "Workbook-style forecast view built from imported monthly finance data.",
+            datasetId: "monthlyForecast",
+            chartType: "line",
+            metricKeys: ["plannedRevenue", "plannedCos", "grossProfit"],
+          },
+          {
+            id: "cashflow-current-forecast",
+            title: "Cashflow Current & Forecast",
+            description: "Weekly actual vs planned cashflow from the imported cashflow model.",
+            datasetId: "weeklyCashflow",
+            chartType: "line",
+            metricKeys: ["actualCashflow", "plannedCashflow"],
+          },
+          {
+            id: "count-by-phase",
+            title: "Count of Project Name by Phase",
+            description: "Execution phase distribution for the visible project set.",
+            datasetId: "phaseSummary",
+            chartType: "bar",
+            metricKeys: ["projectCount"],
+          },
+          {
+            id: "portfolio-timeline",
+            title: "Portfolio Gantt Chart",
+            description: "Milestone pipeline across the portfolio using imported project dates.",
+            datasetId: "milestonePipeline",
+            chartType: "bar",
+            metricKeys: ["pdHandovers", "siteEstablishment", "commissioning", "omHandover", "clientHandover"],
+            stacked: true,
+          },
+          {
+            id: "construction-window",
+            title: "Construction",
+            description: "Upcoming and overdue execution milestones over the next ten days.",
+            datasetId: "constructionWindow",
+            chartType: "bar",
+            metricKeys: ["next10Days", "overdue", "completed"],
+          },
+          {
+            id: "pm-delivery",
+            title: "PM Delivery Breakdown",
+            description: "Operational PM performance from the same filtered project population.",
+            datasetId: "pmSummary",
+            chartType: "bar",
+            metricKeys: ["onScheduleRate", "behindPlanCount"],
+          },
+        ];
+
+        return {
+          supportedChartTypes: ["line", "area", "bar", "composed"],
+          presets,
+          datasets,
+        };
+      })();
+
       const sum = (f: string) => projects.reduce((a: number, p: any) => a + toNum(p[f]), 0);
       const avg = (f: string) => projects.length ? sum(f) / projects.length : 0;
 
@@ -3926,6 +4384,7 @@ export async function registerRoutes(
           pendingApprovalsDecisions: pending,
         },
         projects,
+        charts: chartDatasets,
         options: {
           portfolios: Array.from(new Set(projects.map((p: any) => p.portfolio).filter(Boolean))).sort(),
           pms: Array.from(new Set(projects.map((p: any) => p.pm).filter(Boolean))).sort(),

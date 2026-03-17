@@ -16,8 +16,12 @@ describe("project management structure", () => {
     const approvalsPage = PAGE_REGISTRY.find((page) => page.id === "pmApprovals");
     const deliverablesPage = PAGE_REGISTRY.find((page) => page.id === "pmDeliverables");
     const dashboardPage = PAGE_REGISTRY.find((page) => page.id === "pmDashboard");
+    const executionDashboardPage = PAGE_REGISTRY.find((page) => page.id === "dashboard");
+    const pmOnTheGoPage = PAGE_REGISTRY.find((page) => page.id === "pmOnTheGo");
 
-    expect(dashboardPage?.label).toBe("Execution Overview");
+    expect(executionDashboardPage?.label).toBe("Execution Dashboard");
+    expect(dashboardPage?.label).toBe("Per Project Manager Dashboard");
+    expect(pmOnTheGoPage?.label).toBe("PM On-The-Go");
     expect(approvalsPage?.path).toBe("/pm/approvals");
     expect(deliverablesPage?.path).toBe("/pm/deliverables");
   });
