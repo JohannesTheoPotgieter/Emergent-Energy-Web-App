@@ -177,12 +177,13 @@ function getDailyQuote(category: RoleCategory): string {
   return quotes[dayOfYear % quotes.length];
 }
 
-const COMPANY_PRIORITIES = [
-  { label: "Deliver all FY26 projects on time and within budget", icon: Target, color: "bg-emerald-100 text-emerald-700" },
-  { label: "Achieve 15%+ gross margin across the portfolio", icon: TrendingUp, color: "bg-blue-100 text-blue-700" },
-  { label: "Zero safety incidents on all active sites", icon: Shield, color: "bg-red-100 text-red-700" },
-  { label: "Accelerate pipeline conversion in key accounts", icon: Zap, color: "bg-amber-100 text-amber-700" },
-];
+const PRIORITY_SEVERITY_ICONS: Record<string, { icon: any; color: string }> = {
+  critical: { icon: Shield, color: "bg-red-100 text-red-700" },
+  high: { icon: Target, color: "bg-amber-100 text-amber-700" },
+  important: { icon: Target, color: "bg-amber-100 text-amber-700" },
+  normal: { icon: TrendingUp, color: "bg-emerald-100 text-emerald-700" },
+  low: { icon: Zap, color: "bg-blue-100 text-blue-700" },
+};
 
 function QuickLink({
   href,
@@ -489,6 +490,17 @@ export default function HomePage() {
     },
   });
 
+  const { data: companyPriorities, isLoading: prioritiesLoading } = useQuery<any[]>({
+    queryKey: ["/api/mytool/company-priorities"],
+    queryFn: async () => {
+      const res = await fetch("/api/mytool/company-priorities", {
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const userRole = (user as any)?.role;
   const roleCategory = getRoleCategory(userRole);
   const roleLabel = getRoleLabel(userRole);
@@ -545,29 +557,56 @@ export default function HomePage() {
         </div>
       </div>
 
-      <Card className="border-emerald-200 bg-gradient-to-r from-emerald-50 to-white mb-6" data-testid="card-company-priorities">
-        <CardContent className="p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center">
-              <Flame className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="text-sm font-bold text-foreground uppercase tracking-wide">Company Priorities</h2>
-              <p className="text-xs text-muted-foreground">FY 2025/26 Strategic Focus Areas</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {COMPANY_PRIORITIES.map((priority, i) => (
-              <div key={i} className="flex items-center gap-3 bg-white rounded-lg border border-border/50 p-3" data-testid={`text-priority-${i}`}>
-                <div className={`w-8 h-8 rounded-lg ${priority.color} flex items-center justify-center shrink-0`}>
-                  <priority.icon className="w-4 h-4" />
+      {(companyPriorities && companyPriorities.length > 0) && (
+        <Card className="border-emerald-200 bg-gradient-to-r from-emerald-50 to-white mb-6" data-testid="card-company-priorities">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center">
+                  <Flame className="w-4 h-4" />
                 </div>
-                <p className="text-sm text-foreground font-medium leading-snug">{priority.label}</p>
+                <div>
+                  <h2 className="text-sm font-bold text-foreground uppercase tracking-wide">Company Priorities</h2>
+                  <p className="text-xs text-muted-foreground">{companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").length} active priorities</p>
+                </div>
               </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              <Link href="/project-lifecycle">
+                <span className="text-xs text-emerald-600 hover:text-emerald-700 font-medium cursor-pointer">Manage</span>
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").slice(0, 6).map((priority: any, i: number) => {
+                const sev = PRIORITY_SEVERITY_ICONS[priority.severity] || PRIORITY_SEVERITY_ICONS.normal;
+                const Icon = sev.icon;
+                return (
+                  <div key={priority.id || i} className="flex items-center gap-3 bg-white rounded-lg border border-border/50 p-3" data-testid={`text-priority-${i}`}>
+                    <div className={`w-8 h-8 rounded-lg ${sev.color} flex items-center justify-center shrink-0`}>
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-foreground font-medium leading-snug truncate">{priority.title}</p>
+                      {priority.department && (
+                        <p className="text-xs text-muted-foreground">{priority.department}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {prioritiesLoading && (
+        <Card className="border-emerald-200 bg-gradient-to-r from-emerald-50 to-white mb-6">
+          <CardContent className="p-5">
+            <Skeleton className="h-6 w-48 mb-4" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Skeleton className="h-14 w-full" />
+              <Skeleton className="h-14 w-full" />
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="mb-6">
         <h2 className="text-sm font-bold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">

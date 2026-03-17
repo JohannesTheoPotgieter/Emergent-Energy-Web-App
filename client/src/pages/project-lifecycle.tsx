@@ -8,17 +8,24 @@ import {
   CheckCircle2,
   CircleAlert,
   ClipboardList,
+  Edit2,
+  Flame,
   FolderKanban,
+  GripVertical,
   Layers3,
   Link2,
   Loader2,
   MessagesSquare,
+  Plus,
   RefreshCw,
   Search,
   ShieldCheck,
+  Target,
+  Trash2,
   Users,
   Workflow,
   Wrench,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -736,6 +743,166 @@ function getCurrentSection(pathname: string): WorkspaceSection {
   return "overview";
 }
 
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: "bg-red-100 text-red-700 border-red-200",
+  high: "bg-amber-100 text-amber-700 border-amber-200",
+  important: "bg-amber-100 text-amber-700 border-amber-200",
+  normal: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  low: "bg-blue-100 text-blue-700 border-blue-200",
+};
+
+const STATUS_BADGE: Record<string, string> = {
+  active: "bg-emerald-100 text-emerald-700",
+  in_progress: "bg-cyan-100 text-cyan-700",
+  paused: "bg-amber-100 text-amber-700",
+  completed: "bg-blue-100 text-blue-700",
+  cancelled: "bg-gray-100 text-gray-500",
+};
+
+function CompanyPrioritiesManager() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [department, setDepartment] = useState("");
+  const [severity, setSeverity] = useState("normal");
+  const [status, setFormStatus] = useState("active");
+  const [dueDate, setDueDate] = useState("");
+
+  const token = () => localStorage.getItem("auth_token") || "";
+  const headers = () => ({ Authorization: `Bearer ${token()}`, "Content-Type": "application/json" });
+
+  const { data: priorities = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/mytool/company-priorities"],
+    queryFn: async () => {
+      const res = await fetch("/api/mytool/company-priorities", { headers: { Authorization: `Bearer ${token()}` } });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const resetForm = () => {
+    setTitle(""); setDescription(""); setDepartment(""); setSeverity("normal"); setFormStatus("active"); setDueDate(""); setEditId(null); setShowForm(false);
+  };
+
+  const startEdit = (p: any) => {
+    setEditId(p.id); setTitle(p.title); setDescription(p.description || ""); setDepartment(p.department || ""); setSeverity(p.severity || "normal"); setFormStatus(p.status || "active"); setDueDate(p.dueDate || ""); setShowForm(true);
+  };
+
+  const savePriority = async () => {
+    if (!title.trim()) return toast({ title: "Title is required", variant: "destructive" });
+    const body = { title: title.trim(), description: description.trim() || null, department: department.trim() || null, severity, status, dueDate: dueDate || null };
+    const url = editId ? `/api/mytool/company-priorities/${editId}` : "/api/mytool/company-priorities";
+    const method = editId ? "PATCH" : "POST";
+    const res = await fetch(url, { method, headers: headers(), body: JSON.stringify(body) });
+    if (!res.ok) return toast({ title: "Save failed", variant: "destructive" });
+    queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+    resetForm();
+    toast({ title: editId ? "Priority updated" : "Priority created" });
+  };
+
+  const deletePriority = async (id: number) => {
+    const res = await fetch(`/api/mytool/company-priorities/${id}`, { method: "DELETE", headers: headers() });
+    if (!res.ok) return toast({ title: "Delete failed", variant: "destructive" });
+    queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+    toast({ title: "Priority deleted" });
+  };
+
+  return (
+    <Card className="border-border shadow-sm">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Flame className="h-4 w-4 text-emerald-600" />
+            Company Priorities
+          </CardTitle>
+          <Button size="sm" onClick={() => { resetForm(); setShowForm(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 px-3" data-testid="button-add-priority">
+            <Plus className="h-3.5 w-3.5 mr-1" />Add Priority
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">Strategic focus areas visible to all users on the home page</p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {showForm && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/30 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-gray-900">{editId ? "Edit Priority" : "New Priority"}</span>
+              <Button size="sm" variant="ghost" onClick={resetForm} className="h-6 w-6 p-0"><X className="h-4 w-4" /></Button>
+            </div>
+            <Input placeholder="Priority title" value={title} onChange={(e) => setTitle(e.target.value)} className="h-9" data-testid="input-priority-title" />
+            <Input placeholder="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} className="h-9" data-testid="input-priority-description" />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <Input placeholder="Department" value={department} onChange={(e) => setDepartment(e.target.value)} className="h-9" data-testid="input-priority-department" />
+              <select value={severity} onChange={(e) => setSeverity(e.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm" data-testid="select-priority-severity">
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="normal">Normal</option>
+                <option value="low">Low</option>
+              </select>
+              <select value={status} onChange={(e) => setFormStatus(e.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm" data-testid="select-priority-status">
+                <option value="active">Active</option>
+                <option value="in_progress">In Progress</option>
+                <option value="paused">Paused</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="h-9" data-testid="input-priority-due-date" />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="outline" onClick={resetForm} className="h-8">Cancel</Button>
+              <Button size="sm" onClick={savePriority} className="h-8 bg-emerald-600 hover:bg-emerald-700" data-testid="button-save-priority">
+                {editId ? "Update" : "Create"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="py-8 text-center"><Loader2 className="h-5 w-5 animate-spin mx-auto text-muted-foreground" /></div>
+        ) : priorities.length === 0 ? (
+          <div className="py-8 text-center">
+            <Target className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+            <p className="text-sm text-muted-foreground">No company priorities yet. Add your first strategic priority.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {priorities.map((p: any) => (
+              <div key={p.id} className="flex items-start gap-3 rounded-lg border border-border bg-white p-3 hover:bg-gray-50 transition-colors" data-testid={`card-priority-${p.id}`}>
+                <div className={`w-2 h-full min-h-[2.5rem] rounded-full shrink-0 ${
+                  p.severity === "critical" ? "bg-red-500" : p.severity === "high" ? "bg-amber-500" : p.severity === "normal" ? "bg-emerald-500" : "bg-blue-500"
+                }`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-gray-900">{p.title}</span>
+                    <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 h-4 ${STATUS_BADGE[p.status] || STATUS_BADGE.active}`}>{p.status}</Badge>
+                    <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${SEVERITY_COLORS[p.severity] || ""}`}>{p.severity}</Badge>
+                  </div>
+                  {p.description && <p className="text-xs text-muted-foreground mt-0.5">{p.description}</p>}
+                  <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                    {p.department && <span>{p.department}</span>}
+                    {p.dueDate && <span>Due: {p.dueDate}</span>}
+                    {p.assignedTo && <span>Owner: {p.assignedTo}</span>}
+                  </div>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button size="sm" variant="ghost" onClick={() => startEdit(p)} className="h-7 w-7 p-0" data-testid={`button-edit-priority-${p.id}`}>
+                    <Edit2 className="h-3.5 w-3.5 text-gray-500" />
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => deletePriority(p.id)} className="h-7 w-7 p-0" data-testid={`button-delete-priority-${p.id}`}>
+                    <Trash2 className="h-3.5 w-3.5 text-gray-400 hover:text-red-500" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 const EMPTY_MICROSOFT_BREAKDOWN = {
   email: 0,
   event: 0,
@@ -1082,6 +1249,8 @@ export function ProjectLifecyclePage() {
               testId="project-lifecycle-quick-clients"
             />
           </div>
+
+          <CompanyPrioritiesManager />
 
           <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
             <Card className="border-border shadow-sm">
