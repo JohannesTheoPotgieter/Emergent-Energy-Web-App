@@ -6,10 +6,17 @@ import { runStartupSeeds } from "./run-startup-seeds";
 import { runStartupMaintenanceOrchestrator } from "./startup-maintenance-orchestrator";
 import { startRuntimeServices } from "./start-runtime-services";
 import type { StartupReport } from "./startup-report";
-import { db } from "../db";
+import { db, getDbMode } from "../db";
 import { sql } from "drizzle-orm";
 
 async function runAdditiveSchemaAlignments() {
+  const mode = getDbMode();
+
+  if (mode === "sqlite") {
+    console.log("[Schema] Additive alignments skipped for SQLite (handled by SQLite bootstrap)");
+    return;
+  }
+
   try {
     await db.execute(sql.raw(`
       ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS authority_model JSONB;
