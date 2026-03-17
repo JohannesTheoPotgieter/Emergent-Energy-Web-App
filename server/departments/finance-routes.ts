@@ -2384,7 +2384,7 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
 
 // ==================== BUDGETS CRUD ====================
 
-router.get("/api/budgets", async (req, res) => {
+router.get("/api/budgets", requireAuth, async (req, res) => {
   try {
     const budgets = await storage.getAllBudgets();
     res.json(budgets);
@@ -2421,7 +2421,7 @@ router.delete("/api/budgets/:id", requireAuth, requireAdmin, async (req, res) =>
 
 // ==================== PROGRAM EXPENSES & INFLOWS ====================
 
-router.get("/api/program-expenses", async (req, res) => {
+router.get("/api/program-expenses", requireAuth, async (req, res) => {
   try {
     const { projectName, startDate, endDate, applyOverrides } = req.query;
     let expenses;
@@ -2450,7 +2450,7 @@ router.get("/api/program-expenses", async (req, res) => {
   }
 });
 
-router.get("/api/program-expenses/:projectName", async (req, res) => {
+router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) => {
   try {
     const { projectName } = req.params;
     const { applyOverrides } = req.query;
@@ -2775,7 +2775,7 @@ router.delete("/api/cashflow/planning-overrides/:projectName", requireAuth, requ
 
 // ==================== REVENUE TRACKING OVERRIDES ====================
 
-router.get("/api/revenue-tracking/overrides", async (req, res) => {
+router.get("/api/revenue-tracking/overrides", requireAuth, async (req, res) => {
   try {
     const { projectName } = req.query;
     if (!projectName || typeof projectName !== 'string') {
@@ -2889,7 +2889,7 @@ router.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, requi
 
 // ==================== REVENUE TAB ====================
 
-router.get("/api/revenue-tab/:projectName", async (req, res) => {
+router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = req.params.projectName;
 
@@ -3612,7 +3612,7 @@ router.delete("/api/revenue-tab/:projectName/link-task/:milestoneRowNumber", req
 
 // ==================== EXPENDITURE OVERRIDES ====================
 
-router.get("/api/expenditure/overrides", async (req, res) => {
+router.get("/api/expenditure/overrides", requireAuth, async (req, res) => {
   try {
     const { projectName } = req.query;
     if (!projectName || typeof projectName !== 'string') {

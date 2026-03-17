@@ -8897,7 +8897,7 @@ export async function registerRoutes(
 
   // ==================== CSV EXPORT ROUTES ====================
 
-  app.get("/api/export/projects", async (req, res) => {
+  app.get("/api/export/projects", requireAuth, async (req, res) => {
     try {
       const projects = await storage.getAllProjects();
       const csv = generateCSV(projects, [
@@ -8912,7 +8912,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/export/expenses", async (req, res) => {
+  app.get("/api/export/expenses", requireAuth, async (req, res) => {
     try {
       const expenses = await storage.getAllProgramExpenses();
       const csv = generateCSV(expenses, [
@@ -8928,7 +8928,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/export/revenues", async (req, res) => {
+  app.get("/api/export/revenues", requireAuth, async (req, res) => {
     try {
       const revenues = await storage.getAllProgramInflows();
       const csv = generateCSV(revenues, [
@@ -8944,7 +8944,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/export/tasks", async (req, res) => {
+  app.get("/api/export/tasks", requireAuth, async (req, res) => {
     try {
       const tasks = await storage.getAllTasks();
       const csv = generateCSV(tasks, [
@@ -8959,7 +8959,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/export/projects-summary", async (req, res) => {
+  app.get("/api/export/projects-summary", requireAuth, async (req, res) => {
     try {
       const response = await fetch(`http://localhost:${process.env.PORT || 5000}/api/projects-summary`);
       const summary = await response.json();
@@ -8981,7 +8981,7 @@ export async function registerRoutes(
 
   // ==================== ADMIN SMOKE TEST ====================
   
-  app.get("/api/admin/smoke-test", async (req, res) => {
+  app.get("/api/admin/smoke-test", requireAuth, requireAdmin, async (req, res) => {
     const startTime = Date.now();
     const checks: { name: string; passed: boolean; details: any }[] = [];
     

@@ -289,7 +289,7 @@ export function registerLifecycleRoutes(app: Express) {
     }
   });
 
-  app.get("/api/lifecycle-board/projects", async (_req: Request, res: Response) => {
+  app.get("/api/lifecycle-board/projects", requireAuth, async (_req: Request, res: Response) => {
     try {
       const allProjects = await db.select({
         id: projectInfo.id,
@@ -699,7 +699,7 @@ export function registerLifecycleRoutes(app: Express) {
     }
   });
 
-  app.get("/api/lifecycle-board/execution-dashboard", async (_req: Request, res: Response) => {
+  app.get("/api/lifecycle-board/execution-dashboard", requireAuth, async (_req: Request, res: Response) => {
     try {
       const fy = getCurrentFinancialYearBounds();
       const activeProjects = await db.select({

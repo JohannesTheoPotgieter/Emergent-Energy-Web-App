@@ -295,7 +295,7 @@ function daysDiff(a: string | null, b: string | null): number | null {
 
 // ==================== OVERVIEW API ====================
 
-router.get("/api/overview", async (req, res) => {
+router.get("/api/overview", requireAuth, async (req, res) => {
   try {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks] = await Promise.all([
       storage.getAllProjectInfo(),
@@ -371,7 +371,7 @@ router.get("/api/overview", async (req, res) => {
 
 // ==================== HOME PAGE API (Projects Report) ====================
 
-router.get("/api/home/summary", async (req, res) => {
+router.get("/api/home/summary", requireAuth, async (req, res) => {
   try {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks] = await Promise.all([
       storage.getAllProjectInfo(),
@@ -646,7 +646,7 @@ router.get("/api/home/summary", async (req, res) => {
   }
 });
 
-router.get("/api/home/notes", async (req, res) => {
+router.get("/api/home/notes", requireAuth, async (req, res) => {
   try {
     const notes = await storage.getHomeNotes();
     res.json(notes || { highlightsNotes: '', constructionNotes: '', financeNotes: '', preparedBy: '' });
@@ -676,7 +676,7 @@ router.post("/api/home/notes", requireAuth, requireAdmin, async (req, res) => {
 
 // ==================== PROJECTS SUMMARY API ====================
 
-router.get("/api/projects-summary", async (req, res) => {
+router.get("/api/projects-summary", requireAuth, async (req, res) => {
   try {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, allPlanOverrides, workItemsResult, handoverRows] = await Promise.all([
       storage.getAllProjectInfo(),
@@ -1762,7 +1762,7 @@ router.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
 
 // ==================== DASHBOARD DATA ROUTES ====================
 
-router.get("/api/dashboard", async (req, res) => {
+router.get("/api/dashboard", requireAuth, async (req, res) => {
   try {
     const [projects, expenses, revenues, tasks, latestRefresh] = await Promise.all([
       storage.getAllProjects(),
@@ -1799,7 +1799,7 @@ router.get("/api/projects", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/api/projects/:id", async (req, res) => {
+router.get("/api/projects/:id", requireAuth, async (req, res) => {
   try {
     const id = parseInt(String(req.params.id));
     const project = await storage.getProject(id);
@@ -1814,7 +1814,7 @@ router.get("/api/projects/:id", async (req, res) => {
 
 // ==================== PROJECT PLANS ====================
 
-router.get("/api/project-plans", async (req, res) => {
+router.get("/api/project-plans", requireAuth, async (req, res) => {
   try {
     const { projectName, applyOverrides } = req.query;
     let plans;
@@ -1835,7 +1835,7 @@ router.get("/api/project-plans", async (req, res) => {
   }
 });
 
-router.get("/api/project-plan/:projectName", async (req, res) => {
+router.get("/api/project-plan/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = req.params.projectName;
     const { applyOverrides } = req.query;
@@ -1855,7 +1855,7 @@ router.get("/api/project-plan/:projectName", async (req, res) => {
 
 // ==================== PROJECT INFO ====================
 
-router.get("/api/project-info", async (req, res) => {
+router.get("/api/project-info", requireAuth, async (req, res) => {
   try {
     const info = await storage.getAllProjectInfo();
     res.json(info);
@@ -1968,7 +1968,7 @@ router.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res
 
 // ==================== PROJECT PLAN OVERRIDES ====================
 
-router.get("/api/project-plan/overrides", async (req, res) => {
+router.get("/api/project-plan/overrides", requireAuth, async (req, res) => {
   try {
     const { projectName } = req.query;
     if (!projectName || typeof projectName !== 'string') {
