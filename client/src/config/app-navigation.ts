@@ -140,20 +140,41 @@ export function linkIsActive(current: string, target: string) {
   return current === target || current.startsWith(`${target}/`);
 }
 
-export function getBreadcrumbs(pathname: string, activeSection: TopSection) {
-  if (pathname === "/") return ["Home"];
+export type BreadcrumbItem = { label: string; path?: string };
+
+export function getBreadcrumbs(pathname: string, activeSection: TopSection): BreadcrumbItem[] {
+  if (pathname === "/") return [];
 
   const projectMatch = pathname.match(/^\/project\/([^/]+)/);
-  if (projectMatch) return ["Project Lifecycle", decodeURIComponent(projectMatch[1])];
+  if (projectMatch) return [
+    { label: "Project Lifecycle", path: "/project-lifecycle" },
+    { label: decodeURIComponent(projectMatch[1]) },
+  ];
 
   const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)/);
-  if (portfolioMatch) return ["Project Management", "Portfolios", decodeURIComponent(portfolioMatch[1])];
+  if (portfolioMatch) return [
+    { label: "Project Management", path: "/dashboard" },
+    { label: "Portfolios", path: "/portfolios" },
+    { label: decodeURIComponent(portfolioMatch[1]) },
+  ];
 
-  if (pathname === "/pd/tickets/create") return ["Project Development", "PD Tickets", "Create"];
+  if (pathname === "/pd/tickets/create") return [
+    { label: "Project Development", path: "/pd" },
+    { label: "PD Tickets", path: "/pd/tickets" },
+    { label: "Create" },
+  ];
 
   const ticketMatch = pathname.match(/^\/pd\/tickets\/([^/]+)/);
-  if (ticketMatch) return ["Project Development", "PD Tickets", `Ticket ${decodeURIComponent(ticketMatch[1])}`];
+  if (ticketMatch) return [
+    { label: "Project Development", path: "/pd" },
+    { label: "PD Tickets", path: "/pd/tickets" },
+    { label: `Ticket ${decodeURIComponent(ticketMatch[1])}` },
+  ];
 
   const leaf = activeSection.secondary.find((item) => linkIsActive(pathname, item.path));
-  return [activeSection.label, leaf?.label].filter(Boolean) as string[];
+  const items: BreadcrumbItem[] = [{ label: activeSection.label, path: activeSection.path }];
+  if (leaf && leaf.label !== activeSection.label) {
+    items.push({ label: leaf.label });
+  }
+  return items;
 }
