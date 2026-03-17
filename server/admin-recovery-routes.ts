@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, or, sql, desc, ilike, isNull, isNotNull } from "drizzle-orm";

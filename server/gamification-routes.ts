@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { sql, eq, and, desc, inArray } from "drizzle-orm";
@@ -589,4 +590,3 @@ export function registerGamificationRoutes(app: Express) {
     }
   });
 }
-

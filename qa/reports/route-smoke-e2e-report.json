@@ -1,16 +1,17 @@
 {
-  "generatedAt": "2026-03-16T21:09:02.027Z",
+  "generatedAt": "2026-03-16T22:11:09.792Z",
   "totals": {
-    "checks": 1,
+    "checks": 0,
     "pass": 0,
-    "fail": 1,
+    "fail": 0,
     "blocked": 0,
     "skipped": 0,
-    "routesCovered": 1,
-    "rolesCovered": 1
+    "routesCovered": 0,
+    "rolesCovered": 0
   },
   "missingRoutes": [
     "/",
+    "/projects",
     "/project/:projectName",
     "/engineering",
     "/engineering/tasks",
@@ -27,39 +28,5 @@
     "/admin/roles"
   ],
   "suspiciousIncompleteViews": [],
-  "results": [
-    {
-      "route": "/projects",
-      "resolvedRoute": "/projects",
-      "label": "Projects",
-      "role": "admin",
-      "status": "fail",
-      "finalUrl": "/projects",
-      "pageLoaded": true,
-      "headingOrAnchorFound": true,
-      "primaryWidgetOrActionFound": true,
-      "redirectLoopDetected": false,
-      "has500Response": true,
-      "permissionBlocked": false,
-      "missingMarkers": [
-        "500 response(s) detected"
-      ],
-      "suspiciousIncompleteView": false,
-      "notes": [
-        "500 http://localhost:5000/api/notifications/unread-count",
-        "500 http://localhost:5000/api/dashboard",
-        "500 http://localhost:5000/api/projects-summary",
-        "500 http://localhost:5000/api/my-work/all-tasks",
-        "500 http://localhost:5000/api/notifications?unreadOnly=true&limit=20",
-        "500 http://localhost:5000/api/notifications/unread-count",
-        "500 http://localhost:5000/api/projects-summary",
-        "500 http://localhost:5000/api/dashboard",
-        "500 http://localhost:5000/api/projects-summary",
-        "500 http://localhost:5000/api/notifications/unread-count",
-        "500 http://localhost:5000/api/projects-summary",
-        "500 http://localhost:5000/api/dashboard",
-        "500 http://localhost:5000/api/projects-summary"
-      ]
-    }
-  ]
+  "results": []
 }

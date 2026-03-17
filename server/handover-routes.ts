@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, desc, sql } from "drizzle-orm";

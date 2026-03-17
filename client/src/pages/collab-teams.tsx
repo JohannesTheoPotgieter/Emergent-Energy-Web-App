@@ -10,6 +10,7 @@ import {
   MessageSquare, Loader2, AlertTriangle,
   Link2, Users, ChevronRight as ChevronRightIcon, RefreshCw,
 } from "lucide-react";
+import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import {
   authHeaders, TagToProjectDialog, ConvertToTaskDialog, MsObjectActions,
 } from "./collaboration";
@@ -79,31 +80,45 @@ export default function CollabTeamsPage() {
     },
     staleTime: 60_000,
   });
+  const actionRequiredCount = items.filter((item: any) => item.actionRequired).length;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6" data-testid="collab-teams-page">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2" data-testid="text-teams-title">
-            <MessageSquare className="h-6 w-6 text-purple-600" />
-            Teams Chat
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Teams mentions, activity, and dashboard channels
-            {user?.displayName && <span> — {user.displayName}</span>}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => syncMutation.mutate()}
-          disabled={syncMutation.isPending}
-          data-testid="sync-teams-button"
-        >
-          <RefreshCw className={`h-4 w-4 mr-1 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-          {syncMutation.isPending ? "Syncing..." : "Sync Now"}
-        </Button>
-      </div>
+    <PageShell className="max-w-5xl p-4 md:p-6" data-testid="collab-teams-page">
+      <SectionHeader
+        icon={<MessageSquare className="h-5 w-5" />}
+        eyebrow="Microsoft Work"
+        title="Teams Chat"
+        description={`Teams activity, mentions, and dashboard channels stay connected to the same project and task operating model${user?.displayName ? ` for ${user.displayName}` : ""}.`}
+        badges={[
+          { label: `${items.length} synced items`, icon: <MessageSquare className="h-3.5 w-3.5" /> },
+          { label: `${actionRequiredCount} mentions`, icon: <AlertTriangle className="h-3.5 w-3.5" /> },
+          { label: `${myGroups.length} dashboard channels`, icon: <Users className="h-3.5 w-3.5" /> },
+        ]}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            data-testid="sync-teams-button"
+          >
+            <RefreshCw className={`h-4 w-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+            {syncMutation.isPending ? "Syncing..." : "Sync Now"}
+          </Button>
+        }
+      />
+      <span className="sr-only" data-testid="text-teams-title">Teams Chat</span>
+
+      <WorkspaceNotice
+        title="Microsoft conversations stay role-aware and project-aware"
+        description="Teams mentions, linked chats, and dashboard channels follow the same assignment and conversion patterns used everywhere else in the app."
+        icon={<Link2 className="h-4 w-4" />}
+        tone="microsoft"
+      >
+        <Badge variant="secondary">Mention visibility</Badge>
+        <Badge variant="secondary">Project tag</Badge>
+        <Badge variant="secondary">Dashboard channel routing</Badge>
+      </WorkspaceNotice>
 
       {isLoading || syncMutation.isPending ? (
         <div className="flex items-center justify-center py-16">
@@ -227,6 +242,6 @@ export default function CollabTeamsPage() {
           item={convertTarget}
         />
       )}
-    </div>
+    </PageShell>
   );
 }

@@ -467,11 +467,6 @@ export default function AdminControlCenterPage() {
       ]}
     >
     <div className="space-y-6" data-testid="admin-control-center">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Control Center</h1>
-        <p className="text-sm text-muted-foreground mt-1">Primary admin hub for trusted system controls, governance, and recovery</p>
-      </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         <Card data-testid="card-system-health">
           <CardHeader className="pb-3">

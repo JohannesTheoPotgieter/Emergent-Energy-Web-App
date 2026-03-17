@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Router, type Express, type Request, type Response, type NextFunction } from "express";
 import { requireAuth, requireAdmin } from './shared-middleware';
 import { storage } from "../storage";

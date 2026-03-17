@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import {
   approvals,

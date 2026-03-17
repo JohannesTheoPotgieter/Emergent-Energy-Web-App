@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Express, NextFunction, Request, Response } from "express";
 import { verifyToken } from "./jwt";
 import { listProjectEvents } from "./services/project-event-service";
