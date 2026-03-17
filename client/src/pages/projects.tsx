@@ -933,7 +933,7 @@ function LatestUpdateCell({ project }: { project: ProjectSummary }) {
 
   if (editing) {
     return (
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()} data-interactive="true">
         <Input
           ref={inputRef}
           value={value}
@@ -956,7 +956,8 @@ function LatestUpdateCell({ project }: { project: ProjectSummary }) {
     <span
       className="block truncate text-[10px] text-muted-foreground cursor-pointer hover:text-foreground group"
       title={project.latest_update ? `${project.latest_update} (click to edit)` : "Click to add update"}
-      onClick={() => setEditing(true)}
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      data-interactive="true"
       data-testid={`text-latest-update-${project.project_name}`}
     >
       {project.latest_update || "—"}
