@@ -194,7 +194,7 @@ export default function RoleSettingsPage() {
   );
 }
 
-function ConnectionsSection() {
+export function ConnectionsSection() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { isAdmin } = useAuth();
@@ -617,7 +617,7 @@ function ConnectionsSection() {
   );
 }
 
-function TeamsSettingsSection() {
+export function TeamsSettingsSection() {
   const { toast } = useToast();
   const { isAdmin } = useAuth();
   const queryClient = useQueryClient();
@@ -765,7 +765,7 @@ function TeamsSettingsSection() {
   );
 }
 
-function UserMappingSection() {
+export function UserMappingSection() {
   const { toast } = useToast();
   const { isAdmin } = useAuth();
   const queryClient = useQueryClient();
@@ -968,7 +968,7 @@ function UserMappingSection() {
   );
 }
 
-function RolePasswordsSection() {
+export function RolePasswordsSection() {
   const { toast } = useToast();
   const [editingRole, setEditingRole] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
@@ -1101,7 +1101,7 @@ function RolePasswordsSection() {
   );
 }
 
-function ProcurementAnalysisSection() {
+export function ProcurementAnalysisSection() {
   const { toast } = useToast();
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState<{ costLines: number; counterparties: number; sourceExpenses: number } | null>(null);

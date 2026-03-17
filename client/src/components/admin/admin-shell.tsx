@@ -130,12 +130,6 @@ export function AdminPageShell({
               ))}
             </div>
           ) : null}
-
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-            {ADMIN_SURFACES.map((surfaceItem) => (
-              <SurfaceLinkCard key={surfaceItem.id} surface={surfaceItem} active={surfaceItem.id === surfaceId} />
-            ))}
-          </div>
         </div>
       </div>
 

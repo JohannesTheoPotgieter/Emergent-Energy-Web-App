@@ -207,6 +207,12 @@ export async function seedRolePermissions() {
 }
 
 export function registerRoleManagementRoutes(app: Express) {
+  import("drizzle-orm").then(({ sql }) => {
+    db.execute(sql.raw(`ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS authority_model JSONB;`))
+      .then(() => console.log("[Roles] authority_model column ensured"))
+      .catch((err: any) => console.error("[Roles] Migration error:", err.message));
+  });
+
   app.get("/api/roles", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
     try {
       const roles = await ensureRolePermissionsSeeded();

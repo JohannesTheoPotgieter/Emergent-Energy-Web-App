@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -21,6 +22,23 @@ import {
 } from "./admin-roles.utils";
 import { AlertTriangle, Plus, Save, Search, Shield, ShieldAlert, Users } from "lucide-react";
 import type { AuthorityAction, PermissionAction } from "@shared/schema";
+
+const DEPARTMENTS = [
+  "Executive",
+  "Engineering",
+  "Finance",
+  "Operations",
+  "Project Development",
+  "Project Management",
+  "Quality",
+  "Procurement",
+  "Commercial",
+  "Construction",
+  "Health & Safety",
+  "IT",
+  "HR",
+  "Legal",
+];
 
 const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
 const AUTHORITY_ACTIONS: AuthorityAction[] = ["view", "create", "edit", "delete", "approve", "assign", "reassign", "close_complete", "export", "manage_settings"];
@@ -334,8 +352,11 @@ function GlobalUsersView() {
   }, []);
 
   const updateRole = async (id: number, role: string) => {
-    await fetch(`/api/admin/users/${id}/role`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role }) });
-    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
+    if (!role) return;
+    const res = await fetch(`/api/admin/users/${id}/role`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role }) });
+    if (res.ok) {
+      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
+    }
   };
 
   const updateDepartment = async (id: number, department: string) => {
@@ -375,20 +396,25 @@ function GlobalUsersView() {
                   Department: <span className="font-medium text-foreground">{u.department || "Unassigned"}</span>
                 </div>
               </div>
-              <select className="h-9 border rounded px-2 text-sm" value={u.role} onChange={(e) => updateRole(u.id, e.target.value)}>
-                {roles.map((r) => <option key={r.role} value={r.role}>{r.label}</option>)}
-              </select>
-              <Input
-                className="h-9"
-                defaultValue={u.department || ""}
-                placeholder="Department"
-                onBlur={(e) => {
-                  const nextDepartment = e.target.value.trim();
-                  if ((u.department || "") !== nextDepartment) {
-                    void updateDepartment(u.id, nextDepartment);
-                  }
-                }}
+              <SearchableSelect
+                options={roles.map((r) => ({ value: r.role, label: r.label }))}
+                value={u.role}
+                onValueChange={(val) => updateRole(u.id, val)}
+                placeholder="Select role"
+                searchPlaceholder="Search roles..."
+                data-testid={`select-role-${u.id}`}
+              />
+              <SearchableSelect
+                options={[
+                  ...DEPARTMENTS.map((d) => ({ value: d, label: d })),
+                  ...(u.department && !DEPARTMENTS.includes(u.department) ? [{ value: u.department, label: u.department }] : []),
+                ]}
+                value={u.department || ""}
+                onValueChange={(val) => { if (val) void updateDepartment(u.id, val); }}
+                placeholder="Select department"
+                searchPlaceholder="Search departments..."
                 disabled={savingDepartmentId === u.id}
+                data-testid={`select-department-${u.id}`}
               />
             </div>
           ))}
