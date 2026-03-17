@@ -63,6 +63,7 @@ interface LeaderboardEntry {
   userId: number;
   name: string;
   role: string;
+  department?: string | null;
   points: number;
   pointsEarned: number;
   pointsPenalty: number;
@@ -97,8 +98,19 @@ interface LeaderboardEntry {
   };
 }
 
+interface DepartmentSummary {
+  department: string;
+  members: number;
+  totalPoints: number;
+  totalEarned: number;
+  totalPenalty: number;
+  averagePoints: number;
+  topPerformer: string | null;
+}
+
 interface LeaderboardResponse {
   leaderboard: LeaderboardEntry[];
+  departmentSummary?: DepartmentSummary[];
   pointValues: Record<string, number>;
   penaltyValues: Record<string, number>;
   badgeDefinitions: Record<string, BadgeInfo>;
@@ -566,7 +578,12 @@ export default function LeaderboardPage() {
   const { user } = useAuth();
   const { allowed: canView } = usePermission('leaderboard', 'view');
   const [selectedUser, setSelectedUser] = useState<LeaderboardEntry | null>(null);
-  const [tab, setTab] = useState<"leaderboard" | "badges">("leaderboard");
+  const initialTab = typeof window !== "undefined"
+    ? new URLSearchParams(window.location.search).get("tab")
+    : null;
+  const [tab, setTab] = useState<"leaderboard" | "departments" | "badges">(
+    initialTab === "departments" ? "departments" : "leaderboard",
+  );
 
   const { data, isLoading } = useQuery<LeaderboardResponse>({
     queryKey: ["/api/gamification/leaderboard"],
@@ -584,6 +601,7 @@ export default function LeaderboardPage() {
   const rest = activeEntries.slice(3);
   const myEntry = entries.find(e => e.userId === (user as any)?.id);
   const myRank = activeEntries.findIndex(e => e.userId === (user as any)?.id) + 1;
+  const departments = data?.departmentSummary || [];
 
   if (!canView) {
     return (
@@ -622,6 +640,10 @@ export default function LeaderboardPage() {
             <TabsTrigger value="leaderboard" data-testid="tab-leaderboard" className="gap-1.5">
               <Swords className="w-3.5 h-3.5" />
               Rankings
+            </TabsTrigger>
+            <TabsTrigger value="departments" data-testid="tab-departments" className="gap-1.5">
+              <Users className="w-3.5 h-3.5" />
+              Departments
             </TabsTrigger>
             <TabsTrigger value="badges" data-testid="tab-badges" className="gap-1.5">
               <Medal className="w-3.5 h-3.5" />
@@ -779,6 +801,56 @@ export default function LeaderboardPage() {
             </Card>
           )}
         </>
+      )}
+
+      {tab === "departments" && !isLoading && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" data-testid="department-summary-grid">
+          {departments.length === 0 ? (
+            <Card className="lg:col-span-2">
+              <CardContent className="py-12 text-center">
+                <Users className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+                <h3 className="text-lg font-bold">No Department Data Yet</h3>
+                <p className="text-sm text-muted-foreground mt-2">Assign users to departments in Roles & Permissions to unlock department scorecards.</p>
+              </CardContent>
+            </Card>
+          ) : departments.map((department, index) => (
+            <Card key={department.department} className="overflow-hidden border-border shadow-sm">
+              <CardHeader className="pb-3 bg-gradient-to-r from-emerald-50 via-white to-amber-50">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Department Rank</p>
+                    <CardTitle className="mt-1 text-xl">#{index + 1} {department.department}</CardTitle>
+                  </div>
+                  <Badge variant="outline" className="bg-white/80">
+                    Avg {department.averagePoints} XP
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-xl border border-border/70 bg-muted/25 p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Members</p>
+                  <p className="mt-1 text-2xl font-semibold">{department.members}</p>
+                </div>
+                <div className="rounded-xl border border-border/70 bg-muted/25 p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Total XP</p>
+                  <p className="mt-1 text-2xl font-semibold">{department.totalPoints}</p>
+                </div>
+                <div className="rounded-xl border border-border/70 bg-muted/25 p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Earned</p>
+                  <p className="mt-1 text-lg font-semibold text-emerald-700">{department.totalEarned}</p>
+                </div>
+                <div className="rounded-xl border border-border/70 bg-muted/25 p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Penalties</p>
+                  <p className="mt-1 text-lg font-semibold text-amber-700">{department.totalPenalty}</p>
+                </div>
+                <div className="col-span-2 rounded-xl border border-border/70 bg-card p-3">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Top Performer</p>
+                  <p className="mt-1 text-base font-medium">{department.topPerformer || "No active scorer yet"}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
 
       {tab === "badges" && !isLoading && data?.badgeDefinitions && (

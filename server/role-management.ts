@@ -501,6 +501,7 @@ export function registerRoleManagementRoutes(app: Express) {
         name: users.name,
         email: users.email,
         role: users.role,
+        department: users.department,
       }).from(users);
       const mapped = allUsers.map((u: any) => ({ ...u, role: mapRole(u.role) }));
       res.json(mapped);
@@ -543,6 +544,7 @@ export function registerRoleManagementRoutes(app: Express) {
       if (existingUser) return res.status(409).json({ error: "Username already exists" });
 
       const assignedRole = role || "PROGRAM_MANAGER";
+      const department = typeof req.body?.department === "string" ? req.body.department.trim() || null : null;
 
       const [roleExists] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, assignedRole));
       if (!roleExists) return res.status(400).json({ error: `Role "${assignedRole}" does not exist. Create the role first.` });
@@ -555,10 +557,47 @@ export function registerRoleManagementRoutes(app: Express) {
         email,
         password: hashedPassword,
         role: assignedRole,
+        department,
       }).returning();
 
-      logAuditFromReq(req, { entityType: "user", action: "create", entityId: String(created.id), changesJson: { description: "New user created", username, name, email, role: assignedRole } });
-      res.json({ id: created.id, username: created.username, name: created.name, email: created.email, role: created.role });
+      logAuditFromReq(req, { entityType: "user", action: "create", entityId: String(created.id), changesJson: { description: "New user created", username, name, email, role: assignedRole, department } });
+      res.json({ id: created.id, username: created.username, name: created.name, email: created.email, role: created.role, department: created.department ?? null });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/admin/users/:userId/department", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId as string);
+      const rawDepartment = typeof req.body?.department === "string" ? req.body.department.trim() : "";
+      const department = rawDepartment || null;
+
+      const [userBefore] = await db
+        .select({ id: users.id, name: users.name, department: users.department })
+        .from(users)
+        .where(eq(users.id, userId));
+      if (!userBefore) return res.status(404).json({ error: "User not found" });
+
+      const [updated] = await db
+        .update(users)
+        .set({ department })
+        .where(eq(users.id, userId))
+        .returning({ id: users.id, name: users.name, email: users.email, role: users.role, department: users.department });
+
+      logAuditFromReq(req, {
+        entityType: "user",
+        action: "department_change",
+        entityId: String(userId),
+        changesJson: {
+          description: "User department changed",
+          userName: updated.name,
+          previousDepartment: userBefore.department,
+          newDepartment: department,
+        },
+      });
+
+      res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

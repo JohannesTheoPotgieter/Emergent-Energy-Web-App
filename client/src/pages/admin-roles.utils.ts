@@ -24,7 +24,7 @@ export type RoleSummary = {
   protected?: boolean;
 };
 
-export type UserSummary = { id: number; name: string; email: string; role: string };
+export type UserSummary = { id: number; name: string; email: string; role: string; department?: string | null };
 
 export type AdminRolesViewState = "loading" | "error" | "empty" | "ready";
 

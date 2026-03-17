@@ -67,7 +67,7 @@ import {
   Paperclip,
   Save,
   RotateCw,
-  ArrowLeftRight,
+  ArrowRightLeft,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";

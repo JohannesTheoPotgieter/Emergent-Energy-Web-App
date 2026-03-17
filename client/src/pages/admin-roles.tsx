@@ -318,6 +318,7 @@ function GlobalUsersView() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [search, setSearch] = useState("");
+  const [savingDepartmentId, setSavingDepartmentId] = useState<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -337,5 +338,61 @@ function GlobalUsersView() {
     setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
   };
 
-  return <Card><CardHeader><CardTitle>Users</CardTitle></CardHeader><CardContent className="space-y-2"><Input placeholder="Search users" value={search} onChange={(e) => setSearch(e.target.value)} />{users.filter((u) => `${u.name} ${u.email}`.toLowerCase().includes(search.toLowerCase())).map((u) => <div key={u.id} className="border rounded p-2 flex items-center justify-between"><div><div className="font-medium text-sm">{u.name}</div><div className="text-xs text-muted-foreground">{u.email}</div></div><select className="h-8 border rounded px-2 text-sm" value={u.role} onChange={(e) => updateRole(u.id, e.target.value)}>{roles.map((r) => <option key={r.role} value={r.role}>{r.label}</option>)}</select></div>)}</CardContent></Card>;
+  const updateDepartment = async (id: number, department: string) => {
+    setSavingDepartmentId(id);
+    try {
+      const res = await fetch(`/api/admin/users/${id}/department`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        credentials: "include",
+        body: JSON.stringify({ department }),
+      });
+      const data = await parseJsonSafe<UserRow | { error?: string }>(res);
+      if (!res.ok || !data || Array.isArray(data)) return;
+      setUsers((prev) =>
+        prev.map((u) => (u.id === id ? { ...u, department: "department" in data ? (data as UserRow).department ?? null : department || null } : u)),
+      );
+    } finally {
+      setSavingDepartmentId(null);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Users</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <Input placeholder="Search users" value={search} onChange={(e) => setSearch(e.target.value)} />
+        {users
+          .filter((u) => `${u.name} ${u.email} ${u.department || ""}`.toLowerCase().includes(search.toLowerCase()))
+          .map((u) => (
+            <div key={u.id} className="border rounded p-3 grid gap-3 lg:grid-cols-[minmax(0,1fr),220px,220px] lg:items-center">
+              <div>
+                <div className="font-medium text-sm">{u.name}</div>
+                <div className="text-xs text-muted-foreground">{u.email}</div>
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  Department: <span className="font-medium text-foreground">{u.department || "Unassigned"}</span>
+                </div>
+              </div>
+              <select className="h-9 border rounded px-2 text-sm" value={u.role} onChange={(e) => updateRole(u.id, e.target.value)}>
+                {roles.map((r) => <option key={r.role} value={r.role}>{r.label}</option>)}
+              </select>
+              <Input
+                className="h-9"
+                defaultValue={u.department || ""}
+                placeholder="Department"
+                onBlur={(e) => {
+                  const nextDepartment = e.target.value.trim();
+                  if ((u.department || "") !== nextDepartment) {
+                    void updateDepartment(u.id, nextDepartment);
+                  }
+                }}
+                disabled={savingDepartmentId === u.id}
+              />
+            </div>
+          ))}
+      </CardContent>
+    </Card>
+  );
 }

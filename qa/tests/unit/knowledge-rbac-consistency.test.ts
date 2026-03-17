@@ -8,7 +8,6 @@ const KNOWLEDGE_PATHS = [
   "/ee-info",
   "/leaderboard",
   "/training",
-  "/knowledge-game",
   "/department-scores",
   "/feedback",
 ] as const;
@@ -33,6 +32,11 @@ describe("knowledge RBAC consistency", () => {
       expect(route?.permissionEntity, `Route ${path} must have permission entity`).toBeTruthy();
       expect(checkPermission(COO_ROLE, route!.permissionEntity!, "view"), `COO must view ${path}`).toBe(true);
     }
+  });
+
+  it("removes the knowledge game route and merges department scoring into leaderboard", () => {
+    expect(PAGE_REGISTRY.some((entry) => entry.path === "/knowledge-game")).toBe(false);
+    expect(PAGE_REGISTRY.find((entry) => entry.path === "/department-scores")?.redirectTo).toBe("/leaderboard?tab=departments");
   });
 
   it("keeps route-to-permission resolution aligned for knowledge pages", () => {

@@ -25,6 +25,11 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "auth_required" });
 }
 
+function toPositiveInt(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
 router.use(jwtAuth);
 
 router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Request, res: Response) => {
@@ -729,15 +734,18 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission
 router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
     const { costLineIds, counterpartyId, counterpartyName, counterpartyType, createPattern } = req.body;
-    if (!costLineIds || !Array.isArray(costLineIds) || costLineIds.length === 0) {
+    const normalizedLineIds = Array.isArray(costLineIds)
+      ? costLineIds.map((lineId) => toPositiveInt(lineId)).filter((lineId): lineId is number => lineId != null)
+      : [];
+    if (normalizedLineIds.length === 0) {
       return res.status(400).json({ error: "costLineIds array is required" });
     }
     if (!counterpartyId && !counterpartyName) {
       return res.status(400).json({ error: "counterpartyId or counterpartyName is required" });
     }
 
-    let cpId = counterpartyId;
-    let cpName = counterpartyName;
+    let cpId = toPositiveInt(counterpartyId);
+    let cpName = typeof counterpartyName === "string" ? counterpartyName.trim() : "";
     let cpType = counterpartyType || null;
 
     if (cpId) {
@@ -769,7 +777,7 @@ router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, requi
     }
 
     await db.transaction(async (tx: any) => {
-      for (const lineId of costLineIds) {
+      for (const lineId of normalizedLineIds) {
         await tx.update(normalizedCostLines)
           .set({
             counterpartyId: cpId || null,
@@ -783,7 +791,7 @@ router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, requi
     let patternCreated = null;
     if (createPattern) {
       const lines = await db.select().from(normalizedCostLines).where(
-        sql`${normalizedCostLines.id} = ANY(${costLineIds})`
+        sql`${normalizedCostLines.id} = ANY(${normalizedLineIds})`
       );
       const invoiceNumbers = lines.map(l => l.invoiceNumber).filter(Boolean);
       if (invoiceNumbers.length > 0) {
@@ -808,8 +816,8 @@ router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, requi
       }
     }
 
-    console.log(`[subcontractor] Linked ${costLineIds.length} cost lines to "${cpName}" (id=${cpId})`);
-    res.json({ success: true, linked: costLineIds.length, counterpartyName: cpName, patternCreated });
+    console.log(`[subcontractor] Linked ${normalizedLineIds.length} cost lines to "${cpName}" (id=${cpId})`);
+    res.json({ success: true, linked: normalizedLineIds.length, counterpartyName: cpName, patternCreated });
   } catch (err: any) {
     console.error("[subcontractor-link] Error:", err);
     res.status(500).json({ error: err.message });
@@ -1033,10 +1041,10 @@ router.post("/api/subcontractor-assignments", requireAuth, requirePermission("pr
     const { projectId, counterpartyId, workPackage, scopeDescription, ownerUserId, keyDates } = req.body;
     if (!projectId || !counterpartyId) return res.status(400).json({ error: "projectId and counterpartyId required" });
 
-    const pId = parseInt(projectId);
-    const cId = parseInt(counterpartyId);
-    const oId = ownerUserId ? parseInt(ownerUserId) : null;
-    if (isNaN(pId) || isNaN(cId)) return res.status(400).json({ error: "Invalid projectId or counterpartyId" });
+    const pId = toPositiveInt(projectId);
+    const cId = toPositiveInt(counterpartyId);
+    const oId = toPositiveInt(ownerUserId);
+    if (!pId || !cId) return res.status(400).json({ error: "Invalid projectId or counterpartyId" });
 
     const result = await db.execute(sql`
       INSERT INTO project_subcontractor_assignments (project_id, counterparty_id, work_package, scope_description, owner_user_id, key_dates, status)
@@ -1061,8 +1069,8 @@ router.post("/api/subcontractor-assignments", requireAuth, requirePermission("pr
 
 router.patch("/api/subcontractor-assignments/:id", requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
-    if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+    const id = toPositiveInt(req.params.id);
+    if (!id) return res.status(400).json({ error: "Invalid id" });
 
     const { workPackage, scopeDescription, ownerUserId, status, keyDates, performanceNotes } = req.body;
     const validStatuses = ["active", "completed", "suspended", "terminated"];
@@ -1074,7 +1082,7 @@ router.patch("/api/subcontractor-assignments/:id", requireAuth, requirePermissio
       UPDATE project_subcontractor_assignments SET
         work_package = COALESCE(${workPackage !== undefined ? workPackage : null}, work_package),
         scope_description = COALESCE(${scopeDescription !== undefined ? scopeDescription : null}, scope_description),
-        owner_user_id = CASE WHEN ${ownerUserId !== undefined} THEN ${ownerUserId ? parseInt(ownerUserId) : null}::integer ELSE owner_user_id END,
+        owner_user_id = CASE WHEN ${ownerUserId !== undefined} THEN ${toPositiveInt(ownerUserId)}::integer ELSE owner_user_id END,
         status = COALESCE(${status || null}::text, status::text)::subcontractor_assignment_status,
         key_dates = CASE WHEN ${keyDates !== undefined} THEN ${keyDates ? JSON.stringify(keyDates) : '[]'}::jsonb ELSE key_dates END,
         performance_notes = COALESCE(${performanceNotes !== undefined ? performanceNotes : null}, performance_notes),
