@@ -24,7 +24,7 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Portfolio Management**: Enhanced Gantt Chart and aggregated Cashflow view across projects.
 -   **Company Lifecycle Map**: Interactive lifecycle management with Story Mode and Explore Mode.
 -   **Mobile Experience**: PM On-The-Go Mode for mobile-first site management with quick actions.
--   **Permission Gating**: Sidebar items and routes are permission-gated based on entity-level view permissions.
+-   **Permission Gating**: Sidebar items and routes are permission-gated based on entity-level view permissions. Navigation sections split into: Home, Project Lifecycle, Project Development, Project Management, Engineering, Quality, Finance, Knowledge, Collaboration, Admin. Legacy `DELIVERY` section auto-expands to `PROJECT_MANAGEMENT` + `ENGINEERING`.
 -   **Admin Tools**: Recovery Center, KPI Traceability Panel, Smart Import Control Tower, Control Center, and Operational Exceptions.
 -   **Workflow Management**: 4-gate handover system with checklists and progress tracking.
 -   **Grouped Tab Navigation**: Project detail page tabs organized into DELIVERY, COMMERCIAL, CONTROL, PARTNERS.
