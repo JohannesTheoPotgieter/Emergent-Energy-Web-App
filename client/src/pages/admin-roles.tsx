@@ -178,171 +178,6 @@ export default function AdminRolesPage() {
   );
 }
 
-function PermissionToggle({ entity, action, isOn, disabled, onChange }: {
-  entity: string; action: string; isOn: boolean; disabled: boolean;
-  onChange: (entity: string, action: string, value: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={() => onChange(entity, action, !isOn)}
-      className={`
-        inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition-all duration-150 min-w-[80px] justify-center
-        ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
-        ${isOn
-          ? ACTION_COLORS_ON[action] || "bg-emerald-100 text-emerald-700 border-emerald-300"
-          : "bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100 hover:text-gray-500"
-        }
-      `}
-      title={`${isOn ? "Revoke" : "Grant"} ${action} on ${formatEntityName(entity)}`}
-      aria-label={`${action} permission for ${formatEntityName(entity)}: ${isOn ? "enabled" : "disabled"}`}
-      data-testid={`toggle-${entity}-${action}`}
-    >
-      {ACTION_ICONS[action] || (isOn ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />)}
-      <span className="capitalize">{action}</span>
-    </button>
-  );
-}
-
-function PermissionMatrixCategory({ categoryKey, category, currentEp, canManageRoles, updateEp }: {
-  categoryKey: string;
-  category: { label: string; entities: string[] };
-  currentEp: Record<string, Record<string, boolean>>;
-  canManageRoles: boolean;
-  updateEp: (entity: string, action: string, value: boolean) => void;
-}) {
-  const [expanded, setExpanded] = useState(true);
-  const entitiesWithPerms = category.entities.filter((e) => currentEp[e] !== undefined);
-  if (entitiesWithPerms.length === 0) return null;
-
-  const totalGrants = entitiesWithPerms.reduce((sum, e) => {
-    return sum + Object.values(currentEp[e] || {}).filter(Boolean).length;
-  }, 0);
-  const totalPossible = entitiesWithPerms.reduce((sum, e) => {
-    return sum + Object.keys(currentEp[e] || {}).length;
-  }, 0);
-
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden" data-testid={`perm-category-${categoryKey}`}>
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50/80 hover:bg-gray-100/80 transition-colors"
-        data-testid={`toggle-category-${categoryKey}`}
-      >
-        <div className="flex items-center gap-2">
-          {expanded ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronRight className="h-4 w-4 text-gray-500" />}
-          <span className="text-sm font-semibold text-gray-800">{category.label}</span>
-          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5 bg-gray-200/70 text-gray-600">
-            {entitiesWithPerms.length} {entitiesWithPerms.length === 1 ? "entity" : "entities"}
-          </Badge>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">
-            {totalGrants}/{totalPossible} granted
-          </span>
-          <div className="w-16 h-1.5 rounded-full bg-gray-200 overflow-hidden">
-            <div
-              className="h-full rounded-full bg-emerald-500 transition-all"
-              style={{ width: totalPossible > 0 ? `${(totalGrants / totalPossible) * 100}%` : "0%" }}
-            />
-          </div>
-        </div>
-      </button>
-      {expanded && (
-        <div className="divide-y divide-gray-100">
-          {entitiesWithPerms.map((entity) => {
-            const perms = currentEp[entity] || {};
-            const actions = Object.keys(perms);
-            const grantedCount = Object.values(perms).filter(Boolean).length;
-            return (
-              <div key={entity} className="px-4 py-3 hover:bg-gray-50/50 transition-colors" data-testid={`perm-row-${entity}`}>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-900">{formatEntityName(entity)}</span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {grantedCount}/{actions.length} active
-                    </span>
-                  </div>
-                  {canManageRoles && (
-                    <div className="flex gap-1">
-                      <button
-                        type="button"
-                        onClick={() => actions.forEach((a) => updateEp(entity, a, true))}
-                        className="text-[10px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 font-medium"
-                        title="Grant all permissions"
-                        data-testid={`grant-all-${entity}`}
-                      >
-                        Grant All
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => actions.forEach((a) => updateEp(entity, a, false))}
-                        className="text-[10px] px-2 py-0.5 rounded bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-medium"
-                        title="Revoke all permissions"
-                        data-testid={`revoke-all-${entity}`}
-                      >
-                        Revoke All
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {actions.sort((a, b) => ACTIONS.indexOf(a as PermissionAction) - ACTIONS.indexOf(b as PermissionAction)).map((action) => (
-                    <PermissionToggle
-                      key={action}
-                      entity={entity}
-                      action={action}
-                      isOn={Boolean(perms[action])}
-                      disabled={!canManageRoles}
-                      onChange={updateEp}
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PermissionsSummaryBar({ currentEp }: { currentEp: Record<string, Record<string, boolean>> }) {
-  const entities = Object.keys(currentEp).filter((k) => !k.startsWith("_"));
-  const totals: Record<string, { granted: number; total: number }> = {};
-  ACTIONS.forEach((a) => { totals[a] = { granted: 0, total: 0 }; });
-
-  entities.forEach((entity) => {
-    const perms = currentEp[entity] || {};
-    Object.entries(perms).forEach(([action, value]) => {
-      if (totals[action]) {
-        totals[action].total++;
-        if (value) totals[action].granted++;
-      }
-    });
-  });
-
-  return (
-    <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4" data-testid="permissions-summary">
-      {ACTIONS.map((action) => {
-        const { granted, total } = totals[action] || { granted: 0, total: 0 };
-        if (total === 0) return null;
-        return (
-          <div key={action} className="rounded-lg border border-gray-200 bg-white p-2.5 text-center">
-            <div className="flex items-center justify-center gap-1 mb-1">
-              {ACTION_ICONS[action]}
-              <span className="text-xs font-semibold capitalize text-gray-700">{action}</span>
-            </div>
-            <p className="text-lg font-bold text-gray-900">{granted}<span className="text-sm font-normal text-gray-400">/{total}</span></p>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function RolesControlCenter() {
   const { toast } = useToast();
   const [roles, setRoles] = useState<RoleRow[]>([]);
@@ -354,11 +189,11 @@ function RolesControlCenter() {
   const [showCreate, setShowCreate] = useState(false);
   const [createKey, setCreateKey] = useState("");
   const [createLabel, setCreateLabel] = useState("");
-  const [effective, setEffective] = useState<any[]>([]);
-  const [authorityEffective, setAuthorityEffective] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>("");
   const [canManageRoles, setCanManageRoles] = useState(false);
+  const [activeTab, setActiveTab] = useState<"permissions" | "navigation" | "settings">("permissions");
+  const [permSearch, setPermSearch] = useState("");
 
   const load = async () => {
     setIsLoading(true);
@@ -369,33 +204,23 @@ function RolesControlCenter() {
         fetch("/api/admin/users", { headers: authHeaders(), credentials: "include" }),
         fetch("/api/auth/permissions", { headers: authHeaders(), credentials: "include" }),
       ]);
-
       const roleData = await parseJsonSafe<{ roles?: RoleRow[] }>(roleRes);
       const userData = await parseJsonSafe<UserRow[] | { error?: string }>(userRes);
       const permData = await parseJsonSafe<{ canManageRoles?: boolean }>(permRes);
-
       const nextRoles = Array.isArray(roleData?.roles) ? roleData!.roles : [];
       const nextUsers = Array.isArray(userData) ? userData : [];
-
       setRoles(nextRoles);
       setUsers(nextUsers);
       setCanManageRoles(canManageRoleActions(Boolean(permData?.canManageRoles), roleRes.ok && userRes.ok));
       setSelectedRole((prev) => resolveSelectedRole(prev, nextRoles));
-
-      if (!roleRes.ok) {
-        setLoadError("Unable to load roles. Your account may not have access.");
-      }
+      if (!roleRes.ok) setLoadError("Unable to load roles. Your account may not have access.");
     } catch {
-      setRoles([]);
-      setUsers([]);
-      setLoadError("Unable to load roles right now.");
-    } finally {
-      setIsLoading(false);
-    }
+      setRoles([]); setUsers([]); setLoadError("Unable to load roles right now.");
+    } finally { setIsLoading(false); }
   };
 
   useEffect(() => { void load(); }, []);
-  useEffect(() => { setDraft({}); }, [selectedRole]);
+  useEffect(() => { setDraft({}); setPermSearch(""); }, [selectedRole]);
 
   const selected = useMemo(() => roles.find((r) => r.role === selectedRole), [roles, selectedRole]);
   const hasChanges = Object.keys(draft).length > 0;
@@ -409,11 +234,22 @@ function RolesControlCenter() {
   const effectiveRole = { ...selected, ...draft } as RoleRow;
   const currentEp = (effectiveRole.entityPermissions || {}) as Record<string, Record<string, boolean>>;
   const authorityRules = effectiveRole.authorityModel?.rules || {};
-  const authorityCategories = buildRoleAuthorityCategories(effectiveRole);
 
   const updateEp = (entity: string, action: string, value: boolean) => {
     const next = { ...currentEp, [entity]: { ...(currentEp[entity] || {}), [action]: value } };
     if ((action === "edit" || action === "approve" || action === "delete") && value) next[entity].view = true;
+    setDraft((d) => ({ ...d, entityPermissions: next }));
+  };
+
+  const bulkUpdateCategory = (entities: string[], value: boolean) => {
+    const next = { ...currentEp };
+    entities.forEach((entity) => {
+      if (next[entity]) {
+        const updated = { ...next[entity] };
+        Object.keys(updated).forEach((a) => { updated[a] = value; });
+        next[entity] = updated;
+      }
+    });
     setDraft((d) => ({ ...d, entityPermissions: next }));
   };
 
@@ -429,7 +265,7 @@ function RolesControlCenter() {
     if (!res.ok) return toast({ title: "Save failed", variant: "destructive" });
     setDraft({});
     await load();
-    toast({ title: "Role updated" });
+    toast({ title: "Role saved successfully" });
   };
 
   const createRole = async () => {
@@ -437,13 +273,7 @@ function RolesControlCenter() {
     const res = await fetch("/api/roles", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role: createKey.trim(), label: createLabel.trim(), sections: ["MY_WORK"], canEditData: true }) });
     if (!res.ok) return toast({ title: "Create role failed", variant: "destructive" });
     setShowCreate(false); setCreateKey(""); setCreateLabel(""); await load();
-  };
-
-  const loadEffective = async (userId?: number) => {
-    const res = await fetch("/api/roles/effective-access", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role: selectedRole, userId }) });
-    const data = await parseJsonSafe<{ matrix?: any[]; authorityMatrix?: any[] }>(res);
-    setEffective(data?.matrix || []);
-    setAuthorityEffective(data?.authorityMatrix || []);
+    toast({ title: "Role created" });
   };
 
   const resources = Object.keys(currentEp).filter((k) => !k.startsWith("_")).sort();
@@ -451,8 +281,8 @@ function RolesControlCenter() {
   const viewState: AdminRolesViewState = resolveAdminRolesViewState({ isLoading, hasError: Boolean(loadError), roleCount: roles.length, canManageRoles });
   const systemRoleCount = roles.filter((role) => role.isSystem).length;
   const customRoleCount = roles.filter((role) => !role.isSystem).length;
-  const protectedRoleCount = roles.filter((role) => role.protected).length;
   const assignedUsers = users.filter((user) => Boolean(user.role)).length;
+  const roleUsers = users.filter((u) => u.role === selectedRole);
 
   const getRoleIcon = (r: RoleRow) => {
     if (r.protected) return <Lock className="h-4 w-4 text-amber-500" />;
@@ -473,111 +303,71 @@ function RolesControlCenter() {
     return result;
   }, [resources]);
 
+  const filteredCategories = useMemo(() => {
+    if (!permSearch) return categorizedEntities;
+    const q = permSearch.toLowerCase();
+    return categorizedEntities.map((cat) => ({
+      ...cat,
+      entities: cat.entities.filter((e) => formatEntityName(e).toLowerCase().includes(q) || cat.label.toLowerCase().includes(q)),
+    })).filter((cat) => cat.entities.length > 0);
+  }, [categorizedEntities, permSearch]);
+
+  const totalGranted = resources.reduce((s, e) => s + Object.values(currentEp[e] || {}).filter(Boolean).length, 0);
+  const totalPossible = resources.reduce((s, e) => s + Object.keys(currentEp[e] || {}).length, 0);
+
   return (
     <div className="flex gap-4" style={{ minHeight: 'calc(100vh - 10rem)' }}>
-      <div className="w-[280px] shrink-0 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-hidden">
-        <Card className="border-gray-200 shadow-sm">
-          <CardHeader className="pb-3">
+      <div className="w-[260px] shrink-0 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-hidden">
+        <Card className="border-gray-200 shadow-sm h-full flex flex-col">
+          <CardHeader className="pb-3 shrink-0">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base font-semibold text-gray-900">Roles</CardTitle>
-              <Button size="sm" onClick={() => setShowCreate(true)} disabled={!canManageRoles} className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 px-3" data-testid="button-create-role">
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                New Role
+              <Button size="sm" onClick={() => setShowCreate(true)} disabled={!canManageRoles} className="bg-emerald-600 hover:bg-emerald-700 text-white h-7 px-2.5 text-xs" data-testid="button-create-role">
+                <Plus className="h-3.5 w-3.5 mr-1" /> New Role
               </Button>
             </div>
+            <div className="flex gap-2 mt-2 text-xs text-muted-foreground">
+              <span>{roles.length} total</span>
+              <span>·</span>
+              <span>{systemRoleCount} system</span>
+              <span>·</span>
+              <span>{customRoleCount} custom</span>
+              <span>·</span>
+              <span>{assignedUsers} users</span>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-4 gap-1.5">
-              <div className="text-center p-1.5 rounded-lg bg-gray-50 border border-gray-100">
-                <p className="text-sm font-bold text-gray-900">{roles.length}</p>
-                <p className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider">Total</p>
-              </div>
-              <div className="text-center p-1.5 rounded-lg bg-emerald-50 border border-emerald-100">
-                <p className="text-sm font-bold text-emerald-700">{systemRoleCount}</p>
-                <p className="text-[9px] font-medium text-emerald-600 uppercase tracking-wider">System</p>
-              </div>
-              <div className="text-center p-1.5 rounded-lg bg-emerald-50/50 border border-emerald-100/70">
-                <p className="text-sm font-bold text-emerald-700">{customRoleCount}</p>
-                <p className="text-[9px] font-medium text-emerald-600 uppercase tracking-wider">Custom</p>
-              </div>
-              <div className="text-center p-1.5 rounded-lg bg-emerald-50/30 border border-emerald-100/50">
-                <p className="text-sm font-bold text-emerald-700">{assignedUsers}</p>
-                <p className="text-[9px] font-medium text-emerald-600 uppercase tracking-wider">Users</p>
-              </div>
-            </div>
-
-            <div className="relative">
+          <CardContent className="space-y-3 flex-1 overflow-hidden flex flex-col">
+            <div className="relative shrink-0">
               <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-9 h-9 bg-gray-50 border-gray-200 focus:bg-white"
-                placeholder="Search roles..."
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                data-testid="input-search-roles"
-                aria-label="Search roles"
-              />
+              <Input className="pl-9 h-8 bg-gray-50 border-gray-200 focus:bg-white text-sm" placeholder="Search roles..." value={filter} onChange={(e) => setFilter(e.target.value)} data-testid="input-search-roles" />
             </div>
-
-            <div className="flex gap-1">
+            <div className="flex gap-1 shrink-0">
               {(["all", "system", "custom"] as const).map((k) => (
-                <Button
-                  key={k}
-                  variant={kindFilter === k ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setKindFilter(k)}
-                  className={`h-7 text-xs font-medium flex-1 ${kindFilter === k ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+                <Button key={k} variant={kindFilter === k ? "default" : "outline"} size="sm" onClick={() => setKindFilter(k)}
+                  className={`h-6 text-[11px] font-medium flex-1 ${kindFilter === k ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
                   data-testid={`button-filter-${k}`}
-                >
-                  {k.charAt(0).toUpperCase() + k.slice(1)}
-                </Button>
+                >{k.charAt(0).toUpperCase() + k.slice(1)}</Button>
               ))}
             </div>
-
-            <div className="space-y-1.5 max-h-[calc(100vh-20rem)] overflow-auto pr-1">
+            <div className="space-y-1 overflow-auto flex-1 pr-1">
               {filteredRoles.map((r) => {
                 const isSelected = selectedRole === r.role;
                 return (
-                  <button
-                    key={r.role}
-                    className={`w-full text-left rounded-lg border p-3 transition-all duration-150 group ${
-                      isSelected
-                        ? "border-emerald-300 bg-emerald-50 shadow-sm ring-1 ring-emerald-200"
-                        : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"
-                    }`}
-                    onClick={() => setSelectedRole(r.role)}
-                    data-testid={`button-role-${r.role}`}
+                  <button key={r.role}
+                    className={`w-full text-left rounded-lg border p-2.5 transition-all group ${isSelected ? "border-emerald-300 bg-emerald-50 shadow-sm" : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"}`}
+                    onClick={() => setSelectedRole(r.role)} data-testid={`button-role-${r.role}`}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 ${
-                        isSelected ? "bg-emerald-100" : "bg-gray-100 group-hover:bg-gray-200/70"
-                      }`}>
+                    <div className="flex items-center gap-2">
+                      <div className={`h-7 w-7 rounded-md flex items-center justify-center shrink-0 ${isSelected ? "bg-emerald-100" : "bg-gray-100"}`}>
                         {getRoleIcon(r)}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className={`font-semibold text-sm truncate ${isSelected ? "text-emerald-900" : "text-gray-900"}`}>
-                            {r.label}
-                          </span>
-                          {r.isSystem && (
-                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-gray-100 text-gray-500 border-gray-200 font-medium shrink-0">
-                              System
-                            </Badge>
-                          )}
+                        <div className="flex items-center gap-1.5">
+                          <span className={`font-semibold text-xs truncate ${isSelected ? "text-emerald-900" : "text-gray-900"}`}>{r.label}</span>
+                          {r.isSystem && <Badge variant="secondary" className="text-[9px] px-1 py-0 h-3.5 bg-gray-100 text-gray-500 border-gray-200 shrink-0">System</Badge>}
                         </div>
-                        <div className="flex items-center gap-3 mt-0.5">
-                          <span className="text-xs text-muted-foreground flex items-center gap-1">
-                            <Users className="h-3 w-3" />
-                            {r.userCount || 0} users
-                          </span>
-                          {r.protected && (
-                            <span className="text-xs text-amber-600 flex items-center gap-0.5">
-                              <Lock className="h-3 w-3" />
-                              Protected
-                            </span>
-                          )}
-                        </div>
+                        <span className="text-[11px] text-muted-foreground">{r.userCount || 0} users{r.protected ? " · Protected" : ""}</span>
                       </div>
-                      <ChevronRight className={`h-4 w-4 shrink-0 transition-colors ${isSelected ? "text-emerald-500" : "text-gray-300 group-hover:text-gray-400"}`} />
                     </div>
                   </button>
                 );
@@ -587,376 +377,318 @@ function RolesControlCenter() {
         </Card>
       </div>
 
-      <div className="flex-1 min-w-0 space-y-4">
-        <AdminQueryState
-          isLoading={viewState === "loading"}
-          error={viewState === "error" ? loadError : null}
-          onRetry={() => { void load(); }}
-          loadingLabel="Loading role authority structure..."
-        >
+      <div className="flex-1 min-w-0 space-y-3">
+        <AdminQueryState isLoading={viewState === "loading"} error={viewState === "error" ? loadError : null} onRetry={() => { void load(); }} loadingLabel="Loading roles...">
           {viewState === "empty" ? (
             <Card className="border-gray-200 shadow-sm">
               <CardContent className="py-16 text-center">
-                <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
-                  <Shield className="h-6 w-6 text-gray-400" />
-                </div>
+                <Shield className="h-10 w-10 text-gray-300 mx-auto mb-3" />
                 <p className="text-lg font-semibold text-gray-900">No roles configured</p>
-                <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
-                  No system or custom roles were found. Seeded roles should appear automatically on startup.
-                </p>
-                {canManageRoles && (
-                  <Button size="sm" onClick={() => setShowCreate(true)} className="mt-4 bg-emerald-600 hover:bg-emerald-700">
-                    <Plus className="h-3.5 w-3.5 mr-1" />Create Role
-                  </Button>
-                )}
+                <p className="text-sm text-muted-foreground mt-1">Seeded roles appear automatically on startup.</p>
+                {canManageRoles && <Button size="sm" onClick={() => setShowCreate(true)} className="mt-4 bg-emerald-600 hover:bg-emerald-700"><Plus className="h-3.5 w-3.5 mr-1" />Create Role</Button>}
               </CardContent>
             </Card>
-          ) : (
+          ) : viewState === "ready" && (
             <>
-
-              {viewState === "ready" && hasChanges && (
-                <div className="sticky top-2 z-20 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-center justify-between shadow-sm">
+              {hasChanges && (
+                <div className="sticky top-2 z-20 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 flex items-center justify-between shadow-sm">
                   <div className="flex items-center gap-2">
-                    <div className="h-6 w-6 rounded-full bg-amber-100 flex items-center justify-center">
-                      <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
-                    </div>
-                    <span className="text-sm font-medium text-amber-800">You have unsaved changes</span>
+                    <AlertTriangle className="h-4 w-4 text-amber-600" />
+                    <span className="text-sm font-medium text-amber-800">Unsaved changes</span>
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => setDraft({})} className="h-8 border-amber-300 text-amber-700 hover:bg-amber-100" data-testid="button-reset-changes">
-                      Reset
-                    </Button>
-                    <Button size="sm" onClick={save} disabled={!canManageRoles} className="h-8 bg-emerald-600 hover:bg-emerald-700" data-testid="button-save-changes">
-                      <Save className="h-3.5 w-3.5 mr-1" />Save Changes
+                    <Button size="sm" variant="outline" onClick={() => setDraft({})} className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-100" data-testid="button-reset-changes">Discard</Button>
+                    <Button size="sm" onClick={save} disabled={!canManageRoles} className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700" data-testid="button-save-changes">
+                      <Save className="h-3 w-3 mr-1" />Save
                     </Button>
                   </div>
                 </div>
               )}
 
-              {viewState === "ready" && (
-                <Card className="border-gray-200 shadow-sm">
-                  <CardHeader className="border-b border-gray-100 pb-4">
+              <Card className="border-gray-200 shadow-sm">
+                <CardHeader className="border-b border-gray-100 py-3">
+                  <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center">
-                        {selected && getRoleIcon(selected)}
-                      </div>
+                      <div className="h-9 w-9 rounded-lg bg-emerald-100 flex items-center justify-center">{selected && getRoleIcon(selected)}</div>
                       <div>
-                        <CardTitle className="text-lg font-semibold text-gray-900">{selected?.label || "Select a role"}</CardTitle>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {selected?.isSystem ? "System role" : "Custom role"} · {selected?.userCount || 0} users assigned
+                        <CardTitle className="text-base font-semibold text-gray-900">{selected?.label || "Select a role"}</CardTitle>
+                        <p className="text-xs text-muted-foreground">
+                          {selected?.isSystem ? "System" : "Custom"} · {roleUsers.length} user{roleUsers.length !== 1 ? "s" : ""} · {totalGranted}/{totalPossible} permissions granted
                         </p>
                       </div>
                     </div>
-                  </CardHeader>
-                  <CardContent className="pt-5">
-                    <Tabs defaultValue="permissions">
-                      <TabsList className="bg-gray-100/80 p-1 h-auto flex-wrap gap-0.5">
-                        {[
-                          { value: "permissions", label: "Permissions" },
-                          { value: "overview", label: "Overview" },
-                          { value: "navigation", label: "Navigation" },
-                          { value: "authority", label: "Authority Model" },
-                          { value: "users", label: "Users" },
-                          { value: "effective", label: "Effective Access" },
-                        ].map((tab) => (
-                          <TabsTrigger
-                            key={tab.value}
-                            value={tab.value}
-                            className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-3 py-1.5 text-xs font-medium"
-                            data-testid={`tab-role-${tab.value}`}
-                          >
-                            {tab.label}
-                          </TabsTrigger>
+                    {roleUsers.length > 0 && (
+                      <div className="flex -space-x-2">
+                        {roleUsers.slice(0, 5).map((u) => (
+                          <div key={u.id} className="h-7 w-7 rounded-full bg-emerald-100 border-2 border-white flex items-center justify-center text-emerald-700 font-bold text-[10px]" title={u.name}>
+                            {(u.name || "?").charAt(0).toUpperCase()}
+                          </div>
                         ))}
-                      </TabsList>
+                        {roleUsers.length > 5 && <div className="h-7 w-7 rounded-full bg-gray-100 border-2 border-white flex items-center justify-center text-gray-600 font-bold text-[10px]">+{roleUsers.length - 5}</div>}
+                      </div>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="flex border-b border-gray-100">
+                    {([
+                      { key: "permissions" as const, label: "Permissions", icon: <Shield className="h-3.5 w-3.5" /> },
+                      { key: "navigation" as const, label: "Navigation", icon: <Eye className="h-3.5 w-3.5" /> },
+                      { key: "settings" as const, label: "Settings", icon: <Pencil className="h-3.5 w-3.5" /> },
+                    ]).map((tab) => (
+                      <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                        className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${activeTab === tab.key ? "border-emerald-600 text-emerald-700 bg-emerald-50/50" : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"}`}
+                        data-testid={`tab-role-${tab.key}`}
+                      >{tab.icon}{tab.label}</button>
+                    ))}
+                  </div>
 
-                      <TabsContent value="permissions" className="mt-4">
+                  <div className="p-4">
+                    {activeTab === "permissions" && (
+                      <>
                         {resources.length === 0 ? (
-                          <div className="py-12 text-center rounded-lg border border-dashed border-gray-200 bg-gray-50/50">
+                          <div className="py-12 text-center">
                             <ToggleLeft className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                            <p className="text-sm font-medium text-gray-600">No permissions configured for this role</p>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              This role has no entity permissions set. Permissions are typically configured during role setup.
-                            </p>
+                            <p className="text-sm font-medium text-gray-600">No permissions configured</p>
+                            <p className="text-xs text-muted-foreground mt-1">This role has no entity permissions set yet.</p>
                           </div>
                         ) : (
                           <>
-                            <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-3">
-                              <p className="text-sm text-emerald-800">
-                                <strong>How it works:</strong> Click any permission button to toggle it on or off.
-                                Color-coded buttons show the current state — colored means granted, gray means revoked.
-                                Use "Grant All" or "Revoke All" for bulk changes.
-                              </p>
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="relative flex-1">
+                                <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                                <Input className="pl-8 h-8 text-sm bg-gray-50 border-gray-200" placeholder="Filter permissions..." value={permSearch} onChange={(e) => setPermSearch(e.target.value)} data-testid="input-search-permissions" />
+                              </div>
+                              {canManageRoles && (
+                                <div className="flex gap-1.5">
+                                  <Button size="sm" variant="outline" className="h-8 text-xs text-emerald-700 border-emerald-200 hover:bg-emerald-50" onClick={() => bulkUpdateCategory(resources, true)} data-testid="button-grant-all-global">Grant All</Button>
+                                  <Button size="sm" variant="outline" className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => bulkUpdateCategory(resources, false)} data-testid="button-revoke-all-global">Revoke All</Button>
+                                </div>
+                              )}
                             </div>
-                            <PermissionsSummaryBar currentEp={currentEp} />
-                            <div className="space-y-3 max-h-[60vh] overflow-auto pr-1">
-                              {categorizedEntities.map((cat) => (
-                                <PermissionMatrixCategory
-                                  key={cat.key}
-                                  categoryKey={cat.key}
-                                  category={cat}
-                                  currentEp={currentEp}
-                                  canManageRoles={canManageRoles}
-                                  updateEp={updateEp}
-                                />
-                              ))}
+
+                            <div className="border border-gray-200 rounded-lg overflow-hidden max-h-[60vh] overflow-y-auto">
+                              <table className="w-full text-sm" data-testid="permissions-table">
+                                <thead className="sticky top-0 z-10">
+                                  <tr className="bg-gray-50 border-b border-gray-200">
+                                    <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600 w-[200px] bg-gray-50">Entity</th>
+                                    {ACTIONS.map((a) => (
+                                      <th key={a} className="text-center px-1.5 py-2 text-xs font-semibold text-gray-600 capitalize w-[70px] bg-gray-50">
+                                        <div className="flex items-center justify-center gap-1">{ACTION_ICONS[a]}{a}</div>
+                                      </th>
+                                    ))}
+                                    {canManageRoles && <th className="w-[80px] bg-gray-50" />}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {filteredCategories.length === 0 && (
+                                    <tr><td colSpan={ACTIONS.length + (canManageRoles ? 2 : 1)} className="text-center py-8 text-sm text-muted-foreground">No permissions match "{permSearch}"</td></tr>
+                                  )}
+                                  {filteredCategories.map((cat) => (
+                                    <React.Fragment key={cat.key}>
+                                      <tr className="bg-gray-50/80">
+                                        <td colSpan={ACTIONS.length + (canManageRoles ? 2 : 1)} className="px-3 py-1.5">
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{cat.label}</span>
+                                            {canManageRoles && (
+                                              <div className="flex gap-1">
+                                                <button type="button" onClick={() => bulkUpdateCategory(cat.entities, true)} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-medium" data-testid={`grant-category-${cat.key}`}>Grant all</button>
+                                                <button type="button" onClick={() => bulkUpdateCategory(cat.entities, false)} className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100 font-medium" data-testid={`revoke-category-${cat.key}`}>Revoke all</button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                      {cat.entities.map((entity) => {
+                                        const perms = currentEp[entity] || {};
+                                        return (
+                                          <tr key={entity} className="border-t border-gray-100 hover:bg-gray-50/50" data-testid={`perm-row-${entity}`}>
+                                            <td className="px-3 py-2 text-xs font-medium text-gray-800">{formatEntityName(entity)}</td>
+                                            {ACTIONS.map((action) => {
+                                              const exists = action in perms;
+                                              if (!exists) return <td key={action} className="text-center px-1.5 py-2"><span className="text-gray-200">-</span></td>;
+                                              const isOn = Boolean(perms[action]);
+                                              return (
+                                                <td key={action} className="text-center px-1.5 py-2">
+                                                  <button type="button" disabled={!canManageRoles} onClick={() => updateEp(entity, action, !isOn)}
+                                                    className={`inline-flex items-center justify-center h-7 w-7 rounded-md border transition-all ${canManageRoles ? "cursor-pointer" : "cursor-not-allowed opacity-60"} ${isOn
+                                                      ? ACTION_COLORS_ON[action] || "bg-emerald-100 text-emerald-700 border-emerald-300"
+                                                      : "bg-gray-50 text-gray-300 border-gray-200 hover:bg-gray-100"}`}
+                                                    title={`${isOn ? "Revoke" : "Grant"} ${action} on ${formatEntityName(entity)}`}
+                                                    data-testid={`toggle-${entity}-${action}`}
+                                                  >
+                                                    {isOn ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+                                                  </button>
+                                                </td>
+                                              );
+                                            })}
+                                            {canManageRoles && (
+                                              <td className="text-center px-1.5 py-2">
+                                                <div className="flex gap-0.5 justify-center">
+                                                  <button type="button" onClick={() => Object.keys(perms).forEach((a) => updateEp(entity, a, true))} className="text-[9px] px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100" title="Grant all" data-testid={`grant-all-${entity}`}>All</button>
+                                                  <button type="button" onClick={() => Object.keys(perms).forEach((a) => updateEp(entity, a, false))} className="text-[9px] px-1 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100" title="Revoke all" data-testid={`revoke-all-${entity}`}>None</button>
+                                                </div>
+                                              </td>
+                                            )}
+                                          </tr>
+                                        );
+                                      })}
+                                    </React.Fragment>
+                                  ))}
+                                </tbody>
+                              </table>
                             </div>
                           </>
                         )}
-                      </TabsContent>
+                      </>
+                    )}
 
-                      <TabsContent value="overview" className="space-y-4 mt-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-1.5">
-                            <Label htmlFor="role-name" className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Role Name</Label>
-                            <Input
-                              id="role-name"
-                              value={effectiveRole.label || ""}
-                              onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))}
-                              disabled={!canManageRoles}
-                              className="h-10 bg-gray-50 border-gray-200 focus:bg-white"
-                              data-testid="input-role-name"
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <Label htmlFor="role-description" className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Description</Label>
-                            <Input
-                              id="role-description"
-                              value={effectiveRole.description || ""}
-                              onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
-                              disabled={!canManageRoles}
-                              className="h-10 bg-gray-50 border-gray-200 focus:bg-white"
-                              data-testid="input-role-description"
-                            />
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4 py-2 px-3 rounded-lg bg-gray-50 border border-gray-100">
-                          <span className="text-sm text-gray-600">
-                            <strong>Type:</strong> {selected?.isSystem ? "System" : "Custom"}
-                          </span>
-                          <span className="text-gray-300">|</span>
-                          <span className="text-sm text-gray-600">
-                            <strong>Assigned users:</strong> {selected?.userCount || 0}
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {authorityCategories.map((category) => (
-                            <div key={category.label} className="rounded-lg border border-gray-200 bg-gray-50/50 p-3">
-                              <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{category.label}</h4>
-                              {category.items.length > 0 ? (
-                                <div className="flex flex-wrap gap-1.5">
-                                  {category.items.map((item) => (
-                                    <Badge key={item} variant="outline" className="text-xs bg-white border-gray-200 text-gray-700 font-medium">
-                                      {item}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="text-xs text-muted-foreground italic">No authority configured</p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </TabsContent>
-
-                      <TabsContent value="navigation" className="mt-4">
-                        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-3">
-                          <p className="text-sm text-emerald-800">
-                            <strong>Navigation access:</strong> Toggle which sections of the app this role can see in the top navigation bar.
-                            These match the navigation tabs shown at the top of the screen.
-                          </p>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {NAV_SECTIONS.map((section) => {
-                            const checked = Boolean((effectiveRole.sections || []).includes(section.key));
-                            return (
-                              <label
-                                key={section.key}
-                                className={`flex items-start gap-3 rounded-lg border p-3.5 cursor-pointer transition-colors ${
-                                  checked ? "border-emerald-300 bg-emerald-50 shadow-sm" : "border-gray-200 bg-white hover:bg-gray-50"
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(e) => {
-                                    const next = new Set(effectiveRole.sections || []);
-                                    if (e.target.checked) next.add(section.key); else next.delete(section.key);
-                                    setDraft((d) => ({ ...d, sections: [...next] }));
-                                  }}
-                                  disabled={!canManageRoles}
-                                  className="h-4 w-4 mt-0.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                                  data-testid={`checkbox-nav-${section.key}`}
-                                />
-                                <div className="min-w-0">
-                                  <span className={`text-sm font-semibold block ${checked ? "text-emerald-800" : "text-gray-700"}`}>{section.label}</span>
-                                  <span className="text-xs text-muted-foreground">{section.description}</span>
-                                </div>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </TabsContent>
-
-                      <TabsContent value="authority" className="mt-4 space-y-3">
-                        <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-3">
-                          <p className="text-sm text-emerald-800">
-                            <strong>Authority model:</strong> Fine-grained operational authority with scope controls.
-                            Enable actions per entity and set the scope (own items, department, assigned projects, all projects, or company-wide).
-                          </p>
-                        </div>
-                        {allEntities.length === 0 ? (
-                          <div className="py-12 text-center rounded-lg border border-dashed border-gray-200 bg-gray-50/50">
-                            <Shield className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                            <p className="text-sm font-medium text-gray-600">No authority rules configured</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-2 max-h-[60vh] overflow-auto pr-1">
-                            {allEntities.map((entity) => (
-                              <div key={entity} className="rounded-lg border border-gray-200 p-4 bg-white space-y-3">
-                                <div className="font-semibold text-sm text-gray-900 pb-2 border-b border-gray-100">{formatEntityName(entity)}</div>
-                                <div className="space-y-2">
-                                  {AUTHORITY_ACTIONS.map((action) => {
-                                    const key = `${entity}.${action}`;
-                                    const rule = authorityRules[key] || {};
-                                    const isEnabled = Boolean(rule.enabled);
-                                    return (
-                                      <div key={key} className={`grid grid-cols-[1fr,auto,1fr] gap-3 items-center text-sm py-1.5 px-2 rounded-md transition-colors ${isEnabled ? "bg-emerald-50/50" : ""}`}>
-                                        <span className="text-gray-700 font-medium capitalize">{action.replace(/_/g, " ")}</span>
-                                        <Switch
-                                          checked={isEnabled}
-                                          onCheckedChange={(v) => updateAuthorityRule(entity, action, { enabled: v })}
-                                          disabled={!canManageRoles}
-                                          aria-label={`${action} authority for ${formatEntityName(entity)}`}
-                                          data-testid={`switch-authority-${entity}-${action}`}
-                                        />
-                                        <select
-                                          className={`border rounded-md h-8 px-2 text-sm transition-colors ${
-                                            isEnabled
-                                              ? "border-emerald-200 bg-emerald-50 text-emerald-800 focus:border-emerald-300 focus:ring-1 focus:ring-emerald-200"
-                                              : "border-gray-200 bg-gray-50 text-gray-400 focus:bg-white focus:border-gray-300"
-                                          }`}
-                                          value={rule.scope || "assigned_projects"}
-                                          onChange={(e) => updateAuthorityRule(entity, action, { scope: e.target.value })}
-                                          disabled={!canManageRoles || !isEnabled}
-                                          aria-label={`Scope for ${action} on ${formatEntityName(entity)}`}
-                                          data-testid={`select-scope-${entity}-${action}`}
-                                        >
-                                          {AUTHORITY_SCOPES.map((scope) => <option key={scope} value={scope}>{scope.replace(/_/g, " ")}</option>)}
-                                        </select>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
+                    {activeTab === "navigation" && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {NAV_SECTIONS.map((section) => {
+                          const checked = Boolean((effectiveRole.sections || []).includes(section.key));
+                          return (
+                            <label key={section.key}
+                              className={`flex items-center gap-2.5 rounded-lg border p-3 cursor-pointer transition-colors ${checked ? "border-emerald-300 bg-emerald-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}
+                            >
+                              <input type="checkbox" checked={checked}
+                                onChange={(e) => {
+                                  const next = new Set(effectiveRole.sections || []);
+                                  if (e.target.checked) next.add(section.key); else next.delete(section.key);
+                                  setDraft((d) => ({ ...d, sections: [...next] }));
+                                }}
+                                disabled={!canManageRoles}
+                                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
+                                data-testid={`checkbox-nav-${section.key}`}
+                              />
+                              <div className="min-w-0">
+                                <span className={`text-sm font-semibold block ${checked ? "text-emerald-800" : "text-gray-700"}`}>{section.label}</span>
+                                <span className="text-[11px] text-muted-foreground">{section.description}</span>
                               </div>
-                            ))}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {activeTab === "settings" && (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <Label className="text-xs font-medium text-gray-600 mb-1.5 block">Display Name</Label>
+                            <Input value={effectiveRole.label || ""} onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} disabled={!canManageRoles} className="h-9 bg-gray-50" data-testid="input-role-name" />
+                          </div>
+                          <div>
+                            <Label className="text-xs font-medium text-gray-600 mb-1.5 block">Description</Label>
+                            <Input value={effectiveRole.description || ""} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} disabled={!canManageRoles} className="h-9 bg-gray-50" data-testid="input-role-description" />
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg border border-gray-200 p-3 bg-gray-50/50">
+                          <div className="flex items-center gap-4 text-sm text-gray-600">
+                            <span><strong>Type:</strong> {selected?.isSystem ? "System" : "Custom"}</span>
+                            <span><strong>Key:</strong> <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{selected?.role}</code></span>
+                            {selected?.protected && <Badge variant="outline" className="text-amber-600 border-amber-200 text-xs">Protected</Badge>}
+                          </div>
+                        </div>
+
+                        {roleUsers.length > 0 && (
+                          <div>
+                            <Label className="text-xs font-medium text-gray-600 mb-2 block">Assigned Users ({roleUsers.length})</Label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {roleUsers.map((u) => (
+                                <div key={u.id} className="flex items-center gap-2.5 border border-gray-200 rounded-lg p-2.5 bg-white">
+                                  <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-xs shrink-0">{(u.name || "?").charAt(0).toUpperCase()}</div>
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-semibold text-gray-900 truncate">{u.name}</div>
+                                    <div className="text-[11px] text-muted-foreground truncate">{u.email}</div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         )}
-                      </TabsContent>
 
-                      <TabsContent value="users" className="mt-4">
-                        <div className="space-y-2">
-                          {users.filter((u) => u.role === selectedRole).length === 0 ? (
-                            <div className="py-12 text-center">
-                              <Users className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                              <p className="text-sm text-muted-foreground">No users assigned to this role</p>
+                        {allEntities.length > 0 && (
+                          <div>
+                            <Label className="text-xs font-medium text-gray-600 mb-2 block">Authority Model</Label>
+                            <div className="border border-gray-200 rounded-lg overflow-hidden max-h-[50vh] overflow-y-auto">
+                              <table className="w-full text-sm">
+                                <thead className="sticky top-0 z-10">
+                                  <tr className="bg-gray-50 border-b border-gray-200">
+                                    <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600 bg-gray-50">Entity</th>
+                                    {AUTHORITY_ACTIONS.map((a) => (
+                                      <th key={a} className="text-center px-1 py-2 text-[10px] font-semibold text-gray-600 capitalize bg-gray-50">{a.replace(/_/g, " ")}</th>
+                                    ))}
+                                    <th className="text-center px-1 py-2 text-[10px] font-semibold text-gray-600 bg-gray-50">Scope</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {allEntities.map((entity) => {
+                                    const enabledActions = AUTHORITY_ACTIONS.filter((a) => Boolean((authorityRules[`${entity}.${a}`] || {}).enabled));
+                                    const firstEnabledScope = enabledActions.length > 0 ? (authorityRules[`${entity}.${enabledActions[0]}`]?.scope || "assigned_projects") : "assigned_projects";
+                                    return (
+                                      <tr key={entity} className="border-t border-gray-100 hover:bg-gray-50/50">
+                                        <td className="px-3 py-1.5 text-xs font-medium text-gray-800">{formatEntityName(entity)}</td>
+                                        {AUTHORITY_ACTIONS.map((action) => {
+                                          const key = `${entity}.${action}`;
+                                          const rule = authorityRules[key] || {};
+                                          const isEnabled = Boolean(rule.enabled);
+                                          return (
+                                            <td key={action} className="text-center px-1 py-1.5">
+                                              <button type="button" disabled={!canManageRoles}
+                                                onClick={() => updateAuthorityRule(entity, action, { enabled: !isEnabled })}
+                                                className={`inline-flex items-center justify-center h-6 w-6 rounded border transition-all ${canManageRoles ? "cursor-pointer" : "cursor-not-allowed opacity-60"} ${isEnabled ? "bg-emerald-100 text-emerald-700 border-emerald-300" : "bg-gray-50 text-gray-300 border-gray-200 hover:bg-gray-100"}`}
+                                                data-testid={`switch-authority-${entity}-${action}`}
+                                              >
+                                                {isEnabled ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                                              </button>
+                                            </td>
+                                          );
+                                        })}
+                                        <td className="text-center px-1 py-1.5">
+                                          <select
+                                            className="border rounded h-7 px-1 text-[11px] border-gray-200 bg-gray-50 text-gray-700"
+                                            value={firstEnabledScope}
+                                            onChange={(e) => AUTHORITY_ACTIONS.forEach((a) => { if (Boolean((authorityRules[`${entity}.${a}`] || {}).enabled)) updateAuthorityRule(entity, a, { scope: e.target.value }); })}
+                                            disabled={!canManageRoles || enabledActions.length === 0}
+                                            data-testid={`select-scope-${entity}`}
+                                          >
+                                            {AUTHORITY_SCOPES.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                                          </select>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
                             </div>
-                          ) : (
-                            users.filter((u) => u.role === selectedRole).map((u) => (
-                              <div key={u.id} className="border border-gray-200 rounded-lg p-3 flex justify-between items-center gap-3 bg-white hover:bg-gray-50 transition-colors">
-                                <div className="flex items-center gap-3">
-                                  <div className="h-9 w-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-semibold text-sm">
-                                    {(u.name || "?").charAt(0).toUpperCase()}
-                                  </div>
-                                  <div>
-                                    <div className="text-sm font-semibold text-gray-900">{u.name}</div>
-                                    <div className="text-xs text-muted-foreground">{u.email}</div>
-                                  </div>
-                                </div>
-                                <Button size="sm" variant="outline" onClick={() => loadEffective(u.id)} className="h-8 text-xs border-gray-200" data-testid={`button-inspect-${u.id}`}>
-                                  Inspect access
-                                </Button>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </TabsContent>
-
-                      <TabsContent value="effective" className="mt-4">
-                        <Button size="sm" onClick={() => loadEffective()} className="mb-4 bg-emerald-600 hover:bg-emerald-700" data-testid="button-refresh-effective">
-                          Refresh effective access
-                        </Button>
-                        <div className="space-y-3 max-h-[55vh] overflow-auto pr-1">
-                          {effective.length === 0 && authorityEffective.length === 0 && (
-                            <div className="py-8 text-center text-sm text-muted-foreground">
-                              Click "Refresh effective access" to see what this role can actually do.
-                            </div>
-                          )}
-                          {effective.length > 0 && <h4 className="text-sm font-semibold text-gray-700">Entity Permissions</h4>}
-                          {effective.map((row: any, idx: number) => (
-                            <div key={`legacy-${row.entity}-${idx}`} className="rounded-lg border border-gray-200 p-3 bg-white">
-                              <div className="font-semibold text-sm mb-2 text-gray-900">{formatEntityName(row.entity)}</div>
-                              <div className="flex flex-wrap gap-1.5">
-                                {row.actions.map((a: any) => (
-                                  <div key={a.action} className={`text-xs rounded-lg px-3 py-1.5 font-semibold flex items-center gap-1.5 ${
-                                    a.allowed
-                                      ? ACTION_COLORS_ON[a.action] || "bg-emerald-100 text-emerald-700 border border-emerald-300"
-                                      : "bg-gray-100 text-gray-400 border border-gray-200"
-                                  }`}>
-                                    {a.allowed ? (ACTION_ICONS[a.action] || <Check className="h-3 w-3" />) : <X className="h-3 w-3" />}
-                                    <span className="capitalize">{a.action}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                          {authorityEffective.length > 0 && <h4 className="text-sm font-semibold text-gray-700 pt-2">Authority Permissions</h4>}
-                          {authorityEffective.map((row: any, idx: number) => (
-                            <div key={`auth-${row.entity}-${idx}`} className="rounded-lg border border-gray-200 p-3 bg-white">
-                              <div className="font-semibold text-sm mb-2 text-gray-900">{formatEntityName(row.entity)}</div>
-                              <div className="flex flex-wrap gap-1.5">
-                                {row.actions.map((a: any) => (
-                                  <div key={a.action} className={`text-xs rounded-lg px-3 py-1.5 font-semibold flex items-center gap-1.5 ${
-                                    a.allowed
-                                      ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
-                                      : "bg-gray-100 text-gray-400 border border-gray-200"
-                                  }`}>
-                                    {a.allowed ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-                                    <span className="capitalize">{a.action}</span>
-                                    <span className="text-[10px] opacity-70">({a.scope})</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </TabsContent>
-                    </Tabs>
-                  </CardContent>
-                </Card>
-              )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             </>
           )}
         </AdminQueryState>
       </div>
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-lg">Create New Role</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="create-role-key" className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Role Key</Label>
-              <Input id="create-role-key" value={createKey} onChange={(e) => setCreateKey(e.target.value.toUpperCase())} placeholder="e.g. SITE_MANAGER" className="h-10" data-testid="input-create-role-key" />
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Create New Role</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label className="text-xs font-medium text-gray-600">Role Key *</Label>
+              <Input value={createKey} onChange={(e) => setCreateKey(e.target.value.toUpperCase())} placeholder="e.g. SITE_MANAGER" data-testid="input-create-role-key" />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="create-role-label" className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Display Name</Label>
-              <Input id="create-role-label" value={createLabel} onChange={(e) => setCreateLabel(e.target.value)} placeholder="e.g. Site Manager" className="h-10" data-testid="input-create-role-label" />
+            <div>
+              <Label className="text-xs font-medium text-gray-600">Display Name *</Label>
+              <Input value={createLabel} onChange={(e) => setCreateLabel(e.target.value)} placeholder="e.g. Site Manager" data-testid="input-create-role-label" />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setShowCreate(false)} data-testid="button-cancel-create">Cancel</Button>
             <Button onClick={createRole} disabled={!canManageRoles} className="bg-emerald-600 hover:bg-emerald-700" data-testid="button-confirm-create">Create</Button>
           </DialogFooter>
