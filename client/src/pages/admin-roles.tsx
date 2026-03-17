@@ -471,8 +471,8 @@ function RolesControlCenter() {
   }, [resources]);
 
   return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-[360px,minmax(0,1fr)]">
-      <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px,minmax(0,1fr)]">
+      <div className="space-y-4 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-hidden">
         <Card className="border-gray-200 shadow-sm">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
@@ -484,22 +484,22 @@ function RolesControlCenter() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-4 gap-3">
-              <div className="text-center p-2.5 rounded-lg bg-gray-50 border border-gray-100">
-                <p className="text-lg font-bold text-gray-900">{roles.length}</p>
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Total</p>
+            <div className="grid grid-cols-4 gap-1.5">
+              <div className="text-center p-1.5 rounded-lg bg-gray-50 border border-gray-100">
+                <p className="text-sm font-bold text-gray-900">{roles.length}</p>
+                <p className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider">Total</p>
               </div>
-              <div className="text-center p-2.5 rounded-lg bg-emerald-50 border border-emerald-100">
-                <p className="text-lg font-bold text-emerald-700">{systemRoleCount}</p>
-                <p className="text-[11px] font-medium text-emerald-600 uppercase tracking-wider">System</p>
+              <div className="text-center p-1.5 rounded-lg bg-emerald-50 border border-emerald-100">
+                <p className="text-sm font-bold text-emerald-700">{systemRoleCount}</p>
+                <p className="text-[9px] font-medium text-emerald-600 uppercase tracking-wider">System</p>
               </div>
-              <div className="text-center p-2.5 rounded-lg bg-emerald-50/50 border border-emerald-100/70">
-                <p className="text-lg font-bold text-emerald-700">{customRoleCount}</p>
-                <p className="text-[11px] font-medium text-emerald-600 uppercase tracking-wider">Custom</p>
+              <div className="text-center p-1.5 rounded-lg bg-emerald-50/50 border border-emerald-100/70">
+                <p className="text-sm font-bold text-emerald-700">{customRoleCount}</p>
+                <p className="text-[9px] font-medium text-emerald-600 uppercase tracking-wider">Custom</p>
               </div>
-              <div className="text-center p-2.5 rounded-lg bg-emerald-50/30 border border-emerald-100/50">
-                <p className="text-lg font-bold text-emerald-700">{assignedUsers}</p>
-                <p className="text-[11px] font-medium text-emerald-600 uppercase tracking-wider">Users</p>
+              <div className="text-center p-1.5 rounded-lg bg-emerald-50/30 border border-emerald-100/50">
+                <p className="text-sm font-bold text-emerald-700">{assignedUsers}</p>
+                <p className="text-[9px] font-medium text-emerald-600 uppercase tracking-wider">Users</p>
               </div>
             </div>
 
@@ -530,7 +530,7 @@ function RolesControlCenter() {
               ))}
             </div>
 
-            <div className="space-y-1.5 max-h-[60vh] overflow-auto pr-1">
+            <div className="space-y-1.5 max-h-[45vh] lg:max-h-[calc(100vh-22rem)] overflow-auto pr-1">
               {filteredRoles.map((r) => {
                 const isSelected = selectedRole === r.role;
                 return (
@@ -610,46 +610,6 @@ function RolesControlCenter() {
             </Card>
           ) : (
             <>
-              {viewState === "ready" && (
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                  <Card className="border-gray-200 shadow-sm" data-testid="stat-system-roles">
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-2 text-emerald-600 mb-2">
-                        <ShieldCheck className="h-4 w-4" />
-                        <span className="text-xs font-medium uppercase tracking-wider">System Roles</span>
-                      </div>
-                      <p className="text-2xl font-bold text-gray-900">{systemRoleCount}</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-gray-200 shadow-sm" data-testid="stat-custom-roles">
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-2 text-emerald-600 mb-2">
-                        <Shield className="h-4 w-4" />
-                        <span className="text-xs font-medium uppercase tracking-wider">Custom Roles</span>
-                      </div>
-                      <p className="text-2xl font-bold text-gray-900">{customRoleCount}</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-gray-200 shadow-sm" data-testid="stat-protected-roles">
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-2 text-amber-600 mb-2">
-                        <Lock className="h-4 w-4" />
-                        <span className="text-xs font-medium uppercase tracking-wider">Protected</span>
-                      </div>
-                      <p className="text-2xl font-bold text-gray-900">{protectedRoleCount}</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-gray-200 shadow-sm" data-testid="stat-users-assigned">
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-2 text-emerald-600 mb-2">
-                        <UserCheck className="h-4 w-4" />
-                        <span className="text-xs font-medium uppercase tracking-wider">Users Assigned</span>
-                      </div>
-                      <p className="text-2xl font-bold text-gray-900">{assignedUsers}</p>
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
 
               {viewState === "ready" && hasChanges && (
                 <div className="sticky top-2 z-20 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-center justify-between shadow-sm">
