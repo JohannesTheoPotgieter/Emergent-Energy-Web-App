@@ -1,13 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Progress } from "@/components/ui/progress";
-import { CheckCircle, XCircle, Loader2, Play, RefreshCw, FileSpreadsheet, Clock, Database, Trash2, FolderOpen, AlertTriangle, Upload } from "lucide-react";
+import { CheckCircle, XCircle, Loader2, Play, RefreshCw, FileSpreadsheet, Clock, Database, Trash2, FolderOpen, Upload } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { useToast } from "@/hooks/use-toast";
@@ -18,29 +18,6 @@ interface FolderConfig {
   fileCount: number;
   latestFileDate: string | null;
   projectCounts?: { active: number; historical: number; total: number };
-}
-
-interface ScanResult {
-  success: boolean;
-  message: string;
-  filesProcessed: number;
-  filesFailed: number;
-  filesTotal: number;
-  totalRecordsProcessed: number;
-  latestFileDate: string;
-  results: {
-    fileName: string;
-    projectName: string;
-    status: "success" | "failed";
-    message: string;
-    recordsProcessed?: number;
-    fileDate: string;
-  }[];
-  timestamps: {
-    started: string;
-    completed: string;
-    durationMs: number;
-  };
 }
 
 interface SmokeTestCheck {
@@ -62,17 +39,13 @@ interface SmokeTestResult {
 }
 
 export default function AdminPage() {
-  const { user, isAdmin } = useAuth();
+  const { isAdmin } = useAuth();
+  const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const [folderConfig, setFolderConfig] = useState<FolderConfig | null>(null);
-  const [folderLoading, setFolderLoading] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
-  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
-  const [uploadLoading, setUploadLoading] = useState(false);
-  const folderInputRef = useRef<HTMLInputElement>(null);
-  const cancelRef = useRef(false);
   const [progressInfo, setProgressInfo] = useState<{ current: number; total: number; currentFile: string } | null>(null);
 
   const [smokeLoading, setSmokeLoading] = useState(false);
@@ -82,10 +55,6 @@ export default function AdminPage() {
   const [clearLoading, setClearLoading] = useState(false);
   const [clearResult, setClearResult] = useState<{ success: boolean; message: string } | null>(null);
   const [clearError, setClearError] = useState<string | null>(null);
-
-  const singleFileRef = useRef<HTMLInputElement>(null);
-  const [singleUploadLoading, setSingleUploadLoading] = useState(false);
-  const [singleUploadResult, setSingleUploadResult] = useState<{ status: string; projectName: string; message: string; records?: number } | null>(null);
 
   const viewerOnly = !isAdmin;
 
@@ -97,7 +66,6 @@ export default function AdminPage() {
   const cleanedAdminVisibilityEnabled = rolloutFlags?.find((flag) => flag.key === "cleaned_admin_visibility")?.value === true;
 
   const loadFolderConfig = async () => {
-    setFolderLoading(true);
     try {
       const res = await fetch("/api/admin/folder-config", { credentials: "include" });
       if (res.ok) {
@@ -106,174 +74,12 @@ export default function AdminPage() {
       }
     } catch (err) {
       console.error("Failed to load folder config:", err);
-    } finally {
-      setFolderLoading(false);
     }
   };
 
   useEffect(() => {
     loadFolderConfig();
   }, []);
-
-  const handleFolderSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    const allFiles = Array.from(e.target.files);
-    const excelFiles = allFiles.filter((f) =>
-      /\.(xlsx|xlsm|xls)$/i.test(f.name)
-    );
-    if (excelFiles.length === 0) {
-      toast({ title: "No Excel Files", description: "The selected folder contains no Excel files (.xlsx, .xlsm, .xls)", variant: "destructive" });
-      return;
-    }
-    setUploadLoading(true);
-    setScanResult(null);
-    cancelRef.current = false;
-    setProgressInfo({ current: 0, total: excelFiles.length, currentFile: "" });
-
-    const results: ScanResult["results"] = [];
-    let totalRecords = 0;
-    let wasCancelled = false;
-
-    for (let i = 0; i < excelFiles.length; i++) {
-      if (cancelRef.current) {
-        wasCancelled = true;
-        break;
-      }
-      const file = excelFiles[i];
-      setProgressInfo({ current: i + 1, total: excelFiles.length, currentFile: file.name });
-      try {
-        const formData = new FormData();
-        formData.append("trackers", file);
-        formData.append("mode", "refresh");
-        const res = await fetch("/api/upload", { method: "POST", body: formData, credentials: "include" });
-        const data = await res.json();
-        if (res.ok && data.results) {
-          for (const r of data.results) {
-            const recCount = r.recordsProcessed ?? ((r.expensesParsed || 0) + (r.inflowsParsed || 0) + (r.planParsed || 0) + (r.cashflowParsed || 0) + (r.financeRevenueParsed || 0) + (r.financeCosParsed || 0));
-            results.push({
-              fileName: r.fileName || r.file || file.name,
-              projectName: r.project_name || r.projectName || file.name.replace(/\.(xlsx|xlsm|xls)$/i, ''),
-              status: r.status as "success" | "failed",
-              message: r.message || "",
-              recordsProcessed: recCount,
-              fileDate: r.fileDate || new Date().toISOString(),
-            });
-            totalRecords += recCount;
-          }
-        } else {
-          results.push({
-            fileName: file.name,
-            projectName: file.name,
-            status: "failed",
-            message: data.message || "Upload failed",
-            fileDate: new Date().toISOString(),
-          });
-        }
-      } catch (err: any) {
-        results.push({
-          fileName: file.name,
-          projectName: file.name,
-          status: "failed",
-          message: err.message || "Upload failed",
-          fileDate: new Date().toISOString(),
-        });
-      }
-    }
-
-    const successCount = results.filter((r) => r.status === "success").length;
-    const failedCount = results.filter((r) => r.status === "failed").length;
-    const processedTotal = wasCancelled ? results.length : excelFiles.length;
-
-    const activeProjectNames = results
-      .filter((r) => r.status === "success" && r.projectName)
-      .map((r) => r.projectName);
-    if (activeProjectNames.length > 0) {
-      try {
-        await fetch("/api/admin/mark-active", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectNames: activeProjectNames }),
-          credentials: "include",
-        });
-      } catch {}
-    }
-
-    setScanResult({
-      success: failedCount === 0 && !wasCancelled,
-      message: wasCancelled
-        ? `Import stopped — ${successCount} of ${processedTotal} files processed before cancellation`
-        : `${successCount} of ${excelFiles.length} files processed successfully`,
-      filesProcessed: successCount,
-      filesFailed: failedCount,
-      filesTotal: processedTotal,
-      totalRecordsProcessed: totalRecords,
-      latestFileDate: new Date().toISOString(),
-      results,
-      timestamps: { started: new Date().toISOString(), completed: new Date().toISOString(), durationMs: 0 },
-    });
-    setProgressInfo(null);
-    setUploadLoading(false);
-    queryClient.invalidateQueries();
-    loadFolderConfig();
-    toast({
-      title: wasCancelled ? "Import Stopped" : "Import Complete",
-      description: wasCancelled
-        ? `Stopped after ${successCount} file(s). Already imported files are saved.`
-        : `${successCount} file(s) processed successfully`,
-      variant: wasCancelled ? "destructive" : "default",
-    });
-    if (folderInputRef.current) folderInputRef.current.value = "";
-  };
-
-  const handleSingleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    const file = e.target.files[0];
-    if (!/\.(xlsx|xlsm|xls)$/i.test(file.name)) {
-      toast({ title: "Invalid File", description: "Please select an Excel file (.xlsx, .xlsm, .xls)", variant: "destructive" });
-      return;
-    }
-    setSingleUploadLoading(true);
-    setSingleUploadResult(null);
-    try {
-      const formData = new FormData();
-      formData.append("trackers", file);
-      formData.append("mode", "refresh");
-      const res = await fetch("/api/upload", { method: "POST", body: formData, credentials: "include" });
-      const data = await res.json();
-      if (res.ok && data.results && data.results.length > 0) {
-        const r = data.results[0];
-        const recCount = (r.expensesParsed || 0) + (r.inflowsParsed || 0) + (r.planParsed || 0) + (r.cashflowParsed || 0) + (r.financeRevenueParsed || 0) + (r.financeCosParsed || 0);
-        setSingleUploadResult({
-          status: r.status,
-          projectName: r.project_name || r.projectName || file.name.replace(/\.(xlsx|xlsm|xls)$/i, ''),
-          message: r.status === "success" ? `Updated successfully — ${recCount} records processed` : (r.message || "Upload failed"),
-          records: recCount,
-        });
-        if (r.status === "success") {
-          toast({ title: "Project Updated", description: `${r.project_name || file.name} updated successfully` });
-          queryClient.invalidateQueries();
-          loadFolderConfig();
-        }
-      } else {
-        setSingleUploadResult({
-          status: "failed",
-          projectName: file.name,
-          message: data.message || "Upload failed",
-        });
-        toast({ title: "Upload Failed", description: data.message || "Failed to process file", variant: "destructive" });
-      }
-    } catch (err: any) {
-      setSingleUploadResult({
-        status: "failed",
-        projectName: file.name,
-        message: err.message || "Upload failed",
-      });
-      toast({ title: "Upload Error", description: err.message, variant: "destructive" });
-    } finally {
-      setSingleUploadLoading(false);
-      if (singleFileRef.current) singleFileRef.current.value = "";
-    }
-  };
 
   const runSmokeTest = async () => {
     setSmokeLoading(true);
@@ -352,78 +158,40 @@ export default function AdminPage() {
         <TabsContent value="import" className="space-y-4 mt-4">
           <Card>
             <CardHeader>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <FolderOpen className="h-5 w-5" />
-                    Import Tracker Files
-                  </CardTitle>
-                  <CardDescription>
-                    Choose a folder on your computer containing Excel tracker files (.xlsx, .xlsm, .xls). All Excel files in the folder will be imported.
-                  </CardDescription>
-                </div>
-                <div className="shrink-0">
-                  <input
-                    ref={folderInputRef}
-                    type="file"
-                    className="hidden"
-                    {...({ webkitdirectory: "true", directory: "" } as any)}
-                    onChange={handleFolderSelect}
-                    data-testid="input-folder-select"
-                  />
-                  <Button
-                    onClick={() => folderInputRef.current?.click()}
-                    disabled={uploadLoading}
-                    size="lg"
-                    className="w-full sm:w-auto"
-                    data-testid="button-choose-folder"
-                  >
-                    {uploadLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Importing...
-                      </>
-                    ) : (
-                      <>
-                        <FolderOpen className="mr-2 h-4 w-4" />
-                        Choose Folder
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="h-5 w-5 text-blue-600" />
+                Smart Import
+              </CardTitle>
+              <CardDescription>
+                Upload individual files or entire folders using the Smart Import wizard. Files are analysed, sections detected, and mappings confirmed before committing to the database.
+              </CardDescription>
             </CardHeader>
-            {progressInfo && (
-              <CardContent>
-                <div className="space-y-3" data-testid="import-progress">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground truncate max-w-[50%]">
-                      Processing: {progressInfo.currentFile}
-                    </span>
-                    <div className="flex items-center gap-3">
-                      <span className="font-medium">
-                        {progressInfo.current} of {progressInfo.total}
-                      </span>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => { cancelRef.current = true; }}
-                        data-testid="button-stop-import"
-                      >
-                        <XCircle className="mr-1 h-4 w-4" />
-                        Stop Import
-                      </Button>
-                    </div>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  onClick={() => navigate("/admin/smart-import")}
+                  className="flex items-center gap-3 p-4 rounded-lg border hover:border-blue-400 hover:bg-blue-50/50 transition-colors text-left"
+                  data-testid="link-smart-import-file"
+                >
+                  <FileSpreadsheet className="h-8 w-8 text-emerald-500 flex-shrink-0" />
+                  <div>
+                    <p className="font-medium text-sm">Upload Files</p>
+                    <p className="text-xs text-muted-foreground">Select one or more Excel trackers to analyse and import</p>
                   </div>
-                  <Progress value={(progressInfo.current / progressInfo.total) * 100} className="h-3" />
-                  <p className="text-xs text-muted-foreground text-center">
-                    {Math.round((progressInfo.current / progressInfo.total) * 100)}% complete
-                  </p>
-                </div>
-              </CardContent>
-            )}
-            {!progressInfo && folderConfig && (
-              <CardContent>
+                </button>
+                <button
+                  onClick={() => navigate("/admin/smart-import")}
+                  className="flex items-center gap-3 p-4 rounded-lg border hover:border-blue-400 hover:bg-blue-50/50 transition-colors text-left"
+                  data-testid="link-smart-import-folder"
+                >
+                  <FolderOpen className="h-8 w-8 text-blue-500 flex-shrink-0" />
+                  <div>
+                    <p className="font-medium text-sm">Upload Folder</p>
+                    <p className="text-xs text-muted-foreground">Select a folder of trackers to batch-analyse and import</p>
+                  </div>
+                </button>
+              </div>
+              {folderConfig && (
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                   <div className="flex items-center gap-2 p-3 rounded-lg border">
                     <Database className="h-4 w-4 text-blue-500" />
@@ -458,150 +226,9 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </div>
-              </CardContent>
-            )}
+              )}
+            </CardContent>
           </Card>
-
-          {/* Single Project Update */}
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Upload className="h-5 w-5" />
-                    Update Single Project
-                  </CardTitle>
-                  <CardDescription>
-                    Upload an individual tracker file to update a single project's data. The file will be matched to the project automatically.
-                  </CardDescription>
-                </div>
-                <div className="shrink-0">
-                  <input
-                    ref={singleFileRef}
-                    type="file"
-                    className="hidden"
-                    accept=".xlsx,.xlsm,.xls"
-                    onChange={handleSingleFileUpload}
-                    data-testid="input-single-file"
-                  />
-                  <Button
-                    onClick={() => singleFileRef.current?.click()}
-                    disabled={singleUploadLoading || uploadLoading}
-                    variant="outline"
-                    size="lg"
-                    className="w-full sm:w-auto"
-                    data-testid="button-upload-single"
-                  >
-                    {singleUploadLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Updating...
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="mr-2 h-4 w-4" />
-                        Choose File
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            {singleUploadResult && (
-              <CardContent>
-                <div className={`flex items-center gap-3 p-3 rounded-lg border ${
-                  singleUploadResult.status === "success"
-                    ? "border-green-200 bg-green-50"
-                    : "border-red-200 bg-red-50"
-                }`}>
-                  {singleUploadResult.status === "success" ? (
-                    <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
-                  ) : (
-                    <XCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
-                  )}
-                  <div className="flex-1">
-                    <p className="font-medium text-sm" data-testid="text-single-project-name">{singleUploadResult.projectName}</p>
-                    <p className="text-xs text-muted-foreground">{singleUploadResult.message}</p>
-                  </div>
-                  {singleUploadResult.records !== undefined && singleUploadResult.status === "success" && (
-                    <Badge variant="outline">{singleUploadResult.records} records</Badge>
-                  )}
-                </div>
-              </CardContent>
-            )}
-          </Card>
-
-          {/* Scan Results */}
-          {scanResult && (
-            <Card className={scanResult.filesFailed > 0 ? "border-yellow-500" : "border-green-500"}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    {scanResult.filesFailed === 0 ? (
-                      <CheckCircle className="h-6 w-6 text-green-500" />
-                    ) : (
-                      <AlertTriangle className="h-6 w-6 text-yellow-500" />
-                    )}
-                    {scanResult.message}
-                  </CardTitle>
-                  <div className="flex gap-2 shrink-0">
-                    <Badge variant="default">
-                      {scanResult.totalRecordsProcessed.toLocaleString()} records
-                    </Badge>
-                    <Badge variant="outline" className="hidden sm:inline-flex">
-                      {scanResult.timestamps.durationMs}ms
-                    </Badge>
-                  </div>
-                </div>
-                <CardDescription>
-                  Completed at {new Date(scanResult.timestamps.completed).toLocaleString()}
-                  {scanResult.latestFileDate && (
-                    <> • Latest file: {new Date(scanResult.latestFileDate).toLocaleString()}</>
-                  )}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {scanResult.results.map((r, idx) => (
-                    <div
-                      key={idx}
-                      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-lg border ${
-                        r.status === "failed" ? "border-red-200 bg-red-50" : "bg-muted/50"
-                      }`}
-                      data-testid={`scan-result-${idx}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        {r.status === "success" ? (
-                          <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
-                        ) : (
-                          <XCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
-                        )}
-                        <div>
-                          <span className="font-medium text-sm">{r.projectName}</span>
-                          <p className="text-xs text-muted-foreground">{r.fileName}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        {r.status === "success" && r.recordsProcessed !== undefined && (
-                          <span className="text-muted-foreground">
-                            {r.recordsProcessed} records
-                          </span>
-                        )}
-                        {r.status === "failed" && (
-                          <Badge variant="destructive">{r.message}</Badge>
-                        )}
-                        {r.fileDate && (
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(r.fileDate).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
         </TabsContent>
 
         {/* MAINTENANCE TAB */}
