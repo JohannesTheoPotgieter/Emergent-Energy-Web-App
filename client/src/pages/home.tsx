@@ -585,9 +585,9 @@ export default function HomePage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm text-foreground font-medium leading-snug truncate">{priority.title}</p>
-                      {priority.department && (
-                        <p className="text-xs text-muted-foreground">{priority.department}</p>
-                      )}
+                      <p className="text-xs text-muted-foreground">
+                        {[priority.department, priority.assignedTo ? `Owner: ${priority.assignedTo}` : null].filter(Boolean).join(" · ")}
+                      </p>
                     </div>
                   </div>
                 );
