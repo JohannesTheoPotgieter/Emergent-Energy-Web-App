@@ -12,7 +12,6 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { useToast } from "@/hooks/use-toast";
 import { isSuperAdmin } from "@/lib/access-control";
 import {
-  buildRoleAuthorityCategories,
   canManageRoleActions,
   resolveAdminRolesViewState,
   resolveSelectedRole,
@@ -21,7 +20,7 @@ import {
   type UserSummary,
 } from "./admin-roles.utils";
 import { AlertTriangle, Check, ChevronDown, ChevronRight, Eye, EyeOff, Pencil, Plus, Save, Search, Shield, ShieldCheck, Trash2, Users, UserCheck, Lock, X, ToggleLeft, ToggleRight } from "lucide-react";
-import type { AuthorityAction, PermissionAction } from "@shared/schema";
+import type { PermissionAction } from "@shared/schema";
 
 const DEPARTMENTS = [
   "Executive", "Engineering", "Finance", "Operations", "Project Development",
@@ -30,8 +29,6 @@ const DEPARTMENTS = [
 ];
 
 const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
-const AUTHORITY_ACTIONS: AuthorityAction[] = ["view", "create", "edit", "delete", "approve", "assign", "reassign", "close_complete", "export", "manage_settings"];
-const AUTHORITY_SCOPES = ["own", "department", "assigned_projects", "all_projects", "company_admin"] as const;
 const NAV_SECTIONS = [
   { key: "COCKPIT", label: "Home", description: "Dashboard & My Work" },
   { key: "PROJECTS", label: "Project Lifecycle", description: "Lifecycle stages & clients" },
@@ -47,53 +44,53 @@ const NAV_SECTIONS = [
 ];
 
 const ENTITY_DESCRIPTIONS: Record<string, string> = {
-  projects: "Projects list & overview page",
-  my_work: "My Work task dashboard",
-  notifications: "Notification bell & inbox",
-  deliverables: "Project deliverables tracker",
-  activity_log: "Activity feed on projects",
-  audit_trail: "System-wide audit history",
-  engineering: "Engineering tab on projects",
-  eng_tasks: "Engineering task management",
-  eng_stages: "Engineering 5-stage checklist",
-  quality: "Quality tab & dashboard",
-  financials: "Finance tab & reports",
-  procurement: "Procurement hub & POs",
-  pd_dashboard: "Project detail command center",
-  pd_overview: "Project overview summary",
-  pd_plan: "Project plan / WBS grid",
-  pd_gantt: "Gantt chart view",
-  pd_finance: "Project finance tab",
-  pd_revenue: "Revenue tracker",
-  pd_cashflow: "Cashflow forecasting",
-  pd_cos_tracker: "Cost of Sales tracker",
-  pd_expenditure: "Expenditure breakdown",
-  pd_history: "Project change history",
-  pd_key_dates: "Key dates & milestones",
-  pd_quality: "Project quality tab",
-  pd_engineering: "Project engineering tab",
-  pd_eng_tasks: "Project eng task list",
-  pd_eng_stages: "Project eng stages",
-  pd_collaboration: "Project files & chat",
-  pd_subcontractors: "Subcontractor management",
-  teams_chat: "MS Teams chat integration",
-  project_chat: "In-app project messaging",
-  collaboration_hub: "Shared documents & notes",
-  sharepoint_files: "SharePoint file browser",
-  meetings: "Meeting notes & actions",
-  admin: "Admin panel access",
-  admin_roles: "Roles & permissions config",
-  data_import: "Smart Excel import",
-  data_export: "Data export tools",
-  database_migration: "DB migration tools",
-  ms_integration: "Microsoft 365 setup",
-  ms_sync: "MS Graph sync controls",
-  approvals: "Approval workflows",
-  leaderboard: "Team leaderboard",
-  feedback: "User feedback system",
-  portfolio_detail: "Portfolio-level views",
-  weekly_review_wizard: "Weekly review wizard",
-  create_project: "Create new projects",
+  projects: "Home > My Work & Project Management > Project List",
+  my_work: "Home > My Work",
+  notifications: "Top bar notification bell",
+  deliverables: "Project Management > Deliverables",
+  activity_log: "Project detail > Activity feed",
+  audit_trail: "Admin > Audit History",
+  engineering: "Engineering > Overview",
+  eng_tasks: "Engineering > Requests & Tasks",
+  eng_stages: "Engineering > 5-Stage Checklist",
+  quality: "Quality > Quality Workspace",
+  financials: "Finance > Cashflow, COS, Revenue, GP",
+  procurement: "Finance > Procurement & Subcontractors",
+  pd_dashboard: "Project Development > PD Dashboard",
+  pd_overview: "Project detail > Overview tab",
+  pd_plan: "Project detail > Plan (WBS grid)",
+  pd_gantt: "Project detail > Gantt chart",
+  pd_finance: "Project detail > Finance tab",
+  pd_revenue: "Project detail > Revenue tracker",
+  pd_cashflow: "Project detail > Cashflow tab",
+  pd_cos_tracker: "Project detail > Cost of Sales",
+  pd_expenditure: "Project detail > Expenditure breakdown",
+  pd_history: "Project detail > Change history",
+  pd_key_dates: "Project detail > Key dates & milestones",
+  pd_quality: "Project detail > Quality tab",
+  pd_engineering: "Project detail > Engineering tab",
+  pd_eng_tasks: "Project detail > Engineering tasks",
+  pd_eng_stages: "Project detail > Engineering stages",
+  pd_collaboration: "Project detail > Files & collaboration",
+  pd_subcontractors: "Project detail > Subcontractors",
+  teams_chat: "Home > My Work > Teams chat",
+  project_chat: "Project detail > Chat",
+  collaboration_hub: "Project detail > Collaboration hub",
+  sharepoint_files: "Project detail > SharePoint files",
+  meetings: "Home > My Work > Meetings",
+  admin: "Admin > Control Center",
+  admin_roles: "Admin > Roles & Permissions",
+  data_import: "Admin > Smart Import",
+  data_export: "Admin > Data Export",
+  database_migration: "Admin > DB Migration",
+  ms_integration: "Admin > Microsoft 365 Setup",
+  ms_sync: "Admin > MS Graph Sync",
+  approvals: "Project Management > Approvals",
+  leaderboard: "Knowledge > Leaderboard",
+  feedback: "Knowledge > Feedback",
+  portfolio_detail: "Project Management > Portfolio view",
+  weekly_review_wizard: "Project Management > Weekly Reviews",
+  create_project: "Project Lifecycle > Create new project",
 };
 
 const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
@@ -242,7 +239,7 @@ function RolesControlCenter() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>("");
   const [canManageRoles, setCanManageRoles] = useState(false);
-  const [activeTab, setActiveTab] = useState<"permissions" | "navigation" | "settings">("permissions");
+  const [activeTab, setActiveTab] = useState<"navigation" | "permissions">("navigation");
   const [permSearch, setPermSearch] = useState("");
 
   const load = async () => {
@@ -283,8 +280,6 @@ function RolesControlCenter() {
 
   const effectiveRole = { ...selected, ...draft } as RoleRow;
   const currentEp = (effectiveRole.entityPermissions || {}) as Record<string, Record<string, boolean>>;
-  const authorityRules = effectiveRole.authorityModel?.rules || {};
-
   const updateEp = (entity: string, action: string, value: boolean) => {
     const next = { ...currentEp, [entity]: { ...(currentEp[entity] || {}), [action]: value } };
     if ((action === "edit" || action === "approve" || action === "delete") && value) next[entity].view = true;
@@ -301,12 +296,6 @@ function RolesControlCenter() {
       next[entity] = updated;
     });
     setDraft((d) => ({ ...d, entityPermissions: next }));
-  };
-
-  const updateAuthorityRule = (entity: string, action: AuthorityAction, patch: { enabled?: boolean; scope?: string }) => {
-    const key = `${entity}.${action}`;
-    const nextRules = { ...authorityRules, [key]: { ...(authorityRules[key] || {}), ...patch } };
-    setDraft((d) => ({ ...d, authorityModel: { ...(effectiveRole.authorityModel || {}), rules: nextRules } }));
   };
 
   const save = async () => {
@@ -481,9 +470,8 @@ function RolesControlCenter() {
                 <CardContent className="p-0">
                   <div className="flex border-b border-gray-100">
                     {([
-                      { key: "permissions" as const, label: "Permissions", icon: <Shield className="h-3.5 w-3.5" /> },
                       { key: "navigation" as const, label: "Navigation", icon: <Eye className="h-3.5 w-3.5" /> },
-                      { key: "settings" as const, label: "Settings", icon: <Pencil className="h-3.5 w-3.5" /> },
+                      { key: "permissions" as const, label: "Permissions", icon: <Shield className="h-3.5 w-3.5" /> },
                     ]).map((tab) => (
                       <button key={tab.key} onClick={() => setActiveTab(tab.key)}
                         className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${activeTab === tab.key ? "border-emerald-600 text-emerald-700 bg-emerald-50/50" : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"}`}
@@ -611,105 +599,6 @@ function RolesControlCenter() {
                       </div>
                     )}
 
-                    {activeTab === "settings" && (
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <Label className="text-xs font-medium text-gray-600 mb-1.5 block">Display Name</Label>
-                            <Input value={effectiveRole.label || ""} onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))} disabled={!canManageRoles} className="h-9 bg-gray-50" data-testid="input-role-name" />
-                          </div>
-                          <div>
-                            <Label className="text-xs font-medium text-gray-600 mb-1.5 block">Description</Label>
-                            <Input value={effectiveRole.description || ""} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} disabled={!canManageRoles} className="h-9 bg-gray-50" data-testid="input-role-description" />
-                          </div>
-                        </div>
-
-                        <div className="rounded-lg border border-gray-200 p-3 bg-gray-50/50">
-                          <div className="flex items-center gap-4 text-sm text-gray-600">
-                            <span><strong>Type:</strong> {selected?.isSystem ? "System" : "Custom"}</span>
-                            <span><strong>Key:</strong> <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">{selected?.role}</code></span>
-                            {selected?.protected && <Badge variant="outline" className="text-amber-600 border-amber-200 text-xs">Protected</Badge>}
-                          </div>
-                        </div>
-
-                        {roleUsers.length > 0 && (
-                          <div>
-                            <Label className="text-xs font-medium text-gray-600 mb-2 block">Assigned Users ({roleUsers.length})</Label>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {roleUsers.map((u) => (
-                                <div key={u.id} className="flex items-center gap-2.5 border border-gray-200 rounded-lg p-2.5 bg-white">
-                                  <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-xs shrink-0">{(u.name || "?").charAt(0).toUpperCase()}</div>
-                                  <div className="min-w-0">
-                                    <div className="text-xs font-semibold text-gray-900 truncate">{u.name}</div>
-                                    <div className="text-[11px] text-muted-foreground truncate">{u.email}</div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {allEntities.length > 0 && (
-                          <div>
-                            <Label className="text-xs font-medium text-gray-600 mb-2 block">Authority Model</Label>
-                            <div className="border border-gray-200 rounded-lg overflow-hidden max-h-[50vh] overflow-y-auto">
-                              <table className="w-full text-sm">
-                                <thead className="sticky top-0 z-10">
-                                  <tr className="bg-gray-50 border-b border-gray-200">
-                                    <th className="text-left px-3 py-2 text-xs font-semibold text-gray-600 bg-gray-50">Entity</th>
-                                    {AUTHORITY_ACTIONS.map((a) => (
-                                      <th key={a} className="text-center px-1 py-2 text-[10px] font-semibold text-gray-600 capitalize bg-gray-50">{a.replace(/_/g, " ")}</th>
-                                    ))}
-                                    <th className="text-center px-1 py-2 text-[10px] font-semibold text-gray-600 bg-gray-50">Scope</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {allEntities.map((entity) => {
-                                    const enabledActions = AUTHORITY_ACTIONS.filter((a) => Boolean((authorityRules[`${entity}.${a}`] || {}).enabled));
-                                    const firstEnabledScope = enabledActions.length > 0 ? (authorityRules[`${entity}.${enabledActions[0]}`]?.scope || "assigned_projects") : "assigned_projects";
-                                    return (
-                                      <tr key={entity} className="border-t border-gray-100 hover:bg-gray-50/50">
-                                        <td className="px-3 py-1.5">
-                                          <div className="text-xs font-medium text-gray-800">{formatEntityName(entity)}</div>
-                                          {ENTITY_DESCRIPTIONS[entity] && <div className="text-[10px] text-muted-foreground leading-tight">{ENTITY_DESCRIPTIONS[entity]}</div>}
-                                        </td>
-                                        {AUTHORITY_ACTIONS.map((action) => {
-                                          const key = `${entity}.${action}`;
-                                          const rule = authorityRules[key] || {};
-                                          const isEnabled = Boolean(rule.enabled);
-                                          return (
-                                            <td key={action} className="text-center px-1 py-1.5">
-                                              <button type="button" disabled={!canManageRoles}
-                                                onClick={() => updateAuthorityRule(entity, action, { enabled: !isEnabled })}
-                                                className={`inline-flex items-center justify-center h-6 w-6 rounded border transition-all ${canManageRoles ? "cursor-pointer" : "cursor-not-allowed opacity-60"} ${isEnabled ? "bg-emerald-100 text-emerald-700 border-emerald-300" : "bg-gray-50 text-gray-300 border-gray-200 hover:bg-gray-100"}`}
-                                                data-testid={`switch-authority-${entity}-${action}`}
-                                              >
-                                                {isEnabled ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-                                              </button>
-                                            </td>
-                                          );
-                                        })}
-                                        <td className="text-center px-1 py-1.5">
-                                          <select
-                                            className="border rounded h-7 px-1 text-[11px] border-gray-200 bg-gray-50 text-gray-700"
-                                            value={firstEnabledScope}
-                                            onChange={(e) => AUTHORITY_ACTIONS.forEach((a) => { if (Boolean((authorityRules[`${entity}.${a}`] || {}).enabled)) updateAuthorityRule(entity, a, { scope: e.target.value }); })}
-                                            disabled={!canManageRoles || enabledActions.length === 0}
-                                            data-testid={`select-scope-${entity}`}
-                                          >
-                                            {AUTHORITY_SCOPES.map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
-                                          </select>
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
                 </CardContent>
               </Card>
