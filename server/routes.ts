@@ -3659,6 +3659,98 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== UPCOMING EVENTS (Next 5 working days) ====================
+
+  app.get("/api/upcoming-events", requireAuth, async (req, res) => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const workDays: string[] = [];
+      let d = new Date(today);
+      while (workDays.length < 5) {
+        const dow = d.getDay();
+        if (dow !== 0 && dow !== 6) workDays.push(d.toISOString().slice(0, 10));
+        d.setDate(d.getDate() + 1);
+      }
+      const rangeStart = workDays[0];
+      const rangeEnd = workDays[workDays.length - 1];
+
+      const events: Array<{ type: string; date: string; projectName: string; projectId: number | null; detail: string; amount?: string }> = [];
+
+      const allProjects = await storage.getAllProjectInfo();
+      for (const p of allProjects) {
+        const name = p.projectName || "Unnamed";
+        const pid = p.id ?? null;
+        const check = (dateVal: string | null | undefined, type: string, detail: string) => {
+          if (!dateVal) return;
+          const dt = dateVal.slice(0, 10);
+          if (dt >= rangeStart && dt <= rangeEnd) events.push({ type, date: dt, projectName: name, projectId: pid, detail });
+        };
+        check(p.constructionStartDate, "site_establishment", "Site Establishment");
+        check(p.commissioningDate, "commissioning", "Commissioning");
+        check(p.omHandoverDate, "handover_om", "Handover to O&M");
+        check(p.clientHandoverDate, "handover_client", "Handover to Client");
+      }
+
+      const inflowRows = await db.select({
+        projectName: normalizedRevenueLines.projectName,
+        projectId: normalizedRevenueLines.projectId,
+        expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
+        amountExVat: normalizedRevenueLines.amountExVat,
+        description: normalizedRevenueLines.description,
+        milestoneName: normalizedRevenueLines.milestoneName,
+        paidDate: normalizedRevenueLines.paidDate,
+      }).from(normalizedRevenueLines);
+
+      for (const r of inflowRows) {
+        if (r.paidDate) continue;
+        const dt = (r.expectedPaymentDate || "").slice(0, 10);
+        if (dt >= rangeStart && dt <= rangeEnd) {
+          events.push({
+            type: "payment_in",
+            date: dt,
+            projectName: r.projectName,
+            projectId: r.projectId,
+            detail: r.milestoneName || r.description || "Inflow expected",
+            amount: r.amountExVat || undefined,
+          });
+        }
+      }
+
+      const outflowRows = await db.select({
+        projectName: normalizedCostLines.projectName,
+        projectId: normalizedCostLines.projectId,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        amountExVat: normalizedCostLines.amountExVat,
+        description: normalizedCostLines.description,
+        counterpartyName: normalizedCostLines.counterpartyName,
+        paidDate: normalizedCostLines.paidDate,
+      }).from(normalizedCostLines);
+
+      for (const c of outflowRows) {
+        if (c.paidDate) continue;
+        const dt = (c.invoiceDate || "").slice(0, 10);
+        if (dt >= rangeStart && dt <= rangeEnd) {
+          events.push({
+            type: "payment_out",
+            date: dt,
+            projectName: c.projectName,
+            projectId: c.projectId,
+            detail: c.counterpartyName || c.description || "Outflow due",
+            amount: c.amountExVat || undefined,
+          });
+        }
+      }
+
+      events.sort((a, b) => a.date.localeCompare(b.date));
+      res.json({ rangeStart, rangeEnd, events });
+    } catch (err: any) {
+      console.error("upcoming-events error:", err);
+      res.status(500).json({ error: "Failed to load upcoming events" });
+    }
+  });
+
   // ==================== PROGRAM DASHBOARD API ====================
 
   app.get("/api/program-dashboard", requireAuth, async (req, res) => {
