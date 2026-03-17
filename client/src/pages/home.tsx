@@ -382,9 +382,13 @@ function getRoleKpis(
     case "executive":
       return (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatCard value={stats.totalProjects} label="Total Projects" loading={isLoading} testId="text-total-projects" />
-            <StatCard value={stats.activeProjects} label="Active" loading={isLoading} testId="text-active-projects" />
+            <StatCard value={stats.inConstruction} label="In Construction" color="text-emerald-600" loading={isLoading} testId="text-in-construction" />
+            <StatCard value={stats.inCompany} label="In Company" color="text-blue-600" loading={isLoading} testId="text-in-company" />
+            <StatCard value={stats.inPipeline} label="Pipeline" color="text-violet-600" loading={isLoading} testId="text-in-pipeline" />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
             <StatCard value={stats.greenProjects} label="Green RAG" color="text-emerald-600" loading={isLoading} testId="text-green-projects" />
             <StatCard value={stats.amberProjects} label="Amber RAG" color="text-amber-600" loading={isLoading} testId="text-amber-projects" />
             <StatCard value={stats.redProjects} label="Red RAG" color="text-red-600" loading={isLoading} testId="text-red-projects" />
@@ -415,8 +419,9 @@ function getRoleKpis(
     case "project":
       return (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <StatCard value={stats.activeProjects} label="Active Projects" loading={isLoading} testId="text-active-projects" />
+            <StatCard value={stats.inConstruction} label="In Construction" color="text-emerald-600" loading={isLoading} testId="text-in-construction" />
             <StatCard value={stats.greenProjects} label="Green RAG" color="text-emerald-600" loading={isLoading} testId="text-green-projects" />
             <StatCard value={stats.amberProjects} label="Amber RAG" color="text-amber-600" loading={isLoading} testId="text-amber-projects" />
             <StatCard value={stats.redProjects} label="Red RAG" color="text-red-600" loading={isLoading} testId="text-red-projects" />
@@ -507,12 +512,28 @@ export default function HomePage() {
 
   const stats = useMemo(() => {
     const projects = Array.isArray(summaryData) ? summaryData : summaryData?.projects || [];
+    const active = projects.filter((p: any) => p.is_active === true);
     const totalProjects = projects.length;
-    const activeProjects = projects.filter((p: any) => p.is_active === true).length;
-    const greenProjects = projects.filter((p: any) => p.rag_status === "Green").length;
-    const amberProjects = projects.filter((p: any) => p.rag_status === "Amber").length;
-    const redProjects = projects.filter((p: any) => p.rag_status === "Red").length;
-    return { totalProjects, activeProjects, greenProjects, amberProjects, redProjects };
+    const activeProjects = active.length;
+
+    const constructionPhases = new Set(["construction", "qa"]);
+    const companyPhases = new Set(["compliance handover", "handover", "financial close", "commercial close out", "dlp"]);
+
+    const getCategory = (phase: string | null | undefined) => {
+      const p = (phase || "").toLowerCase().trim();
+      if (constructionPhases.has(p)) return "construction";
+      if (companyPhases.has(p)) return "company";
+      return "pipeline";
+    };
+
+    const inConstruction = active.filter((p: any) => getCategory(p.phase) === "construction").length;
+    const inCompany = active.filter((p: any) => getCategory(p.phase) === "company").length;
+    const inPipeline = active.filter((p: any) => getCategory(p.phase) === "pipeline").length;
+
+    const greenProjects = active.filter((p: any) => p.rag_status === "Green").length;
+    const amberProjects = active.filter((p: any) => p.rag_status === "Amber").length;
+    const redProjects = active.filter((p: any) => p.rag_status === "Red").length;
+    return { totalProjects, activeProjects, inConstruction, inCompany, inPipeline, greenProjects, amberProjects, redProjects };
   }, [summaryData]);
 
   const kpis = dashData?.kpis || {};
