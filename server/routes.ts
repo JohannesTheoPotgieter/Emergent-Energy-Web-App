@@ -1163,7 +1163,7 @@ export async function registerRoutes(
 
   app.get("/api/home/summary", requireAuth, async (req, res) => {
     try {
-      const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks, allPlanOverrides] = await Promise.all([
+      const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks, allPlanOverrides, allPlanTasks] = await Promise.all([
         storage.getAllProjectInfo(),
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
@@ -1173,6 +1173,7 @@ export async function registerRoutes(
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlanOverrides(),
+        getAllPMWorkItemsAsProjectPlan(),
       ]);
       const allExpenses = legacyExpenses;
       const allPlans = applyProjectPlanOverrides(legacyPlans, allPlanOverrides);
@@ -1285,16 +1286,46 @@ export async function registerRoutes(
         : 0;
       const constructionBehindCount = constructionDeltas.filter(p => p.delta < 0).length;
 
-      // Upcoming events (next 7 days)
-      const constructionStartSoon = allProjectInfo.filter(p => isWithinDays(p.constructionStartDate, 7)).length;
-      const commissioningSoon = allProjectInfo.filter(p => isWithinDays(p.commissioningDate, 7)).length;
-      const omHandoverSoon = allProjectInfo.filter(p => isWithinDays(p.omHandoverDate, 7)).length;
-      const clientHandoverSoon = allProjectInfo.filter(p => isWithinDays(p.clientHandoverDate, 7)).length;
+      // Build per-project milestone dates from plan work items (actual dates from smart import)
+      const planTasksByProject = new Map<number, typeof allPlanTasks>();
+      for (const t of allPlanTasks) {
+        if (!t.projectId) continue;
+        if (!planTasksByProject.has(t.projectId)) planTasksByProject.set(t.projectId, []);
+        planTasksByProject.get(t.projectId)!.push(t);
+      }
 
-      // Due in 30 days
-      const commissioningDue30 = allProjectInfo.filter(p => isWithinDays(p.commissioningDate, 30)).length;
-      const omHandoverDue30 = allProjectInfo.filter(p => isWithinDays(p.omHandoverDate, 30)).length;
-      const clientHandoverDue30 = allProjectInfo.filter(p => isWithinDays(p.clientHandoverDate, 30)).length;
+      function getProjectMilestoneDate(p: any): {
+        constructionStart: string | null;
+        commissioning: string | null;
+        omHandover: string | null;
+        clientHandover: string | null;
+      } {
+        const tasks = p.id ? (planTasksByProject.get(p.id) || []) : [];
+        const csFromPlan = findMinStartDate(tasks, ['site establishment']);
+        const commFromPlan = findMaxEndDate(tasks, ['commissioning']);
+        const omFromPlan = findMaxEndDate(tasks, ['handover to matriarch']);
+        const chFromPlan = findMaxEndDate(tasks, ['handover to client']);
+        return {
+          constructionStart: csFromPlan || p.constructionStartDate || null,
+          commissioning: commFromPlan || p.commissioningDate || null,
+          omHandover: omFromPlan || p.omHandoverDate || null,
+          clientHandover: chFromPlan || p.clientHandoverDate || null,
+        };
+      }
+
+      // Upcoming events (next 7 days) — using actual dates from plan work items
+      let constructionStartSoon = 0, commissioningSoon = 0, omHandoverSoon = 0, clientHandoverSoon = 0;
+      let commissioningDue30 = 0, omHandoverDue30 = 0, clientHandoverDue30 = 0;
+      for (const p of allProjectInfo) {
+        const dates = getProjectMilestoneDate(p);
+        if (isWithinDays(dates.constructionStart, 7)) constructionStartSoon++;
+        if (isWithinDays(dates.commissioning, 7)) commissioningSoon++;
+        if (isWithinDays(dates.omHandover, 7)) omHandoverSoon++;
+        if (isWithinDays(dates.clientHandover, 7)) clientHandoverSoon++;
+        if (isWithinDays(dates.commissioning, 30)) commissioningDue30++;
+        if (isWithinDays(dates.omHandover, 30)) omHandoverDue30++;
+        if (isWithinDays(dates.clientHandover, 30)) clientHandoverDue30++;
+      }
 
       // Financial summary - compute from raw data tables
       // If revenueSummaries table has data, use it; otherwise compute from raw inflows/expenses
@@ -1385,7 +1416,7 @@ export async function registerRoutes(
       // Data quality checks
       const missingPhase = allProjectInfo.filter(p => !p.phase).length;
       const missingKwp = allProjectInfo.filter(p => !p.sizeKwp || safeNum(p.sizeKwp) === 0).length;
-      const missingCommissioning = allProjectInfo.filter(p => !p.commissioningDate).length;
+      const missingCommissioning = allProjectInfo.filter(p => !getProjectMilestoneDate(p).commissioning).length;
 
       res.json({
         lastRefresh: latestRefresh?.refreshedAt || null,

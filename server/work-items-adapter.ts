@@ -334,10 +334,13 @@ export async function getAllPMWorkItemsAsProjectPlan(): Promise<any[]> {
       wbsCode: workItems.wbsCode,
       startDate: workItems.startDate,
       endDate: workItems.endDate,
+      actualStart: workItems.actualStart,
+      actualEnd: workItems.actualEnd,
       duration: workItems.duration,
       percentComplete: workItems.percentComplete,
       type: workItems.type,
       status: workItems.status,
+      isMilestone: workItems.isMilestone,
     })
     .from(workItems)
     .where(
