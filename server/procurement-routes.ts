@@ -47,27 +47,25 @@ export function registerProcurementRoutes(app: Express) {
       const statusFilter = req.query.status as string | undefined;
       const categoryFilter = req.query.category as string | undefined;
 
-      let whereClause = `WHERE pi2.project_id = ${projectId}`;
-      if (statusFilter) whereClause += ` AND pi2.status = '${statusFilter}'`;
-      if (categoryFilter) whereClause += ` AND pi2.category = '${categoryFilter}'`;
+      const conditions = [sql`pi2.project_id = ${projectId}`];
+      if (statusFilter) conditions.push(sql`pi2.status = ${statusFilter}`);
+      if (categoryFilter) conditions.push(sql`pi2.category = ${categoryFilter}`);
+      const whereClause = sql.join(conditions, sql` AND `);
 
-      const rows = await db.execute(sql.raw(`
+      const rows = await db.execute(sql`
         SELECT pi2.*,
           u1.name as requested_by_name,
           u2.name as owner_name,
           c.name_canonical as supplier_name,
-          p.project_name,
-          ic.invoice_number as linked_invoice_number,
-          ic.status as linked_invoice_status
+          p.project_name
         FROM procurement_items pi2
         LEFT JOIN users u1 ON pi2.requested_by_user_id = u1.id
         LEFT JOIN users u2 ON pi2.owner_user_id = u2.id
         LEFT JOIN counterparties c ON pi2.supplier_id = c.id
         LEFT JOIN project_info p ON pi2.project_id = p.id
-        LEFT JOIN invoice_captures ic ON pi2.linked_invoice_capture_id = ic.id
-        ${whereClause}
+        WHERE ${whereClause}
         ORDER BY pi2.created_at DESC
-      `));
+      `);
       const items = Array.isArray(rows) ? rows : (rows as any).rows || [];
       res.json(items);
     } catch (err: any) {
@@ -80,16 +78,15 @@ export function registerProcurementRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
-      const rows = await db.execute(sql.raw(`
-        SELECT pi2.*, u1.name as requested_by_name, u2.name as owner_name, c.name_canonical as supplier_name, p.project_name, ic.invoice_number as linked_invoice_number, ic.status as linked_invoice_status
+      const rows = await db.execute(sql`
+        SELECT pi2.*, u1.name as requested_by_name, u2.name as owner_name, c.name_canonical as supplier_name, p.project_name
         FROM procurement_items pi2
         LEFT JOIN users u1 ON pi2.requested_by_user_id = u1.id
         LEFT JOIN users u2 ON pi2.owner_user_id = u2.id
         LEFT JOIN counterparties c ON pi2.supplier_id = c.id
         LEFT JOIN project_info p ON pi2.project_id = p.id
-        LEFT JOIN invoice_captures ic ON pi2.linked_invoice_capture_id = ic.id
         WHERE pi2.id = ${id}
-      `));
+      `);
       const items = Array.isArray(rows) ? rows : (rows as any).rows || [];
       if (items.length === 0) return res.status(404).json({ error: "Not found" });
       res.json(items[0]);

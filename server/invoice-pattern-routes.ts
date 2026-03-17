@@ -90,28 +90,34 @@ async function buildCounterpartyUsageIndex() {
 }
 
 async function buildCounterpartyAssignmentIndex() {
-  const [directAssignments, contactAssignments] = await Promise.all([
-    db.select({
-      assigneeId: entityAssignments.assigneeId,
-      entityType: entityAssignments.entityType,
-    })
-      .from(entityAssignments)
-      .where(and(
-        eq(entityAssignments.assigneeType, "external_counterparty"),
-        eq(entityAssignments.active, true),
-      )),
-    db.select({
-      assigneeId: entityAssignments.assigneeId,
-      counterpartyId: counterpartyContacts.counterpartyId,
-      entityType: entityAssignments.entityType,
-    })
-      .from(entityAssignments)
-      .innerJoin(counterpartyContacts, eq(counterpartyContacts.id, entityAssignments.assigneeId))
-      .where(and(
-        eq(entityAssignments.assigneeType, "external_contact"),
-        eq(entityAssignments.active, true),
-      )),
-  ]);
+  let directAssignments: any[] = [];
+  let contactAssignments: any[] = [];
+  try {
+    [directAssignments, contactAssignments] = await Promise.all([
+      db.select({
+        assigneeId: entityAssignments.assigneeId,
+        entityType: entityAssignments.entityType,
+      })
+        .from(entityAssignments)
+        .where(and(
+          eq(entityAssignments.assigneeType, "external_counterparty"),
+          eq(entityAssignments.active, true),
+        )),
+      db.select({
+        assigneeId: entityAssignments.assigneeId,
+        counterpartyId: counterpartyContacts.counterpartyId,
+        entityType: entityAssignments.entityType,
+      })
+        .from(entityAssignments)
+        .innerJoin(counterpartyContacts, eq(counterpartyContacts.id, entityAssignments.assigneeId))
+        .where(and(
+          eq(entityAssignments.assigneeType, "external_contact"),
+          eq(entityAssignments.active, true),
+        )),
+    ]);
+  } catch {
+    return new Map();
+  }
 
   const usage = new Map<number, {
     directAssignments: number;

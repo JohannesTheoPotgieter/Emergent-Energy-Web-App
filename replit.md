@@ -110,3 +110,10 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Frontend**: `UnifiedPlanTab.tsx` mutations updated from `rowNumber`/`rowNumbers` to `workItemId`/`workItemIds`. Submit locking via `isPending` prevents double-click. Milestone Gantt renders as diamond. Drag-and-drop uses workItemId.
 -   **GET handler**: Canonical mode skips `operationalTasks` merge (prevents duplicates). WI-based parent resolution via `workItemIdToTaskId` map.
 -   **Migration**: `sort_order` integer column added to `work_items` via raw SQL migration in `server/index.ts`.
+
+## Production Hardening (2026-03-17)
+-   **Schema Alignment**: Centralized additive migrations in `server/bootstrap/startup-orchestrator.ts` to align Drizzle ORM schema with actual DB. All migrations use `IF NOT EXISTS`/`IF NOT EXISTS` for idempotency.
+-   **Tables Created**: `counterparty_contacts`, `entity_assignments` (with `entity_assignment_role` and `assignee_type` enums).
+-   **Columns Added**: `users.is_active`, `counterparties.is_active`, `counterparties.role_tags`, `counterparties.updated_at`, `qc_item_evidence.project_id`, `role_permissions.authority_model`.
+-   **Endpoint Fixes**: `active-sessions` (int[] cast), `operational-exceptions` (wrong column names), `procurement/project/:id` (removed non-existent `linked_invoice_capture_id` join), `counterparties/summary` (graceful fallback when `entity_assignments` empty), `quality/dashboard` (missing `project_id` column).
+-   **Validated**: 45 critical API endpoints verified returning 200, zero server errors on clean startup.
