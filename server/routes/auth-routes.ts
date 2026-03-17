@@ -20,6 +20,38 @@ import {
 } from "../auth-context";
 import { ApiError, sendError, unauthorized, serverError, logApiError } from "../lib/api-error";
 
+const MAX_SESSIONS_PER_USER = 3;
+
+async function enforceSessionLimit(userId: number, currentSessionId: string, limit: number = MAX_SESSIONS_PER_USER): Promise<void> {
+  try {
+    const result = await db.execute(
+      sql`SELECT sid, sess, expire FROM "session" WHERE expire > NOW() ORDER BY expire DESC`
+    );
+    const rows = (result as any).rows || result;
+    const userSessions: { sid: string; expire: Date }[] = [];
+    for (const row of rows) {
+      const sess = typeof row.sess === "string" ? JSON.parse(row.sess) : row.sess;
+      const passportUserId = sess?.passport?.user;
+      if (Number(passportUserId) === userId) {
+        userSessions.push({ sid: row.sid, expire: row.expire });
+      }
+    }
+    if (userSessions.length <= limit) return;
+    const toDelete = userSessions
+      .filter((s) => s.sid !== currentSessionId)
+      .slice(limit - 1);
+    if (toDelete.length > 0) {
+      const sids = toDelete.map((s) => s.sid);
+      await db.execute(sql.raw(
+        `DELETE FROM "session" WHERE sid IN (${sids.map((s) => `'${s.replace(/'/g, "''")}'`).join(",")})`
+      ));
+      console.log(`[SESSION] Cleaned ${toDelete.length} old session(s) for user ${userId}, keeping ${limit}`);
+    }
+  } catch (err) {
+    console.error("[SESSION] Failed to enforce session limit:", err);
+  }
+}
+
 export async function registerAuthRoutes(app: Express): Promise<void> {
   app.get("/api/auth/status", async (req, res) => {
     try {
@@ -95,6 +127,7 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
 
         void (async () => {
           try {
+            await enforceSessionLimit(user.id, req.sessionID, 3);
             const tokenVersion = await getTokenVersionForUser(user.id);
             const token = generateToken({
               userId: user.id,
@@ -264,6 +297,7 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
 
         void (async () => {
           try {
+            await enforceSessionLimit(dbUser.id, req.sessionID, 3);
             const tokenVersion = await getTokenVersionForUser(dbUser.id);
             const token = generateToken({
               userId: dbUser.id,

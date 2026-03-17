@@ -34,7 +34,7 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 
 ### Backend
 -   **Frameworks & Libraries**: Express.js with TypeScript.
--   **Authentication & Authorization**: Passport.js with local strategy and Microsoft 365 SSO via `@azure/msal-node`. PostgreSQL for sessions, RBAC, and granular entity-level permissions.
+-   **Authentication & Authorization**: Passport.js with local strategy and Microsoft 365 SSO via `@azure/msal-node`. PostgreSQL for sessions (max 3 per user, enforced at login), RBAC, and granular entity-level permissions.
 -   **Data Handling**: Multer for uploads, `exceljs` for parsing, `pdfkit` for PDF generation.
 -   **Data Storage**: PostgreSQL with Drizzle ORM.
 -   **Canonical Data Model**: All data reads/writes exclusively use `work_items` for tasks, `normalized_cost_lines` for costs, and `normalized_revenue_lines` for revenue as the single source of truth.
