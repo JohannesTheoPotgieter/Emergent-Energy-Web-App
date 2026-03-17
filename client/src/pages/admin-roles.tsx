@@ -30,17 +30,15 @@ const DEPARTMENTS = [
 
 const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
 const NAV_SECTIONS = [
-  { key: "COCKPIT", label: "Home", description: "Dashboard & My Work" },
-  { key: "PROJECTS", label: "Project Lifecycle", description: "Lifecycle stages & clients" },
-  { key: "PROJECT_DEVELOPMENT", label: "Project Development", description: "PD dashboard & tickets" },
-  { key: "DELIVERY", label: "Project Management", description: "Execution & project controls" },
-  { key: "ENGINEERING", label: "Engineering", description: "Engineering tasks & overview" },
-  { key: "QUALITY", label: "Quality", description: "Quality workspace" },
-  { key: "MONEY", label: "Finance", description: "Cashflow, COS, revenue & GP" },
-  { key: "INFORMATION", label: "Knowledge", description: "SOPs, training & feedback" },
-  { key: "COLLABORATION", label: "Collaboration", description: "Teams chat, project chat & meetings" },
-  { key: "GOVERNANCE", label: "Governance", description: "RAID, changes & approvals" },
-  { key: "ADMIN", label: "Admin", description: "System settings & tools" },
+  { key: "COCKPIT", label: "Home", description: "Home, My Work" },
+  { key: "PROJECTS", label: "Project Lifecycle", description: "Overview, Lifecycle, Stage Gates, Clients" },
+  { key: "PROJECT_DEVELOPMENT", label: "Project Development", description: "PD Dashboard, PD Tickets" },
+  { key: "DELIVERY", label: "Project Management & Engineering", description: "Execution Dashboard, Project List, Deliverables, Engineering Overview, Requests & Tasks" },
+  { key: "GOVERNANCE", label: "Quality", description: "Quality Workspace" },
+  { key: "MONEY", label: "Finance", description: "Cashflow, Cost of Sales, Revenue, Gross Profit, Procurement" },
+  { key: "INFORMATION", label: "Knowledge", description: "Lifecycle & SOP, Leaderboard, Training, Feedback" },
+  { key: "COLLABORATION", label: "Collaboration", description: "Project Chat & Meetings" },
+  { key: "ADMIN", label: "Admin", description: "Control Center, Smart Import, Roles & Permissions, Audit Log" },
 ];
 
 const ENTITY_DESCRIPTIONS: Record<string, string> = {
