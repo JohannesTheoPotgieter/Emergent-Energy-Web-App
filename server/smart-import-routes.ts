@@ -36,6 +36,9 @@ import {
   planEditNotifications,
   projectRevenueSummary,
   programExpense,
+  programInflows,
+  expenseTaskLinks,
+  cosStatusOverrides,
   users,
 } from "@shared/schema";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
@@ -1669,6 +1672,44 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         counts.revenueLines = revValues.length;
       }
 
+      if (Array.isArray(norm.revenueLines) && projectName) {
+        const oldInflows = await tx.select({ rowNumber: programInflows.rowNumber, inBank: programInflows.inBank })
+          .from(programInflows)
+          .where(eq(programInflows.projectName, projectName));
+        const oldInBankMap = new Map(oldInflows.filter(r => r.rowNumber != null).map(r => [r.rowNumber!, r.inBank]));
+
+        await tx.delete(programInflows).where(eq(programInflows.projectName, projectName));
+        if (norm.revenueLines.length > 0) {
+          const revIgnored = ignoredRows.get("REVENUE") || new Set();
+          const revOverrides = overrideRows.get("REVENUE") || new Map();
+          let milestoneIdx = 0;
+          const piValues = norm.revenueLines
+            .filter((r: any) => !revIgnored.has(r.sourceRow))
+            .map((r: any) => {
+              const ov = revOverrides.get(r.sourceRow);
+              const m = ov ? { ...r, ...ov } : r;
+              milestoneIdx++;
+              const prevInBank = oldInBankMap.get(r.sourceRow);
+              return {
+                projectName,
+                rowNumber: r.sourceRow,
+                milestoneNo: String(milestoneIdx),
+                milestoneName: m.milestoneName || m.description || null,
+                milestoneAmount: m.amountExVat ? String(m.amountExVat) : null,
+                plannedPaymentDate: m.expectedPaymentDate || null,
+                milestoneInvoiceNumber: m.invoiceNumber || null,
+                invoiceRaisedDate: m.invoiceDate || null,
+                paymentReceivedDate: m.paidDate || null,
+                inBank: prevInBank != null ? prevInBank : (m.inBankDate ? 1 : 0),
+              };
+            });
+          if (piValues.length > 0) {
+            await tx.insert(programInflows).values(piValues);
+            console.log(`[SmartImport] Wrote ${piValues.length} program_inflows rows for "${projectName}"`);
+          }
+        }
+      }
+
       const counterpartyMap = new Map<string, number>();
       if (norm.counterpartyNames && norm.counterpartyNames.length > 0) {
         for (const name of norm.counterpartyNames) {
@@ -1841,23 +1882,26 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
 
       if (Array.isArray(norm.costLines) && projectName) {
+        const oldPeRows = await tx.select({ id: programExpense.id, rowNumber: programExpense.rowNumber })
+          .from(programExpense)
+          .where(eq(programExpense.projectName, projectName));
+
         await tx.delete(programExpense).where(eq(programExpense.projectName, projectName));
+
+        const toStr = (v: any): string | null => v != null ? String(v) : null;
         if (norm.costLines.length > 0) {
           const costIgnored = ignoredRows.get("EXPENDITURE") || new Set();
           const costOverrides = overrideRows.get("EXPENDITURE") || new Map();
           let currentCategory = "";
-          let rowNum = 0;
-          const toStr = (v: any): string | null => v != null ? String(v) : null;
           const peValues = norm.costLines
             .filter((c: any) => !costIgnored.has(c.sourceRow))
             .map((c: any) => {
               const ov = costOverrides.get(c.sourceRow);
               const m = ov ? { ...c, ...ov } : c;
-              rowNum++;
               if (m.costCategory && m.costCategory !== currentCategory) currentCategory = m.costCategory;
               return {
                 projectName,
-                rowNumber: rowNum,
+                rowNumber: c.sourceRow,
                 rowType: "item" as const,
                 expenseCategory: currentCategory || m.costCategory || null,
                 expenseLineItem: m.description || null,
@@ -1878,6 +1922,44 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           if (peValues.length > 0) {
             await tx.insert(programExpense).values(peValues);
             console.log(`[SmartImport] Wrote ${peValues.length} program_expense rows for "${projectName}"`);
+          }
+        }
+
+        const newPeRows = await tx.select({ id: programExpense.id, rowNumber: programExpense.rowNumber })
+          .from(programExpense)
+          .where(eq(programExpense.projectName, projectName));
+        const newIdByRow = new Map(newPeRows.filter(r => r.rowNumber != null).map(r => [r.rowNumber!, r.id]));
+        const newIdSet = new Set(newPeRows.map(r => r.id));
+
+        const existingLinks = await tx.select().from(expenseTaskLinks)
+          .where(eq(expenseTaskLinks.projectName, projectName));
+        for (const link of existingLinks) {
+          const oldRow = oldPeRows.find(r => r.id === link.expenseId);
+          if (oldRow && oldRow.rowNumber != null) {
+            const newId = newIdByRow.get(oldRow.rowNumber);
+            if (newId && newId !== link.expenseId) {
+              await tx.update(expenseTaskLinks).set({ expenseId: newId }).where(eq(expenseTaskLinks.id, link.id));
+            } else if (!newId) {
+              await tx.delete(expenseTaskLinks).where(eq(expenseTaskLinks.id, link.id));
+            }
+          } else if (!newIdSet.has(link.expenseId)) {
+            await tx.delete(expenseTaskLinks).where(eq(expenseTaskLinks.id, link.id));
+          }
+        }
+
+        const existingCosOverrides = await tx.select().from(cosStatusOverrides)
+          .where(eq(cosStatusOverrides.projectName, projectName));
+        for (const co of existingCosOverrides) {
+          const oldRow = oldPeRows.find(r => r.id === co.expenseId);
+          if (oldRow && oldRow.rowNumber != null) {
+            const newId = newIdByRow.get(oldRow.rowNumber);
+            if (newId && newId !== co.expenseId) {
+              await tx.update(cosStatusOverrides).set({ expenseId: newId }).where(eq(cosStatusOverrides.id, co.id));
+            } else if (!newId) {
+              await tx.delete(cosStatusOverrides).where(eq(cosStatusOverrides.id, co.id));
+            }
+          } else if (!newIdSet.has(co.expenseId)) {
+            await tx.delete(cosStatusOverrides).where(eq(cosStatusOverrides.id, co.id));
           }
         }
       }
