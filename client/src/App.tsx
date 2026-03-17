@@ -10,6 +10,7 @@ import { NetworkStatus } from "@/components/NetworkStatus";
 import AppLayout from "@/components/layout/AppLayout";
 import LoginPage from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
+import HomePage from "@/pages/home";
 import ProjectLifecyclePage from "@/pages/project-lifecycle";
 import ProjectsSummary from "@/pages/projects";
 import CashflowPage from "@/pages/cashflow";
@@ -295,7 +296,7 @@ function ProtectedPages() {
     <RoleGuard>
     <AppLayout>
       <Switch>
-        <Route path="/">{() => <HomeRedirect />}</Route>
+        <Route path="/" component={HomePage} />
         {APP_ROUTES.map((route) => {
           if (route.redirectTo) {
             return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;
