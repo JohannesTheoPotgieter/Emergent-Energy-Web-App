@@ -5346,6 +5346,32 @@ export async function registerRoutes(
                 importRunId, turnaroundDays: c.turnaroundDays,
               })));
             }
+            if (norm.costedSummary) {
+              try {
+                const existing = await storage.getProjectRevenueSummary(resolvedProjectName);
+                const hasManualOverride = existing && (existing.plannedRevenue || existing.plannedExpenditure);
+                if (!hasManualOverride) {
+                  await storage.upsertProjectRevenueSummary({
+                    projectName: resolvedProjectName,
+                    plannedRevenue: norm.costedSummary.plannedRevenue?.toString() ?? null,
+                    plannedExpenditure: norm.costedSummary.plannedExpenditure?.toString() ?? null,
+                    plannedProfit: norm.costedSummary.plannedProfit?.toString() ?? null,
+                    plannedMargin: norm.costedSummary.plannedMargin?.toString() ?? null,
+                    actualRevenue: null,
+                    actualExpenditure: null,
+                    actualProfit: null,
+                    actualMargin: null,
+                    voPmLimit: null,
+                    currentVoTotal: null,
+                  });
+                  console.log(`[Upload] Stored costed summary for "${resolvedProjectName}": Rev=${norm.costedSummary.plannedRevenue}, Exp=${norm.costedSummary.plannedExpenditure}`);
+                } else {
+                  console.log(`[Upload] Skipped costed summary for "${resolvedProjectName}" — manual override exists`);
+                }
+              } catch (summaryErr: any) {
+                console.warn("[Upload] Non-blocking costed summary storage failed:", summaryErr.message);
+              }
+            }
             console.log(`[Upload] Also populated normalized tables for "${resolvedProjectName}" via smart import pipeline`);
           } catch (normErr: any) {
             console.error("[Upload] Non-blocking normalized table population failed:", normErr.message);
