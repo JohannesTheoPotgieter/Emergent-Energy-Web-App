@@ -619,9 +619,30 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
     );
   }
 
-  const { milestones, summary, highlevel } = data;
+  const { milestones, highlevel } = data;
   const reconciliation = data.reconciliation;
   const riskSignals = data.riskSignals || [];
+
+  const parseAmt = (m: Milestone) => parseFloat(String((m as any).milestoneAmount ?? (m as any).amount ?? 0)) || 0;
+
+  const summary = useMemo(() => {
+    const totalContract = milestones.reduce((s, m) => s + parseAmt(m), 0);
+    const invoiced = milestones.filter(m => m.status === "invoiced").reduce((s, m) => s + parseAmt(m), 0);
+    const inBank = milestones.filter(m => m.status === "inBank").reduce((s, m) => s + parseAmt(m), 0);
+    const pending = milestones.filter(m => m.status === "planned" || m.status === "overdue").reduce((s, m) => s + parseAmt(m), 0);
+    const overdue = milestones.filter(m => m.status === "overdue").reduce((s, m) => s + parseAmt(m), 0);
+    const milestoneCount = milestones.length;
+    const issueCount = milestones.filter(m => m.status === "overdue" || m.status === "invoiced").length;
+    return { totalContract, invoiced, inBank, pending, overdue, milestoneCount, issueCount };
+  }, [milestones]);
+
+  const liveActual = useMemo(() => {
+    const revenue = summary.inBank;
+    const expenditure = highlevel.actual.expenditure;
+    const profit = revenue - expenditure;
+    const margin = revenue > 0 ? profit / revenue : 0;
+    return { revenue, expenditure, profit, margin };
+  }, [summary.inBank, highlevel.actual.expenditure]);
 
   const StatusBadge = ({ status, flags, milestone }: { status: string; flags: string[]; milestone: Milestone }) => {
     const hasInvoice = !!milestone.milestoneInvoiceNumber;
@@ -852,9 +873,9 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                         <span>{formatCurrency(highlevel.costed.revenue)}</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right font-mono">{formatCurrency(highlevel.actual.revenue)}</TableCell>
-                    <TableCell className={`text-right font-mono ${highlevel.actual.revenue - highlevel.costed.revenue < 0 ? "text-red-600" : "text-green-600"}`}>
-                      {formatCurrency(highlevel.actual.revenue - highlevel.costed.revenue)}
+                    <TableCell className="text-right font-mono">{formatCurrency(liveActual.revenue)}</TableCell>
+                    <TableCell className={`text-right font-mono ${liveActual.revenue - highlevel.costed.revenue < 0 ? "text-red-600" : "text-green-600"}`}>
+                      {formatCurrency(liveActual.revenue - highlevel.costed.revenue)}
                     </TableCell>
                   </TableRow>
                   <TableRow>
@@ -867,25 +888,25 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
                         <span>{formatCurrency(highlevel.costed.expenditure)}</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-right font-mono">{formatCurrency(highlevel.actual.expenditure)}</TableCell>
-                    <TableCell className={`text-right font-mono ${highlevel.actual.expenditure - highlevel.costed.expenditure > 0 ? "text-red-600" : "text-green-600"}`}>
-                      {formatCurrency(highlevel.actual.expenditure - highlevel.costed.expenditure)}
+                    <TableCell className="text-right font-mono">{formatCurrency(liveActual.expenditure)}</TableCell>
+                    <TableCell className={`text-right font-mono ${liveActual.expenditure - highlevel.costed.expenditure > 0 ? "text-red-600" : "text-green-600"}`}>
+                      {formatCurrency(liveActual.expenditure - highlevel.costed.expenditure)}
                     </TableCell>
                   </TableRow>
                   <TableRow className="bg-muted/30 font-semibold">
                     <TableCell className="font-semibold">Profit</TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(highlevel.costed.profit)}</TableCell>
-                    <TableCell className="text-right font-mono">{formatCurrency(highlevel.actual.profit)}</TableCell>
-                    <TableCell className={`text-right font-mono ${highlevel.actual.profit - highlevel.costed.profit < 0 ? "text-red-600" : "text-green-600"}`}>
-                      {formatCurrency(highlevel.actual.profit - highlevel.costed.profit)}
+                    <TableCell className="text-right font-mono">{formatCurrency(liveActual.profit)}</TableCell>
+                    <TableCell className={`text-right font-mono ${liveActual.profit - highlevel.costed.profit < 0 ? "text-red-600" : "text-green-600"}`}>
+                      {formatCurrency(liveActual.profit - highlevel.costed.profit)}
                     </TableCell>
                   </TableRow>
                   <TableRow className="bg-muted/30">
                     <TableCell className="font-semibold">Margin</TableCell>
                     <TableCell className="text-right font-mono">{formatPercent(highlevel.costed.margin)}</TableCell>
-                    <TableCell className="text-right font-mono">{formatPercent(highlevel.actual.margin)}</TableCell>
-                    <TableCell className={`text-right font-mono ${(highlevel.actual.margin - highlevel.costed.margin) < 0 ? "text-red-600" : "text-green-600"}`}>
-                      {formatPercent(highlevel.actual.margin - highlevel.costed.margin)}
+                    <TableCell className="text-right font-mono">{formatPercent(liveActual.margin)}</TableCell>
+                    <TableCell className={`text-right font-mono ${(liveActual.margin - highlevel.costed.margin) < 0 ? "text-red-600" : "text-green-600"}`}>
+                      {formatPercent(liveActual.margin - highlevel.costed.margin)}
                     </TableCell>
                   </TableRow>
                 </TableBody>

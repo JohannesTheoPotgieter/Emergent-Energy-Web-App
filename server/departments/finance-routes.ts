@@ -14,6 +14,7 @@ import {
   financialEditRequests,
   insertBudgetSchema,
   msObjects,
+  normalizedRevenueLines,
   notifications,
   OVERRIDE_CATEGORIES,
   projectInfo,
@@ -2843,6 +2844,44 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
     }
 
     const saved = await storage.upsertManyRevenueTrackingOverrides(overridesWithUser);
+
+    try {
+      for (const projectName of projectNames) {
+        const [rawInflows, latestOverrides] = await Promise.all([
+          storage.getProgramInflowsByProject(projectName),
+          storage.getRevenueTrackingOverridesByProject(projectName),
+        ]);
+        const appliedRows = applyRevenueTrackingOverrides(rawInflows, latestOverrides);
+        for (const r of appliedRows) {
+          const milestoneNo = r.milestoneNo;
+          if (!milestoneNo || !/^\d+$/.test(String(milestoneNo).trim())) continue;
+          const rowNum = r.rowNumber;
+          if (!rowNum) continue;
+          const manualInBank = r.inBank === 1 || r.inBank === '1' || r.inBank === true;
+          const hasInvoice = !!(r.milestoneInvoiceNumber && String(r.milestoneInvoiceNumber).trim());
+          const hasPaymentReceived = !!(r.paymentReceivedDate && String(r.paymentReceivedDate).trim() && r.paymentReceivedDate !== '-');
+          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
+          const paidDateConfirmed = isInBank;
+          const paidDateFontColor = isInBank ? 'black' : 'red';
+          const paidDate = isInBank ? (r.paymentReceivedDate || r.plannedPaymentDate || null) : null;
+          await db.update(normalizedRevenueLines)
+            .set({
+              paidDateConfirmed,
+              paidDateFontColor,
+              paidDate: paidDate,
+              inBankDate: isInBank ? (paidDate || null) : null,
+            })
+            .where(
+              and(
+                eq(normalizedRevenueLines.projectName, projectName),
+                eq(normalizedRevenueLines.sourceRow, rowNum),
+              )
+            );
+        }
+      }
+    } catch (syncErr: any) {
+      console.warn("[sync] Revenue inBank sync to normalized_revenue_lines failed:", syncErr.message);
+    }
 
     try {
       for (const o of overrides) {
