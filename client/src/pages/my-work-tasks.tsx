@@ -487,14 +487,10 @@ export default function MyWorkTasksPage() {
     return result;
   }, [allTaskData, unreadNotifs, microsoftItems]);
 
-  useEffect(() => {
-    if (unifiedDetailOpen && unifiedDetailTask) {
-      const fresh = unifiedTasks.find(t => t._key === unifiedDetailTask._key);
-      if (fresh && fresh !== unifiedDetailTask) {
-        setUnifiedDetailTask(fresh);
-      }
-    }
-  }, [unifiedTasks, unifiedDetailOpen, unifiedDetailTask]);
+  const unifiedDetailTaskFresh = useMemo(() => {
+    if (!unifiedDetailOpen || !unifiedDetailTask) return unifiedDetailTask;
+    return unifiedTasks.find(t => t._key === unifiedDetailTask._key) || unifiedDetailTask;
+  }, [unifiedTasks, unifiedDetailOpen, unifiedDetailTask?._key]);
 
   const invalidateAll = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
@@ -940,51 +936,51 @@ export default function MyWorkTasksPage() {
         </WorkspaceNotice>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" data-testid="kpi-cards">
-          <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-blue-500 to-blue-600 p-3 text-white shadow-sm" data-testid="kpi-active">
+          <div className="relative overflow-hidden rounded-xl border border-emerald-200 bg-white p-3 shadow-sm" data-testid="kpi-active">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-medium text-blue-100 uppercase tracking-wider">Active</p>
-                <p className="text-2xl font-bold mt-0.5">{kpiStats.active}</p>
-                <p className="text-[10px] text-blue-200 mt-0.5">{kpiStats.inProgress} in progress</p>
+                <p className="text-[10px] font-medium text-emerald-600 uppercase tracking-wider">Active</p>
+                <p className="text-2xl font-bold mt-0.5 text-foreground">{kpiStats.active}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{kpiStats.inProgress} in progress</p>
               </div>
-              <div className="rounded-full bg-card/20 p-2"><ListTodo className="h-5 w-5" /></div>
+              <div className="rounded-full bg-emerald-50 p-2 text-emerald-600"><ListTodo className="h-5 w-5" /></div>
             </div>
-            {kpiStats.dueToday > 0 && <div className="mt-1.5 text-[10px] font-semibold bg-card/20 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Zap className="h-2.5 w-2.5" /> {kpiStats.dueToday} due today</div>}
+            {kpiStats.dueToday > 0 && <div className="mt-1.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Zap className="h-2.5 w-2.5" /> {kpiStats.dueToday} due today</div>}
           </div>
 
-          <button onClick={() => setOverdueOnly(!overdueOnly)} className={`relative overflow-hidden rounded-xl border p-3 text-left shadow-sm transition-all ${kpiStats.overdue > 0 ? "bg-gradient-to-br from-red-500 to-red-600 text-white hover:shadow-md" : "bg-gradient-to-br from-slate-100 to-slate-50 text-muted-foreground border-border"} ${overdueOnly ? "ring-2 ring-red-300 ring-offset-1" : ""}`} data-testid="kpi-overdue">
+          <button onClick={() => setOverdueOnly(!overdueOnly)} className={`relative overflow-hidden rounded-xl border p-3 text-left shadow-sm transition-all ${kpiStats.overdue > 0 ? "border-red-200 bg-red-50 hover:shadow-md" : "border-border bg-white"} ${overdueOnly ? "ring-2 ring-emerald-400 ring-offset-1" : ""}`} data-testid="kpi-overdue">
             <div className="flex items-center justify-between">
               <div>
-                <p className={`text-[10px] font-medium uppercase tracking-wider ${kpiStats.overdue > 0 ? "text-red-100" : "text-slate-500"}`}>Overdue</p>
-                <p className="text-2xl font-bold mt-0.5">{kpiStats.overdue}</p>
-                <p className={`text-[10px] mt-0.5 ${kpiStats.overdue > 0 ? "text-red-200" : "text-slate-500"}`}>{kpiStats.blocked} blocked</p>
+                <p className={`text-[10px] font-medium uppercase tracking-wider ${kpiStats.overdue > 0 ? "text-red-600" : "text-muted-foreground"}`}>Overdue</p>
+                <p className={`text-2xl font-bold mt-0.5 ${kpiStats.overdue > 0 ? "text-red-700" : "text-foreground"}`}>{kpiStats.overdue}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{kpiStats.blocked} blocked</p>
               </div>
-              <div className={`rounded-full p-2 ${kpiStats.overdue > 0 ? "bg-card/20" : "bg-slate-200"}`}><AlertCircle className="h-5 w-5" /></div>
+              <div className={`rounded-full p-2 ${kpiStats.overdue > 0 ? "bg-red-100 text-red-600" : "bg-muted text-muted-foreground"}`}><AlertCircle className="h-5 w-5" /></div>
             </div>
-            {overdueOnly && <div className="mt-1.5 text-[10px] font-semibold bg-card/20 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Filter className="h-2.5 w-2.5" /> Filtering</div>}
+            {overdueOnly && <div className="mt-1.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Filter className="h-2.5 w-2.5" /> Filtering</div>}
           </button>
 
-          <div className="relative overflow-hidden rounded-xl border bg-gradient-to-br from-amber-500 to-orange-500 p-3 text-white shadow-sm" data-testid="kpi-critical">
+          <div className="relative overflow-hidden rounded-xl border border-amber-200 bg-white p-3 shadow-sm" data-testid="kpi-critical">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-medium text-amber-100 uppercase tracking-wider">High Priority</p>
-                <p className="text-2xl font-bold mt-0.5">{kpiStats.critical}</p>
-                <p className="text-[10px] text-amber-200 mt-0.5">{kpiStats.dueSoon} due within 3d</p>
+                <p className="text-[10px] font-medium text-amber-600 uppercase tracking-wider">High Priority</p>
+                <p className="text-2xl font-bold mt-0.5 text-foreground">{kpiStats.critical}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{kpiStats.dueSoon} due within 3d</p>
               </div>
-              <div className="rounded-full bg-card/20 p-2"><AlertTriangle className="h-5 w-5" /></div>
+              <div className="rounded-full bg-amber-50 p-2 text-amber-600"><AlertTriangle className="h-5 w-5" /></div>
             </div>
           </div>
 
-          <div className={`relative overflow-hidden rounded-xl border p-3 shadow-sm ${kpiStats.dueThisWeek > 0 ? "bg-gradient-to-br from-violet-500 to-purple-600 text-white" : "bg-gradient-to-br from-slate-100 to-slate-50 text-muted-foreground border-border"}`} data-testid="kpi-due-this-week">
+          <div className={`relative overflow-hidden rounded-xl border p-3 shadow-sm ${kpiStats.dueThisWeek > 0 ? "border-emerald-200 bg-emerald-50/50" : "border-border bg-white"}`} data-testid="kpi-due-this-week">
             <div className="flex items-center justify-between">
               <div>
-                <p className={`text-[10px] font-medium uppercase tracking-wider ${kpiStats.dueThisWeek > 0 ? "text-violet-100" : "text-slate-500"}`}>Due This Week</p>
-                <p className="text-2xl font-bold mt-0.5">{kpiStats.dueThisWeek}</p>
-                <p className={`text-[10px] mt-0.5 ${kpiStats.dueThisWeek > 0 ? "text-violet-200" : "text-slate-500"}`}>{kpiStats.approvalsPending} awaiting review</p>
+                <p className={`text-[10px] font-medium uppercase tracking-wider ${kpiStats.dueThisWeek > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>Due This Week</p>
+                <p className="text-2xl font-bold mt-0.5 text-foreground">{kpiStats.dueThisWeek}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{kpiStats.approvalsPending} awaiting review</p>
               </div>
-              <div className={`rounded-full p-2 ${kpiStats.dueThisWeek > 0 ? "bg-card/20" : "bg-slate-200"}`}><Target className="h-5 w-5" /></div>
+              <div className={`rounded-full p-2 ${kpiStats.dueThisWeek > 0 ? "bg-emerald-100 text-emerald-600" : "bg-muted text-muted-foreground"}`}><Target className="h-5 w-5" /></div>
             </div>
-            {kpiStats.dueToday > 0 && <div className="mt-1.5 text-[10px] font-semibold bg-card/20 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Zap className="h-2.5 w-2.5" /> {kpiStats.dueToday} due today</div>}
+            {kpiStats.dueToday > 0 && <div className="mt-1.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Zap className="h-2.5 w-2.5" /> {kpiStats.dueToday} due today</div>}
           </div>
         </div>
       </div>
@@ -998,7 +994,7 @@ export default function MyWorkTasksPage() {
           {priorityFilter.length > 0 && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-white/70">{priorityFilter.length} priority</Badge>}
           {projectFilter && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-white/70 truncate max-w-[100px]">{projectFilter.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</Badge>}
           {overdueOnly && <Badge variant="destructive" className="text-[9px] px-1 py-0 h-4">Overdue</Badge>}
-          {dueThisWeekOnly && <Badge className="text-[9px] px-1 py-0 h-4 bg-violet-500 text-white">Due 7d</Badge>}
+          {dueThisWeekOnly && <Badge className="text-[9px] px-1 py-0 h-4 bg-emerald-600 text-white">Due 7d</Badge>}
           {blockedOnly && <Badge className="text-[9px] px-1 py-0 h-4 bg-orange-500 text-white">Blocked</Badge>}
           {showCompleted && <Badge className="text-[9px] px-1 py-0 h-4 bg-emerald-500 text-white">+Done</Badge>}
           {groomMode && <Badge className="text-[9px] px-1 py-0 h-4 bg-amber-500">Groom</Badge>}
@@ -1041,7 +1037,7 @@ export default function MyWorkTasksPage() {
           <button onClick={() => { setOverdueOnly(!overdueOnly); if (!overdueOnly) { setDueThisWeekOnly(false); setBlockedOnly(false); } }} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap border transition-all ${overdueOnly ? "bg-red-500 text-white border-red-500" : kpiStats.overdue > 0 ? "text-red-600 border-red-200 hover:bg-red-50" : "text-muted-foreground border-transparent hover:bg-muted"}`} data-testid="quick-filter-overdue">
             <AlertCircle className="h-3 w-3" /> Overdue {kpiStats.overdue > 0 && <span className="opacity-80">{kpiStats.overdue}</span>}
           </button>
-          <button onClick={() => { setDueThisWeekOnly(!dueThisWeekOnly); if (!dueThisWeekOnly) { setOverdueOnly(false); setBlockedOnly(false); } }} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap border transition-all ${dueThisWeekOnly ? "bg-violet-500 text-white border-violet-500" : kpiStats.dueThisWeek > 0 ? "text-violet-600 border-violet-200 hover:bg-violet-50" : "text-muted-foreground border-transparent hover:bg-muted"}`} data-testid="quick-filter-due-week">
+          <button onClick={() => { setDueThisWeekOnly(!dueThisWeekOnly); if (!dueThisWeekOnly) { setOverdueOnly(false); setBlockedOnly(false); } }} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap border transition-all ${dueThisWeekOnly ? "bg-emerald-600 text-white border-emerald-600" : kpiStats.dueThisWeek > 0 ? "text-emerald-700 border-emerald-200 hover:bg-emerald-50" : "text-muted-foreground border-transparent hover:bg-muted"}`} data-testid="quick-filter-due-week">
             <Target className="h-3 w-3" /> Due 7d {kpiStats.dueThisWeek > 0 && <span className="opacity-80">{kpiStats.dueThisWeek}</span>}
           </button>
           <button onClick={() => { setBlockedOnly(!blockedOnly); if (!blockedOnly) { setOverdueOnly(false); setDueThisWeekOnly(false); } }} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap border transition-all ${blockedOnly ? "bg-orange-500 text-white border-orange-500" : kpiStats.blocked > 0 ? "text-orange-600 border-orange-200 hover:bg-orange-50" : "text-muted-foreground border-transparent hover:bg-muted"}`} data-testid="quick-filter-blocked">
@@ -1071,7 +1067,7 @@ export default function MyWorkTasksPage() {
           {overdueOnly && <Badge variant="destructive" className="cursor-pointer gap-1 text-[10px]" onClick={() => setOverdueOnly(false)} data-testid="badge-overdue-filter">
             <AlertCircle className="h-3 w-3" /> Overdue only <X className="h-3 w-3 ml-1" />
           </Badge>}
-          {dueThisWeekOnly && <Badge className="cursor-pointer gap-1 text-[10px] bg-violet-500 hover:bg-violet-600" onClick={() => setDueThisWeekOnly(false)} data-testid="badge-due-week-filter">
+          {dueThisWeekOnly && <Badge className="cursor-pointer gap-1 text-[10px] bg-emerald-600 hover:bg-emerald-700" onClick={() => setDueThisWeekOnly(false)} data-testid="badge-due-week-filter">
             <Target className="h-3 w-3" /> Due this week <X className="h-3 w-3 ml-1" />
           </Badge>}
           {blockedOnly && <Badge className="cursor-pointer gap-1 text-[10px] bg-orange-500 hover:bg-orange-600" onClick={() => setBlockedOnly(false)} data-testid="badge-blocked-filter">
@@ -1207,7 +1203,7 @@ export default function MyWorkTasksPage() {
       )}
 
       {drawerOpen && drawerTask && (<TaskDetailDrawer task={drawerTask} open={drawerOpen} onOpenChange={(open) => setDrawerOpen(open)} onInvalidate={invalidateAll} />)}
-      {unifiedDetailOpen && unifiedDetailTask && (<TaskDetailPanel task={unifiedDetailTask} open={unifiedDetailOpen} onOpenChange={setUnifiedDetailOpen} onInvalidate={invalidateAll} allProjects={allProjects} canReassign={canReassignTask(unifiedDetailTask)} taskTypeLabel={taskTypeLabel(unifiedDetailTask)} />)}
+      {unifiedDetailOpen && unifiedDetailTaskFresh && (<TaskDetailPanel task={unifiedDetailTaskFresh} open={unifiedDetailOpen} onOpenChange={setUnifiedDetailOpen} onInvalidate={invalidateAll} allProjects={allProjects} canReassign={canReassignTask(unifiedDetailTaskFresh)} taskTypeLabel={taskTypeLabel(unifiedDetailTaskFresh)} />)}
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="max-w-[95vw] sm:max-w-lg">

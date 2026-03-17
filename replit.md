@@ -117,3 +117,9 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Columns Added**: `users.is_active`, `counterparties.is_active`, `counterparties.role_tags`, `counterparties.updated_at`, `qc_item_evidence.project_id`, `role_permissions.authority_model`.
 -   **Endpoint Fixes**: `active-sessions` (int[] cast), `operational-exceptions` (wrong column names), `procurement/project/:id` (removed non-existent `linked_invoice_capture_id` join), `counterparties/summary` (graceful fallback when `entity_assignments` empty), `quality/dashboard` (missing `project_id` column).
 -   **Validated**: 45 critical API endpoints verified returning 200, zero server errors on clean startup.
+
+## UX Consistency & Navigation Cleanup (2026-03-17)
+-   **Theme**: Light white/green only (#16A34A emerald-600 primary). KPI cards use white backgrounds with emerald borders/icons. No colored gradient fills on cards.
+-   **My Tasks Infinite Loop Fix**: Replaced `useEffect`+`setState` sync pattern with `useMemo` (`unifiedDetailTaskFresh`) to prevent `Maximum update depth exceeded` errors from reference comparison on new objects each render.
+-   **Navigation**: Home sub-nav renamed from "Dashboard" to "Home". Breadcrumb bar only renders when breadcrumbs or secondary nav items exist (no empty chrome). Removed leftover "Actions Active" mobile floating badge.
+-   **Filter Consistency**: Due-this-week quick filter and badges updated from violet to emerald-600 to match green theme. Source filter active state uses emerald-600.
