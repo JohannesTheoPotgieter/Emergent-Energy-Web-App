@@ -121,6 +121,21 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   pd_eng_stages: "Project detail > Engineering stages",
   pd_collaboration: "Project detail > Files & collaboration",
   pd_subcontractors: "Project detail > Subcontractors",
+  pd_change_control: "Project detail > Change control / VOs",
+  pd_commissioning: "Project detail > Commissioning & closeout",
+  pd_dependencies: "Project detail > Linked dependencies",
+  pd_raid: "Project detail > RAID log (Risks, Actions, Issues)",
+
+  dashboard_widgets: "Home dashboard — widget cards & charts",
+  excel_sync_ack: "Smart Import — sync acknowledgement panel",
+  financial_integration: "Financial Integration — rule-based matching",
+  financial_linking: "Financial Linking — expense/revenue pairing",
+  governance: "Governance — phase gate & compliance controls",
+  operational_tasks: "Operational Tasks — ad-hoc task tracking",
+  gamification: "Gamification — points, streaks & leaderboard",
+  project_creation: "Create Project — new project wizard",
+  project_tagging: "Project Tagging — labels & categories",
+  work_items: "Work Items — canonical task/work tracking",
 };
 
 const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
@@ -166,7 +181,11 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   project_detail: {
     label: "Project Detail Tabs",
-    entities: ["pd_overview", "pd_plan", "pd_gantt", "pd_finance", "pd_revenue", "pd_cashflow", "pd_cos_tracker", "pd_expenditure", "pd_history", "pd_key_dates", "pd_quality", "pd_engineering", "pd_eng_tasks", "pd_eng_stages", "pd_collaboration", "pd_subcontractors"],
+    entities: ["pd_overview", "pd_plan", "pd_gantt", "pd_finance", "pd_revenue", "pd_cashflow", "pd_cos_tracker", "pd_expenditure", "pd_history", "pd_key_dates", "pd_quality", "pd_engineering", "pd_eng_tasks", "pd_eng_stages", "pd_collaboration", "pd_subcontractors", "pd_change_control", "pd_commissioning", "pd_dependencies", "pd_raid"],
+  },
+  other: {
+    label: "Other Permissions",
+    entities: ["dashboard_widgets", "excel_sync_ack", "financial_integration", "financial_linking", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items"],
   },
 };
 
