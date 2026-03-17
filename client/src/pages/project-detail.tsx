@@ -942,7 +942,7 @@ export default function ProjectDetailPage() {
       if (!res.ok) return null;
       return res.json();
     },
-    enabled: !!projectName && canViewTab.finance && (activeSection === "commercial" || activeSection === "overview"),
+    enabled: !!projectName && canViewTab.finance && (activeSection === "commercial" || activeSection === "overview" || activeSection === "delivery"),
   });
 
   const { data: expenditureTrustData } = useQuery<any>({
@@ -952,7 +952,7 @@ export default function ProjectDetailPage() {
       if (!res.ok) return null;
       return res.json();
     },
-    enabled: !!projectName && canViewTab.finance && (activeSection === "commercial" || activeSection === "overview"),
+    enabled: !!projectName && canViewTab.finance && (activeSection === "commercial" || activeSection === "overview" || activeSection === "delivery"),
   });
 
   const { data: commercialMsObjects = [] } = useQuery<any[]>({
@@ -962,7 +962,7 @@ export default function ProjectDetailPage() {
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: !!projectInfoId && canViewTab.finance && (activeSection === "commercial" || activeSection === "overview"),
+    enabled: !!projectInfoId && canViewTab.finance && (activeSection === "commercial" || activeSection === "overview" || activeSection === "delivery"),
   });
 
   const { data: cashflowData = [] } = useQuery({
@@ -1063,12 +1063,7 @@ export default function ProjectDetailPage() {
     ? (qualityGatesPassed === qualityGatesTotal && qualityGatesTotal > 0 ? "green" : qualityApprovedItems > 0 ? "amber" : "red")
     : "red";
 
-  const isInflowInBank = (r: any): boolean => {
-    const manualInBank = r.inBank === 1 || r.inBank === '1' || r.inBank === true;
-    const hasInvoice = !!(r.milestoneInvoiceNumber && String(r.milestoneInvoiceNumber).trim());
-    const hasPaymentReceived = !!(r.paymentReceivedDate && String(r.paymentReceivedDate).trim() && r.paymentReceivedDate !== '-');
-    return manualInBank || (hasPaymentReceived && hasInvoice);
-  };
+  const revTabMilestones: any[] = revenueTrustData?.milestones || [];
 
   const isExpensePaid = (e: any): boolean => {
     const hasPaymentDate = !!(e.expensePaymentDate && String(e.expensePaymentDate).trim());
@@ -1085,24 +1080,23 @@ export default function ProjectDetailPage() {
   };
 
   const nextMilestone = useMemo<NextMilestoneSummary | null>(() => {
-    const unpaid = (revenueData as any[])
-      .filter((r: any) => !isInflowInBank(r) && r.plannedPaymentDate)
-      .sort((a: any, b: any) => new Date(a.plannedPaymentDate).getTime() - new Date(b.plannedPaymentDate).getTime());
+    const milestones = revTabMilestones;
+    const unpaid = milestones
+      .filter((m: any) => m.status !== 'inBank' && m.date)
+      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
     if (unpaid.length > 0) {
       const m = unpaid[0];
-      return { name: m.milestoneName || "Revenue Milestone", date: m.plannedPaymentDate, allPaid: false };
+      return { name: m.milestoneName || "Revenue Milestone", date: m.date, allPaid: false };
     }
-    const hasAny = (revenueData as any[]).length > 0;
-    if (hasAny) {
+    if (milestones.length > 0) {
       return { name: "All Paid", date: null, allPaid: true };
     }
     return null;
-  }, [revenueData]);
+  }, [revTabMilestones]);
 
-  const totalPaidInflows = (revenueData as any[]).reduce((s: number, r: any) => {
-    if (isInflowInBank(r)) return s + (Number(r.milestoneAmount) || 0);
-    return s;
-  }, 0);
+  const totalPaidInflows = revTabMilestones
+    .filter((m: any) => m.status === 'inBank')
+    .reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
   const revenueRealisedPct = contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0;
 
   const totalRealisedCos = (expenseData as any[]).reduce((s: number, e: any) => {
@@ -1115,7 +1109,7 @@ export default function ProjectDetailPage() {
 
   const hasRedRag = scheduleRag === "red" || costRag === "red" || qualityRag === "red";
   const overallRag: "green" | "amber" | "red" = hasRedRag ? "red" : (scheduleRag === "amber" || costRag === "amber" || qualityRag === "amber") ? "amber" : "green";
-  const commercialPendingCount = Math.max((revenueData as any[]).filter((r: any) => !isInflowInBank(r)).length, 0);
+  const commercialPendingCount = Math.max(revTabMilestones.filter((m: any) => m.status !== 'inBank').length, 0);
   const unpaidExpenseCount = Math.max((expenseData as any[]).filter((e: any) => !isExpensePaid(e)).length, 0);
   const revenueReconciliation = revenueTrustData?.reconciliation;
   const expenditureReconciliation = expenditureTrustData?.reconciliation;

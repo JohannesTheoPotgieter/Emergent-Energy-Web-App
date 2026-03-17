@@ -24,6 +24,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { sendExcelSyncNotification } from "../excel-sync-notifications";
+import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from "../work-items-adapter";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 
@@ -2937,15 +2938,18 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = req.params.projectName;
 
-    const [rawInflows, overrides, projectInfoList, savedSummary, operationalTasks, planTasks, taskLinks] = await Promise.all([
+    const useCanonical = await isWorkItemsEnabled();
+    const [rawInflows, overrides, projectInfoList, savedSummary, canonicalTasks, legacyOperationalTasks, planTasks, taskLinks] = await Promise.all([
       storage.getProgramInflowsByProject(projectName),
       storage.getRevenueTrackingOverridesByProject(projectName),
       storage.getAllProjectInfo(),
       storage.getProjectRevenueSummary(projectName),
+      useCanonical ? getWorkItemsAsOperationalTasks(projectName) : Promise.resolve([]),
       storage.getOperationalTasksByProject(projectName),
       storage.getProjectPlansByProject(projectName),
       storage.getMilestoneTaskLinks(projectName),
     ]);
+    const operationalTasks = (useCanonical && canonicalTasks.length > 0) ? canonicalTasks : legacyOperationalTasks;
 
     const inflows = applyRevenueTrackingOverrides(rawInflows, overrides);
     const sourceInflowByRow = new Map(rawInflows.map((row: any) => [row.rowNumber, row]));
@@ -3011,7 +3015,8 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
       let linkedTask: any = null;
       if (link) {
         if (link.taskId > 0) {
-          linkedTask = operationalTasks.find((t: any) => t.id === link.taskId);
+          linkedTask = operationalTasks.find((t: any) => t.id === link.taskId)
+            || legacyOperationalTasks.find((t: any) => t.id === link.taskId);
         } else {
           const planTask = planTasks.find((pt: any) => pt.id === Math.abs(link.taskId));
           if (planTask) {
@@ -3451,11 +3456,14 @@ router.post("/api/revenue-tab/:projectName/costed", requireAuth, requireAdminOrF
 router.get("/api/revenue-tab/:projectName/task-alerts", requireAuth, requireAdmin, async (req, res) => {
   try {
     const projectName = req.params.projectName;
-    const [tasks, inflows, taskLinks] = await Promise.all([
+    const useCanonicalAlerts = await isWorkItemsEnabled();
+    const [legacyTasks, canonicalAlertTasks, inflows, taskLinks] = await Promise.all([
       storage.getOperationalTasksByProject(projectName),
+      useCanonicalAlerts ? getWorkItemsAsOperationalTasks(projectName) : Promise.resolve([]),
       storage.getProgramInflowsByProject(projectName),
       storage.getMilestoneTaskLinks(projectName),
     ]);
+    const tasks = (useCanonicalAlerts && canonicalAlertTasks.length > 0) ? canonicalAlertTasks : legacyTasks;
 
     const alerts: any[] = [];
     for (const milestone of inflows) {
@@ -3464,7 +3472,7 @@ router.get("/api/revenue-tab/:projectName/task-alerts", requireAuth, requireAdmi
       if (name === '-') continue;
 
       const link = taskLinks.find((l: any) => l.milestoneRowNumber === milestone.rowNumber);
-      const linkedTask = link ? tasks.find((t: any) => t.id === link.taskId) : null;
+      const linkedTask = link ? (tasks.find((t: any) => t.id === link.taskId) || legacyTasks.find((t: any) => t.id === link.taskId)) : null;
 
       if (linkedTask && ((linkedTask as any).status === 'complete' || (linkedTask as any).status === 'Complete') && !milestone.milestoneInvoiceNumber) {
         alerts.push({
