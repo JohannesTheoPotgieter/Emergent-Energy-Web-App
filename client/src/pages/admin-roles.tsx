@@ -445,6 +445,7 @@ function RolesControlCenter() {
   };
 
   const resources = Object.keys(currentEp).filter((k) => !k.startsWith("_")).sort();
+  const allEntities = Object.values(ENTITY_CATEGORIES).flatMap((c) => c.entities).sort();
   const viewState: AdminRolesViewState = resolveAdminRolesViewState({ isLoading, hasError: Boolean(loadError), roleCount: roles.length, canManageRoles });
   const systemRoleCount = roles.filter((role) => role.isSystem).length;
   const customRoleCount = roles.filter((role) => !role.isSystem).length;
@@ -797,20 +798,20 @@ function RolesControlCenter() {
                       </TabsContent>
 
                       <TabsContent value="authority" className="mt-4 space-y-3">
-                        <div className="rounded-lg border border-violet-200 bg-violet-50/50 px-4 py-3">
-                          <p className="text-sm text-violet-800">
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 px-4 py-3">
+                          <p className="text-sm text-emerald-800">
                             <strong>Authority model:</strong> Fine-grained operational authority with scope controls.
                             Enable actions per entity and set the scope (own items, department, assigned projects, all projects, or company-wide).
                           </p>
                         </div>
-                        {resources.length === 0 ? (
+                        {allEntities.length === 0 ? (
                           <div className="py-12 text-center rounded-lg border border-dashed border-gray-200 bg-gray-50/50">
                             <Shield className="h-10 w-10 text-gray-300 mx-auto mb-3" />
                             <p className="text-sm font-medium text-gray-600">No authority rules configured</p>
                           </div>
                         ) : (
                           <div className="space-y-2 max-h-[60vh] overflow-auto pr-1">
-                            {resources.map((entity) => (
+                            {allEntities.map((entity) => (
                               <div key={entity} className="rounded-lg border border-gray-200 p-4 bg-white space-y-3">
                                 <div className="font-semibold text-sm text-gray-900 pb-2 border-b border-gray-100">{formatEntityName(entity)}</div>
                                 <div className="space-y-2">
