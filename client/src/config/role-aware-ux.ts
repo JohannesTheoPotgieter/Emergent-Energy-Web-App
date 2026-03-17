@@ -14,8 +14,8 @@ const ROLE_ALIASES: Record<string, string> = {
   CEO_ADMIN: "LEADERSHIP",
   COO_ADMIN: "LEADERSHIP",
   PROGRAM_MANAGER: "LEADERSHIP",
-  PROJECT_MANAGER_SITE: "DELIVERY",
-  CONSTRUCTION_MANAGER: "DELIVERY",
+  PROJECT_MANAGER_SITE: "SITE_MANAGEMENT",
+  CONSTRUCTION_MANAGER: "SITE_MANAGEMENT",
   ENGINEER: "ENGINEERING",
   ENGINEERING_MANAGER: "ENGINEERING",
   QUALITY_MANAGER: "QUALITY",
@@ -27,7 +27,7 @@ const ROLE_ALIASES: Record<string, string> = {
 
 const ROLE_SECTION_PRIORITIES: Record<string, RoleAwareSection[]> = {
   LEADERSHIP: ["MY_WORK", "PROJECT_MANAGEMENT", "FINANCE", "ENGINEERING", "QUALITY", "PROJECT_DEVELOPMENT", "FEEDBACK", "SYSTEM"],
-  DELIVERY: ["MY_WORK", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "FINANCE", "PROJECT_DEVELOPMENT", "FEEDBACK", "SYSTEM"],
+  SITE_MANAGEMENT: ["MY_WORK", "PROJECT_MANAGEMENT", "ENGINEERING", "QUALITY", "FINANCE", "PROJECT_DEVELOPMENT", "FEEDBACK", "SYSTEM"],
   ENGINEERING: ["MY_WORK", "ENGINEERING", "PROJECT_MANAGEMENT", "QUALITY", "FINANCE", "PROJECT_DEVELOPMENT", "FEEDBACK", "SYSTEM"],
   QUALITY: ["MY_WORK", "QUALITY", "PROJECT_MANAGEMENT", "ENGINEERING", "FINANCE", "PROJECT_DEVELOPMENT", "FEEDBACK", "SYSTEM"],
   FINANCE: ["MY_WORK", "FINANCE", "PROJECT_MANAGEMENT", "QUALITY", "ENGINEERING", "PROJECT_DEVELOPMENT", "FEEDBACK", "SYSTEM"],
@@ -37,7 +37,7 @@ const ROLE_SECTION_PRIORITIES: Record<string, RoleAwareSection[]> = {
 
 const ROLE_LANDING_CANDIDATES: Record<string, string[]> = {
   LEADERSHIP: ["dashboard", "projects", "myWork", "commandCenter"],
-  DELIVERY: ["pmDashboard", "projects", "pmOnTheGo", "myWorkTasks", "myWork"],
+  SITE_MANAGEMENT: ["pmDashboard", "projects", "pmOnTheGo", "myWorkTasks", "myWork"],
   ENGINEERING: ["engineering", "engineeringTasks", "myWorkTasks", "myWork"],
   QUALITY: ["quality", "myWorkApprovals", "myWorkTasks", "myWork"],
   FINANCE: ["cashflow", "cos", "revenueTracker", "gpTracker", "myWork"],
@@ -47,7 +47,7 @@ const ROLE_LANDING_CANDIDATES: Record<string, string[]> = {
 
 const MICROSOFT_PRIORITY_BY_ROLE: Record<string, string[]> = {
   LEADERSHIP: ["myWorkEmail", "myWorkTeams", "myWorkMeetings"],
-  DELIVERY: ["myWorkTeams", "myWorkMeetings", "myWorkEmail"],
+  SITE_MANAGEMENT: ["myWorkTeams", "myWorkMeetings", "myWorkEmail"],
   ENGINEERING: ["myWorkTeams", "myWorkMeetings", "myWorkEmail"],
   QUALITY: ["myWorkMeetings", "myWorkTeams", "myWorkEmail"],
   FINANCE: ["myWorkEmail", "myWorkMeetings", "myWorkTeams"],

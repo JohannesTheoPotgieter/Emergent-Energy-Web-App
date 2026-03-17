@@ -39,14 +39,12 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "Admin access required" });
 }
 
-const VALID_SECTIONS = new Set(["COCKPIT", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "DELIVERY", "GOVERNANCE", "COLLABORATION", "INFORMATION", "ADMIN"]);
+const VALID_SECTIONS = new Set(["COCKPIT", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "COLLABORATION", "INFORMATION", "ADMIN"]);
 const SECTION_MIGRATION: Record<string, string> = {
   EXCO: "COCKPIT",
   MY_TOOL: "COCKPIT",
-  PROJECT_MANAGEMENT: "PROJECTS",
   OPERATIONS: "PROJECTS",
   FINANCE: "MONEY",
-  ENGINEERING: "DELIVERY",
   QUALITY: "GOVERNANCE",
   FEEDBACK: "INFORMATION",
 };
@@ -166,11 +164,17 @@ async function ensureRolePermissionsSeeded() {
   }
 }
 
+const SECTION_EXPANSION: Record<string, string[]> = {
+  DELIVERY: ["PROJECT_MANAGEMENT", "ENGINEERING"],
+};
+
 function migrateSections(sections: string[]): string[] {
   const migrated = new Set<string>();
   for (const s of sections) {
     if (VALID_SECTIONS.has(s)) {
       migrated.add(s);
+    } else if (SECTION_EXPANSION[s]) {
+      for (const expanded of SECTION_EXPANSION[s]) migrated.add(expanded);
     } else if (SECTION_MIGRATION[s]) {
       migrated.add(SECTION_MIGRATION[s]);
     }

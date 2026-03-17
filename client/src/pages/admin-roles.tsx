@@ -31,9 +31,10 @@ const DEPARTMENTS = [
 const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
 const NAV_SECTIONS = [
   { key: "COCKPIT", label: "Home", description: "Home, My Work" },
-  { key: "PROJECTS", label: "Project Lifecycle", description: "Overview, Lifecycle, Stage Gates, Clients" },
+  { key: "PROJECTS", label: "Project Lifecycle", description: "Overview, Lifecycle Board, Stage Gates, Clients" },
   { key: "PROJECT_DEVELOPMENT", label: "Project Development", description: "PD Dashboard, PD Tickets" },
-  { key: "DELIVERY", label: "Project Management & Engineering", description: "Execution Dashboard, Project List, Deliverables, Engineering Overview, Requests & Tasks" },
+  { key: "PROJECT_MANAGEMENT", label: "Project Management", description: "Execution Dashboard, Project List, Deliverables, PM Dashboard, PM On-The-Go" },
+  { key: "ENGINEERING", label: "Engineering", description: "Engineering Overview, Requests & Tasks" },
   { key: "GOVERNANCE", label: "Quality", description: "Quality Workspace" },
   { key: "MONEY", label: "Finance", description: "Cashflow, Cost of Sales, Revenue, Gross Profit, Procurement" },
   { key: "INFORMATION", label: "Knowledge", description: "Lifecycle & SOP, Leaderboard, Training, Feedback" },
@@ -42,19 +43,68 @@ const NAV_SECTIONS = [
 ];
 
 const ENTITY_DESCRIPTIONS: Record<string, string> = {
-  projects: "Home > My Work & Project Management > Project List",
-  my_work: "Home > My Work",
+  home: "Home page dashboard & landing",
+  my_work: "My Work hub — tasks, calendar, meetings",
+  my_tool: "My Work task planner (Today, Week, Backlog)",
   notifications: "Top bar notification bell",
-  deliverables: "Project Management > Deliverables",
-  activity_log: "Project detail > Activity feed",
-  audit_trail: "Admin > Audit History",
-  engineering: "Engineering > Overview",
-  eng_tasks: "Engineering > Requests & Tasks",
-  eng_stages: "Engineering > 5-Stage Checklist",
-  quality: "Quality > Quality Workspace",
-  financials: "Finance > Cashflow, COS, Revenue, GP",
-  procurement: "Finance > Procurement & Subcontractors",
-  pd_dashboard: "Project Development > PD Dashboard",
+  company_priorities: "Company-wide priorities & goals",
+
+  lifecycle: "Project Lifecycle overview & board",
+  create_project: "Create new project from lifecycle",
+  pd_clients: "Clients list & client overview",
+
+  pd_dashboard: "PD Dashboard — project development pipeline",
+  pd_tickets: "PD Tickets — development tickets & tracking",
+
+  projects: "Project List — all projects summary table",
+  execution_board: "Execution Dashboard — delivery KPIs & cards",
+  deliverables: "Deliverables tracker across projects",
+  pm_dashboard: "Project Manager Dashboard",
+  pm_on_the_go: "PM On-The-Go mobile site management",
+  approvals: "Approvals — pending approval queue",
+  weekly_review_wizard: "Weekly Reviews — guided review wizard",
+  portfolios: "Portfolio view — grouped project analysis",
+  portfolio_detail: "Portfolio detail — drilldown view",
+
+  engineering: "Engineering Overview — team workload & status",
+  eng_tasks: "Engineering Requests & Tasks",
+  eng_stages: "Engineering 5-Stage Checklist system",
+
+  quality: "Quality Workspace — QA gates & inspections",
+
+  cashflow: "Cashflow — inflows, outflows, forecast",
+  cos: "Cost of Sales — COS tracking & realised",
+  revenue_tracker: "Revenue Tracker — invoiced & outstanding",
+  gp_tracker: "Gross Profit Tracker — GP% & margins",
+  financials: "Finance — general financial access",
+  procurement: "Procurement Hub & subcontractor management",
+  subcontractors: "Counterparties & procurement pipeline",
+  invoice_patterns: "Invoice Pattern Library",
+
+  ee_info: "Lifecycle & SOP — company knowledge base",
+  leaderboard: "Leaderboard — team & department scores",
+  training: "Training — learning resources & modules",
+  feedback: "Feedback & Support — suggestions & issues",
+  department_scores: "Department Scores — team performance",
+
+  teams_chat: "Teams Chat — Microsoft Teams messages",
+  project_chat: "Project Chat — per-project messaging",
+  collaboration_hub: "Collaboration Hub — files & communication",
+  sharepoint_files: "SharePoint Files — document library",
+  meetings: "Meetings — calendar & meeting notes",
+
+  admin: "Admin Control Center — system settings",
+  admin_roles: "Roles & Permissions management",
+  smart_import: "Smart Import — Excel data import",
+  data_import: "Data Import tools",
+  data_export: "Data Export tools",
+  excel_updates: "Excel Updates — batch data updates",
+  database_migration: "Database Migration tools",
+  ms_integration: "Microsoft 365 integration setup",
+  ms_sync: "MS Graph Sync — calendar, email, Teams",
+  activity_log: "Activity Log — system change audit",
+  audit_trail: "Audit Trail — detailed change history",
+
   pd_overview: "Project detail > Overview tab",
   pd_plan: "Project detail > Plan (WBS grid)",
   pd_gantt: "Project detail > Gantt chart",
@@ -71,30 +121,24 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   pd_eng_stages: "Project detail > Engineering stages",
   pd_collaboration: "Project detail > Files & collaboration",
   pd_subcontractors: "Project detail > Subcontractors",
-  teams_chat: "Home > My Work > Teams chat",
-  project_chat: "Project detail > Chat",
-  collaboration_hub: "Project detail > Collaboration hub",
-  sharepoint_files: "Project detail > SharePoint files",
-  meetings: "Home > My Work > Meetings",
-  admin: "Admin > Control Center",
-  admin_roles: "Admin > Roles & Permissions",
-  data_import: "Admin > Smart Import",
-  data_export: "Admin > Data Export",
-  database_migration: "Admin > DB Migration",
-  ms_integration: "Admin > Microsoft 365 Setup",
-  ms_sync: "Admin > MS Graph Sync",
-  approvals: "Project Management > Approvals",
-  leaderboard: "Knowledge > Leaderboard",
-  feedback: "Knowledge > Feedback",
-  portfolio_detail: "Project Management > Portfolio view",
-  weekly_review_wizard: "Project Management > Weekly Reviews",
-  create_project: "Project Lifecycle > Create new project",
 };
 
 const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
-  core: {
-    label: "Core Access",
-    entities: ["projects", "my_work", "notifications", "deliverables", "activity_log", "audit_trail"],
+  home: {
+    label: "Home",
+    entities: ["home", "my_work", "my_tool", "notifications", "company_priorities"],
+  },
+  lifecycle: {
+    label: "Project Lifecycle",
+    entities: ["lifecycle", "create_project", "pd_clients"],
+  },
+  project_dev: {
+    label: "Project Development",
+    entities: ["pd_dashboard", "pd_tickets"],
+  },
+  project_management: {
+    label: "Project Management",
+    entities: ["projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_review_wizard", "portfolios", "portfolio_detail"],
   },
   engineering: {
     label: "Engineering",
@@ -105,24 +149,24 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
     entities: ["quality"],
   },
   finance: {
-    label: "Finance & Commercial",
-    entities: ["financials", "procurement"],
+    label: "Finance",
+    entities: ["cashflow", "cos", "revenue_tracker", "gp_tracker", "financials", "procurement", "subcontractors", "invoice_patterns"],
   },
-  project_dev: {
-    label: "Project Development",
-    entities: ["pd_dashboard", "pd_overview", "pd_plan", "pd_gantt", "pd_finance", "pd_revenue", "pd_cashflow", "pd_cos_tracker", "pd_expenditure", "pd_history", "pd_key_dates", "pd_quality", "pd_engineering", "pd_eng_tasks", "pd_eng_stages", "pd_collaboration", "pd_subcontractors"],
+  knowledge: {
+    label: "Knowledge",
+    entities: ["ee_info", "leaderboard", "training", "feedback", "department_scores"],
   },
   collaboration: {
-    label: "Collaboration & Comms",
+    label: "Collaboration",
     entities: ["teams_chat", "project_chat", "collaboration_hub", "sharepoint_files", "meetings"],
   },
   admin: {
-    label: "Administration",
-    entities: ["admin", "admin_roles", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync"],
+    label: "Admin",
+    entities: ["admin", "admin_roles", "smart_import", "data_import", "data_export", "excel_updates", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail"],
   },
-  other: {
-    label: "Other",
-    entities: ["approvals", "leaderboard", "feedback", "portfolio_detail", "weekly_review_wizard", "create_project"],
+  project_detail: {
+    label: "Project Detail Tabs",
+    entities: ["pd_overview", "pd_plan", "pd_gantt", "pd_finance", "pd_revenue", "pd_cashflow", "pd_cos_tracker", "pd_expenditure", "pd_history", "pd_key_dates", "pd_quality", "pd_engineering", "pd_eng_tasks", "pd_eng_stages", "pd_collaboration", "pd_subcontractors"],
   },
 };
 
