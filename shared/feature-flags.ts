@@ -21,6 +21,8 @@ export const FEATURE_FLAG_KEYS = [
   "imports_governance_enforcement_preview",
   "promoted_engineering_read",
   "promoted_quality_read",
+  "task_management_hub",
+  "standup_system",
 ] as const;
 
 export type RolloutFeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -159,6 +161,18 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "promoted_quality_read",
     label: "Promoted quality read",
     description: "Controls compatibility-backed promoted quality reads while legacy QC endpoints remain default.",
+    defaultValue: false,
+  },
+  {
+    key: "task_management_hub",
+    label: "Task management hub",
+    description: "Controls visibility of the unified task management hub with board, list, calendar, and metrics views.",
+    defaultValue: false,
+  },
+  {
+    key: "standup_system",
+    label: "Standup system",
+    description: "Controls the bi-daily standup system with async submissions, team views, and analytics.",
     defaultValue: false,
   },
 ];
