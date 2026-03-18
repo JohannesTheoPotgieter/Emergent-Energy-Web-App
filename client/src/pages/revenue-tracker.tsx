@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -116,6 +117,7 @@ const ROW_DEFS: {
 ];
 
 function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "unrealised"; defaultProject?: string }) {
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<"all" | "realised" | "unrealised">(defaultFilter);
   const [projectFilter, setProjectFilter] = useState<string>(defaultProject);
@@ -313,7 +315,15 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                       <td className="px-3 py-2.5 text-slate-500 group-hover:text-muted-foreground transition-colors">
                         {expandedId === item.id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                       </td>
-                      <td className="px-3 py-2.5 max-w-[150px] truncate font-medium text-foreground" title={item.projectName}>{item.projectName}</td>
+                      <td className="px-3 py-2.5 max-w-[150px] truncate font-medium" title={item.projectName}>
+                        <button
+                          type="button"
+                          className="text-blue-600 hover:text-blue-800 hover:underline transition-colors text-left truncate max-w-full"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(item.projectName)}?tab=revenue-tracking`); }}
+                        >
+                          {item.projectName}
+                        </button>
+                      </td>
                       <td className="px-3 py-2.5 text-muted-foreground max-w-[150px] truncate" title={item.category || ""}>{item.category || "—"}</td>
                       <td className="px-3 py-2.5 max-w-[200px] truncate text-foreground" title={item.lineItem || ""}>{item.lineItem || "—"}</td>
                       <td className="px-3 py-2.5 text-center">
@@ -373,6 +383,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
 type EditingCell = { field: string; monthKey: string; value: string };
 
 export default function RevenueTrackerPage() {
+  const [, navigate] = useLocation();
   const qc = useQueryClient();
   const { allowed: canEditRevenueTracker } = usePermission("revenue_tracker", "edit");
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -756,9 +767,14 @@ export default function RevenueTrackerPage() {
                             data-testid={`row-detail-${row.key}-${pName}`}
                           >
                             <td className="sticky left-0 z-10 bg-emerald-50/30 backdrop-blur-sm pl-11 pr-4 py-1.5 text-xs text-muted-foreground truncate max-w-[200px] border-r border-border" title={pName}>
-                              <span className="cursor-pointer hover:text-emerald-600 hover:underline decoration-dashed underline-offset-2 transition-colors">
+                              <button
+                                type="button"
+                                className="cursor-pointer text-blue-600 hover:text-blue-800 hover:underline decoration-dashed underline-offset-2 transition-colors text-left"
+                                onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(pName)}?tab=revenue-tracking`); }}
+                                aria-label={`View ${pName} revenue details`}
+                              >
                                 {pName}
-                              </span>
+                              </button>
                             </td>
                             {months.map((m) => {
                               const projArr = row.projectsKey ? (m as any)[row.projectsKey] as ProjectBreakdown[] : [];
