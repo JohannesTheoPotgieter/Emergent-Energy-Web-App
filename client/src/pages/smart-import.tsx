@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AdminPageShell, AdminQueryState } from "@/components/admin/admin-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -67,30 +67,38 @@ function confidenceBadge(confidence: number) {
   );
 }
 
-function StepIndicator({ currentStep }: { currentStep: number }) {
+function StepIndicator({ currentStep, onStepClick }: { currentStep: number; onStepClick?: (step: number) => void }) {
   return (
     <div className="flex items-center gap-1 mb-6" data-testid="step-indicator">
       {STEP_LABELS.map((label, idx) => {
         const stepNum = idx + 1;
         const isActive = stepNum === currentStep;
         const isComplete = stepNum < currentStep;
+        const isClickable = isComplete && onStepClick;
         return (
           <div key={label} className="flex items-center gap-1">
             {idx > 0 && (
               <div className={`h-0.5 w-4 md:w-8 ${isComplete ? "bg-blue-500" : "bg-slate-200"}`} />
             )}
-            <div className="flex items-center gap-1.5">
+            <div
+              className={`flex items-center gap-1.5 ${isClickable ? "cursor-pointer group" : ""}`}
+              onClick={() => { if (isClickable) onStepClick(stepNum); }}
+            >
               <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${
+                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-colors ${
                   isActive ? "bg-blue-600 text-white" :
-                  isComplete ? "bg-blue-500 text-white" :
+                  isComplete ? "bg-blue-500 text-white group-hover:bg-blue-600" :
                   "bg-slate-200 text-muted-foreground"
                 }`}
                 data-testid={`step-circle-${stepNum}`}
               >
                 {isComplete ? <Check className="w-3.5 h-3.5" /> : stepNum}
               </div>
-              <span className={`text-xs hidden md:inline ${isActive ? "font-semibold text-blue-700" : "text-muted-foreground"}`}>
+              <span className={`text-xs hidden md:inline transition-colors ${
+                isActive ? "font-semibold text-blue-700" :
+                isComplete ? "text-muted-foreground group-hover:text-blue-600" :
+                "text-muted-foreground"
+              }`}>
                 {label}
               </span>
             </div>
@@ -521,6 +529,10 @@ function EditableField({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value || "");
 
+  useEffect(() => {
+    if (!editing) setDraft(value || "");
+  }, [value, editing]);
+
   function formatDisplay() {
     if (!value) return "—";
     if (type === "date") {
@@ -599,7 +611,7 @@ function SectionDetectionStep({
   const sections = preview?.detection?.sections || preview?.sections || [];
   const unmatchedSheets = preview?.detection?.unmatched || preview?.unmatchedSheets || [];
   const projectInfo = preview?.detection?.projectInfo || preview?.projectInfo || {};
-  const hasProjectInfo = true;
+  const hasProjectInfo = Object.values(projectInfo).some(v => v != null && v !== "");
   const { toast } = useToast();
 
   const handleFieldSave = async (key: string, value: string) => {
@@ -619,7 +631,9 @@ function SectionDetectionStep({
           onProjectInfoUpdated?.(data.projectInfo);
           toast({ title: "Saved", description: `Updated ${key}` });
         }
-      } catch {}
+      } catch {
+          toast({ title: "Error", description: "Failed to save project info", variant: "destructive" });
+        }
     }
     onProjectInfoUpdated?.(preview?.detection?.projectInfo);
   };
@@ -793,11 +807,11 @@ function ColumnMappingStep({
   onBack: () => void;
   onPreviewUpdate: (p: any) => void;
 }) {
-  const detectedSections = preview?.detection?.sections || [];
-  const mappingResults = preview?.mappings || [];
-  const normalization = preview?.normalization || {};
+  const detectedSections = useMemo(() => preview?.detection?.sections || [], [preview]);
+  const mappingResults = useMemo(() => preview?.mappings || [], [preview]);
+  const normalization = useMemo(() => preview?.normalization || {}, [preview]);
 
-  const sectionNames = detectedSections.map((s: any) => s.section).filter(Boolean);
+  const sectionNames = useMemo(() => detectedSections.map((s: any) => s.section).filter(Boolean), [detectedSections]);
   const [activeTab, setActiveTab] = useState(sectionNames[0] || "PLAN");
   const [saving, setSaving] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState<Record<string, boolean>>({});
@@ -1103,7 +1117,7 @@ function ColumnMappingStep({
   );
 }
 
-function IssueRowDetail({ issue, normalization }: { issue: any; normalization: any }) {
+const IssueRowDetail = memo(function IssueRowDetail({ issue, normalization }: { issue: any; normalization: any }) {
   const payload = issue.payloadJson || {};
   const section = (issue.section || "").toUpperCase();
   const row = payload.row;
@@ -1247,7 +1261,7 @@ function IssueRowDetail({ issue, normalization }: { issue: any; normalization: a
       </div>
     </div>
   );
-}
+});
 
 function IssuesStep({
   runId,
@@ -1266,14 +1280,18 @@ function IssuesStep({
 }) {
   const [resolving, setResolving] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const [cpName, setCpName] = useState("");
-  const [cpType, setCpType] = useState("subcontractor");
+  const [cpState, setCpState] = useState<Record<number, { name: string; type: string }>>({});
   const [creatingCp, setCreatingCp] = useState<number | null>(null);
   const [applyingPrior, setApplyingPrior] = useState(false);
   const [ignoringAll, setIgnoringAll] = useState(false);
   const [allowingAll, setAllowingAll] = useState(false);
   const [editingOverride, setEditingOverride] = useState<number | null>(null);
   const [overrideFields, setOverrideFields] = useState<Record<string, string>>({});
+  const [sectionFilter, setSectionFilter] = useState<string>("ALL");
+  const [severityFilter, setSeverityFilter] = useState<string>("ALL");
+  const [showResolved, setShowResolved] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ISSUES_PER_PAGE = 20;
   const { toast } = useToast();
 
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
@@ -1282,11 +1300,49 @@ function IssuesStep({
   const issuesWithPriorRules = issues.filter((i: any) => i.matchedRuleId && !i.resolved && !i.autoResolved);
   const autoResolvedCount = issues.filter((i: any) => i.autoResolved).length;
 
-  const blockers = issues.filter((i) => i.severity === "BLOCKER" || i.severity === "blocker" || i.severity === "error");
-  const warnings = issues.filter((i) => i.severity === "WARNING" || i.severity === "warning" || i.severity === "warn");
-  const infos = issues.filter((i) => i.severity === "INFO" || i.severity === "info");
+  const getSeverity = (i: any) => (i.severity || "").toUpperCase();
+  const blockers = issues.filter((i) => { const s = getSeverity(i); return s === "BLOCKER" || s === "ERROR"; });
+  const warnings = issues.filter((i) => { const s = getSeverity(i); return s === "WARNING" || s === "WARN"; });
+  const infos = issues.filter((i) => { const s = getSeverity(i); return s === "INFO"; });
 
   const unresolvedBlockers = blockers.filter((i) => !i.resolved);
+
+  // Section counts for filter badges
+  const sectionCounts = issues.reduce<Record<string, number>>((acc, i) => {
+    const sec = (i.section || "OTHER").toUpperCase();
+    acc[sec] = (acc[sec] || 0) + 1;
+    return acc;
+  }, {});
+  const availableSections = Object.keys(sectionCounts).sort();
+
+  // Apply filters
+  const applyFilters = (items: any[]) => {
+    let filtered = items;
+    if (sectionFilter !== "ALL") {
+      filtered = filtered.filter(i => (i.section || "OTHER").toUpperCase() === sectionFilter);
+    }
+    if (!showResolved) {
+      filtered = filtered.filter(i => !i.resolved && !i.autoResolved);
+    }
+    return filtered;
+  };
+
+  const filteredBlockers = applyFilters(blockers);
+  const filteredWarnings = applyFilters(warnings);
+  const filteredInfos = applyFilters(infos);
+
+  // Combine all filtered issues for pagination
+  const allFilteredIssues = [...filteredBlockers, ...filteredWarnings, ...filteredInfos];
+  const totalPages = Math.max(1, Math.ceil(allFilteredIssues.length / ISSUES_PER_PAGE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedIssues = allFilteredIssues.slice((safePage - 1) * ISSUES_PER_PAGE, safePage * ISSUES_PER_PAGE);
+
+  // Split paginated issues back into severity groups for rendering
+  const paginatedBlockers = paginatedIssues.filter(i => { const s = getSeverity(i); return s === "BLOCKER" || s === "ERROR"; });
+  const paginatedWarnings = paginatedIssues.filter(i => { const s = getSeverity(i); return s === "WARNING" || s === "WARN"; });
+  const paginatedInfos = paginatedIssues.filter(i => { const s = getSeverity(i); return s === "INFO"; });
+
+  const resolvedCount = issues.filter(i => i.resolved || i.autoResolved).length;
 
   const toggleExpand = (id: number) => {
     setExpanded(prev => {
@@ -1384,18 +1440,24 @@ function IssuesStep({
     }
   };
 
+  const getCpState = (issueId: number) => cpState[issueId] || { name: "", type: "subcontractor" };
+  const setCpField = (issueId: number, field: "name" | "type", value: string) => {
+    setCpState(prev => ({ ...prev, [issueId]: { ...getCpState(issueId), [field]: value } }));
+  };
+
   const handleCreateCounterparty = async (issueId: number) => {
-    if (!cpName.trim()) return;
+    const cp = getCpState(issueId);
+    if (!cp.name.trim()) return;
     setCreatingCp(issueId);
     try {
       const res = await fetch("/api/counterparties", {
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ nameCanonical: cpName.trim(), typeDefault: cpType, isCore: false }),
+        body: JSON.stringify({ nameCanonical: cp.name.trim(), typeDefault: cp.type, isCore: false }),
       });
       if (res.ok) {
-        toast({ title: "Counterparty Created", description: `${cpName} added` });
-        setCpName("");
+        toast({ title: "Counterparty Created", description: `${cp.name} added` });
+        setCpState(prev => { const next = { ...prev }; delete next[issueId]; return next; });
         await handleResolve(issueId, true, "ACCEPTED");
       } else {
         const err = await res.json().catch(() => ({ error: "Failed" }));
@@ -1443,9 +1505,16 @@ function IssuesStep({
                   <div className="flex items-start gap-2 flex-1">
                     <ChevronDown className={`w-3.5 h-3.5 mt-0.5 text-slate-500 shrink-0 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
                     <div className="flex-1">
-                      <p className="text-xs font-medium" data-testid={`text-issue-msg-${issue.id}`}>
-                        {issue.message}
-                      </p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {issue.section && (
+                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-medium">
+                            {(issue.section || "").toUpperCase()}
+                          </Badge>
+                        )}
+                        <p className="text-xs font-medium" data-testid={`text-issue-msg-${issue.id}`}>
+                          {issue.message}
+                        </p>
+                      </div>
                       {issue.autoResolved && (
                         <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded mt-0.5">
                           <CheckCircle2 className="w-2.5 h-2.5" /> Auto-resolved from prior decision
@@ -1618,8 +1687,8 @@ function IssuesStep({
                           <Label className="text-[10px]">Name</Label>
                           <Input
                             className="h-7 text-xs"
-                            value={cpName}
-                            onChange={(e) => setCpName(e.target.value)}
+                            value={getCpState(issue.id).name}
+                            onChange={(e) => setCpField(issue.id, "name", e.target.value)}
                             placeholder="Counterparty name..."
                             data-testid={`input-cp-name-${issue.id}`}
                           />
@@ -1627,8 +1696,8 @@ function IssuesStep({
                         <div className="w-[140px]">
                           <Label className="text-[10px]">Type</Label>
                           <SearchableSelect
-                            value={cpType}
-                            onValueChange={setCpType}
+                            value={getCpState(issue.id).type}
+                            onValueChange={(v) => setCpField(issue.id, "type", v)}
                             triggerClassName="h-7 text-xs"
                             data-testid={`select-trigger-cp-type-${issue.id}`}
                             options={[
@@ -1643,7 +1712,7 @@ function IssuesStep({
                         <Button
                           size="sm"
                           className="h-7 text-xs"
-                          disabled={!cpName.trim() || creatingCp === issue.id}
+                          disabled={!getCpState(issue.id).name.trim() || creatingCp === issue.id}
                           onClick={() => handleCreateCounterparty(issue.id)}
                           data-testid={`btn-create-cp-${issue.id}`}
                         >
@@ -1734,26 +1803,128 @@ function IssuesStep({
         </Card>
       ) : (
         <>
-          {renderIssueGroup(
+          {/* Filter bar */}
+          <Card className="bg-card rounded-xl shadow-sm" data-testid="issues-filter-bar">
+            <CardContent className="p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground mr-1">Section:</span>
+                <button
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${sectionFilter === "ALL" ? "bg-blue-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                  onClick={() => { setSectionFilter("ALL"); setCurrentPage(1); }}
+                  data-testid="filter-section-all"
+                >
+                  All ({issues.length})
+                </button>
+                {availableSections.map(sec => (
+                  <button
+                    key={sec}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${sectionFilter === sec ? "bg-blue-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                    onClick={() => { setSectionFilter(sec); setCurrentPage(1); }}
+                    data-testid={`filter-section-${sec}`}
+                  >
+                    {sec} ({sectionCounts[sec]})
+                  </button>
+                ))}
+
+                <div className="w-px h-5 bg-border mx-1 hidden sm:block" />
+
+                <span className="text-xs font-medium text-muted-foreground mr-1">Severity:</span>
+                {[
+                  { key: "ALL", label: "All" },
+                  { key: "BLOCKER", label: "Blockers", count: blockers.length },
+                  { key: "WARNING", label: "Warnings", count: warnings.length },
+                  { key: "INFO", label: "Info", count: infos.length },
+                ].map(opt => (
+                  <button
+                    key={opt.key}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${severityFilter === opt.key ? "bg-blue-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                    onClick={() => { setSeverityFilter(opt.key); setCurrentPage(1); }}
+                    data-testid={`filter-severity-${opt.key}`}
+                  >
+                    {opt.label}{opt.count != null ? ` (${opt.count})` : ""}
+                  </button>
+                ))}
+
+                <div className="w-px h-5 bg-border mx-1 hidden sm:block" />
+
+                <button
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${showResolved ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                  onClick={() => { setShowResolved(!showResolved); setCurrentPage(1); }}
+                  data-testid="filter-show-resolved"
+                >
+                  {showResolved ? "Hide" : "Show"} Resolved ({resolvedCount})
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Issue groups (filtered + paginated) */}
+          {severityFilter === "ALL" || severityFilter === "BLOCKER" ? renderIssueGroup(
             "Blockers",
-            blockers,
+            paginatedBlockers,
             <AlertCircle className="w-4 h-4 text-red-500" />,
             "bg-red-50/50",
             "border-red-200",
-          )}
-          {renderIssueGroup(
+          ) : null}
+          {severityFilter === "ALL" || severityFilter === "WARNING" ? renderIssueGroup(
             "Warnings",
-            warnings,
+            paginatedWarnings,
             <AlertTriangle className="w-4 h-4 text-amber-500" />,
             "bg-amber-50/50",
             "border-amber-200",
-          )}
-          {renderIssueGroup(
+          ) : null}
+          {severityFilter === "ALL" || severityFilter === "INFO" ? renderIssueGroup(
             "Info",
-            infos,
+            paginatedInfos,
             <Info className="w-4 h-4 text-blue-500" />,
             "bg-blue-50/50",
             "border-blue-200",
+          ) : null}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between" data-testid="issues-pagination">
+              <span className="text-xs text-muted-foreground">
+                Showing {(safePage - 1) * ISSUES_PER_PAGE + 1}–{Math.min(safePage * ISSUES_PER_PAGE, allFilteredIssues.length)} of {allFilteredIssues.length} issues
+              </span>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  disabled={safePage <= 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  data-testid="btn-prev-page"
+                >
+                  <ArrowLeft className="w-3 h-3" />
+                </Button>
+                <span className="text-xs text-muted-foreground px-2">
+                  Page {safePage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  data-testid="btn-next-page"
+                >
+                  <ArrowRight className="w-3 h-3" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {allFilteredIssues.length === 0 && issues.length > 0 && (
+            <Card className="bg-card rounded-xl shadow-sm">
+              <CardContent className="flex flex-col items-center justify-center py-8 gap-2">
+                <Info className="w-6 h-6 text-slate-400" />
+                <p className="text-sm text-muted-foreground">No issues match the current filters</p>
+                <Button variant="outline" size="sm" className="text-xs" onClick={() => { setSectionFilter("ALL"); setSeverityFilter("ALL"); setShowResolved(true); }}>
+                  Clear Filters
+                </Button>
+              </CardContent>
+            </Card>
           )}
         </>
       )}
@@ -1959,7 +2130,7 @@ function InvoiceClassificationPanel({ runId, normalization }: { runId: number; n
                           {reviewing === cl.sourceRow ? (
                             <Loader2 className="w-3 h-3 animate-spin" />
                           ) : cl.outcome === "UNRESOLVED" ? (
-                            <div className="flex gap-1 items-center">
+                            <div className="flex flex-wrap gap-1 items-center">
                               {cl.confidenceScore >= 50 && (
                                 <Button size="sm" variant="outline" className="h-6 text-[10px] px-2"
                                   onClick={() => handleReview(cl.sourceRow, "confirm")}
@@ -1980,7 +2151,7 @@ function InvoiceClassificationPanel({ runId, normalization }: { runId: number; n
                               />
                               <Input
                                 placeholder="Reason..."
-                                className="h-6 text-[10px] w-28"
+                                className="h-6 text-[10px] w-28 min-w-0"
                                 value={getRowOverride(cl.sourceRow).reason}
                                 onChange={(e) => setRowOverride(cl.sourceRow, "reason", e.target.value)}
                                 data-testid={`input-reason-${cl.sourceRow}`}
@@ -2430,7 +2601,7 @@ function PreviewCommitStep({
                             <th className="text-left px-3 py-1.5 font-medium text-slate-600">Field</th>
                             <th className="text-left px-3 py-1.5 font-medium text-slate-600">Manual Value</th>
                             <th className="text-left px-3 py-1.5 font-medium text-slate-600">Excel Value</th>
-                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Edited By</th>
+                            <th className="text-left px-3 py-1.5 font-medium text-slate-600 hidden md:table-cell">Edited By</th>
                             <th className="text-center px-3 py-1.5 font-medium text-slate-600">Decision</th>
                           </tr>
                         </thead>
@@ -2447,7 +2618,7 @@ function PreviewCommitStep({
                                 <td className="px-3 py-1.5 text-slate-600">{c.field}</td>
                                 <td className="px-3 py-1.5 text-emerald-700 font-medium">{c.currentValue}</td>
                                 <td className="px-3 py-1.5 text-slate-500">{c.importValue}</td>
-                                <td className="px-3 py-1.5 text-slate-400 text-[10px]">
+                                <td className="px-3 py-1.5 text-slate-400 text-[10px] hidden md:table-cell">
                                   {c.editedByName && <span className="block">{c.editedByName}</span>}
                                   {c.editedAt && <span className="block">{new Date(c.editedAt).toLocaleDateString()}</span>}
                                 </td>
@@ -2552,6 +2723,44 @@ function PreviewCommitStep({
                       </Button>
                     </>
                   )}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {recencyWarning && (
+        <Card className="border-amber-300 bg-amber-50" data-testid="recency-warning">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <p className="text-sm font-medium text-amber-800">{recencyWarning.message}</p>
+                <p className="text-xs text-amber-600">
+                  {recencyWarning.error === "import_equal_date"
+                    ? "The uploaded file has the same date as the existing data. You may proceed if the file contains corrections."
+                    : "The uploaded file appears older than the existing data. Proceeding may overwrite newer data with older values."}
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setRecencyWarning(null)}
+                    data-testid="btn-cancel-recency"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="bg-amber-600 hover:bg-amber-700 text-white"
+                    onClick={() => { setRecencyWarning(null); doCommit({ acknowledgeEqualDate: true, forceCommit: true }); }}
+                    disabled={committing}
+                    data-testid="btn-force-recency"
+                  >
+                    {committing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                    Import Anyway
+                  </Button>
                 </div>
               </div>
             </div>
@@ -3124,109 +3333,107 @@ function SmartImportGovernancePanel({
   recentRunsError: string | null;
   retryRecentRuns: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const recentAttentionRuns = recentRuns.filter((run) => run.status !== "COMMITTED" || run.unresolvedBlockers > 0 || run.unresolvedWarnings > 0 || run.recordsFailed > 0).slice(0, 5);
 
-  return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr),minmax(0,0.9fr)]">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Zap className="w-4 h-4 text-blue-600" />
-            Import Governance Queue
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AdminQueryState
-            isLoading={pendingRunsLoading}
-            error={pendingRunsError}
-            onRetry={retryPendingRuns}
-            empty={pendingRuns.length === 0}
-            emptyTitle="No runs need review right now"
-            emptyDescription="New Excel uploads will appear here before they are committed."
-            loadingLabel="Loading pending import queue..."
-          >
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-border/70 bg-muted/30 p-3">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Pending Files</p>
-                  <p className="mt-1 text-2xl font-semibold text-foreground">{pendingRuns.length}</p>
-                </div>
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                  <p className="text-xs uppercase tracking-wide text-amber-700">With Warnings</p>
-                  <p className="mt-1 text-2xl font-semibold text-amber-700">{pendingRuns.filter((run) => run.warningCount > 0).length}</p>
-                </div>
-                <div className="rounded-xl border border-red-200 bg-red-50 p-3">
-                  <p className="text-xs uppercase tracking-wide text-red-700">Blocked</p>
-                  <p className="mt-1 text-2xl font-semibold text-red-700">{pendingRuns.filter((run) => run.blockerCount > 0).length}</p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {pendingRuns.slice(0, 5).map((run) => (
-                  <div key={run.id} className="flex items-start justify-between gap-3 rounded-xl border border-border/70 p-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{run.projectName}</p>
-                      <p className="text-xs text-muted-foreground truncate">{run.sourceFileName}</p>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        Uploaded {new Date(run.uploadedAt).toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      {run.blockerCount > 0 ? <Badge className="bg-red-50 text-red-700 border-red-200">{run.blockerCount} blockers</Badge> : null}
-                      {run.warningCount > 0 ? <Badge className="bg-amber-50 text-amber-700 border-amber-200">{run.warningCount} warnings</Badge> : null}
-                      {run.blockerCount === 0 && run.warningCount === 0 ? <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">Ready</Badge> : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </AdminQueryState>
-        </CardContent>
-      </Card>
+  const withWarnings = pendingRuns.filter((run) => run.warningCount > 0).length;
+  const blocked = pendingRuns.filter((run) => run.blockerCount > 0).length;
+  const recentCommitted = recentRuns.filter(r => r.status === "COMMITTED").length;
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <History className="w-4 h-4 text-slate-700" />
-            Recent Import History
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AdminQueryState
-            isLoading={recentRunsLoading}
-            error={recentRunsError}
-            onRetry={retryRecentRuns}
-            empty={recentRuns.length === 0}
-            emptyTitle="No import history recorded yet"
-            emptyDescription="Completed and preview runs will appear here once files have been processed."
-            loadingLabel="Loading import history..."
-          >
-            <div className="space-y-2">
-              {(recentAttentionRuns.length > 0 ? recentAttentionRuns : recentRuns.slice(0, 5)).map((run) => (
-                <div key={run.id} className="rounded-xl border border-border/70 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{run.projectName}</p>
-                      <p className="text-xs text-muted-foreground truncate">{run.sourceFileName}</p>
+  return (
+    <Card data-testid="governance-panel">
+      {/* Compact summary bar - always visible */}
+      <CardContent className="p-3">
+        <div
+          className="flex items-center justify-between cursor-pointer"
+          onClick={() => setExpanded(!expanded)}
+          data-testid="governance-toggle"
+        >
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-blue-600" />
+            <span className="text-sm font-semibold">Import Governance</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge className="bg-muted text-foreground border-border text-[10px] px-2 py-0.5">
+              {pendingRuns.length} pending
+            </Badge>
+            {withWarnings > 0 && (
+              <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-2 py-0.5">
+                {withWarnings} warnings
+              </Badge>
+            )}
+            {blocked > 0 && (
+              <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px] px-2 py-0.5">
+                {blocked} blocked
+              </Badge>
+            )}
+            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-2 py-0.5">
+              {recentCommitted} committed
+            </Badge>
+            {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          </div>
+        </div>
+
+        {/* Expanded details */}
+        {expanded && (
+          <div className="mt-3 pt-3 border-t border-border grid gap-4 xl:grid-cols-[minmax(0,1.1fr),minmax(0,0.9fr)]">
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Pending Queue</h4>
+              <AdminQueryState
+                isLoading={pendingRunsLoading}
+                error={pendingRunsError}
+                onRetry={retryPendingRuns}
+                empty={pendingRuns.length === 0}
+                emptyTitle="No runs need review"
+                emptyDescription="New uploads appear here before commit."
+                loadingLabel="Loading..."
+              >
+                <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                  {pendingRuns.slice(0, 5).map((run) => (
+                    <div key={run.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 p-2 text-xs">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium truncate">{run.projectName}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{run.sourceFileName}</p>
+                      </div>
+                      {run.blockerCount > 0 ? <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px] px-1.5 py-0">{run.blockerCount} blockers</Badge> :
+                       run.warningCount > 0 ? <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0">{run.warningCount} warnings</Badge> :
+                       <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">Ready</Badge>}
                     </div>
-                    <Badge variant="outline" className={run.status === "COMMITTED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : run.status === "FAILED" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
-                      {run.status.replace(/_/g, " ")}
-                    </Badge>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                    <span>{new Date(run.uploadedAt).toLocaleString()}</span>
-                    {run.uploaderName ? <span>By {run.uploaderName}</span> : null}
-                    <span>{run.recordsSucceeded}/{run.recordsAttempted} succeeded</span>
-                    {run.recordsFailed > 0 ? <span className="text-red-600">{run.recordsFailed} failed</span> : null}
-                    {run.unresolvedBlockers > 0 ? <span className="text-red-600">{run.unresolvedBlockers} blockers</span> : null}
-                    {run.unresolvedWarnings > 0 ? <span className="text-amber-600">{run.unresolvedWarnings} warnings</span> : null}
-                  </div>
+                  ))}
                 </div>
-              ))}
+              </AdminQueryState>
             </div>
-          </AdminQueryState>
-        </CardContent>
-      </Card>
-    </div>
+
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Recent History</h4>
+              <AdminQueryState
+                isLoading={recentRunsLoading}
+                error={recentRunsError}
+                onRetry={retryRecentRuns}
+                empty={recentRuns.length === 0}
+                emptyTitle="No history yet"
+                emptyDescription="Completed runs appear here."
+                loadingLabel="Loading..."
+              >
+                <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                  {(recentAttentionRuns.length > 0 ? recentAttentionRuns : recentRuns.slice(0, 5)).map((run) => (
+                    <div key={run.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 p-2 text-xs">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium truncate">{run.projectName}</p>
+                        <p className="text-[10px] text-muted-foreground">{new Date(run.uploadedAt).toLocaleDateString()} — {run.recordsSucceeded}/{run.recordsAttempted} rows</p>
+                      </div>
+                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${run.status === "COMMITTED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : run.status === "FAILED" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                        {run.status.replace(/_/g, " ")}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </AdminQueryState>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -3357,7 +3564,41 @@ export default function SmartImportPage() {
         retryRecentRuns={() => { void recentRunsQuery.refetch(); }}
       />
 
-      {!bulkMode && <StepIndicator currentStep={step} />}
+      {!bulkMode && <StepIndicator currentStep={step} onStepClick={(s) => { if (s < step) setStep(s); }} />}
+
+      {/* Contextual status line */}
+      {!bulkMode && step > 1 && preview && !loadingRun && (
+        <div className="flex items-center gap-2 -mt-4 mb-2 text-xs text-muted-foreground" data-testid="step-context">
+          <Info className="w-3.5 h-3.5 shrink-0" />
+          {step === 2 && (
+            <span>
+              {(preview?.detection?.sections || []).length} section(s) found
+              {preview?.detection?.projectInfo?.name ? ` in "${preview.detection.projectInfo.name}"` : ""}
+            </span>
+          )}
+          {step === 3 && (() => {
+            const mappings = preview?.mappings || [];
+            const totalMapped = mappings.reduce((sum: number, m: any) => sum + (m.mappings?.length || 0), 0);
+            const totalUnmapped = mappings.reduce((sum: number, m: any) => sum + (m.unmappedHeaders?.length || 0), 0);
+            const total = totalMapped + totalUnmapped;
+            return <span>{totalMapped} of {total} columns mapped{total > 0 ? ` (${Math.round((totalMapped / total) * 100)}%)` : ""}</span>;
+          })()}
+          {step === 4 && (
+            <span>
+              {issues.filter(i => !i.resolved && !i.autoResolved).length} unresolved of {issues.length} total issues
+            </span>
+          )}
+          {step === 5 && (() => {
+            const n = preview?.normalization || {};
+            const parts = [
+              (n.planTasks?.length || 0) > 0 && `${n.planTasks.length} plan tasks`,
+              (n.revenueLines?.length || 0) > 0 && `${n.revenueLines.length} revenue lines`,
+              (n.costLines?.length || 0) > 0 && `${n.costLines.length} cost lines`,
+            ].filter(Boolean);
+            return <span>Ready to import: {parts.join(", ") || "no data"}</span>;
+          })()}
+        </div>
+      )}
 
       {loadingRun && step > 1 && !bulkMode && (
         <div className="flex items-center justify-center py-4">
