@@ -26,6 +26,7 @@ import {
   Plus,
   Filter,
   Loader2,
+  Zap,
   Search,
   X,
   Calendar,
@@ -868,6 +869,8 @@ function TaskDetailDrawer({
   const [drawerHoldReason, setDrawerHoldReason] = useState("");
   const [drawerBlockedType, setDrawerBlockedType] = useState("");
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  const [showMentions, setShowMentions] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [mappedPathDraft, setMappedPathDraft] = useState("");
   const [fallbackDraft, setFallbackDraft] = useState<"download" | "clipboard">("download");
@@ -1972,18 +1975,61 @@ function TaskDetailDrawer({
             {activeTab === "updates" && (
               <div className="space-y-3">
                 <div className="flex gap-2">
-                  <Input
-                    value={commentText}
-                    onChange={(e) => setCommentText(e.target.value)}
-                    placeholder="Add a quick comment..."
-                    className="text-sm"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey && commentText.trim()) {
-                        addCommentMutation.mutate(commentText.trim());
-                      }
-                    }}
-                    data-testid="input-comment"
-                  />
+                  <div className="relative flex-1">
+                    <Input
+                      value={commentText}
+                      onChange={(e) => {
+                        setCommentText(e.target.value);
+                        const val = e.target.value;
+                        const atIdx = val.lastIndexOf("@");
+                        if (atIdx >= 0 && atIdx === val.length - 1) {
+                          setMentionQuery("");
+                          setShowMentions(true);
+                        } else if (atIdx >= 0 && !val.substring(atIdx).includes(" ")) {
+                          setMentionQuery(val.substring(atIdx + 1).toLowerCase());
+                          setShowMentions(true);
+                        } else {
+                          setShowMentions(false);
+                        }
+                      }}
+                      placeholder="Add a comment... use @ to mention"
+                      className="text-sm"
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape" && showMentions) { setShowMentions(false); e.stopPropagation(); return; }
+                        if (e.key === "Enter" && !e.shiftKey && commentText.trim() && !showMentions) {
+                          addCommentMutation.mutate(commentText.trim());
+                        }
+                      }}
+                      data-testid="input-comment"
+                    />
+                    {showMentions && (
+                      <div className="absolute bottom-full left-0 w-full mb-1 bg-white border rounded-md shadow-lg z-50 max-h-[150px] overflow-y-auto">
+                        {teamMembers
+                          .filter(m => !mentionQuery || m.fullName.toLowerCase().includes(mentionQuery))
+                          .slice(0, 6)
+                          .map(m => (
+                            <button
+                              key={m.id}
+                              className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 flex items-center gap-2"
+                              onClick={() => {
+                                const atIdx = commentText.lastIndexOf("@");
+                                setCommentText(commentText.substring(0, atIdx) + `@${m.fullName} `);
+                                setShowMentions(false);
+                              }}
+                            >
+                              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white ${getAvatarColor(m.fullName)}`}>
+                                {getInitials(m.fullName)}
+                              </div>
+                              <span className="font-medium">{m.fullName}</span>
+                              <span className="text-muted-foreground ml-auto">{m.role}</span>
+                            </button>
+                          ))}
+                        {teamMembers.filter(m => !mentionQuery || m.fullName.toLowerCase().includes(mentionQuery)).length === 0 && (
+                          <p className="text-xs text-muted-foreground p-2 text-center">No matches</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <Button
                     size="icon"
                     className="h-9 w-9 shrink-0"
@@ -2831,6 +2877,42 @@ function MyTasksView({
           data-testid="my-tasks-filter-due"
         />
       </div>
+
+      {(() => {
+        const todayFocus = filteredMyTasks.filter(t => {
+          if (isTaskComplete(t.status)) return false;
+          if (isOverdue(t.dueDate, t.status)) return true;
+          if (t.dueDate && new Date(t.dueDate).toDateString() === new Date().toDateString()) return true;
+          if (t.status === "IN PROGRESS" && (t.priority === "Critical" || t.priority === "Urgent")) return true;
+          return false;
+        }).slice(0, 7);
+        if (todayFocus.length === 0) return null;
+        return (
+          <div className="border-2 border-blue-300 rounded-lg bg-blue-50/40 p-3 mb-2" data-testid="today-focus">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center">
+                <Zap className="h-4 w-4 text-blue-600" />
+              </div>
+              <span className="font-semibold text-sm text-blue-900">Today's Focus</span>
+              <span className="text-[10px] text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full font-bold">{todayFocus.length}</span>
+            </div>
+            <div className="space-y-1">
+              {todayFocus.map(t => (
+                <div
+                  key={t.id}
+                  className="flex items-center gap-2 text-xs p-2 bg-white rounded border hover:bg-blue-50 cursor-pointer transition-colors"
+                  onClick={() => onCardClick(t)}
+                >
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${isOverdue(t.dueDate, t.status) ? "bg-red-500" : t.priority === "Critical" ? "bg-red-500" : "bg-blue-500"}`} />
+                  <span className="flex-1 font-medium truncate">{t.title}</span>
+                  {t.projectName && <span className="text-muted-foreground truncate max-w-[120px]">{t.projectName.replace(/_Tracker.*$/, "").replace(/_/g, " ")}</span>}
+                  {t.dueDate && <span className={`text-[10px] font-semibold shrink-0 ${isOverdue(t.dueDate, t.status) ? "text-red-600" : "text-muted-foreground"}`}>{daysLabel(t.dueDate)}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {buckets.map(bucket => {
         if (bucket.tasks.length === 0) return null;
