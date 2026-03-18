@@ -811,7 +811,7 @@ function TaskDetailContent({
           </label>
           {isBaselineTask ? (
             <UserAssignmentPicker
-              taskId={Math.abs(task.id)}
+              taskId={Number.isFinite(task.id) ? Math.abs(task.id) : 0}
               taskSource="plan"
               resolvedUsers={task.resolvedAssignees || null}
               textNames={task.assignees || null}
@@ -821,7 +821,7 @@ function TaskDetailContent({
             />
           ) : (
             <UserAssignmentPicker
-              taskId={task.id}
+              taskId={Number.isFinite(task.id) ? task.id : 0}
               taskSource="operational"
               resolvedUsers={task.resolvedAssignees || null}
               textNames={task.assignees || null}
