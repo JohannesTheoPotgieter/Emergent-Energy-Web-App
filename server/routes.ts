@@ -7,7 +7,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly } from "@shared/schema";
+import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags } from "@shared/schema";
 import { db } from "./db";
 import { safeLegacyQuery } from "./legacy-table-guard";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -24,6 +24,44 @@ import { runDataQualityChecks } from "./lib/calculations/dataQuality";
 import { buildOverrideMap, applyOverridesToCashflowLines, applyOverridesToCOSLines, computeMonthlyBuckets, getEffectiveDate } from "./lib/calculations/scenarioResolver";
 import { recordOverride, recordManualEdit } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
+
+/** Record a manual edit flag for conflict detection during smart import */
+async function recordManualEditFlag(opts: {
+  entityType: string;
+  entityId: number;
+  fieldName: string;
+  editedByUserId?: number;
+  editedByName?: string;
+}) {
+  try {
+    // Upsert: update editedAt if flag already exists, otherwise create
+    const existing = await db
+      .select({ id: manualEditFlags.id })
+      .from(manualEditFlags)
+      .where(and(
+        eq(manualEditFlags.entityType, opts.entityType),
+        eq(manualEditFlags.entityId, opts.entityId),
+        eq(manualEditFlags.fieldName, opts.fieldName),
+      ))
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db.update(manualEditFlags)
+        .set({ editedAt: new Date(), editedByUserId: opts.editedByUserId || null, editedByName: opts.editedByName || null })
+        .where(eq(manualEditFlags.id, existing[0].id));
+    } else {
+      await db.insert(manualEditFlags).values({
+        entityType: opts.entityType,
+        entityId: opts.entityId,
+        fieldName: opts.fieldName,
+        editedByUserId: opts.editedByUserId || null,
+        editedByName: opts.editedByName || null,
+      });
+    }
+  } catch (err: any) {
+    console.warn("[manual-edit-flag] Failed to record:", err.message);
+  }
+}
 import { requirePermission } from "./permission-middleware";
 import { createNameResolver, mapCostToExpenseInput } from "./lib/data-merge";
 import { sendExcelSyncNotification } from "./excel-sync-notifications";
@@ -3679,13 +3717,16 @@ export async function registerRoutes(
         console.warn("[audit] COS realisation toggle audit failed:", auditErr.message);
       }
 
-      sendExcelSyncNotification({
-        projectName: expense.projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "cos_realisation_toggle",
-        changeDescription: `COS realisation ${realised ? 'marked' : 'unmarked'} for expense ${id}.`,
-        details: { expenseId: id, realised },
-      }).catch(() => {});
+      // Record manual edit flag for import conflict detection
+      recordManualEditFlag({
+        entityType: "program_expense",
+        entityId: id,
+        fieldName: "invoiceDateConfirmed",
+        editedByUserId: req.user?.id,
+        editedByName: (req as any).user?.name,
+      });
+
+      // Excel sync notifications silenced per Step 4.2 — manual edits tracked via audit log only
 
       logAuditFromReq(req, { entityType: "cos_realisation", action: "toggle", entityId: String(id), projectName: expense.projectName, changesJson: { description: `${realised ? 'Marked' : 'Unmarked'} as COS realised`, expenseId: id, realised } });
       res.json({ success: true, id, realised });
@@ -6409,6 +6450,18 @@ export async function registerRoutes(
         console.warn("[audit] Project plan override audit failed:", auditErr.message);
       }
 
+      // Record manual edit flags for import conflict detection
+      for (const o of overrides) {
+        recordManualEditFlag({
+          entityType: "project_plan",
+          entityId: o.rowNumber,
+          fieldName: o.fieldName,
+          editedByUserId: userId,
+          editedByName: (req as any).user?.name,
+        });
+      }
+
+      // Plan edit notifications are tracked via planEditNotifications table (existing mechanism)
       const projectNameForNotif = overrides[0]?.projectName;
       if (projectNameForNotif) {
         const changeDetails = overrides.map((o: any) => ({
@@ -7279,21 +7332,21 @@ export async function registerRoutes(
             oldRecord: {},
             newRecord: { [o.fieldName]: o.overrideValue },
           });
+
+          // Record manual edit flag for import conflict detection
+          recordManualEditFlag({
+            entityType: "revenue_tracking",
+            entityId: o.rowNumber,
+            fieldName: o.fieldName,
+            editedByUserId: userId,
+            editedByName: (req as any).user?.name,
+          });
         }
       } catch (auditErr: any) {
         console.warn("[audit] Revenue override audit failed:", auditErr.message);
       }
 
-      const revProjectNames = [...new Set(overrides.map((o: any) => o.projectName))];
-      for (const pn of revProjectNames) {
-        sendExcelSyncNotification({
-          projectName: pn,
-          changedByUserId: req.user?.id || 0,
-          changeType: "revenue_tracking_override",
-          changeDescription: "Revenue tracking overrides were updated.",
-          details: { count: overrides.filter((o: any) => o.projectName === pn).length },
-        }).catch(() => {});
-      }
+      // Excel sync notifications silenced per Step 4.2 — manual edits are tracked via audit log only
 
       logAuditFromReq(req, { entityType: "revenue_tracking_override", action: "create", changesJson: { description: `${overrides.length} revenue tracking override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
       res.json({ message: "Revenue tracking overrides saved", count: saved.length, overrides: saved });
@@ -7818,16 +7871,20 @@ export async function registerRoutes(
         console.warn("[audit] Expenditure override audit failed:", auditErr.message);
       }
 
-      const expProjectNames = [...new Set(overrides.map((o: any) => o.projectName))];
-      for (const pn of expProjectNames) {
-        sendExcelSyncNotification({
-          projectName: pn,
-          changedByUserId: req.user?.id || 0,
-          changeType: "expenditure_override",
-          changeDescription: "Expenditure overrides were updated.",
-          details: { count: overrides.filter((o: any) => o.projectName === pn).length },
-        }).catch(() => {});
+      // Record manual edit flags for conflict detection during import
+      for (const [expenseId, fields] of rowGroups.entries()) {
+        for (const fieldName of Object.keys(fields)) {
+          recordManualEditFlag({
+            entityType: "program_expense",
+            entityId: expenseId,
+            fieldName,
+            editedByUserId: userId,
+            editedByName: (req as any).user?.name,
+          });
+        }
       }
+
+      // Excel sync notifications silenced per Step 4.2 — manual edits are tracked via audit log only
 
       logAuditFromReq(req, { entityType: "expenditure_override", action: "create", changesJson: { description: `${overrides.length} expenditure override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
       res.json({ message: "Expenditure overrides saved and applied", count: saved.length, overrides: saved });
