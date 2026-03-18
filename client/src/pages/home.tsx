@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
+import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import {
   LayoutDashboard,
   FolderOpen,
@@ -21,8 +22,6 @@ import {
   Target,
   Zap,
   ArrowRight,
-  Star,
-  Quote,
   Flame,
   ClipboardCheck,
   Receipt,
@@ -504,6 +503,17 @@ export default function HomePage() {
     },
   });
 
+  const { data: myWorkData } = useQuery<any>({
+    queryKey: ["/api/my-work/all-tasks"],
+    queryFn: async () => {
+      const res = await fetch("/api/my-work/all-tasks", {
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
   const userRole = (user as any)?.role;
   const roleCategory = getRoleCategory(userRole);
   const roleLabel = getRoleLabel(userRole);
@@ -551,28 +561,59 @@ export default function HomePage() {
   const dailyQuote = useMemo(() => getDailyQuote(roleCategory), [roleCategory]);
   const quickLinks = useMemo(() => getQuickLinksForRole(roleCategory), [roleCategory]);
 
+  const myPendingActions = useMemo(() => {
+    if (!myWorkData) return 0;
+    const items: any[] = myWorkData.items || myWorkData.tasks || [];
+    return items.filter((t: any) => {
+      if (!t.dueDate) return false;
+      const isOverdue = new Date(t.dueDate) < new Date();
+      const isOpen = !["complete", "done", "closed", "cancelled"].includes(
+        String(t.status || "").toLowerCase()
+      );
+      return isOverdue && isOpen;
+    }).length;
+  }, [myWorkData]);
+
+  const attentionItems = useMemo((): AttentionItem[] => {
+    const items: AttentionItem[] = [];
+    if (stats.redProjects > 0) items.push({ label: "Red RAG Projects", value: stats.redProjects, color: "text-red-600 bg-red-50 border-red-200", href: "/projects" });
+    if (Number(kpis.projectsBehindPlan) > 0) items.push({ label: "Behind Plan", value: Number(kpis.projectsBehindPlan), color: "text-amber-700 bg-amber-50 border-amber-200", href: "/pm-dashboard" });
+    if (Number(kpis.pendingApprovals) > 0) items.push({ label: "Pending Approvals", value: Number(kpis.pendingApprovals), color: "text-blue-700 bg-blue-50 border-blue-200", href: "/approvals" });
+    if (Number(kpis.openEngineeringBlockers) > 0) items.push({ label: "Eng. Blockers", value: Number(kpis.openEngineeringBlockers), color: "text-violet-700 bg-violet-50 border-violet-200", href: "/engineering" });
+    if (Number(kpis.openQualityWarnings) > 0) items.push({ label: "Quality Warnings", value: Number(kpis.openQualityWarnings), color: "text-orange-700 bg-orange-50 border-orange-200", href: "/quality" });
+    if (myPendingActions > 0) items.push({ label: "My Overdue Actions", value: myPendingActions, color: "text-rose-700 bg-rose-50 border-rose-200", href: "/my-work/tasks" });
+    return items;
+  }, [stats, kpis, myPendingActions]);
+
   return (
     <PageShell data-testid="home-page">
-      {/* Hero greeting + quote */}
-      <div>
-        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
-          {greeting}, {displayName}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
-        <div className="mt-3 flex items-center gap-2.5 bg-muted/30 border border-border/40 rounded-md px-3.5 py-2.5" data-testid="text-daily-quote">
-          <Quote className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-          <p className="text-[13px] text-muted-foreground italic leading-relaxed">{dailyQuote}</p>
+      <div className="mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
+              {greeting}, {displayName}
+            </h1>
+            <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
+          </div>
+          <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground/60 italic max-w-xs text-right" data-testid="text-daily-quote">
+            <p className="leading-relaxed">{dailyQuote}</p>
+          </div>
         </div>
       </div>
 
       {/* Company Priorities */}
       {(companyPriorities && companyPriorities.length > 0) && (
-        <div data-testid="card-company-priorities">
-          <div className="flex items-center justify-between mb-2.5">
-            <div className="flex items-center gap-2">
-              <Flame className="w-4 h-4 text-primary" />
-              <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
-              <Badge variant="secondary" className="text-[11px]">{companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").length} active</Badge>
+        <Card className="border-border/60 mb-6" data-testid="card-company-priorities">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <Flame className="w-4 h-4 text-primary" />
+                <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
+                <Badge variant="secondary" className="text-[11px]">{companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").length} active</Badge>
+              </div>
+              <Link href="/project-lifecycle">
+                <span className="text-xs text-primary hover:underline font-medium cursor-pointer">Manage</span>
+              </Link>
             </div>
             <Link href="/project-lifecycle">
               <span className="text-xs text-primary hover:underline font-medium cursor-pointer">Manage</span>
@@ -611,9 +652,12 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Key Metrics */}
-      <div>
-        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+      {!isLoading && (
+        <AttentionBadges items={attentionItems} threshold={5} />
+      )}
+
+      <div className="mb-6">
+        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
           Key Metrics
         </h2>
         {getRoleKpis(roleCategory, kpis, stats, isLoading)}
@@ -621,7 +665,7 @@ export default function HomePage() {
 
       {/* Quick Access */}
       <div>
-        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
           Quick Access
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
