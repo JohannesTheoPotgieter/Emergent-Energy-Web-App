@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { getQueryFn, apiRequest } from "@/lib/queryClient";
+import { getQueryFn, apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import { usePermission } from "@/hooks/use-permissions";
 import {
   Bar,
@@ -391,6 +391,7 @@ export default function RevenueTrackerPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/revenue-tracker"] });
+      invalidateDashboardQueries(qc);
     },
   });
 
