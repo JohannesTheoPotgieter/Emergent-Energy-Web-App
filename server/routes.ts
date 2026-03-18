@@ -11692,6 +11692,9 @@ export async function registerRoutes(
   app.get("/api/operational-tasks/task/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ error: `Invalid task ID: ${req.params.id}` });
+      }
 
       if (id < 0) {
         const planId = -id;
@@ -11904,6 +11907,9 @@ export async function registerRoutes(
   app.patch("/api/operational-tasks/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ error: `Invalid task ID: ${req.params.id}` });
+      }
       const updates = req.body;
       const validationErrors = validateTaskUpdate(updates);
       if (validationErrors.length > 0) {
@@ -12289,7 +12295,7 @@ export async function registerRoutes(
 
           const usedIds = new Set<number>();
           baselineTasks = filteredCanonical.map((ct: any, idx: number) => {
-            let taskId = ct.id || (idx + 1);
+            let taskId = Number.isFinite(ct.id) && ct.id > 0 ? ct.id : (idx + 1);
             while (usedIds.has(taskId)) taskId = taskId + 100000;
             usedIds.add(taskId);
 
@@ -12321,7 +12327,7 @@ export async function registerRoutes(
 
             return {
               id: -taskId,
-              workItemId: ct.workItemId || null,
+              workItemId: ct.workItemId || taskId,
               projectName,
               planProjectName: projectName,
               importedTaskId: ct.id,
@@ -12802,6 +12808,9 @@ export async function registerRoutes(
   app.patch("/api/planning-tasks/:taskId", requireAuth, async (req: Request, res: Response) => {
     try {
       const taskId = parseInt(req.params.taskId);
+      if (!Number.isFinite(taskId)) {
+        return res.status(400).json({ error: `Invalid task ID: ${req.params.taskId}` });
+      }
       const user = req.user as any;
       const { projectName, ...updates } = req.body;
       if (!projectName) return res.status(400).json({ error: "projectName is required" });
