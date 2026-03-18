@@ -148,7 +148,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen ee-shell">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:text-sm focus:font-medium">Skip to content</a>
       <header className="sticky top-0 z-50 border-b border-border/60 bg-background/95 backdrop-blur-lg">
-        <div className="px-4 lg:px-6 py-2.5 flex items-center gap-3">
+        <div className="px-4 lg:px-6 py-2.5 flex items-center gap-3 mx-auto w-full max-w-[1440px]">
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="lg:hidden"><Menu className="h-5 w-5" /></Button>
@@ -294,73 +294,77 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </DropdownMenu>
         </div>
 
-        <nav className="hidden lg:flex px-6 py-1 gap-0.5 border-t border-border/50 overflow-x-auto">
-          {visibleSections.map((section) => {
-            const active = section.label === activeSection.label;
-            return (
-              <Link
-                key={section.label}
-                href={section.path}
-                className={cn(
-                  "relative px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors rounded-md",
-                  active ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
-                )}
-              >
-                {section.label}
-                {active && <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-primary rounded-full" />}
-              </Link>
-            );
-          })}
-        </nav>
+        <div className="hidden lg:block border-t border-border/50">
+          <nav className="flex px-6 py-1 gap-0.5 overflow-x-auto mx-auto w-full max-w-[1440px]">
+            {visibleSections.map((section) => {
+              const active = section.label === activeSection.label;
+              return (
+                <Link
+                  key={section.label}
+                  href={section.path}
+                  className={cn(
+                    "relative px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors rounded-md",
+                    active ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                  )}
+                >
+                  {section.label}
+                  {active && <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-primary rounded-full" />}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
 
         {(breadcrumbs.length > 0 || activeSection.secondary.length > 0) && (
-          <div className="px-4 lg:px-6 border-t border-border/40 bg-muted/20">
-            {breadcrumbs.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 py-1.5 text-xs text-muted-foreground">
-                <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
-                {breadcrumbs.map((crumb, idx) => (
-                  <span key={crumb.label + idx} className="flex items-center gap-1.5">
-                    <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
-                    {crumb.path ? (
-                      <Link href={crumb.path} className="hover:text-foreground transition-colors">{crumb.label}</Link>
-                    ) : (
-                      <span className="text-foreground font-medium">{crumb.label}</span>
-                    )}
-                  </span>
-                ))}
-              </div>
-            )}
-            {activeSection.secondary.length > 0 && (
-              <div ref={subNavRef} className="flex gap-1.5 overflow-x-auto pb-2 pt-0.5">
-                {activeSection.secondary.map((item) => (
-                  item.disabled ? (
-                    <span
-                      key={item.path}
-                      className="ee-subnav-pill cursor-not-allowed whitespace-nowrap opacity-55"
-                      aria-disabled="true"
-                    >
-                      {item.label}
-                    </span>
-                  ) : (
-                    <Link
-                      key={item.path}
-                      href={item.path}
-                      className={cn(
-                        "ee-subnav-pill whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                        linkIsActive(location, item.path) ? "ee-subnav-pill-active" : "",
+          <div className="border-t border-border/40 bg-muted/20">
+            <div className="px-4 lg:px-6 mx-auto w-full max-w-[1440px]">
+              {breadcrumbs.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 py-1.5 text-xs text-muted-foreground">
+                  <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
+                  {breadcrumbs.map((crumb, idx) => (
+                    <span key={crumb.label + idx} className="flex items-center gap-1.5">
+                      <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
+                      {crumb.path ? (
+                        <Link href={crumb.path} className="hover:text-foreground transition-colors">{crumb.label}</Link>
+                      ) : (
+                        <span className="text-foreground font-medium">{crumb.label}</span>
                       )}
-                    >
-                      {item.label}
-                    </Link>
-                  )
-                ))}
-              </div>
-            )}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {activeSection.secondary.length > 0 && (
+                <div ref={subNavRef} className="flex gap-1.5 overflow-x-auto pb-2 pt-0.5">
+                  {activeSection.secondary.map((item) => (
+                    item.disabled ? (
+                      <span
+                        key={item.path}
+                        className="ee-subnav-pill cursor-not-allowed whitespace-nowrap opacity-55"
+                        aria-disabled="true"
+                      >
+                        {item.label}
+                      </span>
+                    ) : (
+                      <Link
+                        key={item.path}
+                        href={item.path}
+                        className={cn(
+                          "ee-subnav-pill whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          linkIsActive(location, item.path) ? "ee-subnav-pill-active" : "",
+                        )}
+                      >
+                        {item.label}
+                      </Link>
+                    )
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </header>
 
-      <main id="main-content" className="p-4 lg:p-6">{children}</main>
+      <main id="main-content" className="px-4 lg:px-6 py-5">{children}</main>
       <GlobalCommandPalette />
     </div>
   );
