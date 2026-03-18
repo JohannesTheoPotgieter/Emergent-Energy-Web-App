@@ -4538,7 +4538,7 @@ export default function EngineeringTasksPage() {
                   { value: "Internal", label: "Internal" },
                   { value: "External", label: "External" },
                 ]}
-                data-testid="select-hold-blocked-type-page"
+                data-testid="select-hold-blocked-type"
               />
             </div>
             <Textarea
