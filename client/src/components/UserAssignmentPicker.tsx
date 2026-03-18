@@ -99,25 +99,33 @@ export default function UserAssignmentPicker({
 
   const reassignMutation = useMutation({
     mutationFn: async (payload: { assigneeType: AssigneeType | null; assigneeId: number | null }) => {
+      const requestBody = { taskId, taskSource, ...payload };
+      console.log("[Assignment] Sending reassign request:", requestBody);
       const res = await fetch("/api/tasks/reassign", {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ taskId, taskSource, ...payload }),
+        body: JSON.stringify(requestBody),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error || "Failed to reassign");
+      if (!res.ok) {
+        console.error("[Assignment] Reassign failed:", res.status, body);
+        throw new Error(body?.error || `Failed to reassign (${res.status})`);
+      }
+      console.log("[Assignment] Reassign succeeded:", body);
       return body;
     },
     onSuccess: () => {
       for (const key of invalidateKeys) {
         queryClient.invalidateQueries({ queryKey: [key] });
       }
+      queryClient.invalidateQueries({ queryKey: ["/api/assignables"] });
       onSuccess?.();
       toast({ title: "Assignment updated" });
       setOpen(false);
     },
     onError: (error: any) => {
+      console.error("[Assignment] Mutation error:", error);
       toast({ title: error?.message || "Failed to update assignment", variant: "destructive" });
     },
   });
