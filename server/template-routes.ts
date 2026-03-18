@@ -691,6 +691,45 @@ export function registerTemplateRoutes(app: Express) {
     }
   });
 
+  // ========== FUZZY PROJECT NAME SEARCH ==========
+
+  app.get("/api/projects/similar-names", jwtAuth, requireAuth, async (req, res) => {
+    try {
+      const name = String(req.query.name || "").trim();
+      if (name.length < 2) return res.json({ matches: [] });
+
+      const allProjects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
+        .from(projectInfo)
+        .where(eq(projectInfo.isActive, true));
+
+      const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const needle = normalise(name);
+
+      const matches = allProjects.filter(p => {
+        const hay = normalise(p.projectName);
+        if (hay === needle) return true;
+        if (hay.includes(needle) || needle.includes(hay)) return true;
+        // Simple similarity: shared trigram ratio
+        const trigrams = (s: string) => {
+          const set = new Set<string>();
+          for (let i = 0; i <= s.length - 3; i++) set.add(s.slice(i, i + 3));
+          return set;
+        };
+        const a = trigrams(needle);
+        const b = trigrams(hay);
+        if (a.size === 0 || b.size === 0) return false;
+        let shared = 0;
+        for (const t of a) if (b.has(t)) shared++;
+        const ratio = shared / Math.max(a.size, b.size);
+        return ratio > 0.4;
+      }).slice(0, 5).map(p => ({ id: p.id, projectName: p.projectName }));
+
+      res.json({ matches });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ========== PROJECT CREATION (exec-only) ==========
 
   app.post("/api/projects", jwtAuth, requireAuth, requirePermission('create_project', 'edit'), async (req, res) => {
