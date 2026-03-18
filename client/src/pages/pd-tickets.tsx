@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { statusColorClasses, priorityColorClasses } from "@/lib/status-colors";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Loader2, Plus, Search, FileEdit, Filter, AlertTriangle } from "lucide-react";
@@ -169,8 +170,8 @@ export default function PdTicketsPage() {
                     <td className="p-2.5 pl-3 font-medium">{t.projectSiteName}</td>
                     <td className="p-2.5 text-muted-foreground">{row.clientName || "—"}</td>
                     <td className="p-2.5"><Badge variant="outline" className="text-[10px]">{t.requestType}</Badge></td>
-                    <td className="p-2.5"><Badge className={`text-[10px] ${priorityColor(t.priority)}`}>{t.priority}</Badge></td>
-                    <td className="p-2.5"><Badge className={`text-[10px] ${statusColor(t.status)}`}>{t.status}</Badge></td>
+                    <td className="p-2.5"><Badge className={`text-[10px] ${priorityColorClasses(t.priority)}`}>{t.priority}</Badge></td>
+                    <td className="p-2.5"><Badge className={`text-[10px] ${statusColorClasses(t.status)}`}>{t.status}</Badge></td>
                     <td className={`p-2.5 ${overdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
                       <div className="flex items-center gap-1.5">
                         <span>{t.dueDate || "—"}</span>
@@ -206,17 +207,3 @@ export default function PdTicketsPage() {
   );
 }
 
-function statusColor(s: string) {
-  if (s === "Completed") return "bg-green-100 text-green-700";
-  if (s === "In Progress") return "bg-blue-100 text-blue-700";
-  if (s === "On Hold") return "bg-orange-100 text-orange-700";
-  if (s === "Cancelled") return "bg-muted text-muted-foreground";
-  return "bg-muted text-foreground";
-}
-
-function priorityColor(p: string) {
-  if (p === "Critical") return "bg-red-100 text-red-700";
-  if (p === "High") return "bg-orange-100 text-orange-700";
-  if (p === "Low") return "bg-green-100 text-green-700";
-  return "bg-blue-100 text-blue-700";
-}
