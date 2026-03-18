@@ -378,7 +378,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== ENHANCED TASK OPERATIONS ==========
 
-  app.get("/api/eng/tasks", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const { projectName, status, phase, ownerUserId, projectId } = req.query;
       const tasks = await listEngineeringWorkItems({
@@ -561,7 +561,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks", requireAuth, async (req, res) => {
+  app.post("/api/eng/tasks", requireAuth, requirePermission("eng_tasks", "create"), async (req, res) => {
     try {
       const data = req.body;
       if (!TASK_STATUSES.includes(data.status)) {
@@ -623,7 +623,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng/tasks/:id", requireAuth, async (req, res) => {
+  app.patch("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));

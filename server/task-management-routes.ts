@@ -9,6 +9,7 @@ import {
   type InsertWorkItem, type InsertTaskTag,
 } from "@shared/schema";
 import { getEffectiveUser, requireAuth } from "./auth-context";
+import { requirePermission } from "./permission-middleware";
 
 type AppUser = { id: number; email: string; name: string; role: string };
 
@@ -21,7 +22,7 @@ export function registerTaskManagementRoutes(app: Express) {
   // ── Unified Task Hub ───────────────────────────────────────────────────────
 
   /** List tasks with comprehensive filters */
-  app.get("/api/tasks", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/tasks", requireAuth, requirePermission("task_management", "view"), async (req: Request, res: Response) => {
     try {
       const {
         projectId, status, priority, assigneeId, workstream,
@@ -145,7 +146,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Board view — tasks grouped by status */
-  app.get("/api/tasks/board", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/tasks/board", requireAuth, requirePermission("task_management", "view"), async (req: Request, res: Response) => {
     try {
       const { projectId, assigneeId, workstream } = req.query;
       const conditions = [isNull(workItems.deletedAt)];
@@ -194,7 +195,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Calendar view — tasks bucketed by date */
-  app.get("/api/tasks/calendar", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/tasks/calendar", requireAuth, requirePermission("task_management", "view"), async (req: Request, res: Response) => {
     try {
       const { startDate, endDate, projectId, assigneeId } = req.query;
       const conditions = [isNull(workItems.deletedAt)];
@@ -242,7 +243,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Task metrics — velocity, completion rate, tag breakdown */
-  app.get("/api/tasks/metrics", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/tasks/metrics", requireAuth, requirePermission("task_management", "view"), async (req: Request, res: Response) => {
     try {
       const { projectId, days } = req.query;
       const lookbackDays = parseInt(days as string) || 30;
@@ -325,7 +326,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Create a task */
-  app.post("/api/tasks", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/tasks", requireAuth, requirePermission("task_management", "create"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const {
@@ -379,7 +380,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Update a task */
-  app.patch("/api/tasks/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/tasks/:id", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const id = parseInt(req.params.id);
@@ -427,7 +428,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Soft-delete a task */
-  app.delete("/api/tasks/:id", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/tasks/:id", requireAuth, requirePermission("task_management", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       await db
@@ -441,7 +442,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Bulk update tasks (status or assignment) */
-  app.post("/api/tasks/bulk-update", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/tasks/bulk-update", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const { taskIds, updates } = req.body;
@@ -664,7 +665,7 @@ export function registerTaskManagementRoutes(app: Express) {
   // ── Seed Data ──────────────────────────────────────────────────────────────
 
   /** Seed identified bugs/improvements/features as work items */
-  app.post("/api/tasks/seed-identified-items", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/tasks/seed-identified-items", requireAuth, requirePermission("task_management", "create"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
 

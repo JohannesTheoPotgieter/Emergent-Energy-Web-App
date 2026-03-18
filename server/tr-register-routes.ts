@@ -7,6 +7,7 @@ import {
   insertTrItemSchema, projectInfo, operationalTasks,
   type TrItemProjectLink, type TrSuggestionDecision, type ProjectInfo,
 } from "@shared/schema";
+import { requirePermission } from "./permission-middleware";
 
 type AppUser = { id: number; email: string; name: string; role: string; };
 
@@ -157,7 +158,7 @@ export async function seedTrRegisterData() {
 export function registerTrRegisterRoutes(app: Express) {
   app.use("/api/tr-register", jwtAuth);
 
-  app.get("/api/tr-register", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/tr-register", requireAuth, requirePermission("tr_register", "view"), async (req: Request, res: Response) => {
     try {
       const status = req.query.status as string | undefined;
       const ragStatus = req.query.ragStatus as string | undefined;
@@ -243,7 +244,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.get("/api/tr-register/:id", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/tr-register/:id", requireAuth, requirePermission("tr_register", "view"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       const [item] = await db.select().from(trItems).where(eq(trItems.id, id));
@@ -271,7 +272,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.post("/api/tr-register", requireAuth, requireManager, async (req: Request, res: Response) => {
+  app.post("/api/tr-register", requireAuth, requirePermission("tr_register", "create"), async (req: Request, res: Response) => {
     try {
       const parsed = insertTrItemSchema.parse({
         ...req.body,
@@ -285,7 +286,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/tr-register/:id", requireAuth, requireManager, async (req: Request, res: Response) => {
+  app.patch("/api/tr-register/:id", requireAuth, requirePermission("tr_register", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       const [existing] = await db.select().from(trItems).where(eq(trItems.id, id));
@@ -315,7 +316,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/tr-register/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.delete("/api/tr-register/:id", requireAuth, requirePermission("tr_register", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       const [existing] = await db.select().from(trItems).where(eq(trItems.id, id));
@@ -327,7 +328,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.post("/api/tr-register/:id/link", requireAuth, requireManager, async (req: Request, res: Response) => {
+  app.post("/api/tr-register/:id/link", requireAuth, requirePermission("tr_register", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       const { projectId } = req.body;
@@ -375,7 +376,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/tr-register/:id/link/:linkId", requireAuth, requireManager, async (req: Request, res: Response) => {
+  app.delete("/api/tr-register/:id/link/:linkId", requireAuth, requirePermission("tr_register", "edit"), async (req: Request, res: Response) => {
     try {
       const linkId = parseInt(req.params.linkId as string);
       const [link] = await db.select().from(trItemProjectLinks).where(eq(trItemProjectLinks.id, linkId));
@@ -392,7 +393,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/tr-register/:id/complete", requireAuth, requireManager, async (req: Request, res: Response) => {
+  app.patch("/api/tr-register/:id/complete", requireAuth, requirePermission("tr_register", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       const [trItem] = await db.select().from(trItems).where(eq(trItems.id, id));
@@ -525,7 +526,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.post("/api/tr-register/:id/suggestion-decision", requireAuth, requireManager, async (req: Request, res: Response) => {
+  app.post("/api/tr-register/:id/suggestion-decision", requireAuth, requirePermission("tr_register", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       const { projectId, decision } = req.body;
