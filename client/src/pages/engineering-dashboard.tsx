@@ -1391,6 +1391,21 @@ export default function EngineeringDashboard() {
     return items;
   }, [data?.summary]);
 
+  const summary = data?.summary;
+  const blockers = data?.blockers;
+  const recentlyCompleted = data?.recentlyCompleted ?? [];
+  const upcomingThisWeek = data?.upcomingThisWeek ?? [];
+  const needsApproval = data?.needsApproval ?? [];
+  const inProgressHighlights = data?.inProgressHighlights ?? [];
+  const workload = data?.workload ?? [];
+  const projectHealth = data?.projectHealth ?? [];
+  const statusPipeline = data?.statusPipeline ?? {};
+  const totalBlockers = (blockers?.hold?.length ?? 0) + (blockers?.overdue?.length ?? 0);
+
+  const todayFormatted = new Date().toLocaleDateString("en-ZA", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric"
+  });
+
   if (isLoading) {
     return (
       <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
@@ -1409,7 +1424,7 @@ export default function EngineeringDashboard() {
     );
   }
 
-  if (error || !data) {
+  if (error || !data || !summary) {
     return (
       <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
         <SectionHeader
@@ -1428,13 +1443,6 @@ export default function EngineeringDashboard() {
       </PageShell>
     );
   }
-
-  const { summary, blockers, recentlyCompleted, upcomingThisWeek, needsApproval, inProgressHighlights, workload, projectHealth } = data;
-  const totalBlockers = blockers.hold.length + blockers.overdue.length;
-
-  const todayFormatted = new Date().toLocaleDateString("en-ZA", {
-    weekday: "long", day: "numeric", month: "long", year: "numeric"
-  });
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
@@ -1709,7 +1717,7 @@ export default function EngineeringDashboard() {
               {(() => {
                 const statusOrder = ["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "QC APPROVED", "PROVIDE FEEDBACK", "PROJECTS ASSISTANCE", "HOLD", "COMPLETE"];
                                 const total = summary.totalTasks || 1;
-                return Object.entries(data.statusPipeline)
+                return Object.entries(statusPipeline)
                   .sort(([a], [b]) => {
                     const ai = statusOrder.indexOf(a);
                     const bi = statusOrder.indexOf(b);
