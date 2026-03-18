@@ -15466,7 +15466,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/send", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/outlook/send", requireAuth, async (req, res) => {
     try {
       const { to, cc, subject, body, bodyType } = req.body;
       if (!to || !Array.isArray(to) || to.length === 0 || !subject) {
@@ -15485,7 +15485,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/messages/:id/reply", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/outlook/messages/:id/reply", requireAuth, async (req, res) => {
     try {
       const { comment, replyAll } = req.body;
       if (!comment) {
@@ -15504,7 +15504,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/messages/:id/forward", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/outlook/messages/:id/forward", requireAuth, async (req, res) => {
     try {
       const { comment, to } = req.body;
       if (!to || !Array.isArray(to) || to.length === 0) {
