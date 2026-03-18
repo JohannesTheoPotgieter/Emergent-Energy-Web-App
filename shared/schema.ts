@@ -2709,7 +2709,8 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'data_import' | 'data_export' | 'audit_trail'
   | 'ms_integration'
   | 'my_work' | 'ms_sync' | 'project_tagging' | 'excel_updates' | 'database_migration'
-  | 'revenue_tracker' | 'gp_tracker' | 'work_items';
+  | 'revenue_tracker' | 'gp_tracker' | 'work_items'
+  | 'task_management' | 'standups';
 export type PermissionAction = 'view' | 'create' | 'edit' | 'approve' | 'override' | 'delete';
 export const AUTHORITY_ACTIONS = [
   'view',
@@ -5216,6 +5217,10 @@ export const workItems = pgTable("work_items", {
   actualEnd: text("actual_end"),
   actualDuration: integer("actual_duration"),
   sortOrder: integer("sort_order").default(0),
+  estimateMinutes: integer("estimate_minutes"),
+  taskCategory: text("task_category"),
+  recurringRule: text("recurring_rule"),
+  recurringParentId: integer("recurring_parent_id"),
 });
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;
@@ -5606,6 +5611,99 @@ export const invoiceCaptures = pgTable("invoice_captures", {
 export const insertInvoiceCaptureSchema = createInsertSchema(invoiceCaptures).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertInvoiceCapture = z.infer<typeof insertInvoiceCaptureSchema>;
 export type InvoiceCapture = typeof invoiceCaptures.$inferSelect;
+
+// ── Task Management & Standup System ─────────────────────────────────────────
+
+export const taskTagCategoryEnum = pgEnum('task_tag_category', ['BUG', 'IMPROVEMENT', 'FEATURE', 'CUSTOM']);
+export const standupCadenceEnum = pgEnum('standup_cadence', ['DAILY', 'EVERY_2_DAYS', 'EVERY_3_DAYS', 'WEEKLY']);
+export const standupMoodEnum = pgEnum('standup_mood', ['great', 'good', 'okay', 'struggling', 'blocked']);
+
+export const standupSchedules = pgTable("standup_schedules", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  teamLabel: text("team_label"),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  cadence: standupCadenceEnum("cadence").notNull().default("EVERY_2_DAYS"),
+  cadenceDays: integer("cadence_days").notNull().default(2),
+  anchorDate: text("anchor_date").notNull(),
+  deadlineTime: text("deadline_time").default("10:00"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertStandupScheduleSchema = createInsertSchema(standupSchedules).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertStandupSchedule = z.infer<typeof insertStandupScheduleSchema>;
+export type StandupSchedule = typeof standupSchedules.$inferSelect;
+
+export const standupParticipants = pgTable("standup_participants", {
+  id: serial("id").primaryKey(),
+  scheduleId: integer("schedule_id").notNull().references(() => standupSchedules.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id),
+  isRequired: boolean("is_required").notNull().default(true),
+  addedAt: timestamp("added_at").notNull().defaultNow(),
+});
+export const insertStandupParticipantSchema = createInsertSchema(standupParticipants).omit({ id: true, addedAt: true } as any);
+export type InsertStandupParticipant = z.infer<typeof insertStandupParticipantSchema>;
+export type StandupParticipant = typeof standupParticipants.$inferSelect;
+
+export const standupEntries = pgTable("standup_entries", {
+  id: serial("id").primaryKey(),
+  scheduleId: integer("schedule_id").notNull().references(() => standupSchedules.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id),
+  standupDate: text("standup_date").notNull(),
+  whatIDid: text("what_i_did"),
+  whatImDoing: text("what_im_doing"),
+  blockers: text("blockers"),
+  mood: standupMoodEnum("mood"),
+  isLate: boolean("is_late").notNull().default(false),
+  submittedAt: timestamp("submitted_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertStandupEntrySchema = createInsertSchema(standupEntries).omit({ id: true, submittedAt: true, updatedAt: true } as any);
+export type InsertStandupEntry = z.infer<typeof insertStandupEntrySchema>;
+export type StandupEntry = typeof standupEntries.$inferSelect;
+
+export const taskTags = pgTable("task_tags", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  color: text("color").notNull().default("#6366f1"),
+  category: taskTagCategoryEnum("category").notNull().default("CUSTOM"),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertTaskTagSchema = createInsertSchema(taskTags).omit({ id: true, createdAt: true } as any);
+export type InsertTaskTag = z.infer<typeof insertTaskTagSchema>;
+export type TaskTag = typeof taskTags.$inferSelect;
+
+export const workItemTags = pgTable("work_item_tags", {
+  id: serial("id").primaryKey(),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+  tagId: integer("tag_id").notNull().references(() => taskTags.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueWorkItemTag: unique("work_item_tags_unique").on(table.workItemId, table.tagId),
+}));
+export const insertWorkItemTagSchema = createInsertSchema(workItemTags).omit({ id: true, createdAt: true } as any);
+export type InsertWorkItemTag = z.infer<typeof insertWorkItemTagSchema>;
+export type WorkItemTag = typeof workItemTags.$inferSelect;
+
+export const taskTimeEntries = pgTable("task_time_entries", {
+  id: serial("id").primaryKey(),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id),
+  durationMinutes: integer("duration_minutes").notNull(),
+  description: text("description"),
+  date: text("date").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const insertTaskTimeEntrySchema = createInsertSchema(taskTimeEntries).omit({ id: true, createdAt: true } as any);
+export type InsertTaskTimeEntry = z.infer<typeof insertTaskTimeEntrySchema>;
+export type TaskTimeEntry = typeof taskTimeEntries.$inferSelect;
+
+// Additional columns for work_items (added via ALTER TABLE in migration)
+// estimateMinutes, taskCategory, recurringRule, recurringParentId
+// These are represented in the migration SQL and available via raw queries
 
 export const projectLinkageReviewQueue = pgTable("project_linkage_review_queue", {
   id: serial("id").primaryKey(),
