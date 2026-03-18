@@ -8,6 +8,7 @@ import {
   qcItemInstance, qcChecklist, qcTemplateItem,
   projectInfo, users, normalizedPlanTasks, engineeringTasks, approvals,
   msAccounts, msObjects, communicationFollowUps, projectCommunicationTimelineEvents, workItemAssignments,
+  workItems,
 } from "@shared/schema";
 import {
   tagToProject,
@@ -446,6 +447,28 @@ export function registerMsSyncRoutes(app: Express) {
         mode: assigneeType ? mode : "clear",
       });
       console.log("[Reassign] Assignment saved to DB:", { entityType, taskId, assignmentRole, mode, resultCount: assignments.length });
+
+      if (entityType === "work_item") {
+        try {
+          const internalAssigneeIds = assignments
+            .filter((a) => a.active && a.assigneeType === "internal_user" && Number.isFinite(a.assigneeId))
+            .map((a) => a.assigneeId);
+          const internalNames = assignments
+            .filter((a) => a.active && a.assigneeType === "internal_user")
+            .map((a) => a.displayLabel)
+            .filter(Boolean);
+          const primaryOwner = internalAssigneeIds[0] || null;
+          await db.update(workItems).set({
+            ownerUserId: primaryOwner,
+            assigneeUserIds: internalAssigneeIds.length > 0 ? internalAssigneeIds : null,
+            assignees: internalNames.length > 0 ? internalNames : null,
+            updatedAt: new Date(),
+          }).where(eq(workItems.id, taskId));
+          console.log("[Reassign] Synced back to work_items:", { taskId, primaryOwner, internalAssigneeIds, internalNames });
+        } catch (syncErr: any) {
+          console.error("[Reassign] Sync-back to work_items failed (non-fatal):", syncErr.message);
+        }
+      }
 
       const current = assignments.find((assignment) =>
         assigneeType != null &&
