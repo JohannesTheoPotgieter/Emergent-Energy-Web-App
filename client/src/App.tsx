@@ -84,9 +84,11 @@ import { ShieldAlert, ArrowLeft } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PAGE_REGISTRY, ROLE_LANDING_PAGE, getPermissionEntityForPath } from "@/config/page-registry";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
+import { useEffect } from "react";
 
 const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
 const PM_ALLOWED_PATHS = ["/", "/dashboard", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm-dashboard", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
+const QM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
 
 type RouteConfig = { path: string; component?: React.ComponentType<any>; redirectTo?: string };
 
@@ -253,8 +255,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (user?.role === "quality_manager") {
-    const qmAllowed = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
-    const allowed = qmAllowed.some(p => 
+    const allowed = QM_ALLOWED_PATHS.some(p =>
       p === location || (p === "/projects" && location.startsWith("/project/"))
     );
     if (!allowed) {
@@ -290,23 +291,34 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function usePageTitle(location: string) {
+  useEffect(() => {
+    const page = PAGE_REGISTRY.find((p) => p.path === location);
+    const label = page?.label || "Dashboard";
+    document.title = `${label} — Emergent Energy`;
+  }, [location]);
+}
+
 function ProtectedPages() {
   const [location] = useLocation();
   useScrollRestoration(location);
+  usePageTitle(location);
 
   return (
     <RoleGuard>
     <AppLayout>
-      <Switch>
-        <Route path="/" component={HomePage} />
-        {APP_ROUTES.map((route) => {
-          if (route.redirectTo) {
-            return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;
-          }
-          return <Route key={route.path} path={route.path} component={route.component!} />;
-        })}
-        <Route component={NotFound} />
-      </Switch>
+      <div key={location} className="page-enter">
+        <Switch>
+          <Route path="/" component={HomePage} />
+          {APP_ROUTES.map((route) => {
+            if (route.redirectTo) {
+              return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;
+            }
+            return <Route key={route.path} path={route.path} component={route.component!} />;
+          })}
+          <Route component={NotFound} />
+        </Switch>
+      </div>
     </AppLayout>
     </RoleGuard>
   );
