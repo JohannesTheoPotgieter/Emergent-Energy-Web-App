@@ -2,7 +2,10 @@ import React, { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
 import { usePermission } from "@/hooks/use-permissions";
 import {
@@ -25,6 +28,8 @@ import {
   X,
   Search,
   Loader2,
+  AlertCircle,
+  HelpCircle,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -172,8 +177,8 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex" data-testid="drawer-revenue-detail">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
+    <div className="fixed inset-0 z-50 flex" data-testid="drawer-revenue-detail" role="dialog" aria-modal="true" aria-label={`Revenue detail for ${monthLabel}`}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose} aria-hidden="true" />
       <div className="ml-auto relative w-full max-w-5xl bg-white shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-300">
         <div className="px-3 sm:px-6 py-4 sm:py-5 border-b bg-gradient-to-r from-emerald-50 to-white flex items-center justify-between">
           <div>
@@ -182,8 +187,8 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
               Revenue Line Item Detail · {summaries.lineCount} items · {formatRand(summaries.totalAmount)}
             </p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors" data-testid="button-close-drawer">
-            <X className="h-5 w-5 text-muted-foreground" />
+          <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors" data-testid="button-close-drawer" aria-label="Close detail drawer">
+            <X className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
           </button>
         </div>
 
@@ -375,7 +380,7 @@ export default function RevenueTrackerPage() {
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "unrealised"; defaultProject?: string } | null>(null);
 
-  const { data, isLoading } = useQuery<RevenueTrackerResponse>({
+  const { data, isLoading, isError, error, refetch } = useQuery<RevenueTrackerResponse>({
     queryKey: ["/api/revenue-tracker"],
     staleTime: 30_000,
   });
@@ -456,8 +461,63 @@ export default function RevenueTrackerPage() {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3" data-testid="loading-indicator">
-        <EnergyLoader size="lg" label="Loading Revenue data…" />
+      <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50" data-testid="loading-indicator">
+        <div className="bg-white border-b border-border/80 px-3 sm:px-6 py-4 sm:py-6 shadow-sm">
+          <div className="max-w-[1800px] mx-auto">
+            <Skeleton className="h-8 w-64 mb-2" />
+            <Skeleton className="h-4 w-96" />
+          </div>
+        </div>
+        <div className="max-w-[1800px] mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Card key={i} className="shadow-sm">
+                <CardContent className="pt-5 pb-4 px-4">
+                  <div className="flex items-start gap-3">
+                    <Skeleton className="h-10 w-10 rounded-xl" />
+                    <div className="flex-1">
+                      <Skeleton className="h-3 w-20 mb-2" />
+                      <Skeleton className="h-6 w-24" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <Card className="shadow-sm overflow-hidden">
+            <CardContent className="p-6">
+              <Skeleton className="h-[420px] w-full rounded-lg" />
+            </CardContent>
+          </Card>
+          <Card className="shadow-sm overflow-hidden">
+            <CardContent className="p-0">
+              <div className="px-5 py-3 border-b"><Skeleton className="h-5 w-40" /></div>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="flex gap-2 px-5 py-2.5 border-b border-border/40">
+                  <Skeleton className="h-4 w-36" />
+                  {Array.from({ length: 6 }).map((_, j) => (
+                    <Skeleton key={j} className="h-4 w-20 ml-auto" />
+                  ))}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6 max-w-[1200px] mx-auto" data-testid="revenue-tracker-error-state">
+        <Card className="border-red-200 bg-red-50/40">
+          <CardContent className="py-10 text-center space-y-3">
+            <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
+            <p className="text-sm font-semibold text-red-700">Revenue tracker data failed to load.</p>
+            <p className="text-xs text-red-600/90">{(error as Error)?.message || "An unexpected error occurred."}</p>
+            <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-revenue-tracker">Retry</Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -468,9 +528,9 @@ export default function RevenueTrackerPage() {
     : 0;
 
   const kpiCards = [
-    { id: "ytd-revenue", label: "YTD Revenue", value: formatRand(lastMonth?.ytdRevenue ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground font-black", borderColor: "" },
-    { id: "ytd-realised", label: "YTD Realised", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingUp, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border" },
-    { id: "ytd-unrealised", label: "YTD Unrealised", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200" },
+    { id: "ytd-revenue", label: "YTD Revenue", value: formatRand(lastMonth?.ytdRevenue ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground font-black", borderColor: "", tooltip: "Year-to-date total revenue from milestone payments. Includes both received and pending payments." },
+    { id: "ytd-realised", label: "YTD Realised", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingUp, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border", tooltip: "Revenue where milestone payment has been received and confirmed. This is actual cash collected." },
+    { id: "ytd-unrealised", label: "YTD Unrealised", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200", tooltip: "Revenue from milestones that have been invoiced or are planned but payment is not yet received." },
     {
       id: "ytd-variance", label: "YTD Variance", value: formatRand(ytdVar),
       icon: TrendingUp,
@@ -478,6 +538,7 @@ export default function RevenueTrackerPage() {
       iconColor: ytdVar >= 0 ? "text-green-600" : "text-red-600",
       valueColor: ytdVar >= 0 ? "text-green-600" : "text-red-600",
       borderColor: ytdVar >= 0 ? "border-green-200" : "border-red-200",
+      tooltip: "Difference between actual revenue and budget (Revenue − Budget). Green = ahead of plan, Red = behind plan.",
     },
     {
       id: "realised-pct", label: "Realised %", value: `${(realisedPct * 100).toFixed(1)}%`,
@@ -486,6 +547,7 @@ export default function RevenueTrackerPage() {
       iconColor: realisedPct >= 0.5 ? "text-green-600" : "text-amber-600",
       valueColor: realisedPct >= 0.5 ? "text-green-600" : "text-amber-600",
       borderColor: realisedPct >= 0.5 ? "border-green-200" : "border-amber-200",
+      tooltip: "Percentage of total revenue that has been realised (received). Green if >= 50%, Amber if below.",
     },
   ];
 
@@ -519,25 +581,39 @@ export default function RevenueTrackerPage() {
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-          {kpiCards.map((kpi) => (
-            <Card key={kpi.id} className={`shadow-sm hover:shadow-md transition-shadow ${kpi.borderColor}`} data-testid={`card-${kpi.id}`}>
-              <CardContent className="pt-5 pb-4 px-4">
-                <div className="flex items-start gap-3">
-                  <div className={`rounded-xl ${kpi.iconBg} p-2.5 shrink-0`}>
-                    <kpi.icon className={`h-5 w-5 ${kpi.iconColor}`} />
+        <TooltipProvider delayDuration={300}>
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4" role="region" aria-label="Revenue KPI Summary">
+            {kpiCards.map((kpi) => (
+              <Card key={kpi.id} className={`shadow-sm hover:shadow-md transition-shadow ${kpi.borderColor}`} data-testid={`card-${kpi.id}`}>
+                <CardContent className="pt-5 pb-4 px-4">
+                  <div className="flex items-start gap-3">
+                    <div className={`rounded-xl ${kpi.iconBg} p-2.5 shrink-0`}>
+                      <kpi.icon className={`h-5 w-5 ${kpi.iconColor}`} aria-hidden="true" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1">
+                        <p className="text-xs font-medium text-muted-foreground truncate">{kpi.label}</p>
+                        <UiTooltip>
+                          <TooltipTrigger asChild>
+                            <button type="button" className="text-muted-foreground/50 hover:text-muted-foreground transition-colors shrink-0" aria-label={`Info: ${kpi.label}`}>
+                              <HelpCircle className="h-3 w-3" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-[240px] text-xs leading-relaxed">
+                            {kpi.tooltip}
+                          </TooltipContent>
+                        </UiTooltip>
+                      </div>
+                      <p className={`text-xl font-bold font-mono mt-0.5 ${kpi.valueColor}`} data-testid={`text-${kpi.id}-value`}>
+                        {kpi.value}
+                      </p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-muted-foreground truncate">{kpi.label}</p>
-                    <p className={`text-xl font-bold font-mono mt-0.5 ${kpi.valueColor}`} data-testid={`text-${kpi.id}-value`}>
-                      {kpi.value}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TooltipProvider>
 
         <Card className="shadow-sm overflow-hidden">
           <CardHeader className="bg-gradient-to-r from-emerald-50 to-white border-b px-6 py-4">
@@ -607,6 +683,8 @@ export default function RevenueTrackerPage() {
                                 type="button"
                                 className="flex items-center gap-1.5 hover:text-emerald-600 transition-colors group"
                                 onClick={() => toggleRow(row.key)}
+                                aria-expanded={isExpanded}
+                                aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${row.label} by project`}
                                 data-testid={`toggle-${row.key}`}
                               >
                                 <span className="text-slate-500 group-hover:text-emerald-500 transition-colors">
