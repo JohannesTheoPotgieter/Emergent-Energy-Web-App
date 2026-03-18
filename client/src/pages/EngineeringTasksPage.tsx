@@ -419,11 +419,13 @@ function EngineeringWorkloadStrip({
 }
 
 
-function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateChange, compact }: {
+function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateChange, compact, selected, onToggleSelect }: {
   task: Task; onClick: () => void; onStatusChange: (id: number, status: string) => void;
   onPriorityChange?: (id: number, priority: string) => void;
   onDueDateChange?: (id: number, date: string) => void;
   compact?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: number) => void;
 }) {
   const [quickEditOpen, setQuickEditOpen] = useState(false);
   const { user } = useAuth();
@@ -495,6 +497,15 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
       data-testid={`kanban-card-${task.id}`}
     >
       <div className="flex items-start gap-1.5 mb-1">
+        {onToggleSelect && (
+          <button
+            className={`w-4 h-4 mt-0.5 rounded border shrink-0 flex items-center justify-center transition-colors ${selected ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300 opacity-0 group-hover:opacity-100 hover:border-blue-400"}`}
+            onClick={(e) => { e.stopPropagation(); onToggleSelect(task.id); }}
+            data-testid={`select-task-${task.id}`}
+          >
+            {selected && <Check className="h-2.5 w-2.5" />}
+          </button>
+        )}
         <h4 className="text-[13px] font-medium leading-snug line-clamp-2 flex-1 min-w-0" data-testid={`text-card-title-${task.id}`}>
           {task.title}
         </h4>
@@ -601,15 +612,37 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
           <span className="truncate">{task.holdReason}</span>
         </div>
       )}
+
+      {/* Inline quick actions - appear on hover */}
+      {onStatusChange && (
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-1.5 pt-1.5 border-t border-dashed flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          {task.status !== "IN PROGRESS" && (
+            <button className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium" onClick={() => onStatusChange(task.id, "IN PROGRESS")}>
+              Start
+            </button>
+          )}
+          {task.status !== "COMPLETE" && task.status !== "NEEDS APPROVAL" && (
+            <button className="text-[9px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 font-medium" onClick={() => onStatusChange(task.id, "NEEDS APPROVAL")}>
+              Submit
+            </button>
+          )}
+          {task.status !== "COMPLETE" && (
+            <button className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium" onClick={() => onStatusChange(task.id, "COMPLETE")}>
+              Done
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 function KanbanColumn({
-  status, tasks, onDrop, onCardClick, onStatusChange, onPriorityChange, onDueDateChange, compact, collapsed, onToggleCollapse, totalTasks
+  status, tasks, onDrop, onCardClick, onStatusChange, onPriorityChange, onDueDateChange, compact, collapsed, onToggleCollapse, totalTasks, selectedTaskIds, onToggleSelect,
 }: {
   status: string; tasks: Task[]; onDrop: (taskId: number, newStatus: string) => void; onCardClick: (task: Task) => void; onStatusChange: (id: number, status: string) => void; onPriorityChange?: (id: number, priority: string) => void;
   onDueDateChange?: (id: number, date: string) => void; compact?: boolean; collapsed?: boolean; onToggleCollapse?: () => void; totalTasks?: number;
+  selectedTaskIds?: Set<number>; onToggleSelect?: (id: number) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
   const sorted = useMemo(() => sortTasksForColumn(tasks), [tasks]);
@@ -693,7 +726,7 @@ function KanbanColumn({
       <ScrollArea className="flex-1 px-1.5 pb-2" style={{ maxHeight: "calc(100vh - 280px)" }}>
         <div className="space-y-1.5">
           {sorted.map(task => (
-            <TaskCard key={task.id} task={task} onClick={() => onCardClick(task)} onStatusChange={onStatusChange} onPriorityChange={onPriorityChange} onDueDateChange={onDueDateChange} compact={compact} />
+            <TaskCard key={task.id} task={task} onClick={() => onCardClick(task)} onStatusChange={onStatusChange} onPriorityChange={onPriorityChange} onDueDateChange={onDueDateChange} compact={compact} selected={selectedTaskIds?.has(task.id)} onToggleSelect={onToggleSelect} />
           ))}
           {tasks.length === 0 && (
             <div className="text-center py-8 text-xs text-muted-foreground/40">
@@ -3188,6 +3221,18 @@ export default function EngineeringTasksPage() {
   const [holdDialog, setHoldDialog] = useState<{ taskId: number; reason: string; blockedType: string } | null>(null);
   const [boardCompact, setBoardCompact] = useState(savedDefaults?.boardCompact || false);
   const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(() => new Set());
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(new Set());
+  const bulkMode = selectedTaskIds.size > 0;
+
+  const toggleTaskSelection = useCallback((taskId: number) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId); else next.add(taskId);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedTaskIds(new Set()), []);
 
   const toggleColumnCollapse = useCallback((status: string) => {
     setCollapsedColumns(prev => {
@@ -3331,6 +3376,30 @@ export default function EngineeringTasksPage() {
   const handlePriorityChange = useCallback((taskId: number, newPriority: string) => {
     updatePriorityMutation.mutate({ taskId, priority: newPriority });
   }, [updatePriorityMutation]);
+
+  const bulkStatusMutation = useMutation({
+    mutationFn: async ({ taskIds, status }: { taskIds: number[]; status: string }) => {
+      await Promise.all(taskIds.map(id => engFetch(`/api/eng/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ status }) })));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      toast({ title: `${selectedTaskIds.size} tasks updated` });
+      clearSelection();
+    },
+    onError: (e: Error) => toast({ title: "Bulk update failed", description: e.message, variant: "destructive" }),
+  });
+
+  const bulkPriorityMutation = useMutation({
+    mutationFn: async ({ taskIds, priority }: { taskIds: number[]; priority: string }) => {
+      await Promise.all(taskIds.map(id => engFetch(`/api/eng/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ priority }) })));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      toast({ title: `${selectedTaskIds.size} tasks updated` });
+      clearSelection();
+    },
+    onError: (e: Error) => toast({ title: "Bulk update failed", description: e.message, variant: "destructive" }),
+  });
 
   const updateDueDateMutation = useMutation({
     mutationFn: ({ taskId, dueDate }: { taskId: number; dueDate: string }) =>
@@ -4039,6 +4108,32 @@ export default function EngineeringTasksPage() {
           </div>
         </div>
 
+        {bulkMode && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg" data-testid="bulk-action-bar">
+            <span className="text-xs font-semibold text-blue-800">{selectedTaskIds.size} selected</span>
+            <div className="h-4 w-px bg-blue-200" />
+            <SearchableSelect
+              value=""
+              onValueChange={(status) => bulkStatusMutation.mutate({ taskIds: Array.from(selectedTaskIds), status })}
+              placeholder="Set status..."
+              triggerClassName="h-7 text-[10px] min-w-[100px]"
+              options={getVisibleStatusesForView("board").map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
+              data-testid="bulk-status-select"
+            />
+            <SearchableSelect
+              value=""
+              onValueChange={(p) => bulkPriorityMutation.mutate({ taskIds: Array.from(selectedTaskIds), priority: p })}
+              placeholder="Set priority..."
+              triggerClassName="h-7 text-[10px] min-w-[90px]"
+              options={PRIORITIES.map(p => ({ value: p, label: p }))}
+              data-testid="bulk-priority-select"
+            />
+            <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground" onClick={clearSelection}>
+              <X className="h-3 w-3 mr-1" /> Clear
+            </Button>
+          </div>
+        )}
+
         <div className="h-2 bg-muted/40 rounded-full overflow-hidden flex" data-testid="status-distribution-bar" title="Status distribution">
           {boardStatuses.map(status => {
             const count = (tasksByStatus[status] || []).length;
@@ -4072,6 +4167,8 @@ export default function EngineeringTasksPage() {
               collapsed={collapsedColumns.has(status)}
               onToggleCollapse={() => toggleColumnCollapse(status)}
               totalTasks={filtered.length}
+              selectedTaskIds={selectedTaskIds}
+              onToggleSelect={toggleTaskSelection}
             />
           ))}
         </div>
