@@ -101,18 +101,21 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4" data-testid="page-login">
-      <div className="w-full max-w-sm space-y-8 animate-float-in">
-        <div className="text-center space-y-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-background via-background to-muted/40 p-4" data-testid="page-login">
+      <div className="w-full max-w-[380px] space-y-6 animate-float-in">
+        <div className="text-center space-y-3">
           <div className="flex justify-center">
             <img
               src="/emergent-logo.png"
               alt="Emergent Energy"
-              className="h-12 object-contain"
+              className="h-10 object-contain"
               data-testid="img-logo"
             />
           </div>
-          <p className="text-sm text-muted-foreground">Sign in to your account</p>
+          <div>
+            <h1 className="text-lg font-semibold text-foreground tracking-tight">Welcome back</h1>
+            <p className="text-sm text-muted-foreground mt-1">Sign in to your workspace</p>
+          </div>
         </div>
 
         {error && (
@@ -122,7 +125,7 @@ export default function LoginPage() {
           </div>
         )}
 
-        <Card className="border border-border energy-glow-border">
+        <Card className="border border-border/80 shadow-sm">
           <CardContent className="p-6 space-y-4">
             {msEnabled ? (
               <>
@@ -297,7 +300,7 @@ export default function LoginPage() {
             data-testid="button-version-info"
           >
             <Info className="w-3.5 h-3.5" />
-            v{versionInfo.version}{versionInfo.buildNumber ? ` (${versionInfo.buildNumber})` : ""} — The Production Hardening Update
+            v{versionInfo.version}{versionInfo.buildNumber ? ` · Build ${versionInfo.buildNumber}` : ""}
           </button>
         </div>
       </div>
@@ -369,7 +372,7 @@ export default function LoginPage() {
               Version {versionInfo.version} Release Notes
             </DialogTitle>
             <p id="version-dialog-description" className="text-xs text-muted-foreground mt-0.5">
-              {versionInfo.buildTime || "Latest"}{versionInfo.buildNumber ? ` · Build ${versionInfo.buildNumber}` : ""} — The official release. For real this time.
+              {versionInfo.buildTime || "Latest"}{versionInfo.buildNumber ? ` · Build ${versionInfo.buildNumber}` : ""}
             </p>
           </DialogHeader>
 
@@ -394,9 +397,8 @@ export default function LoginPage() {
           </div>
 
           <div className="px-5 py-3 border-t border-border bg-muted/30">
-            <p className="text-[10px] text-muted-foreground text-center italic">
-              V1.2 — Dependencies, RAID logs, Change Control, Procurement, Commissioning. Eight features, zero excuses.
-              Still powered by electrons. Now managing entire project lifecycles with unreasonable thoroughness. ⚡
+            <p className="text-[10px] text-muted-foreground text-center">
+              Emergent Energy Operating Workspace
             </p>
           </div>
         </DialogContent>
