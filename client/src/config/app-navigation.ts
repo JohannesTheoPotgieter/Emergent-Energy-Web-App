@@ -51,10 +51,12 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Project Management",
     path: "/dashboard",
-    match: (pathname) => startsWithAny(pathname, ["/dashboard", "/pm-dashboard", "/projects", "/execution-board", "/pm/approvals", "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/weekly-reviews", "/pm/handover-review", "/portfolios"]),
+    match: (pathname) => startsWithAny(pathname, ["/dashboard", "/pm-dashboard", "/projects", "/execution-board", "/pm/approvals", "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/weekly-reviews", "/pm/handover-review", "/portfolios", "/exceptions"]),
     secondary: [
       { label: "Execution Dashboard", path: "/dashboard" },
       { label: "Project List", path: "/projects" },
+      { label: "Portfolios", path: "/portfolios" },
+      { label: "Exceptions", path: "/exceptions" },
       { label: "Deliverables", path: "/pm/deliverables" },
       { label: "Site / Execution Controls", path: "/handover-control" },
       { label: "PM On-The-Go", path: "/pm/on-the-go" },

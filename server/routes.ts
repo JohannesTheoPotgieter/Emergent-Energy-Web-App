@@ -4021,6 +4021,7 @@ export async function registerRoutes(
         if (!rowsByProject.has(proj.id)) rowsByProject.set(proj.id, {
           projectId: proj.id, projectName: proj.projectName, portfolio: proj.portfolio || null, pm: proj.pm || null, pd: proj.pd || null,
           executionPhase: proj.executionPhase || proj.phase || null, rag: proj.ragStatus || 'UNKNOWN',
+          ragUpdatedAt: proj.ragUpdatedAt || null,
           actualProgressPct: 0, expectedProgressPct: 0, scheduleVariancePct: 0,
           plannedRevenueFy: 0, receivedInflowFy: 0, openInflowFy: 0,
           plannedExpenditureFy: 0, paidExpenditureFy: 0, openExpenditureFy: 0, grossMarginPctFy: null,
