@@ -21,8 +21,6 @@ import {
   Target,
   Zap,
   ArrowRight,
-  Star,
-  Quote,
   Flame,
   ClipboardCheck,
   Receipt,
@@ -555,24 +553,22 @@ export default function HomePage() {
 
   return (
     <PageShell data-testid="home-page">
-      <div className="mb-8">
+      <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
               {greeting}, {displayName}
             </h1>
-            <p className="text-sm text-muted-foreground mt-1" data-testid="text-role-badge">{roleLabel}</p>
+            <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
           </div>
-        </div>
-
-        <div className="mt-4 flex items-start gap-2.5 bg-muted/40 border border-border/50 rounded-lg px-4 py-3" data-testid="text-daily-quote">
-          <Quote className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-          <p className="text-sm text-muted-foreground italic leading-relaxed">{dailyQuote}</p>
+          <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground/60 italic max-w-xs text-right" data-testid="text-daily-quote">
+            <p className="leading-relaxed">{dailyQuote}</p>
+          </div>
         </div>
       </div>
 
       {(companyPriorities && companyPriorities.length > 0) && (
-        <Card className="border-border/60 mb-8" data-testid="card-company-priorities">
+        <Card className="border-border/60 mb-6" data-testid="card-company-priorities">
           <CardContent className="p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2.5">
@@ -618,15 +614,45 @@ export default function HomePage() {
         </Card>
       )}
 
-      <div className="mb-8">
-        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+      {!isLoading && (
+        (() => {
+          const alerts: { label: string; value: string | number; color: string; href: string }[] = [];
+          if (stats.redProjects > 0) alerts.push({ label: "Red RAG Projects", value: stats.redProjects, color: "text-red-600 bg-red-50 border-red-200", href: "/projects" });
+          if (Number(kpis.projectsBehindPlan) > 0) alerts.push({ label: "Behind Plan", value: kpis.projectsBehindPlan, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/pm-dashboard" });
+          if (Number(kpis.pendingApprovals) > 0) alerts.push({ label: "Pending Approvals", value: kpis.pendingApprovals, color: "text-blue-700 bg-blue-50 border-blue-200", href: "/approvals" });
+          if (Number(kpis.openEngineeringBlockers) > 0) alerts.push({ label: "Eng. Blockers", value: kpis.openEngineeringBlockers, color: "text-violet-700 bg-violet-50 border-violet-200", href: "/engineering" });
+          if (Number(kpis.openQualityWarnings) > 0) alerts.push({ label: "Quality Warnings", value: kpis.openQualityWarnings, color: "text-orange-700 bg-orange-50 border-orange-200", href: "/quality" });
+          if (alerts.length === 0) return null;
+          return (
+            <div className="mb-6" data-testid="section-attention-needed">
+              <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+                Attention Needed
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {alerts.map((a) => (
+                  <Link key={a.label} href={a.href}>
+                    <span className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium cursor-pointer transition-colors hover:opacity-80 ${a.color}`}>
+                      <span className="font-mono font-bold text-base">{a.value}</span>
+                      {a.label}
+                      <ArrowRight className="w-3.5 h-3.5 opacity-50" />
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          );
+        })()
+      )}
+
+      <div className="mb-6">
+        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
           Key Metrics
         </h2>
         {getRoleKpis(roleCategory, kpis, stats, isLoading)}
       </div>
 
       <div>
-        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
           Quick Access
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">

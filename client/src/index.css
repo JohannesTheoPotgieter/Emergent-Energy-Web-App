@@ -193,6 +193,22 @@
 .dark .bg-white {
   background-color: hsl(222 14% 12%) !important;
 }
+/* Attention badges dark mode */
+.dark [data-testid="section-attention-needed"] .bg-red-50 {
+  background-color: hsl(0 40% 16%) !important;
+}
+.dark [data-testid="section-attention-needed"] .bg-amber-50 {
+  background-color: hsl(40 40% 14%) !important;
+}
+.dark [data-testid="section-attention-needed"] .bg-blue-50 {
+  background-color: hsl(220 40% 16%) !important;
+}
+.dark [data-testid="section-attention-needed"] .bg-violet-50 {
+  background-color: hsl(280 30% 16%) !important;
+}
+.dark [data-testid="section-attention-needed"] .bg-orange-50 {
+  background-color: hsl(30 30% 16%) !important;
+}
 
 .command-header {
   --cmd-bg: #FFFFFF;
