@@ -381,30 +381,28 @@ function getRoleKpis(
   switch (category) {
     case "executive":
       return (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="space-y-2.5">
+          <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
             <StatCard value={stats.totalProjects} label="Total Projects" loading={isLoading} testId="text-total-projects" />
             <StatCard value={stats.inConstruction} label="In Construction" color="text-emerald-600" loading={isLoading} testId="text-in-construction" />
             <StatCard value={stats.inCompany} label="In Company" color="text-blue-600" loading={isLoading} testId="text-in-company" />
             <StatCard value={stats.inPipeline} label="Pipeline" color="text-violet-600" loading={isLoading} testId="text-in-pipeline" />
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
             <StatCard value={stats.greenProjects} label="Green RAG" color="text-emerald-600" loading={isLoading} testId="text-green-projects" />
             <StatCard value={stats.amberProjects} label="Amber RAG" color="text-amber-600" loading={isLoading} testId="text-amber-projects" />
             <StatCard value={stats.redProjects} label="Red RAG" color="text-red-600" loading={isLoading} testId="text-red-projects" />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Inflow Received (FY)" value={money(kpis.receivedInflowFy)} loading={isLoading} testId="text-inflow-received" />
             <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Gross Margin" value={kpis.grossMarginPctFy != null ? `${(Number(kpis.grossMarginPctFy) * 100).toFixed(1)}%` : "—"} loading={isLoading} testId="text-gp-pct" />
             <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Gross Profit (FY)" value={money(kpis.grossProfitFy)} loading={isLoading} testId="text-gross-profit" />
             <KpiCard icon={<Clock className="w-4 h-4" />} label="Behind Plan" value={kpis.projectsBehindPlan ?? "—"} loading={isLoading} testId="text-behind-plan" />
           </div>
-        </>
+        </div>
       );
 
     case "finance":
       return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Inflow Received (FY)" value={money(kpis.receivedInflowFy)} loading={isLoading} testId="text-inflow-received" />
           <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Open Inflow (FY)" value={money(kpis.openInflowFy)} loading={isLoading} testId="text-open-inflow" />
           <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Gross Margin" value={kpis.grossMarginPctFy != null ? `${(Number(kpis.grossMarginPctFy) * 100).toFixed(1)}%` : "—"} loading={isLoading} testId="text-gp-pct" />
@@ -418,26 +416,26 @@ function getRoleKpis(
 
     case "project":
       return (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="space-y-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             <StatCard value={stats.activeProjects} label="Active Projects" loading={isLoading} testId="text-active-projects" />
             <StatCard value={stats.inConstruction} label="In Construction" color="text-emerald-600" loading={isLoading} testId="text-in-construction" />
             <StatCard value={stats.greenProjects} label="Green RAG" color="text-emerald-600" loading={isLoading} testId="text-green-projects" />
             <StatCard value={stats.amberProjects} label="Amber RAG" color="text-amber-600" loading={isLoading} testId="text-amber-projects" />
             <StatCard value={stats.redProjects} label="Red RAG" color="text-red-600" loading={isLoading} testId="text-red-projects" />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <KpiCard icon={<BarChart3 className="w-4 h-4" />} label="Avg Progress" value={kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "—"} loading={isLoading} testId="text-avg-progress" />
             <KpiCard icon={<Clock className="w-4 h-4" />} label="Behind Plan" value={kpis.projectsBehindPlan ?? "—"} loading={isLoading} testId="text-behind-plan" />
             <KpiCard icon={<CheckCircle2 className="w-4 h-4" />} label="Pending Approvals" value={kpis.pendingApprovals ?? "—"} loading={isLoading} testId="text-pending-approvals" />
             <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Open Expenditure (FY)" value={money(kpis.openExpenditureFy)} loading={isLoading} testId="text-open-expenditure" />
           </div>
-        </>
+        </div>
       );
 
     case "engineering":
       return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <StatCard value={stats.activeProjects} label="Active Projects" loading={isLoading} testId="text-active-projects" />
           <KpiCard icon={<BarChart3 className="w-4 h-4" />} label="Avg Progress" value={kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "—"} loading={isLoading} testId="text-avg-progress" />
           <KpiCard icon={<AlertTriangle className="w-4 h-4" />} label="Eng. Blockers" value={kpis.openEngineeringBlockers ?? "—"} loading={isLoading} testId="text-eng-blockers" />
@@ -447,7 +445,7 @@ function getRoleKpis(
 
     case "quality":
       return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <StatCard value={stats.activeProjects} label="Active Projects" loading={isLoading} testId="text-active-projects" />
           <KpiCard icon={<AlertTriangle className="w-4 h-4" />} label="Quality Warnings" value={kpis.openQualityWarnings ?? "—"} loading={isLoading} testId="text-quality-warnings" />
           <KpiCard icon={<CheckCircle2 className="w-4 h-4" />} label="Pending Approvals" value={kpis.pendingApprovals ?? "—"} loading={isLoading} testId="text-pending-approvals" />
@@ -457,7 +455,7 @@ function getRoleKpis(
 
     case "business":
       return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <StatCard value={stats.totalProjects} label="Total Projects" loading={isLoading} testId="text-total-projects" />
           <StatCard value={stats.activeProjects} label="Active" loading={isLoading} testId="text-active-projects" />
           <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Planned Revenue (FY)" value={money(kpis.plannedRevenueFy)} loading={isLoading} testId="text-planned-revenue" />
@@ -555,41 +553,43 @@ export default function HomePage() {
 
   return (
     <PageShell data-testid="home-page">
-      <div className="mb-8">
+      {/* Hero greeting + quote */}
+      <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
               {greeting}, {displayName}
             </h1>
-            <p className="text-sm text-muted-foreground mt-1" data-testid="text-role-badge">{roleLabel}</p>
+            <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
           </div>
         </div>
 
-        <div className="mt-4 flex items-start gap-2.5 bg-muted/40 border border-border/50 rounded-lg px-4 py-3" data-testid="text-daily-quote">
-          <Quote className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-          <p className="text-sm text-muted-foreground italic leading-relaxed">{dailyQuote}</p>
+        <div className="mt-3 flex items-center gap-2.5 bg-muted/30 border border-border/40 rounded-md px-3.5 py-2.5" data-testid="text-daily-quote">
+          <Quote className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+          <p className="text-[13px] text-muted-foreground italic leading-relaxed">{dailyQuote}</p>
         </div>
       </div>
 
+      {/* Company Priorities */}
       {(companyPriorities && companyPriorities.length > 0) && (
-        <Card className="border-border/60 mb-8" data-testid="card-company-priorities">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <Flame className="w-4 h-4 text-primary" />
-                <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
-                <Badge variant="secondary" className="text-[11px]">{companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").length} active</Badge>
-              </div>
-              <Link href="/project-lifecycle">
-                <span className="text-xs text-primary hover:underline font-medium cursor-pointer">Manage</span>
-              </Link>
+        <div className="mb-6" data-testid="card-company-priorities">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Flame className="w-4 h-4 text-primary" />
+              <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
+              <Badge variant="secondary" className="text-[11px]">{companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").length} active</Badge>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").slice(0, 6).map((priority: any, i: number) => {
-                const sev = PRIORITY_SEVERITY_ICONS[priority.severity] || PRIORITY_SEVERITY_ICONS.normal;
-                const Icon = sev.icon;
-                return (
-                  <div key={priority.id || i} className="flex items-center gap-3 rounded-lg border border-border/50 p-3 hover:bg-muted/30 transition-colors" data-testid={`text-priority-${i}`}>
+            <Link href="/project-lifecycle">
+              <span className="text-xs text-primary hover:underline font-medium cursor-pointer">Manage</span>
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").slice(0, 6).map((priority: any, i: number) => {
+              const sev = PRIORITY_SEVERITY_ICONS[priority.severity] || PRIORITY_SEVERITY_ICONS.normal;
+              const Icon = sev.icon;
+              return (
+                <Card key={priority.id || i} className="border-border/50 hover:border-primary/20 transition-colors">
+                  <CardContent className="p-3 flex items-center gap-3" data-testid={`text-priority-${i}`}>
                     <div className={`w-7 h-7 rounded-md ${sev.color} flex items-center justify-center shrink-0`}>
                       <Icon className="w-3.5 h-3.5" />
                     </div>
@@ -599,34 +599,34 @@ export default function HomePage() {
                         {[priority.department, priority.assignedTo ? `Owner: ${priority.assignedTo}` : null].filter(Boolean).join(" · ")}
                       </p>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
       )}
       {prioritiesLoading && (
-        <Card className="border-emerald-200 bg-gradient-to-r from-emerald-50 to-white mb-6">
-          <CardContent className="p-5">
-            <Skeleton className="h-6 w-48 mb-4" />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Skeleton className="h-14 w-full" />
-              <Skeleton className="h-14 w-full" />
-            </div>
-          </CardContent>
-        </Card>
+        <div className="mb-6">
+          <Skeleton className="h-5 w-48 mb-3" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <Skeleton className="h-14 w-full rounded-lg" />
+            <Skeleton className="h-14 w-full rounded-lg" />
+          </div>
+        </div>
       )}
 
-      <div className="mb-8">
-        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+      {/* Key Metrics */}
+      <div className="mb-6">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
           Key Metrics
         </h2>
         {getRoleKpis(roleCategory, kpis, stats, isLoading)}
       </div>
 
+      {/* Quick Access */}
       <div>
-        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
           Quick Access
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
