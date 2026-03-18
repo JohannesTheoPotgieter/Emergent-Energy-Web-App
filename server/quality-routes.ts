@@ -792,7 +792,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const { evidenceUrl, evidenceNote } = req.body;
@@ -879,7 +879,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, qmApprovalUpload.single("file"), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, requirePermission("quality", "edit"), qmApprovalUpload.single("file"), async (req, res) => {
     try {
       const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const projectName = decodeURIComponent(String(req.params.projectName));
@@ -931,7 +931,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/quality/evidence/:evidenceId", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.delete("/api/quality/evidence/:evidenceId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
     try {
       await db.delete(qcItemEvidence).where(eq(qcItemEvidence.id, parseInt(String(req.params.evidenceId), 10)));
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.evidenceId), action: "delete", changesJson: { description: "Evidence deleted" } });
@@ -1024,7 +1024,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== RISK ANSWERS ==========
 
-  app.post("/api/quality/project/:projectName/risk-answer", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/project/:projectName/risk-answer", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const { riskAnswerId, answerYesno, answerText, answerNumber } = req.body;
       const updates: any = { lastUpdatedBy: getUser(req).id, lastUpdatedAt: new Date() };
@@ -1115,7 +1115,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/warning/:warningId/acknowledge", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/warning/:warningId/acknowledge", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const warningId = parseInt(String(req.params.warningId), 10);
       const { note } = req.body;
@@ -1136,7 +1136,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/warning/:warningId/resolve", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/warning/:warningId/resolve", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const warningId = parseInt(String(req.params.warningId), 10);
       const { note } = req.body;
@@ -1170,7 +1170,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/plan-link", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/project/:projectName/plan-link", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const { planItemId, itemInstanceId, phaseId, linkType } = req.body;
@@ -1188,7 +1188,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/quality/plan-link/:linkId", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.delete("/api/quality/plan-link/:linkId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
     try {
       const [deletedLink] = await db.select().from(qcPlanLink).where(eq(qcPlanLink.id, parseInt(String(req.params.linkId), 10)));
       await db.delete(qcPlanLink).where(eq(qcPlanLink.id, parseInt(String(req.params.linkId), 10)));
@@ -1661,7 +1661,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== GLOBAL QUALITY DASHBOARD ==========
 
-  app.get("/api/quality/dashboard", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.get("/api/quality/dashboard", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const allChecklists = await db.select().from(qcChecklist);
       const allWarnings = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
@@ -1779,7 +1779,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== WARNING ENGINE ==========
 
-  app.post("/api/quality/project/:projectName/recalculate-warnings", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/project/:projectName/recalculate-warnings", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const count = await recalculateWarnings(projectName);
@@ -1810,7 +1810,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/postmortem/:projectName", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/postmortem/:projectName", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const { metricInputs } = req.body;
