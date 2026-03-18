@@ -315,6 +315,7 @@ export function registerPmRoutes(app: Express) {
       for (const b of budgetOverruns.rows as any[]) {
         const budget = parseFloat(b.total_budget) || 0;
         const actual = parseFloat(b.total_actual) || 0;
+        if (budget <= 0) continue;
         const overrun = Math.round(((actual - budget) / budget) * 100);
         items.push({
           type: "budget_overrun",

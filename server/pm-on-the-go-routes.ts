@@ -92,7 +92,7 @@ async function requirePmAssignment(req: Request, res: Response, next: NextFuncti
     if (rows.length === 0) {
       return res.status(404).json({ error: "Project not found" });
     }
-    if (rows[0].pmUserId !== user.id) {
+    if (!rows[0].pmUserId || rows[0].pmUserId !== user.id) {
       return res.status(403).json({ error: "You are not assigned to this project" });
     }
     next();
