@@ -296,7 +296,7 @@
   }
 
   .ee-page {
-    @apply mx-auto w-full max-w-[1440px] space-y-6;
+    @apply mx-auto w-full max-w-[1440px] space-y-5;
   }
 
   .ee-page-header {
