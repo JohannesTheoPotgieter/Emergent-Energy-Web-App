@@ -453,8 +453,9 @@ async function engPatch(url: string, body: Record<string, any>) {
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(url, { method: "PATCH", headers, body: JSON.stringify(body), credentials: "include" });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(err.error || "Request failed");
+    const err = await res.json().catch(() => ({ error: "Update failed" }));
+    const context = url.includes("/tasks/") ? "task update" : "update";
+    throw new Error(err.error || `Failed to save ${context} (${res.status})`);
   }
   return res.json();
 }
@@ -465,8 +466,9 @@ async function engPost(url: string, body: Record<string, any>) {
   if (token) headers["Authorization"] = `Bearer ${token}`;
   const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), credentials: "include" });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(err.error || "Request failed");
+    const err = await res.json().catch(() => ({ error: "Action failed" }));
+    const context = url.includes("/comments") ? "comment" : url.includes("/watchers") ? "watcher update" : "action";
+    throw new Error(err.error || `Failed to complete ${context} (${res.status})`);
   }
   return res.json();
 }
@@ -536,6 +538,11 @@ function StandupTaskDrawer({
   const queryClient = useQueryClient();
   const [commentText, setCommentText] = useState("");
   const [activeTab, setActiveTab] = useState<"updates" | "activity">("updates");
+  const [activityLimit, setActivityLimit] = useState(20);
+  const visibleActivity = useMemo(
+    () => [...activity].reverse().slice(0, activityLimit),
+    [activity, activityLimit]
+  );
 
   const { data: comments = [] } = useQuery<TaskComment[]>({
     queryKey: ["standup-task-comments", task.id],
@@ -719,7 +726,7 @@ function StandupTaskDrawer({
                 <p className="text-[10px] text-muted-foreground text-center py-4">No activity recorded</p>
               ) : (
                 <div className="space-y-1.5">
-                  {[...activity].reverse().slice(0, 20).map((a: TaskActivity) => (
+                  {visibleActivity.map((a: TaskActivity) => (
                     <div key={a.id} className="flex items-start gap-2 text-[10px]" data-testid={`drawer-activity-${a.id}`}>
                       <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground mt-1.5 shrink-0" />
                       <div className="flex-1 min-w-0">
@@ -735,6 +742,14 @@ function StandupTaskDrawer({
                       </span>
                     </div>
                   ))}
+                  {activity.length > activityLimit && (
+                    <button
+                      onClick={() => setActivityLimit(prev => prev + 20)}
+                      className="w-full text-center text-[10px] text-blue-600 hover:text-blue-800 py-1.5 hover:bg-muted/50 rounded"
+                    >
+                      Show more ({activity.length - activityLimit} remaining)
+                    </button>
+                  )}
                 </div>
               )}
             </TabsContent>

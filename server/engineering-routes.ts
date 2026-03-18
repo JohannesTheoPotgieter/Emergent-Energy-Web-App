@@ -796,14 +796,14 @@ export function registerEngineeringRoutes(app: Express) {
         const fileInfo = file ? ` [Attachment: ${file.originalname}]` : "";
         await db.insert(taskComments).values({
           taskId: id,
-          userId: user.id,
-          text: `[Sent for Approval] ${note.trim()}${fileInfo}`,
+          authorId: user.id,
+          body: `[Sent for Approval] ${note.trim()}${fileInfo}`,
         });
       } else if (file) {
         await db.insert(taskComments).values({
           taskId: id,
-          userId: user.id,
-          text: `[Sent for Approval] Attachment: ${file.originalname}`,
+          authorId: user.id,
+          body: `[Sent for Approval] Attachment: ${file.originalname}`,
         });
       }
 
@@ -952,7 +952,7 @@ export function registerEngineeringRoutes(app: Express) {
       if (!existing) return res.status(404).json({ error: "Task not found" });
 
       const recipientUserId = parseInt(req.body.recipientUserId);
-      if (!recipientUserId) return res.status(400).json({ error: "Recipient is required" });
+      if (!recipientUserId || isNaN(recipientUserId)) return res.status(400).json({ error: "A valid recipient is required" });
 
       const recipientSuggestion = req.body?.recipientSuggestion || null;
       const recipientFinal = req.body?.recipientFinal || String(recipientUserId);
@@ -1041,8 +1041,8 @@ export function registerEngineeringRoutes(app: Express) {
       const fileInfo = note.trim() ? ` — ${note.trim()}` : "";
       await db.insert(taskComments).values({
         taskId: id,
-        userId: user.id,
-        text: `[Deliverable Sent] ${file.originalname} → ${(await db.select({ name: users.name }).from(users).where(eq(users.id, recipientUserId)))[0]?.name || "recipient"}${fileInfo}`,
+        authorId: user.id,
+        body: `[Deliverable Sent] ${file.originalname} → ${(await db.select({ name: users.name }).from(users).where(eq(users.id, recipientUserId)))[0]?.name || "recipient"}${fileInfo}`,
       });
 
       await db.insert(taskActivityLog).values({
@@ -1247,8 +1247,8 @@ export function registerEngineeringRoutes(app: Express) {
 
       await db.insert(taskComments).values({
         taskId: deliverable.taskId,
-        userId: user.id,
-        text: `[Acknowledged] Deliverable "${deliverable.originalName}" received and acknowledged`,
+        authorId: user.id,
+        body: `[Acknowledged] Deliverable "${deliverable.originalName}" received and acknowledged`,
       });
 
       await db.insert(taskActivityLog).values({
@@ -1400,10 +1400,36 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/eng/tasks/:id/watchers", requireAuth, async (req, res) => {
     try {
+      const taskId = parseInt(req.params.id);
+      const userId = parseInt(req.body.userId);
+      if (isNaN(taskId) || isNaN(userId)) {
+        return res.status(400).json({ error: "Valid taskId and userId are required" });
+      }
+
+      // Verify task exists
+      const [task] = await db.select({ id: workItems.id }).from(workItems)
+        .where(and(eq(workItems.id, taskId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
+      if (!task) return res.status(404).json({ error: "Task not found" });
+
+      // Prevent duplicate watchers
+      const [existing] = await db.select({ id: taskWatchers.id }).from(taskWatchers)
+        .where(and(eq(taskWatchers.taskId, taskId), eq(taskWatchers.userId, userId)));
+      if (existing) return res.json(existing);
+
       const [watcher] = await db.insert(taskWatchers).values({
-        taskId: parseInt(req.params.id),
-        userId: req.body.userId,
+        taskId,
+        userId,
       }).returning();
+
+      // Log watcher addition to activity
+      await db.insert(taskActivityLog).values({
+        taskId,
+        actorId: getUser(req).id,
+        actionType: "watcher_added",
+        fieldName: "watchers",
+        newValue: String(userId),
+      });
+
       res.json(watcher);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
@@ -1413,10 +1439,26 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.delete("/api/eng/tasks/:taskId/watchers/:userId", requireAuth, async (req, res) => {
     try {
+      const taskId = parseInt(req.params.taskId);
+      const userId = parseInt(req.params.userId);
+      if (isNaN(taskId) || isNaN(userId)) {
+        return res.status(400).json({ error: "Valid taskId and userId are required" });
+      }
+
       await db.delete(taskWatchers).where(
-        and(eq(taskWatchers.taskId, parseInt(req.params.taskId)),
-            eq(taskWatchers.userId, parseInt(req.params.userId)))
+        and(eq(taskWatchers.taskId, taskId),
+            eq(taskWatchers.userId, userId))
       );
+
+      // Log watcher removal to activity
+      await db.insert(taskActivityLog).values({
+        taskId,
+        actorId: getUser(req).id,
+        actionType: "watcher_removed",
+        fieldName: "watchers",
+        oldValue: String(userId),
+      });
+
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
