@@ -3458,6 +3458,7 @@ export default function EngineeringTasksPage() {
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [holdDialog, setHoldDialog] = useState<{ taskId: number; reason: string; blockedType: string } | null>(null);
   const [boardCompact, setBoardCompact] = useState(savedDefaults?.boardCompact || false);
+  const [boardGroupBy, setBoardGroupBy] = useState<"status" | "priority" | "assignee" | "project">("status");
   const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(() => new Set());
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(new Set());
   const bulkMode = selectedTaskIds.size > 0;
@@ -3807,6 +3808,42 @@ export default function EngineeringTasksPage() {
     return acc;
   }, {} as Record<string, Task[]>);
 
+  // Column grouping (#13)
+  const boardGroupKeys = useMemo(() => {
+    if (boardGroupBy === "status") return boardStatuses;
+    if (boardGroupBy === "priority") return ["Critical", "Urgent", "High", "Medium", "Low"];
+    if (boardGroupBy === "assignee") {
+      const names = new Set<string>();
+      filtered.forEach(t => (t.assignees || []).forEach(a => { if (a) names.add(a); }));
+      return ["Unassigned", ...Array.from(names).sort()];
+    }
+    if (boardGroupBy === "project") {
+      const projs = new Set<string>();
+      filtered.forEach(t => { if (t.projectName) projs.add(t.projectName); });
+      return ["No Project", ...Array.from(projs).sort()];
+    }
+    return boardStatuses;
+  }, [filtered, boardGroupBy, boardStatuses]);
+
+  const tasksByGroup = useMemo(() => {
+    if (boardGroupBy === "status") return tasksByStatus;
+    const groups: Record<string, Task[]> = {};
+    boardGroupKeys.forEach(k => { groups[k] = []; });
+    filtered.forEach(t => {
+      if (boardGroupBy === "priority") {
+        const key = t.priority || "Medium";
+        (groups[key] || (groups[key] = [])).push(t);
+      } else if (boardGroupBy === "assignee") {
+        const assignees = (t.assignees || []).filter(Boolean);
+        if (assignees.length === 0) (groups["Unassigned"] || (groups["Unassigned"] = [])).push(t);
+        else assignees.forEach(a => (groups[a] || (groups[a] = [])).push(t));
+      } else if (boardGroupBy === "project") {
+        const key = t.projectName || "No Project";
+        (groups[key] || (groups[key] = [])).push(t);
+      }
+    });
+    return groups;
+  }, [filtered, boardGroupBy, boardGroupKeys, tasksByStatus]);
 
   const engNextAction = useMemo((): NextAction | null => {
     if (overdueTasks.length > 0) return { label: `${overdueTasks.length} overdue task${overdueTasks.length !== 1 ? "s" : ""} — review and update`, severity: "urgent" };
@@ -4332,6 +4369,19 @@ export default function EngineeringTasksPage() {
                   {boardCompact ? "Expand cards for full details" : "Compact cards to fit more work on screen"}
                 </TooltipContent>
               </Tooltip>
+              <SearchableSelect
+                value={boardGroupBy}
+                onValueChange={(v) => setBoardGroupBy(v as any)}
+                placeholder="Group by..."
+                triggerClassName="h-7 text-[10px] min-w-[90px]"
+                options={[
+                  { value: "status", label: "Status" },
+                  { value: "priority", label: "Priority" },
+                  { value: "assignee", label: "Assignee" },
+                  { value: "project", label: "Project" },
+                ]}
+                data-testid="board-group-by"
+              />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span>
@@ -4402,19 +4452,19 @@ export default function EngineeringTasksPage() {
         </div>
 
         <div className="flex gap-1.5 overflow-x-auto pb-4" style={{ minHeight: "400px" }}>
-          {boardStatuses.map(status => (
+          {boardGroupKeys.map(group => (
             <KanbanColumn
-              key={status}
-              status={status}
-              tasks={tasksByStatus[status] || []}
+              key={group}
+              status={group}
+              tasks={tasksByGroup[group] || []}
               onDrop={handleDrop}
               onCardClick={setSelectedTask}
               onStatusChange={handleStatusChange}
               onPriorityChange={handlePriorityChange}
               onDueDateChange={handleDueDateChange}
               compact={boardCompact}
-              collapsed={collapsedColumns.has(status)}
-              onToggleCollapse={() => toggleColumnCollapse(status)}
+              collapsed={collapsedColumns.has(group)}
+              onToggleCollapse={() => toggleColumnCollapse(group)}
               totalTasks={filtered.length}
               selectedTaskIds={selectedTaskIds}
               onToggleSelect={toggleTaskSelection}
