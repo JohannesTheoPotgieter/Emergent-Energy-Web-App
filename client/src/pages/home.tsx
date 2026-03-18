@@ -554,16 +554,11 @@ export default function HomePage() {
   return (
     <PageShell data-testid="home-page">
       {/* Hero greeting + quote */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
-              {greeting}, {displayName}
-            </h1>
-            <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
-          </div>
-        </div>
-
+      <div>
+        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
+          {greeting}, {displayName}
+        </h1>
+        <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
         <div className="mt-3 flex items-center gap-2.5 bg-muted/30 border border-border/40 rounded-md px-3.5 py-2.5" data-testid="text-daily-quote">
           <Quote className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
           <p className="text-[13px] text-muted-foreground italic leading-relaxed">{dailyQuote}</p>
@@ -572,8 +567,8 @@ export default function HomePage() {
 
       {/* Company Priorities */}
       {(companyPriorities && companyPriorities.length > 0) && (
-        <div className="mb-6" data-testid="card-company-priorities">
-          <div className="flex items-center justify-between mb-3">
+        <div data-testid="card-company-priorities">
+          <div className="flex items-center justify-between mb-2.5">
             <div className="flex items-center gap-2">
               <Flame className="w-4 h-4 text-primary" />
               <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
@@ -607,8 +602,8 @@ export default function HomePage() {
         </div>
       )}
       {prioritiesLoading && (
-        <div className="mb-6">
-          <Skeleton className="h-5 w-48 mb-3" />
+        <div>
+          <Skeleton className="h-5 w-48 mb-2.5" />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Skeleton className="h-14 w-full rounded-lg" />
             <Skeleton className="h-14 w-full rounded-lg" />
@@ -617,7 +612,7 @@ export default function HomePage() {
       )}
 
       {/* Key Metrics */}
-      <div className="mb-6">
+      <div>
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
           Key Metrics
         </h2>
