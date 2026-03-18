@@ -193,21 +193,48 @@
 .dark .bg-white {
   background-color: hsl(222 14% 12%) !important;
 }
-/* Attention badges dark mode */
-.dark [data-testid="section-attention-needed"] .bg-red-50 {
+/* Attention badges dark mode — all dashboard instances */
+.dark [data-testid="section-attention-needed"] .bg-red-50,
+.dark [data-testid="execution-attention-needed"] .bg-red-50,
+.dark [data-testid="lifecycle-attention-needed"] .bg-red-50,
+.dark [data-testid="eng-attention-needed"] .bg-red-50,
+.dark [data-testid="qm-attention-needed"] .bg-red-50 {
   background-color: hsl(0 40% 16%) !important;
 }
-.dark [data-testid="section-attention-needed"] .bg-amber-50 {
+.dark [data-testid="section-attention-needed"] .bg-amber-50,
+.dark [data-testid="execution-attention-needed"] .bg-amber-50,
+.dark [data-testid="lifecycle-attention-needed"] .bg-amber-50,
+.dark [data-testid="eng-attention-needed"] .bg-amber-50,
+.dark [data-testid="qm-attention-needed"] .bg-amber-50 {
   background-color: hsl(40 40% 14%) !important;
 }
-.dark [data-testid="section-attention-needed"] .bg-blue-50 {
+.dark [data-testid="section-attention-needed"] .bg-blue-50,
+.dark [data-testid="execution-attention-needed"] .bg-blue-50,
+.dark [data-testid="lifecycle-attention-needed"] .bg-blue-50,
+.dark [data-testid="eng-attention-needed"] .bg-blue-50,
+.dark [data-testid="qm-attention-needed"] .bg-blue-50 {
   background-color: hsl(220 40% 16%) !important;
 }
-.dark [data-testid="section-attention-needed"] .bg-violet-50 {
+.dark [data-testid="section-attention-needed"] .bg-violet-50,
+.dark [data-testid="execution-attention-needed"] .bg-violet-50,
+.dark [data-testid="lifecycle-attention-needed"] .bg-violet-50,
+.dark [data-testid="eng-attention-needed"] .bg-violet-50,
+.dark [data-testid="qm-attention-needed"] .bg-violet-50 {
   background-color: hsl(280 30% 16%) !important;
 }
-.dark [data-testid="section-attention-needed"] .bg-orange-50 {
+.dark [data-testid="section-attention-needed"] .bg-orange-50,
+.dark [data-testid="execution-attention-needed"] .bg-orange-50,
+.dark [data-testid="lifecycle-attention-needed"] .bg-orange-50,
+.dark [data-testid="eng-attention-needed"] .bg-orange-50,
+.dark [data-testid="qm-attention-needed"] .bg-orange-50 {
   background-color: hsl(30 30% 16%) !important;
+}
+.dark [data-testid="section-attention-needed"] .bg-rose-50,
+.dark [data-testid="section-attention-needed"] .bg-sky-50 {
+  background-color: hsl(340 30% 16%) !important;
+}
+.dark [data-testid="qm-attention-needed"] .bg-sky-50 {
+  background-color: hsl(200 30% 16%) !important;
 }
 
 .command-header {

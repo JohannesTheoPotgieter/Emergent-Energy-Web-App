@@ -29,6 +29,7 @@ import {
   formatCurrencyFull,
   formatDate,
 } from "@/lib/execution-dashboard";
+import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 
 type RoleView = "coo" | "program" | "finance" | "construction";
 
@@ -214,6 +215,17 @@ export default function ExecutionBoard() {
     return filteredProjects.filter((p) => p.importFreshness !== "Fresh");
   }, [filteredProjects]);
 
+  const executionAttentionItems = useMemo((): AttentionItem[] => {
+    const items: AttentionItem[] = [];
+    if (ragDistribution.Red > 0) items.push({ label: "Red RAG Projects", value: ragDistribution.Red, color: "text-red-600 bg-red-50 border-red-200", href: "/projects" });
+    if (kpis.projectsBehindPlan > 0) items.push({ label: "Behind Plan", value: kpis.projectsBehindPlan, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/execution-board" });
+    if (kpis.pendingApprovals > 0) items.push({ label: "Pending Approvals", value: kpis.pendingApprovals, color: "text-blue-700 bg-blue-50 border-blue-200", href: "/approvals" });
+    if (kpis.openEngineeringBlockers > 0) items.push({ label: "Eng. Blockers", value: kpis.openEngineeringBlockers, color: "text-violet-700 bg-violet-50 border-violet-200", href: "/engineering" });
+    if (kpis.openQualityWarnings > 0) items.push({ label: "Quality Warnings", value: kpis.openQualityWarnings, color: "text-orange-700 bg-orange-50 border-orange-200", href: "/quality" });
+    if (kpis.staleImports > 0) items.push({ label: "Stale Imports", value: kpis.staleImports, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/admin/excel-updates" });
+    return items;
+  }, [ragDistribution, kpis]);
+
   const openProject = (project: ExecutionDashboardProject, tab?: string) => {
     const projectPath = `/project/${encodeURIComponent(project.projectName)}`;
     setLocation(tab ? `${projectPath}?tab=${tab}` : projectPath);
@@ -266,6 +278,8 @@ export default function ExecutionBoard() {
           )}
         </div>
       </div>
+
+      <AttentionBadges items={executionAttentionItems} threshold={5} testId="execution-attention-needed" />
 
       {staleWarningProjects.length > 0 && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs" data-testid="stale-data-banner">
