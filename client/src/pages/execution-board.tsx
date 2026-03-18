@@ -161,15 +161,50 @@ export default function ExecutionBoard() {
     return dashboard.actionCenter.rows.filter((r) => visibleIds.has(r.projectId));
   }, [dashboard, filteredProjects]);
 
+  // Role-view filtering: scope action center by role lens
+  const roleFilteredActionRows = useMemo(() => {
+    if (activeView === "coo") return actionRows;
+    const queueFilter: Record<RoleView, Set<string>> = {
+      coo: new Set(), // show all
+      program: new Set(["Behind Plan", "Stale Imports", "Pending Approvals"]),
+      finance: new Set(["Inflow at Risk", "Expenditure / COS at Risk"]),
+      construction: new Set(["Engineering Blockers", "Quality Issues", "Behind Plan"]),
+    };
+    const allowedQueues = queueFilter[activeView];
+    if (!allowedQueues || allowedQueues.size === 0) return actionRows;
+    return actionRows.filter((r) => {
+      const q = r.queue || "Other";
+      for (const allowed of allowedQueues) {
+        if (q.toLowerCase().includes(allowed.toLowerCase().split(" ")[0])) return true;
+      }
+      return false;
+    });
+  }, [actionRows, activeView]);
+
+  const roleFilteredProjects = useMemo(() => {
+    if (activeView === "coo") return filteredProjects;
+    if (activeView === "finance") {
+      return [...filteredProjects].sort((a, b) => (b.openInflowFy + b.openExpenditureFy) - (a.openInflowFy + a.openExpenditureFy));
+    }
+    if (activeView === "construction") {
+      return [...filteredProjects].sort((a, b) => (b.engineeringBlockerCount + b.openQualityWarningCount) - (a.engineeringBlockerCount + a.openQualityWarningCount));
+    }
+    // program view: sort by behind-plan first, then critical count
+    return [...filteredProjects].sort((a, b) => {
+      if (a.behindPlan !== b.behindPlan) return a.behindPlan ? -1 : 1;
+      return b.criticalActionCount - a.criticalActionCount;
+    });
+  }, [filteredProjects, activeView]);
+
   const groupedActions = useMemo(() => {
-    const groups: Record<string, typeof actionRows> = {};
-    for (const row of actionRows) {
+    const groups: Record<string, typeof roleFilteredActionRows> = {};
+    for (const row of roleFilteredActionRows) {
       const key = row.queue || "Other";
       if (!groups[key]) groups[key] = [];
       groups[key].push(row);
     }
     return groups;
-  }, [actionRows]);
+  }, [roleFilteredActionRows]);
 
   const openProject = (project: ExecutionDashboardProject, tab?: string) => {
     const projectPath = `/project/${encodeURIComponent(project.projectName)}`;
@@ -354,11 +389,14 @@ export default function ExecutionBoard() {
             <div className="flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-red-500" />
               <h2 className="text-base font-semibold">Action Center</h2>
-              <Badge variant="outline" className="text-xs ml-1">{actionRows.length} items</Badge>
+              <Badge variant="outline" className="text-xs ml-1">{roleFilteredActionRows.length} items</Badge>
+              {activeView !== "coo" && (
+                <Badge variant="secondary" className="text-[10px] ml-1">{ROLE_VIEW_LABELS[activeView]} lens</Badge>
+              )}
             </div>
           </div>
 
-          {actionRows.length === 0 ? (
+          {roleFilteredActionRows.length === 0 ? (
             <div className="text-center py-8">
               <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-3">
                 <Activity className="w-6 h-6 text-emerald-500" />
@@ -439,7 +477,7 @@ export default function ExecutionBoard() {
           <div className="flex items-center gap-2 mb-4">
             <BarChart3 className="w-5 h-5 text-blue-500" />
             <h2 className="text-base font-semibold">Project Portfolio</h2>
-            <Badge variant="outline" className="text-xs ml-1">{filteredProjects.length} projects</Badge>
+            <Badge variant="outline" className="text-xs ml-1">{roleFilteredProjects.length} projects</Badge>
           </div>
           <div className="rounded-lg border border-border/60">
             <table className="w-full text-sm">
@@ -458,7 +496,7 @@ export default function ExecutionBoard() {
                 </tr>
               </thead>
               <tbody>
-                {filteredProjects.map((p) => {
+                {roleFilteredProjects.map((p) => {
                   const expanded = expandedId === p.projectId;
                   const variance = p.scheduleVariancePct || 0;
                   return (
@@ -559,7 +597,7 @@ export default function ExecutionBoard() {
                 })}
               </tbody>
             </table>
-            {filteredProjects.length === 0 && (
+            {roleFilteredProjects.length === 0 && (
               <div className="text-center py-12">
                 <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mx-auto mb-3">
                   <FolderOpen className="w-6 h-6 text-muted-foreground" />

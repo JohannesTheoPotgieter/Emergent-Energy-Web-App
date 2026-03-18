@@ -327,6 +327,7 @@ function ragBadge(rag: string) {
 export default function DashboardPage() {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
+  const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState({
     search: "",
     portfolio: "all",
@@ -581,7 +582,8 @@ export default function DashboardPage() {
               const rows = data?.actionCenter?.[k] || [];
               const isCollapsed = collapsedQueues.has(k);
               const meta = queueMeta(k);
-              const showMax = 5;
+              const isQueueExpanded = expandedQueues.has(k);
+              const showMax = isQueueExpanded ? rows.length : 5;
               const visibleRows = isCollapsed ? [] : rows.slice(0, showMax);
 
               return (
@@ -622,10 +624,17 @@ export default function DashboardPage() {
                               </div>
                             );
                           })}
-                          {rows.length > showMax && (
-                            <div className="px-4 py-2 text-xs text-emerald-600 cursor-pointer hover:underline">
-                              Show {rows.length - showMax} more...
-                            </div>
+                          {rows.length > 5 && (
+                            <button
+                              onClick={() => setExpandedQueues(prev => {
+                                const next = new Set(prev);
+                                if (next.has(k)) next.delete(k); else next.add(k);
+                                return next;
+                              })}
+                              className="w-full px-4 py-2 text-xs text-emerald-600 cursor-pointer hover:underline hover:bg-muted/20 text-left transition-colors"
+                            >
+                              {isQueueExpanded ? "Show less" : `Show ${rows.length - 5} more...`}
+                            </button>
                           )}
                         </>
                       )}
@@ -738,7 +747,21 @@ export default function DashboardPage() {
                           </td>
                           <td className="py-2.5 px-2 text-muted-foreground text-xs hidden lg:table-cell">{p.pm || "-"}</td>
                           <td className="py-2.5 px-2 text-center">
-                            <Badge className={`text-[10px] ${ragBadge(p.rag || "Unknown")}`}>{p.rag || "-"}</Badge>
+                            <div className="flex flex-col items-center gap-0.5">
+                              <Badge className={`text-[10px] ${ragBadge(p.rag || "Unknown")}`}>{p.rag || "-"}</Badge>
+                              {p.ragUpdatedAt ? (
+                                (() => {
+                                  const ageDays = Math.floor((Date.now() - new Date(p.ragUpdatedAt).getTime()) / 86400000);
+                                  return ageDays > 14 ? (
+                                    <span className="text-[9px] text-red-500 font-medium" title={`RAG last updated ${ageDays}d ago`}>{ageDays}d old</span>
+                                  ) : ageDays > 7 ? (
+                                    <span className="text-[9px] text-amber-500" title={`RAG last updated ${ageDays}d ago`}>{ageDays}d</span>
+                                  ) : null;
+                                })()
+                              ) : p.rag && p.rag !== "Unknown" ? (
+                                <span className="text-[9px] text-red-400" title="RAG status has never been updated">no date</span>
+                              ) : null}
+                            </div>
                           </td>
                           <td className="py-2.5 px-2 text-right">
                             <span className="tabular-nums font-medium text-sm">{pct(p.actualProgressPct)}</span>
@@ -749,7 +772,7 @@ export default function DashboardPage() {
                           </td>
                           <td className="py-2.5 px-2 text-right tabular-nums text-sm text-amber-600 hidden lg:table-cell">{money(p.openInflowFy)}</td>
                           <td className="py-2.5 px-2 text-right tabular-nums text-sm text-amber-600 hidden lg:table-cell">{money(p.openExpenditureFy)}</td>
-                          <td className="py-2.5 px-2 text-right tabular-nums text-sm font-medium hidden md:table-cell">{pct((p.grossMarginPctFy || 0) * 100)}</td>
+                          <td className="py-2.5 px-2 text-right tabular-nums text-sm font-medium hidden md:table-cell">{p.plannedRevenueFy > 0 ? pct((p.grossMarginPctFy || 0) * 100) : <span className="text-muted-foreground">-</span>}</td>
                           <td className="py-2.5 px-2 text-center">
                             {p.criticalActionCount > 0 ? (
                               <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">{p.criticalActionCount}</Badge>
@@ -791,7 +814,7 @@ export default function DashboardPage() {
                                     <p><span className="text-muted-foreground">Expenditure:</span> {money(p.plannedExpenditureFy)}</p>
                                     <p><span className="text-muted-foreground">Paid:</span> <span className="text-emerald-600">{money(p.paidExpenditureFy)}</span></p>
                                     <p><span className="text-muted-foreground">Open Exp:</span> <span className="text-amber-600">{money(p.openExpenditureFy)}</span></p>
-                                    <p><span className="text-muted-foreground">GP Margin:</span> <span className="font-medium">{pct((p.grossMarginPctFy || 0) * 100)}</span></p>
+                                    <p><span className="text-muted-foreground">GP Margin:</span> <span className="font-medium">{p.plannedRevenueFy > 0 ? pct((p.grossMarginPctFy || 0) * 100) : "-"}</span></p>
                                   </div>
                                 </div>
                                 <div className="rounded-lg border border-border/50 p-3">
