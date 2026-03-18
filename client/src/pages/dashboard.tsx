@@ -716,7 +716,7 @@ export default function DashboardPage() {
                     <th className="text-right py-2 px-2 font-medium hidden md:table-cell">Variance</th>
                     <th className="text-right py-2 px-2 font-medium hidden lg:table-cell">Open Inflow</th>
                     <th className="text-right py-2 px-2 font-medium hidden lg:table-cell">Open Exp.</th>
-                    <th className="text-right py-2 px-2 font-medium hidden md:table-cell">GP %</th>
+                    <th className="text-right py-2 px-2 font-medium hidden md:table-cell" title="Planned gross margin based on planned revenue and expenditure">Plan GP %</th>
                     <th className="text-center py-2 px-2 font-medium">Issues</th>
                     <th className="w-8 py-2 px-1"></th>
                   </tr>
@@ -791,7 +791,7 @@ export default function DashboardPage() {
                                     <p><span className="text-muted-foreground">Expenditure:</span> {money(p.plannedExpenditureFy)}</p>
                                     <p><span className="text-muted-foreground">Paid:</span> <span className="text-emerald-600">{money(p.paidExpenditureFy)}</span></p>
                                     <p><span className="text-muted-foreground">Open Exp:</span> <span className="text-amber-600">{money(p.openExpenditureFy)}</span></p>
-                                    <p><span className="text-muted-foreground">GP Margin:</span> <span className="font-medium">{pct((p.grossMarginPctFy || 0) * 100)}</span></p>
+                                    <p><span className="text-muted-foreground">Plan GP Margin:</span> <span className="font-medium">{pct((p.grossMarginPctFy || 0) * 100)}</span></p>
                                   </div>
                                 </div>
                                 <div className="rounded-lg border border-border/50 p-3">

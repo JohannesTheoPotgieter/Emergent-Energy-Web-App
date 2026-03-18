@@ -10,7 +10,7 @@ import {
 } from "recharts";
 import {
   DollarSign, TrendingUp, Activity, Percent, Search,
-  Target, ChevronDown, ChevronRight,
+  Target, ChevronDown, ChevronRight, X,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { EnergyLoader } from "@/components/ui/energy-loader";
@@ -72,12 +72,83 @@ const ROW_DEFS: {
   { key: "ytdGpPct", label: "YTD GP %", dataKey: "ytdGpPct", colorClass: "text-foreground font-semibold", group: "ytd" },
 ];
 
+function GpMonthDetailPanel({ monthKey, monthLabel, onClose }: { monthKey: string; monthLabel: string; onClose: () => void }) {
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["gp-tracker-month-detail", monthKey],
+    queryFn: async () => {
+      const res = await fetch(`/api/gp-tracker/month-detail?monthKey=${encodeURIComponent(monthKey)}`, { headers: authHeaders(), credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load GP month detail");
+      return res.json();
+    },
+    enabled: !!monthKey,
+  });
+
+  return (
+    <Card className="border-blue-200 bg-blue-50/20">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="text-sm font-semibold">GP Line Items — {monthLabel}</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {data ? `${data.lineCount} items | Revenue ${formatRand(data.totalRevenue)} | COS ${formatRand(data.totalCOS)} | GP ${formatRand(data.totalGP)}` : "Loading..."}
+            </p>
+          </div>
+          <Button size="sm" variant="ghost" onClick={onClose} className="h-7 w-7 p-0" data-testid="button-close-month-detail">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        {isLoading ? (
+          <div className="py-6 text-center text-xs text-muted-foreground">Loading line items...</div>
+        ) : !data?.items?.length ? (
+          <div className="py-6 text-center text-xs text-muted-foreground">No line items for this month</div>
+        ) : (
+          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-white z-10">
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="pb-2 font-medium">Project</th>
+                  <th className="pb-2 font-medium">Line Item</th>
+                  <th className="pb-2 font-medium">Supplier</th>
+                  <th className="pb-2 font-medium text-right">COS</th>
+                  <th className="pb-2 font-medium text-right">Revenue</th>
+                  <th className="pb-2 font-medium text-right">GP</th>
+                  <th className="pb-2 font-medium text-right">GP%</th>
+                  <th className="pb-2 font-medium">State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((item: any) => (
+                  <tr key={item.id} className="border-b border-border/30 hover:bg-muted/20">
+                    <td className="py-1.5 font-medium text-blue-600 max-w-[140px] truncate">{item.projectName}</td>
+                    <td className="py-1.5 text-muted-foreground max-w-[160px] truncate">{item.lineItem || item.category || "-"}</td>
+                    <td className="py-1.5 text-muted-foreground max-w-[120px] truncate">{item.supplier || "-"}</td>
+                    <td className="py-1.5 text-right tabular-nums">{formatRand(item.costAmount)}</td>
+                    <td className="py-1.5 text-right tabular-nums text-blue-600">{formatRand(item.revenueAmount)}</td>
+                    <td className={`py-1.5 text-right tabular-nums font-semibold ${(item.gpAmount ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatRand(item.gpAmount)}</td>
+                    <td className="py-1.5 text-right tabular-nums">{(item.gpPct ?? 0).toFixed(1)}%</td>
+                    <td className="py-1.5">
+                      <Badge className={`text-[9px] ${item.isRealised ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                        {item.gpState}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function GpTrackerPage() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [showMonthly, setShowMonthly] = useState(true);
   const [showYtd, setShowYtd] = useState(true);
   const [showProjects, setShowProjects] = useState(true);
+  const [selectedMonth, setSelectedMonth] = useState<{ monthKey: string; monthLabel: string } | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ["gp-tracker-portfolio"],
@@ -162,7 +233,7 @@ export default function GpTrackerPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">GP Tracker</h1>
-          <p className="text-sm text-muted-foreground">Portfolio-level Gross Profit — Budget vs Actual (Sep 2025 – Aug 2026). Monthly grid cells are summary values (no line-item drill-down yet).</p>
+          <p className="text-sm text-muted-foreground">Portfolio-level Gross Profit — Budget vs Actual (Sep 2025 – Aug 2026). Click any GP row cell to drill down to line items.</p>
         </div>
       </div>
 
@@ -220,7 +291,9 @@ export default function GpTrackerPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {monthlyRows.map(row => (
+                  {monthlyRows.map(row => {
+                    const isDrillable = ["totalGP", "realisedGP", "unrealisedGP", "totalRevenue", "totalCOS"].includes(row.key);
+                    return (
                     <tr key={row.key} className="border-b border-border/40 hover:bg-muted/20" data-testid={`row-${row.key}`}>
                       <td className="py-2 px-3 font-medium text-muted-foreground sticky left-0 bg-white z-10 whitespace-nowrap">
                         {row.label}
@@ -229,19 +302,32 @@ export default function GpTrackerPage() {
                         const val = getCellValue(m, row.dataKey);
                         const colorClass = row.colorCoded ? getVarianceColor(val) : row.colorClass;
                         return (
-                          <td key={m.monthKey} className={`py-2 px-3 text-right ${colorClass}`}>
+                          <td
+                            key={m.monthKey}
+                            className={`py-2 px-3 text-right ${colorClass} ${isDrillable ? 'cursor-pointer hover:bg-blue-50 hover:underline' : ''}`}
+                            onClick={isDrillable ? () => setSelectedMonth({ monthKey: m.monthKey, monthLabel: m.monthLabel }) : undefined}
+                          >
                             {formatCellValue(val, row.dataKey)}
                           </td>
                         );
                       })}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
         </CardContent>
       </Card>
+
+      {selectedMonth && (
+        <GpMonthDetailPanel
+          monthKey={selectedMonth.monthKey}
+          monthLabel={selectedMonth.monthLabel}
+          onClose={() => setSelectedMonth(null)}
+        />
+      )}
 
       <Card>
         <CardContent className="p-4">
