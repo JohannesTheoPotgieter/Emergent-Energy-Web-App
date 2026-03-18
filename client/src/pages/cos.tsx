@@ -27,7 +27,6 @@ import {
   ChevronRight,
   X,
   Search,
-  Info,
   Loader2,
   AlertCircle,
   HelpCircle,
