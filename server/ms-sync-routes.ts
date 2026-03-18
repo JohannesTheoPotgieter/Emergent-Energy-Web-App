@@ -353,12 +353,14 @@ export function registerMsSyncRoutes(app: Express) {
     try {
       const parsed = assignmentPayloadSchema.safeParse(req.body);
       if (!parsed.success) {
+        console.error("[Reassign] Zod validation failed:", parsed.error.issues, "body:", req.body);
         return res.status(400).json({ error: "Invalid assignment payload", details: parsed.error.issues });
       }
 
       const { taskId, taskSource } = parsed.data;
       const assigneeType = parsed.data.assigneeType ?? (parsed.data.userId != null ? "internal_user" : null);
       const assigneeId = parsed.data.assigneeId ?? parsed.data.userId ?? null;
+      console.log("[Reassign] Processing:", { taskId, taskSource, assigneeType, assigneeId, userId: getEffectiveUser(req)?.id });
 
       if (taskSource === "plan_viewer" || taskSource === "remove_viewer") {
         const viewerUserId = assigneeType === "internal_user" ? assigneeId : parsed.data.userId ?? null;
@@ -431,6 +433,7 @@ export function registerMsSyncRoutes(app: Express) {
         assigneeId,
         mode: assigneeType ? mode : "clear",
       });
+      console.log("[Reassign] Assignment saved to DB:", { entityType, taskId, assignmentRole, mode, resultCount: assignments.length });
 
       const current = assignments.find((assignment) =>
         assigneeType != null &&
