@@ -22,19 +22,18 @@ export async function runAssigneeUserIdsBackfill(log: (message: string, source?:
   let otUpdated = 0;
   let otOffset = 0;
   while (true) {
-    const otRows = await db.execute(sql.raw(`
+    const otRows = await db.execute(sql`
       SELECT id, assignees FROM operational_tasks
       WHERE assignees IS NOT NULL AND array_length(assignees, 1) > 0
         AND (assignee_user_ids IS NULL OR array_length(assignee_user_ids, 1) = 0 OR array_length(assignee_user_ids, 1) IS NULL)
       ORDER BY id LIMIT 200 OFFSET ${otOffset}
-    `));
+    `);
     const rows = (otRows as any).rows || [];
     if (rows.length === 0) break;
     for (const row of rows) {
       const ids = await resolveNamesForBackfill(row.assignees || []);
       if (ids.length > 0) {
-        const idsStr = `{${ids.join(",")}}`;
-        await db.execute(sql.raw(`UPDATE operational_tasks SET assignee_user_ids = '${idsStr}'::integer[] WHERE id = ${row.id}`));
+        await db.execute(sql`UPDATE operational_tasks SET assignee_user_ids = ${ids}::integer[] WHERE id = ${row.id}`);
         otUpdated++;
       }
     }
@@ -45,19 +44,18 @@ export async function runAssigneeUserIdsBackfill(log: (message: string, source?:
   let trUpdated = 0;
   let trOffset = 0;
   while (true) {
-    const trRows = await db.execute(sql.raw(`
+    const trRows = await db.execute(sql`
       SELECT id, owners FROM tr_items
       WHERE owners IS NOT NULL AND array_length(owners, 1) > 0
         AND (owner_user_ids IS NULL OR array_length(owner_user_ids, 1) = 0 OR array_length(owner_user_ids, 1) IS NULL)
       ORDER BY id LIMIT 200 OFFSET ${trOffset}
-    `));
+    `);
     const rows = (trRows as any).rows || [];
     if (rows.length === 0) break;
     for (const row of rows) {
       const ids = await resolveNamesForBackfill(row.owners || []);
       if (ids.length > 0) {
-        const idsStr = `{${ids.join(",")}}`;
-        await db.execute(sql.raw(`UPDATE tr_items SET owner_user_ids = '${idsStr}'::integer[] WHERE id = ${row.id}`));
+        await db.execute(sql`UPDATE tr_items SET owner_user_ids = ${ids}::integer[] WHERE id = ${row.id}`);
         trUpdated++;
       }
     }

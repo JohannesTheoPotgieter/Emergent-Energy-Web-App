@@ -336,6 +336,23 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
+  app.get("/api/entity-assignments/:entityType/:entityId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const entityType = mapTaskSourceToEntityType(req.params.entityType);
+      if (!entityType) {
+        return res.status(400).json({ error: `Unknown entity type: ${req.params.entityType}` });
+      }
+      const entityId = parseInt(req.params.entityId, 10);
+      if (!Number.isFinite(entityId) || entityId <= 0) {
+        return res.status(400).json({ error: `Invalid entity ID: ${req.params.entityId}` });
+      }
+      const assignments = await getAssignmentsForEntity(entityType, entityId);
+      res.json(assignments);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/assignables", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const search = typeof req.query.search === "string" ? req.query.search : undefined;
