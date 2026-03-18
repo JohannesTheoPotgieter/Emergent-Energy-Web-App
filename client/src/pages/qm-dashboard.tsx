@@ -269,8 +269,7 @@ export default function QmDashboardPage() {
     queryKey: ["quality-all-items"],
     queryFn: () => qFetch("/api/quality/all-items"),
     refetchOnMount: "always",
-    staleTime: 0,
-    enabled: viewMode === "items",
+    staleTime: 30_000,
   });
 
   const { data: allProjects = [] } = useQuery<Array<{ project_name: string }>>({
@@ -346,6 +345,10 @@ export default function QmDashboardPage() {
 
   const handleAction = () => {
     if (!selectedWarning || !actionType) return;
+    if (!reasonText.trim()) {
+      toast({ title: "Reason required", description: "Please provide a reason before proceeding.", variant: "destructive" });
+      return;
+    }
     if (actionType === "override") {
       acknowledgeMutation.mutate({ warningId: selectedWarning.id, note: reasonText });
     } else {
