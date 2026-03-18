@@ -398,7 +398,7 @@ export function registerHandoverRoutes(app: Express) {
         SELECT
           p.id AS project_id,
           p.project_name,
-          p.client_name,
+          COALESCE(c.name, '') AS client_name,
           p.pd,
           p.pm,
           p.excel_tracker_link,
@@ -411,6 +411,7 @@ export function registerHandoverRoutes(app: Express) {
           h.rejection_reason,
           h.deliverables
         FROM project_info p
+        LEFT JOIN clients c ON c.id = p.client_id
         LEFT JOIN project_pd_pm_handover h ON h.project_id = p.id
         WHERE p.is_active = true
         ORDER BY COALESCE(h.updated_at, p.updated_at) DESC NULLS LAST, p.project_name ASC
