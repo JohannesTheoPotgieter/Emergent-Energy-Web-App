@@ -1745,6 +1745,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
                 invoiceRaisedDate: m.invoiceDate || null,
                 paymentReceivedDate: m.paidDate || null,
                 inBank: prevInBank != null ? prevInBank : (m.inBankDate ? 1 : 0),
+                dataSource: "SMART_IMPORT",
+                projectId: projectId || null,
+                importRunId: runId,
               };
             });
           if (piValues.length > 0) {
@@ -1961,6 +1964,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
                 invoiceDateFontColor: m.invoiceDateFontColor || null,
                 expensePaymentDate: m.paidDate || null,
                 paymentDateFontColor: m.paidDateFontColor || null,
+                dataSource: "SMART_IMPORT",
+                projectId: projectId || null,
+                importRunId: runId,
               };
             });
           if (peValues.length > 0) {
