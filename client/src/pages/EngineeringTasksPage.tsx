@@ -1186,6 +1186,20 @@ function TaskDetailDrawer({
                 />
               </div>
 
+              {(task.status === "HOLD" && (task.holdReason || task.blockedType)) && (
+                <div className="bg-red-50 border border-red-200 rounded-md p-2.5 space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
+                    <span className="text-[10px] font-semibold text-red-700 uppercase">
+                      On Hold{task.blockedType ? ` — ${task.blockedType}` : ""}
+                    </span>
+                  </div>
+                  {task.holdReason && (
+                    <p className="text-[11px] text-red-700">{task.holdReason}</p>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-1">
                 <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Due Date</Label>
                 <Input
@@ -1195,6 +1209,17 @@ function TaskDetailDrawer({
                   onChange={(e) => updateMutation.mutate({ dueDate: e.target.value || null })}
                   data-testid="input-drawer-due-date"
                 />
+                {task.dueDate && (() => {
+                  const label = daysLabel(task.dueDate);
+                  if (!label) return null;
+                  const isLate = label.includes("late");
+                  return (
+                    <span className={`text-[10px] font-medium ${isLate ? "text-red-600" : "text-muted-foreground"}`}>
+                      {isLate ? <AlertTriangle className="inline h-3 w-3 mr-0.5" /> : <Clock className="inline h-3 w-3 mr-0.5" />}
+                      {label}
+                    </span>
+                  );
+                })()}
               </div>
 
               <div className="space-y-1">
@@ -1208,6 +1233,21 @@ function TaskDetailDrawer({
                 />
               </div>
             </div>
+
+            {task.resolvedOwner && (
+              <div className="space-y-1">
+                <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Owner</Label>
+                <div className="flex items-center gap-2 text-xs">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${getAvatarColor(task.resolvedOwner.name)}`}>
+                    {getInitials(task.resolvedOwner.name)}
+                  </div>
+                  <div>
+                    <span className="font-medium">{task.resolvedOwner.name}</span>
+                    <span className="text-muted-foreground ml-1.5 text-[10px]">{task.resolvedOwner.role}</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Assignee</Label>
@@ -1923,7 +1963,7 @@ function TaskDetailDrawer({
                   {tab === "updates" && <MessageSquare className="h-3.5 w-3.5 inline mr-1" />}
                   {tab === "activity" && <Activity className="h-3.5 w-3.5 inline mr-1" />}
                   {tab === "subtasks" && <ListTodo className="h-3.5 w-3.5 inline mr-1" />}
-                  {tab === "updates" ? "Updates" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  {tab === "updates" ? "Comments" : tab.charAt(0).toUpperCase() + tab.slice(1)}
                   {tab === "updates" && comments.length > 0 && <span className="ml-1 text-muted-foreground">({comments.length})</span>}
                   {tab === "subtasks" && subtasks.length > 0 && <span className="ml-1 text-muted-foreground">({subtasks.length})</span>}
                 </button>

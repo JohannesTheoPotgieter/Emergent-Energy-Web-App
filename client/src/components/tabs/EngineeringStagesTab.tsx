@@ -1056,7 +1056,8 @@ function ApprovalRow({ approval, projectId, stageId, userRole, isCoo }: {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const roleLabel = approval.approverRole === "QA_REVIEW" ? "QA Review (Dean)" : "Technical Signoff (Tanaka)";
+  const roleName = approval.approverRole === "QA_REVIEW" ? "QA Review" : "Technical Signoff";
+  const roleLabel = approval.approverUserName ? `${roleName} (${approval.approverUserName})` : roleName;
   const canApprove = isCoo || (approval.approverRole === "QA_REVIEW" && userRole === "QUALITY_MANAGER") ||
     (approval.approverRole === "TECHNICAL_SIGNOFF" && (userRole === "ENGINEER" || userRole === "PROGRAM_MANAGER"));
 

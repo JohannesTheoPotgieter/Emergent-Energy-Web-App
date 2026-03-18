@@ -1566,7 +1566,7 @@ export default function EngineeringDashboard() {
         {upcomingThisWeek.length > 0 ? (
           upcomingThisWeek.map(t => <TaskRow key={t.id} task={t} />)
         ) : (
-          <p className="text-xs text-muted-foreground p-4">No tasks due this week</p>
+          <p className="text-xs text-muted-foreground p-4">No tasks due this week — all clear for the next 7 days.</p>
         )}
       </CollapsibleSection>
 
@@ -1581,7 +1581,7 @@ export default function EngineeringDashboard() {
         {inProgressHighlights.length > 0 ? (
           inProgressHighlights.map(t => <TaskRow key={t.id} task={t} />)
         ) : (
-          <p className="text-xs text-muted-foreground p-4">No tasks in progress</p>
+          <p className="text-xs text-muted-foreground p-4">No tasks currently in progress. Check the task board for items to pick up.</p>
         )}
       </CollapsibleSection>
 
