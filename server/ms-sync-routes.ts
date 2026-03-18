@@ -351,9 +351,6 @@ export function registerMsSyncRoutes(app: Express) {
 
   app.patch("/api/tasks/reassign", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const fs = await import("fs");
-      const debugLine = (msg: string) => { try { fs.appendFileSync("/tmp/reassign-debug.log", `${new Date().toISOString()} ${msg}\n`); } catch {} };
-      debugLine(`ENTERED handler body=${JSON.stringify(req.body)} user=${getEffectiveUser(req)?.id}`);
       const parsed = assignmentPayloadSchema.safeParse(req.body);
       if (!parsed.success) {
         console.error("[Reassign] Zod validation failed:", parsed.error.issues, "body:", req.body);
@@ -470,16 +467,9 @@ export function registerMsSyncRoutes(app: Express) {
         assignments,
       });
     } catch (err: any) {
-      const fs2 = await import("fs");
-      try { fs2.appendFileSync("/tmp/reassign-debug.log", `${new Date().toISOString()} CATCH error=${err?.message}\nstack=${err?.stack}\nbody=${JSON.stringify(req.body)}\n`); } catch {}
-      console.error("[Reassign] Assignment update failed", {
-        error: err?.message,
-        stack: err?.stack,
-        body: req.body,
-        userId: getEffectiveUser(req)?.id,
-      });
+      console.error("[Reassign] Assignment update failed", err?.message, err?.stack?.split("\n").slice(0, 8).join("\n"));
       const status = err?.message?.toLowerCase().includes("permission") ? 403 : err?.message?.toLowerCase().includes("not found") ? 404 : err?.message?.toLowerCase().includes("required") ? 400 : 500;
-      res.status(status).json({ error: err.message || "Assignment update failed" });
+      res.status(status).json({ error: err.message || "Assignment update failed", _debug: { body: req.body, stack: err?.stack?.split("\n").slice(0, 8) } });
     }
   });
 
