@@ -17,4 +17,8 @@ export async function registerCoreRoutes(app: Express) {
   registerTemplateRoutes(app);
   const { registerApiV2Routes } = await import("../api/v2/routes/v2-routes");
   registerApiV2Routes(app);
+  const { registerTaskManagementRoutes } = await import("../task-management-routes");
+  registerTaskManagementRoutes(app);
+  const { registerStandupRoutes } = await import("../standup-routes");
+  registerStandupRoutes(app);
 }
