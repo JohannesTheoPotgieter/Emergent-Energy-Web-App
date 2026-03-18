@@ -14,7 +14,7 @@ import {
   notifications, notificationThrottle,
   users, projectInfo,
 } from "@shared/schema";
-import { requireAuthority, requirePermission } from "./permission-middleware";
+import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
@@ -78,18 +78,6 @@ async function resolveProjectIdForItemInstance(itemInstanceId: number): Promise<
   `);
   const value = rows.rows?.[0]?.project_id;
   return typeof value === "number" ? value : null;
-}
-
-function requireQmChallenge(req: Request, res: Response, next: NextFunction) {
-  if (isAdminRole(getUserRole(req))) return next();
-  if ((req.session as any)?.qmChallengePassed) return next();
-  res.status(403).json({ error: "qm_challenge_required", message: "Quality Manager access code required", code: "QM_CHALLENGE_REQUIRED" });
-}
-
-function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
-  if (isAdminRole(getUserRole(req))) return next();
-  if ((req.session as any)?.epmChallengePassed) return next();
-  res.status(403).json({ error: "epm_challenge_required", message: "Engineering Program Manager access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
 
 function requireAdminOrQm(req: Request, res: Response, next: NextFunction) {
