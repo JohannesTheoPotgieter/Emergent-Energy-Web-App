@@ -1052,6 +1052,39 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
+  // Dashboard channels derived from user's synced Teams data
+  app.get("/api/chat-groups/mine", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "auth_required" });
+
+      const teamsItems = await db
+        .select()
+        .from(msObjects)
+        .where(and(eq(msObjects.userId, userId), eq(msObjects.type, "teams"), ne(msObjects.dismissed, true)))
+        .orderBy(desc(msObjects.receivedOrStartDatetime));
+
+      const groups = teamsItems.map((item) => {
+        const meta = (item.metadata as any) || {};
+        return {
+          id: item.id,
+          name: item.subjectOrTitle || "Chat",
+          type: meta.chatType === "oneOnOne" ? "project" : "department",
+          memberCount: meta.memberCount || 0,
+          unreadCount: item.isRead === false ? 1 : 0,
+          lastUpdated: item.receivedOrStartDatetime,
+          msId: item.msId,
+          webLink: item.webLink,
+        };
+      });
+
+      res.json(groups);
+    } catch (err: any) {
+      console.error("[Chat Groups] Error:", err);
+      res.status(500).json({ error: "Failed to fetch chat groups" });
+    }
+  });
+
   app.post("/api/webhooks/graph", async (req: Request, res: Response) => {
     if (req.query.validationToken) {
       return res.status(200).contentType("text/plain").send(req.query.validationToken as string);
