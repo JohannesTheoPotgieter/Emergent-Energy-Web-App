@@ -50,6 +50,7 @@ import {
   X,
   MoreHorizontal,
   ArrowRightLeft,
+  ClipboardCopy,
 } from "lucide-react";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
@@ -279,13 +280,13 @@ function CollapsibleSection({
 
 function KpiStrip({ summary }: { summary: StandupData["summary"] }) {
   const stats = [
-    { label: "Projects", value: summary.totalProjects, icon: <Layers className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-project-health" },
-    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-in-progress" },
-    { label: "Overdue", value: summary.overdueTasks, icon: <AlertTriangle className="w-4 h-4" />, color: summary.overdueTasks > 0 ? "text-red-600" : "text-muted-foreground", bg: summary.overdueTasks > 0 ? "bg-red-50" : "bg-muted", border: summary.overdueTasks > 0 ? "border-red-200" : "", pulse: summary.overdueTasks > 0, scrollTo: "section-blockers" },
-    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50" : "bg-muted", border: summary.holdTasks > 0 ? "border-amber-200" : "", pulse: false, scrollTo: "section-blockers" },
-    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50" : "bg-muted", border: summary.needsApprovalCount > 0 ? "border-purple-200" : "", pulse: false, scrollTo: "section-approvals" },
-    { label: "Due This Week", value: summary.upcomingThisWeekCount, icon: <Timer className="w-4 h-4" />, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200", pulse: false, scrollTo: "section-due-this-week" },
-    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", pulse: false, scrollTo: "section-recently-completed" },
+    { label: "Projects", value: summary.totalProjects, icon: <Layers className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-project-health", href: null },
+    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-in-progress", href: "/engineering/tasks?status=IN+PROGRESS" },
+    { label: "Overdue", value: summary.overdueTasks, icon: <AlertTriangle className="w-4 h-4" />, color: summary.overdueTasks > 0 ? "text-red-600" : "text-muted-foreground", bg: summary.overdueTasks > 0 ? "bg-red-50" : "bg-muted", border: summary.overdueTasks > 0 ? "border-red-200" : "", pulse: summary.overdueTasks > 0, scrollTo: "section-blockers", href: "/engineering/tasks?dueDate=overdue" },
+    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50" : "bg-muted", border: summary.holdTasks > 0 ? "border-amber-200" : "", pulse: false, scrollTo: "section-blockers", href: "/engineering/tasks?status=HOLD" },
+    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50" : "bg-muted", border: summary.needsApprovalCount > 0 ? "border-purple-200" : "", pulse: false, scrollTo: "section-approvals", href: "/engineering/tasks?status=NEEDS+APPROVAL" },
+    { label: "Due This Week", value: summary.upcomingThisWeekCount, icon: <Timer className="w-4 h-4" />, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200", pulse: false, scrollTo: "section-due-this-week", href: "/engineering/tasks?dueDate=this_week" },
+    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", pulse: false, scrollTo: "section-recently-completed", href: "/engineering/tasks?status=COMPLETE" },
   ];
 
   return (
@@ -294,7 +295,7 @@ function KpiStrip({ summary }: { summary: StandupData["summary"] }) {
         <Card
           key={s.label}
           className={`overflow-hidden shadow-sm ${s.border} transition-all hover:shadow-md cursor-pointer`}
-          onClick={() => document.querySelector(`[data-testid="${s.scrollTo}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
+          onClick={() => s.href ? (window.location.href = s.href) : document.querySelector(`[data-testid="${s.scrollTo}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
         >
           <CardContent className="p-3 flex items-center gap-2.5">
             <div className={`w-9 h-9 rounded-xl ${s.bg} flex items-center justify-center shrink-0 ${s.pulse ? "animate-pulse" : ""}`}>
@@ -1406,6 +1407,47 @@ export default function EngineeringDashboard() {
             >
               <LayoutGrid className="h-3.5 w-3.5" />
               {standupMode ? "Exit Standup" : "Standup Mode"}
+            </Button>
+          )}
+          {standupMode && data && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5"
+              onClick={() => {
+                const s = data.summary;
+                const lines = [
+                  `**Engineering Standup — ${new Date().toLocaleDateString("en-ZA", { weekday: "long", day: "2-digit", month: "short", year: "numeric" })}**`,
+                  "",
+                  `Projects: ${s.totalProjects} | Active: ${s.activeTasks} | Overdue: ${s.overdueTasks} | On Hold: ${s.holdTasks}`,
+                  "",
+                ];
+                if (data.blockers.overdue.length > 0) {
+                  lines.push(`**Overdue (${data.blockers.overdue.length}):**`);
+                  data.blockers.overdue.slice(0, 10).forEach(t => lines.push(`- ${t.title}${t.assignees?.length ? ` (${t.assignees[0]})` : ""}`));
+                  lines.push("");
+                }
+                if (data.blockers.hold.length > 0) {
+                  lines.push(`**On Hold (${data.blockers.hold.length}):**`);
+                  data.blockers.hold.slice(0, 10).forEach(t => lines.push(`- ${t.title}: ${t.holdReason || "no reason"}`));
+                  lines.push("");
+                }
+                if (data.needsApproval.length > 0) {
+                  lines.push(`**Needs Approval (${data.needsApproval.length}):**`);
+                  data.needsApproval.slice(0, 5).forEach(t => lines.push(`- ${t.title}`));
+                  lines.push("");
+                }
+                if (data.upcomingThisWeek.length > 0) {
+                  lines.push(`**Due This Week (${data.upcomingThisWeek.length}):**`);
+                  data.upcomingThisWeek.slice(0, 10).forEach(t => lines.push(`- ${t.title}${t.dueDate ? ` (${new Date(t.dueDate).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })})` : ""}`));
+                }
+                navigator.clipboard.writeText(lines.join("\n")).then(() => {
+                  toast({ title: "Standup copied", description: "Summary copied to clipboard" });
+                });
+              }}
+              data-testid="btn-copy-standup"
+            >
+              <ClipboardCopy className="h-3.5 w-3.5" /> Copy Standup
             </Button>
           )}
           {!standupMode && totalBlockers > 0 && (

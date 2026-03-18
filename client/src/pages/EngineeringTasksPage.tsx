@@ -3071,12 +3071,12 @@ export default function EngineeringTasksPage() {
     return fullName.split(/\s+/)[0];
   });
   const [showNamePicker, setShowNamePicker] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>(savedDefaults?.statusFilter || "all");
-  const [priorityFilter, setPriorityFilter] = useState<string>(savedDefaults?.priorityFilter || "all");
-  const [assigneeFilter, setAssigneeFilter] = useState<string>(savedDefaults?.assigneeFilter || "all");
+  const [statusFilter, setStatusFilter] = useState<string>(initialUrlParams.get("status") || savedDefaults?.statusFilter || "all");
+  const [priorityFilter, setPriorityFilter] = useState<string>(initialUrlParams.get("priority") || savedDefaults?.priorityFilter || "all");
+  const [assigneeFilter, setAssigneeFilter] = useState<string>(initialUrlParams.get("assignee") || savedDefaults?.assigneeFilter || "all");
   const [projectFilter, setProjectFilter] = useState<string>(savedDefaults?.projectFilter || "all");
   const [dueDateFilter, setDueDateFilter] = useState<EngineeringDueDateFilter>(
-    (savedDefaults?.dueDateFilter as EngineeringDueDateFilter) || "all",
+    (initialUrlParams.get("dueDate") as EngineeringDueDateFilter) || (savedDefaults?.dueDateFilter as EngineeringDueDateFilter) || "all",
   );
   const [workloadStateFilter, setWorkloadStateFilter] = useState<EngineeringWorkloadStateFilter>(
     (savedDefaults?.workloadStateFilter as EngineeringWorkloadStateFilter) || "all",
@@ -3114,6 +3114,29 @@ export default function EngineeringTasksPage() {
       return next;
     });
   }, []);
+
+  // Keyboard shortcuts
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      // Don't trigger in input/textarea
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey) { setShowShortcuts(s => !s); return; }
+      if (e.key === "n" && !e.ctrlKey && !e.metaKey) { setCreateOpen(true); return; }
+      if (e.key === "Escape") {
+        if (selectedTask) { setSelectedTask(null); return; }
+        if (showShortcuts) { setShowShortcuts(false); return; }
+      }
+      if (e.key === "1") { setViewMode("board"); return; }
+      if (e.key === "2") { setViewMode("mytasks"); return; }
+      if (e.key === "3") { setViewMode("projects"); return; }
+      if (e.key === "4") { setViewMode("list"); return; }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedTask, showShortcuts]);
 
   const { data: tasks = [], isLoading, error } = useQuery<Task[]>({
     queryKey: ["eng-tasks"],
@@ -4029,7 +4052,7 @@ export default function EngineeringTasksPage() {
                   { value: "Internal", label: "Internal" },
                   { value: "External", label: "External" },
                 ]}
-                data-testid="select-hold-blocked-type"
+                data-testid="select-hold-blocked-type-page"
               />
             </div>
             <Textarea
@@ -4059,6 +4082,33 @@ export default function EngineeringTasksPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {showShortcuts && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowShortcuts(false)}>
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-sm">Keyboard Shortcuts</h3>
+              <button onClick={() => setShowShortcuts(false)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-2 text-xs">
+              {[
+                ["N", "New task"],
+                ["1", "Board view"],
+                ["2", "My Tasks view"],
+                ["3", "Projects view"],
+                ["4", "List view"],
+                ["Esc", "Close drawer / dialog"],
+                ["?", "Toggle this help"],
+              ].map(([key, desc]) => (
+                <div key={key} className="flex items-center justify-between">
+                  <span className="text-muted-foreground">{desc}</span>
+                  <kbd className="px-2 py-0.5 bg-muted rounded border text-[10px] font-mono font-bold">{key}</kbd>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
