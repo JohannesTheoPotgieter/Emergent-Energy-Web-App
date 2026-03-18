@@ -47,7 +47,6 @@ import {
   MessageSquare,
   Activity,
   ArrowLeft,
-  X,
   MoreHorizontal,
   ArrowRightLeft,
   ClipboardCopy,
@@ -123,15 +122,6 @@ interface StandupData {
 
 // PHASE_COLORS imported from @/lib/phase-colors
 
-
-const priorityColors: Record<string, string> = {
-  "Critical": "text-red-600",
-  "Urgent": "text-red-600",
-  "High": "text-orange-600",
-  "Med": "text-yellow-600",
-  "Medium": "text-yellow-600",
-  "Low": "text-muted-foreground",
-};
 
 const priorityBorderDash: Record<string, string> = {
   "Critical": "border-l-red-600",
