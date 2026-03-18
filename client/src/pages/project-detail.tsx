@@ -738,7 +738,7 @@ export default function ProjectDetailPage() {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
   const projectName = params?.projectName ? decodeURIComponent(params.projectName) : "";
-  const { projectsSummary } = useProgramData();
+  const { projectsSummary, isLoading: programDataLoading } = useProgramData();
   const { user } = useAuth();
 
   useEffect(() => {
@@ -1011,6 +1011,39 @@ export default function ProjectDetailPage() {
         <h2 className="text-3xl font-heading font-bold text-foreground">Project Not Found</h2>
         <p className="text-muted-foreground">No project specified.</p>
       </div>
+    );
+  }
+
+  if (programDataLoading) {
+    return (
+      <PageShell className="p-3 md:p-4">
+        <div className="flex flex-col items-center justify-center py-20 gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading project data...</p>
+        </div>
+      </PageShell>
+    );
+  }
+
+  if (projectsSummary && !projectInfo) {
+    return (
+      <PageShell className="p-3 md:p-4">
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
+            <AlertCircle className="w-8 h-8 text-muted-foreground" />
+          </div>
+          <div className="text-center space-y-1">
+            <h3 className="text-lg font-semibold text-foreground">Project Not Found</h3>
+            <p className="text-sm text-muted-foreground max-w-md">
+              The project "{projectName.replace(/_Tracker$/i, "").replace(/_/g, " ")}" was not found in the project list. It may not have been imported yet, or the URL may be incorrect.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setLocation("/projects")} className="mt-2">
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back to Project List
+          </Button>
+        </div>
+      </PageShell>
     );
   }
 
