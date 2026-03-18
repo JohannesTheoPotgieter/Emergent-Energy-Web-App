@@ -6,11 +6,9 @@ import {
   projectInfo,
   pmSiteVisits,
   pmOnTheGoActions,
-  pmComplianceTracking,
   pmModePreferences,
   notifications,
   notificationThrottle,
-  users,
 } from "@shared/schema";
 import multer from "multer";
 import path from "path";
