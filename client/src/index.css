@@ -157,6 +157,43 @@
   color-scheme: dark;
 }
 
+/* Engineering dark mode overrides (#15) */
+.dark [data-testid="eng-tasks-page"] .bg-red-50\/60,
+.dark [data-testid="eng-tasks-page"] .bg-red-50,
+.dark [data-testid="standup-kpi-strip"] .bg-red-50 {
+  background-color: hsl(0 40% 18%) !important;
+}
+.dark [data-testid="eng-tasks-page"] .bg-blue-50,
+.dark [data-testid="eng-tasks-page"] .bg-blue-50\/30,
+.dark [data-testid="today-focus"] {
+  background-color: hsl(220 40% 16%) !important;
+}
+.dark [data-testid="eng-tasks-page"] .bg-amber-50,
+.dark [data-testid="eng-tasks-page"] .bg-amber-50\/30 {
+  background-color: hsl(40 40% 16%) !important;
+}
+.dark [data-testid="eng-tasks-page"] .bg-emerald-50,
+.dark [data-testid="eng-tasks-page"] .bg-emerald-50\/30 {
+  background-color: hsl(160 30% 14%) !important;
+}
+.dark [data-testid="eng-tasks-page"] .bg-purple-50 {
+  background-color: hsl(280 30% 16%) !important;
+}
+.dark [data-testid="eng-tasks-page"] .bg-orange-50\/30 {
+  background-color: hsl(30 30% 16%) !important;
+}
+.dark [data-testid="bulk-action-bar"] {
+  background-color: hsl(220 40% 18%) !important;
+  border-color: hsl(220 40% 30%) !important;
+}
+.dark [data-testid="section-stages-matrix"] table tr:hover,
+.dark [data-testid="section-activity-feed"] > div > div > div:hover {
+  background-color: hsl(220 14% 16%) !important;
+}
+.dark .bg-white {
+  background-color: hsl(222 14% 12%) !important;
+}
+
 .command-header {
   --cmd-bg: #FFFFFF;
   --cmd-bg-panel: linear-gradient(135deg, hsl(210 20% 97%) 0%, hsl(142 30% 96%) 100%);
@@ -339,6 +376,39 @@
   th, td {
     padding-left: 6px;
     padding-right: 6px;
+  }
+  /* Engineering mobile optimizations (#14) */
+  [data-testid="eng-tasks-page"] .flex.gap-1\.5.overflow-x-auto {
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  [data-testid="eng-tasks-page"] .flex.gap-1\.5.overflow-x-auto > div {
+    scroll-snap-align: start;
+    min-width: 85vw;
+  }
+  [data-testid="standup-kpi-strip"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  [data-testid="board-toolbar"] {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    padding-bottom: 4px;
+  }
+  [data-testid="timeline-view"] {
+    font-size: 10px;
+  }
+  [data-testid="timeline-view"] .w-\[220px\] {
+    width: 140px !important;
+    min-width: 140px !important;
+  }
+  /* Larger touch targets for task cards */
+  [data-testid^="kanban-card-"] {
+    padding: 12px !important;
+  }
+  /* Stack today focus items tighter */
+  [data-testid="today-focus"] .space-y-1 > div {
+    padding: 10px 8px !important;
   }
 }
 
