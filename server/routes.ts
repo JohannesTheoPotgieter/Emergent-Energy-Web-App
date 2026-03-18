@@ -3998,7 +3998,7 @@ export async function registerRoutes(
 
       // Build override lookup sets so dashboard aggregates respect manual overrides
       const inBankOverrideSet = new Set(
-        revOverrides.filter((o: any) => o.overrideValue === "1").map((o: any) => `${o.projectName}::${o.sourceRow ?? o.rowNumber}`)
+        revOverrides.filter((o: any) => o.overrideValue === "1").map((o: any) => `${o.projectName}::${o.rowNumber}`)
       );
       const cosOverrideByKey = new Map<string, string>();
       for (const co of cosOverrides) {
