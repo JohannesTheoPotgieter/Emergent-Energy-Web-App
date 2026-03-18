@@ -77,6 +77,8 @@ import ActionLaunchpadPage from "@/pages/action-launchpad";
 import PdPmHandoverPage from "@/pages/pd-pm-handover";
 import PmHandoverReviewPage from "@/pages/pm-handover-review";
 import HandoverControlPage from "@/pages/handover-control";
+import TaskManagementPage from "@/pages/task-management";
+import StandupsPage from "@/pages/standups";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { checkPermission, normalizeRoleForPermissions } from "@shared/schema";
@@ -85,8 +87,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { PAGE_REGISTRY, ROLE_LANDING_PAGE, getPermissionEntityForPath } from "@/config/page-registry";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 
-const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
-const PM_ALLOWED_PATHS = ["/", "/dashboard", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm-dashboard", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings"];
+const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings", "/tasks", "/standups"];
+const PM_ALLOWED_PATHS = ["/", "/dashboard", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm-dashboard", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/settings/integrations", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/my-tool", "/my-tool/week", "/my-tool/backlog", "/my-tool/settings", "/my-tool/help", "/my-tool/meetings", "/tasks", "/standups"];
 
 type RouteConfig = { path: string; component?: React.ComponentType<any>; redirectTo?: string };
 
@@ -161,6 +163,8 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   PdPmHandoverPage,
   PmHandoverReviewPage,
   HandoverControlPage,
+  TaskManagementPage,
+  StandupsPage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
