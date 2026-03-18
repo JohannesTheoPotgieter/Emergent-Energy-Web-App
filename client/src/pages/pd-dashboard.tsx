@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, FileEdit, Plus, AlertTriangle, Clock, CheckCircle2, PauseCircle, FileStack } from "lucide-react";
+import { statusColorClasses, priorityColorClasses } from "@/lib/status-colors";
 import { useLocation } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
 
@@ -126,8 +127,8 @@ export default function PdDashboardPage() {
                         <span className="text-[9px] text-muted-foreground">{row.taskCompleted}/{row.taskTotal}</span>
                       </div>
                     )}
-                    <Badge className={`text-[10px] shrink-0 ${statusColor(t.status)}`}>{t.status}</Badge>
-                    <Badge className={`text-[10px] shrink-0 ${priorityColor(t.priority)}`}>{t.priority}</Badge>
+                    <Badge className={`text-[10px] shrink-0 ${statusColorClasses(t.status)}`}>{t.status}</Badge>
+                    <Badge className={`text-[10px] shrink-0 ${priorityColorClasses(t.priority)}`}>{t.priority}</Badge>
                   </CardContent>
                 </Card>
               );
@@ -139,17 +140,3 @@ export default function PdDashboardPage() {
   );
 }
 
-function statusColor(s: string) {
-  if (s === "Completed") return "bg-green-100 text-green-700";
-  if (s === "In Progress") return "bg-blue-100 text-blue-700";
-  if (s === "On Hold") return "bg-orange-100 text-orange-700";
-  if (s === "Cancelled") return "bg-muted text-muted-foreground";
-  return "bg-muted text-foreground";
-}
-
-function priorityColor(p: string) {
-  if (p === "Critical") return "bg-red-100 text-red-700";
-  if (p === "High") return "bg-orange-100 text-orange-700";
-  if (p === "Low") return "bg-green-100 text-green-700";
-  return "bg-blue-100 text-blue-700";
-}

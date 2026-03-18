@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { toCanonicalEngineeringStageStatus } from "@shared/status-logic";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
@@ -3964,7 +3965,7 @@ export async function registerRoutes(
       const fyEnd = `${fyStartYear + 1}-08-31`;
       const today = now.toISOString().slice(0, 10);
 
-      const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, canonicalPlanTasks, qualityResult, usersResult, cashflowPointRows, financeRevenueRows, financeCosRows] = await Promise.all([
+      const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, canonicalPlanTasks, qualityResult, usersResult, cashflowPointRows, financeRevenueRows, financeCosRows, revOverrides, cosOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
         db.select().from(normalizedRevenueLines),
         db.select().from(normalizedCostLines),
@@ -3977,6 +3978,8 @@ export async function registerRoutes(
         db.select().from(cashflowPoints),
         db.select().from(financeRevenueMonthly),
         db.select().from(financeCosMonthly),
+        db.select().from(revenueTrackingOverrides).where(eq(revenueTrackingOverrides.fieldName, "inBank")),
+        db.select().from(cosStatusOverrides),
       ]);
 
       const userNameById = new Map<number, string>((usersResult.rows as any[]).map((u: any) => [Number(u.id), u.name || `User ${u.id}`]));
@@ -3992,6 +3995,15 @@ export async function registerRoutes(
         const end = (e || s || '').slice(0, 10);
         return !!start && !!end && start <= fyEnd && end >= fyStart;
       };
+
+      // Build override lookup sets so dashboard aggregates respect manual overrides
+      const inBankOverrideSet = new Set(
+        revOverrides.filter((o: any) => o.overrideValue === "1").map((o: any) => `${o.projectName}::${o.sourceRow ?? o.rowNumber}`)
+      );
+      const cosOverrideByKey = new Map<string, string>();
+      for (const co of cosOverrides) {
+        cosOverrideByKey.set(`${co.projectName}::${co.rowNumber}`, co.overrideStatus);
+      }
 
       // RLS: scope project data to user's accessible projects
       const { resolveProjectScope } = await import("./services/project-access-service");
@@ -4077,7 +4089,9 @@ export async function registerRoutes(
         const row = ensureRow(proj); row.__hasFyItem = true;
         const amt = toNum(r.amountExVat);
         row.plannedRevenueFy += amt;
-        const received = hasText(r.invoiceNumber) && hasText(r.paidDate) && isBlack(r.paidDateFontColor);
+        const baseReceived = hasText(r.invoiceNumber) && hasText(r.paidDate) && isBlack(r.paidDateFontColor);
+        const overrideInBank = inBankOverrideSet.has(`${r.projectName}::${r.sourceRow}`);
+        const received = baseReceived || overrideInBank;
         if (received) row.receivedInflowFy += amt;
         if (!received && dateKey && dateKey < today) row._inflowRisk += amt;
       }
@@ -4100,7 +4114,9 @@ export async function registerRoutes(
 
         if (dateKey && dateKey.slice(0, 7) === currentMonthKey) {
           cosPlannedMonth += amt;
-          if (c.cosRealised === true) cosRealisedMonth += amt;
+          const cosOverrideStatus = cosOverrideByKey.get(`${c.projectName}::${c.sourceRow}`);
+          const isRealised = cosOverrideStatus ? cosOverrideStatus === 'COS Realised' : c.cosRealised === true;
+          if (isRealised) cosRealisedMonth += amt;
         }
       }
 
@@ -4108,7 +4124,7 @@ export async function registerRoutes(
         const proj = e.projectId ? projectById.get(e.projectId) : projectByName.get((e.projectName || '').toLowerCase());
         if (!proj) continue;
         const row = ensureRow(proj);
-        if (String(e.status || '').toUpperCase() !== 'COMPLETE' && !e.softDeletedAt) row._engOpen += 1;
+        if (toCanonicalEngineeringStageStatus(e.status) !== 'complete' && !e.softDeletedAt) row._engOpen += 1;
       }
 
       for (const q of qualityRows) {
