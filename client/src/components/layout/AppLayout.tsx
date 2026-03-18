@@ -8,12 +8,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Menu, Search, Plus, Bell, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, Building2, UserCircle2, LogOut, X } from "lucide-react";
+import { Menu, Search, Plus, Bell, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
+import { useTheme } from "@/hooks/use-theme";
 
 type SearchResult = { id: string; title: string; subtitle?: string; type: string; url?: string | null };
 
@@ -39,6 +40,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [microsoftMenuOpen, setMicrosoftMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { canAccessEntityAction, canViewPath } = useAccessMatrix();
+  const { theme, setTheme } = useTheme();
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const subNavRef = useRef<HTMLDivElement>(null);
 
@@ -284,6 +286,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <div className="font-medium flex items-center gap-2"><UserCircle2 className="h-4 w-4" />{user?.username || "User"}</div>
                 <div className="text-xs text-muted-foreground flex items-center gap-1"><Building2 className="h-3 w-3" />{user?.role || "role"}</div>
               </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Theme</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => setTheme("light")}><Sun className="h-4 w-4 mr-2" />Light{theme === "light" && <span className="ml-auto text-primary text-xs">Active</span>}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme("dark")}><Moon className="h-4 w-4 mr-2" />Dark{theme === "dark" && <span className="ml-auto text-primary text-xs">Active</span>}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme("system")}><Monitor className="h-4 w-4 mr-2" />System{theme === "system" && <span className="ml-auto text-primary text-xs">Active</span>}</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => logout()}><LogOut className="h-4 w-4 mr-2" />Log out</DropdownMenuItem>
             </DropdownMenuContent>
