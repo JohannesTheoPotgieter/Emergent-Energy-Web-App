@@ -181,7 +181,7 @@ function BoardView({ filters }: { filters: Record<string, string> }) {
     if (v) params.set(k, v);
   }
 
-  const { data: boardData, isLoading } = useQuery<BoardData>({
+  const { data: boardData, isLoading, isError, error, refetch } = useQuery<BoardData>({
     queryKey: ["tasks-board", filters],
     queryFn: () => apiFetch(`/api/tasks/board?${params}`),
   });
@@ -197,6 +197,16 @@ function BoardView({ filters }: { filters: Record<string, string> }) {
 
   if (isLoading) {
     return <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <AlertTriangle className="h-8 w-8 text-red-500" />
+        <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : "Failed to load board data"}</p>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
+      </div>
+    );
   }
 
   const columns = ["Not Started", "In Progress", "Complete", "Delayed"];
@@ -219,7 +229,7 @@ function BoardView({ filters }: { filters: Record<string, string> }) {
               {items.map((task: TaskItem) => (
                 <TaskCard
                   key={task.id}
-                  task={{ ...task, tags: [] }}
+                  task={task}
                   onStatusChange={(id, newStatus) => updateMutation.mutate({ id, status: newStatus })}
                 />
               ))}
@@ -244,13 +254,23 @@ function ListView({ filters }: { filters: Record<string, string> }) {
 
   const params = new URLSearchParams({ ...filters, sortBy, sortDir, limit: "100" });
 
-  const { data, isLoading } = useQuery<TasksResponse>({
+  const { data, isLoading, isError, error, refetch } = useQuery<TasksResponse>({
     queryKey: ["tasks", filters, sortBy, sortDir],
     queryFn: () => apiFetch(`/api/tasks?${params}`),
   });
 
   if (isLoading) {
     return <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <AlertTriangle className="h-8 w-8 text-red-500" />
+        <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : "Failed to load tasks"}</p>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
+      </div>
+    );
   }
 
   const items = data?.items || [];
@@ -322,13 +342,23 @@ function CalendarView({ filters }: { filters: Record<string, string> }) {
 
   const params = new URLSearchParams({ ...filters, startDate, endDate });
 
-  const { data: calendarData, isLoading } = useQuery<Record<string, TaskItem[]>>({
+  const { data: calendarData, isLoading, isError, error, refetch } = useQuery<Record<string, TaskItem[]>>({
     queryKey: ["tasks-calendar", month, filters],
     queryFn: () => apiFetch(`/api/tasks/calendar?${params}`),
   });
 
   if (isLoading) {
     return <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <AlertTriangle className="h-8 w-8 text-red-500" />
+        <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : "Failed to load calendar data"}</p>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
+      </div>
+    );
   }
 
   const firstDayOfWeek = new Date(year, monthNum - 1, 1).getDay();
@@ -404,13 +434,23 @@ function CalendarView({ filters }: { filters: Record<string, string> }) {
 function MetricsView({ filters }: { filters: Record<string, string> }) {
   const params = new URLSearchParams(filters);
 
-  const { data: metrics, isLoading } = useQuery<MetricsData>({
+  const { data: metrics, isLoading, isError, error, refetch } = useQuery<MetricsData>({
     queryKey: ["tasks-metrics", filters],
     queryFn: () => apiFetch(`/api/tasks/metrics?${params}`),
   });
 
   if (isLoading) {
     return <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <AlertTriangle className="h-8 w-8 text-red-500" />
+        <p className="text-sm text-muted-foreground">{error instanceof Error ? error.message : "Failed to load metrics"}</p>
+        <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
+      </div>
+    );
   }
 
   if (!metrics) return null;
