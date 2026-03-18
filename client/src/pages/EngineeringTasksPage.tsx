@@ -1201,7 +1201,7 @@ function TaskDetailDrawer({
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Assignee</Label>
               <UserAssignmentPicker
-                taskId={task.id}
+                taskId={Number.isFinite(task.id) ? task.id : 0}
                 taskSource="plan"
                 resolvedUsers={task.resolvedAssignees || null}
                 textNames={task.assignees || null}
