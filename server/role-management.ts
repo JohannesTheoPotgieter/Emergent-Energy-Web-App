@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, desc, and, or, isNull, gte } from "drizzle-orm";
 import {
   AUTHORITY_ACTIONS,
   ENTITY_PERMISSION_DEFAULTS,
@@ -21,8 +21,6 @@ import { invalidateEntityPermCache, invalidateUserOverrideCache } from "./permis
 import bcrypt from "bcryptjs";
 import { logAuditFromReq } from "./audit-logger";
 import { logPermissionAudit } from "./permission-audit";
-import { desc, and, or, isNull, gte } from "drizzle-orm";
-// Note: eq, inArray imported above
 
 const LEGACY_ROLE_MAP: Record<string, string> = {
   admin: "COO_ADMIN",

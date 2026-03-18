@@ -160,7 +160,7 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   project_management: {
     label: "Project Management",
-    entities: ["projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_review_wizard", "portfolios", "portfolio_detail"],
+    entities: ["projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_review_wizard", "portfolios", "portfolio_detail", "handover", "commissioning", "task_management", "standups"],
   },
   engineering: {
     label: "Engineering",
@@ -172,7 +172,7 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   finance: {
     label: "Finance",
-    entities: ["cashflow", "cos", "revenue_tracker", "gp_tracker", "financials", "procurement", "subcontractors", "invoice_patterns"],
+    entities: ["cashflow", "cos", "revenue_tracker", "gp_tracker", "financials", "procurement", "counterparties", "subcontractors", "invoice_patterns"],
   },
   knowledge: {
     label: "Knowledge",
@@ -180,7 +180,7 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   collaboration: {
     label: "Collaboration",
-    entities: ["teams_chat", "project_chat", "collaboration_hub", "sharepoint_files", "meetings"],
+    entities: ["teams_chat", "project_chat", "collaboration_hub", "sharepoint_files", "meetings", "reports"],
   },
   admin: {
     label: "Admin",

@@ -482,7 +482,7 @@ export function registerTaskManagementRoutes(app: Express) {
   // ── Time Tracking ──────────────────────────────────────────────────────────
 
   /** Log time for a task */
-  app.post("/api/tasks/:id/time", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/tasks/:id/time", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const workItemId = parseInt(req.params.id);
@@ -507,7 +507,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Get time entries for a task */
-  app.get("/api/tasks/:id/time", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/tasks/:id/time", requireAuth, requirePermission("task_management", "view"), async (req: Request, res: Response) => {
     try {
       const workItemId = parseInt(req.params.id);
       const entries = await db
@@ -550,7 +550,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Create a tag */
-  app.post("/api/tags", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/tags", requireAuth, requirePermission("task_management", "create"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const { name, color, category } = req.body;
@@ -574,7 +574,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Update a tag */
-  app.patch("/api/tags/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/tags/:id", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       const { name, color, category } = req.body;
@@ -597,7 +597,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Delete a tag */
-  app.delete("/api/tags/:id", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/tags/:id", requireAuth, requirePermission("task_management", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       await db.delete(taskTags).where(eq(taskTags.id, id));
@@ -608,7 +608,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Assign tags to a task */
-  app.post("/api/tasks/:id/tags", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/tasks/:id/tags", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
       const workItemId = parseInt(req.params.id);
       const { tagIds } = req.body;
@@ -644,7 +644,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Remove a tag from a task */
-  app.delete("/api/tasks/:id/tags/:tagId", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/tasks/:id/tags/:tagId", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
     try {
       const workItemId = parseInt(req.params.id);
       const tagId = parseInt(req.params.tagId);
