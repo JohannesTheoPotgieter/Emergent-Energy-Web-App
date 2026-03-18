@@ -496,6 +496,7 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
         ${priorityBorderColors[task.priority] || "border-l-gray-300"}
         ${overdue ? "bg-red-50/60 border-r-red-200 border-t-red-200 border-b-red-200" : ""}
         ${isCritical && !overdue ? "bg-orange-50/30" : ""}
+        ${selected ? "ring-2 ring-blue-500 bg-blue-50/40" : ""}
       `}
       data-testid={`kanban-card-${task.id}`}
     >
@@ -2319,7 +2320,7 @@ function TaskDetailDrawer({
             )}
 
             {activeTab === "dependencies" && (
-              <DependenciesTab task={task} allTasks={allTasks} />
+              <DependenciesTab task={task} />
             )}
 
             {(task.linkedPlanItemId || task.linkedDeliverableId || task.linkedQualityItemInstanceId) && (

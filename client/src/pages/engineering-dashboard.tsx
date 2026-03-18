@@ -1365,6 +1365,7 @@ export default function EngineeringDashboard() {
   const userRole = (user as any)?.role || "";
   const managerRoles = ["admin", "eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
   const isManagerRole = isAdmin || managerRoles.includes(userRole);
+  const { toast } = useToast();
   const [showAllTasks, setShowAllTasks] = useState(isManagerRole);
   const [standupMode, setStandupMode] = useState(false);
   const fullName = user?.name || "";
