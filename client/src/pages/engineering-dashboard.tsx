@@ -56,6 +56,7 @@ import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { engFetch, engPatch, engPost } from "@/lib/eng-fetch";
 import { PHASE_COLORS } from "@/lib/phase-colors";
+import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 
 interface StandupTask {
   id: number;
@@ -1420,6 +1421,15 @@ export default function EngineeringDashboard() {
   const { summary, blockers, recentlyCompleted, upcomingThisWeek, needsApproval, inProgressHighlights, workload, projectHealth } = data;
   const totalBlockers = blockers.hold.length + blockers.overdue.length;
 
+  const engAttentionItems = useMemo((): AttentionItem[] => {
+    const items: AttentionItem[] = [];
+    if (summary.overdueTasks > 0) items.push({ label: "Overdue Tasks", value: summary.overdueTasks, color: "text-red-600 bg-red-50 border-red-200", href: "/engineering/tasks?dueDate=overdue" });
+    if (summary.holdTasks > 0) items.push({ label: "On Hold", value: summary.holdTasks, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/engineering/tasks?status=HOLD" });
+    if (summary.needsApprovalCount > 0) items.push({ label: "Needs Approval", value: summary.needsApprovalCount, color: "text-violet-700 bg-violet-50 border-violet-200", href: "/engineering/tasks?status=NEEDS+APPROVAL" });
+    if (summary.upcomingThisWeekCount > 0) items.push({ label: "Due This Week", value: summary.upcomingThisWeekCount, color: "text-blue-700 bg-blue-50 border-blue-200", href: "/engineering/tasks?dueDate=this_week" });
+    return items;
+  }, [summary]);
+
   const todayFormatted = new Date().toLocaleDateString("en-ZA", {
     weekday: "long", day: "numeric", month: "long", year: "numeric"
   });
@@ -1581,6 +1591,7 @@ export default function EngineeringDashboard() {
         </>
       ) : (
       <>
+      <AttentionBadges items={engAttentionItems} threshold={5} testId="eng-attention-needed" />
       <KpiStrip summary={summary} />
 
       {totalBlockers > 0 && (
