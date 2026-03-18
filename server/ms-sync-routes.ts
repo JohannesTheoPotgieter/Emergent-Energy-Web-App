@@ -65,11 +65,11 @@ function normalizeTaskStatus(status: string | null | undefined): string {
 export function registerMsSyncRoutes(app: Express) {
   const assignmentPayloadSchema = z
     .object({
-      taskId: z.number().int().positive(),
+      taskId: z.coerce.number().int().positive(),
       taskSource: z.string().min(1),
       assigneeType: z.enum(["internal_user", "external_counterparty", "external_contact"]).nullable().optional(),
-      assigneeId: z.number().int().positive().nullable().optional(),
-      userId: z.number().int().positive().nullable().optional(), // legacy shape
+      assigneeId: z.coerce.number().int().positive().nullable().optional(),
+      userId: z.coerce.number().int().positive().nullable().optional(), // legacy shape
     })
     .superRefine((data, ctx) => {
       const effectiveAssigneeType = data.assigneeType ?? (data.userId != null ? "internal_user" : null);
