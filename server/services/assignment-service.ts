@@ -985,9 +985,11 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
     throw new Error("Selected assignee is inactive");
   }
 
+  console.log("[Assignment] Starting transaction:", { entityType: input.entityType, entityId, assignmentRole, mode, assigneeType: input.assigneeType, assigneeId });
   return db.transaction(async (tx) => {
     const projectId = await getEntityProjectId(tx as Queryable, input.entityType, entityId);
     const before = await getCanonicalAssignments(tx as Queryable, input.entityType, entityId);
+    console.log("[Assignment] Before state:", before.length, "active assignments");
 
     if (mode !== "append" || !target) {
       await tx.update(entityAssignments).set({
@@ -1029,6 +1031,7 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
 
     await syncLegacyAssignments(tx as Queryable, input.entityType, entityId);
     const after = await getCanonicalAssignments(tx as Queryable, input.entityType, entityId);
+    console.log("[Assignment] After state:", after.length, "active assignments, ids:", after.map(a => `${a.assigneeType}:${a.assigneeId}`).join(", "));
 
     logAuditFromReq(req, {
       entityType: "assignment",

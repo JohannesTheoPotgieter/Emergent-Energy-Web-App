@@ -99,7 +99,41 @@ async function initializeDatabase(): Promise<void> {
           message: `Connected to PostgreSQL (${config.dbHost})`,
           host: config.dbHost,
         });
-        
+
+        // Ensure entity_assignments table exists (idempotent DDL)
+        try {
+          await pool.query(`
+            CREATE TABLE IF NOT EXISTS public.entity_assignments (
+              id SERIAL PRIMARY KEY,
+              entity_type TEXT NOT NULL,
+              entity_id INTEGER NOT NULL,
+              project_id INTEGER REFERENCES public.project_info(id),
+              assignment_role TEXT NOT NULL DEFAULT 'ASSIGNEE',
+              assignee_type TEXT NOT NULL,
+              assignee_id INTEGER NOT NULL,
+              display_label_snapshot TEXT NOT NULL,
+              active BOOLEAN NOT NULL DEFAULT TRUE,
+              assigned_by_user_id INTEGER REFERENCES public.users(id),
+              cleared_by_user_id INTEGER REFERENCES public.users(id),
+              assigned_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              cleared_at TIMESTAMP,
+              metadata JSONB,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+          `);
+          await pool.query(`CREATE INDEX IF NOT EXISTS entity_assignments_entity_idx ON public.entity_assignments(entity_type, entity_id, active)`);
+          await pool.query(`CREATE INDEX IF NOT EXISTS entity_assignments_project_idx ON public.entity_assignments(project_id, active)`);
+          await pool.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS entity_assignments_active_unique
+            ON public.entity_assignments(entity_type, entity_id, assignment_role, assignee_type, assignee_id)
+            WHERE active = TRUE
+          `);
+          console.log('[DB] ✓ entity_assignments table verified');
+        } catch (ddlErr: any) {
+          console.warn('[DB] entity_assignments DDL warning (non-fatal):', ddlErr.message);
+        }
+
         isInitialized = true;
         return;
       }
