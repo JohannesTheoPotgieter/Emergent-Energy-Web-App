@@ -156,6 +156,9 @@ export const programExpense = pgTable("program_expense", {
   computedForecastPaymentDate: text("computed_forecast_payment_date"),
   supplierName: text("supplier_name"),
   isManual: boolean("is_manual").default(false),
+  dataSource: text("data_source").default("SMART_IMPORT"),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  importRunId: integer("import_run_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -181,6 +184,9 @@ export const programInflows = pgTable("program_inflows", {
   inBank: integer("in_bank").default(0),
   inflowLineHash: text("inflow_line_hash"),
   computedForecastReceiptDate: text("computed_forecast_receipt_date"),
+  dataSource: text("data_source").default("SMART_IMPORT"),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  importRunId: integer("import_run_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -220,6 +226,7 @@ export const projectRevenueSummary = pgTable("project_revenue_summary", {
   actualMargin: decimal("actual_margin", { precision: 6, scale: 4 }),
   voPmLimit: decimal("vo_pm_limit", { precision: 15, scale: 2 }),
   currentVoTotal: decimal("current_vo_total", { precision: 15, scale: 2 }),
+  projectId: integer("project_id").references(() => projectInfo.id),
   capturedAt: timestamp("captured_at").notNull().defaultNow(),
 });
 
@@ -384,6 +391,7 @@ export const cashflowPoints = pgTable("cashflow_points", {
   seriesName: text("series_name").notNull(), // e.g. "Planned Revenue", "ACTUAL CashFlow"
   pointDate: text("point_date").notNull(), // ISO date string for the week/date
   value: decimal("value", { precision: 15, scale: 2 }),
+  projectId: integer("project_id").references(() => projectInfo.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -3851,8 +3859,9 @@ export const normalizedPlanTasks = pgTable("normalized_plan_tasks", {
   scheduledDate: text("scheduled_date"),
   scheduledStartTime: text("scheduled_start_time"),
   scheduledEndTime: text("scheduled_end_time"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertNormalizedPlanTaskSchema = createInsertSchema(normalizedPlanTasks).omit({ id: true } as any);
+export const insertNormalizedPlanTaskSchema = createInsertSchema(normalizedPlanTasks).omit({ id: true, createdAt: true } as any);
 export type InsertNormalizedPlanTask = z.infer<typeof insertNormalizedPlanTaskSchema>;
 export type NormalizedPlanTask = typeof normalizedPlanTasks.$inferSelect;
 
@@ -3878,8 +3887,9 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   sourceRow: integer("source_row"),
   importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
   turnaroundDays: integer("turnaround_days"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true } as any);
+export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true } as any);
 export type InsertNormalizedRevenueLine = z.infer<typeof insertNormalizedRevenueLineSchema>;
 export type NormalizedRevenueLine = typeof normalizedRevenueLines.$inferSelect;
 
@@ -3975,14 +3985,15 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   status: costLineStatusEnum("cost_line_status").notNull().default('PLANNED'),
   sourceSheet: text("source_sheet"),
   sourceRow: integer("source_row"),
-  importRunId: integer("import_run_id").references(() => smartImportRuns.id),
+  importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
   turnaroundDays: integer("turnaround_days"),
   patternRuleId: integer("pattern_rule_id"),
   patternClassifiedAt: timestamp("pattern_classified_at"),
   patternInferredType: text("pattern_inferred_type"),
   noRevenueLinked: boolean("no_revenue_linked").default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true } as any);
+export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true } as any);
 export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;
 export type NormalizedCostLine = typeof normalizedCostLines.$inferSelect;
 
@@ -3994,8 +4005,9 @@ export const normalizedExecutionPhases = pgTable("normalized_execution_phases", 
   phaseDate: text("phase_date"),
   source: phaseSourceEnum("source").notNull().default('EXCEL_IMPORT'),
   importRunId: integer("import_run_id").references(() => smartImportRuns.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertNormalizedExecutionPhaseSchema = createInsertSchema(normalizedExecutionPhases).omit({ id: true } as any);
+export const insertNormalizedExecutionPhaseSchema = createInsertSchema(normalizedExecutionPhases).omit({ id: true, createdAt: true } as any);
 export type InsertNormalizedExecutionPhase = z.infer<typeof insertNormalizedExecutionPhaseSchema>;
 export type NormalizedExecutionPhase = typeof normalizedExecutionPhases.$inferSelect;
 
