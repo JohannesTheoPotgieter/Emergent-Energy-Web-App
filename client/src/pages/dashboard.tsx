@@ -315,6 +315,7 @@ function UpcomingFinancialsSection({ data }: { data: FinancialsResponse | undefi
 export default function DashboardPage() {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
+  const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState({
     search: "",
     portfolio: "all",
@@ -569,7 +570,8 @@ export default function DashboardPage() {
               const rows = data?.actionCenter?.[k] || [];
               const isCollapsed = collapsedQueues.has(k);
               const meta = queueMeta(k);
-              const showMax = 5;
+              const isQueueExpanded = expandedQueues.has(k);
+              const showMax = isQueueExpanded ? rows.length : 5;
               const visibleRows = isCollapsed ? [] : rows.slice(0, showMax);
 
               return (
@@ -610,10 +612,17 @@ export default function DashboardPage() {
                               </div>
                             );
                           })}
-                          {rows.length > showMax && (
-                            <div className="px-4 py-2 text-xs text-emerald-600 cursor-pointer hover:underline">
-                              Show {rows.length - showMax} more...
-                            </div>
+                          {rows.length > 5 && (
+                            <button
+                              onClick={() => setExpandedQueues(prev => {
+                                const next = new Set(prev);
+                                if (next.has(k)) next.delete(k); else next.add(k);
+                                return next;
+                              })}
+                              className="w-full px-4 py-2 text-xs text-emerald-600 cursor-pointer hover:underline hover:bg-muted/20 text-left transition-colors"
+                            >
+                              {isQueueExpanded ? "Show less" : `Show ${rows.length - 5} more...`}
+                            </button>
                           )}
                         </>
                       )}
@@ -737,7 +746,7 @@ export default function DashboardPage() {
                           </td>
                           <td className="py-2.5 px-2 text-right tabular-nums text-sm text-amber-600 hidden lg:table-cell">{money(p.openInflowFy)}</td>
                           <td className="py-2.5 px-2 text-right tabular-nums text-sm text-amber-600 hidden lg:table-cell">{money(p.openExpenditureFy)}</td>
-                          <td className="py-2.5 px-2 text-right tabular-nums text-sm font-medium hidden md:table-cell">{pct((p.grossMarginPctFy || 0) * 100)}</td>
+                          <td className="py-2.5 px-2 text-right tabular-nums text-sm font-medium hidden md:table-cell">{p.plannedRevenueFy > 0 ? pct((p.grossMarginPctFy || 0) * 100) : <span className="text-muted-foreground">-</span>}</td>
                           <td className="py-2.5 px-2 text-center">
                             {p.criticalActionCount > 0 ? (
                               <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">{p.criticalActionCount}</Badge>
