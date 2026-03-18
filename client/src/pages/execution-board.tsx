@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ragBadgeClasses, severityStyle } from "@/lib/status-colors";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
@@ -43,20 +44,6 @@ const defaultFilters: ExecutionFilters = {
   staleImportsOnly: false,
 };
 
-function ragBadge(rag: string) {
-  if (rag === "Red") return "bg-red-100 text-red-700 border-red-200";
-  if (rag === "Amber") return "bg-amber-100 text-amber-700 border-amber-200";
-  if (rag === "Green") return "bg-emerald-100 text-emerald-700 border-emerald-200";
-  return "bg-slate-100 text-slate-500 border-slate-200";
-}
-
-function severityBadge(severity: string) {
-  const s = severity?.toLowerCase();
-  if (s === "critical") return { bg: "bg-red-50 border-red-200", text: "text-red-700", dot: "bg-red-500" };
-  if (s === "high") return { bg: "bg-orange-50 border-orange-200", text: "text-orange-700", dot: "bg-orange-500" };
-  if (s === "medium") return { bg: "bg-amber-50 border-amber-200", text: "text-amber-700", dot: "bg-amber-500" };
-  return { bg: "bg-slate-50 border-slate-200", text: "text-slate-600", dot: "bg-slate-400" };
-}
 
 function queueIcon(queue: string) {
   const q = queue?.toLowerCase();
@@ -401,7 +388,7 @@ export default function ExecutionBoard() {
                           </thead>
                           <tbody>
                             {rows.map((r, idx) => {
-                              const sev = severityBadge(r.severity);
+                              const sev = severityStyle(r.severity);
                               return (
                                 <tr key={`${r.projectId}-${idx}`} className="border-t border-border/40 hover:bg-white/80 transition-colors">
                                   <td className="py-2.5 px-4 font-medium text-foreground">{r.projectName}</td>
@@ -474,7 +461,7 @@ export default function ExecutionBoard() {
                         </td>
                         <td className="py-2.5 px-2 text-muted-foreground text-xs hidden lg:table-cell">{p.pm || "—"}</td>
                         <td className="py-2.5 px-2 text-center">
-                          <Badge className={`text-[10px] ${ragBadge(p.rag)}`}>{p.rag}</Badge>
+                          <Badge className={`text-[10px] ${ragBadgeClasses(p.rag)}`}>{p.rag}</Badge>
                         </td>
                         <td className="py-2.5 px-2 text-right">
                           <span className="tabular-nums font-medium text-sm">{p.actualProgressPct ?? "—"}%</span>
