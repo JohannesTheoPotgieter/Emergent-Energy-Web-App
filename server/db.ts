@@ -873,6 +873,82 @@ async function ensureSqliteSchema() {
     `);
     await db.run(sql`CREATE INDEX IF NOT EXISTS idx_project_phase_history_project ON project_phase_history(project_id, changed_at)`);
 
+    // ── Task Management & Standup System ───────────────────────────────────
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS standup_schedules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        team_label TEXT,
+        project_id INTEGER,
+        cadence TEXT NOT NULL DEFAULT 'EVERY_2_DAYS',
+        cadence_days INTEGER NOT NULL DEFAULT 2,
+        anchor_date TEXT NOT NULL,
+        deadline_time TEXT DEFAULT '10:00',
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS standup_participants (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        schedule_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        is_required INTEGER NOT NULL DEFAULT 1,
+        added_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_standup_participants_schedule ON standup_participants(schedule_id)`);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS standup_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        schedule_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        standup_date TEXT NOT NULL,
+        what_i_did TEXT,
+        what_im_doing TEXT,
+        blockers TEXT,
+        mood TEXT,
+        is_late INTEGER NOT NULL DEFAULT 0,
+        submitted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_standup_entries_schedule_date ON standup_entries(schedule_id, standup_date)`);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS task_tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        color TEXT NOT NULL DEFAULT '#6366f1',
+        category TEXT NOT NULL DEFAULT 'CUSTOM',
+        created_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS work_item_tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        work_item_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(work_item_id, tag_id)
+      )
+    `);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_work_item_tags_item ON work_item_tags(work_item_id)`);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS task_time_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        work_item_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        duration_minutes INTEGER NOT NULL,
+        description TEXT,
+        date TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_task_time_entries_item ON task_time_entries(work_item_id)`);
+
     console.log('[DB] SQLite schema verified');
   } catch (err: any) {
     console.error('[DB] Error creating SQLite schema:', err.message);
