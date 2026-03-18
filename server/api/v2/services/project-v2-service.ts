@@ -1,7 +1,7 @@
 import * as repo from "../repositories/project-v2-repository";
 import { ApiV2Error, paginationMeta } from "../utils/http";
 
-export async function listProjectsService(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc" }) {
+export async function listProjectsService(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null }) {
   const { rows, total } = await repo.listProjects(params);
   return { rows, meta: paginationMeta(params.page, params.pageSize, total) };
 }
@@ -151,8 +151,8 @@ export async function lookupByTypeService(type: string) {
   return [];
 }
 
-export async function dashboardByRoleService(role: string) {
-  const totals = await repo.dashboardCoreTotals();
+export async function dashboardByRoleService(role: string, scopeProjectIds?: Set<number> | null) {
+  const totals = await repo.dashboardCoreTotals(scopeProjectIds);
   if (["CFO", "ACCOUNTANT"].includes(role)) {
     return { role, cashflow: totals.pendingInvoices, cos: totals.openProcurement, overdueInvoices: totals.pendingInvoices, forecastRisk: totals.projects };
   }
