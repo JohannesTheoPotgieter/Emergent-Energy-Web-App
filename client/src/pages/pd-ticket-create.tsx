@@ -162,6 +162,14 @@ export default function PdTicketCreatePage() {
       toast({ title: "Request Type required", variant: "destructive" });
       return;
     }
+    if (!selectedProject) {
+      toast({ title: "Project linkage required", description: "Please link this ticket to a project for lifecycle tracking.", variant: "destructive" });
+      return;
+    }
+    if (!form.dueDate) {
+      toast({ title: "Due date required", description: "A due date is required for SLA tracking.", variant: "destructive" });
+      return;
+    }
 
     const body: any = {
       ...form,
@@ -372,11 +380,11 @@ export default function PdTicketCreatePage() {
                 )}
 
                 {!selectedProject && (
-                  <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs flex items-start gap-1.5" data-testid="no-project-warning">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
+                  <div className="p-2 bg-red-50 border border-red-200 rounded text-xs flex items-start gap-1.5" data-testid="no-project-warning">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-600 mt-0.5 shrink-0" />
                     <div>
-                      <p className="font-medium text-amber-800">No project linked</p>
-                      <p className="text-amber-600">Tickets without a project cannot flow into lifecycle tracking or handover. Link to a project for proper downstream visibility.</p>
+                      <p className="font-medium text-red-800">Project linkage required</p>
+                      <p className="text-red-600">Every PD ticket must be linked to a project for lifecycle tracking and handover. Select or create a project above to continue.</p>
                     </div>
                   </div>
                 )}
@@ -385,7 +393,7 @@ export default function PdTicketCreatePage() {
 
             <div className="flex justify-between pt-2">
               <Button variant="outline" onClick={() => setStep(1)} data-testid="btn-step2-back">Back</Button>
-              <Button onClick={() => setStep(3)} data-testid="btn-step2-next">
+              <Button onClick={() => setStep(3)} disabled={!selectedProject} data-testid="btn-step2-next">
                 Next <ChevronRight className="h-4 w-4 ml-1" />
               </Button>
             </div>
@@ -433,9 +441,9 @@ export default function PdTicketCreatePage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Due Date</Label>
+                <Label className="text-xs">Due Date *</Label>
                 <Input type="date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} data-testid="input-due-date" />
-                {!form.dueDate && <p className="text-[10px] text-amber-600">Setting a due date enables SLA tracking and overdue alerts.</p>}
+                {!form.dueDate && <p className="text-[10px] text-red-600">Required for SLA tracking and overdue alerts.</p>}
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Funding Type</Label>
