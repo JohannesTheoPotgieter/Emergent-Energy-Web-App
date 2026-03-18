@@ -15,7 +15,6 @@ import {
   Target, ChevronDown, ChevronRight, X, HelpCircle,
 } from "lucide-react";
 import { useLocation } from "wouter";
-import { EnergyLoader } from "@/components/ui/energy-loader";
 
 function authHeaders() {
   const token = localStorage.getItem("auth_token");

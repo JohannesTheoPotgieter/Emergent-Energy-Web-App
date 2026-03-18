@@ -31,7 +31,6 @@ import {
   AlertCircle,
   HelpCircle,
 } from "lucide-react";
-import { EnergyLoader } from "@/components/ui/energy-loader";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 interface ProjectBreakdown {
