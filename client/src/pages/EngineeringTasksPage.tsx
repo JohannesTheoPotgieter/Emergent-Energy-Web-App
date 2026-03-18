@@ -1837,6 +1837,27 @@ function TaskDetailDrawer({
                 <div className="space-y-2 max-h-[200px] overflow-y-auto">
                   {taskDeliverables.map((del: any) => (
                     <div key={del.id} className="p-2 bg-card rounded border text-xs space-y-1" data-testid={`deliverable-item-${del.id}`}>
+                      {/* Inline preview for images */}
+                      {/\.(png|jpe?g|gif|webp|svg)$/i.test(del.originalName || "") && (
+                        <div className="rounded overflow-hidden border mb-1 bg-muted/20">
+                          <img
+                            src={`/api/eng/deliverables/${del.id}/download`}
+                            alt={del.originalName}
+                            className="max-h-[200px] w-full object-contain"
+                            loading="lazy"
+                          />
+                        </div>
+                      )}
+                      {/* PDF inline preview */}
+                      {/\.pdf$/i.test(del.originalName || "") && (
+                        <div className="rounded overflow-hidden border mb-1">
+                          <iframe
+                            src={`/api/eng/deliverables/${del.id}/download#toolbar=0`}
+                            className="w-full h-[200px]"
+                            title={del.originalName}
+                          />
+                        </div>
+                      )}
                       <div className="flex items-center justify-between gap-2">
                         <a
                           href={`/api/eng/deliverables/${del.id}/download`}
@@ -1847,6 +1868,7 @@ function TaskDetailDrawer({
                         >
                           <Paperclip className="h-3 w-3 text-blue-500 shrink-0" />
                           <span className="font-medium truncate">{del.originalName}</span>
+                          {del.fileSize && <span className="text-[9px] text-muted-foreground shrink-0">({(del.fileSize / 1024).toFixed(0)}KB)</span>}
                         </a>
                         {del.acknowledged ? (
                           <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300 text-[9px] shrink-0">Acknowledged</Badge>

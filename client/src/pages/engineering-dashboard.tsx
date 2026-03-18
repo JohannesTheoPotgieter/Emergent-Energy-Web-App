@@ -1301,6 +1301,65 @@ function CompanyPrioritiesSection() {
   );
 }
 
+function ActivityFeed() {
+  const { data: auditData } = useQuery<{ entries: any[] }>({
+    queryKey: ["eng-activity-feed"],
+    queryFn: () => engFetch("/api/eng/audit-log?limit=15"),
+    refetchInterval: 60000,
+  });
+
+  const entries = auditData?.entries || [];
+
+  if (entries.length === 0) return null;
+
+  return (
+    <Card className="shadow-sm" data-testid="section-activity-feed">
+      <div className="px-4 py-3 border-b flex items-center gap-2">
+        <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center">
+          <Activity className="h-4 w-4 text-indigo-600" />
+        </div>
+        <span className="font-semibold text-sm">Recent Activity</span>
+        <span className="text-[10px] text-muted-foreground ml-auto">Live</span>
+      </div>
+      <CardContent className="p-0">
+        <div className="max-h-[280px] overflow-y-auto divide-y">
+          {entries.map((entry: any, i: number) => (
+            <div key={entry.id || i} className="px-4 py-2.5 flex items-start gap-2.5 hover:bg-muted/30 transition-colors text-xs">
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold text-white shrink-0 mt-0.5 ${
+                entry.actionType?.includes("status") ? "bg-blue-500" :
+                entry.actionType?.includes("comment") ? "bg-emerald-500" :
+                entry.actionType?.includes("created") ? "bg-purple-500" :
+                "bg-gray-400"
+              }`}>
+                {(entry.actorName || "?")[0]?.toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="leading-snug">
+                  <span className="font-semibold">{entry.actorName || "System"}</span>
+                  {" "}
+                  <span className="text-muted-foreground">
+                    {entry.actionType === "field_changed" && entry.fieldName === "status"
+                      ? `changed status → ${entry.newValue}`
+                      : entry.actionType === "comment_added"
+                      ? "added a comment"
+                      : entry.actionType === "created"
+                      ? "created a task"
+                      : `${entry.actionType?.replace(/_/g, " ")}`}
+                  </span>
+                </p>
+                {entry.taskTitle && <p className="text-muted-foreground truncate mt-0.5">{entry.taskTitle}</p>}
+              </div>
+              <span className="text-[9px] text-muted-foreground shrink-0 mt-0.5">
+                {entry.createdAt ? new Date(entry.createdAt).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" }) : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function EngineeringDashboard() {
   const { user, isAdmin } = useAuth();
   const userRole = (user as any)?.role || "";
@@ -1663,6 +1722,8 @@ export default function EngineeringDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <ActivityFeed />
 
       <div>
         <div className="flex items-center gap-2 mb-3">
