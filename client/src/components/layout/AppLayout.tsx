@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -8,11 +8,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Menu, Search, Plus, Bell, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, Building2, UserCircle2, LogOut } from "lucide-react";
+import { Menu, Search, Plus, Bell, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
+import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
+import { useTheme } from "@/hooks/use-theme";
 
 type SearchResult = { id: string; title: string; subtitle?: string; type: string; url?: string | null };
 
@@ -38,6 +40,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [microsoftMenuOpen, setMicrosoftMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { canAccessEntityAction, canViewPath } = useAccessMatrix();
+  const { theme, setTheme } = useTheme();
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const subNavRef = useRef<HTMLDivElement>(null);
+
+  // Close search dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setSearchTerm("");
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Auto-scroll sub-nav to active pill
+  useEffect(() => {
+    if (!subNavRef.current) return;
+    const active = subNavRef.current.querySelector(".ee-subnav-pill-active");
+    if (active) {
+      active.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    }
+  }, [location]);
 
   const visibleSections = useMemo(() => {
     return buildVisibleTopSections({ canViewPath });
@@ -121,6 +146,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen ee-shell">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:text-sm focus:font-medium">Skip to content</a>
       <header className="sticky top-0 z-50 border-b border-border/80 bg-background/92 backdrop-blur-xl shadow-[var(--shadow-xs)]">
         <div className="px-4 lg:px-6 py-3 flex items-center gap-2.5">
           <Sheet>
@@ -160,11 +186,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           </Link>
 
-          <div className="relative flex-1 max-w-2xl">
+          <div className="relative flex-1 max-w-2xl" ref={searchContainerRef}>
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60" />
-            <Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search projects, work items, finance, documents, people" className="pl-9 border-input focus-visible:ring-ring/30" />
+            <Input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape") setSearchTerm(""); }}
+              placeholder="Search projects, work items, finance, documents, people"
+              className={cn("pl-9 border-input focus-visible:ring-ring/30", searchTerm && "pr-8")}
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground transition-colors"
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
             {searchTerm.trim().length >= 2 && (
-              <div className="absolute left-0 right-0 top-[105%] rounded-2xl border border-border/80 bg-background/98 shadow-[var(--shadow-md)] p-2 max-h-96 overflow-auto">
+              <div className="absolute left-0 right-0 top-[calc(100%+4px)] rounded-2xl border border-border/80 bg-background/98 shadow-[var(--shadow-md)] p-2 max-h-96 overflow-auto" role="listbox" aria-live="polite">
                 {loadingSearch ? (
                   <p className="text-xs text-muted-foreground p-2">Searching across projects, work items, and finance…</p>
                 ) : searchError ? (
@@ -234,8 +276,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="gap-2" onClick={() => setUserMenuOpen((prev) => !prev)} data-testid="button-user-menu">
                 <Avatar className="h-7 w-7">
-                  <AvatarImage src={`https://api.dicebear.com/7.x/fun-emoji/svg?seed=${encodeURIComponent(user?.username || "ee")}`} alt={user?.username || "User"} />
-                  <AvatarFallback>{user?.username?.slice(0, 2)?.toUpperCase() || "EE"}</AvatarFallback>
+                  <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">{user?.username?.slice(0, 2)?.toUpperCase() || "EE"}</AvatarFallback>
                 </Avatar>
                 <span className="hidden md:inline text-sm text-foreground">{user?.username || "User"}</span>
               </Button>
@@ -246,12 +287,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <div className="text-xs text-muted-foreground flex items-center gap-1"><Building2 className="h-3 w-3" />{user?.role || "role"}</div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Theme</DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => setTheme("light")}><Sun className="h-4 w-4 mr-2" />Light{theme === "light" && <span className="ml-auto text-primary text-xs">Active</span>}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme("dark")}><Moon className="h-4 w-4 mr-2" />Dark{theme === "dark" && <span className="ml-auto text-primary text-xs">Active</span>}</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme("system")}><Monitor className="h-4 w-4 mr-2" />System{theme === "system" && <span className="ml-auto text-primary text-xs">Active</span>}</DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => logout()}><LogOut className="h-4 w-4 mr-2" />Log out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
 
-        <nav className="hidden lg:flex px-6 py-2 gap-1 border-t border-border/70 bg-background/72 overflow-x-auto">
+        <nav className="hidden lg:flex px-6 py-1.5 gap-1 border-t border-border/70 bg-background/72 overflow-x-auto">
           {visibleSections.map((section) => {
             const active = section.label === activeSection.label;
             return (
@@ -272,7 +318,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {(breadcrumbs.length > 0 || activeSection.secondary.length > 0) && (
           <div className="px-4 lg:px-6 border-t border-border/70 bg-muted/30">
             {breadcrumbs.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 py-2 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-1.5 py-1.5 text-xs text-muted-foreground">
                 <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
                 {breadcrumbs.map((crumb, idx) => (
                   <span key={crumb.label + idx} className="flex items-center gap-1.5">
@@ -287,7 +333,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             )}
             {activeSection.secondary.length > 0 && (
-              <div className="flex gap-1.5 overflow-x-auto pb-2.5 pt-1">
+              <div ref={subNavRef} className="flex gap-1.5 overflow-x-auto pb-2 pt-0.5">
                 {activeSection.secondary.map((item) => (
                   item.disabled ? (
                     <span
@@ -316,8 +362,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         )}
       </header>
 
-      <main className="p-4 lg:p-6">{children}</main>
-
+      <main id="main-content" className="p-4 lg:p-6">{children}</main>
+      <GlobalCommandPalette />
     </div>
   );
 }
