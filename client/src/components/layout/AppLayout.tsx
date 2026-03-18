@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -38,6 +38,32 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [microsoftMenuOpen, setMicrosoftMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { canAccessEntityAction, canViewPath } = useAccessMatrix();
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement>(null);
+
+  const isMac = useMemo(() => typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent), []);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        // Focus whichever search input is visible
+        const desktop = searchInputRef.current;
+        const mobile = mobileSearchInputRef.current;
+        if (desktop && desktop.offsetParent !== null) {
+          desktop.focus();
+        } else if (mobile) {
+          mobile.focus();
+        }
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchTerm(value);
+  }, []);
 
   const visibleSections = useMemo(() => {
     return buildVisibleTopSections({ canViewPath });
@@ -160,9 +186,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           </Link>
 
-          <div className="relative flex-1 max-w-2xl">
+          <div className="relative flex-1 max-w-2xl hidden lg:block">
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60" />
-            <Input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search projects, work items, finance, documents, people" className="pl-9 border-input focus-visible:ring-ring/30" />
+            <Input ref={searchInputRef} value={searchTerm} onChange={(e) => handleSearchChange(e.target.value)} placeholder="Search projects, work items, finance, documents, people" className="pl-9 pr-16 border-input focus-visible:ring-ring/30" />
+            <kbd className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none hidden sm:inline-flex h-5 items-center gap-0.5 rounded border border-border/80 bg-muted/60 px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+              {isMac ? "⌘" : "Ctrl+"}K
+            </kbd>
             {searchTerm.trim().length >= 2 && (
               <div className="absolute left-0 right-0 top-[105%] rounded-2xl border border-border/80 bg-background/98 shadow-[var(--shadow-md)] p-2 max-h-96 overflow-auto">
                 {loadingSearch ? (
@@ -249,6 +278,52 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <DropdownMenuItem onClick={() => logout()}><LogOut className="h-4 w-4 mr-2" />Log out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+        </div>
+
+        {/* Mobile search — visible below lg */}
+        <div className="lg:hidden px-4 pb-2">
+          <div className="relative">
+            <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60" />
+            <Input ref={mobileSearchInputRef} value={searchTerm} onChange={(e) => handleSearchChange(e.target.value)} placeholder="Search anything…" className="pl-9 border-input focus-visible:ring-ring/30" />
+            {searchTerm.trim().length >= 2 && (
+              <div className="absolute left-0 right-0 top-[105%] z-50 rounded-2xl border border-border/80 bg-background/98 shadow-[var(--shadow-md)] p-2 max-h-96 overflow-auto">
+                {loadingSearch ? (
+                  <p className="text-xs text-muted-foreground p-2">Searching…</p>
+                ) : searchError ? (
+                  <div className="p-2 space-y-2">
+                    <p className="text-xs text-red-700">{searchError}</p>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={retrySearch}>Retry</Button>
+                  </div>
+                ) : (
+                  <>
+                    {Object.entries(groupedResults).map(([group, items]) => items.length > 0 ? (
+                      <div key={group} className="mb-2">
+                        <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">{group}</p>
+                        {items.map((item) => {
+                          const hasLink = isDirectResultUrl(item.url);
+                          if (!hasLink) {
+                            return (
+                              <div key={item.id} className="rounded px-2 py-2 text-muted-foreground/60 cursor-not-allowed">
+                                <p className="text-sm">{item.title}</p>
+                                {item.subtitle ? <p className="text-xs truncate">{item.subtitle}</p> : null}
+                              </div>
+                            );
+                          }
+                          return (
+                            <Link key={item.id} href={item.url!} onClick={() => setSearchTerm("")} className="block rounded px-2 py-2 transition-colors hover:bg-muted/60">
+                              <p className="text-sm">{item.title}</p>
+                              {item.subtitle ? <p className="text-xs text-muted-foreground truncate">{item.subtitle}</p> : null}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    ) : null)}
+                    {results.length === 0 ? <p className="text-xs text-muted-foreground p-2">No matches found.</p> : null}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         <nav className="hidden lg:flex px-6 py-2 gap-1 border-t border-border/70 bg-background/72 overflow-x-auto">

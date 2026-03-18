@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
+import { MorningBriefing } from "@/components/home/MorningBriefing";
 import {
   LayoutDashboard,
   FolderOpen,
@@ -553,71 +554,25 @@ export default function HomePage() {
   const dailyQuote = useMemo(() => getDailyQuote(roleCategory), [roleCategory]);
   const quickLinks = useMemo(() => getQuickLinksForRole(roleCategory), [roleCategory]);
 
+  const activePriorities = useMemo(() => {
+    if (!companyPriorities) return [];
+    return companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").slice(0, 6);
+  }, [companyPriorities]);
+
   return (
     <PageShell data-testid="home-page">
-      <div className="mb-6">
-        <div className="flex items-start gap-4">
-          <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 shadow-sm">
-            <LayoutDashboard className="w-6 h-6" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
-              {greeting}, {displayName}
-            </h1>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge variant="secondary" className="text-xs font-medium bg-emerald-50 text-emerald-700 border-emerald-200" data-testid="text-role-badge">
-                {roleLabel}
-              </Badge>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-4 flex items-start gap-2 bg-emerald-50/60 border border-emerald-100 rounded-lg p-3" data-testid="text-daily-quote">
-          <Quote className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-          <p className="text-sm text-emerald-800 italic leading-relaxed">{dailyQuote}</p>
-        </div>
+      {/* 1. Compact greeting */}
+      <div className="flex items-center gap-3 mb-6">
+        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
+          {greeting}, {displayName}
+        </h1>
+        <Badge variant="secondary" className="text-xs font-medium bg-emerald-50 text-emerald-700 border-emerald-200" data-testid="text-role-badge">
+          {roleLabel}
+        </Badge>
       </div>
 
-      {(companyPriorities && companyPriorities.length > 0) && (
-        <Card className="border-emerald-200 bg-gradient-to-r from-emerald-50 to-white mb-6" data-testid="card-company-priorities">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center">
-                  <Flame className="w-4 h-4" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-foreground uppercase tracking-wide">Company Priorities</h2>
-                  <p className="text-xs text-muted-foreground">{companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").length} active priorities</p>
-                </div>
-              </div>
-              <Link href="/project-lifecycle">
-                <span className="text-xs text-emerald-600 hover:text-emerald-700 font-medium cursor-pointer">Manage</span>
-              </Link>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").slice(0, 6).map((priority: any, i: number) => {
-                const sev = PRIORITY_SEVERITY_ICONS[priority.severity] || PRIORITY_SEVERITY_ICONS.normal;
-                const Icon = sev.icon;
-                return (
-                  <div key={priority.id || i} className="flex items-center gap-3 bg-white rounded-lg border border-border/50 p-3" data-testid={`text-priority-${i}`}>
-                    <div className={`w-8 h-8 rounded-lg ${sev.color} flex items-center justify-center shrink-0`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-foreground font-medium leading-snug truncate">{priority.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {[priority.department, priority.assignedTo ? `Owner: ${priority.assignedTo}` : null].filter(Boolean).join(" · ")}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      {prioritiesLoading && (
+      {/* 2. Company Priorities — always visible */}
+      {prioritiesLoading ? (
         <Card className="border-emerald-200 bg-gradient-to-r from-emerald-50 to-white mb-6">
           <CardContent className="p-5">
             <Skeleton className="h-6 w-48 mb-4" />
@@ -627,8 +582,54 @@ export default function HomePage() {
             </div>
           </CardContent>
         </Card>
+      ) : (
+        <Card className="border-emerald-200 bg-gradient-to-r from-emerald-50 to-white mb-6" data-testid="card-company-priorities">
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center">
+                  <Flame className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-foreground uppercase tracking-wide">Company Priorities</h2>
+                  <p className="text-xs text-muted-foreground">{activePriorities.length} active priorit{activePriorities.length === 1 ? "y" : "ies"}</p>
+                </div>
+              </div>
+              <Link href="/company-priorities">
+                <span className="text-xs text-emerald-600 hover:text-emerald-700 font-medium cursor-pointer">Manage</span>
+              </Link>
+            </div>
+            {activePriorities.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {activePriorities.map((priority: any, i: number) => {
+                  const sev = PRIORITY_SEVERITY_ICONS[priority.severity] || PRIORITY_SEVERITY_ICONS.normal;
+                  const Icon = sev.icon;
+                  return (
+                    <div key={priority.id || i} className="flex items-center gap-3 bg-white rounded-lg border border-border/50 p-3" data-testid={`text-priority-${i}`}>
+                      <div className={`w-8 h-8 rounded-lg ${sev.color} flex items-center justify-center shrink-0`}>
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-foreground font-medium leading-snug truncate">{priority.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {[priority.department, priority.assignedTo ? `Owner: ${priority.assignedTo}` : null].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-2">No active company priorities set.</p>
+            )}
+          </CardContent>
+        </Card>
       )}
 
+      {/* 3. Your Focus — morning briefing */}
+      <MorningBriefing />
+
+      {/* 4. Your Key Metrics */}
       <div className="mb-6">
         <h2 className="text-sm font-bold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
           <Star className="w-4 h-4 text-emerald-600" />
@@ -637,7 +638,8 @@ export default function HomePage() {
         {getRoleKpis(roleCategory, kpis, stats, isLoading)}
       </div>
 
-      <div>
+      {/* 5. Quick Access */}
+      <div className="mb-8">
         <h2 className="text-sm font-bold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
           <Zap className="w-4 h-4 text-emerald-600" />
           Quick Access
@@ -648,6 +650,11 @@ export default function HomePage() {
           ))}
         </div>
       </div>
+
+      {/* 6. Daily quote — demoted to footer */}
+      <p className="text-xs text-muted-foreground/60 italic text-center mt-4" data-testid="text-daily-quote">
+        "{dailyQuote}"
+      </p>
     </PageShell>
   );
 }
