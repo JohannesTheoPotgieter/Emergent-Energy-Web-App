@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -12,11 +13,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@/hooks/use-auth";
-import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import {
-  Users, Calendar, BarChart3, Settings, Plus, Loader2, Send, Clock,
-  CheckCircle2, AlertTriangle, MessageSquare, TrendingUp, Search,
+  Users, Calendar, BarChart3, Plus, Loader2, Send, Clock,
+  CheckCircle2, AlertTriangle, MessageSquare,
   Smile, Meh, Frown, ThumbsUp, XCircle, History,
 } from "lucide-react";
 
@@ -94,12 +94,12 @@ interface Suggestions {
   whatImDoing: string[];
 }
 
-// ── Mood helpers ─────────────────────────────────────────────────────────────
+// ── Mood helpers (strict color alignment with eng dashboard) ─────────────────
 
 const MOOD_OPTIONS = [
   { value: "great", label: "Great", icon: <ThumbsUp className="h-4 w-4" />, color: "text-emerald-600" },
-  { value: "good", label: "Good", icon: <Smile className="h-4 w-4" />, color: "text-green-600" },
-  { value: "okay", label: "Okay", icon: <Meh className="h-4 w-4" />, color: "text-yellow-600" },
+  { value: "good", label: "Good", icon: <Smile className="h-4 w-4" />, color: "text-emerald-500" },
+  { value: "okay", label: "Okay", icon: <Meh className="h-4 w-4" />, color: "text-amber-500" },
   { value: "struggling", label: "Struggling", icon: <Frown className="h-4 w-4" />, color: "text-orange-600" },
   { value: "blocked", label: "Blocked", icon: <XCircle className="h-4 w-4" />, color: "text-red-600" },
 ];
@@ -108,10 +108,14 @@ function MoodBadge({ mood }: { mood: string | null }) {
   if (!mood) return null;
   const opt = MOOD_OPTIONS.find((m) => m.value === mood);
   return opt ? (
-    <span className={`flex items-center gap-1 text-xs ${opt.color}`}>
+    <span className={`flex items-center gap-1 text-xs font-medium ${opt.color}`}>
       {opt.icon} {opt.label}
     </span>
   ) : null;
+}
+
+function getInitials(name: string) {
+  return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 }
 
 // ── Standup Form ─────────────────────────────────────────────────────────────
@@ -127,7 +131,6 @@ function StandupForm({ scheduleId, existing, onSubmitted }: {
   const [mood, setMood] = useState(existing?.mood || "");
   const { toast } = useToast();
 
-  // Load suggestions
   const { data: suggestions } = useQuery<Suggestions>({
     queryKey: ["standup-suggestions"],
     queryFn: () => apiFetch("/api/standups/suggestions"),
@@ -149,12 +152,11 @@ function StandupForm({ scheduleId, existing, onSubmitted }: {
 
   return (
     <div className="space-y-4">
-      {/* What I did */}
       <div className="space-y-1.5">
-        <label className="text-sm font-medium flex items-center gap-1.5">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-          What I did
-        </label>
+        <Label className="flex items-center gap-1.5">
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+          What I completed
+        </Label>
         <Textarea
           value={whatIDid}
           onChange={(e) => setWhatIDid(e.target.value)}
@@ -162,8 +164,8 @@ function StandupForm({ scheduleId, existing, onSubmitted }: {
           rows={3}
         />
         {suggestions?.whatIDid && suggestions.whatIDid.length > 0 && !whatIDid && (
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">Suggestions from recent activity:</p>
+          <div className="space-y-1 pt-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Suggestions from recent activity</p>
             {suggestions.whatIDid.map((s, i) => (
               <button
                 key={i}
@@ -177,12 +179,11 @@ function StandupForm({ scheduleId, existing, onSubmitted }: {
         )}
       </div>
 
-      {/* What I'm doing */}
       <div className="space-y-1.5">
-        <label className="text-sm font-medium flex items-center gap-1.5">
-          <Clock className="h-4 w-4 text-blue-600" />
-          What I'm doing
-        </label>
+        <Label className="flex items-center gap-1.5">
+          <Clock className="h-3.5 w-3.5 text-blue-600" />
+          What I am working on
+        </Label>
         <Textarea
           value={whatImDoing}
           onChange={(e) => setWhatImDoing(e.target.value)}
@@ -190,8 +191,8 @@ function StandupForm({ scheduleId, existing, onSubmitted }: {
           rows={3}
         />
         {suggestions?.whatImDoing && suggestions.whatImDoing.length > 0 && !whatImDoing && (
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">Current tasks:</p>
+          <div className="space-y-1 pt-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Current in-progress tasks</p>
             {suggestions.whatImDoing.map((s, i) => (
               <button
                 key={i}
@@ -205,12 +206,11 @@ function StandupForm({ scheduleId, existing, onSubmitted }: {
         )}
       </div>
 
-      {/* Blockers */}
       <div className="space-y-1.5">
-        <label className="text-sm font-medium flex items-center gap-1.5">
-          <AlertTriangle className="h-4 w-4 text-orange-500" />
+        <Label className="flex items-center gap-1.5">
+          <AlertTriangle className="h-3.5 w-3.5 text-orange-500" />
           Blockers
-        </label>
+        </Label>
         <Textarea
           value={blockers}
           onChange={(e) => setBlockers(e.target.value)}
@@ -219,20 +219,19 @@ function StandupForm({ scheduleId, existing, onSubmitted }: {
         />
       </div>
 
-      {/* Mood */}
       <div className="space-y-1.5">
-        <label className="text-sm font-medium">How are you feeling?</label>
+        <Label>How are you feeling?</Label>
         <div className="flex gap-2">
           {MOOD_OPTIONS.map((opt) => (
             <Button
               key={opt.value}
               variant={mood === opt.value ? "default" : "outline"}
               size="sm"
-              className="gap-1"
+              className="gap-1.5"
               onClick={() => setMood(mood === opt.value ? "" : opt.value)}
             >
               {opt.icon}
-              <span className="hidden sm:inline">{opt.label}</span>
+              {opt.label}
             </Button>
           ))}
         </div>
@@ -270,59 +269,63 @@ function TeamView({ scheduleId }: { scheduleId: number }) {
   const missingParticipants = (participants || []).filter((p) => !submittedUserIds.has(p.userId));
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
         <Input
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="w-[180px] h-8"
+          className="w-[180px]"
         />
         <span className="text-sm text-muted-foreground">
-          {entries?.length || 0} / {participants?.length || 0} submitted
+          {entries?.length || 0} of {participants?.length || 0} submitted
         </span>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         {(entries || []).map((entry) => (
           <Card key={entry.id}>
-            <CardContent className="p-4">
+            <CardContent className="px-4 py-3">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <Avatar className="h-7 w-7">
-                    <AvatarFallback className="text-xs">
-                      {(entry.userName || "?").split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                  <Avatar className="h-6 w-6">
+                    <AvatarFallback className="text-[10px] font-semibold">
+                      {getInitials(entry.userName || "?")}
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <p className="text-sm font-medium">{entry.userName}</p>
+                    <p className="text-sm font-semibold">{entry.userName}</p>
                     <p className="text-[11px] text-muted-foreground">
                       {new Date(entry.submittedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      {entry.isLate && <Badge variant="destructive" className="ml-1.5 text-[9px] px-1 py-0">Late</Badge>}
+                      {entry.isLate && (
+                        <Badge variant="outline" className="ml-1.5 text-[9px] px-1 py-0 border-orange-200 bg-orange-50 text-orange-700">
+                          Late
+                        </Badge>
+                      )}
                     </p>
                   </div>
                 </div>
                 <MoodBadge mood={entry.mood} />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-emerald-700 flex items-center gap-1">
-                    <CheckCircle2 className="h-3 w-3" /> Done
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600 flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> Completed
                   </p>
-                  <p className="text-muted-foreground whitespace-pre-line">{entry.whatIDid || "—"}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-line">{entry.whatIDid || "—"}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-blue-700 flex items-center gap-1">
-                    <Clock className="h-3 w-3" /> Doing
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-600 flex items-center gap-1">
+                    <Clock className="h-3 w-3" /> Working On
                   </p>
-                  <p className="text-muted-foreground whitespace-pre-line">{entry.whatImDoing || "—"}</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-line">{entry.whatImDoing || "—"}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-orange-700 flex items-center gap-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-600 flex items-center gap-1">
                     <AlertTriangle className="h-3 w-3" /> Blockers
                   </p>
-                  <p className={`whitespace-pre-line ${entry.blockers ? "text-orange-700" : "text-muted-foreground"}`}>
+                  <p className={`text-sm whitespace-pre-line ${entry.blockers ? "text-orange-700 font-medium" : "text-muted-foreground"}`}>
                     {entry.blockers || "None"}
                   </p>
                 </div>
@@ -333,11 +336,11 @@ function TeamView({ scheduleId }: { scheduleId: number }) {
 
         {missingParticipants.length > 0 && (
           <Card className="border-dashed">
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground mb-2">Awaiting submission:</p>
+            <CardContent className="px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Awaiting submission</p>
               <div className="flex flex-wrap gap-2">
                 {missingParticipants.map((p) => (
-                  <Badge key={p.userId} variant="outline" className="gap-1">
+                  <Badge key={p.userId} variant="outline" className="gap-1 text-xs">
                     <Users className="h-3 w-3" />
                     {p.userName || p.userEmail || `User ${p.userId}`}
                   </Badge>
@@ -348,7 +351,11 @@ function TeamView({ scheduleId }: { scheduleId: number }) {
         )}
 
         {(!entries || entries.length === 0) && missingParticipants.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-8">No standup scheduled for this date</p>
+          <div className="ee-empty-state">
+            <Calendar className="h-8 w-8 text-muted-foreground/30 mb-2" />
+            <p className="text-sm font-medium">No standup scheduled for this date</p>
+            <p className="text-xs text-muted-foreground mt-1">Select a different date to view entries</p>
+          </div>
         )}
       </div>
     </div>
@@ -373,7 +380,7 @@ function HistoryView({ scheduleId }: { scheduleId: number }) {
   const dates = Object.keys(data?.entries || {}).sort().reverse();
 
   return (
-    <ScrollArea className="max-h-[600px]">
+    <ScrollArea className="h-[calc(100vh-400px)] min-h-[300px]">
       <div className="space-y-4">
         {dates.map((date) => {
           const entries = data!.entries[date];
@@ -381,22 +388,36 @@ function HistoryView({ scheduleId }: { scheduleId: number }) {
             <div key={date}>
               <div className="flex items-center gap-2 mb-2">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-medium">
+                <span className="text-sm font-semibold tracking-tight">
                   {new Date(date + "T00:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
                 </span>
-                <Badge variant="secondary" className="text-[10px]">{entries.length} entries</Badge>
+                <Badge variant="outline" className="text-[10px] font-semibold">{entries.length} entries</Badge>
               </div>
-              <div className="space-y-2 pl-6">
+              <div className="space-y-1.5 pl-6">
                 {entries.map((entry) => (
-                  <div key={entry.id} className="text-sm border rounded-lg p-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-medium">{entry.userName}</span>
-                      <MoodBadge mood={entry.mood} />
-                    </div>
-                    {entry.whatIDid && <p className="text-muted-foreground text-xs"><span className="text-emerald-600 font-medium">Done:</span> {entry.whatIDid}</p>}
-                    {entry.whatImDoing && <p className="text-muted-foreground text-xs"><span className="text-blue-600 font-medium">Doing:</span> {entry.whatImDoing}</p>}
-                    {entry.blockers && <p className="text-orange-700 text-xs"><span className="font-medium">Blocker:</span> {entry.blockers}</p>}
-                  </div>
+                  <Card key={entry.id}>
+                    <CardContent className="px-3 py-2.5">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-semibold">{entry.userName}</span>
+                        <MoodBadge mood={entry.mood} />
+                      </div>
+                      {entry.whatIDid && (
+                        <p className="text-xs text-muted-foreground">
+                          <span className="text-emerald-600 font-semibold">Completed:</span> {entry.whatIDid}
+                        </p>
+                      )}
+                      {entry.whatImDoing && (
+                        <p className="text-xs text-muted-foreground">
+                          <span className="text-blue-600 font-semibold">Working on:</span> {entry.whatImDoing}
+                        </p>
+                      )}
+                      {entry.blockers && (
+                        <p className="text-xs text-orange-700 font-medium">
+                          <span className="font-semibold">Blocker:</span> {entry.blockers}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
                 ))}
               </div>
               <Separator className="mt-3" />
@@ -404,7 +425,11 @@ function HistoryView({ scheduleId }: { scheduleId: number }) {
           );
         })}
         {dates.length === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-8">No standup history yet</p>
+          <div className="ee-empty-state">
+            <History className="h-8 w-8 text-muted-foreground/30 mb-2" />
+            <p className="text-sm font-medium">No standup history yet</p>
+            <p className="text-xs text-muted-foreground mt-1">History will appear after the first standup submission</p>
+          </div>
         )}
       </div>
     </ScrollArea>
@@ -423,52 +448,50 @@ function AnalyticsView({ scheduleId }: { scheduleId: number }) {
     return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
 
+  const onTimeRate = analytics.totalEntries > 0
+    ? Math.round(((analytics.totalEntries - analytics.lateEntries) / analytics.totalEntries) * 100)
+    : 0;
+
   return (
     <div className="space-y-6">
-      {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Total Entries</p>
-            <p className="text-2xl font-bold">{analytics.totalEntries}</p>
+          <CardContent className="px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Total Entries</p>
+            <p className="text-2xl font-bold tracking-tight mt-1">{analytics.totalEntries}</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Participants</p>
-            <p className="text-2xl font-bold">{analytics.totalParticipants}</p>
+          <CardContent className="px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Participants</p>
+            <p className="text-2xl font-bold tracking-tight mt-1">{analytics.totalParticipants}</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">On-Time Rate</p>
-            <p className="text-2xl font-bold">
-              {analytics.totalEntries > 0
-                ? Math.round(((analytics.totalEntries - analytics.lateEntries) / analytics.totalEntries) * 100)
-                : 0}%
-            </p>
+          <CardContent className="px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600">On-Time Rate</p>
+            <p className="text-2xl font-bold tracking-tight mt-1">{onTimeRate}%</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground">Late Entries</p>
-            <p className="text-2xl font-bold text-orange-600">{analytics.lateEntries}</p>
+          <CardContent className="px-4 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-600">Late Entries</p>
+            <p className="text-2xl font-bold tracking-tight mt-1">{analytics.lateEntries}</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Mood distribution */}
       {analytics.moodDistribution.length > 0 && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Mood Distribution</CardTitle></CardHeader>
-          <CardContent>
-            <div className="flex gap-4">
+          <CardHeader className="px-4 py-3 pb-2"><CardTitle className="ee-section-title">Mood Distribution</CardTitle></CardHeader>
+          <CardContent className="px-4 pb-3">
+            <div className="flex flex-wrap gap-4">
               {analytics.moodDistribution.map((m) => {
                 const opt = MOOD_OPTIONS.find((o) => o.value === m.mood);
                 return (
                   <div key={m.mood} className="flex items-center gap-2 text-sm">
                     <span className={opt?.color || ""}>{opt?.icon}</span>
-                    <span className="font-medium">{m.count}</span>
+                    <span className="font-semibold tabular-nums">{m.count}</span>
                     <span className="text-muted-foreground">{opt?.label || m.mood}</span>
                   </div>
                 );
@@ -478,18 +501,16 @@ function AnalyticsView({ scheduleId }: { scheduleId: number }) {
         </Card>
       )}
 
-      {/* Recent blockers */}
       {analytics.recentBlockers.length > 0 && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Recent Blockers</CardTitle></CardHeader>
-          <CardContent>
+          <CardHeader className="px-4 py-3 pb-2"><CardTitle className="ee-section-title">Recent Blockers</CardTitle></CardHeader>
+          <CardContent className="px-4 pb-3">
             <div className="space-y-2">
               {analytics.recentBlockers.map((b, i) => (
-                <div key={i} className="flex items-start gap-2 text-sm">
-                  <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0 mt-0.5" />
+                <div key={i} className="flex items-start gap-2 border-l-3 border-l-orange-500 pl-3 py-1">
                   <div>
-                    <p className="text-orange-700">{b.blockers}</p>
-                    <p className="text-xs text-muted-foreground">{b.userName} - {b.standupDate}</p>
+                    <p className="text-sm text-orange-700 font-medium">{b.blockers}</p>
+                    <p className="text-[11px] text-muted-foreground">{b.userName} &middot; {b.standupDate}</p>
                   </div>
                 </div>
               ))}
@@ -546,18 +567,18 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
         <DialogHeader>
           <DialogTitle>Create Standup Schedule</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <label className="text-sm font-medium">Name</label>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>Schedule Name</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Engineering Bi-Daily" />
           </div>
-          <div>
-            <label className="text-sm font-medium">Team / Department</label>
+          <div className="space-y-1.5">
+            <Label>Team / Department</Label>
             <Input value={teamLabel} onChange={(e) => setTeamLabel(e.target.value)} placeholder="e.g. Engineering, PM, Quality" />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium">Frequency</label>
+            <div className="space-y-1.5">
+              <Label>Frequency</Label>
               <Select value={cadenceDays} onValueChange={setCadenceDays}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -568,8 +589,8 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <label className="text-sm font-medium">Deadline</label>
+            <div className="space-y-1.5">
+              <Label>Submission Deadline</Label>
               <Input type="time" value={deadlineTime} onChange={(e) => setDeadlineTime(e.target.value)} />
             </div>
           </div>
@@ -590,25 +611,21 @@ export default function StandupsPage() {
   const [tab, setTab] = useState("today");
   const queryClient = useQueryClient();
 
-  // Load user's schedules
   const { data: schedules, isLoading: schedulesLoading } = useQuery<StandupSchedule[]>({
     queryKey: ["standup-schedules"],
     queryFn: () => apiFetch("/api/standups/schedules"),
   });
 
-  // Load all schedules for admin
   const { data: allSchedules } = useQuery<StandupSchedule[]>({
     queryKey: ["standup-schedules-all"],
     queryFn: () => apiFetch("/api/standups/schedules/all"),
   });
 
-  // Load today's standups
-  const { data: todayStandups, isLoading: todayLoading } = useQuery<TodayStandup[]>({
+  const { data: todayStandups } = useQuery<TodayStandup[]>({
     queryKey: ["standups-today"],
     queryFn: () => apiFetch("/api/standups/today"),
   });
 
-  // Auto-select first schedule
   useEffect(() => {
     if (!selectedScheduleId && schedules && schedules.length > 0) {
       setSelectedScheduleId(schedules[0].id);
@@ -630,65 +647,57 @@ export default function StandupsPage() {
       <SectionHeader
         icon={<Users className="h-5 w-5" />}
         title="Standups"
-        eyebrow="Team Coordination"
-        description="Bi-daily async standups — share progress, flag blockers, stay aligned."
+        description="Async bi-daily standups. Share progress, flag blockers, and maintain team alignment across departments."
         actions={<CreateScheduleDialog onCreated={handleRefresh} />}
       />
 
       {schedulesLoading ? (
         <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : displaySchedules.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <Users className="h-12 w-12 text-muted-foreground/30 mb-4" />
-            <h3 className="font-medium mb-1">No standup schedules yet</h3>
-            <p className="text-sm text-muted-foreground mb-4">Create your first standup schedule to get started with bi-daily check-ins.</p>
-            <CreateScheduleDialog onCreated={handleRefresh} />
-          </CardContent>
-        </Card>
+        <div className="ee-empty-state">
+          <Users className="h-10 w-10 text-muted-foreground/30 mb-3" />
+          <p className="text-sm font-semibold">No standup schedules configured</p>
+          <p className="text-xs text-muted-foreground mt-1 mb-4">Create your first standup schedule to begin bi-daily check-ins.</p>
+          <CreateScheduleDialog onCreated={handleRefresh} />
+        </div>
       ) : (
         <div className="space-y-4">
-          {/* Schedule selector */}
           {displaySchedules.length > 1 && (
             <div className="flex gap-2 overflow-x-auto pb-1">
               {displaySchedules.map((s) => (
-                <Button
+                <button
                   key={s.id}
-                  variant={selectedScheduleId === s.id ? "default" : "outline"}
-                  size="sm"
                   onClick={() => setSelectedScheduleId(s.id)}
-                  className="shrink-0"
+                  className={`ee-subnav-pill shrink-0 ${selectedScheduleId === s.id ? "ee-subnav-pill-active" : ""}`}
                 >
                   {s.name}
-                  {s.teamLabel && <span className="text-xs ml-1 opacity-70">({s.teamLabel})</span>}
+                  {s.teamLabel && <span className="text-[10px] ml-1 opacity-70">({s.teamLabel})</span>}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {todayStandups && todayStandups.filter((t) => !t.hasSubmitted).length > 0 && (
+            <WorkspaceNotice
+              tone="warning"
+              icon={<MessageSquare className="h-4 w-4" />}
+              title="Standup submission pending"
+              description={`You have ${todayStandups.filter((t) => !t.hasSubmitted).length} standup(s) due today.`}
+              actions={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const pending = todayStandups!.find((t) => !t.hasSubmitted);
+                    if (pending) { setSelectedScheduleId(pending.schedule.id); setTab("today"); }
+                  }}
+                >
+                  Submit Now
                 </Button>
-              ))}
-            </div>
+              }
+            />
           )}
 
-          {/* Today's standup alert */}
-          {todayStandups && todayStandups.length > 0 && (
-            <div className="space-y-2">
-              {todayStandups.filter((t) => !t.hasSubmitted).map((t) => (
-                <Card key={t.schedule.id} className="border-primary/30 bg-primary/5">
-                  <CardContent className="p-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <MessageSquare className="h-4 w-4 text-primary" />
-                      <span className="text-sm font-medium">Standup due: {t.schedule.name}</span>
-                      {t.schedule.deadlineTime && (
-                        <span className="text-xs text-muted-foreground">before {t.schedule.deadlineTime}</span>
-                      )}
-                    </div>
-                    <Button size="sm" variant="outline" onClick={() => { setSelectedScheduleId(t.schedule.id); setTab("today"); }}>
-                      Submit Now
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-
-          {/* Main tabs */}
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList>
               <TabsTrigger value="today" className="gap-1.5">
@@ -712,14 +721,14 @@ export default function StandupsPage() {
             <TabsContent value="today" className="mt-4">
               {selectedScheduleId ? (
                 <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">
+                  <CardHeader className="px-4 py-3">
+                    <CardTitle className="ee-section-title">
                       {todayStandups?.find((t) => t.schedule.id === selectedScheduleId)?.hasSubmitted
                         ? "Update Your Standup"
                         : "Submit Your Standup"}
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="px-4 pb-4">
                     <StandupForm
                       scheduleId={selectedScheduleId}
                       existing={todayStandups?.find((t) => t.schedule.id === selectedScheduleId)?.entry || null}
@@ -728,7 +737,9 @@ export default function StandupsPage() {
                   </CardContent>
                 </Card>
               ) : (
-                <p className="text-sm text-muted-foreground text-center py-8">Select a schedule to submit your standup</p>
+                <div className="ee-empty-state">
+                  <p className="text-sm font-medium">Select a schedule to submit your standup</p>
+                </div>
               )}
             </TabsContent>
 
@@ -736,7 +747,9 @@ export default function StandupsPage() {
               {selectedScheduleId ? (
                 <TeamView scheduleId={selectedScheduleId} />
               ) : (
-                <p className="text-sm text-muted-foreground text-center py-8">Select a schedule</p>
+                <div className="ee-empty-state">
+                  <p className="text-sm font-medium">Select a schedule to view team entries</p>
+                </div>
               )}
             </TabsContent>
 
@@ -744,7 +757,9 @@ export default function StandupsPage() {
               {selectedScheduleId ? (
                 <HistoryView scheduleId={selectedScheduleId} />
               ) : (
-                <p className="text-sm text-muted-foreground text-center py-8">Select a schedule</p>
+                <div className="ee-empty-state">
+                  <p className="text-sm font-medium">Select a schedule to view history</p>
+                </div>
               )}
             </TabsContent>
 
@@ -752,7 +767,9 @@ export default function StandupsPage() {
               {selectedScheduleId ? (
                 <AnalyticsView scheduleId={selectedScheduleId} />
               ) : (
-                <p className="text-sm text-muted-foreground text-center py-8">Select a schedule</p>
+                <div className="ee-empty-state">
+                  <p className="text-sm font-medium">Select a schedule to view analytics</p>
+                </div>
               )}
             </TabsContent>
           </Tabs>
