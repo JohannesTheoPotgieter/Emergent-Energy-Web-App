@@ -942,7 +942,7 @@ async function syncLegacyAssignments(executor: Queryable, entityType: Assignment
 
 export async function setEntityAssignment(req: Request, input: SetEntityAssignmentInput): Promise<ResolvedAssignment[]> {
   const user = getEffectiveUser(req);
-  if (!user?.id) {
+  if (!user?.id || !Number.isFinite(user.id)) {
     throw new Error("Authentication required");
   }
 
@@ -950,6 +950,7 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
   const mode = input.mode || "replace";
   const assigneeId = toInt(input.assigneeId);
   const entityId = toInt(input.entityId);
+  console.log("[Assignment] setEntityAssignment called:", { entityType: input.entityType, inputEntityId: input.entityId, entityId, inputAssigneeId: input.assigneeId, assigneeId, assigneeType: input.assigneeType, mode, userId: user.id });
 
   if (!entityId) {
     throw new Error("A valid entity ID is required");

@@ -351,6 +351,7 @@ export function registerMsSyncRoutes(app: Express) {
 
   app.patch("/api/tasks/reassign", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
+      console.log("[Reassign] ENTERED handler, body:", JSON.stringify(req.body), "user:", getEffectiveUser(req)?.id);
       const parsed = assignmentPayloadSchema.safeParse(req.body);
       if (!parsed.success) {
         console.error("[Reassign] Zod validation failed:", parsed.error.issues, "body:", req.body);
@@ -363,11 +364,16 @@ export function registerMsSyncRoutes(app: Express) {
         return res.status(400).json({ error: `Invalid task ID: ${taskId}` });
       }
       const assigneeType = parsed.data.assigneeType ?? (parsed.data.userId != null ? "internal_user" : null);
-      const assigneeId = parsed.data.assigneeId ?? parsed.data.userId ?? null;
+      const rawAssigneeId = parsed.data.assigneeId ?? parsed.data.userId ?? null;
+      const assigneeId = rawAssigneeId != null ? Number(rawAssigneeId) : null;
       if (assigneeId != null && (!Number.isFinite(assigneeId) || assigneeId <= 0)) {
-        return res.status(400).json({ error: `Invalid assignee ID: ${assigneeId}` });
+        return res.status(400).json({ error: `Invalid assignee ID: ${rawAssigneeId}` });
       }
-      console.log("[Reassign] Processing:", { taskId, taskSource, assigneeType, assigneeId, userId: getEffectiveUser(req)?.id });
+      const actorId = getEffectiveUser(req)?.id;
+      if (!actorId || !Number.isFinite(actorId)) {
+        return res.status(401).json({ error: "Valid user session required" });
+      }
+      console.log("[Reassign] Processing:", { taskId, taskSource, assigneeType, assigneeId, actorId, body: JSON.stringify(req.body) });
 
       if (taskSource === "plan_viewer" || taskSource === "remove_viewer") {
         const viewerUserId = assigneeType === "internal_user" ? assigneeId : parsed.data.userId ?? null;
