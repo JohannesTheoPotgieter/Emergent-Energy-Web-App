@@ -104,6 +104,59 @@
   --sidebar-ring: 142 76% 36%;
 }
 
+.dark {
+  --background: 222 14% 10%;
+  --foreground: 210 20% 92%;
+
+  --card: 222 14% 12%;
+  --card-foreground: 210 20% 92%;
+
+  --popover: 222 14% 12%;
+  --popover-foreground: 210 20% 92%;
+
+  --primary: 145 72% 40%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 215 14% 18%;
+  --secondary-foreground: 210 20% 92%;
+
+  --muted: 215 14% 18%;
+  --muted-foreground: 215 16% 58%;
+
+  --accent: 215 14% 20%;
+  --accent-foreground: 210 20% 92%;
+
+  --destructive: 0 72% 55%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 215 14% 22%;
+  --input: 215 14% 22%;
+  --ring: 145 72% 40%;
+
+  --surface: 222 14% 11%;
+  --surface-strong: 222 14% 14%;
+  --surface-tint: 142 20% 12%;
+  --success: 142 64% 42%;
+  --warning: 35 92% 50%;
+  --danger: 0 72% 55%;
+  --info: 214 78% 55%;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+
+  --sidebar: 222 14% 11%;
+  --sidebar-foreground: 215 16% 58%;
+  --sidebar-primary: 142 76% 42%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 215 14% 18%;
+  --sidebar-accent-foreground: 210 20% 92%;
+  --sidebar-border: 215 14% 20%;
+  --sidebar-ring: 142 76% 42%;
+
+  color-scheme: dark;
+}
+
 .command-header {
   --cmd-bg: #FFFFFF;
   --cmd-bg-panel: linear-gradient(135deg, hsl(210 20% 97%) 0%, hsl(142 30% 96%) 100%);
@@ -160,7 +213,7 @@
   .ee-shell {
     background:
       radial-gradient(circle at top left, hsl(var(--surface-tint)) 0%, transparent 34%),
-      linear-gradient(180deg, hsl(var(--surface)) 0%, #ffffff 100%);
+      linear-gradient(180deg, hsl(var(--surface)) 0%, hsl(var(--background)) 100%);
     @apply text-foreground;
   }
 
