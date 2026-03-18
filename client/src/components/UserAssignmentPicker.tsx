@@ -109,7 +109,6 @@ export default function UserAssignmentPicker({
         throw new Error(`Invalid assignee ID: ${payload.assigneeId}`);
       }
       const requestBody = { taskId: safeTaskId, taskSource, assigneeType: payload.assigneeType, assigneeId: numericAssigneeId };
-      console.log("[Assignment] Sending reassign request:", requestBody);
       const res = await fetch("/api/tasks/reassign", {
         method: "PATCH",
         credentials: "include",
@@ -121,7 +120,6 @@ export default function UserAssignmentPicker({
         console.error("[Assignment] Reassign failed:", res.status, body);
         throw new Error(body?.error || `Failed to reassign (${res.status})`);
       }
-      console.log("[Assignment] Reassign succeeded:", body);
       return body;
     },
     onSuccess: () => {
