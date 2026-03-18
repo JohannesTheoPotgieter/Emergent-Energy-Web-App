@@ -62,6 +62,7 @@ import { ActionBar } from "@/components/guidance/ActionBar";
 import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
 import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 
 async function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem('auth_token');
@@ -397,6 +398,16 @@ export default function QmDashboardPage() {
     return total > 0 ? Math.round((passed / total) * 100) : 0;
   };
 
+  const qmAttentionItems = useMemo((): AttentionItem[] => {
+    const items: AttentionItem[] = [];
+    if (governanceSummary?.overdueActions && governanceSummary.overdueActions > 0) items.push({ label: "Overdue Actions", value: governanceSummary.overdueActions, color: "text-red-600 bg-red-50 border-red-200", href: "/quality" });
+    if (governanceSummary?.resubmissionNeeded && governanceSummary.resubmissionNeeded > 0) items.push({ label: "Resubmission Needed", value: governanceSummary.resubmissionNeeded, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/quality" });
+    if (governanceSummary?.evidenceRequired && governanceSummary.evidenceRequired > 0) items.push({ label: "Evidence Gaps", value: governanceSummary.evidenceRequired, color: "text-sky-700 bg-sky-50 border-sky-200", href: "/quality" });
+    if (governanceSummary?.blockedHandovers && governanceSummary.blockedHandovers > 0) items.push({ label: "Blocked Handovers", value: governanceSummary.blockedHandovers, color: "text-violet-700 bg-violet-50 border-violet-200", href: "/quality" });
+    if (activeWarnings > 0) items.push({ label: "Open Warnings", value: activeWarnings, color: "text-orange-700 bg-orange-50 border-orange-200", href: "/quality" });
+    return items;
+  }, [governanceSummary, activeWarnings]);
+
   const getProjectProgress = (c: Checklist) => {
     if (!c.phases || c.phases.length === 0) return 0;
     const total = c.phases.reduce((t, p) => t + p.total, 0);
@@ -553,6 +564,8 @@ export default function QmDashboardPage() {
 
       <MicroWalkthrough screenId="qm-dashboard" steps={qmWalkthroughSteps} />
       <ActionBar nextAction={qmNextAction} blockers={qmBlockers} />
+
+      <AttentionBadges items={qmAttentionItems} threshold={5} testId="qm-attention-needed" />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Card className="border-red-100 bg-red-50/50">
