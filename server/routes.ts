@@ -2105,7 +2105,7 @@ export async function registerRoutes(
       const currentUserId = currentUser?.id || currentUser?.userId;
       const currentUserName = currentUser?.name || "";
       const currentRole = currentUser?.role || "";
-      const FULL_OVERSIGHT_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "ACCOUNTANT", "CONSTRUCTION_MANAGER"];
+      const { FULL_OVERSIGHT_ROLES } = await import("./services/project-access-service");
       const isFullOversight = FULL_OVERSIGHT_ROLES.includes(currentRole);
 
       const userOwnedProjectIds = new Set<number>();
@@ -2463,7 +2463,11 @@ export async function registerRoutes(
       });
 
       let finalResult = projectsSummary;
-      if (scopeParam === "owned" && !isFullOversight) {
+      // RLS enforcement: scoped users only see owned/assigned projects
+      if (!isFullOversight) {
+        finalResult = projectsSummary.filter((p: any) => p._user_scope === "owned" || p._user_scope === "assigned");
+      } else if (scopeParam === "owned") {
+        // Full oversight users can optionally narrow to their own projects
         finalResult = projectsSummary.filter((p: any) => p._user_scope === "owned" || p._user_scope === "assigned");
       }
 
@@ -3945,9 +3949,21 @@ export async function registerRoutes(
         return !!start && !!end && start <= fyEnd && end >= fyStart;
       };
 
+      // RLS: scope project data to user's accessible projects
+      const { resolveProjectScope } = await import("./services/project-access-service");
+      const dashUser = (req as any).user;
+      const dashScope = await resolveProjectScope(
+        dashUser?.id || 0,
+        dashUser?.role || "",
+        dashUser?.name || "",
+      );
+      const scopedProjectInfo = dashScope.kind === "full_oversight"
+        ? allProjectInfo
+        : allProjectInfo.filter((p: any) => dashScope.projectIds.has(p.id));
+
       const projectById = new Map<number, any>();
       const projectByName = new Map<string, any>();
-      for (const p of allProjectInfo) {
+      for (const p of scopedProjectInfo) {
         if (p.id) projectById.set(p.id, p);
         projectByName.set((p.projectName || '').toLowerCase(), p);
       }
@@ -5517,10 +5533,17 @@ export async function registerRoutes(
     try {
       const { projectName, startDate, endDate, applyOverrides } = req.query;
       let expenses;
-      
+
       if (projectName && typeof projectName === 'string') {
+        // RLS: verify user has access to this project by name
+        const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+        const expUser = (req as any).user;
+        const expScope = await resolveProjectScope(expUser?.id || 0, expUser?.role || "", expUser?.name || "");
+        if (!isProjectAccessibleByName(expScope, projectName)) {
+          return res.status(403).json({ error: "FORBIDDEN", message: "You do not have access to this project" });
+        }
         expenses = await storage.getProgramExpensesByProject(projectName);
-        
+
         // Apply overrides if requested
         if (applyOverrides === 'true') {
           const overrides = await storage.getExpenditureOverridesByProject(projectName);
@@ -5528,6 +5551,13 @@ export async function registerRoutes(
         }
       } else {
         expenses = await storage.getAllProgramExpenses();
+        // RLS: filter to accessible projects
+        const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+        const expUser = (req as any).user;
+        const expScope = await resolveProjectScope(expUser?.id || 0, expUser?.role || "", expUser?.name || "");
+        if (expScope.kind === "scoped") {
+          expenses = expenses.filter((e: any) => isProjectAccessibleByName(expScope, e.projectName || ""));
+        }
       }
 
       if (startDate && typeof startDate === 'string') {
@@ -5548,9 +5578,17 @@ export async function registerRoutes(
     try {
       const { projectName } = req.params;
       const { applyOverrides } = req.query;
-      
+
+      // RLS: verify user has access to this project
+      const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+      const expPUser = (req as any).user;
+      const expPScope = await resolveProjectScope(expPUser?.id || 0, expPUser?.role || "", expPUser?.name || "");
+      if (!isProjectAccessibleByName(expPScope, projectName)) {
+        return res.status(403).json({ error: "FORBIDDEN", message: "You do not have access to this project" });
+      }
+
       let expenses = await storage.getProgramExpensesByProject(projectName);
-      
+
       // Apply overrides if requested
       if (applyOverrides === 'true') {
         const overrides = await storage.getExpenditureOverridesByProject(projectName);
@@ -5567,10 +5605,17 @@ export async function registerRoutes(
     try {
       const { projectName, startDate, endDate, applyOverrides } = req.query;
       let inflows;
-      
+
       if (projectName && typeof projectName === 'string') {
+        // RLS: verify user has access to this project by name
+        const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+        const infUser = (req as any).user;
+        const infScope = await resolveProjectScope(infUser?.id || 0, infUser?.role || "", infUser?.name || "");
+        if (!isProjectAccessibleByName(infScope, projectName)) {
+          return res.status(403).json({ error: "FORBIDDEN", message: "You do not have access to this project" });
+        }
         inflows = await storage.getProgramInflowsByProject(projectName);
-        
+
         // Apply overrides if requested
         if (applyOverrides === 'true') {
           const overrides = await storage.getRevenueTrackingOverridesByProject(projectName);
@@ -5578,6 +5623,13 @@ export async function registerRoutes(
         }
       } else {
         inflows = await storage.getAllProgramInflows();
+        // RLS: filter to accessible projects
+        const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+        const infUser = (req as any).user;
+        const infScope = await resolveProjectScope(infUser?.id || 0, infUser?.role || "", infUser?.name || "");
+        if (infScope.kind === "scoped") {
+          inflows = inflows.filter((i: any) => isProjectAccessibleByName(infScope, i.projectName || ""));
+        }
       }
 
       if (startDate && typeof startDate === 'string') {
