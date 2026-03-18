@@ -99,7 +99,15 @@ export default function UserAssignmentPicker({
 
   const reassignMutation = useMutation({
     mutationFn: async (payload: { assigneeType: AssigneeType | null; assigneeId: number | null }) => {
-      const requestBody = { taskId, taskSource, ...payload };
+      const numericTaskId = Number(taskId);
+      const numericAssigneeId = payload.assigneeId != null ? Number(payload.assigneeId) : null;
+      if (!numericTaskId || isNaN(numericTaskId)) {
+        throw new Error(`Invalid task ID: ${taskId}`);
+      }
+      if (numericAssigneeId != null && isNaN(numericAssigneeId)) {
+        throw new Error(`Invalid assignee ID: ${payload.assigneeId}`);
+      }
+      const requestBody = { taskId: numericTaskId, taskSource, assigneeType: payload.assigneeType, assigneeId: numericAssigneeId };
       console.log("[Assignment] Sending reassign request:", requestBody);
       const res = await fetch("/api/tasks/reassign", {
         method: "PATCH",
