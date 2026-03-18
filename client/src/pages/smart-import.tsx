@@ -2235,6 +2235,15 @@ function PreviewCommitStep({
       expected?: string | null;
     }>;
   } | null>(null);
+  const [planEditConflict, setPlanEditConflict] = useState<{
+    message: string;
+    unresolvedCount: number;
+    conflicts: Array<{ id: number; taskName: string; editType: string; fieldName: string; oldValue: string; newValue: string }>;
+  } | null>(null);
+  const [duplicateProjectWarning, setDuplicateProjectWarning] = useState<{
+    message: string;
+    matchCandidates: Array<{ projectId: number; projectName: string; confidence: number; matchReason: string }>;
+  } | null>(null);
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
@@ -2267,6 +2276,8 @@ function PreviewCommitStep({
         setPreviouslyDeletedWarning(null);
         setRecencyWarning(null);
         setBlockerWarning(null);
+        setPlanEditConflict(null);
+        setDuplicateProjectWarning(null);
         toast({ title: "Import Committed!", description: "Data has been imported successfully" });
       } else {
         const err = await res.json().catch(() => ({ error: "Commit failed" }));
@@ -2288,6 +2299,17 @@ function PreviewCommitStep({
             message: err.message || "Resolve the remaining blocker rows before committing.",
             unresolvedBlockers: err.unresolvedBlockers || [],
           });
+        } else if (err.error === "plan_edit_conflict_block") {
+          setPlanEditConflict({
+            message: err.message || "Unresolved front-end plan edits must be resolved before committing.",
+            unresolvedCount: err.unresolvedCount || 0,
+            conflicts: err.conflicts || [],
+          });
+        } else if (err.error === "duplicate_project_candidate") {
+          setDuplicateProjectWarning({
+            message: err.message || "A similar project already exists.",
+            matchCandidates: err.matchCandidates || [],
+          });
         } else {
           toast({ title: "Error", description: err.message || err.error || "Commit failed", variant: "destructive" });
         }
@@ -2304,6 +2326,8 @@ function PreviewCommitStep({
   const handleCommitPreserve = () => doCommit({ preserveManualEdits: true });
   const handleCommitWithResolutions = () => doCommit({ conflictResolutions });
   const handleCommitRecreate = () => doCommit({ forceRecreate: true });
+  const handleCommitConfirmNewProject = () => doCommit({ confirmNewProject: true });
+  const handleCommitSelectProject = (projectId: number) => doCommit({ projectId });
 
   const toggleTable = (key: string) => {
     setExpandedTables((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -2763,6 +2787,80 @@ function PreviewCommitStep({
                   </Button>
                 </div>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {planEditConflict && (
+        <Card className="border-amber-300 bg-amber-50" data-testid="plan-edit-conflict-warning">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-amber-800">{planEditConflict.message}</p>
+                <p className="text-xs text-amber-600">{planEditConflict.unresolvedCount} unresolved plan edit(s) must be reviewed before this import can be committed.</p>
+              </div>
+            </div>
+            {planEditConflict.conflicts.length > 0 && (
+              <div className="space-y-2">
+                {planEditConflict.conflicts.map((c) => (
+                  <div key={c.id} className="rounded-lg border border-amber-200 bg-white p-3 text-xs text-slate-700">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">{c.taskName}</Badge>
+                      <Badge variant="outline">{c.editType}</Badge>
+                      {c.fieldName && <Badge variant="outline">{c.fieldName}</Badge>}
+                    </div>
+                    {(c.oldValue || c.newValue) && (
+                      <p className="mt-2 text-slate-600">
+                        {c.oldValue && <span>Old: <strong>{c.oldValue}</strong></span>}
+                        {c.oldValue && c.newValue && " → "}
+                        {c.newValue && <span>New: <strong>{c.newValue}</strong></span>}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPlanEditConflict(null)}>
+                Dismiss
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {duplicateProjectWarning && (
+        <Card className="border-amber-300 bg-amber-50" data-testid="duplicate-project-warning">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-amber-800">{duplicateProjectWarning.message}</p>
+                <p className="text-xs text-amber-600">Select an existing project to map to, or confirm creating a new one.</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {duplicateProjectWarning.matchCandidates.map((m) => (
+                <div key={m.projectId} className="rounded-lg border border-amber-200 bg-white p-3 text-xs text-slate-700 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-slate-900">{m.projectName}</p>
+                    <p className="text-slate-500">{m.matchReason} — {Math.round(m.confidence * 100)}% match</p>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => { setDuplicateProjectWarning(null); handleCommitSelectProject(m.projectId); }}>
+                    Use This Project
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setDuplicateProjectWarning(null)}>
+                Cancel
+              </Button>
+              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { setDuplicateProjectWarning(null); handleCommitConfirmNewProject(); }}>
+                Create New Project
+              </Button>
             </div>
           </CardContent>
         </Card>
