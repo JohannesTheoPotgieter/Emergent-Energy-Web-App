@@ -5219,8 +5219,12 @@ export const workItems = pgTable("work_items", {
   sortOrder: integer("sort_order").default(0),
   estimateMinutes: integer("estimate_minutes"),
   taskCategory: text("task_category"),
-  recurringRule: text("recurring_rule"),
-  recurringParentId: integer("recurring_parent_id"),
+  isRecurring: boolean("is_recurring").default(false),
+  recurrenceFrequency: text("recurrence_frequency"),
+  recurrenceInterval: integer("recurrence_interval").default(1),
+  recurrenceDaysOfWeek: text("recurrence_days_of_week"),
+  recurrenceEndDate: text("recurrence_end_date"),
+  recurrenceParentId: integer("recurrence_parent_id"),
 });
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;
@@ -5700,10 +5704,6 @@ export const taskTimeEntries = pgTable("task_time_entries", {
 export const insertTaskTimeEntrySchema = createInsertSchema(taskTimeEntries).omit({ id: true, createdAt: true } as any);
 export type InsertTaskTimeEntry = z.infer<typeof insertTaskTimeEntrySchema>;
 export type TaskTimeEntry = typeof taskTimeEntries.$inferSelect;
-
-// Additional columns for work_items (added via ALTER TABLE in migration)
-// estimateMinutes, taskCategory, recurringRule, recurringParentId
-// These are represented in the migration SQL and available via raw queries
 
 export const projectLinkageReviewQueue = pgTable("project_linkage_review_queue", {
   id: serial("id").primaryKey(),

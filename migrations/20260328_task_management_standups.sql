@@ -88,11 +88,15 @@ CREATE TABLE IF NOT EXISTS task_time_entries (
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
--- Add columns to work_items
+-- Add columns to work_items (estimate, category, recurrence aligned with mytool_tasks pattern)
 ALTER TABLE work_items ADD COLUMN IF NOT EXISTS estimate_minutes INTEGER;
 ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_category TEXT;
-ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurring_rule TEXT;
-ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurring_parent_id INTEGER;
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT false;
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_frequency TEXT;
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_interval INTEGER DEFAULT 1;
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_days_of_week TEXT;
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_end_date TEXT;
+ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_parent_id INTEGER;
 
 -- Seed default tags
 INSERT INTO task_tags (name, color, category) VALUES
