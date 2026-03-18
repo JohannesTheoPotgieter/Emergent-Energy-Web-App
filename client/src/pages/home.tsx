@@ -201,18 +201,18 @@ function QuickLink({
   return (
     <Link href={href}>
       <Card
-        className="hover:shadow-md transition-all cursor-pointer border-border/60 h-full group"
+        className="hover:border-primary/30 transition-colors cursor-pointer border-border/50 h-full group"
         data-testid={`link-${label.toLowerCase().replace(/\s+/g, "-")}`}
       >
-        <CardContent className="p-4 flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-lg ${color} flex items-center justify-center shrink-0`}>
+        <CardContent className="p-3.5 flex items-center gap-3">
+          <div className={`w-9 h-9 rounded-md ${color} flex items-center justify-center shrink-0`}>
             {icon}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-foreground">{label}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+            <p className="text-sm font-medium text-foreground">{label}</p>
+            <p className="text-xs text-muted-foreground">{description}</p>
           </div>
-          <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+          <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
         </CardContent>
       </Card>
     </Link>
@@ -233,16 +233,16 @@ function StatCard({
   testId: string;
 }) {
   return (
-    <Card className="border-border/60">
-      <CardContent className="p-4 text-center">
+    <Card className="border-border/50">
+      <CardContent className="p-3.5 text-center">
         {loading ? (
-          <Skeleton className="h-8 w-12 mx-auto" />
+          <Skeleton className="h-7 w-10 mx-auto" />
         ) : (
-          <p className={`text-2xl font-bold ${color || "text-foreground"}`} data-testid={testId}>
+          <p className={`text-xl font-semibold font-mono ${color || "text-foreground"}`} data-testid={testId}>
             {value}
           </p>
         )}
-        <p className="text-xs text-muted-foreground mt-1">{label}</p>
+        <p className="text-[11px] text-muted-foreground mt-1 uppercase tracking-wide">{label}</p>
       </CardContent>
     </Card>
   );
@@ -262,16 +262,16 @@ function KpiCard({
   testId: string;
 }) {
   return (
-    <Card className="border-border/60">
-      <CardContent className="p-4">
-        <div className="flex items-center gap-2 text-muted-foreground mb-1">
+    <Card className="border-border/50">
+      <CardContent className="p-3.5">
+        <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
           {icon}
-          <span className="text-xs">{label}</span>
+          <span className="text-[11px] uppercase tracking-wide">{label}</span>
         </div>
         {loading ? (
-          <Skeleton className="h-6 w-20" />
+          <Skeleton className="h-5 w-20" />
         ) : (
-          <p className="text-lg font-bold text-foreground" data-testid={testId}>
+          <p className="text-base font-semibold font-mono text-foreground" data-testid={testId}>
             {value}
           </p>
         )}
@@ -555,54 +555,43 @@ export default function HomePage() {
 
   return (
     <PageShell data-testid="home-page">
-      <div className="mb-6">
-        <div className="flex items-start gap-4">
-          <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 shadow-sm">
-            <LayoutDashboard className="w-6 h-6" />
-          </div>
-          <div className="min-w-0 flex-1">
+      <div className="mb-8">
+        <div className="flex items-center justify-between">
+          <div>
             <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
               {greeting}, {displayName}
             </h1>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge variant="secondary" className="text-xs font-medium bg-emerald-50 text-emerald-700 border-emerald-200" data-testid="text-role-badge">
-                {roleLabel}
-              </Badge>
-            </div>
+            <p className="text-sm text-muted-foreground mt-1" data-testid="text-role-badge">{roleLabel}</p>
           </div>
         </div>
 
-        <div className="mt-4 flex items-start gap-2 bg-emerald-50/60 border border-emerald-100 rounded-lg p-3" data-testid="text-daily-quote">
-          <Quote className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-          <p className="text-sm text-emerald-800 italic leading-relaxed">{dailyQuote}</p>
+        <div className="mt-4 flex items-start gap-2.5 bg-muted/40 border border-border/50 rounded-lg px-4 py-3" data-testid="text-daily-quote">
+          <Quote className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+          <p className="text-sm text-muted-foreground italic leading-relaxed">{dailyQuote}</p>
         </div>
       </div>
 
       {(companyPriorities && companyPriorities.length > 0) && (
-        <Card className="border-emerald-200 bg-gradient-to-r from-emerald-50 to-white mb-6" data-testid="card-company-priorities">
+        <Card className="border-border/60 mb-8" data-testid="card-company-priorities">
           <CardContent className="p-5">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center">
-                  <Flame className="w-4 h-4" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-foreground uppercase tracking-wide">Company Priorities</h2>
-                  <p className="text-xs text-muted-foreground">{companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").length} active priorities</p>
-                </div>
+              <div className="flex items-center gap-2.5">
+                <Flame className="w-4 h-4 text-primary" />
+                <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
+                <Badge variant="secondary" className="text-[11px]">{companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").length} active</Badge>
               </div>
               <Link href="/project-lifecycle">
-                <span className="text-xs text-emerald-600 hover:text-emerald-700 font-medium cursor-pointer">Manage</span>
+                <span className="text-xs text-primary hover:underline font-medium cursor-pointer">Manage</span>
               </Link>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").slice(0, 6).map((priority: any, i: number) => {
                 const sev = PRIORITY_SEVERITY_ICONS[priority.severity] || PRIORITY_SEVERITY_ICONS.normal;
                 const Icon = sev.icon;
                 return (
-                  <div key={priority.id || i} className="flex items-center gap-3 bg-white rounded-lg border border-border/50 p-3" data-testid={`text-priority-${i}`}>
-                    <div className={`w-8 h-8 rounded-lg ${sev.color} flex items-center justify-center shrink-0`}>
-                      <Icon className="w-4 h-4" />
+                  <div key={priority.id || i} className="flex items-center gap-3 rounded-lg border border-border/50 p-3 hover:bg-muted/30 transition-colors" data-testid={`text-priority-${i}`}>
+                    <div className={`w-7 h-7 rounded-md ${sev.color} flex items-center justify-center shrink-0`}>
+                      <Icon className="w-3.5 h-3.5" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm text-foreground font-medium leading-snug truncate">{priority.title}</p>
@@ -629,20 +618,18 @@ export default function HomePage() {
         </Card>
       )}
 
-      <div className="mb-6">
-        <h2 className="text-sm font-bold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-          <Star className="w-4 h-4 text-emerald-600" />
-          Your Key Metrics
+      <div className="mb-8">
+        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
+          Key Metrics
         </h2>
         {getRoleKpis(roleCategory, kpis, stats, isLoading)}
       </div>
 
       <div>
-        <h2 className="text-sm font-bold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-          <Zap className="w-4 h-4 text-emerald-600" />
+        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">
           Quick Access
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           {quickLinks.map((link) => (
             <QuickLink key={link.href} {...link} />
           ))}
