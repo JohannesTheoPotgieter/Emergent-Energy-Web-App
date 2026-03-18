@@ -122,7 +122,7 @@ export function NotificationBell() {
         <Button variant="ghost" size="icon" className="relative" data-testid="button-notifications-bell">
           <Bell className="w-5 h-5" />
           {count > 0 && (
-            <Badge className="absolute -top-1 -right-1 h-5 min-w-[20px] px-1 text-xs bg-red-600 hover:bg-red-600" data-testid="badge-notification-count">
+            <Badge className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 text-[10px] bg-destructive hover:bg-destructive" data-testid="badge-notification-count">
               {count > 99 ? "99+" : count}
             </Badge>
           )}
@@ -207,7 +207,8 @@ export function NotificationBell() {
                             ) : (
                               <Button
                                 size="sm"
-                                className="h-7 text-xs mt-0.5 bg-amber-500 hover:bg-amber-600 text-white"
+                                variant="outline"
+                                className="h-7 text-xs mt-0.5"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   confirmMutation.mutate(n.id);
@@ -236,8 +237,8 @@ export function NotificationBell() {
             </div>
           )}
         </ScrollArea>
-        <div className="border-t p-2.5 text-center">
-          <p className="text-[11px] text-muted-foreground">Notification center page is not enabled in this shell.</p>
+        <div className="border-t p-2 text-center">
+          <p className="text-[11px] text-muted-foreground">Showing last 50 notifications</p>
         </div>
       </PopoverContent>
     </Popover>
