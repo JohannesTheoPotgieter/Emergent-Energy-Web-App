@@ -701,7 +701,7 @@ export default function TaskGridView({ projectName, onTaskClick }: TaskGridViewP
       case "assignees":
         return (
           <UserAssignmentPicker
-            taskId={Number.isFinite(task.id) ? Math.abs(task.id) : 0}
+            taskId={task.id > 0 ? task.id : (task.workItemId || (Number.isFinite(task.id) ? Math.abs(task.id) : 0))}
             taskSource={task.id > 0 ? "operational" : "plan"}
             resolvedUsers={task.resolvedAssignees || null}
             textNames={task.assignees || null}
