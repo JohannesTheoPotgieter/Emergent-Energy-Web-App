@@ -1725,6 +1725,68 @@ export default function EngineeringDashboard() {
 
       <ActivityFeed />
 
+      {/* Stages Progress Matrix (#8) */}
+      {projectHealth.length > 0 && (
+        <Card className="shadow-sm" data-testid="section-stages-matrix">
+          <div className="px-4 py-3 border-b flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center">
+              <LayoutGrid className="h-4 w-4 text-violet-600" />
+            </div>
+            <span className="font-semibold text-sm">Stages Progress Matrix</span>
+            <span className="text-[10px] text-muted-foreground ml-auto">{projectHealth.length} projects</span>
+          </div>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/20">
+                    <th className="text-left px-3 py-2 font-semibold text-muted-foreground min-w-[150px]">Project</th>
+                    <th className="text-center px-2 py-2 font-semibold text-muted-foreground">Phase</th>
+                    <th className="text-center px-2 py-2 font-semibold text-muted-foreground min-w-[120px]">Progress</th>
+                    <th className="text-center px-2 py-2 font-semibold text-muted-foreground">Active</th>
+                    <th className="text-center px-2 py-2 font-semibold text-muted-foreground">Hold</th>
+                    <th className="text-center px-2 py-2 font-semibold text-muted-foreground">Overdue</th>
+                    <th className="text-center px-2 py-2 font-semibold text-muted-foreground">RAG</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projectHealth
+                    .sort((a, b) => {
+                      const ragOrder: Record<string, number> = { RED: 0, AMBER: 1, GREEN: 2 };
+                      return (ragOrder[a.rag] ?? 3) - (ragOrder[b.rag] ?? 3) || b.completion - a.completion;
+                    })
+                    .map(p => (
+                    <tr key={p.projectName} className="border-b hover:bg-muted/20 transition-colors">
+                      <td className="px-3 py-2 font-medium truncate max-w-[180px]">{p.displayName}</td>
+                      <td className="px-2 py-2 text-center">
+                        <span className="px-2 py-0.5 rounded-full bg-muted text-[9px] font-medium">{p.phaseLabel || p.phase || "—"}</span>
+                      </td>
+                      <td className="px-2 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-muted/60 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${p.rag === "RED" ? "bg-red-400" : p.rag === "AMBER" ? "bg-amber-400" : "bg-emerald-400"}`}
+                              style={{ width: `${p.completion}%` }}
+                            />
+                          </div>
+                          <span className="font-mono text-[10px] w-8 text-right font-bold">{p.completion}%</span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-center font-mono font-bold">{p.active}</td>
+                      <td className="px-2 py-2 text-center font-mono font-bold">{p.hold > 0 ? <span className="text-amber-600">{p.hold}</span> : "—"}</td>
+                      <td className="px-2 py-2 text-center font-mono font-bold">{p.overdue > 0 ? <span className="text-red-600">{p.overdue}</span> : "—"}</td>
+                      <td className="px-2 py-2 text-center">
+                        <span className={`w-3 h-3 rounded-full inline-block ${p.rag === "RED" ? "bg-red-500" : p.rag === "AMBER" ? "bg-amber-500" : "bg-emerald-500"}`} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div>
         <div className="flex items-center gap-2 mb-3">
           <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center">
