@@ -79,6 +79,7 @@ import PmHandoverReviewPage from "@/pages/pm-handover-review";
 import HandoverControlPage from "@/pages/handover-control";
 import TaskManagementPage from "@/pages/task-management";
 import StandupsPage from "@/pages/standups";
+import ExceptionsPage from "@/pages/exceptions";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { checkPermission, normalizeRoleForPermissions } from "@shared/schema";
@@ -167,6 +168,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   HandoverControlPage,
   TaskManagementPage,
   StandupsPage,
+  ExceptionsPage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
