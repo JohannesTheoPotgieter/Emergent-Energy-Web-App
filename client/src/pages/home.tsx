@@ -615,32 +615,29 @@ export default function HomePage() {
                 <span className="text-xs text-primary hover:underline font-medium cursor-pointer">Manage</span>
               </Link>
             </div>
-            <Link href="/project-lifecycle">
-              <span className="text-xs text-primary hover:underline font-medium cursor-pointer">Manage</span>
-            </Link>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").slice(0, 6).map((priority: any, i: number) => {
-              const sev = PRIORITY_SEVERITY_ICONS[priority.severity] || PRIORITY_SEVERITY_ICONS.normal;
-              const Icon = sev.icon;
-              return (
-                <Card key={priority.id || i} className="border-border/50 hover:border-primary/20 transition-colors">
-                  <CardContent className="p-3 flex items-center gap-3" data-testid={`text-priority-${i}`}>
-                    <div className={`w-7 h-7 rounded-md ${sev.color} flex items-center justify-center shrink-0`}>
-                      <Icon className="w-3.5 h-3.5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-foreground font-medium leading-snug truncate">{priority.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {[priority.department, priority.assignedTo ? `Owner: ${priority.assignedTo}` : null].filter(Boolean).join(" · ")}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").slice(0, 6).map((priority: any, i: number) => {
+                const sev = PRIORITY_SEVERITY_ICONS[priority.severity] || PRIORITY_SEVERITY_ICONS.normal;
+                const Icon = sev.icon;
+                return (
+                  <Card key={priority.id || i} className="border-border/50 hover:border-primary/20 transition-colors">
+                    <CardContent className="p-3 flex items-center gap-3" data-testid={`text-priority-${i}`}>
+                      <div className={`w-7 h-7 rounded-md ${sev.color} flex items-center justify-center shrink-0`}>
+                        <Icon className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-foreground font-medium leading-snug truncate">{priority.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {[priority.department, priority.assignedTo ? `Owner: ${priority.assignedTo}` : null].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
       )}
       {prioritiesLoading && (
         <div>
