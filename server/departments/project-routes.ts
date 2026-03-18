@@ -1837,11 +1837,11 @@ router.get("/api/project-plans", requireAuth, async (req, res) => {
 
 router.get("/api/project-plan/:projectName", requireAuth, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = req.params.projectName as string;
     const { applyOverrides } = req.query;
-    
+
     let plans = await storage.getProjectPlansByProject(projectName);
-    
+
     if (applyOverrides === 'true') {
       const overrides = await storage.getProjectPlanOverridesByProject(projectName);
       plans = applyProjectPlanOverrides(plans, overrides);
@@ -1894,7 +1894,7 @@ router.get("/api/pd-assignable-users", requireAuth, async (_req, res) => {
 
 router.patch("/api/project-info/:id/assign-pm", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id as string);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid project ID" });
 
     const schema = z.object({
@@ -1927,7 +1927,7 @@ router.patch("/api/project-info/:id/assign-pm", requireAuth, requirePermission('
 
 router.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id as string);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid project ID" });
 
     const editSchema = z.object({
@@ -2047,7 +2047,7 @@ router.delete("/api/project-plan/overrides/:projectName", requireAuth, requireAd
 
 router.get("/api/key-date-mappings/:projectName", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const mappings = await storage.getKeyDateMappings(decodeURIComponent(req.params.projectName));
+    const mappings = await storage.getKeyDateMappings(decodeURIComponent(req.params.projectName as string));
     res.json(mappings);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -2065,7 +2065,7 @@ router.post("/api/key-date-mappings", requireAuth, requireAdmin, async (req: Req
 
 router.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const updated = await storage.updateKeyDateMapping(parseInt(req.params.id), req.body);
+    const updated = await storage.updateKeyDateMapping(parseInt(req.params.id as string), req.body);
     sendExcelSyncNotification({
       projectName: updated?.projectName || req.body?.projectName || "Unknown",
       changedByUserId: (req as any).user?.id,
@@ -2081,7 +2081,7 @@ router.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req
 
 router.delete("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    await storage.deleteKeyDateMapping(parseInt(req.params.id));
+    await storage.deleteKeyDateMapping(parseInt(req.params.id as string));
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -2090,7 +2090,7 @@ router.delete("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (re
 
 router.get("/api/key-dates/:projectName", requireAuth, async (req: Request, res: Response) => {
   try {
-    const projectName = decodeURIComponent(req.params.projectName);
+    const projectName = decodeURIComponent(req.params.projectName as string);
     const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
 
     const [planTasksDirect, planTasksTracker] = await Promise.all([
