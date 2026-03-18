@@ -5334,6 +5334,58 @@ export const insertPlanEditNotificationSchema = createInsertSchema(planEditNotif
 export type InsertPlanEditNotification = z.infer<typeof insertPlanEditNotificationSchema>;
 export type PlanEditNotification = typeof planEditNotifications.$inferSelect;
 
+// Import logs — structured log of every import attempt (successful or not)
+export const importLogs = pgTable("import_logs", {
+  id: serial("id").primaryKey(),
+  importRunId: integer("import_run_id").references(() => smartImportRuns.id),
+  fileName: text("file_name").notNull(),
+  importedByUserId: integer("imported_by_user_id").references(() => users.id),
+  importedByName: text("imported_by_name"),
+  projectName: text("project_name"),
+  status: text("status").notNull(), // SUCCESS, PARTIAL, FAILED, REJECTED
+  rowsAttempted: integer("rows_attempted").default(0),
+  rowsWritten: integer("rows_written").default(0),
+  rowsSkipped: integer("rows_skipped").default(0),
+  rowsRejected: integer("rows_rejected").default(0),
+  conflictsDetected: integer("conflicts_detected").default(0),
+  conflictsResolved: integer("conflicts_resolved").default(0),
+  errorMessage: text("error_message"),
+  summaryJson: jsonb("summary_json"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export type ImportLog = typeof importLogs.$inferSelect;
+
+// Manual edit flags — tracks fields manually edited in the UI that should be protected from import overwrite
+export const manualEditFlags = pgTable("manual_edit_flags", {
+  id: serial("id").primaryKey(),
+  entityType: text("entity_type").notNull(), // normalized_cost_lines, normalized_revenue_lines, work_items, etc.
+  entityId: integer("entity_id").notNull(),
+  fieldName: text("field_name").notNull(),
+  editedByUserId: integer("edited_by_user_id").references(() => users.id),
+  editedByName: text("edited_by_name"),
+  editedAt: timestamp("edited_at").notNull().defaultNow(),
+  isProtected: boolean("is_protected").notNull().default(false), // true = "Keep Manual Edit" chosen
+  protectedAt: timestamp("protected_at"),
+  protectedByUserId: integer("protected_by_user_id").references(() => users.id),
+});
+export type ManualEditFlag = typeof manualEditFlags.$inferSelect;
+
+// Conflict resolution log — records each field-level resolution decision during import
+export const conflictResolutionLog = pgTable("conflict_resolution_log", {
+  id: serial("id").primaryKey(),
+  importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id"),
+  fieldName: text("field_name").notNull(),
+  manualValue: text("manual_value"),
+  importValue: text("import_value"),
+  decision: text("decision").notNull(), // KEEP_MANUAL, OVERWRITE_WITH_IMPORT
+  decidedByUserId: integer("decided_by_user_id").references(() => users.id),
+  decidedByName: text("decided_by_name"),
+  decidedAt: timestamp("decided_at").notNull().defaultNow(),
+})
+export type ConflictResolutionLogEntry = typeof conflictResolutionLog.$inferSelect;
+
 export const migrationBackups = pgTable("migration_backups", {
   id: serial("id").primaryKey(),
   backupId: text("backup_id").notNull(),

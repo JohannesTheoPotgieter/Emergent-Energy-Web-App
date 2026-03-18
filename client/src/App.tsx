@@ -69,6 +69,7 @@ import PMDeliverablesPage from "@/pages/pm-deliverables";
 import DatabaseMigrationPage from "@/pages/database-migration";
 import ClientsPage from "@/pages/clients";
 import ImportControlTowerPage from "@/pages/import-control-tower";
+import ProgrammeReportsPage from "@/pages/programme-reports";
 import KpiTraceabilityPage from "@/pages/kpi-traceability";
 import AdminRecoveryPage from "@/pages/admin-recovery";
 import AdminControlCenterPage from "@/pages/admin-control-center";
@@ -152,6 +153,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   DatabaseMigrationPage,
   KpiTraceabilityPage,
   ImportControlTowerPage,
+  ProgrammeReportsPage,
   AdminRecoveryPage,
   AdminControlCenterPage,
   ClientsPage,
