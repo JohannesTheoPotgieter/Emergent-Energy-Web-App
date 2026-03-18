@@ -333,6 +333,7 @@ export default function MyWorkTasksPage() {
   const unifiedTasks: UnifiedTask[] = useMemo(() => {
     if (!allTaskData) return [];
     const result: UnifiedTask[] = [];
+    const safeId = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
     const withSourceMeta = <T extends UnifiedTask>(task: T, raw: any): T => ({
       ...task,
       projectId: raw?.projectId ?? raw?.project_id ?? null,
@@ -347,7 +348,7 @@ export default function MyWorkTasksPage() {
     for (const t of (allTaskData.personal || [])) {
       result.push(withSourceMeta({
         _key: `personal-${t.id}`, _source: "personal", _sourceLabel: "Personal",
-        _sourceColor: "bg-blue-50 border-blue-200 text-blue-700", _rawId: Number(t.id), id: Number(t.id),
+        _sourceColor: "bg-blue-50 border-blue-200 text-blue-700", _rawId: safeId(t.id), id: safeId(t.id),
         title: t.title || "", status: t.status || "todo", priority: t.priority || "normal",
         projectName: t.projectName || t.project_name || null, dueAt: t.dueAt || t.due_at || null,
         createdAt: t.createdAt || t.created_at || null, updatedAt: t.updatedAt || t.updated_at || null, notes: t.notes || null,
@@ -370,7 +371,7 @@ export default function MyWorkTasksPage() {
       if (t.parentTaskId) continue;
       result.push(withSourceMeta({
         _key: `op-${t.id}`, _source: "operational", _sourceLabel: "Project",
-        _sourceColor: "bg-emerald-50 border-emerald-200 text-emerald-700", _rawId: Number(t.id), id: Number(t.id),
+        _sourceColor: "bg-emerald-50 border-emerald-200 text-emerald-700", _rawId: safeId(t.id), id: safeId(t.id),
         title: t.title || "", status: normalizeStatus(t.status), priority: normalizePriority(t.priority),
         projectName: t.projectName || t.project_name || null, dueAt: t.dueDate || t.due_date || null,
         createdAt: t.createdAt || t.created_at || null, updatedAt: t.updatedAt || t.updated_at || null, notes: t.description || t.comment || null,
@@ -384,7 +385,7 @@ export default function MyWorkTasksPage() {
     for (const a of (allTaskData.approvals?.engineering || [])) {
       result.push(withSourceMeta({
         _key: `approval-eng-${a.id}`, _source: "approvals", _sourceLabel: "Eng Approval",
-        _sourceColor: "bg-amber-50 border-amber-200 text-amber-700", _rawId: Number(a.id), id: Number(a.id),
+        _sourceColor: "bg-amber-50 border-amber-200 text-amber-700", _rawId: safeId(a.id), id: safeId(a.id),
         title: a.title || "", status: normalizeStatus(a.status), priority: "high",
         projectName: a.projectName || null, dueAt: null, createdAt: a.createdAt || null, notes: null,
       }, a));
@@ -392,7 +393,7 @@ export default function MyWorkTasksPage() {
     for (const a of (allTaskData.approvals?.quality || [])) {
       result.push(withSourceMeta({
         _key: `approval-qc-${a.id}`, _source: "approvals", _sourceLabel: "QC Review",
-        _sourceColor: "bg-amber-50 border-amber-200 text-amber-700", _rawId: Number(a.id), id: Number(a.id),
+        _sourceColor: "bg-amber-50 border-amber-200 text-amber-700", _rawId: safeId(a.id), id: safeId(a.id),
         title: a.title || "", status: normalizeStatus(a.status), priority: "high",
         projectName: a.projectName || null, dueAt: null, createdAt: a.createdAt || null, notes: null,
       }, a));
@@ -400,7 +401,7 @@ export default function MyWorkTasksPage() {
     for (const a of (allTaskData.approvals?.general || [])) {
       result.push(withSourceMeta({
         _key: `approval-gen-${a.id}`, _source: "approvals", _sourceLabel: "Approval",
-        _sourceColor: "bg-amber-50 border-amber-200 text-amber-700", _rawId: Number(a.id), id: Number(a.id),
+        _sourceColor: "bg-amber-50 border-amber-200 text-amber-700", _rawId: safeId(a.id), id: safeId(a.id),
         title: a.title || "", status: normalizeStatus(a.status), priority: "high",
         projectName: a.projectName || null, dueAt: null, createdAt: a.createdAt || null, notes: null,
       }, a));
@@ -409,7 +410,7 @@ export default function MyWorkTasksPage() {
     for (const t of (allTaskData.trRegister || [])) {
       result.push(withSourceMeta({
         _key: `tr-${t.id}`, _source: "tr_register", _sourceLabel: "Action",
-        _sourceColor: "bg-purple-50 border-purple-200 text-purple-700", _rawId: Number(t.id), id: Number(t.id),
+        _sourceColor: "bg-purple-50 border-purple-200 text-purple-700", _rawId: safeId(t.id), id: safeId(t.id),
         title: t.actionDescription || "", status: normalizeStatus(t.status),
         priority: t.ragStatus === "Red" ? "critical" : t.ragStatus === "Amber" ? "high" : "normal",
         projectName: null, dueAt: t.dueDate || t.due_date || null,
@@ -423,7 +424,7 @@ export default function MyWorkTasksPage() {
     for (const d of (allTaskData.deliverables || [])) {
       result.push(withSourceMeta({
         _key: `del-${d.id}`, _source: "deliverables", _sourceLabel: "Deliverable",
-        _sourceColor: "bg-rose-50 border-rose-200 text-rose-700", _rawId: Number(d.id), id: Number(d.id),
+        _sourceColor: "bg-rose-50 border-rose-200 text-rose-700", _rawId: safeId(d.id), id: safeId(d.id),
         title: d.title || "", status: normalizeStatus(d.status), priority: "normal",
         projectName: d.projectName || d.project_name || null, dueAt: null,
         createdAt: d.createdAt || d.created_at || null, updatedAt: d.updatedAt || d.updated_at || null, notes: null,
@@ -434,7 +435,7 @@ export default function MyWorkTasksPage() {
     for (const t of (allTaskData.planTasks || [])) {
       result.push(withSourceMeta({
         _key: `plan-${t.id}`, _source: "plan", _sourceLabel: "Project Plan",
-        _sourceColor: "bg-violet-50 border-violet-200 text-violet-700", _rawId: Number(t.id), id: Number(t.id),
+        _sourceColor: "bg-violet-50 border-violet-200 text-violet-700", _rawId: safeId(t.id), id: safeId(t.id),
         title: t.title || "", status: normalizeStatus(t.status), priority: "normal",
         projectName: t.projectName || null, dueAt: t.endDate || null, createdAt: null,
         notes: t.phase ? `Phase: ${t.phase}` : null,
@@ -447,7 +448,7 @@ export default function MyWorkTasksPage() {
     for (const t of (allTaskData.engineeringTasks || [])) {
       result.push(withSourceMeta({
         _key: `eng-${t.id}`, _source: "engineering_task", _sourceLabel: "Engineering",
-        _sourceColor: "bg-cyan-50 border-cyan-200 text-cyan-700", _rawId: Number(t.id), id: Number(t.id),
+        _sourceColor: "bg-cyan-50 border-cyan-200 text-cyan-700", _rawId: safeId(t.id), id: safeId(t.id),
         title: t.title || "", status: normalizeStatus(t.status), priority: "normal",
         projectName: t.projectName || null, dueAt: null, createdAt: null,
         notes: t.lifecyclePhase ? `Phase: ${t.lifecyclePhase}` : null,
@@ -458,7 +459,7 @@ export default function MyWorkTasksPage() {
     for (const t of (allTaskData.qualityTasks || [])) {
       result.push(withSourceMeta({
         _key: `qc-${t.id}`, _source: "quality_task", _sourceLabel: "Quality",
-        _sourceColor: "bg-rose-50 border-rose-200 text-rose-700", _rawId: Number(t.id), id: Number(t.id),
+        _sourceColor: "bg-rose-50 border-rose-200 text-rose-700", _rawId: safeId(t.id), id: safeId(t.id),
         title: t.title || "", status: normalizeStatus(t.status), priority: "normal",
         projectName: t.projectName || null, dueAt: t.endDate || null, createdAt: null, notes: null,
         resolvedAssignees: t.resolvedAssignee ? [t.resolvedAssignee] : null,
@@ -468,7 +469,7 @@ export default function MyWorkTasksPage() {
     for (const n of (unreadNotifs.items || [])) {
       result.push(withSourceMeta({
         _key: `notif-${n.id}`, _source: "notifications", _sourceLabel: "Notification",
-        _sourceColor: "bg-orange-50 border-orange-200 text-orange-700", _rawId: Number(n.id), id: Number(n.id),
+        _sourceColor: "bg-orange-50 border-orange-200 text-orange-700", _rawId: safeId(n.id), id: safeId(n.id),
         title: n.title || "", status: "todo" as TaskStatus,
         priority: n.eventType === "excel_sync_confirmation" ? "normal" : "high",
         projectName: n.projectName || n.project_name || null, dueAt: null,
@@ -479,7 +480,7 @@ export default function MyWorkTasksPage() {
     for (const item of microsoftItems) {
       result.push(withSourceMeta({
         _key: `ms-${item.id}`, _source: "microsoft", _sourceLabel: "Microsoft",
-        _sourceColor: "bg-indigo-50 border-indigo-200 text-indigo-700", _rawId: Number(item.id), id: Number(item.id),
+        _sourceColor: "bg-indigo-50 border-indigo-200 text-indigo-700", _rawId: safeId(item.id), id: safeId(item.id),
         title: item.subjectOrTitle || item.subject_or_title || "", status: "todo" as TaskStatus, priority: "normal",
         projectName: item.linkedProjectName || item.linked_project_name || null, dueAt: null,
         createdAt: item.receivedOrStartDatetime || item.received_or_start_datetime || null, notes: item.preview || null,

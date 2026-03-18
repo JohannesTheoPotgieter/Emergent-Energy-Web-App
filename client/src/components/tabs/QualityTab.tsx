@@ -1172,7 +1172,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                         <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Assignee</Label>
                                         <div className="mt-1">
                                           <UserAssignmentPicker
-                                            taskId={instance.id}
+                                            taskId={Number.isFinite(instance.id) ? instance.id : 0}
                                             taskSource="quality_task"
                                             assignments={instance.assignments || null}
                                             resolvedUsers={instance.assigneeUserId && assigneeName ? [{
