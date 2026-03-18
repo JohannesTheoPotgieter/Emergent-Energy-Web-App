@@ -2,9 +2,19 @@ import { and, asc, count, desc, eq, ilike, inArray, isNull, sql } from "drizzle-
 import { db } from "../../../db";
 import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLines, procurementItems, projectEngDeliverables, projectEngStages, projectInfo, projectPhaseHistory, qcChecklist, qcItemInstance, smartImportRuns, workItems, users, counterparties } from "@shared/schema";
 
-export async function listProjects(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc" }) {
+export async function listProjects(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null }) {
   const filters = [eq(projectInfo.isActive, true)];
   if (params.q) filters.push(ilike(projectInfo.projectName, `%${params.q}%`));
+
+  // RLS: scope to user's assigned projects when provided
+  if (params.scopeProjectIds != null) {
+    if (params.scopeProjectIds.size === 0) {
+      return { rows: [], total: 0 };
+    }
+    const ids = [...params.scopeProjectIds];
+    filters.push(inArray(projectInfo.id, ids));
+  }
+
   const where = and(...filters);
 
   const totalRow = await db.select({ total: count() }).from(projectInfo).where(where);
@@ -250,12 +260,36 @@ export async function listAuditActivity() {
   return db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(200);
 }
 
-export async function dashboardCoreTotals() {
+export async function dashboardCoreTotals(scopeProjectIds?: Set<number> | null) {
+  // RLS: when scoped, filter all counts to user's assigned projects
+  const hasScope = scopeProjectIds != null && scopeProjectIds.size > 0;
+  const ids = hasScope ? [...scopeProjectIds!] : [];
+
+  if (scopeProjectIds != null && scopeProjectIds.size === 0) {
+    return { projects: 0, openWorkItems: 0, openProcurement: 0, pendingInvoices: 0 };
+  }
+
+  const projectFilter = hasScope
+    ? and(eq(projectInfo.isActive, true), inArray(projectInfo.id, ids))
+    : eq(projectInfo.isActive, true);
+
+  const workFilter = hasScope
+    ? and(isNull(workItems.deletedAt), sql`${workItems.status} != 'Complete'`, inArray(workItems.projectId, ids))
+    : and(isNull(workItems.deletedAt), sql`${workItems.status} != 'Complete'`);
+
+  const procFilter = hasScope
+    ? and(sql`${procurementItems.status} not in ('closed','received')`, inArray(procurementItems.projectId, ids))
+    : sql`${procurementItems.status} not in ('closed','received')`;
+
+  const invFilter = hasScope
+    ? and(sql`${invoiceCaptures.status} in ('captured','submitted','verified')`, inArray(invoiceCaptures.projectId, ids))
+    : sql`${invoiceCaptures.status} in ('captured','submitted','verified')`;
+
   const [projects, openWork, openProcurement, invoices] = await Promise.all([
-    db.select({ total: sql<number>`count(*)` }).from(projectInfo).where(eq(projectInfo.isActive, true)),
-    db.select({ total: sql<number>`count(*)` }).from(workItems).where(and(isNull(workItems.deletedAt), sql`${workItems.status} != 'Complete'`)),
-    db.select({ total: sql<number>`count(*)` }).from(procurementItems).where(sql`${procurementItems.status} not in ('closed','received')`),
-    db.select({ total: sql<number>`count(*)` }).from(invoiceCaptures).where(sql`${invoiceCaptures.status} in ('captured','submitted','verified')`),
+    db.select({ total: sql<number>`count(*)` }).from(projectInfo).where(projectFilter),
+    db.select({ total: sql<number>`count(*)` }).from(workItems).where(workFilter),
+    db.select({ total: sql<number>`count(*)` }).from(procurementItems).where(procFilter),
+    db.select({ total: sql<number>`count(*)` }).from(invoiceCaptures).where(invFilter),
   ]);
   return {
     projects: Number(projects[0]?.total ?? 0),
