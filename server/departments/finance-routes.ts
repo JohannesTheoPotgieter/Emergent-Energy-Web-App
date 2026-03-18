@@ -1175,6 +1175,12 @@ router.post("/api/tracker-monthly", requireAuth, requireTrackerPermission("edit"
     if (!trackerType || !monthKey) {
       return res.status(400).json({ error: "trackerType and monthKey required" });
     }
+    if (!/^\d{4}-\d{2}$/.test(monthKey)) {
+      return res.status(400).json({ error: "monthKey must be in YYYY-MM format" });
+    }
+    if (!["COS", "REV", "GP"].includes(trackerType)) {
+      return res.status(400).json({ error: "trackerType must be COS, REV, or GP" });
+    }
     const result = await storage.upsertTrackerMonthlyManual({
       trackerType,
       monthKey,
@@ -1588,11 +1594,10 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       }
 
       const nowD = new Date();
-      const curMK = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
-      const isFutureMonth = itemMonthKey ? itemMonthKey > curMK : false;
+      const currentMonthKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
 
-      const isRealised = isCosRealised(exp) && !isFutureMonth;
-      const isConfirmedPayment = isCashflowConfirmed(exp) && !isFutureMonth;
+      const isRealised = isCosRealised(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
+      const isConfirmedPayment = isCashflowConfirmed(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
 
       let cosState = 'Planned';
       if (isConfirmedPayment) {
@@ -1675,18 +1680,22 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
       return res.status(400).json({ error: "Cannot mark as realised without an invoice number" });
     }
 
-    await storage.updateProgramExpenseFields(id, {
+    if (realised && !expense.expenseInvoicedDate) {
+      return res.status(400).json({ error: "Cannot mark as realised without an invoice date" });
+    }
+
+    const updated = await storage.updateProgramExpenseFields(id, {
       invoiceDateConfirmed: realised,
     });
 
-    const updatedExpenses = await storage.getAllProgramExpenses();
-    const updatedExpense = updatedExpenses.find(e => e.id === id);
-    if (updatedExpense) {
-      const newState = classifyExpenseState(updatedExpense as any);
-      await storage.updateProgramExpenseFields(id, {
-        computedState: newState,
-      });
+    if (!updated) {
+      return res.status(500).json({ error: "Failed to update expense fields" });
     }
+
+    const newState = classifyExpenseState(updated as any);
+    await storage.updateProgramExpenseFields(id, {
+      computedState: newState,
+    });
 
     res.json({ success: true, id, realised });
   } catch (error) {

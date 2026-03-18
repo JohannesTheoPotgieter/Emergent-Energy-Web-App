@@ -1282,6 +1282,30 @@ export default function ProjectDetailPage() {
 
       {activeSection === "commercial" && canViewTab.finance && (
         <div className="space-y-2" data-testid="commercial-section">
+          {urlTab && ["expenditure", "revenue-tracking", "monthly-realisation", "revenue-tracker", "gp-tracker"].includes(urlTab) && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="tracker-breadcrumb">
+              <button
+                type="button"
+                className="flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                onClick={() => {
+                  const trackerMap: Record<string, string> = {
+                    "expenditure": "/cos-tracker",
+                    "monthly-realisation": "/cos-tracker",
+                    "revenue-tracking": "/revenue-tracker",
+                    "revenue-tracker": "/revenue-tracker",
+                    "gp-tracker": "/gp-tracker",
+                  };
+                  setLocation(trackerMap[urlTab] || "/cos-tracker");
+                }}
+                aria-label="Navigate back to portfolio tracker"
+              >
+                <ArrowLeft className="h-3 w-3" />
+                <span>Back to {urlTab === "gp-tracker" ? "GP Tracker" : urlTab === "revenue-tracking" || urlTab === "revenue-tracker" ? "Revenue Tracker" : "COS Tracker"}</span>
+              </button>
+              <span className="text-muted-foreground/40">/</span>
+              <span className="font-medium text-foreground">{projectName}</span>
+            </div>
+          )}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="commercial-sub-tabs">
             {[
               { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
