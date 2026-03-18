@@ -297,7 +297,7 @@ function getQuickLinksForRole(category: RoleCategory) {
       color: "bg-blue-100",
     },
     pm: {
-      href: "/pm-dashboard",
+      href: "/execution-board",
       icon: <Briefcase className="w-5 h-5 text-violet-600" />,
       label: "Project Management",
       description: "Execution overview & controls",
