@@ -379,10 +379,13 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Update a task */
-  app.patch("/api/tasks/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/tasks/:id", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getUser(req);
       const id = parseInt(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        return next();
+      }
       const body = req.body;
 
       // Get current item for status change tracking
