@@ -73,6 +73,7 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { usePermission } from "@/hooks/use-permissions";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import {
@@ -3413,6 +3414,7 @@ export default function EngineeringTasksPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
   const savedDefaults = useMemo(() => getSavedEngDefaultView(user?.id), [user?.id]);
   const initialUrlParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const [viewMode, setViewMode] = useState<"board" | "list" | "projects" | "mytasks" | "timeline">(savedDefaults?.viewMode || "board");
@@ -4451,6 +4453,7 @@ export default function EngineeringTasksPage() {
           })}
         </div>
 
+        {isMobile && <p className="text-[10px] text-muted-foreground text-center py-1">Swipe to see more columns →</p>}
         <div className="flex gap-1.5 overflow-x-auto pb-4" style={{ minHeight: "400px" }}>
           {boardGroupKeys.map(group => (
             <KanbanColumn
