@@ -75,6 +75,21 @@ async function bootstrap() {
   await initializeDatabase();
 
   applySecurityAndParsingMiddleware(app);
+
+  app.use((req, res, next) => {
+    if (req.method === "PATCH" && req.path === "/api/tasks/reassign") {
+      const origJson = res.json.bind(res);
+      res.json = function(body: any) {
+        if (res.statusCode >= 400) {
+          const err = new Error();
+          console.error("[REASSIGN-INTERCEPT] status=" + res.statusCode + " body=" + JSON.stringify(body) + " stack=" + err.stack?.split("\n").slice(1, 8).join(" | "));
+        }
+        return origJson(body);
+      };
+    }
+    next();
+  });
+
   configureSession({
     app,
     sessionSecret,
