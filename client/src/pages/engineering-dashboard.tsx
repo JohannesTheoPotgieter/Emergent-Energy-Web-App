@@ -1472,7 +1472,24 @@ export default function EngineeringDashboard() {
       )}
 
       {standupMode ? (
+        <>
+        <Card className="mb-4 border-primary/30 bg-primary/5">
+          <CardContent className="p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-primary" />
+              <span className="text-sm font-medium">New: Unified Standup System</span>
+              <span className="text-xs text-muted-foreground">Bi-daily async standups with team views and analytics</span>
+            </div>
+            <Link href="/standups">
+              <Button size="sm" variant="outline" className="gap-1.5 text-xs">
+                <ArrowUpRight className="h-3.5 w-3.5" />
+                Go to Standups
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
         <StandupModeView />
+        </>
       ) : (
       <>
       <KpiStrip summary={summary} />
