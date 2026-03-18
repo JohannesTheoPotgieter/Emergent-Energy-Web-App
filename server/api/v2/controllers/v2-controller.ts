@@ -3,6 +3,8 @@ import { assertPermission, permissionsForRole } from "../policies/access-policy"
 import { recordAudit } from "../services/audit-service";
 import * as service from "../services/project-v2-service";
 import { ApiV2Error, asyncHandler, created, ok, paginationQuerySchema, validate } from "../utils/http";
+import { getProjectScope } from "../../../middleware/project-scope-middleware";
+import { scopeProjectIds } from "../../../services/project-access-service";
 import {
   engineeringDesignCreateSchema,
   engineeringDesignPatchSchema,
@@ -44,12 +46,14 @@ export const mePermissions = asyncHandler(async (req: Request, res: Response) =>
 
 export const dashboardByRole = asyncHandler(async (req: Request, res: Response) => {
   const role = String(req.params.role || (req.user as any).role);
-  ok(res, await service.dashboardByRoleService(role));
+  const scope = getProjectScope(req);
+  ok(res, await service.dashboardByRoleService(role, scopeProjectIds(scope)));
 });
 
 export const listProjects = asyncHandler(async (req, res) => {
   const query = validate(paginationQuerySchema, req.query, "Invalid pagination query");
-  const response = await service.listProjectsService({ ...query, page: query.page ?? 1, pageSize: query.pageSize ?? 25, sortDir: query.sortDir ?? "asc" });
+  const scope = getProjectScope(req);
+  const response = await service.listProjectsService({ ...query, page: query.page ?? 1, pageSize: query.pageSize ?? 25, sortDir: query.sortDir ?? "asc", scopeProjectIds: scopeProjectIds(scope) });
   ok(res, response.rows, response.meta);
 });
 
