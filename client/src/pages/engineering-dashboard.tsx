@@ -53,15 +53,8 @@ import {
 } from "lucide-react";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
-
-async function engFetch(url: string) {
-  const token = localStorage.getItem("auth_token");
-  const headers: Record<string, string> = {};
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(url, { headers, credentials: "include" });
-  if (!res.ok) throw new Error("Failed to fetch");
-  return res.json();
-}
+import { engFetch, engPatch, engPost } from "@/lib/eng-fetch";
+import { PHASE_COLORS } from "@/lib/phase-colors";
 
 interface StandupTask {
   id: number;
@@ -127,16 +120,7 @@ interface StandupData {
   statusPipeline: Record<string, number>;
 }
 
-const PHASE_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
-  P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", accent: "bg-slate-500" },
-  P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-50", text: "text-violet-700", accent: "bg-violet-500" },
-  P2_PD_PM_HANDOVER: { bg: "bg-indigo-50", text: "text-indigo-700", accent: "bg-indigo-500" },
-  P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-50", text: "text-blue-700", accent: "bg-blue-500" },
-  P4_CONSTRUCTION_INSTALLATION: { bg: "bg-amber-50", text: "text-amber-700", accent: "bg-amber-500" },
-  P5_COMMISSIONING_TESTING: { bg: "bg-orange-50", text: "text-orange-700", accent: "bg-orange-500" },
-  P6_HANDOVER_CLIENT_MATRIARCH: { bg: "bg-teal-50", text: "text-teal-700", accent: "bg-teal-500" },
-  P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-50", text: "text-emerald-700", accent: "bg-emerald-500" },
-};
+// PHASE_COLORS imported from @/lib/phase-colors
 
 
 const priorityColors: Record<string, string> = {
@@ -295,19 +279,23 @@ function CollapsibleSection({
 
 function KpiStrip({ summary }: { summary: StandupData["summary"] }) {
   const stats = [
-    { label: "Projects", value: summary.totalProjects, icon: <Layers className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false },
-    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false },
-    { label: "Overdue", value: summary.overdueTasks, icon: <AlertTriangle className="w-4 h-4" />, color: summary.overdueTasks > 0 ? "text-red-600" : "text-muted-foreground", bg: summary.overdueTasks > 0 ? "bg-red-50" : "bg-muted", border: summary.overdueTasks > 0 ? "border-red-200" : "", pulse: summary.overdueTasks > 0 },
-    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50" : "bg-muted", border: summary.holdTasks > 0 ? "border-amber-200" : "", pulse: false },
-    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50" : "bg-muted", border: summary.needsApprovalCount > 0 ? "border-purple-200" : "", pulse: false },
-    { label: "Due This Week", value: summary.upcomingThisWeekCount, icon: <Timer className="w-4 h-4" />, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200", pulse: false },
-    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", pulse: false },
+    { label: "Projects", value: summary.totalProjects, icon: <Layers className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-project-health" },
+    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-in-progress" },
+    { label: "Overdue", value: summary.overdueTasks, icon: <AlertTriangle className="w-4 h-4" />, color: summary.overdueTasks > 0 ? "text-red-600" : "text-muted-foreground", bg: summary.overdueTasks > 0 ? "bg-red-50" : "bg-muted", border: summary.overdueTasks > 0 ? "border-red-200" : "", pulse: summary.overdueTasks > 0, scrollTo: "section-blockers" },
+    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50" : "bg-muted", border: summary.holdTasks > 0 ? "border-amber-200" : "", pulse: false, scrollTo: "section-blockers" },
+    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50" : "bg-muted", border: summary.needsApprovalCount > 0 ? "border-purple-200" : "", pulse: false, scrollTo: "section-approvals" },
+    { label: "Due This Week", value: summary.upcomingThisWeekCount, icon: <Timer className="w-4 h-4" />, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200", pulse: false, scrollTo: "section-due-this-week" },
+    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", pulse: false, scrollTo: "section-recently-completed" },
   ];
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2" data-testid="standup-kpi-strip">
       {stats.map(s => (
-        <Card key={s.label} className={`overflow-hidden shadow-sm ${s.border} transition-all hover:shadow-md`}>
+        <Card
+          key={s.label}
+          className={`overflow-hidden shadow-sm ${s.border} transition-all hover:shadow-md cursor-pointer`}
+          onClick={() => document.querySelector(`[data-testid="${s.scrollTo}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
+        >
           <CardContent className="p-3 flex items-center gap-2.5">
             <div className={`w-9 h-9 rounded-xl ${s.bg} flex items-center justify-center shrink-0 ${s.pulse ? "animate-pulse" : ""}`}>
               <span className={s.color}>{s.icon}</span>
@@ -353,7 +341,10 @@ function ProjectHealthGrid({ projects }: { projects: ProjectHealth[] }) {
                     {p.phaseLabel}
                   </span>
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${ragBg[p.rag]} ${ragText[p.rag]}`}>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md cursor-help ${ragBg[p.rag]} ${ragText[p.rag]}`}
+                  title={p.rag === "RED" ? "High risk: overdue tasks or >2 on hold" : p.rag === "AMBER" ? "At risk: tasks on hold or >3 due this week" : "On track: no overdue, minimal holds"}
+                >
                   {p.rag}
                 </span>
               </div>
@@ -401,7 +392,13 @@ function WorkloadTable({ workload }: { workload: WorkloadEntry[] }) {
         </thead>
         <tbody>
           {workload.map(w => (
-            <tr key={w.name} className="border-b last:border-b-0 hover:bg-muted/20 transition-colors" data-testid={`workload-row-${w.name}`}>
+            <tr
+              key={w.name}
+              className="border-b last:border-b-0 hover:bg-blue-50 transition-colors cursor-pointer"
+              onClick={() => window.location.href = `/engineering/tasks?assignee=${encodeURIComponent(w.name)}`}
+              title={`View ${w.name}'s tasks`}
+              data-testid={`workload-row-${w.name}`}
+            >
               <td className="px-3 py-2.5">
                 <div className="flex items-center gap-2">
                   <div className={`w-6 h-6 rounded-full ${getAvatarColor(w.name)} flex items-center justify-center shrink-0`}>
@@ -447,31 +444,7 @@ function WorkloadTable({ workload }: { workload: WorkloadEntry[] }) {
   );
 }
 
-async function engPatch(url: string, body: Record<string, any>) {
-  const token = localStorage.getItem("auth_token");
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(url, { method: "PATCH", headers, body: JSON.stringify(body), credentials: "include" });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Update failed" }));
-    const context = url.includes("/tasks/") ? "task update" : "update";
-    throw new Error(err.error || `Failed to save ${context} (${res.status})`);
-  }
-  return res.json();
-}
-
-async function engPost(url: string, body: Record<string, any>) {
-  const token = localStorage.getItem("auth_token");
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), credentials: "include" });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Action failed" }));
-    const context = url.includes("/comments") ? "comment" : url.includes("/watchers") ? "watcher update" : "action";
-    throw new Error(err.error || `Failed to complete ${context} (${res.status})`);
-  }
-  return res.json();
-}
+// engPatch, engPost imported from @/lib/eng-fetch
 
 interface FullTask {
   id: number;

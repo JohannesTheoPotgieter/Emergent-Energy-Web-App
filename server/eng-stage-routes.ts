@@ -490,6 +490,8 @@ export function registerEngStageRoutes(app: Express) {
         isRequired: engTaskTemplates.isRequired,
         sequence: engTaskTemplates.sequence,
         defaultOwnerRole: engTaskTemplates.defaultOwnerRole,
+        ownerUserName: sql<string>`(SELECT name FROM users WHERE id = ${projectEngTasks.ownerUserId})`,
+        completedByName: sql<string>`(SELECT name FROM users WHERE id = ${projectEngTasks.completedBy})`,
       })
         .from(projectEngTasks)
         .innerJoin(engTaskTemplates, eq(projectEngTasks.taskTemplateId, engTaskTemplates.id))

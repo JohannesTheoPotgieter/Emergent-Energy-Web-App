@@ -100,19 +100,8 @@ import {
 } from "@/hooks/useEngineeringTaskFilters";
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
-
-async function engFetch(url: string, options?: RequestInit) {
-  const token = localStorage.getItem("auth_token");
-  const headers: Record<string, string> = { ...(options?.headers as Record<string, string> || {}) };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  if (options?.body) headers["Content-Type"] = "application/json";
-  const res = await fetch(url, { ...options, headers, credentials: "include" });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(err.error || "Request failed");
-  }
-  return res.json();
-}
+import { engFetch } from "@/lib/eng-fetch";
+import { PHASE_COLORS } from "@/lib/phase-colors";
 
 const PRIORITIES = ["Critical", "Urgent", "High", "Medium", "Low"];
 const DUE_DATE_FILTER_OPTIONS: { value: EngineeringDueDateFilter; label: string }[] = [
@@ -1172,6 +1161,15 @@ function TaskDetailDrawer({
                   options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
                   data-testid="select-drawer-status"
                 />
+                {(() => {
+                  const validNext = TASK_STATUSES.filter(s => s !== task.status && canTransition(task.status, s));
+                  if (validNext.length === 0) return null;
+                  return (
+                    <p className="text-[9px] text-muted-foreground mt-0.5">
+                      Can move to: {validNext.map(s => getTaskStatusLabel(s)).join(" · ")}
+                    </p>
+                  );
+                })()}
               </div>
 
               <div className="space-y-1">
@@ -1965,6 +1963,7 @@ function TaskDetailDrawer({
                   {tab === "subtasks" && <ListTodo className="h-3.5 w-3.5 inline mr-1" />}
                   {tab === "updates" ? "Comments" : tab.charAt(0).toUpperCase() + tab.slice(1)}
                   {tab === "updates" && comments.length > 0 && <span className="ml-1 text-muted-foreground">({comments.length})</span>}
+                  {tab === "activity" && activity.length > 0 && <span className="ml-1 text-muted-foreground">({activity.length})</span>}
                   {tab === "subtasks" && subtasks.length > 0 && <span className="ml-1 text-muted-foreground">({subtasks.length})</span>}
                 </button>
               ))}
@@ -2189,16 +2188,7 @@ function TaskDetailDrawer({
   );
 }
 
-const PHASE_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
-  P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", accent: "bg-slate-500" },
-  P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-50", text: "text-violet-700", accent: "bg-violet-500" },
-  P2_PD_PM_HANDOVER: { bg: "bg-indigo-50", text: "text-indigo-700", accent: "bg-indigo-500" },
-  P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-50", text: "text-blue-700", accent: "bg-blue-500" },
-  P4_CONSTRUCTION_INSTALLATION: { bg: "bg-amber-50", text: "text-amber-700", accent: "bg-amber-500" },
-  P5_COMMISSIONING_TESTING: { bg: "bg-orange-50", text: "text-orange-700", accent: "bg-orange-500" },
-  P6_HANDOVER_CLIENT_MATRIARCH: { bg: "bg-teal-50", text: "text-teal-700", accent: "bg-teal-500" },
-  P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-50", text: "text-emerald-700", accent: "bg-emerald-500" },
-};
+// PHASE_COLORS imported from @/lib/phase-colors
 
 interface ProjectGroup {
   projectName: string;
