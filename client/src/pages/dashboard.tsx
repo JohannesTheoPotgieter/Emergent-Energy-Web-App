@@ -10,7 +10,6 @@ import { severityStyle, ragBadgeClasses } from "@/lib/status-colors";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageShell } from "@/components/layout/page-shell";
 import {
-  Activity,
   AlertCircle,
   ArrowRight,
   CalendarDays,
@@ -28,7 +27,6 @@ import {
   Filter,
   RotateCcw,
   ExternalLink,
-  BarChart3,
   Wrench,
   HandshakeIcon,
 } from "lucide-react";
