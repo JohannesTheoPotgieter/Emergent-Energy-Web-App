@@ -2149,11 +2149,25 @@ function PreviewCommitStep({
           <h3 className="text-lg font-semibold text-emerald-700">Import Successful!</h3>
           {commitResult && (
             <div className="text-center text-sm text-muted-foreground space-y-1">
-              {commitResult.planTasks != null && <p>{commitResult.planTasks} plan tasks imported</p>}
-              {commitResult.revenueLines != null && <p>{commitResult.revenueLines} revenue lines imported</p>}
-              {commitResult.costLines != null && <p>{commitResult.costLines} cost lines imported</p>}
-              {commitResult.executionPhases != null && <p>{commitResult.executionPhases} execution phases</p>}
-              {commitResult.counterparties != null && <p>{commitResult.counterparties} new counterparties</p>}
+              {commitResult.summary && (
+                <div className="mb-3 p-3 rounded-lg bg-muted/50 text-left max-w-md mx-auto">
+                  <p className="font-medium text-foreground mb-1">Import Summary</p>
+                  <p>File: {commitResult.summary.fileName}</p>
+                  <p>Timestamp: {new Date(commitResult.summary.timestamp).toLocaleString()}</p>
+                  <p>Rows written: {commitResult.summary.rowsWritten}</p>
+                  {commitResult.summary.rowsSkipped > 0 && (
+                    <p className="text-amber-600">Rows skipped: {commitResult.summary.rowsSkipped}</p>
+                  )}
+                  {commitResult.summary.conflictsDetected > 0 && (
+                    <p className="text-blue-600">Conflicts detected: {commitResult.summary.conflictsDetected} (resolved: {commitResult.summary.conflictsResolved})</p>
+                  )}
+                </div>
+              )}
+              {commitResult.counts?.planTasks != null && <p>{commitResult.counts.planTasks} plan tasks imported</p>}
+              {commitResult.counts?.revenueLines != null && <p>{commitResult.counts.revenueLines} revenue lines imported</p>}
+              {commitResult.counts?.costLines != null && <p>{commitResult.counts.costLines} cost lines imported</p>}
+              {commitResult.counts?.executionPhases != null && <p>{commitResult.counts.executionPhases} execution phases</p>}
+              {commitResult.counts?.counterparties != null && <p>{commitResult.counts.counterparties} new counterparties</p>}
               {commitResult.preservedManualEdits != null && commitResult.preservedManualEdits > 0 && (
                 <p className="text-emerald-600 font-medium">{commitResult.preservedManualEdits} manual edit(s) preserved</p>
               )}
@@ -2407,31 +2421,36 @@ function PreviewCommitStep({
                     <div className="px-3 py-2 bg-amber-100/50 border-b border-amber-200">
                       <p className="text-xs font-semibold text-amber-800">Manual edits detected — choose which to keep</p>
                     </div>
-                    <div className="max-h-[240px] overflow-y-auto">
+                    <div className="max-h-[320px] overflow-y-auto">
                       <table className="w-full text-xs" data-testid="table-conflicts">
                         <thead>
                           <tr className="bg-slate-50 border-b border-slate-200">
                             <th className="text-left px-3 py-1.5 font-medium text-slate-600">Row</th>
                             <th className="text-left px-3 py-1.5 font-medium text-slate-600">Item</th>
                             <th className="text-left px-3 py-1.5 font-medium text-slate-600">Field</th>
-                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Current</th>
-                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Import</th>
-                            <th className="text-center px-3 py-1.5 font-medium text-slate-600">Keep?</th>
+                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Manual Value</th>
+                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Excel Value</th>
+                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Edited By</th>
+                            <th className="text-center px-3 py-1.5 font-medium text-slate-600">Decision</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {manualEditsWarning.conflicts.map((c, i) => {
+                          {manualEditsWarning.conflicts.map((c: any, i: number) => {
                             const key = `${c.sourceRow}::${c.field}`;
                             const isKeep = conflictResolutions[key] === "keep";
                             return (
                               <tr key={i} className={`border-b border-slate-100 ${isKeep ? "bg-emerald-50/30" : "bg-red-50/20"}`}>
                                 <td className="px-3 py-1.5 text-slate-500 font-mono">{c.sourceRow}</td>
-                                <td className="px-3 py-1.5 text-slate-700 max-w-[180px] truncate" title={`${c.costCategory}: ${c.description}`}>
+                                <td className="px-3 py-1.5 text-slate-700 max-w-[160px] truncate" title={`${c.costCategory}: ${c.description}`}>
                                   {c.description || c.costCategory}
                                 </td>
                                 <td className="px-3 py-1.5 text-slate-600">{c.field}</td>
                                 <td className="px-3 py-1.5 text-emerald-700 font-medium">{c.currentValue}</td>
                                 <td className="px-3 py-1.5 text-slate-500">{c.importValue}</td>
+                                <td className="px-3 py-1.5 text-slate-400 text-[10px]">
+                                  {c.editedByName && <span className="block">{c.editedByName}</span>}
+                                  {c.editedAt && <span className="block">{new Date(c.editedAt).toLocaleDateString()}</span>}
+                                </td>
                                 <td className="px-3 py-1.5 text-center">
                                   <button
                                     className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
@@ -2447,7 +2466,7 @@ function PreviewCommitStep({
                                     }}
                                     data-testid={`btn-toggle-conflict-${i}`}
                                   >
-                                    {isKeep ? "Keep Manual" : "Use Import"}
+                                    {isKeep ? "Keep Manual" : "Overwrite with Excel"}
                                   </button>
                                 </td>
                               </tr>
@@ -2456,9 +2475,10 @@ function PreviewCommitStep({
                         </tbody>
                       </table>
                     </div>
-                    <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 flex gap-2">
+                    <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 flex items-center gap-3">
+                      <span className="text-[10px] text-slate-500 font-medium">Apply to All:</span>
                       <button
-                        className="text-[10px] font-medium text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
+                        className="text-[10px] font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded transition-colors"
                         onClick={() => {
                           const all: Record<string, "keep" | "import"> = {};
                           for (const c of manualEditsWarning.conflicts || []) {
@@ -2468,11 +2488,10 @@ function PreviewCommitStep({
                         }}
                         data-testid="btn-keep-all"
                       >
-                        Keep All Manual
+                        Keep All Manual Edits
                       </button>
-                      <span className="text-slate-300">|</span>
                       <button
-                        className="text-[10px] font-medium text-red-600 hover:text-red-700 underline underline-offset-2"
+                        className="text-[10px] font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded transition-colors"
                         onClick={() => {
                           const all: Record<string, "keep" | "import"> = {};
                           for (const c of manualEditsWarning.conflicts || []) {
@@ -2482,8 +2501,9 @@ function PreviewCommitStep({
                         }}
                         data-testid="btn-use-all-import"
                       >
-                        Use All Import Values
+                        Overwrite All with Excel
                       </button>
+                      <span className="text-[10px] text-slate-400 ml-auto">You can still change individual fields after applying</span>
                     </div>
                   </div>
                 )}
@@ -2506,7 +2526,7 @@ function PreviewCommitStep({
                       data-testid="btn-commit-resolved"
                     >
                       {committing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
-                      Commit with Selections
+                      Confirm and Apply
                     </Button>
                   ) : (
                     <>
