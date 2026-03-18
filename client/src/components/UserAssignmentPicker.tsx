@@ -124,7 +124,8 @@ export default function UserAssignmentPicker({
 
   useEffect(() => {
     if (open && inputRef.current) {
-      setTimeout(() => inputRef.current?.focus(), 100);
+      const timer = setTimeout(() => inputRef.current?.focus(), 100);
+      return () => clearTimeout(timer);
     }
   }, [open]);
 
@@ -219,46 +220,46 @@ export default function UserAssignmentPicker({
   const isXs = size === "xs";
 
   return (
-    <div className="flex items-center gap-1 flex-wrap" data-testid={`user-assignment-${taskSource}-${taskId}`}>
+    <div className="flex items-center gap-1.5 flex-wrap" data-testid={`user-assignment-${taskSource}-${taskId}`}>
       {effectiveResolved.length > 0 && effectiveResolved.map(u => (
         <span
           key={u.id}
-          className={`inline-flex items-center gap-1 ${isXs ? 'px-1 py-0.5 text-[10px]' : 'px-1.5 py-0.5 text-xs'} rounded-full bg-muted text-foreground font-medium`}
-          title={`${u.name} (${u.role})`}
+          className={`inline-flex items-center gap-1.5 ${isXs ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-xs'} rounded-md bg-slate-50 border border-slate-200 text-foreground font-medium shadow-sm`}
+          title={`${u.name}${u.role ? ` — ${u.role}` : ''}`}
         >
-          <span className={`inline-flex items-center justify-center ${isXs ? 'w-3.5 h-3.5 text-[7px]' : 'w-4 h-4 text-[8px]'} rounded-full text-white font-bold ${getAvatarColor(u.name)}`}>
+          <span className={`inline-flex items-center justify-center ${isXs ? 'w-4 h-4 text-[7px]' : 'w-5 h-5 text-[9px]'} rounded-full text-white font-bold shadow-sm ${getAvatarColor(u.name)}`}>
             {getInitials(u.name)}
           </span>
-          {u.name}
-          <span className="text-[9px] text-blue-600">Internal</span>
+          <span className="truncate max-w-[120px]">{u.name}</span>
         </span>
       ))}
 
       {resolvedExternal.map((entry, i) => (
         <span
           key={`cp-${entry.assigneeType}-${entry.assigneeId}-${i}`}
-          className={`inline-flex items-center gap-1 ${isXs ? 'px-1 py-0.5 text-[10px]' : 'px-1.5 py-0.5 text-xs'} rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-medium`}
+          className={`inline-flex items-center gap-1.5 ${isXs ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-xs'} rounded-md bg-amber-50 text-amber-800 border border-amber-200 font-medium shadow-sm`}
         >
-          <Building2 className={isXs ? "w-2.5 h-2.5" : "w-3 h-3"} />
-          {entry.name}
-          <span className="text-[9px]">{getAssigneeBadgeLabel(entry.assigneeType)}</span>
+          <Building2 className={isXs ? "w-3 h-3" : "w-3.5 h-3.5"} />
+          <span className="truncate max-w-[120px]">{entry.name}</span>
         </span>
       ))}
 
       {unmatchedNames.map((name, i) => (
         <span
           key={`unmatched-${i}`}
-          className={`inline-flex items-center gap-1 ${isXs ? 'px-1 py-0.5 text-[10px]' : 'px-1.5 py-0.5 text-xs'} rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-medium`}
-          title={`"${name}" not found in system`}
+          className={`inline-flex items-center gap-1.5 ${isXs ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-xs'} rounded-md bg-orange-50 text-orange-700 border border-orange-200 font-medium shadow-sm`}
+          title={`"${name}" — not matched to a system user`}
         >
-          <User className={isXs ? "w-2.5 h-2.5" : "w-3 h-3"} />
-          {name}
-          <span className="text-amber-600">(unmatched)</span>
+          <User className={isXs ? "w-3 h-3" : "w-3.5 h-3.5"} />
+          <span className="truncate max-w-[100px]">{name}</span>
         </span>
       ))}
 
       {isUnassigned && showUnassignedLabel && (
-        <span className={`${isXs ? 'text-[10px]' : 'text-xs'} text-muted-foreground italic`}>Unassigned</span>
+        <span className={`inline-flex items-center gap-1 ${isXs ? 'text-[10px]' : 'text-xs'} text-muted-foreground`}>
+          <User className={isXs ? "w-3 h-3" : "w-3.5 h-3.5"} />
+          Unassigned
+        </span>
       )}
 
       <Popover open={open} onOpenChange={(next) => { if (!disabled) setOpen(next); }}>
@@ -266,34 +267,41 @@ export default function UserAssignmentPicker({
           <Button
             variant="ghost"
             size="icon"
-            className={`${isXs ? 'h-5 w-5' : 'h-6 w-6'} rounded-full hover:bg-blue-50 text-muted-foreground hover:text-blue-600`}
+            className={`${isXs ? 'h-5 w-5' : 'h-6 w-6'} rounded-full border border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50 text-muted-foreground hover:text-blue-600 transition-colors`}
             data-testid={`btn-assign-${taskSource}-${taskId}`}
-            title={disabled ? (disabledReason || "You do not have permission to assign this task") : "Assign"}
+            title={disabled ? (disabledReason || "You do not have permission to assign this task") : "Assign user"}
             disabled={disabled}
           >
             <UserPlus className={isXs ? "h-3 w-3" : "h-3.5 w-3.5"} />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-72 p-2" align="start" side="bottom">
-          <div className="flex items-center gap-1 mb-2">
-            <Button size="sm" variant={directoryMode === "internal" ? "default" : "outline"} className="h-7 text-xs" onClick={() => setDirectoryMode("internal")}>Internal</Button>
-            <Button size="sm" variant={directoryMode === "external" ? "default" : "outline"} className="h-7 text-xs" onClick={() => setDirectoryMode("external")}>External</Button>
+        <PopoverContent className="w-80 p-0" align="start" side="bottom">
+          <div className="px-3 pt-3 pb-2 border-b border-border/60">
+            <p className="text-xs font-semibold text-foreground mb-2">Assign to</p>
+            <div className="flex items-center gap-1 mb-2">
+              <Button size="sm" variant={directoryMode === "internal" ? "default" : "outline"} className="h-7 text-xs flex-1" onClick={() => setDirectoryMode("internal")}>
+                <User className="h-3 w-3 mr-1" />Team
+              </Button>
+              <Button size="sm" variant={directoryMode === "external" ? "default" : "outline"} className="h-7 text-xs flex-1" onClick={() => setDirectoryMode("external")}>
+                <Building2 className="h-3 w-3 mr-1" />External
+              </Button>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              <Input
+                ref={inputRef}
+                className="h-8 text-xs pl-8 bg-muted/40 border-border/60"
+                placeholder={directoryMode === "internal" ? "Search team members..." : "Search external parties..."}
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                data-testid="input-assignment-search"
+              />
+            </div>
           </div>
-          <div className="flex items-center gap-1.5 mb-2">
-            <Search className="h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              ref={inputRef}
-              className="h-7 text-xs border-0 shadow-none focus-visible:ring-0"
-              placeholder={directoryMode === "internal" ? "Search users..." : "Search counterparties or contacts..."}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              data-testid="input-assignment-search"
-            />
-          </div>
-          <div className="max-h-52 overflow-y-auto space-y-0.5">
+          <div className="max-h-56 overflow-y-auto p-1">
             {hasAssignments && mode === "single" && (
               <button
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-red-600 hover:bg-red-50 transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs text-red-600 hover:bg-red-50 transition-colors mb-0.5"
                 onClick={() => reassignMutation.mutate({ assigneeType: null, assigneeId: null })}
                 data-testid="btn-unassign"
               >
@@ -307,18 +315,21 @@ export default function UserAssignmentPicker({
               return (
                 <button
                   key={entry.assigneeId}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${isAssigned ? 'bg-blue-50 text-blue-700' : 'hover:bg-muted text-foreground'}`}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs transition-colors ${isAssigned ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'hover:bg-muted/60 text-foreground'}`}
                   onClick={() => {
                     if (!isAssigned) reassignMutation.mutate({ assigneeType: "internal_user", assigneeId: entry.assigneeId });
                   }}
                   disabled={isAssigned}
                   data-testid={`btn-select-user-${entry.assigneeId}`}
                 >
-                  <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-white text-[9px] font-bold ${getAvatarColor(entry.displayLabel)}`}>
+                  <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-[10px] font-bold shadow-sm ${getAvatarColor(entry.displayLabel)}`}>
                     {getInitials(entry.displayLabel)}
                   </span>
-                  <span className="flex-1 text-left truncate">{entry.displayLabel}</span>
-                  {isAssigned && <Check className="h-3.5 w-3.5 text-blue-600" />}
+                  <div className="flex-1 text-left min-w-0">
+                    <div className="truncate font-medium">{entry.displayLabel}</div>
+                    {entry.secondaryLabel && <div className="text-[10px] text-muted-foreground truncate">{entry.secondaryLabel}</div>}
+                  </div>
+                  {isAssigned && <Check className="h-4 w-4 text-blue-600" />}
                 </button>
               );
             })}
@@ -328,35 +339,48 @@ export default function UserAssignmentPicker({
               return (
                 <button
                   key={`${entry.assigneeType}-${entry.assigneeId}`}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${isAssigned ? 'bg-blue-50 text-blue-700' : 'hover:bg-muted text-foreground'}`}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs transition-colors ${isAssigned ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'hover:bg-muted/60 text-foreground'}`}
                   onClick={() => {
                     if (!isAssigned) reassignMutation.mutate({ assigneeType: entry.assigneeType, assigneeId: entry.assigneeId });
                   }}
                   disabled={isAssigned}
                   data-testid={`btn-select-${entry.assigneeType}-${entry.assigneeId}`}
                 >
-                  <Building2 className="h-4 w-4 text-amber-700" />
+                  <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-100 text-amber-700 shadow-sm">
+                    <Building2 className="h-3.5 w-3.5" />
+                  </span>
                   <div className="flex-1 text-left min-w-0">
-                    <div className="truncate">{entry.displayLabel}</div>
+                    <div className="truncate font-medium">{entry.displayLabel}</div>
                     {(entry.secondaryLabel || entry.sourceLabel) && (
                       <div className="text-[10px] text-muted-foreground truncate">
-                        {[entry.secondaryLabel, entry.sourceLabel].filter(Boolean).join(" | ")}
+                        {[entry.secondaryLabel, entry.sourceLabel].filter(Boolean).join(" — ")}
                       </div>
                     )}
                   </div>
-                  <span className="text-[10px] text-amber-700">{getAssigneeBadgeLabel(entry.assigneeType)}</span>
-                  {isAssigned && <Check className="h-3.5 w-3.5 text-blue-600" />}
+                  {isAssigned && <Check className="h-4 w-4 text-blue-600" />}
                 </button>
               );
             })}
 
             {directoryMode === "internal" && filteredUsers.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-3">No users found</p>
+              <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
+                <User className="h-5 w-5 mb-1.5 opacity-40" />
+                <p className="text-xs">No team members found</p>
+              </div>
             )}
             {directoryMode === "external" && filteredExternalEntries.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-3">No counterparties or contacts found</p>
+              <div className="flex flex-col items-center justify-center py-6 text-muted-foreground">
+                <Building2 className="h-5 w-5 mb-1.5 opacity-40" />
+                <p className="text-xs">No external parties found</p>
+              </div>
             )}
           </div>
+          {reassignMutation.isPending && (
+            <div className="px-3 py-2 border-t border-border/60 text-[10px] text-muted-foreground flex items-center gap-1.5">
+              <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              Updating assignment...
+            </div>
+          )}
         </PopoverContent>
       </Popover>
     </div>
