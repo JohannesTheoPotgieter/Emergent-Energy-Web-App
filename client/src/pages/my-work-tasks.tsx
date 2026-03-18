@@ -361,6 +361,8 @@ export default function MyWorkTasksPage() {
         completionNote: t.completionNote || t.completion_note || null,
         plannedForDate: t.plannedForDate || t.planned_for_date || null,
         department: t.department || null, tag: t.tag || null,
+        resolvedAssignees: t.resolvedOwner ? [t.resolvedOwner] : null,
+        _trackingRole: "assignee" as TrackingRole,
       }, t));
     }
 
@@ -924,63 +926,51 @@ export default function MyWorkTasksPage() {
           }
         />
         <span className="sr-only" data-testid="text-tasks-title">My Tasks</span>
-        <WorkspaceNotice
-          title="My Work is the single personal action workspace"
-          description="Personal tasks, project work, approvals, deliverables, and Microsoft follow-ups all appear in one place with the same ownership and source cues."
-          icon={<Link2 className="h-4 w-4" />}
-          tone="microsoft"
-        >
-          <Badge variant="secondary">Unified sources</Badge>
-          <Badge variant="secondary">Microsoft follow-ups</Badge>
-          <Badge variant="secondary">Project-linked context</Badge>
-        </WorkspaceNotice>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" data-testid="kpi-cards">
-          <div className="relative overflow-hidden rounded-xl border border-emerald-200 bg-white p-3 shadow-sm" data-testid="kpi-active">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="kpi-cards">
+          <div className="relative overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-sm" data-testid="kpi-active">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-medium text-emerald-600 uppercase tracking-wider">Active</p>
-                <p className="text-2xl font-bold mt-0.5 text-foreground">{kpiStats.active}</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">{kpiStats.inProgress} in progress</p>
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Active</p>
+                <p className="text-2xl font-bold mt-1 text-foreground tabular-nums">{kpiStats.active}</p>
+                <p className="text-[10px] text-muted-foreground mt-1">{kpiStats.inProgress} in progress</p>
               </div>
-              <div className="rounded-full bg-emerald-50 p-2 text-emerald-600"><ListTodo className="h-5 w-5" /></div>
+              <div className="rounded-lg bg-emerald-50 p-2 text-emerald-600"><ListTodo className="h-4 w-4" /></div>
             </div>
-            {kpiStats.dueToday > 0 && <div className="mt-1.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Zap className="h-2.5 w-2.5" /> {kpiStats.dueToday} due today</div>}
+            {kpiStats.dueToday > 0 && <div className="mt-2 text-[10px] font-semibold bg-emerald-50 text-emerald-700 rounded px-1.5 py-0.5 inline-flex items-center gap-1"><Zap className="h-2.5 w-2.5" /> {kpiStats.dueToday} due today</div>}
           </div>
 
-          <button onClick={() => setOverdueOnly(!overdueOnly)} className={`relative overflow-hidden rounded-xl border p-3 text-left shadow-sm transition-all ${kpiStats.overdue > 0 ? "border-red-200 bg-red-50 hover:shadow-md" : "border-border bg-white"} ${overdueOnly ? "ring-2 ring-emerald-400 ring-offset-1" : ""}`} data-testid="kpi-overdue">
+          <button onClick={() => setOverdueOnly(!overdueOnly)} className={`relative overflow-hidden rounded-xl border p-3.5 text-left shadow-sm transition-all hover:shadow-md ${kpiStats.overdue > 0 ? "border-red-200/80 bg-card" : "border-border bg-card"} ${overdueOnly ? "ring-2 ring-primary ring-offset-1" : ""}`} data-testid="kpi-overdue">
             <div className="flex items-center justify-between">
               <div>
-                <p className={`text-[10px] font-medium uppercase tracking-wider ${kpiStats.overdue > 0 ? "text-red-600" : "text-muted-foreground"}`}>Overdue</p>
-                <p className={`text-2xl font-bold mt-0.5 ${kpiStats.overdue > 0 ? "text-red-700" : "text-foreground"}`}>{kpiStats.overdue}</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">{kpiStats.blocked} blocked</p>
+                <p className={`text-[10px] font-semibold uppercase tracking-widest ${kpiStats.overdue > 0 ? "text-red-600" : "text-muted-foreground"}`}>Overdue</p>
+                <p className={`text-2xl font-bold mt-1 tabular-nums ${kpiStats.overdue > 0 ? "text-red-600" : "text-foreground"}`}>{kpiStats.overdue}</p>
+                <p className="text-[10px] text-muted-foreground mt-1">{kpiStats.blocked} blocked</p>
               </div>
-              <div className={`rounded-full p-2 ${kpiStats.overdue > 0 ? "bg-red-100 text-red-600" : "bg-muted text-muted-foreground"}`}><AlertCircle className="h-5 w-5" /></div>
+              <div className={`rounded-lg p-2 ${kpiStats.overdue > 0 ? "bg-red-50 text-red-500" : "bg-muted text-muted-foreground"}`}><AlertCircle className="h-4 w-4" /></div>
             </div>
-            {overdueOnly && <div className="mt-1.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Filter className="h-2.5 w-2.5" /> Filtering</div>}
+            {overdueOnly && <div className="mt-2 text-[10px] font-semibold bg-primary/10 text-primary rounded px-1.5 py-0.5 inline-flex items-center gap-1"><Filter className="h-2.5 w-2.5" /> Filtering</div>}
           </button>
 
-          <div className="relative overflow-hidden rounded-xl border border-amber-200 bg-white p-3 shadow-sm" data-testid="kpi-critical">
+          <div className="relative overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-sm" data-testid="kpi-critical">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-medium text-amber-600 uppercase tracking-wider">High Priority</p>
-                <p className="text-2xl font-bold mt-0.5 text-foreground">{kpiStats.critical}</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">{kpiStats.dueSoon} due within 3d</p>
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">High Priority</p>
+                <p className="text-2xl font-bold mt-1 text-foreground tabular-nums">{kpiStats.critical}</p>
+                <p className="text-[10px] text-muted-foreground mt-1">{kpiStats.dueSoon} due within 3d</p>
               </div>
-              <div className="rounded-full bg-amber-50 p-2 text-amber-600"><AlertTriangle className="h-5 w-5" /></div>
+              <div className="rounded-lg bg-amber-50 p-2 text-amber-500"><AlertTriangle className="h-4 w-4" /></div>
             </div>
           </div>
 
-          <div className={`relative overflow-hidden rounded-xl border p-3 shadow-sm ${kpiStats.dueThisWeek > 0 ? "border-emerald-200 bg-emerald-50/50" : "border-border bg-white"}`} data-testid="kpi-due-this-week">
+          <div className={`relative overflow-hidden rounded-xl border p-3.5 shadow-sm ${kpiStats.dueThisWeek > 0 ? "border-border bg-card" : "border-border bg-card"}`} data-testid="kpi-due-this-week">
             <div className="flex items-center justify-between">
               <div>
-                <p className={`text-[10px] font-medium uppercase tracking-wider ${kpiStats.dueThisWeek > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>Due This Week</p>
-                <p className="text-2xl font-bold mt-0.5 text-foreground">{kpiStats.dueThisWeek}</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">{kpiStats.approvalsPending} awaiting review</p>
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Due This Week</p>
+                <p className="text-2xl font-bold mt-1 text-foreground tabular-nums">{kpiStats.dueThisWeek}</p>
+                <p className="text-[10px] text-muted-foreground mt-1">{kpiStats.approvalsPending} awaiting review</p>
               </div>
-              <div className={`rounded-full p-2 ${kpiStats.dueThisWeek > 0 ? "bg-emerald-100 text-emerald-600" : "bg-muted text-muted-foreground"}`}><Target className="h-5 w-5" /></div>
+              <div className={`rounded-lg p-2 ${kpiStats.dueThisWeek > 0 ? "bg-blue-50 text-blue-500" : "bg-muted text-muted-foreground"}`}><Target className="h-4 w-4" /></div>
             </div>
-            {kpiStats.dueToday > 0 && <div className="mt-1.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1"><Zap className="h-2.5 w-2.5" /> {kpiStats.dueToday} due today</div>}
           </div>
         </div>
       </div>
@@ -1002,12 +992,12 @@ export default function MyWorkTasksPage() {
         </div>
       )}
 
-      <div className="shrink-0 space-y-2 mb-2">
+      <div className="shrink-0 space-y-2.5 mb-3">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input placeholder="Search tasks..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-8 h-8 text-xs" data-testid="input-task-search" />
-            {searchText && <button onClick={() => setSearchText("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>}
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Search tasks..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9 h-9 text-sm rounded-lg border-border/80 bg-card shadow-sm" data-testid="input-task-search" />
+            {searchText && <button onClick={() => setSearchText("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
           </div>
           <div className="flex items-center gap-0.5 shrink-0">
             <Button variant={showFilters ? "secondary" : "ghost"} size="sm" className="h-7 px-2 text-xs" onClick={() => setShowFilters(!showFilters)} data-testid="button-toggle-filters">
@@ -1111,7 +1101,7 @@ export default function MyWorkTasksPage() {
       )}
 
       {viewMode === "list" ? (
-        <div className="flex-1 min-h-0 overflow-y-auto" data-testid="task-list">
+        <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-border bg-card shadow-sm" data-testid="task-list">
           {filteredTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
               <Inbox className="h-8 w-8 mb-2 opacity-40" />
@@ -1369,7 +1359,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onPrimaryAction, onO
 
   return (
     <div data-testid={`task-row-${task._key}`}>
-      <div className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 sm:py-2.5 transition-all hover:bg-muted/40 cursor-pointer group ${isDone ? "opacity-50" : ""} ${isOverdue && !isDone ? "bg-red-50/40 border-l-2 border-l-red-400" : ""} ${task.status === "blocked" && !isDone ? "bg-amber-50/30 border-l-2 border-l-amber-400" : ""}`} onClick={onPrimaryAction}>
+      <div className={`flex items-center gap-2 sm:gap-2.5 px-3 sm:px-4 py-2.5 sm:py-3 transition-all hover:bg-muted/30 cursor-pointer group ${isDone ? "opacity-40" : ""} ${isOverdue && !isDone ? "bg-red-50/30 border-l-[3px] border-l-red-400" : ""} ${task.status === "blocked" && !isDone ? "bg-amber-50/20 border-l-[3px] border-l-amber-400" : ""}`} onClick={onPrimaryAction}>
 
         {task._source === "operational" && (task.subtaskCount || 0) > 0 ? (
           <button onClick={e => { e.stopPropagation(); onToggleExpand(); }} className="shrink-0 p-0.5 rounded hover:bg-muted" data-testid={`btn-expand-${task._key}`}>
@@ -1733,12 +1723,12 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
               )}
 
               {["personal", "operational", "plan", "engineering_task", "quality_task", "tr_register"].includes(task._source) && (
-                <div>
-                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5 block">Assigned To</Label>
+                <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                  <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-2 block">Assigned To</Label>
                   <div onClick={e => e.stopPropagation()}>
                     <UserAssignmentPicker taskId={task._rawId} taskSource={task._source} resolvedUsers={task.resolvedAssignees || task.resolvedOwners || null} textNames={task.assignees || task.owners || null} mode={["operational", "tr_register"].includes(task._source) ? "multi" : "single"} size="sm" invalidateKeys={["/api/my-work/all-tasks", "/api/mytool/tasks", "/api/tr-register"]} disabled={!canReassign} disabledReason="You do not have permission to reassign this task" />
                   </div>
-                  {!canReassign && <p className="text-[10px] text-muted-foreground mt-1">You have read-only assignment access for this task.</p>}
+                  {!canReassign && <p className="text-[10px] text-muted-foreground mt-2 italic">Read-only access for this task.</p>}
                 </div>
               )}
 

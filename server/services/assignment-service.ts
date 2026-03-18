@@ -1004,11 +1004,10 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
     }
 
     if (target && assigneeId) {
-      const duplicate = before.find((assignment) =>
-        assignment.assignmentRole === assignmentRole &&
+      const alreadyActive = await getCanonicalAssignments(tx as Queryable, input.entityType, entityId, assignmentRole);
+      const duplicate = alreadyActive.find((assignment) =>
         assignment.assigneeType === input.assigneeType &&
-        assignment.assigneeId === assigneeId &&
-        assignment.active,
+        assignment.assigneeId === assigneeId,
       );
 
       if (!duplicate) {

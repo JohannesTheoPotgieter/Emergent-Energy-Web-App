@@ -45,6 +45,7 @@ export function canReassignTask(task: TaskLike, role = ""): boolean {
   const isAssigneeContext = task._trackingRole === "assignee" || task._trackingRole === "both";
   switch (task._source) {
     case "personal":
+      return true;
     case "operational":
       return isPrivileged || isAssigneeContext;
     case "plan":
