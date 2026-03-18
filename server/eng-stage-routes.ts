@@ -15,6 +15,7 @@ import {
   projectEngDeliverables,
   projectEngApprovals,
   projectInfo,
+  users,
 } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
 
@@ -417,9 +418,13 @@ export function registerEngStageRoutes(app: Express) {
         const approvals = await db.select({
           id: projectEngApprovals.id,
           approverRole: projectEngApprovals.approverRole,
+          approverUserId: projectEngApprovals.approverUserId,
           status: projectEngApprovals.status,
+          comments: projectEngApprovals.comments,
+          approverUserName: users.name,
         })
           .from(projectEngApprovals)
+          .leftJoin(users, eq(projectEngApprovals.approverUserId, users.id))
           .where(eq(projectEngApprovals.projectEngStageId, s.id));
 
         result.push({
@@ -499,8 +504,19 @@ export function registerEngStageRoutes(app: Express) {
         .from(projectEngDeliverables)
         .where(eq(projectEngDeliverables.projectEngStageId, stageId));
 
-      const approvals = await db.select()
+      const approvals = await db.select({
+        id: projectEngApprovals.id,
+        projectEngStageId: projectEngApprovals.projectEngStageId,
+        approverRole: projectEngApprovals.approverRole,
+        approverUserId: projectEngApprovals.approverUserId,
+        status: projectEngApprovals.status,
+        comments: projectEngApprovals.comments,
+        createdAt: projectEngApprovals.createdAt,
+        updatedAt: projectEngApprovals.updatedAt,
+        approverUserName: users.name,
+      })
         .from(projectEngApprovals)
+        .leftJoin(users, eq(projectEngApprovals.approverUserId, users.id))
         .where(eq(projectEngApprovals.projectEngStageId, stageId));
 
       res.json({
