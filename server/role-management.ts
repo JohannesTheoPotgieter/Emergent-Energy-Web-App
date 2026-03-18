@@ -1,12 +1,14 @@
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   AUTHORITY_ACTIONS,
   ENTITY_PERMISSION_DEFAULTS,
   normalizeRoleForPermissions,
   rolePermissions,
+  userPermissionOverrides,
+  permissionAuditLog,
   users,
   DEFAULT_ROLE_PERMISSIONS,
   type AuthorityAction,
@@ -15,9 +17,12 @@ import {
 } from "@shared/schema";
 import { evaluateAuthorityForRole, evaluatePermissionForRole } from "@shared/permission-resolver";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
-import { invalidateEntityPermCache } from "./permission-middleware";
+import { invalidateEntityPermCache, invalidateUserOverrideCache } from "./permission-middleware";
 import bcrypt from "bcryptjs";
 import { logAuditFromReq } from "./audit-logger";
+import { logPermissionAudit } from "./permission-audit";
+import { desc, and, or, isNull, gte } from "drizzle-orm";
+// Note: eq, inArray imported above
 
 const LEGACY_ROLE_MAP: Record<string, string> = {
   admin: "COO_ADMIN",
@@ -307,6 +312,7 @@ export function registerRoleManagementRoutes(app: Express) {
         .returning();
       invalidateEntityPermCache();
       logAuditFromReq(req, { entityType: "role_permissions", action: "update", entityId: roleKey, changesJson: { description: "Role permissions updated", role: roleKey, sections, canManageUsers, canManageRoles, canEditData, hasEntityPermChanges: ep !== undefined, hasAuthorityModelChanges: authorityModel !== undefined } });
+      logPermissionAudit(req, { eventType: "role_updated", targetRole: roleKey, changeDetail: { sections, canManageUsers, canManageRoles, canEditData, hasEntityPermChanges: ep !== undefined, hasAuthorityModelChanges: authorityModel !== undefined } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -333,6 +339,7 @@ export function registerRoleManagementRoutes(app: Express) {
         isSystem: false,
       }).returning();
       logAuditFromReq(req, { entityType: "role_permissions", action: "create", entityId: role, changesJson: { description: "New role created", role, label, sections } });
+      logPermissionAudit(req, { eventType: "role_created", targetRole: role, changeDetail: { label, sections } });
       res.json(created);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -366,6 +373,7 @@ export function registerRoleManagementRoutes(app: Express) {
       }).returning();
 
       logAuditFromReq(req, { entityType: "role_permissions", action: "clone", entityId: newRole, changesJson: { description: "Role cloned", sourceRole: sourceRoleKey, newRole } });
+      logPermissionAudit(req, { eventType: "role_cloned", targetRole: newRole, changeDetail: { sourceRole: sourceRoleKey, label } });
       res.json(created);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -492,6 +500,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       await db.delete(rolePermissions).where(eq(rolePermissions.role, roleKey));
       logAuditFromReq(req, { entityType: "role_permissions", action: "delete", entityId: roleKey, changesJson: { description: "Role deleted", role: roleKey, label: existing.label } });
+      logPermissionAudit(req, { eventType: "role_deleted", targetRole: roleKey, changeDetail: { label: existing.label } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -531,6 +540,7 @@ export function registerRoleManagementRoutes(app: Express) {
       if (!updated) return res.status(404).json({ error: "User not found" });
 
       logAuditFromReq(req, { entityType: "user", action: "role_change", entityId: String(userId), changesJson: { description: "User role changed", userName: updated.name, previousRole: userBefore?.role, newRole: role } });
+      logPermissionAudit(req, { eventType: "user_role_changed", targetUserId: userId, targetRole: role, changeDetail: { userName: updated.name, previousRole: userBefore?.role, newRole: role } });
       res.json({ id: updated.id, email: updated.email, name: updated.name, role: updated.role });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -651,7 +661,8 @@ export function registerRoleManagementRoutes(app: Express) {
   app.get("/api/auth/permissions", jwtAuth, async (req: Request, res: Response) => {
     try {
       const companyRole = req.headers["x-company-role"] as string;
-      const userRole = getEffectiveUser(req)?.role;
+      const user = getEffectiveUser(req);
+      const userRole = user?.role;
       const raw = companyRole || userRole;
 
       if (!raw) {
@@ -674,6 +685,34 @@ export function registerRoleManagementRoutes(app: Express) {
         return res.json({ sections: ["PROJECTS"], canManageUsers: false, canManageRoles: false, canEditData: false });
       }
 
+      // Load user-specific overrides
+      let userOverrides: Record<string, boolean> = {};
+      if (user?.id) {
+        try {
+          const overrides = await db.select({
+            entity: userPermissionOverrides.entity,
+            action: userPermissionOverrides.action,
+            allowed: userPermissionOverrides.allowed,
+            expiresAt: userPermissionOverrides.expiresAt,
+          })
+          .from(userPermissionOverrides)
+          .where(
+            and(
+              eq(userPermissionOverrides.userId, user.id),
+              or(
+                isNull(userPermissionOverrides.expiresAt),
+                gte(userPermissionOverrides.expiresAt, new Date())
+              )
+            )
+          );
+          for (const o of overrides) {
+            userOverrides[`${o.entity}:${o.action}`] = o.allowed;
+          }
+        } catch {
+          // Table may not exist yet
+        }
+      }
+
       res.json({
         role: perm.role,
         label: perm.label,
@@ -683,6 +722,7 @@ export function registerRoleManagementRoutes(app: Express) {
         canEditData: perm.canEditData,
         entityPermissions: perm.entityPermissions || null,
         authorityModel: perm.authorityModel || null,
+        userOverrides: Object.keys(userOverrides).length > 0 ? userOverrides : null,
         authoritySummary: ENTITY_PERMISSION_DEFAULTS.map((rule) => ({
           entity: rule.entity,
           actions: AUTHORITY_ACTIONS.map((action) => {
@@ -702,6 +742,140 @@ export function registerRoleManagementRoutes(app: Express) {
           }),
         })),
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ========== USER PERMISSION OVERRIDES ==========
+
+  app.get("/api/admin/user-overrides/:userId", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
+
+      const overrides = await db.select().from(userPermissionOverrides)
+        .where(eq(userPermissionOverrides.userId, userId));
+      res.json(overrides);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/user-overrides", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { userId, entity, action, allowed, scope, reason, expiresAt } = req.body;
+      if (!userId || !entity || !action) {
+        return res.status(400).json({ error: "userId, entity, and action are required" });
+      }
+
+      // Upsert: delete existing then insert
+      await db.delete(userPermissionOverrides)
+        .where(and(
+          eq(userPermissionOverrides.userId, userId),
+          eq(userPermissionOverrides.entity, entity),
+          eq(userPermissionOverrides.action, action),
+        ));
+
+      const [created] = await db.insert(userPermissionOverrides).values({
+        userId,
+        entity,
+        action,
+        allowed: allowed !== false,
+        scope: scope || null,
+        grantedBy: getEffectiveUser(req)?.id || null,
+        reason: reason || null,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+      }).returning();
+
+      invalidateUserOverrideCache(userId);
+      logPermissionAudit(req, {
+        eventType: "user_override_added",
+        targetUserId: userId,
+        changeDetail: { entity, action, allowed: allowed !== false, scope, reason, expiresAt },
+      });
+
+      res.json(created);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/admin/user-overrides/:id", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const overrideId = parseInt(req.params.id);
+      if (isNaN(overrideId)) return res.status(400).json({ error: "Invalid override ID" });
+
+      const [existing] = await db.select().from(userPermissionOverrides)
+        .where(eq(userPermissionOverrides.id, overrideId));
+      if (!existing) return res.status(404).json({ error: "Override not found" });
+
+      await db.delete(userPermissionOverrides).where(eq(userPermissionOverrides.id, overrideId));
+      invalidateUserOverrideCache(existing.userId);
+
+      logPermissionAudit(req, {
+        eventType: "user_override_removed",
+        targetUserId: existing.userId,
+        changeDetail: { entity: existing.entity, action: existing.action, wasAllowed: existing.allowed },
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ========== PERMISSION AUDIT LOG ==========
+
+  app.get("/api/admin/permission-audit-log", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const offset = parseInt(req.query.offset as string) || 0;
+      const eventType = req.query.eventType as string;
+
+      let query = db.select({
+        id: permissionAuditLog.id,
+        eventType: permissionAuditLog.eventType,
+        targetRole: permissionAuditLog.targetRole,
+        targetUserId: permissionAuditLog.targetUserId,
+        changedByUserId: permissionAuditLog.changedByUserId,
+        changedByRole: permissionAuditLog.changedByRole,
+        changeDetail: permissionAuditLog.changeDetail,
+        createdAt: permissionAuditLog.createdAt,
+      }).from(permissionAuditLog)
+        .orderBy(desc(permissionAuditLog.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      if (eventType) {
+        query = query.where(eq(permissionAuditLog.eventType, eventType)) as any;
+      }
+
+      const rows = await query;
+
+      // Enrich with user names
+      const userIds = new Set<number>();
+      for (const row of rows) {
+        if (row.changedByUserId) userIds.add(row.changedByUserId);
+        if (row.targetUserId) userIds.add(row.targetUserId);
+      }
+
+      const userMap = new Map<number, string>();
+      if (userIds.size > 0) {
+        const userRows = await db.select({ id: users.id, name: users.name }).from(users)
+          .where(inArray(users.id, [...userIds]));
+        for (const u of userRows) {
+          userMap.set(u.id, u.name);
+        }
+      }
+
+      const enriched = rows.map((row) => ({
+        ...row,
+        changedByName: row.changedByUserId ? userMap.get(row.changedByUserId) || null : null,
+        targetUserName: row.targetUserId ? userMap.get(row.targetUserId) || null : null,
+      }));
+
+      res.json({ entries: enriched, limit, offset });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

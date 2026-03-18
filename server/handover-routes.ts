@@ -8,6 +8,7 @@ import { logAuditFromReq } from "./audit-logger";
 import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
 import { storage } from "./storage";
 import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./services/project-development-workspace-service";
+import { requirePermission } from "./permission-middleware";
 
 const PM_REVIEW_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"];
 const PD_PM_HANDOVER_GATE_ID = "PD_PM_HANDOVER";
@@ -142,7 +143,7 @@ export function registerHandoverRoutes(app: Express) {
   app.use("/api/projects/:id/handover-gates", jwtAuth);
   app.use("/api/projects/:id/handover-history", jwtAuth);
 
-  app.get("/api/projects/:id/handover-gates", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:id/handover-gates", requireAuth, requirePermission("handover", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -190,7 +191,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/projects/:id/handover-gates/:gateId/complete", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/projects/:id/handover-gates/:gateId/complete", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
       const gateId = req.params.gateId;
@@ -255,7 +256,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/projects/:id/handover-gates/:gateId/update-checklist", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/projects/:id/handover-gates/:gateId/update-checklist", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
       const gateId = req.params.gateId;
@@ -292,7 +293,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/projects/:id/handover-gates/:gateId/reopen", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/projects/:id/handover-gates/:gateId/reopen", requireAuth, requirePermission("handover", "override"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
       const gateId = req.params.gateId;
@@ -336,7 +337,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.get("/api/projects/:id/handover-history", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:id/handover-history", requireAuth, requirePermission("handover", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -362,7 +363,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd-pm-handover/status-map", requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/pd-pm-handover/status-map", requireAuth, requirePermission("handover", "view"), async (_req: Request, res: Response) => {
     try {
       const rows: any[] = await db.execute(sql.raw(`SELECT project_id, status FROM project_pd_pm_handover`)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
       const statusMap: Record<string, string> = {};
@@ -376,7 +377,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd-pm-handover/submitted", requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/pd-pm-handover/submitted", requireAuth, requirePermission("handover", "view"), async (_req: Request, res: Response) => {
     try {
       const rows: any[] = await db.execute(sql.raw(`
         SELECT h.project_id, h.status, h.updated_at, p.project_name, p.pd, p.pm
@@ -392,7 +393,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd-pm-handover/control", requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/pd-pm-handover/control", requireAuth, requirePermission("handover", "view"), async (_req: Request, res: Response) => {
     try {
       const rows: any[] = await db.execute(sql.raw(`
         SELECT
@@ -456,7 +457,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd-pm-handover/:projectId", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/pd-pm-handover/:projectId", requireAuth, requirePermission("handover", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -521,7 +522,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.put("/api/pd-pm-handover/:projectId/draft", requireAuth, async (req: Request, res: Response) => {
+  app.put("/api/pd-pm-handover/:projectId/draft", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -607,7 +608,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd-pm-handover/:projectId/submit", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/pd-pm-handover/:projectId/submit", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -701,7 +702,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd-pm-handover/:projectId/accept", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/pd-pm-handover/:projectId/accept", requireAuth, requirePermission("handover", "approve"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -751,7 +752,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd-pm-handover/:projectId/reject", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/pd-pm-handover/:projectId/reject", requireAuth, requirePermission("handover", "approve"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       const reason = String(req.body?.reason || "").trim();
@@ -792,7 +793,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.put("/api/pd-pm-handover/:projectId/excel-tracker", requireAuth, async (req: Request, res: Response) => {
+  app.put("/api/pd-pm-handover/:projectId/excel-tracker", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -826,7 +827,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd-pm-handover/:projectId/evidence", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/pd-pm-handover/:projectId/evidence", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });

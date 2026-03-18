@@ -4,6 +4,7 @@ import { projectInfo, type ProjectInfo, smartImportRuns, normalizedCostLines, no
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import ExcelJS from "exceljs";
+import { requirePermission } from "./permission-middleware";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated()) return next();
@@ -260,7 +261,7 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
   }
 
   // === 1. PROJECT PLAN REPORT ===
-  app.get("/api/reports/project-plan", requireAuth, async (req, res) => {
+  app.get("/api/reports/project-plan", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
       const projectFilter = req.query.projectName as string | undefined;
       const programmeFilter = req.query.programme as string | undefined;
@@ -344,7 +345,7 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
   });
 
   // === 2. COST REPORT ===
-  app.get("/api/reports/cost", requireAuth, async (req, res) => {
+  app.get("/api/reports/cost", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
       const projectFilter = req.query.projectName as string | undefined;
       const categoryFilter = req.query.costCategory as string | undefined;
@@ -452,7 +453,7 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
 
   // === 3. QUALITY REPORT ===
   // Quality is tracked via RAG status on projects. No separate quality_metrics table exists.
-  app.get("/api/reports/quality", requireAuth, async (req, res) => {
+  app.get("/api/reports/quality", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
       const projectFilter = req.query.projectName as string | undefined;
 
@@ -504,7 +505,7 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
 
   // === 4. RESOURCE ALLOCATION REPORT ===
   // Resource data comes from work_items ownerName and work_item_assignments
-  app.get("/api/reports/resource-allocation", requireAuth, async (req, res) => {
+  app.get("/api/reports/resource-allocation", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
       const resourceFilter = req.query.resource as string | undefined;
       const projectFilter = req.query.projectName as string | undefined;

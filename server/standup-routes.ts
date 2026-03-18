@@ -8,6 +8,7 @@ import {
   type InsertStandupSchedule, type InsertStandupEntry, type InsertStandupParticipant,
 } from "@shared/schema";
 import { getEffectiveUser, requireAuth } from "./auth-context";
+import { requirePermission } from "./permission-middleware";
 
 type AppUser = { id: number; email: string; name: string; role: string };
 
@@ -78,7 +79,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Create a standup schedule */
-  app.post("/api/standups/schedules", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/standups/schedules", requireAuth, requirePermission("standups", "create"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const { name, teamLabel, projectId, cadence, cadenceDays, anchorDate, deadlineTime } = req.body;
@@ -108,7 +109,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Update a standup schedule */
-  app.patch("/api/standups/schedules/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/standups/schedules/:id", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       const updates: Partial<InsertStandupSchedule> = {};
@@ -131,7 +132,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Delete a standup schedule */
-  app.delete("/api/standups/schedules/:id", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/standups/schedules/:id", requireAuth, requirePermission("standups", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       await db.delete(standupSchedules).where(eq(standupSchedules.id, id));
