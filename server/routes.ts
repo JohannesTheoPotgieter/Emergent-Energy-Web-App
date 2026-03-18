@@ -9429,19 +9429,16 @@ export async function registerRoutes(
         addCheck("auth_admin_exists", false, { error: err.message });
       }
 
-      // 3. Upload baseline test - Check existing uploads
+      // 3. Import runs baseline - Check DB import history (no disk files)
       try {
-        const uploadDir = path.join(process.cwd(), 'uploads');
-        const files = fs.readdirSync(uploadDir).filter(f => 
-          f.endsWith('.xlsx') || f.endsWith('.xlsm') || f.endsWith('.xls')
-        );
-        
-        addCheck("upload_files_available", files.length > 0, {
-          count: files.length,
-          files: files.slice(0, 5)
-        });
+        const importRuns = await db.execute(sql`
+          SELECT COUNT(*) as count FROM smart_import_runs WHERE status = 'COMMITTED'
+        `);
+        const rows = Array.isArray(importRuns) ? importRuns : (importRuns.rows || []);
+        const count = Number(rows[0]?.count || 0);
+        addCheck("import_runs_available", count > 0, { committedRuns: count });
       } catch (err: any) {
-        addCheck("upload_files_available", false, { error: err.message });
+        addCheck("import_runs_available", false, { error: err.message });
       }
 
       // 4. Projects data check
