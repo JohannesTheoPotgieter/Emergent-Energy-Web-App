@@ -933,6 +933,17 @@ function TaskDetailDrawer({
     })).filter((p: any) => p.project_name && !EXCLUDED_PHASES_DRAWER.includes(p.phase)).sort((a: any, b: any) => a.project_name.localeCompare(b.project_name)),
   });
 
+  const projectPhaseInfo = useMemo(() => {
+    if (!task.projectName) return null;
+    const proj = drawerProjects.find((p: any) => p.raw === task.projectName || p.project_name === task.projectName);
+    const phase = proj?.phase as ProjectPhase | undefined;
+    const slug = task.projectName.replace(/ /g, "_");
+    return {
+      phaseLabel: phase ? PROJECT_PHASE_LABELS[phase as keyof typeof PROJECT_PHASE_LABELS] || phase : null,
+      phaseColor: phase ? PHASE_COLORS[phase] : null,
+      trackerName: slug.endsWith("_Tracker") ? slug : slug + "_Tracker",
+    };
+  }, [task.projectName, drawerProjects]);
 
   useEffect(() => {
     if (!showSendDeliverable) return;
@@ -1248,26 +1259,19 @@ function TaskDetailDrawer({
                   </Command>
                 </PopoverContent>
               </Popover>
-              {task.projectName && (() => {
-                const proj = drawerProjects.find((p: any) => p.raw === task.projectName || p.project_name === task.projectName);
-                const phase = proj?.phase as ProjectPhase | undefined;
-                const phaseLabel = phase ? (PROJECT_PHASE_LABELS as any)[phase] || phase : null;
-                const phaseColor = phase ? PHASE_COLORS[phase] : null;
-                const trackerName = task.projectName?.replace(/ /g, "_");
-                return (
-                  <div className="flex items-center gap-2 mt-1">
-                    {phaseLabel && (
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${phaseColor?.bg || "bg-muted"} ${phaseColor?.text || "text-foreground"}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${phaseColor?.accent || "bg-slate-500"}`} />
-                        {phaseLabel}
-                      </span>
-                    )}
-                    <a href={`/project/${trackerName}`} className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 hover:underline">
-                      <ExternalLink className="h-3 w-3" /> View Project
-                    </a>
-                  </div>
-                );
-              })()}
+              {task.projectName && projectPhaseInfo && (
+                <div className="flex items-center gap-2 mt-1">
+                  {projectPhaseInfo.phaseLabel && (
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${projectPhaseInfo.phaseColor?.bg || "bg-muted"} ${projectPhaseInfo.phaseColor?.text || "text-foreground"}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${projectPhaseInfo.phaseColor?.accent || "bg-slate-500"}`} />
+                      {projectPhaseInfo.phaseLabel}
+                    </span>
+                  )}
+                  <a href={`/project/${projectPhaseInfo.trackerName}`} className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 hover:underline">
+                    <ExternalLink className="h-3 w-3" /> View Project
+                  </a>
+                </div>
+              )}
             </div>
 
             <div className="space-y-3 p-3 bg-slate-50/70 rounded-lg border">
