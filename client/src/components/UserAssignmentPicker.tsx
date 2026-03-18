@@ -97,17 +97,18 @@ export default function UserAssignmentPicker({
     staleTime: 60000,
   });
 
+  const safeTaskId = Number.isFinite(taskId) && taskId > 0 ? taskId : null;
+
   const reassignMutation = useMutation({
     mutationFn: async (payload: { assigneeType: AssigneeType | null; assigneeId: number | null }) => {
-      const numericTaskId = Number(taskId);
-      const numericAssigneeId = payload.assigneeId != null ? Number(payload.assigneeId) : null;
-      if (!numericTaskId || isNaN(numericTaskId)) {
+      if (!safeTaskId) {
         throw new Error(`Invalid task ID: ${taskId}`);
       }
-      if (numericAssigneeId != null && isNaN(numericAssigneeId)) {
+      const numericAssigneeId = payload.assigneeId != null ? Number(payload.assigneeId) : null;
+      if (numericAssigneeId != null && (!Number.isFinite(numericAssigneeId) || numericAssigneeId <= 0)) {
         throw new Error(`Invalid assignee ID: ${payload.assigneeId}`);
       }
-      const requestBody = { taskId: numericTaskId, taskSource, assigneeType: payload.assigneeType, assigneeId: numericAssigneeId };
+      const requestBody = { taskId: safeTaskId, taskSource, assigneeType: payload.assigneeType, assigneeId: numericAssigneeId };
       console.log("[Assignment] Sending reassign request:", requestBody);
       const res = await fetch("/api/tasks/reassign", {
         method: "PATCH",
@@ -278,15 +279,15 @@ export default function UserAssignmentPicker({
         </span>
       )}
 
-      <Popover open={open} onOpenChange={(next) => { if (!disabled) setOpen(next); }}>
+      <Popover open={open} onOpenChange={(next) => { if (!disabled && safeTaskId) setOpen(next); }}>
         <PopoverTrigger asChild>
           <Button
             variant="ghost"
             size="icon"
             className={`${isXs ? 'h-5 w-5' : 'h-6 w-6'} rounded-full border border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50 text-muted-foreground hover:text-blue-600 transition-colors`}
             data-testid={`btn-assign-${taskSource}-${taskId}`}
-            title={disabled ? (disabledReason || "You do not have permission to assign this task") : "Assign user"}
-            disabled={disabled}
+            title={!safeTaskId ? "Cannot assign — invalid task" : disabled ? (disabledReason || "You do not have permission to assign this task") : "Assign user"}
+            disabled={disabled || !safeTaskId}
           >
             <UserPlus className={isXs ? "h-3 w-3" : "h-3.5 w-3.5"} />
           </Button>

@@ -65,11 +65,11 @@ function normalizeTaskStatus(status: string | null | undefined): string {
 export function registerMsSyncRoutes(app: Express) {
   const assignmentPayloadSchema = z
     .object({
-      taskId: z.coerce.number().int().positive(),
+      taskId: z.coerce.number().finite().int().positive(),
       taskSource: z.string().min(1),
       assigneeType: z.enum(["internal_user", "external_counterparty", "external_contact"]).nullable().optional(),
-      assigneeId: z.coerce.number().int().positive().nullable().optional(),
-      userId: z.coerce.number().int().positive().nullable().optional(), // legacy shape
+      assigneeId: z.coerce.number().finite().int().positive().nullable().optional(),
+      userId: z.coerce.number().finite().int().positive().nullable().optional(), // legacy shape
     })
     .superRefine((data, ctx) => {
       const effectiveAssigneeType = data.assigneeType ?? (data.userId != null ? "internal_user" : null);
@@ -358,8 +358,15 @@ export function registerMsSyncRoutes(app: Express) {
       }
 
       const { taskId, taskSource } = parsed.data;
+      if (!Number.isFinite(taskId) || taskId <= 0) {
+        console.error("[Reassign] Invalid taskId after Zod parse:", taskId, "body:", req.body);
+        return res.status(400).json({ error: `Invalid task ID: ${taskId}` });
+      }
       const assigneeType = parsed.data.assigneeType ?? (parsed.data.userId != null ? "internal_user" : null);
       const assigneeId = parsed.data.assigneeId ?? parsed.data.userId ?? null;
+      if (assigneeId != null && (!Number.isFinite(assigneeId) || assigneeId <= 0)) {
+        return res.status(400).json({ error: `Invalid assignee ID: ${assigneeId}` });
+      }
       console.log("[Reassign] Processing:", { taskId, taskSource, assigneeType, assigneeId, userId: getEffectiveUser(req)?.id });
 
       if (taskSource === "plan_viewer" || taskSource === "remove_viewer") {
