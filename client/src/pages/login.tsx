@@ -49,12 +49,16 @@ export default function LoginPage() {
           setReleaseNotes(data.releaseNotes);
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        if (import.meta.env.DEV) console.warn("Version fetch failed:", err);
+      });
 
     fetch("/api/auth/microsoft/config")
       .then((r) => r.json())
       .then((data) => setMsEnabled(data.enabled))
-      .catch(() => {});
+      .catch((err) => {
+        if (import.meta.env.DEV) console.warn("MS config fetch failed:", err);
+      });
 
     const params = new URLSearchParams(window.location.search);
     const msError = params.get("error");
@@ -114,7 +118,7 @@ export default function LoginPage() {
         </div>
 
         {error && (
-          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200" data-testid="text-login-error">
+          <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200" role="alert" aria-live="assertive" data-testid="text-login-error">
             <AlertCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
             <p className="text-xs text-red-600">{error}</p>
           </div>
@@ -360,83 +364,69 @@ export default function LoginPage() {
         </DialogContent>
       </Dialog>
 
-      {showVersion && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowVersion(false)}>
-          <div
-            className="bg-card rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col border border-border"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <div>
-                <h2 className="text-lg font-bold text-foreground">
-                  Version {versionInfo.version} Release Notes
-                </h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {versionInfo.buildTime || "Latest"}{versionInfo.buildNumber ? ` · Build ${versionInfo.buildNumber}` : ""} — The official release. For real this time.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowVersion(false)}
-                className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                data-testid="button-close-version"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      <Dialog open={showVersion} onOpenChange={setShowVersion}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-hidden flex flex-col p-0" aria-describedby="version-dialog-description">
+          <DialogHeader className="px-5 py-4 border-b border-border">
+            <DialogTitle className="text-lg font-bold">
+              Version {versionInfo.version} Release Notes
+            </DialogTitle>
+            <p id="version-dialog-description" className="text-xs text-muted-foreground mt-0.5">
+              {versionInfo.buildTime || "Latest"}{versionInfo.buildNumber ? ` · Build ${versionInfo.buildNumber}` : ""} — The official release. For real this time.
+            </p>
+          </DialogHeader>
 
-            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-3">
-              {releaseNotes.length > 0 ? (
-                releaseNotes.map((item, i) => {
-                  const isEasterEgg = item.title.includes("Easter Egg");
-                  return (
-                    <div
-                      key={i}
-                      className={`flex gap-3 ${isEasterEgg ? "cursor-pointer hover:bg-amber-50 rounded-lg p-2 -m-2 transition-all" : ""}`}
-                      data-testid={`version-item-${i}`}
-                      onClick={isEasterEgg ? () => {
-                        const next = easterEggClicks + 1;
-                        setEasterEggClicks(next);
-                        if (next >= 7) setShowEasterEgg(true);
-                      } : undefined}
-                    >
-                      <div className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center mt-0.5 ${isEasterEgg ? "bg-amber-50" : "bg-emerald-50"}`}>
-                        <Zap className={`w-3.5 h-3.5 ${isEasterEgg ? "text-amber-600" : "text-emerald-600"}`} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-sm font-semibold text-foreground">{item.title}</h3>
-                        {item.description && (
-                          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{item.description}</p>
-                        )}
-                        {isEasterEgg && easterEggClicks > 0 && easterEggClicks < 7 && (
-                          <p className="text-[10px] text-amber-600 mt-1">{7 - easterEggClicks} more click{7 - easterEggClicks !== 1 ? "s" : ""}...</p>
-                        )}
-                      </div>
+          <div className="overflow-y-auto flex-1 px-5 py-4 space-y-3">
+            {releaseNotes.length > 0 ? (
+              releaseNotes.map((item, i) => {
+                const isEasterEgg = item.title.includes("Easter Egg");
+                return (
+                  <div
+                    key={i}
+                    className={`flex gap-3 ${isEasterEgg ? "cursor-pointer hover:bg-amber-50 rounded-lg p-2 -m-2 transition-all" : ""}`}
+                    data-testid={`version-item-${i}`}
+                    onClick={isEasterEgg ? () => {
+                      const next = easterEggClicks + 1;
+                      setEasterEggClicks(next);
+                      if (next >= 7) setShowEasterEgg(true);
+                    } : undefined}
+                  >
+                    <div className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center mt-0.5 ${isEasterEgg ? "bg-amber-50" : "bg-emerald-50"}`}>
+                      <Zap className={`w-3.5 h-3.5 ${isEasterEgg ? "text-amber-600" : "text-emerald-600"}`} />
                     </div>
-                  );
-                })
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-4">No release notes available yet.</p>
-              )}
-              {showEasterEgg && (
-                <div className="mt-4 p-4 bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-amber-500/10 rounded-xl border border-amber-200 text-center animate-pulse" data-testid="easter-egg-reveal">
-                  <p className="text-2xl mb-2">⚡🎉⚡</p>
-                  <p className="text-sm font-bold text-emerald-600">You found The First Electron!</p>
-                  <p className="text-xs text-muted-foreground mt-1">You are now officially part of the Emergent Energy story.</p>
-                  <p className="text-xs text-muted-foreground mt-1">V1.2 — Eight new features. Zero new databases. One increasingly philosophical easter egg.</p>
-                  <p className="text-[10px] text-amber-600 mt-2 italic">Achievement Unlocked: Curious Clicker 🏆</p>
-                </div>
-              )}
-            </div>
-
-            <div className="px-5 py-3 border-t border-border bg-muted/30">
-              <p className="text-[10px] text-muted-foreground text-center italic">
-                V1.2 — Dependencies, RAID logs, Change Control, Procurement, Commissioning. Eight features, zero excuses.
-                Still powered by electrons. Now managing entire project lifecycles with unreasonable thoroughness. ⚡
-              </p>
-            </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-sm font-semibold text-foreground">{item.title}</h3>
+                      {item.description && (
+                        <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{item.description}</p>
+                      )}
+                      {isEasterEgg && easterEggClicks > 0 && easterEggClicks < 7 && (
+                        <p className="text-[10px] text-amber-600 mt-1">{7 - easterEggClicks} more click{7 - easterEggClicks !== 1 ? "s" : ""}...</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-4">No release notes available yet.</p>
+            )}
+            {showEasterEgg && (
+              <div className="mt-4 p-4 bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-amber-500/10 rounded-xl border border-amber-200 text-center animate-pulse" data-testid="easter-egg-reveal">
+                <p className="text-2xl mb-2">⚡🎉⚡</p>
+                <p className="text-sm font-bold text-emerald-600">You found The First Electron!</p>
+                <p className="text-xs text-muted-foreground mt-1">You are now officially part of the Emergent Energy story.</p>
+                <p className="text-xs text-muted-foreground mt-1">V1.2 — Eight new features. Zero new databases. One increasingly philosophical easter egg.</p>
+                <p className="text-[10px] text-amber-600 mt-2 italic">Achievement Unlocked: Curious Clicker 🏆</p>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+
+          <div className="px-5 py-3 border-t border-border bg-muted/30">
+            <p className="text-[10px] text-muted-foreground text-center italic">
+              V1.2 — Dependencies, RAID logs, Change Control, Procurement, Commissioning. Eight features, zero excuses.
+              Still powered by electrons. Now managing entire project lifecycles with unreasonable thoroughness. ⚡
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
