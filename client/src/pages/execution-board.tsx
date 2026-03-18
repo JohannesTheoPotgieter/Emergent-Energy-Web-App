@@ -18,7 +18,7 @@ import {
   Activity, AlertCircle, AlertTriangle, ChevronDown, ChevronUp,
   ExternalLink, RefreshCw, TrendingUp, TrendingDown, DollarSign,
   BarChart3, Shield, FileWarning, Clock, Users, FolderOpen,
-  ArrowRight, Filter, RotateCcw, Database, CalendarDays
+  ArrowRight, Filter, RotateCcw, Database
 } from "lucide-react";
 import {
   ExecutionDashboardProject,
