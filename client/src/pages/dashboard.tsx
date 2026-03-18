@@ -149,14 +149,9 @@ function UpcomingEventsSection({ events }: { events: UpcomingEvent[] }) {
     <Card className="border-border" data-testid="upcoming-events-card">
       <CardContent className="p-4 md:p-5">
         <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
-              <CalendarDays className="w-4 h-4 text-emerald-600" />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold">Upcoming This Week</h2>
-              <p className="text-xs text-muted-foreground">{filtered.length} event{filtered.length !== 1 ? "s" : ""} in the next 5 working days</p>
-            </div>
+          <div>
+            <h2 className="text-sm font-semibold">Upcoming This Week</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{filtered.length} event{filtered.length !== 1 ? "s" : ""} in the next 5 working days</p>
           </div>
           {paymentCount > 0 && (
             <Button
@@ -231,18 +226,13 @@ function UpcomingFinancialsSection({ data }: { data: FinancialsResponse | undefi
     <Card className="border-border" data-testid="upcoming-financials-card">
       <CardContent className="p-4 md:p-5">
         <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
-              <DollarSign className="w-4 h-4 text-blue-600" />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold">Upcoming Financial Milestones</h2>
-              <p className="text-xs text-muted-foreground">
-                {hasEvents
-                  ? `${data.events.length} item${data.events.length !== 1 ? "s" : ""} in the next 10 working days`
-                  : "Next 10 working days"}
-              </p>
-            </div>
+          <div>
+            <h2 className="text-sm font-semibold">Upcoming Financial Milestones</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {hasEvents
+                ? `${data.events.length} item${data.events.length !== 1 ? "s" : ""} in the next 10 working days`
+                : "Next 10 working days"}
+            </p>
           </div>
           {hasEvents && (
             <div className="flex items-center gap-3 text-xs">
@@ -265,17 +255,17 @@ function UpcomingFinancialsSection({ data }: { data: FinancialsResponse | undefi
         {hasEvents ? (
           <>
             <div className="grid grid-cols-3 gap-3 mb-4">
-              <div className="rounded-lg border p-3 bg-emerald-50/50">
-                <p className="text-[10px] text-emerald-600 font-medium uppercase tracking-wider">Total Inflows</p>
-                <p className="text-lg font-bold text-emerald-700">R {data.totalInflow.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+              <div className="rounded-lg border border-border/50 p-3">
+                <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wide">Total Inflows</p>
+                <p className="text-base font-semibold font-mono text-emerald-700 mt-0.5">R {data.totalInflow.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
               </div>
-              <div className="rounded-lg border p-3 bg-red-50/50">
-                <p className="text-[10px] text-red-600 font-medium uppercase tracking-wider">Total Outflows</p>
-                <p className="text-lg font-bold text-red-700">R {data.totalOutflow.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+              <div className="rounded-lg border border-border/50 p-3">
+                <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wide">Total Outflows</p>
+                <p className="text-base font-semibold font-mono text-red-700 mt-0.5">R {data.totalOutflow.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
               </div>
-              <div className={`rounded-lg border p-3 ${data.netCashflow >= 0 ? "bg-emerald-50/50" : "bg-amber-50/50"}`}>
-                <p className={`text-[10px] font-medium uppercase tracking-wider ${data.netCashflow >= 0 ? "text-emerald-600" : "text-amber-600"}`}>Net Cashflow</p>
-                <p className={`text-lg font-bold ${data.netCashflow >= 0 ? "text-emerald-700" : "text-amber-700"}`}>R {data.netCashflow.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+              <div className="rounded-lg border border-border/50 p-3">
+                <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wide">Net Cashflow</p>
+                <p className={`text-base font-semibold font-mono mt-0.5 ${data.netCashflow >= 0 ? "text-emerald-700" : "text-amber-700"}`}>R {data.netCashflow.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
               </div>
             </div>
 
@@ -439,16 +429,10 @@ export default function DashboardPage() {
     <div className="ee-page p-0 pb-8" data-testid="execution-dashboard-page">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center">
-              <Activity className="w-5 h-5 text-emerald-600" />
-            </div>
-            Execution Dashboard
-          </h1>
+          <h1 className="text-xl font-semibold tracking-tight">Execution Dashboard</h1>
           {data?.meta && (
-            <p className="text-muted-foreground text-sm mt-1.5 ml-[46px]">
-              Financial year <span className="font-medium text-foreground">{data.meta.fyStart}</span> to{" "}
-              <span className="font-medium text-foreground">{data.meta.fyEnd}</span>
+            <p className="text-muted-foreground text-sm mt-1">
+              FY {data.meta.fyStart} – {data.meta.fyEnd}
             </p>
           )}
         </div>
@@ -482,12 +466,8 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <Card className="border-border">
-        <CardContent className="p-4 space-y-3">
-          <div className="flex items-center gap-2 mb-1">
-            <Filter className="w-4 h-4 text-muted-foreground" />
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Filters</span>
-          </div>
+      <Card className="border-border/50">
+        <CardContent className="p-3 space-y-2.5">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">
             <Input
               placeholder="Search projects..."
@@ -560,45 +540,40 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      <p className="text-sm text-muted-foreground -mt-1 mb-3">Start here first: unresolved execution and cash-risk items that need intervention.</p>
+      <p className="text-[13px] text-muted-foreground -mt-2">Unresolved execution and cash-risk items requiring intervention.</p>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card className="border-red-200 bg-red-50" data-testid="kpi-urgent-risk">
+        <Card className="border-border/50" data-testid="kpi-urgent-risk">
           <CardContent className="p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-red-700 mb-1">Urgent Execution Risk</p>
-            <p className="text-3xl font-bold text-red-800">{Number(data?.kpis?.projectsBehindPlan || 0) + Number(data?.kpis?.openEngineeringBlockers || 0) + Number(data?.kpis?.staleImports || 0)}</p>
-            <p className="text-xs text-red-600 mt-1">Behind-plan projects, engineering blockers, stale imports</p>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Execution Risk</p>
+            <p className="text-2xl font-semibold font-mono text-red-700">{Number(data?.kpis?.projectsBehindPlan || 0) + Number(data?.kpis?.openEngineeringBlockers || 0) + Number(data?.kpis?.staleImports || 0)}</p>
+            <p className="text-xs text-muted-foreground mt-1">Behind plan + blockers + stale imports</p>
           </CardContent>
         </Card>
 
-        <Card className="border-amber-200 bg-amber-50" data-testid="kpi-financial-intervention">
+        <Card className="border-border/50" data-testid="kpi-financial-intervention">
           <CardContent className="p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700 mb-1">Financial Intervention</p>
-            <p className="text-3xl font-bold text-amber-800">{money(data?.kpis?.openInflowFy)}</p>
-            <p className="text-xs text-amber-600 mt-1">Outstanding receivables requiring follow-up</p>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Open Receivables</p>
+            <p className="text-2xl font-semibold font-mono text-amber-700">{money(data?.kpis?.openInflowFy)}</p>
+            <p className="text-xs text-muted-foreground mt-1">Outstanding inflow requiring follow-up</p>
           </CardContent>
         </Card>
 
-        <Card className="border-orange-200 bg-orange-50" data-testid="kpi-cash-protection">
+        <Card className="border-border/50" data-testid="kpi-cash-protection">
           <CardContent className="p-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-orange-700 mb-1">Cash Protection</p>
-            <p className="text-3xl font-bold text-orange-800">{money(data?.kpis?.openExpenditureFy)}</p>
-            <p className="text-xs text-orange-600 mt-1">Open supplier expenditure outstanding this FY</p>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Open Expenditure</p>
+            <p className="text-2xl font-semibold font-mono text-orange-700">{money(data?.kpis?.openExpenditureFy)}</p>
+            <p className="text-xs text-muted-foreground mt-1">Supplier spend outstanding this FY</p>
           </CardContent>
         </Card>
       </div>
 
       <Card className="border-border" data-testid="immediate-intervention-queue">
         <CardContent className="p-4 md:p-5">
-          <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+          <div className="flex items-center justify-between gap-3 mb-4">
             <div>
-              <div className="flex items-center gap-2 mb-1">
-                <AlertCircle className="w-5 h-5 text-red-500" />
-                <h2 className="text-lg font-semibold">Immediate Intervention Queue</h2>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {totalActionItems} action items &middot; Overdue expenses &middot; Revenue outstanding &middot; Projects behind plan &middot; Upcoming milestones &middot; Overdue tasks
-              </p>
+              <h2 className="text-sm font-semibold">Action Centre</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">{totalActionItems} items requiring attention</p>
             </div>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -677,30 +652,25 @@ export default function DashboardPage() {
         return (
           <Card className="border-border" data-testid="cos-tracker-card">
             <CardContent className="p-4 md:p-5">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
-                  <DollarSign className="w-4 h-4 text-blue-600" />
-                </div>
-                <div>
-                  <h2 className="text-base font-semibold">COS Planned vs Realised</h2>
-                  <p className="text-xs text-muted-foreground">{monthStr}</p>
-                </div>
+              <div className="mb-3">
+                <h2 className="text-sm font-semibold">COS Planned vs Realised</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">{monthStr}</p>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="rounded-lg border p-3 bg-slate-50">
-                  <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Planned COS</p>
-                  <p className="text-xl font-bold mt-1">{money(planned)}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded-lg border border-border/50 p-3">
+                  <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wide">Planned COS</p>
+                  <p className="text-lg font-semibold font-mono mt-1">{money(planned)}</p>
                   <p className="text-xs text-muted-foreground">Total cost lines this month</p>
                 </div>
-                <div className="rounded-lg border p-3 bg-emerald-50">
-                  <p className="text-[10px] text-emerald-700 font-medium uppercase tracking-wider">Realised COS</p>
-                  <p className="text-xl font-bold text-emerald-700 mt-1">{money(realised)}</p>
-                  <p className="text-xs text-emerald-600">{realisedPct.toFixed(1)}% of planned</p>
+                <div className="rounded-lg border border-border/50 p-3">
+                  <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wide">Realised COS</p>
+                  <p className="text-lg font-semibold font-mono text-emerald-700 mt-1">{money(realised)}</p>
+                  <p className="text-xs text-muted-foreground">{realisedPct.toFixed(1)}% of planned</p>
                 </div>
-                <div className={`rounded-lg border p-3 ${gap > 0 ? "bg-amber-50" : "bg-emerald-50"}`}>
-                  <p className={`text-[10px] font-medium uppercase tracking-wider ${gap > 0 ? "text-amber-700" : "text-emerald-700"}`}>Gap</p>
-                  <p className={`text-xl font-bold mt-1 ${gap > 0 ? "text-amber-700" : "text-emerald-700"}`}>{money(Math.abs(gap))}</p>
-                  <p className={`text-xs ${gap > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                <div className="rounded-lg border border-border/50 p-3">
+                  <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wide">Gap</p>
+                  <p className={`text-lg font-semibold font-mono mt-1 ${gap > 0 ? "text-amber-700" : "text-emerald-700"}`}>{money(Math.abs(gap))}</p>
+                  <p className="text-xs text-muted-foreground">
                     {gap > 0 ? "Still to be realised" : "Fully realised"}
                   </p>
                 </div>
@@ -726,11 +696,10 @@ export default function DashboardPage() {
 
       <Card className="border-border">
         <CardContent className="p-4">
-          <div className="flex items-center gap-2 mb-4">
-            <BarChart3 className="w-5 h-5 text-blue-500" />
-            <h2 className="text-base font-semibold">Project Portfolio</h2>
-            <Badge variant="outline" className="text-xs ml-1">
-              {(data?.projects || []).length} projects
+          <div className="flex items-center gap-2 mb-3">
+            <h2 className="text-sm font-semibold">Project Portfolio</h2>
+            <Badge variant="secondary" className="text-[11px] font-mono">
+              {(data?.projects || []).length}
             </Badge>
           </div>
           {isLoading ? (
@@ -739,17 +708,17 @@ export default function DashboardPage() {
             <div className="rounded-lg border border-border">
               <table className="w-full text-sm" data-testid="execution-dashboard-table">
                 <thead>
-                  <tr className="bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
-                    <th className="text-left py-2.5 px-3 font-medium">Project</th>
-                    <th className="text-left py-2.5 px-2 font-medium hidden lg:table-cell">PM</th>
-                    <th className="text-center py-2.5 px-2 font-medium">RAG</th>
-                    <th className="text-right py-2.5 px-2 font-medium">Progress</th>
-                    <th className="text-right py-2.5 px-2 font-medium hidden md:table-cell">Variance</th>
-                    <th className="text-right py-2.5 px-2 font-medium hidden lg:table-cell">Open Inflow</th>
-                    <th className="text-right py-2.5 px-2 font-medium hidden lg:table-cell">Open Exp.</th>
-                    <th className="text-right py-2.5 px-2 font-medium hidden md:table-cell">GP %</th>
-                    <th className="text-center py-2.5 px-2 font-medium">Issues</th>
-                    <th className="w-8 py-2.5 px-1"></th>
+                  <tr className="bg-muted/30 text-xs uppercase tracking-normal text-muted-foreground">
+                    <th className="text-left py-2 px-3 font-medium">Project</th>
+                    <th className="text-left py-2 px-2 font-medium hidden lg:table-cell">PM</th>
+                    <th className="text-center py-2 px-2 font-medium">RAG</th>
+                    <th className="text-right py-2 px-2 font-medium">Progress</th>
+                    <th className="text-right py-2 px-2 font-medium hidden md:table-cell">Variance</th>
+                    <th className="text-right py-2 px-2 font-medium hidden lg:table-cell">Open Inflow</th>
+                    <th className="text-right py-2 px-2 font-medium hidden lg:table-cell">Open Exp.</th>
+                    <th className="text-right py-2 px-2 font-medium hidden md:table-cell">GP %</th>
+                    <th className="text-center py-2 px-2 font-medium">Issues</th>
+                    <th className="w-8 py-2 px-1"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -759,7 +728,7 @@ export default function DashboardPage() {
                     return (
                       <Fragment key={p.projectId}>
                         <tr
-                          className={`border-t border-border/40 cursor-pointer transition-colors ${isExpanded ? "bg-emerald-50/40" : "hover:bg-muted/30"}`}
+                          className={`border-t border-border/40 cursor-pointer transition-colors ${isExpanded ? "bg-muted/40" : "hover:bg-muted/20"}`}
                           onClick={() => setExpanded(isExpanded ? null : p.projectId)}
                           data-testid={`project-row-${p.projectId}`}
                         >
@@ -796,8 +765,8 @@ export default function DashboardPage() {
                           <tr className="bg-muted/20 border-t border-border/40">
                             <td colSpan={10} className="p-4">
                               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                                <div className="bg-white rounded-lg border p-3">
-                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Project Details</p>
+                                <div className="rounded-lg border border-border/50 p-3">
+                                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Project Details</p>
                                   <div className="space-y-1.5 text-sm">
                                     <p><span className="text-muted-foreground">Portfolio:</span> <span className="font-medium">{p.portfolio || "-"}</span></p>
                                     <p><span className="text-muted-foreground">PM:</span> {p.pm || "-"}</p>
@@ -805,16 +774,16 @@ export default function DashboardPage() {
                                     <p><span className="text-muted-foreground">Phase:</span> {p.executionPhase || "-"}</p>
                                   </div>
                                 </div>
-                                <div className="bg-white rounded-lg border p-3">
-                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Progress</p>
+                                <div className="rounded-lg border border-border/50 p-3">
+                                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Progress</p>
                                   <div className="space-y-1.5 text-sm">
                                     <p><span className="text-muted-foreground">Actual:</span> <span className="font-medium">{pct(p.actualProgressPct)}</span></p>
                                     <p><span className="text-muted-foreground">Expected:</span> {pct(p.expectedProgressPct)}</p>
                                     <p><span className="text-muted-foreground">Variance:</span> <span className={variance < 0 ? "text-red-700 font-medium" : "text-emerald-600 font-medium"}>{pct(p.scheduleVariancePct)}</span></p>
                                   </div>
                                 </div>
-                                <div className="bg-white rounded-lg border p-3">
-                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Financials</p>
+                                <div className="rounded-lg border border-border/50 p-3">
+                                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Financials</p>
                                   <div className="space-y-1.5 text-sm">
                                     <p><span className="text-muted-foreground">Revenue:</span> {money(p.plannedRevenueFy)}</p>
                                     <p><span className="text-muted-foreground">Inflow:</span> <span className="text-emerald-600">{money(p.receivedInflowFy)}</span></p>
@@ -825,8 +794,8 @@ export default function DashboardPage() {
                                     <p><span className="text-muted-foreground">GP Margin:</span> <span className="font-medium">{pct((p.grossMarginPctFy || 0) * 100)}</span></p>
                                   </div>
                                 </div>
-                                <div className="bg-white rounded-lg border p-3">
-                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Issues & Status</p>
+                                <div className="rounded-lg border border-border/50 p-3">
+                                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">Issues & Status</p>
                                   <div className="space-y-1.5 text-sm">
                                     <p><span className="text-muted-foreground">Critical actions:</span> <span className="font-medium">{p.criticalActionCount}</span></p>
                                     <p><span className="text-muted-foreground">Engineering:</span> {p.engineeringStatus}</p>
