@@ -9,10 +9,15 @@ import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import {
+  MetricTooltip,
+  EXECUTION_METHODOLOGIES,
+  QUEUE_METHODOLOGY,
+} from "@/components/dashboard/MetricTooltip";
+import {
   Activity, AlertCircle, AlertTriangle, ChevronDown, ChevronUp,
   ExternalLink, RefreshCw, TrendingUp, TrendingDown, DollarSign,
   BarChart3, Shield, FileWarning, Clock, Users, FolderOpen,
-  ArrowRight, Filter, RotateCcw
+  ArrowRight, Filter, RotateCcw, Database, CalendarDays
 } from "lucide-react";
 import {
   ExecutionDashboardProject,
@@ -98,6 +103,8 @@ export default function ExecutionBoard() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [showMethodology, setShowMethodology] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -110,6 +117,7 @@ export default function ExecutionBoard() {
       if (!res.ok) throw new Error(`Failed to load dashboard (${res.status})`);
       const data: ExecutionDashboardResponse = await res.json();
       setDashboard(data);
+      setLastRefresh(new Date());
     } catch (err: any) {
       setError(err.message || "Failed to load execution dashboard");
       toast({ title: "Error", description: err.message || "Failed to load execution dashboard", variant: "destructive" });
@@ -206,6 +214,19 @@ export default function ExecutionBoard() {
     return groups;
   }, [roleFilteredActionRows]);
 
+  const ragDistribution = useMemo(() => {
+    const dist: Record<string, number> = { Red: 0, Amber: 0, Green: 0, Unknown: 0 };
+    for (const p of filteredProjects) {
+      const key = dist[p.rag] !== undefined ? p.rag : "Unknown";
+      dist[key] = (dist[key] || 0) + 1;
+    }
+    return dist;
+  }, [filteredProjects]);
+
+  const staleWarningProjects = useMemo(() => {
+    return filteredProjects.filter((p) => p.importFreshness !== "Fresh");
+  }, [filteredProjects]);
+
   const openProject = (project: ExecutionDashboardProject, tab?: string) => {
     const projectPath = `/project/${encodeURIComponent(project.projectName)}`;
     setLocation(tab ? `${projectPath}?tab=${tab}` : projectPath);
@@ -233,13 +254,21 @@ export default function ExecutionBoard() {
             <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center">
               <Activity className="w-5 h-5 text-emerald-600" />
             </div>
-            Work Plan / Board
+            Execution Dashboard
           </h1>
           <p className="text-muted-foreground text-sm mt-1.5 ml-[46px]">
             Post-handover execution view for <span className="font-medium text-foreground">{fyLabel}</span> ({dashboard?.financialYear.start} to {dashboard?.financialYear.end})
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
+          {lastRefresh && (
+            <span className="text-[10px] text-muted-foreground tabular-nums" data-testid="last-refresh">
+              Data as of {lastRefresh.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
+          <Button variant="outline" size="sm" onClick={() => setShowMethodology(!showMethodology)} className="gap-1.5 text-muted-foreground" data-testid="btn-methodology">
+            <Database className="w-3.5 h-3.5" />{showMethodology ? "Hide" : "Show"} Methodology
+          </Button>
           <Button variant="outline" size="sm" onClick={loadData} className="gap-1.5">
             <RefreshCw className="w-3.5 h-3.5" />Refresh
           </Button>
@@ -250,6 +279,16 @@ export default function ExecutionBoard() {
           )}
         </div>
       </div>
+
+      {staleWarningProjects.length > 0 && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs" data-testid="stale-data-banner">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>
+            <strong>{staleWarningProjects.length} project{staleWarningProjects.length !== 1 ? "s" : ""}</strong> have stale imports (&gt;7 days since last data sync).
+            Financial and progress data may be outdated.
+          </span>
+        </div>
+      )}
 
       <Card className="border-border/60">
         <CardContent className="p-4 space-y-3">
@@ -305,6 +344,7 @@ export default function ExecutionBoard() {
                 <FolderOpen className="w-4 h-4 text-blue-600" />
               </div>
               <span className="text-xs text-muted-foreground font-medium">Portfolio</span>
+              {showMethodology && <MetricTooltip methodology={EXECUTION_METHODOLOGIES.portfolio} />}
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
               <div><p className="text-[10px] text-muted-foreground">Active Projects</p><p className="text-lg font-bold">{kpis.activeDashboardProjects}</p></div>
@@ -322,6 +362,7 @@ export default function ExecutionBoard() {
                 <TrendingUp className="w-4 h-4 text-emerald-600" />
               </div>
               <span className="text-xs text-muted-foreground font-medium">Revenue & Inflow</span>
+              {showMethodology && <MetricTooltip methodology={EXECUTION_METHODOLOGIES.revenue} />}
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
               <div><p className="text-[10px] text-muted-foreground">Planned Revenue</p><p className="text-sm font-semibold">{formatCurrencyCompact(kpis.plannedRevenueFy)}</p></div>
@@ -337,7 +378,8 @@ export default function ExecutionBoard() {
               <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center">
                 <TrendingDown className="w-4 h-4 text-orange-600" />
               </div>
-              <span className="text-xs text-muted-foreground font-medium">Expenditure</span>
+              <span className="text-xs text-muted-foreground font-medium">Expenditure & GP</span>
+              {showMethodology && <MetricTooltip methodology={EXECUTION_METHODOLOGIES.expenditure} />}
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
               <div><p className="text-[10px] text-muted-foreground">Planned</p><p className="text-sm font-semibold">{formatCurrencyCompact(kpis.plannedExpenditureFy)}</p></div>
@@ -355,6 +397,7 @@ export default function ExecutionBoard() {
                 <AlertTriangle className="w-4 h-4 text-red-600" />
               </div>
               <span className="text-xs text-muted-foreground font-medium">Risks & Actions</span>
+              {showMethodology && <MetricTooltip methodology={EXECUTION_METHODOLOGIES.risks} />}
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
               <div><p className="text-[10px] text-muted-foreground">Eng. Blockers</p><p className="text-sm font-semibold">{kpis.openEngineeringBlockers}</p></div>
@@ -382,6 +425,117 @@ export default function ExecutionBoard() {
           </button>
         ))}
       </div>
+
+      {activeView === "coo" && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {Object.entries(ragDistribution).map(([rag, count]) => {
+            const total = filteredProjects.length || 1;
+            const pct = Math.round((count / total) * 100);
+            const colors: Record<string, string> = {
+              Red: "bg-red-100 border-red-200 text-red-700",
+              Amber: "bg-amber-100 border-amber-200 text-amber-700",
+              Green: "bg-emerald-100 border-emerald-200 text-emerald-700",
+              Unknown: "bg-slate-100 border-slate-200 text-slate-600",
+            };
+            return (
+              <div key={rag} className={`rounded-lg border px-3 py-2 ${colors[rag] || colors.Unknown}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium">{rag}</span>
+                  <span className="text-lg font-bold">{count}</span>
+                </div>
+                <div className="h-1.5 bg-white/50 rounded-full mt-1.5 overflow-hidden">
+                  <div className="h-full rounded-full bg-current opacity-40" style={{ width: `${pct}%` }} />
+                </div>
+                <p className="text-[10px] mt-0.5">{pct}% of portfolio</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {activeView === "finance" && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Card className="border-emerald-200 bg-emerald-50/50">
+            <CardContent className="p-3">
+              <div className="text-[10px] text-emerald-700 font-medium uppercase">Gross Profit (FY)</div>
+              <p className="text-xl font-bold text-emerald-800">{formatCurrencyCompact(kpis.grossProfitFy)}</p>
+              <p className="text-[10px] text-emerald-600">Margin: {kpis.grossMarginPctFy ?? "—"}%</p>
+            </CardContent>
+          </Card>
+          <Card className="border-blue-200 bg-blue-50/50">
+            <CardContent className="p-3">
+              <div className="text-[10px] text-blue-700 font-medium uppercase">Inflow Collection Rate</div>
+              <p className="text-xl font-bold text-blue-800">{kpis.plannedRevenueFy > 0 ? `${Math.round((kpis.receivedInflowFy / kpis.plannedRevenueFy) * 100)}%` : "—"}</p>
+              <p className="text-[10px] text-blue-600">{formatCurrencyCompact(kpis.receivedInflowFy)} of {formatCurrencyCompact(kpis.plannedRevenueFy)}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-orange-200 bg-orange-50/50">
+            <CardContent className="p-3">
+              <div className="text-[10px] text-orange-700 font-medium uppercase">Expenditure Paid Rate</div>
+              <p className="text-xl font-bold text-orange-800">{kpis.plannedExpenditureFy > 0 ? `${Math.round((kpis.paidExpenditureFy / kpis.plannedExpenditureFy) * 100)}%` : "—"}</p>
+              <p className="text-[10px] text-orange-600">{formatCurrencyCompact(kpis.paidExpenditureFy)} of {formatCurrencyCompact(kpis.plannedExpenditureFy)}</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {activeView === "construction" && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Card className="border-violet-200 bg-violet-50/50">
+            <CardContent className="p-3">
+              <div className="text-[10px] text-violet-700 font-medium uppercase">Engineering Status</div>
+              <div className="flex gap-3 mt-1">
+                <div><span className="text-lg font-bold text-red-600">{filteredProjects.filter((p) => p.engineeringStatus === "Blocked").length}</span><span className="text-[10px] text-muted-foreground ml-1">Blocked</span></div>
+                <div><span className="text-lg font-bold text-amber-600">{filteredProjects.filter((p) => p.engineeringStatus === "At Risk").length}</span><span className="text-[10px] text-muted-foreground ml-1">At Risk</span></div>
+                <div><span className="text-lg font-bold text-emerald-600">{filteredProjects.filter((p) => p.engineeringStatus === "On Track").length}</span><span className="text-[10px] text-muted-foreground ml-1">On Track</span></div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-amber-200 bg-amber-50/50">
+            <CardContent className="p-3">
+              <div className="text-[10px] text-amber-700 font-medium uppercase">Quality Status</div>
+              <div className="flex gap-3 mt-1">
+                <div><span className="text-lg font-bold text-red-600">{filteredProjects.filter((p) => p.qualityStatus === "Blocked").length}</span><span className="text-[10px] text-muted-foreground ml-1">Blocked</span></div>
+                <div><span className="text-lg font-bold text-amber-600">{filteredProjects.filter((p) => p.qualityStatus === "At Risk").length}</span><span className="text-[10px] text-muted-foreground ml-1">At Risk</span></div>
+                <div><span className="text-lg font-bold text-emerald-600">{filteredProjects.filter((p) => p.qualityStatus === "On Track").length}</span><span className="text-[10px] text-muted-foreground ml-1">On Track</span></div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-blue-200 bg-blue-50/50">
+            <CardContent className="p-3">
+              <div className="text-[10px] text-blue-700 font-medium uppercase">Total Open Issues</div>
+              <p className="text-xl font-bold text-blue-800">{kpis.openEngineeringBlockers + kpis.openQualityWarnings}</p>
+              <p className="text-[10px] text-blue-600">{kpis.openEngineeringBlockers} eng. + {kpis.openQualityWarnings} quality</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {activeView === "program" && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Card className="border-red-200 bg-red-50/50">
+            <CardContent className="p-3">
+              <div className="text-[10px] text-red-700 font-medium uppercase">Schedule Health</div>
+              <p className="text-xl font-bold text-red-800">{kpis.projectsBehindPlan} behind</p>
+              <p className="text-[10px] text-red-600">of {kpis.activeDashboardProjects} active projects</p>
+            </CardContent>
+          </Card>
+          <Card className="border-blue-200 bg-blue-50/50">
+            <CardContent className="p-3">
+              <div className="text-[10px] text-blue-700 font-medium uppercase">Avg. Progress</div>
+              <p className="text-xl font-bold text-blue-800">{kpis.averageActualProgressPct ?? "—"}%</p>
+              <p className="text-[10px] text-blue-600">Expected: {kpis.averageExpectedProgressPct ?? "—"}%</p>
+            </CardContent>
+          </Card>
+          <Card className="border-amber-200 bg-amber-50/50">
+            <CardContent className="p-3">
+              <div className="text-[10px] text-amber-700 font-medium uppercase">Pending Actions</div>
+              <p className="text-xl font-bold text-amber-800">{kpis.pendingApprovals + kpis.staleImports}</p>
+              <p className="text-[10px] text-amber-600">{kpis.pendingApprovals} approvals + {kpis.staleImports} stale imports</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <Card className="border-border/60">
         <CardContent className="p-4">
@@ -417,6 +571,11 @@ export default function ExecutionBoard() {
                     >
                       {queueIcon(queue)}
                       <span className="text-sm font-semibold flex-1">{queue}</span>
+                      {showMethodology && QUEUE_METHODOLOGY[queue] && (
+                        <span onClick={(e) => e.stopPropagation()}>
+                          <MetricTooltip methodology={QUEUE_METHODOLOGY[queue]} />
+                        </span>
+                      )}
                       <Badge variant="outline" className="text-[10px] font-medium">{rows.length} {rows.length === 1 ? "issue" : "issues"}</Badge>
                       {criticalCount > 0 && (
                         <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">{criticalCount} critical</Badge>
@@ -608,6 +767,41 @@ export default function ExecutionBoard() {
           </div>
         </CardContent>
       </Card>
+
+      {showMethodology && (
+        <Card className="border-border/60 bg-muted/20" data-testid="methodology-footer">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Database className="w-4 h-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold">Data Sources & Methodology</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+              <div className="space-y-1">
+                <p className="font-medium text-foreground">Financial Data</p>
+                <p className="text-muted-foreground">Revenue: <code className="bg-muted px-1 rounded text-[10px]">normalized_revenue_lines</code></p>
+                <p className="text-muted-foreground">Costs: <code className="bg-muted px-1 rounded text-[10px]">normalized_cost_lines</code></p>
+                <p className="text-muted-foreground">GP = (Planned Revenue - Planned Expenditure) / Planned Revenue</p>
+              </div>
+              <div className="space-y-1">
+                <p className="font-medium text-foreground">Progress & Schedule</p>
+                <p className="text-muted-foreground">Source: <code className="bg-muted px-1 rounded text-[10px]">normalized_plan_tasks</code></p>
+                <p className="text-muted-foreground">Method: Duration-weighted average of % complete</p>
+                <p className="text-muted-foreground">Behind = actual &lt; expected - 5%</p>
+              </div>
+              <div className="space-y-1">
+                <p className="font-medium text-foreground">Operational Data</p>
+                <p className="text-muted-foreground">Engineering: <code className="bg-muted px-1 rounded text-[10px]">operational_tasks</code></p>
+                <p className="text-muted-foreground">Quality: <code className="bg-muted px-1 rounded text-[10px]">qc_warning</code></p>
+                <p className="text-muted-foreground">Approvals: <code className="bg-muted px-1 rounded text-[10px]">approvals</code></p>
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-3 border-t pt-2">
+              Time range: Current Financial Year ({dashboard?.financialYear.start} to {dashboard?.financialYear.end}).
+              All financial figures are ex-VAT. Import freshness based on <code className="bg-muted px-1 rounded">smart_import_runs</code> upload timestamps.
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
