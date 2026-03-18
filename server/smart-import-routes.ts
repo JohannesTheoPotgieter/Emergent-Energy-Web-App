@@ -40,6 +40,9 @@ import {
   expenseTaskLinks,
   cosStatusOverrides,
   users,
+  importLogs,
+  manualEditFlags,
+  conflictResolutionLog,
 } from "@shared/schema";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
@@ -224,20 +227,13 @@ const upload = multer({
   }),
   limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowedMimes = [
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "application/vnd.ms-excel.sheet.macroEnabled.12",
-      "application/vnd.ms-excel",
-    ];
-    if (
-      allowedMimes.includes(file.mimetype) ||
-      file.originalname.endsWith(".xlsx") ||
-      file.originalname.endsWith(".xlsm") ||
-      file.originalname.endsWith(".xls")
-    ) {
+    const isXlsx =
+      file.mimetype === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+      file.originalname.toLowerCase().endsWith(".xlsx");
+    if (isXlsx) {
       cb(null, true);
     } else {
-      cb(new Error("Invalid file type. Only Excel files (.xlsx, .xlsm, .xls) are allowed."));
+      cb(new Error("Invalid file type. Only .xlsx files are accepted. Please convert your file to .xlsx format and try again."));
     }
   },
 });
@@ -282,9 +278,20 @@ router.get("/api/smart-import/runs", requireAuth, requirePermission("smart_impor
 
 // POST /api/smart-import/upload
 router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_import", "edit"), (req: Request, res: Response, next: NextFunction) => {
-  upload.single("file")(req, res, (err: any) => {
+  upload.single("file")(req, res, async (err: any) => {
     if (err) {
       const message = err.message || "File upload failed";
+      // Log rejected upload attempt
+      try {
+        const userId = (req as any).user?.id || null;
+        await db.insert(importLogs).values({
+          fileName: (req as any).file?.originalname || "unknown",
+          importedByUserId: userId,
+          importedByName: (req as any).user?.name || null,
+          status: "REJECTED",
+          errorMessage: message,
+        });
+      } catch (_) { /* non-blocking */ }
       return res.status(400).json({ error: message });
     }
     next();
@@ -1150,6 +1157,22 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         ));
       const changeSetCount = Number(manualEditChangeSets[0]?.count || 0);
 
+      // Also check manualEditFlags for broader field-level conflicts
+      const editFlags = await db.select().from(manualEditFlags)
+        .where(and(
+          eq(manualEditFlags.entityType, "program_expense"),
+          eq(manualEditFlags.isProtected, false),
+        ));
+
+      // Build a lookup of who edited what
+      const editFlagMap = new Map<string, { editedByName: string | null; editedAt: Date }>();
+      for (const ef of editFlags) {
+        editFlagMap.set(`${ef.entityId}::${ef.fieldName}`, {
+          editedByName: ef.editedByName,
+          editedAt: ef.editedAt,
+        });
+      }
+
       if (manuallyModifiedRows.length > 0) {
         const norm = (run.summaryJson as any)?.normalization;
         const importCostLines = norm?.costLines || [];
@@ -1161,21 +1184,33 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           field: string;
           currentValue: string;
           importValue: string;
+          editedByName?: string;
+          editedAt?: string;
         }> = [];
 
         for (const existing of manuallyModifiedRows) {
           const matchingImport = importCostLines.find((imp: any) => imp.sourceRow === existing.sourceRow);
+
+          // COS Realized: requires BOTH invoice number AND black font invoice date
+          // Non-black font = not confirmed = NOT realized
           if (existing.cosRealised) {
+            const importHasInvoice = matchingImport?.invoiceNumber && matchingImport.invoiceNumber.trim();
+            const importDateConfirmed = matchingImport?.invoiceDateConfirmed === true;
+            const importCos = importHasInvoice && importDateConfirmed;
+            const flagInfo = editFlagMap.get(`${existing.id}::invoiceDateConfirmed`);
             conflicts.push({
               sourceRow: existing.sourceRow || 0,
               description: existing.description || "",
               costCategory: existing.costCategory || "",
               field: "COS Realised",
               currentValue: "Yes (manually confirmed)",
-              importValue: matchingImport?.cosRealised ? "Yes" : "No",
+              importValue: importCos ? "Yes" : "No (invoice not black or missing)",
+              editedByName: flagInfo?.editedByName || undefined,
+              editedAt: flagInfo?.editedAt?.toISOString() || undefined,
             });
           }
           if (existing.invoiceDateConfirmed) {
+            const flagInfo = editFlagMap.get(`${existing.id}::invoiceDateConfirmed`);
             conflicts.push({
               sourceRow: existing.sourceRow || 0,
               description: existing.description || "",
@@ -1183,16 +1218,22 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               field: "Invoice Date Confirmed",
               currentValue: "Yes (manually confirmed)",
               importValue: matchingImport?.invoiceDateConfirmed ? "Yes" : "No",
+              editedByName: flagInfo?.editedByName || undefined,
+              editedAt: flagInfo?.editedAt?.toISOString() || undefined,
             });
           }
+          // Payment date: non-black = not happened yet
           if (existing.paidDateConfirmed) {
+            const flagInfo = editFlagMap.get(`${existing.id}::paidDateConfirmed`);
             conflicts.push({
               sourceRow: existing.sourceRow || 0,
               description: existing.description || "",
               costCategory: existing.costCategory || "",
               field: "Paid Date Confirmed",
-              currentValue: "Yes (manually confirmed)",
-              importValue: matchingImport?.paidDateConfirmed ? "Yes" : "No",
+              currentValue: "Yes (manually confirmed — payment received)",
+              importValue: matchingImport?.paidDateConfirmed ? "Yes" : "No (not black — payment not received)",
+              editedByName: flagInfo?.editedByName || undefined,
+              editedAt: flagInfo?.editedAt?.toISOString() || undefined,
             });
           }
           if (existing.noRevenueLinked) {
@@ -1206,6 +1247,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             });
           }
           if (existing.cashflowConfirmed) {
+            const flagInfo = editFlagMap.get(`${existing.id}::cashflowConfirmed`);
             conflicts.push({
               sourceRow: existing.sourceRow || 0,
               description: existing.description || "",
@@ -1213,6 +1255,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               field: "Cashflow Confirmed",
               currentValue: "Yes (manually confirmed)",
               importValue: matchingImport?.cashflowConfirmed ? "Yes" : "No",
+              editedByName: flagInfo?.editedByName || undefined,
+              editedAt: flagInfo?.editedAt?.toISOString() || undefined,
             });
           }
         }
@@ -1223,7 +1267,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           manualEditCount: manuallyModifiedRows.length,
           changeSetCount,
           conflicts,
-          hint: "Choose 'preserveManualEdits' to keep your manual changes, or 'acknowledgeManualEdits' to overwrite them with the imported data.",
+          hint: "Resolve each conflict individually: 'keep' to preserve your manual edit, 'import' to overwrite with Excel data.",
         });
       }
     }
@@ -2111,6 +2155,53 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       console.warn("[smart-import] Audit logging failed (non-blocking):", auditErr.message);
     }
 
+    // Step 4.5: Log conflict resolution decisions and manage protected fields
+    if (hasConflictResolutions && conflictResolutions) {
+      try {
+        for (const [key, decision] of Object.entries(conflictResolutions)) {
+          const [sourceRowStr, fieldLabel] = key.split("::");
+          const sourceRow = parseInt(sourceRowStr);
+          if (isNaN(sourceRow)) continue;
+
+          await db.insert(conflictResolutionLog).values({
+            importRunId: runId,
+            entityType: "normalized_cost_line",
+            entityId: `${projectName || ''}|row${sourceRow}`,
+            fieldName: fieldLabel || "unknown",
+            manualValue: decision === "keep" ? "preserved" : null,
+            importValue: decision === "import" ? "applied" : null,
+            decision: decision === "keep" ? "KEEP_MANUAL" : "OVERWRITE_WITH_IMPORT",
+            decidedByUserId: userId,
+            decidedByName: (req as any).user?.name || null,
+          });
+
+          // Manage manual edit flags based on decision
+          if (decision === "keep") {
+            // Mark field as protected — future imports must resolve conflict again
+            await db.update(manualEditFlags)
+              .set({
+                isProtected: true,
+                protectedAt: new Date(),
+                protectedByUserId: userId,
+              })
+              .where(and(
+                eq(manualEditFlags.entityType, "program_expense"),
+                eq(manualEditFlags.fieldName, fieldLabel || ""),
+              ));
+          } else {
+            // Clear the manual edit flag — field returns to normal import behaviour
+            await db.delete(manualEditFlags)
+              .where(and(
+                eq(manualEditFlags.entityType, "program_expense"),
+                eq(manualEditFlags.fieldName, fieldLabel || ""),
+              ));
+          }
+        }
+      } catch (resLogErr: any) {
+        console.warn("[smart-import] Conflict resolution logging failed (non-blocking):", resLogErr.message);
+      }
+    }
+
     logAuditFromReq(req, {
       entityType: "smart_import",
       entityId: String(runId),
@@ -2120,15 +2211,72 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       changesJson: { counts, preservedOverrides: skippedOverrideFields.length, preservedManualEdits: preservedManualEditsCount },
     });
 
+    // Build complete import summary
+    const totalAttempted = (norm.planTasks?.length || 0) + (norm.revenueLines?.length || 0) + (norm.costLines?.length || 0) + (norm.executionPhases?.length || 0);
+    const totalWritten = (counts.planTasks || 0) + (counts.revenueLines || 0) + (counts.costLines || 0) + (counts.executionPhases || 0);
+    const totalSkipped = totalAttempted - totalWritten;
+
+    const importSummary = {
+      fileName: run.sourceFileName || run.originalFileName || "unknown",
+      timestamp: new Date().toISOString(),
+      rowsWritten: totalWritten,
+      rowsSkipped: totalSkipped,
+      conflictsDetected: skippedOverrideFields.length,
+      conflictsResolved: hasConflictResolutions ? Object.keys(conflictResolutions!).length : 0,
+      counts,
+    };
+
+    // Write structured import log (Step 3.3)
+    try {
+      await db.insert(importLogs).values({
+        importRunId: runId,
+        fileName: importSummary.fileName,
+        importedByUserId: userId,
+        importedByName: (req as any).user?.name || null,
+        projectName: projectName || null,
+        status: totalWritten > 0 ? (totalSkipped > 0 ? "PARTIAL" : "SUCCESS") : "FAILED",
+        rowsAttempted: totalAttempted,
+        rowsWritten: totalWritten,
+        rowsSkipped: totalSkipped,
+        rowsRejected: 0,
+        conflictsDetected: skippedOverrideFields.length,
+        conflictsResolved: importSummary.conflictsResolved,
+        summaryJson: importSummary as any,
+      });
+    } catch (logErr: any) {
+      console.warn("[smart-import] Import log write failed (non-blocking):", logErr.message);
+    }
+
     res.json({
       success: true,
       runId,
+      summary: importSummary,
       counts,
       preservedOverrides: skippedOverrideFields.length > 0 ? skippedOverrideFields : undefined,
       preservedManualEdits: preservedManualEditsCount > 0 ? preservedManualEditsCount : undefined,
     });
   } catch (err: any) {
     console.error("[smart-import] POST commit error:", err);
+
+    // Log failed import attempt
+    try {
+      const userId = (req as any).user?.id || null;
+      const runId = parseInt(req.params.runId as string);
+      if (!isNaN(runId)) {
+        const [failedRun] = await db.select({ fileName: smartImportRuns.sourceFileName, projectName: smartImportRuns.projectName })
+          .from(smartImportRuns).where(eq(smartImportRuns.id, runId)).limit(1);
+        await db.insert(importLogs).values({
+          importRunId: runId,
+          fileName: failedRun?.fileName || "unknown",
+          importedByUserId: userId,
+          importedByName: (req as any).user?.name || null,
+          projectName: failedRun?.projectName || null,
+          status: "FAILED",
+          errorMessage: err.message,
+        });
+      }
+    } catch (_) { /* non-blocking */ }
+
     res.status(500).json({ error: err.message });
   }
 });
