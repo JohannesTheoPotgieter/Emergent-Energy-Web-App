@@ -147,8 +147,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen ee-shell">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:text-sm focus:font-medium">Skip to content</a>
-      <header className="sticky top-0 z-50 border-b border-border/80 bg-background/92 backdrop-blur-xl shadow-[var(--shadow-xs)]">
-        <div className="px-4 lg:px-6 py-3 flex items-center gap-2.5">
+      <header className="sticky top-0 z-50 border-b border-border/60 bg-background/95 backdrop-blur-lg">
+        <div className="px-4 lg:px-6 py-2.5 flex items-center gap-3">
           <Sheet>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="lg:hidden"><Menu className="h-5 w-5" /></Button>
@@ -179,21 +179,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </SheetContent>
           </Sheet>
 
-          <Link href="/" className="flex items-center gap-3 min-w-fit">
+          <Link href="/" className="flex items-center gap-2.5 min-w-fit">
             <img src="/emergent-logo.png" alt="Emergent Energy" className="h-7 w-auto object-contain" />
-            <div className="hidden lg:block min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Operating Workspace</p>
-            </div>
           </Link>
 
-          <div className="relative flex-1 max-w-2xl" ref={searchContainerRef}>
-            <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60" />
+          <div className="relative flex-1 max-w-xl" ref={searchContainerRef}>
+            <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
             <Input
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Escape") setSearchTerm(""); }}
-              placeholder="Search projects, work items, finance, documents, people"
-              className={cn("pl-9 border-input focus-visible:ring-ring/30", searchTerm && "pr-8")}
+              placeholder="Search..."
+              className={cn("pl-9 h-9 bg-muted/40 border-transparent hover:border-border focus-visible:border-border focus-visible:bg-background focus-visible:ring-ring/20 transition-colors", searchTerm && "pr-8 bg-background border-border")}
             />
             {searchTerm && (
               <button
@@ -206,9 +203,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </button>
             )}
             {searchTerm.trim().length >= 2 && (
-              <div className="absolute left-0 right-0 top-[calc(100%+4px)] rounded-2xl border border-border/80 bg-background/98 shadow-[var(--shadow-md)] p-2 max-h-96 overflow-auto" role="listbox" aria-live="polite">
+              <div className="absolute left-0 right-0 top-[calc(100%+4px)] rounded-lg border border-border/80 bg-background shadow-[var(--shadow-md)] p-1.5 max-h-96 overflow-auto" role="listbox" aria-live="polite">
                 {loadingSearch ? (
-                  <p className="text-xs text-muted-foreground p-2">Searching across projects, work items, and finance…</p>
+                  <p className="text-xs text-muted-foreground p-2">Searching…</p>
                 ) : searchError ? (
                   <div className="p-2 space-y-2">
                     <p className="text-xs text-red-700">{searchError}</p>
@@ -297,7 +294,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </DropdownMenu>
         </div>
 
-        <nav className="hidden lg:flex px-6 py-1.5 gap-1 border-t border-border/70 bg-background/72 overflow-x-auto">
+        <nav className="hidden lg:flex px-6 py-1 gap-0.5 border-t border-border/50 overflow-x-auto">
           {visibleSections.map((section) => {
             const active = section.label === activeSection.label;
             return (
@@ -305,18 +302,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 key={section.label}
                 href={section.path}
                 className={cn(
-                  "rounded-full px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors",
-                  active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-background hover:text-foreground",
+                  "relative px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors rounded-md",
+                  active ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
                 )}
               >
                 {section.label}
+                {active && <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-primary rounded-full" />}
               </Link>
             );
           })}
         </nav>
 
         {(breadcrumbs.length > 0 || activeSection.secondary.length > 0) && (
-          <div className="px-4 lg:px-6 border-t border-border/70 bg-muted/30">
+          <div className="px-4 lg:px-6 border-t border-border/40 bg-muted/20">
             {breadcrumbs.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 py-1.5 text-xs text-muted-foreground">
                 <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
