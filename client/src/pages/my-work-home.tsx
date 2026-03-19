@@ -98,7 +98,6 @@ const SOURCE_BADGE_COLORS: Record<string, string> = {
   deliverable: "bg-pink-50 text-pink-700 border-pink-200",
   tr_register: "bg-purple-50 text-purple-700 border-purple-200",
   ms365: "bg-indigo-50 text-indigo-700 border-indigo-200",
-  notification: "bg-blue-50 text-blue-700 border-blue-200",
 };
 
 function authHeaders() {
@@ -146,7 +145,6 @@ const SOURCE_FILTERS = [
   { key: "quality", label: "Quality" },
   { key: "approval", label: "Approvals" },
   { key: "deliverable", label: "Deliverables" },
-  { key: "notification", label: "Notifications" },
   { key: "ms365", label: "MS 365" },
   { key: "tr_register", label: "Action Items" },
 ];
@@ -262,18 +260,6 @@ export default function MyWorkHomePage() {
     },
   });
 
-  const { data: unreadNotifs = { items: [], total: 0 } } = useQuery<{ items: any[]; total: number }>({
-    queryKey: ["/api/notifications", "unread"],
-    queryFn: async () => {
-      const res = await fetch("/api/notifications?unreadOnly=true&limit=20", {
-        credentials: "include",
-        headers: authHeaders(),
-      });
-      if (!res.ok) return { items: [], total: 0 };
-      return res.json();
-    },
-  });
-
   const microsoftItems = useMemo<MsObject[]>(() => {
     if (Array.isArray(allTaskData?.microsoftItems) && allTaskData.microsoftItems.length > 0) {
       return allTaskData.microsoftItems;
@@ -293,7 +279,7 @@ export default function MyWorkHomePage() {
     id: string;
     title: string;
     subtitle?: string;
-    source: "approval" | "deliverable" | "notification" | "tr_register" | "ms_object";
+    source: "approval" | "deliverable" | "tr_register" | "ms_object";
     sourceLabel: string;
     sourceColor: string;
     projectName?: string;
@@ -385,20 +371,6 @@ export default function MyWorkHomePage() {
       }
     }
 
-    for (const n of (unreadNotifs.items || [])) {
-      items.push(withActionSource({
-        id: `notif-${n.id}`,
-        title: n.title,
-        subtitle: n.body || n.projectName || "",
-        source: "notification",
-        sourceLabel: "Notification",
-        sourceColor: "bg-blue-50 text-blue-700 border-blue-200",
-        projectName: n.projectName || n.project_name,
-        link: n.link || n.href || n.sourceLink || undefined,
-        createdAt: n.createdAt || n.created_at,
-      }, n));
-    }
-
     for (const item of microsoftItems) {
       items.push(withActionSource({
         id: `ms-${item.id}`,
@@ -415,7 +387,7 @@ export default function MyWorkHomePage() {
 
     items.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
     return items;
-  }, [allTaskData, microsoftItems, unreadNotifs]);
+  }, [allTaskData, microsoftItems]);
 
   const actionsLoading = allTasksLoading || (!Array.isArray(allTaskData?.microsoftItems) && msActionsLoading);
 
@@ -655,28 +627,8 @@ export default function MyWorkHomePage() {
       }, item));
     }
 
-    for (const n of (unreadNotifs.items || [])) {
-      const key = `notif-${n.id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      items.push(withTaskSource({
-        id: `notif-${n.id}`,
-        title: n.title || "",
-        status: "unread",
-        priority: "normal",
-        plannedForDate: null,
-        dueAt: n.createdAt || n.created_at || null,
-        sortOrder: 999,
-        projectName: n.projectName || n.project_name || null,
-        department: null,
-        source: "notification",
-        sourceLabel: "Notification",
-        link: n.link || n.href || n.sourceLink || undefined,
-      }, n));
-    }
-
     return items;
-  }, [allTaskData, microsoftItems, unreadNotifs]);
+  }, [allTaskData, microsoftItems]);
 
   const tasksLoading = allTasksLoading;
   const openTarget = (href?: string | null, fallback?: string) => {
@@ -809,7 +761,6 @@ export default function MyWorkHomePage() {
                     onClick={() => {
                       queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
                       queryClient.invalidateQueries({ queryKey: ["/api/ms-objects/mine"] });
-                      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
                       toast({ title: "Refreshing tasks...", description: "Fetching latest task data." });
                     }}
                     data-testid="button-refresh-tasks"
@@ -1187,7 +1138,7 @@ export default function MyWorkHomePage() {
                   {actionItems.length}
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground">Items waiting on your response from approvals, notifications, and Microsoft tools.</p>
+              <p className="text-xs text-muted-foreground">Items waiting on your response from approvals and Microsoft tools.</p>
             </CardHeader>
             <CardContent className="pt-0">
               {actionsLoading ? (

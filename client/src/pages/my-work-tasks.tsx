@@ -35,7 +35,7 @@ import { useLocation } from "wouter";
 
 type SortField = "priority" | "dueDate" | "createdAt" | "status" | "smart";
 type SortDirection = "asc" | "desc";
-type SourceFilter = "all" | "personal" | "operational" | "plan" | "engineering_task" | "quality_task" | "approvals" | "tr_register" | "deliverables" | "notifications" | "microsoft" | "tracking";
+type SourceFilter = "all" | "personal" | "operational" | "plan" | "engineering_task" | "quality_task" | "approvals" | "tr_register" | "deliverables" | "microsoft" | "tracking";
 type TrackingRole = "assignee" | "creator" | "both" | "viewer" | "admin_overview";
 type ViewMode = "list" | "board";
 
@@ -135,7 +135,6 @@ const SOURCE_CONFIG: Record<SourceFilter, { label: string; shortLabel: string; i
   tr_register: { label: "Actions", shortLabel: "Actions", icon: BookOpen, color: "text-purple-600", bgColor: "bg-purple-50 border-purple-200", dot: "bg-purple-500" },
   tracking: { label: "Tracking", shortLabel: "Tracking", icon: Eye, color: "text-teal-600", bgColor: "bg-teal-50 border-teal-200", dot: "bg-teal-500" },
   deliverables: { label: "Deliverables", shortLabel: "Deliver", icon: FileCheck, color: "text-rose-600", bgColor: "bg-rose-50 border-rose-200", dot: "bg-rose-500" },
-  notifications: { label: "Notifications", shortLabel: "Notifs", icon: AlertTriangle, color: "text-orange-600", bgColor: "bg-orange-50 border-orange-200", dot: "bg-orange-500" },
   microsoft: { label: "Microsoft", shortLabel: "MS", icon: Link2, color: "text-indigo-600", bgColor: "bg-indigo-50 border-indigo-200", dot: "bg-indigo-500" },
 };
 

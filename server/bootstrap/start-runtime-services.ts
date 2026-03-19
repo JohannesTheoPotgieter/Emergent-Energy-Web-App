@@ -1,6 +1,5 @@
 import { runBackfill } from "../lib/backfill";
 import { startScheduler } from "../importPipeline";
-import { startMilestoneChecker } from "../milestone-notifications";
 
 export async function startRuntimeServices(options: {
   startupBackfillEnabled: boolean;
@@ -17,9 +16,6 @@ export async function startRuntimeServices(options: {
 
   startScheduler();
   started.push("import-scheduler");
-
-  startMilestoneChecker();
-  started.push("milestone-checker");
 
   const { startPeriodicSync } = await import("../ms-sync-service");
   if (startupSyncEnabled) {
