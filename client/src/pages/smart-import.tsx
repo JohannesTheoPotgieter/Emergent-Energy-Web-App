@@ -802,6 +802,13 @@ const FIELD_LABELS: Record<string, string> = {
   budget_rate: "Budget Rate", budget_total: "Budget Total", actual_total: "Actual Total", po_number: "PO #",
   approved_date: "Approved Date", payment_date: "Payment Date", forecast_payment_date: "Forecast Payment",
   budget_cos: "Budget COS", actual_cos: "Actual COS",
+  // camelCase keys from normalized data objects
+  budgetQty: "Budget Qty", budgetRate: "Budget Rate", budgetTotal: "Budget Total", budgetCos: "Budget COS",
+  actualCos: "Actual COS", revenueRecognitionAmount: "Revenue Recognition", forecastPaymentDate: "Forecast Payment",
+  subProjectName: "Sub-Project", amountExVat: "Amount (ex VAT)", costCategory: "Cost Category",
+  counterpartyName: "Counterparty", invoiceNumber: "Invoice #", invoiceDate: "Invoice Date",
+  poNumber: "PO #", paidDate: "Paid Date", taskName: "Task Name", taskNo: "Task #",
+  milestoneName: "Milestone", expectedPaymentDate: "Expected Payment",
 };
 
 const DB_TABLE_MAP: Record<string, string> = {
@@ -1062,11 +1069,14 @@ function ColumnMappingStep({
                             <thead>
                               <tr className="bg-blue-50 border-b">
                                 <th className="text-left px-2 py-1.5 text-[10px] font-semibold text-blue-600 uppercase">Row</th>
-                                {Object.keys(previewData[0] || {}).filter(k => !["sourceSheet", "sourceRow"].includes(k)).slice(0, 8).map(key => (
-                                  <th key={key} className="text-left px-2 py-1.5 text-[10px] font-semibold text-blue-600 uppercase whitespace-nowrap">
-                                    {FIELD_LABELS[key] || key.replace(/([A-Z])/g, " $1").trim()}
-                                  </th>
-                                ))}
+                                {Object.keys(previewData[0] || {}).filter(k => !["sourceSheet", "sourceRow"].includes(k)).slice(0, 10).map(key => {
+                                  const isBudgetCol = key.startsWith("budget") || key === "forecastPaymentDate";
+                                  return (
+                                    <th key={key} className={`text-left px-2 py-1.5 text-[10px] font-semibold uppercase whitespace-nowrap ${isBudgetCol ? "bg-slate-100 text-slate-500" : "text-blue-600"}`}>
+                                      {FIELD_LABELS[key] || key.replace(/([A-Z])/g, " $1").trim()}
+                                    </th>
+                                  );
+                                })}
                               </tr>
                             </thead>
                             <tbody>
@@ -1076,8 +1086,10 @@ function ColumnMappingStep({
                                 return (
                                 <tr key={idx} className={`border-b border-border ${isMs ? "bg-amber-50/60 font-semibold" : "hover:bg-muted/50"}`}>
                                   <td className="px-2 py-1 text-slate-500">{row.sourceRow || idx + 1}</td>
-                                  {Object.entries(row).filter(([k]) => !["sourceSheet", "sourceRow", "isMilestone", "parentTaskNo", "indentLevel"].includes(k)).slice(0, 8).map(([key, val]) => (
-                                    <td key={key} className="px-2 py-1 max-w-[120px] truncate" title={String(val ?? "")}>
+                                  {Object.entries(row).filter(([k]) => !["sourceSheet", "sourceRow", "isMilestone", "parentTaskNo", "indentLevel"].includes(k)).slice(0, 10).map(([key, val]) => {
+                                    const isBudgetCell = key.startsWith("budget") || key === "forecastPaymentDate";
+                                    return (
+                                    <td key={key} className={`px-2 py-1 max-w-[120px] truncate ${isBudgetCell ? "bg-slate-50 text-slate-500" : ""}`} title={String(val ?? "")}>
                                       {key === "taskName" && indent > 0 ? (
                                         <span style={{ paddingLeft: `${indent * 12}px` }}>{isMs ? "◆ " : ""}{val != null ? String(val) : <span className="text-slate-600">—</span>}</span>
                                       ) : key === "taskName" && isMs ? (
@@ -1086,7 +1098,8 @@ function ColumnMappingStep({
                                         val != null ? String(val) : <span className="text-slate-600">—</span>
                                       )}
                                     </td>
-                                  ))}
+                                    );
+                                  })}
                                 </tr>
                                 );
                               })}
@@ -2439,6 +2452,85 @@ function PreviewCommitStep({
           </div>
         </CardContent>
       </Card>
+
+      {/* Budget vs Actual summary card */}
+      {normalization.costedSummary && (
+        <Card className="bg-card rounded-xl shadow-sm" data-testid="budget-actual-summary">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold mb-3">Costed Summary</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              {[
+                { label: "Revenue", planned: normalization.costedSummary.plannedRevenue, actual: normalization.costedSummary.actualRevenue },
+                { label: "Expenditure", planned: normalization.costedSummary.plannedExpenditure, actual: normalization.costedSummary.actualExpenditure },
+                { label: "Profit", planned: normalization.costedSummary.plannedProfit, actual: normalization.costedSummary.actualProfit },
+                { label: "Margin", planned: normalization.costedSummary.plannedMargin, actual: normalization.costedSummary.actualMargin },
+              ].map(({ label, planned, actual }) => {
+                const isMargin = label === "Margin";
+                const fmt = (v: number | null) => {
+                  if (v == null) return "—";
+                  return isMargin ? `${(v * 100).toFixed(1)}%` : `R ${Number(v).toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+                };
+                const variance = planned != null && actual != null ? actual - planned : null;
+                return (
+                  <div key={label} className="border rounded-lg p-2.5">
+                    <div className="font-medium text-muted-foreground mb-1">{label}</div>
+                    <div className="flex justify-between items-baseline">
+                      <div>
+                        <div className="text-[10px] text-slate-400">Budget</div>
+                        <div className="font-semibold text-slate-600 bg-slate-50 px-1 rounded">{fmt(planned)}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] text-slate-400">Actual</div>
+                        <div className="font-semibold">{fmt(actual)}</div>
+                      </div>
+                    </div>
+                    {variance != null && !isMargin && (
+                      <div className={`text-[10px] mt-1 text-right ${variance >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                        {variance >= 0 ? "+" : ""}{fmt(variance)} variance
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Budget line totals vs actual totals */}
+      {costRows.length > 0 && costRows.some((r: any) => r.budgetTotal) && (
+        <Card className="bg-card rounded-xl shadow-sm" data-testid="budget-line-summary">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold mb-2">Expenditure: Budget vs Actual</p>
+            <div className="grid grid-cols-3 gap-3 text-xs">
+              {(() => {
+                const totalBudget = costRows.reduce((s: number, r: any) => s + (parseFloat(r.budgetTotal) || 0), 0);
+                const totalActual = costRows.reduce((s: number, r: any) => s + (parseFloat(r.amountExVat) || 0), 0);
+                const variance = totalActual - totalBudget;
+                const fmt = (v: number) => `R ${v.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+                return (
+                  <>
+                    <div className="bg-slate-50 rounded-lg p-2.5 text-center">
+                      <div className="text-[10px] text-slate-400">Total Budget</div>
+                      <div className="font-bold text-slate-600">{fmt(totalBudget)}</div>
+                    </div>
+                    <div className="bg-muted rounded-lg p-2.5 text-center">
+                      <div className="text-[10px] text-slate-400">Total Actual</div>
+                      <div className="font-bold">{fmt(totalActual)}</div>
+                    </div>
+                    <div className={`rounded-lg p-2.5 text-center ${variance >= 0 ? "bg-red-50" : "bg-emerald-50"}`}>
+                      <div className="text-[10px] text-slate-400">Variance</div>
+                      <div className={`font-bold ${variance >= 0 ? "text-red-600" : "text-emerald-600"}`}>
+                        {variance >= 0 ? "+" : ""}{fmt(variance)}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {planRows.length > 0 && (
         <Card className="bg-card rounded-xl shadow-sm">

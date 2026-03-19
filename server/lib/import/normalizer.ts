@@ -85,6 +85,10 @@ export interface NormalizationResult {
     plannedExpenditure: number | null;
     plannedProfit: number | null;
     plannedMargin: number | null;
+    actualRevenue: number | null;
+    actualExpenditure: number | null;
+    actualProfit: number | null;
+    actualMargin: number | null;
   } | null;
   issues: Array<{
     severity: "INFO" | "WARNING" | "BLOCKER";
@@ -112,6 +116,10 @@ function extractCostedSummary(
   let plannedExpenditure: number | null = null;
   let plannedProfit: number | null = null;
   let plannedMargin: number | null = null;
+  let actualRevenue: number | null = null;
+  let actualExpenditure: number | null = null;
+  let actualProfit: number | null = null;
+  let actualMargin: number | null = null;
 
   const scanEnd = Math.min(headerRowIndex, data.length);
   for (let i = 0; i < scanEnd; i++) {
@@ -122,16 +130,23 @@ function extractCostedSummary(
       const cellVal = String(row[c] || "").toLowerCase().trim();
       if (!cellVal) continue;
 
+      // Planned/costed value: first numeric value after the label (column D)
       const valueCol = findNumericValueInRow(row, c + 1);
+      // Actual value: look further right (column F, typically c+3 or c+4)
+      const actualCol = findNumericValueInRow(row, c + 3);
 
-      if (cellVal.includes("planned revenue") || (cellVal.includes("planned") && cellVal.includes("revenue"))) {
+      if (cellVal.includes("planned revenue") || (cellVal.includes("planned") && cellVal.includes("revenue")) || cellVal === "revenue") {
         if (valueCol !== null) plannedRevenue = valueCol;
-      } else if (cellVal.includes("planned expenditure") || (cellVal.includes("planned") && cellVal.includes("expend"))) {
+        if (actualCol !== null) actualRevenue = actualCol;
+      } else if (cellVal.includes("planned expenditure") || (cellVal.includes("planned") && cellVal.includes("expend")) || cellVal === "expenditure") {
         if (valueCol !== null) plannedExpenditure = valueCol;
-      } else if (cellVal.includes("planned profit") || (cellVal.includes("planned") && cellVal.includes("profit"))) {
+        if (actualCol !== null) actualExpenditure = actualCol;
+      } else if (cellVal.includes("planned profit") || (cellVal.includes("planned") && cellVal.includes("profit")) || cellVal === "profit") {
         if (valueCol !== null) plannedProfit = valueCol;
-      } else if (cellVal.includes("planned margin") || (cellVal.includes("planned") && cellVal.includes("margin"))) {
+        if (actualCol !== null) actualProfit = actualCol;
+      } else if (cellVal.includes("planned margin") || (cellVal.includes("planned") && cellVal.includes("margin")) || cellVal === "margin") {
         if (valueCol !== null) plannedMargin = valueCol;
+        if (actualCol !== null) actualMargin = actualCol;
       }
     }
   }
@@ -147,7 +162,16 @@ function extractCostedSummary(
     }
   }
 
-  return { plannedRevenue, plannedExpenditure, plannedProfit, plannedMargin };
+  if (actualRevenue !== null && actualExpenditure !== null) {
+    if (actualProfit === null) {
+      actualProfit = actualRevenue - actualExpenditure;
+    }
+    if (actualMargin === null && actualRevenue > 0) {
+      actualMargin = (actualRevenue - actualExpenditure) / actualRevenue;
+    }
+  }
+
+  return { plannedRevenue, plannedExpenditure, plannedProfit, plannedMargin, actualRevenue, actualExpenditure, actualProfit, actualMargin };
 }
 
 function findNumericValueInRow(row: any[], startCol: number): number | null {
