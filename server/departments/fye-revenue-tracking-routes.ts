@@ -529,7 +529,7 @@ router.post(
           .where(eq(projectInfo.projectName, data.projectName))
           .limit(1);
 
-        await db.run(sql`INSERT INTO fye_budgets (project_id, project_name, fye, month_key, budget_type, amount, updated_by, created_at, updated_at)
+        await db.execute(sql`INSERT INTO fye_budgets (project_id, project_name, fye, month_key, budget_type, amount, updated_by, created_at, updated_at)
           VALUES (${proj?.id || null}, ${data.projectName}, ${data.fye}, ${data.monthKey}, ${data.budgetType}, ${String(data.amount)}, ${userId || null}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
       }
 
@@ -597,7 +597,7 @@ router.post(
       const data = pipelineSchema.parse(req.body);
       const userId = (req as any).user?.id;
 
-      await db.run(sql`INSERT INTO forecast_pipeline (fye_year, project_name, project_developer, location, size_kwp, deal_probability_pct, forecast_signature_date, solar_revenue, bess_revenue, forecast_gp_pct, notes, status, created_by, updated_by, created_at, updated_at)
+      await db.execute(sql`INSERT INTO forecast_pipeline (fye_year, project_name, project_developer, location, size_kwp, deal_probability_pct, forecast_signature_date, solar_revenue, bess_revenue, forecast_gp_pct, notes, status, created_by, updated_by, created_at, updated_at)
         VALUES (${data.fyeYear || getCurrentFye()}, ${data.projectName}, ${data.projectDeveloper || null}, ${data.location || null}, ${data.sizeKwp != null ? String(data.sizeKwp) : null}, ${data.dealProbabilityPct}, ${data.forecastSignatureDate || null}, ${data.solarRevenue != null ? String(data.solarRevenue) : "0"}, ${data.bessRevenue != null ? String(data.bessRevenue) : "0"}, ${data.forecastGpPct != null ? String(data.forecastGpPct) : null}, ${data.notes || null}, 'active', ${userId || null}, ${userId || null}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
 
       const [row] = await db.select({ id: forecastPipeline.id, projectName: forecastPipeline.projectName }).from(forecastPipeline).orderBy(desc(forecastPipeline.id)).limit(1);
@@ -701,7 +701,7 @@ router.post(
       const data = lostDealSchema.parse(req.body);
       const userId = (req as any).user?.id;
 
-      await db.run(sql`INSERT INTO lost_deals (fye_year, deal_name, deal_value, business_developer, lost_reason, lost_date, notes, created_by, updated_by, created_at, updated_at)
+      await db.execute(sql`INSERT INTO lost_deals (fye_year, deal_name, deal_value, business_developer, lost_reason, lost_date, notes, created_by, updated_by, created_at, updated_at)
         VALUES (${data.fyeYear || getCurrentFye()}, ${data.dealName}, ${data.dealValue != null ? String(data.dealValue) : null}, ${data.businessDeveloper || null}, ${data.lostReason || null}, ${data.lostDate || null}, ${data.notes || null}, ${userId || null}, ${userId || null}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
 
       const [row] = await db.select({ id: lostDeals.id, dealName: lostDeals.dealName }).from(lostDeals).orderBy(desc(lostDeals.id)).limit(1);
@@ -964,7 +964,7 @@ router.post(
 
       const snapshotData = await collectSnapshotData(fye);
 
-      await db.run(sql`INSERT INTO fye_report_snapshots (fye_year, snapshot_month, snapshot_date, snapshot_label, status, snapshot_data, notes, created_by, created_at)
+      await db.execute(sql`INSERT INTO fye_report_snapshots (fye_year, snapshot_month, snapshot_date, snapshot_label, status, snapshot_data, notes, created_by, created_at)
         VALUES (${fye}, ${snapshotMonth}, ${now.toISOString().slice(0, 10)}, ${data.snapshotLabel}, 'draft', ${JSON.stringify(snapshotData)}, ${data.notes || null}, ${userId || null}, CURRENT_TIMESTAMP)`);
 
       // Get the inserted row id
@@ -1033,7 +1033,7 @@ router.put(
       if (!row) return res.status(404).json({ error: "Snapshot not found" });
       if (row.status !== "draft") return res.status(400).json({ error: "Only draft snapshots can be submitted" });
 
-      await db.run(sql`UPDATE fye_report_snapshots SET status = 'submitted', submitted_by = ${userId || null}, submitted_at = CURRENT_TIMESTAMP WHERE id = ${id}`);
+      await db.execute(sql`UPDATE fye_report_snapshots SET status = 'submitted', submitted_by = ${userId || null}, submitted_at = CURRENT_TIMESTAMP WHERE id = ${id}`);
       res.json({ ok: true, status: "submitted" });
     } catch (error: any) {
       res.status(400).json({ error: "Failed to submit snapshot", message: error?.message });
@@ -1053,7 +1053,7 @@ router.put(
       if (!row) return res.status(404).json({ error: "Snapshot not found" });
       if (row.status !== "submitted") return res.status(400).json({ error: "Only submitted snapshots can be approved" });
 
-      await db.run(sql`UPDATE fye_report_snapshots SET status = 'approved', approved_by = ${userId || null}, approved_at = CURRENT_TIMESTAMP WHERE id = ${id}`);
+      await db.execute(sql`UPDATE fye_report_snapshots SET status = 'approved', approved_by = ${userId || null}, approved_at = CURRENT_TIMESTAMP WHERE id = ${id}`);
       res.json({ ok: true, status: "approved" });
     } catch (error: any) {
       res.status(400).json({ error: "Failed to approve snapshot", message: error?.message });
@@ -1229,7 +1229,7 @@ async function seedFyeData() {
         [2026,"Unitrans Brackenfell","Cole Bisset","Cape Town","188",95,"2025-12-10","1900000","3700000",null],
       ];
       for (const d of pipelineDeals) {
-        await db.run(sql`INSERT INTO forecast_pipeline (fye_year, project_name, project_developer, location, size_kwp, deal_probability_pct, forecast_signature_date, solar_revenue, bess_revenue, forecast_gp_pct, status, created_at, updated_at)
+        await db.execute(sql`INSERT INTO forecast_pipeline (fye_year, project_name, project_developer, location, size_kwp, deal_probability_pct, forecast_signature_date, solar_revenue, bess_revenue, forecast_gp_pct, status, created_at, updated_at)
           VALUES (${d[0]}, ${d[1]}, ${d[2]}, ${d[3]}, ${d[4]}, ${d[5]}, ${d[6]}, ${d[7]}, ${d[8]}, ${d[9]}, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
       }
       console.log("[FYE Seed] Inserted 15 pipeline deals");
@@ -1251,7 +1251,7 @@ async function seedFyeData() {
         [2026,"Neulux Park deal","1968450","Gordon Upton","Lost to someone else"],
       ];
       for (const d of lostDealData) {
-        await db.run(sql`INSERT INTO lost_deals (fye_year, deal_name, deal_value, business_developer, lost_reason, created_at, updated_at)
+        await db.execute(sql`INSERT INTO lost_deals (fye_year, deal_name, deal_value, business_developer, lost_reason, created_at, updated_at)
           VALUES (${d[0]}, ${d[1]}, ${d[2]}, ${d[3]}, ${d[4]}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
       }
       console.log("[FYE Seed] Inserted 6 lost deals");
@@ -1265,7 +1265,7 @@ async function seedFyeData() {
       .limit(1);
 
     if (existingKpi.length === 0) {
-      await db.run(sql`INSERT INTO fye_kpi_counters (fye_year, brought_in, signed, created_at, updated_at)
+      await db.execute(sql`INSERT INTO fye_kpi_counters (fye_year, brought_in, signed, created_at, updated_at)
         VALUES (2026, 26, 10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
       console.log("[FYE Seed] Inserted KPI counters for FYE 2026");
     }
