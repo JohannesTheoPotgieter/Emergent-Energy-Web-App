@@ -31,7 +31,7 @@ import {
   workItemAssignments,
   workItemDependencies,
   projectPlanOverrides,
-  planEditNotifications,
+  // planEditNotifications, // Notifications feature removed
   projectRevenueSummary,
   programExpense,
   programInflows,
@@ -1532,43 +1532,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     let projectId = run.projectId;
     const userId = (req as any).user?.id || null;
 
-    // Canonical governance: imported plan promotion is blocked while unresolved
-    // front-end plan edits exist. plan_edit_notifications is the single source
-    // of truth for unresolved plan edit conflicts.
-    if (Array.isArray(norm.planTasks) && norm.planTasks.length > 0) {
-      const unresolvedPlanEdits = await db
-        .select({
-          id: planEditNotifications.id,
-          taskId: planEditNotifications.taskId,
-          taskName: planEditNotifications.taskName,
-          editType: planEditNotifications.editType,
-          fieldName: planEditNotifications.fieldName,
-          oldValue: planEditNotifications.oldValue,
-          newValue: planEditNotifications.newValue,
-          createdAt: planEditNotifications.createdAt,
-        })
-        .from(planEditNotifications)
-        .where(and(
-          eq(planEditNotifications.status, "pending"),
-          projectId
-            ? or(
-                eq(planEditNotifications.projectId, projectId),
-                eq(planEditNotifications.projectName, projectName),
-              )
-            : eq(planEditNotifications.projectName, projectName),
-        ))
-        .orderBy(desc(planEditNotifications.createdAt));
-
-      if (unresolvedPlanEdits.length > 0) {
-        return res.status(409).json({
-          error: "plan_edit_conflict_block",
-          message: "Unresolved front-end project plan edits were found. Resolve plan_edit_notifications before promoting this import.",
-          unresolvedCount: unresolvedPlanEdits.length,
-          conflicts: unresolvedPlanEdits,
-          hint: "Resolve each notification by choosing keep_frontend_update, use_import_value, or merge_manual before re-running commit.",
-        });
-      }
-    }
+    // Notifications feature removed - planEditNotifications governance check disabled
+    // Previously blocked import commits when unresolved front-end plan edits existed.
 
     if (req.body?.projectId && !projectId) {
       const overrideProjectId = parseInt(req.body.projectId);

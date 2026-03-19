@@ -59,7 +59,7 @@ interface OutlookEvent {
 
 interface CalendarTask {
   id: number | string;
-  taskType: "mytool" | "operational" | "plan" | "engineering" | "quality" | "tr_register" | "deliverable" | "approval" | "ms_object" | "notification";
+  taskType: "mytool" | "operational" | "plan" | "engineering" | "quality" | "tr_register" | "deliverable" | "approval" | "ms_object";
   title: string;
   status: string;
   priority: string;
@@ -93,7 +93,6 @@ const TASK_TYPE_COLORS: Record<string, { bg: string; border: string; text: strin
   deliverable: { bg: "bg-pink-100", border: "border-pink-300", text: "text-pink-900", subText: "text-pink-700", hoverBg: "hover:bg-pink-200", bgLight: "bg-pink-50", hoverLight: "hover:bg-pink-100", legendBg: "bg-pink-100", legendBorder: "border-pink-200" },
   approval: { bg: "bg-orange-100", border: "border-orange-300", text: "text-orange-900", subText: "text-orange-700", hoverBg: "hover:bg-orange-200", bgLight: "bg-orange-50", hoverLight: "hover:bg-orange-100", legendBg: "bg-orange-100", legendBorder: "border-orange-200" },
   ms_object: { bg: "bg-indigo-100", border: "border-indigo-300", text: "text-indigo-900", subText: "text-indigo-700", hoverBg: "hover:bg-indigo-200", bgLight: "bg-indigo-50", hoverLight: "hover:bg-indigo-100", legendBg: "bg-indigo-100", legendBorder: "border-indigo-200" },
-  notification: { bg: "bg-blue-100", border: "border-blue-300", text: "text-blue-900", subText: "text-blue-700", hoverBg: "hover:bg-blue-200", bgLight: "bg-blue-50", hoverLight: "hover:bg-blue-100", legendBg: "bg-blue-100", legendBorder: "border-blue-200" },
 };
 
 const TASK_TYPE_LABELS: Record<string, string> = {
@@ -106,7 +105,6 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   deliverable: "Deliverable",
   approval: "Approval",
   ms_object: "MS 365",
-  notification: "Notification",
 };
 
 function getStartStr(ev: OutlookEvent): string {
@@ -190,7 +188,6 @@ const CAL_SOURCE_FILTERS = [
   { key: "deliverable", label: "Deliverables" },
   { key: "tr_register", label: "Action Items" },
   { key: "ms_object", label: "MS 365" },
-  { key: "notification", label: "Notifications" },
 ];
 
 export default function MyWorkCalendarPage() {
@@ -264,18 +261,6 @@ export default function MyWorkCalendarPage() {
         headers: authHeaders(),
       });
       if (!res.ok) return [];
-      return res.json();
-    },
-  });
-
-  const { data: unreadNotifs = { items: [], total: 0 } } = useQuery<{ items: any[]; total: number }>({
-    queryKey: ["/api/notifications", "unread"],
-    queryFn: async () => {
-      const res = await fetch("/api/notifications?unreadOnly=true&limit=20", {
-        credentials: "include",
-        headers: authHeaders(),
-      });
-      if (!res.ok) return { items: [], total: 0 };
       return res.json();
     },
   });
@@ -491,25 +476,8 @@ export default function MyWorkCalendarPage() {
       }, item));
     }
 
-    for (const n of (unreadNotifs.items || [])) {
-      tasks.push(withSourceContext({
-        id: `notif-${n.id}`,
-        taskType: "notification",
-        title: n.title || "",
-        status: "unread",
-        priority: "Medium",
-        projectName: n.projectName || n.project_name || null,
-        plannedForDate: null,
-        dueDate: null,
-        startDate: null,
-        scheduledDate: null,
-        scheduledStartTime: null,
-        scheduledEndTime: null,
-      }, n));
-    }
-
     return tasks;
-  }, [allTaskData, microsoftItems, unreadNotifs]);
+  }, [allTaskData, microsoftItems]);
 
   const scheduleMutation = useMutation({
     mutationFn: async (payload: {
@@ -929,7 +897,7 @@ export default function MyWorkCalendarPage() {
   );
 }
 
-const NON_SCHEDULABLE_TYPES = new Set(["approval", "ms_object", "notification"]);
+const NON_SCHEDULABLE_TYPES = new Set(["approval", "ms_object"]);
 
 function DraggableTaskCard({
   task,

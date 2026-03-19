@@ -257,15 +257,7 @@ router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFina
       .where(eq(financialEditRequests.id, requestId))
       .returning();
 
-    const [reviewer] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
-    await db.insert(notifications).values({
-      recipientUserId: existing.requestedByUserId,
-      eventType: "financial.edit_approved",
-      title: `Edit Approved: ${existing.projectName}`,
-      body: `${reviewer?.name || "A reviewer"} approved your edit request. ${existing.editSummary}${comment ? ` Comment: ${comment}` : ""}`,
-      projectName: existing.projectName,
-      isRead: false,
-    });
+    // Notifications feature removed - approval notification is now a no-op
 
     res.json({ message: "Edit request approved", request: updated });
   } catch (error: any) {
@@ -299,15 +291,7 @@ router.post("/api/financial-edit-requests/:id/reject", requireAuth, requireFinan
       .where(eq(financialEditRequests.id, requestId))
       .returning();
 
-    const [reviewer] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
-    await db.insert(notifications).values({
-      recipientUserId: existing.requestedByUserId,
-      eventType: "financial.edit_rejected",
-      title: `Edit Rejected: ${existing.projectName}`,
-      body: `${reviewer?.name || "A reviewer"} rejected your edit request. Reason: ${comment.trim()}`,
-      projectName: existing.projectName,
-      isRead: false,
-    });
+    // Notifications feature removed - rejection notification is now a no-op
 
     res.json({ message: "Edit request rejected", request: updated });
   } catch (error: any) {

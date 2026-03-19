@@ -11,7 +11,6 @@ import {
   qcPlanLink, qcWarning, qcWarningEvent,
   qcPostmortem, qcPostmortemMetricValue, qcPostmortemSummary,
   qcAccessChallenge, calendarHoliday,
-  notifications, notificationThrottle,
   users, projectInfo,
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
@@ -92,35 +91,12 @@ function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required" });
 }
 
-import { gt } from "drizzle-orm";
-
-async function createQmNotification(recipientUserId: number, eventType: string, title: string, body: string | null, opts: {
-  projectName?: string; linkedTaskId?: number;
-} = {}) {
-  const throttleKey = `${eventType}:${opts.linkedTaskId || 0}`;
-  const existing = await db.select().from(notificationThrottle)
-    .where(and(
-      eq(notificationThrottle.recipientUserId, recipientUserId),
-      eq(notificationThrottle.eventType, eventType),
-      eq(notificationThrottle.entityType, throttleKey.split(':')[0] || 'generic'),
-      eq(notificationThrottle.entityId, opts.linkedTaskId || 0),
-      gt(notificationThrottle.lastSentAt, new Date(Date.now() - 24 * 60 * 60 * 1000))
-    ));
-  if (existing.length > 0) return null;
-
-  const [notif] = await db.insert(notifications).values({
-    recipientUserId, eventType, title, body,
-    projectName: opts.projectName || null,
-    linkedTaskId: opts.linkedTaskId || null,
-  }).returning();
-
-  await db.insert(notificationThrottle).values({
-    recipientUserId, eventType,
-    entityType: throttleKey.split(':')[0] || 'generic',
-    entityId: opts.linkedTaskId || 0,
-  }).onConflictDoNothing();
-
-  return notif;
+// Notifications feature removed - createQmNotification is now a no-op
+async function createQmNotification(
+  _recipientUserId: number, _eventType: string, _title: string, _body: string | null,
+  _opts: { projectName?: string; linkedTaskId?: number; } = {}
+) {
+  return null;
 }
 
 function businessDaysBetween(startStr: string, endStr: string, holidays: string[]): number {

@@ -278,7 +278,7 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
     steps: [
       {
         title: "Collaboration Hub",
-        description: "All your Microsoft 365 tools and in-app notifications in one place. Switch between Calendar, Email, Teams Chat, SharePoint, and Notifications using the tabs.",
+        description: "All your Microsoft 365 tools in one place. Switch between Calendar, Email, Teams Chat, and SharePoint using the tabs.",
         position: "center",
       },
       {
@@ -303,12 +303,6 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
         targetSelector: '[data-testid="tab-sharepoint"]',
         title: "SharePoint Tab",
         description: "Browse your SharePoint document library. Navigate folders, preview files, download documents, or open them directly in SharePoint.",
-        position: "bottom",
-      },
-      {
-        targetSelector: '[data-testid="tab-notifications"]',
-        title: "Notifications Tab",
-        description: "All your in-app notifications: task assignments, approval requests, plan changes, and project updates. Filter by unread or action-required. Confirm plan changes directly here.",
         position: "bottom",
       },
     ],
@@ -371,28 +365,6 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
         title: "Badge Collection",
         description: "View all available badges and which ones you've earned. Badges are awarded for milestones like completing 10 tasks, making your first import, or reaching a new level.",
         position: "bottom",
-      },
-    ],
-  },
-
-  "/notifications": {
-    id: "notification-center",
-    title: "Notification Center",
-    steps: [
-      {
-        title: "Notification Center",
-        description: "All your notifications in one place. See task assignments, approval requests, plan changes, deadline warnings, and project updates.",
-        position: "center",
-      },
-      {
-        title: "Notification Types",
-        description: "Notifications are colour-coded by type: blue for task assignments, amber for plan changes needing confirmation, purple for approval requests, red for warnings and overdue items.",
-        position: "center",
-      },
-      {
-        title: "Actions",
-        description: "Mark notifications as read individually or all at once. For plan change confirmations, click 'Confirm' to acknowledge the change — this also auto-confirms related notifications.",
-        position: "center",
       },
     ],
   },
@@ -559,7 +531,7 @@ export function getScreenTour(pathname: string): ScreenTourDef | null {
         },
         {
           title: "Collaboration Pillar",
-          description: "Project-specific chat, SharePoint files, approvals and deliverables, and notifications — all scoped to this project. Keep communication focused and trackable.",
+          description: "Project-specific chat, SharePoint files, and approvals — all scoped to this project. Keep communication focused and trackable.",
           position: "center",
         },
       ],

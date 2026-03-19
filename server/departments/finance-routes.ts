@@ -15,7 +15,6 @@ import {
   insertBudgetSchema,
   msObjects,
   normalizedRevenueLines,
-  notifications,
   OVERRIDE_CATEGORIES,
   projectInfo,
   users,
@@ -70,22 +69,7 @@ async function createPendingEditRequest(
     status: "pending",
   }).returning();
 
-  const recipients = await db.select({ id: users.id }).from(users)
-    .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
-  const [requestor] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
-
-  for (const r of recipients) {
-    if (r.id === userId) continue;
-    await db.insert(notifications).values({
-      recipientUserId: r.id,
-      eventType: "financial.edit_request",
-      title: `Edit Request: ${projectName}`,
-      body: `${requestor?.name || "A PM"} submitted a ${editType} edit requiring approval. ${editSummary}`,
-      projectName,
-      requiresConfirmation: true,
-      changeDetails: JSON.stringify({ requestId: saved.id, editType, editSummary }),
-    });
-  }
+  // Notifications feature removed - financial edit request notifications are now no-ops
 
   return saved;
 }

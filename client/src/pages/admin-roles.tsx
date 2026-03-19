@@ -47,7 +47,6 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   home: "Home page dashboard & landing",
   my_work: "My Work hub — tasks, calendar, meetings",
   my_tool: "My Work task planner (Today, Week, Backlog)",
-  notifications: "Top bar notification bell",
   company_priorities: "Company-wide priorities & goals",
 
   lifecycle: "Project Lifecycle overview & board",
@@ -146,7 +145,7 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
 const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
   home: {
     label: "Home",
-    entities: ["home", "my_work", "my_tool", "notifications", "company_priorities"],
+    entities: ["home", "my_work", "my_tool", "company_priorities"],
   },
   lifecycle: {
     label: "Project Lifecycle",

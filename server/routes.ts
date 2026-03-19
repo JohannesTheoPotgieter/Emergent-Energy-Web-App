@@ -671,18 +671,11 @@ async function sendPlanChangeNotifications(
 
     const detailsJson = JSON.stringify({ projectName, changedBy: changedByUser?.name || "Unknown", changes: changeDetails, timestamp: new Date().toISOString() });
 
-    for (const recipient of recipients) {
-      if (recipient.id === changedByUserId) continue;
-      await db.insert(notifications).values({
-        recipientUserId: recipient.id,
-        eventType: "plan.change_confirmation",
-        title: `Plan updated: ${projectName}`,
-        body: `${changedByUser?.name || "Someone"} made changes to the project plan. ${changeDescription} Please confirm you have captured this in the Excel tracker.`,
-        projectName,
-        requiresConfirmation: true,
-        changeDetails: detailsJson,
-      });
-    }
+    // Notifications feature removed - notification inserts are now no-ops
+    // for (const recipient of recipients) {
+    //   if (recipient.id === changedByUserId) continue;
+    //   await db.insert(notifications).values({...});
+    // }
   } catch (err: any) {
     console.warn("[plan-notify] Failed to send plan change notifications:", err.message);
   }
@@ -9838,39 +9831,7 @@ export async function registerRoutes(
       res.json(result);
 
       try {
-        const { milestoneTaskLinks, expenseTaskLinks, notifications: notificationsTable, users: usersTable } = await import("@shared/schema");
-        const APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
-        const [revLinks, expLinks] = await Promise.all([
-          db.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName)),
-          db.select().from(expenseTaskLinks).where(eq(expenseTaskLinks.projectName, projectName)),
-        ]);
-        const hasRevImpact = revLinks.some(l => Math.abs(l.taskId) === id);
-        const hasExpImpact = expLinks.some(l => Math.abs(l.taskId) === id);
-        if (hasRevImpact || hasExpImpact) {
-          const flags: string[] = [];
-          if (hasRevImpact) flags.push("Revenue");
-          if (hasExpImpact) flags.push("Expenditure");
-          const editDesc = [
-            startDate && `start date → ${startDate}`,
-            endDate && `end date → ${endDate}`,
-            name && `name → "${name}"`,
-          ].filter(Boolean).join(", ");
-          const approvers = await db.select({ id: usersTable.id }).from(usersTable)
-            .where(inArray(usersTable.role, APPROVER_ROLES));
-          const actorName = req.user?.name || req.user?.username || "Someone";
-          for (const appr of approvers) {
-            if (appr.id === req.user?.id) continue;
-            await db.insert(notificationsTable).values({
-              recipientUserId: appr.id,
-              eventType: "financial.plan_task_impact",
-              title: `[FINANCIAL] Plan Task Edit: ${projectName}`,
-              body: `${actorName} edited task #${id} (${editDesc || "fields changed"}). This task is linked to ${flags.join(" & ")} items. Please verify financial alignment.`,
-              projectName,
-              linkedPlanItemId: id,
-              isRead: false,
-            });
-          }
-        }
+        // Notifications feature removed - financial impact notification inserts are now no-ops
       } catch (crossErr: any) {
         console.warn("[fin-cross] Plan-to-financial notification failed:", crossErr.message);
       }
@@ -12971,25 +12932,7 @@ export async function registerRoutes(
           }
         }
 
-        const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
-        if (!isAdmin && notifFields.length > 0) {
-          const projectInfoRow = await storage.getProjectInfo(projectName);
-          for (const nf of notifFields) {
-            await db.insert(planEditNotifications).values({
-              projectName,
-              projectId: projectInfoRow?.id || null,
-              taskId: actualTaskId,
-              taskName,
-              editType: "task_update",
-              fieldName: nf.field,
-              oldValue: nf.old,
-              newValue: nf.new_,
-              editedByUserId: user.id,
-              editedByName: user.name || user.username,
-              status: "pending",
-            });
-          }
-        }
+        // Notifications feature removed - planEditNotifications inserts are now no-ops
 
         logAuditFromReq(req, {
           entityType: "plan_task",
@@ -13097,25 +13040,7 @@ export async function registerRoutes(
           console.warn(`[planning-tasks] Failed to sync to work_items for task ${actualTaskId}:`, e);
         }
 
-        const isAdminRole = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
-        if (!isAdminRole && notifFields.length > 0) {
-          const projectInfoRow = await storage.getProjectInfo(projectName);
-          for (const nf of notifFields) {
-            await db.insert(planEditNotifications).values({
-              projectName,
-              projectId: projectInfoRow?.id || null,
-              taskId: actualTaskId,
-              taskName,
-              editType: "task_update",
-              fieldName: nf.field,
-              oldValue: nf.old,
-              newValue: nf.new_,
-              editedByUserId: user.id,
-              editedByName: user.name || user.username,
-              status: "pending",
-            });
-          }
-        }
+        // Notifications feature removed - planEditNotifications inserts are now no-ops
 
         logAuditFromReq(req, {
           entityType: "plan_task",
@@ -13243,22 +13168,7 @@ export async function registerRoutes(
 
       task = { id: mirroredTaskId ?? workItem.id };
 
-      const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
-      if (!isAdmin) {
-        await db.insert(planEditNotifications).values({
-          projectName,
-          projectId,
-          taskId: task.id,
-          taskName: title,
-          editType: "task_created",
-          fieldName: null,
-          oldValue: null,
-          newValue: title,
-          editedByUserId: user.id,
-          editedByName: user.name || user.username,
-          status: "pending",
-        });
-      }
+      // Notifications feature removed - planEditNotifications insert for task_created is now a no-op
 
       logAuditFromReq(req, {
         entityType: "plan_task",
@@ -13431,23 +13341,7 @@ export async function registerRoutes(
         await softDeleteLegacyOperationalTaskByWorkItemId(taskId);
       }
 
-      const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
-      if (!isAdmin) {
-        const projectInfoRow = await storage.getProjectInfo(projectName);
-        await db.insert(planEditNotifications).values({
-          projectName,
-          projectId: projectInfoRow?.id || null,
-          taskId: actualTaskId,
-          taskName: `Task #${actualTaskId}`,
-          editType: "task_deleted",
-          fieldName: null,
-          oldValue: "active",
-          newValue: "deleted",
-          editedByUserId: user.id,
-          editedByName: user.name || user.username,
-          status: "pending",
-        });
-      }
+      // Notifications feature removed - planEditNotifications insert for task_deleted is now a no-op
 
       logAuditFromReq(req, {
         entityType: "plan_task",
@@ -13464,80 +13358,8 @@ export async function registerRoutes(
     }
   });
 
-  // ==================== PLAN EDIT NOTIFICATIONS (COO VIEW) ====================
-
-  app.get("/api/plan-edit-notifications", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = req.user as any;
-      const isCOO = ["admin", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(user.role || "");
-      if (!isCOO) return res.status(403).json({ error: "Only COO/CEO/Program Manager can view notifications" });
-
-      const status = (req.query.status as string) || "pending";
-      const projectName = req.query.projectName as string | undefined;
-
-      let query = db.select().from(planEditNotifications);
-      const conditions: any[] = [];
-      if (status && status !== "all") conditions.push(eq(planEditNotifications.status, status));
-      if (projectName) conditions.push(eq(planEditNotifications.projectName, projectName));
-
-      const items = conditions.length > 0
-        ? await query.where(and(...conditions)).orderBy(desc(planEditNotifications.createdAt))
-        : await query.orderBy(desc(planEditNotifications.createdAt));
-
-      res.json(items);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.patch("/api/plan-edit-notifications/:id/resolve", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = req.user as any;
-      const isCOO = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
-      if (!isCOO) return res.status(403).json({ error: "Only COO/CEO can resolve notifications" });
-
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
-      const { resolution } = req.body;
-
-      await db.update(planEditNotifications).set({
-        status: "resolved",
-        resolvedByUserId: user.id,
-        resolvedByName: user.name || user.username,
-        resolvedAt: new Date(),
-        resolution: resolution || "acknowledged",
-      }).where(eq(planEditNotifications.id, id));
-
-      logAuditFromReq(req, { entityType: "plan_edit_notification", entityId: String(id), action: "resolve", changesJson: { resolution: resolution || "acknowledged" } });
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/plan-edit-notifications/bulk-resolve", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = req.user as any;
-      const isCOO = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
-      if (!isCOO) return res.status(403).json({ error: "Only COO/CEO can resolve notifications" });
-
-      const { ids, resolution } = req.body;
-      if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids array required" });
-
-      await db.update(planEditNotifications).set({
-        status: "resolved",
-        resolvedByUserId: user.id,
-        resolvedByName: user.name || user.username,
-        resolvedAt: new Date(),
-        resolution: resolution || "bulk_acknowledged",
-      }).where(inArray(planEditNotifications.id, ids));
-
-      logAuditFromReq(req, { entityType: "plan_edit_notification", action: "bulk_resolve", changesJson: { count: ids.length, resolution: resolution || "bulk_acknowledged" } });
-      res.json({ success: true, resolved: ids.length });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+  // ==================== PLAN EDIT NOTIFICATIONS (REMOVED) ====================
+  // Notifications feature removed - plan-edit-notification endpoints removed
 
   // ==================== KEY DATE MAPPINGS ====================
 

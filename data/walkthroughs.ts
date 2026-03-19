@@ -477,39 +477,6 @@ export const WALKTHROUGHS: Walkthrough[] = [
     ],
   },
   {
-    id: "notification-center",
-    title: "Notification Centre",
-    description: "The Notification Centre aggregates all system notifications — task updates, approval requests, deliverable acknowledgments, plan changes, and more — in one organized view.",
-    category: "productivity",
-    estimatedMinutes: 5,
-    steps: [
-      {
-        stepNumber: 1,
-        title: "Open the Notification Centre",
-        description: "Click the bell icon in the top navigation bar, or navigate to Notifications from the sidebar. The bell shows a red badge with unread count.",
-        targetPage: "/notifications",
-        tryIt: "Look for the bell icon in the top bar. Click it to open your notifications.",
-      },
-      {
-        stepNumber: 2,
-        title: "Browse Notifications by Type",
-        description: "Notifications are categorized with colored badges:\n• Blue — Task assignments and updates\n• Green — Approvals completed\n• Orange — Deliverables sent for acknowledgment\n• Purple — Quality review requests\n• Red — Overdue warnings and escalations\n• Yellow — Plan change notifications",
-      },
-      {
-        stepNumber: 3,
-        title: "Take Action",
-        description: "Each notification is clickable — it navigates you directly to the relevant item (task, approval, deliverable, etc.). Click 'Mark as Read' to clear individual notifications, or 'Mark All Read' to clear everything.",
-        tryIt: "Click on any unread notification to navigate to the related item. Notice how the notification badge count decreases.",
-      },
-      {
-        stepNumber: 4,
-        title: "Filter and Search",
-        description: "Use the category filter buttons to see only specific types of notifications. The search bar lets you find notifications by content.",
-        tryIt: "Try filtering by 'Action Required' to see only notifications that need your response.",
-      },
-    ],
-  },
-  {
     id: "project-summary",
     title: "Understanding the Project Detail Page",
     description: "The project detail page is the comprehensive hub for all project information, organized into tabs by pillar (Project Management, Engineering, Quality).",
