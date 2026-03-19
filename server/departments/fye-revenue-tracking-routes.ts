@@ -842,7 +842,7 @@ router.get(
 // ─── Seed Data (idempotent) ───
 async function seedFyeData() {
   try {
-    // Seed pipeline deals for FYE 2026
+    // Seed pipeline deals for FYE 2026 — uses raw SQL to avoid Drizzle defaultNow() on SQLite
     const existingPipeline = await db
       .select({ id: forecastPipeline.id })
       .from(forecastPipeline)
@@ -850,24 +850,25 @@ async function seedFyeData() {
 
     if (existingPipeline.length === 0) {
       const pipelineDeals = [
-        { fyeYear: 2026, projectName: "Engen Mbekweni", projectDeveloper: "Cole Bisset", location: "Paarl", sizeKwp: "130", dealProbabilityPct: 90, forecastSignatureDate: "2026-11-30", solarRevenue: "761633", bessRevenue: "0", forecastGpPct: "0.20", status: "active" },
-        { fyeYear: 2026, projectName: "Wolwendrift Trust", projectDeveloper: "Cole Bisset", location: "Cape Town", sizeKwp: "75", dealProbabilityPct: 95, forecastSignatureDate: "2025-11-24", solarRevenue: "1682698", bessRevenue: "0", forecastGpPct: "0.1958", status: "active" },
-        { fyeYear: 2026, projectName: "GIMCO-6th Avenue Shopping Centre", projectDeveloper: "Gordon Upton", location: "Port Elizabeth", sizeKwp: "250", dealProbabilityPct: 100, forecastSignatureDate: "2025-11-28", solarRevenue: "3414591.17", bessRevenue: "0", forecastGpPct: "0.1862", status: "active" },
-        { fyeYear: 2026, projectName: "Volvo Moffett Retail Park", projectDeveloper: "Gordon Upton", location: "Port Elizabeth", sizeKwp: "45", dealProbabilityPct: 100, forecastSignatureDate: "2025-12-31", solarRevenue: "1251129", bessRevenue: "631416", forecastGpPct: "0.20", status: "active" },
-        { fyeYear: 2026, projectName: "Moffett Retail Park deal", projectDeveloper: "Gordon Upton", location: "Port Elizabeth", sizeKwp: "715", dealProbabilityPct: 100, forecastSignatureDate: "2025-12-31", solarRevenue: "5669948", bessRevenue: "0", forecastGpPct: "0.1659", status: "active" },
-        { fyeYear: 2026, projectName: "Saxon Industrial Park", projectDeveloper: "Cole Bisset", location: "Cape Town", sizeKwp: "182", dealProbabilityPct: 80, forecastSignatureDate: "2026-02-09", solarRevenue: "1699292", bessRevenue: "0", forecastGpPct: "0.15", status: "active" },
-        { fyeYear: 2026, projectName: "SPEK deal", projectDeveloper: "Cole Bisset", location: "Cape Town", sizeKwp: "670", dealProbabilityPct: 75, forecastSignatureDate: "2026-02-23", solarRevenue: "5004014", bessRevenue: "0", forecastGpPct: "0.13", status: "active" },
-        { fyeYear: 2026, projectName: "Pangea Made - Finishing deal", projectDeveloper: "Gordon Upton", location: "Joburg", sizeKwp: "252", dealProbabilityPct: 80, forecastSignatureDate: "2026-02-27", solarRevenue: "2729166", bessRevenue: "0", forecastGpPct: "0.16", status: "active" },
-        { fyeYear: 2026, projectName: "Pangea Made - Cutting", projectDeveloper: "Gordon Upton", location: "Joburg", sizeKwp: "185", dealProbabilityPct: 80, forecastSignatureDate: "2026-02-27", solarRevenue: "1597247", bessRevenue: "0", forecastGpPct: "0.18", status: "active" },
-        { fyeYear: 2026, projectName: "WEG - 6 Laneshaw", projectDeveloper: "Cole Bisset", location: "Joburg", sizeKwp: "480", dealProbabilityPct: 80, forecastSignatureDate: "2026-03-23", solarRevenue: "9946481", bessRevenue: "5134357", forecastGpPct: "0.13", status: "active" },
-        { fyeYear: 2026, projectName: "Pick n Pay Bethal", projectDeveloper: "Megan Moore", location: "Gauteng", sizeKwp: "420", dealProbabilityPct: 80, forecastSignatureDate: "2026-03-31", solarRevenue: "3530327", bessRevenue: "0", forecastGpPct: "0.17", status: "active" },
-        { fyeYear: 2026, projectName: "Pick n Pay Secunda deal", projectDeveloper: "Megan Moore", location: "Joburg", sizeKwp: "303", dealProbabilityPct: 80, forecastSignatureDate: "2026-04-30", solarRevenue: "4351728", bessRevenue: "763673", forecastGpPct: "0.17", status: "active" },
-        { fyeYear: 2026, projectName: "Freshco", projectDeveloper: "Gordon Upton", location: "Port Elizabeth", sizeKwp: "350", dealProbabilityPct: 75, forecastSignatureDate: "2026-06-01", solarRevenue: "8456914", bessRevenue: "5018177", forecastGpPct: "0.10", status: "active" },
-        { fyeYear: 2026, projectName: "Wilec Clayville Deal", projectDeveloper: "Megan Moore", location: "Joburg", sizeKwp: "1200", dealProbabilityPct: 80, forecastSignatureDate: "2026-06-30", solarRevenue: "10191761", bessRevenue: "0", forecastGpPct: "0.11", status: "active" },
-        { fyeYear: 2026, projectName: "Unitrans Brackenfell", projectDeveloper: "Cole Bisset", location: "Cape Town", sizeKwp: "188", dealProbabilityPct: 95, forecastSignatureDate: "2025-12-10", solarRevenue: "1900000", bessRevenue: "3700000", forecastGpPct: null, status: "active" },
+        [2026,"Engen Mbekweni","Cole Bisset","Paarl","130",90,"2026-11-30","761633","0","0.20"],
+        [2026,"Wolwendrift Trust","Cole Bisset","Cape Town","75",95,"2025-11-24","1682698","0","0.1958"],
+        [2026,"GIMCO-6th Avenue Shopping Centre","Gordon Upton","Port Elizabeth","250",100,"2025-11-28","3414591.17","0","0.1862"],
+        [2026,"Volvo Moffett Retail Park","Gordon Upton","Port Elizabeth","45",100,"2025-12-31","1251129","631416","0.20"],
+        [2026,"Moffett Retail Park deal","Gordon Upton","Port Elizabeth","715",100,"2025-12-31","5669948","0","0.1659"],
+        [2026,"Saxon Industrial Park","Cole Bisset","Cape Town","182",80,"2026-02-09","1699292","0","0.15"],
+        [2026,"SPEK deal","Cole Bisset","Cape Town","670",75,"2026-02-23","5004014","0","0.13"],
+        [2026,"Pangea Made - Finishing deal","Gordon Upton","Joburg","252",80,"2026-02-27","2729166","0","0.16"],
+        [2026,"Pangea Made - Cutting","Gordon Upton","Joburg","185",80,"2026-02-27","1597247","0","0.18"],
+        [2026,"WEG - 6 Laneshaw","Cole Bisset","Joburg","480",80,"2026-03-23","9946481","5134357","0.13"],
+        [2026,"Pick n Pay Bethal","Megan Moore","Gauteng","420",80,"2026-03-31","3530327","0","0.17"],
+        [2026,"Pick n Pay Secunda deal","Megan Moore","Joburg","303",80,"2026-04-30","4351728","763673","0.17"],
+        [2026,"Freshco","Gordon Upton","Port Elizabeth","350",75,"2026-06-01","8456914","5018177","0.10"],
+        [2026,"Wilec Clayville Deal","Megan Moore","Joburg","1200",80,"2026-06-30","10191761","0","0.11"],
+        [2026,"Unitrans Brackenfell","Cole Bisset","Cape Town","188",95,"2025-12-10","1900000","3700000",null],
       ];
-      for (const deal of pipelineDeals) {
-        await db.insert(forecastPipeline).values(deal as any);
+      for (const d of pipelineDeals) {
+        await db.run(sql`INSERT INTO forecast_pipeline (fye_year, project_name, project_developer, location, size_kwp, deal_probability_pct, forecast_signature_date, solar_revenue, bess_revenue, forecast_gp_pct, status, created_at, updated_at)
+          VALUES (${d[0]}, ${d[1]}, ${d[2]}, ${d[3]}, ${d[4]}, ${d[5]}, ${d[6]}, ${d[7]}, ${d[8]}, ${d[9]}, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
       }
       console.log("[FYE Seed] Inserted 15 pipeline deals");
     }
@@ -880,15 +881,16 @@ async function seedFyeData() {
 
     if (existingLost.length === 0) {
       const lostDealData = [
-        { fyeYear: 2026, dealName: "House Anand", dealValue: "1000000", businessDeveloper: "Gordon Upton", lostReason: "Wanted Sunsync instead of Victron" },
-        { fyeYear: 2026, dealName: "Volvo Trucks JetPark Phase 2", dealValue: "10443453.63", businessDeveloper: "Megan Moore", lostReason: "Lost tender - too expensive" },
-        { fyeYear: 2026, dealName: "Wanderers Club (Padel) deal", dealValue: "3970811", businessDeveloper: "Megan Moore", lostReason: "Went ahead with someone else connected to the board" },
-        { fyeYear: 2026, dealName: "Green Gate deal (DS) PEET", dealValue: "10862099", businessDeveloper: "Peet Verreynne", lostReason: "Lost to EP - PPA 10 cents cheaper" },
-        { fyeYear: 2026, dealName: "Volvo Trucks JetPark Phase 1", dealValue: "3142443.69", businessDeveloper: "Megan Moore", lostReason: "Lost tender - too expensive" },
-        { fyeYear: 2026, dealName: "Neulux Park deal", dealValue: "1968450", businessDeveloper: "Gordon Upton", lostReason: "Lost to someone else" },
+        [2026,"House Anand","1000000","Gordon Upton","Wanted Sunsync instead of Victron"],
+        [2026,"Volvo Trucks JetPark Phase 2","10443453.63","Megan Moore","Lost tender - too expensive"],
+        [2026,"Wanderers Club (Padel) deal","3970811","Megan Moore","Went ahead with someone else connected to the board"],
+        [2026,"Green Gate deal (DS) PEET","10862099","Peet Verreynne","Lost to EP - PPA 10 cents cheaper"],
+        [2026,"Volvo Trucks JetPark Phase 1","3142443.69","Megan Moore","Lost tender - too expensive"],
+        [2026,"Neulux Park deal","1968450","Gordon Upton","Lost to someone else"],
       ];
-      for (const deal of lostDealData) {
-        await db.insert(lostDeals).values(deal as any);
+      for (const d of lostDealData) {
+        await db.run(sql`INSERT INTO lost_deals (fye_year, deal_name, deal_value, business_developer, lost_reason, created_at, updated_at)
+          VALUES (${d[0]}, ${d[1]}, ${d[2]}, ${d[3]}, ${d[4]}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
       }
       console.log("[FYE Seed] Inserted 6 lost deals");
     }
@@ -901,11 +903,8 @@ async function seedFyeData() {
       .limit(1);
 
     if (existingKpi.length === 0) {
-      await db.insert(fyeKpiCounters).values({
-        fyeYear: 2026,
-        broughtIn: 26,
-        signed: 10,
-      } as any);
+      await db.run(sql`INSERT INTO fye_kpi_counters (fye_year, brought_in, signed, created_at, updated_at)
+        VALUES (2026, 26, 10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
       console.log("[FYE Seed] Inserted KPI counters for FYE 2026");
     }
   } catch (err: any) {
