@@ -57,15 +57,25 @@ export function allocateRevenue(
 
 // ─── COS realisation check ───
 // Determines whether a cost line item should be treated as "realised" for tracker
-// purposes. Uses the canonical classifyCosStatus() from stateClassifier.ts to
-// ensure the tracker agrees with the expense-state classification system.
+// purposes. Uses the canonical classifyCosStatus() from stateClassifier.ts,
+// PLUS respects manual COS status overrides and the cosRealised boolean.
 //
-// COS is realised when the line item has BOTH an invoice number AND an invoice date.
+// COS is realised when:
+// 1. classifyCosStatus returns 'COS Realised' (has invoice number AND invoice date), OR
+// 2. A COS override marks it as 'COS Realised', OR
+// 3. The normalizedCostLines.cosRealised boolean is true
 export function isCosRealised(exp: {
   expenseInvoiceNumber?: string | null;
   expenseInvoicedDate?: string | null;
   expensePoNumber?: string | null;
+  _cosOverrideStatus?: string | null;
+  _cosRealisedFlag?: boolean | null;
 }): boolean {
+  // Manual override takes precedence
+  if (exp._cosOverrideStatus === 'COS Realised') return true;
+  // Normalized table boolean flag
+  if (exp._cosRealisedFlag === true) return true;
+  // Classification from invoice data
   const status = classifyCosStatus({
     expenseInvoiceNumber: exp.expenseInvoiceNumber ?? null,
     expenseInvoicedDate: exp.expenseInvoicedDate ?? null,

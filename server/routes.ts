@@ -3324,14 +3324,14 @@ export async function registerRoutes(
         const budget = manual?.budget ? parseFloat(manual.budget) : 0;
 
         const variance = planned - budget;
-        const variancePct = budget !== 0 ? (planned - budget) / budget : 0;
+        const variancePct = budget !== 0 ? ((planned - budget) / budget) * 100 : 0;
 
         ytdPlanned += planned;
         ytdRealised += realised;
         ytdOutstanding += outstanding;
         ytdBudget += budget;
         const ytdVariance = ytdPlanned - ytdBudget;
-        const ytdVariancePct = ytdBudget !== 0 ? (ytdPlanned - ytdBudget) / ytdBudget : 0;
+        const ytdVariancePct = ytdBudget !== 0 ? ((ytdPlanned - ytdBudget) / ytdBudget) * 100 : 0;
 
         months.push({
           monthKey,
@@ -3477,7 +3477,7 @@ export async function registerRoutes(
         const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[monthKey] ?? 0);
 
         const variance = totalCOS - budget;
-        const variancePct = budget !== 0 ? variance / budget : 0;
+        const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
         const revRealised = revByMonth.get(monthKey) ?? 0;
         ytdCOS += totalCOS;
@@ -3486,7 +3486,7 @@ export async function registerRoutes(
         ytdRevRealised += revRealised;
         const ytdUnrealised = ytdCOS - ytdRealised;
         const ytdVariance = ytdCOS - ytdBudget;
-        const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+        const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
         months.push({
           monthKey,
@@ -4355,9 +4355,14 @@ export async function registerRoutes(
         row.actualProgressPct = row._taskWeight > 0 ? row._taskActual / row._taskWeight : 0;
         row.expectedProgressPct = row._taskWeight > 0 ? row._taskExpected / row._taskWeight : 0;
         row.scheduleVariancePct = row.actualProgressPct - row.expectedProgressPct;
+        // Compute RAG from progress delta when manual ragStatus is absent (matching projects-summary)
+        if (row.rag === 'UNKNOWN') {
+          const delta = row.scheduleVariancePct;
+          row.rag = delta >= -5 ? 'Green' : delta >= -15 ? 'Amber' : 'Red';
+        }
         row.openInflowFy = row.plannedRevenueFy - row.receivedInflowFy;
         row.openExpenditureFy = row.plannedExpenditureFy - row.paidExpenditureFy;
-        row.grossMarginPctFy = row.plannedRevenueFy > 0 ? (row.plannedRevenueFy - row.plannedExpenditureFy) / row.plannedRevenueFy : null;
+        row.grossMarginPctFy = row.plannedRevenueFy > 0 ? Number((((row.plannedRevenueFy - row.plannedExpenditureFy) / row.plannedRevenueFy) * 100).toFixed(1)) : null;
         row.engineeringStatus = row._engOpen >= 5 ? 'Blocked' : row._engOpen > 0 ? 'At Risk' : 'On Track';
         row.qualityStatus = row._qualityOpen >= 5 ? 'Blocked' : row._qualityOpen > 0 ? 'At Risk' : 'On Track';
         const latest = latestImportByProject.get(row.projectId);
@@ -4894,7 +4899,7 @@ export async function registerRoutes(
           paidExpenditureFy: sum('paidExpenditureFy'),
           openExpenditureFy: sum('openExpenditureFy'),
           grossProfitFy: sum('plannedRevenueFy') - sum('plannedExpenditureFy'),
-          grossMarginPctFy: sum('plannedRevenueFy') > 0 ? (sum('plannedRevenueFy') - sum('plannedExpenditureFy')) / sum('plannedRevenueFy') : null,
+          grossMarginPctFy: sum('plannedRevenueFy') > 0 ? Number((((sum('plannedRevenueFy') - sum('plannedExpenditureFy')) / sum('plannedRevenueFy')) * 100).toFixed(1)) : null,
           openEngineeringBlockers: sum('_engOpen'),
           openQualityWarnings: sum('_qualityOpen'),
           pendingApprovals: sum('_approvalsPending'),
