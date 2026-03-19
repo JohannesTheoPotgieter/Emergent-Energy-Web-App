@@ -52,7 +52,7 @@ function normalizeForComparison(name: string): string {
   n = n.replace(/\b(rev|revision|version|ver|v)\s*\d+\b/gi, "");
   n = n.replace(/\bv\d+(\.\d+)*\b/gi, "");
   n = n.replace(/\b(tracker|template|copy|final|draft|updated|new|old)\b/gi, "");
-  n = n.replace(/\b(ph\d+|phase\s*\d+)\b/gi, "");
+  // Phase suffixes (ph1, phase 2, etc.) are PRESERVED to distinguish multi-phase projects
   n = n.replace(/\(\d+\)/g, "");
   n = n.replace(/\d{4}[-\/]\d{2}[-\/]\d{2}/g, "");
   n = n.replace(/\d{8,}/g, "");
@@ -61,20 +61,47 @@ function normalizeForComparison(name: string): string {
   return n;
 }
 
-function computeSimilarity(a: string, b: string): number {
-  if (a === b) return 1.0;
-  if (!a || !b) return 0;
+/**
+ * Strips phase suffixes from a normalized name to get the base project name.
+ * Used to detect same-project-different-phase scenarios.
+ */
+function stripPhase(normalized: string): string {
+  return normalized.replace(/\b(ph\s*\d+|phase\s*\d+)\b/gi, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Extracts the phase identifier from a normalized name (e.g., "ph2", "phase 1").
+ * Returns null if no phase found.
+ */
+function extractPhase(normalized: string): string | null {
+  const match = normalized.match(/\b(ph\s*\d+|phase\s*\d+)\b/i);
+  return match ? match[1].replace(/\s+/g, "").toLowerCase() : null;
+}
+
+function computeSimilarity(a: string, b: string): { score: number; matchReason?: string } {
+  if (a === b) return { score: 1.0 };
+  if (!a || !b) return { score: 0 };
 
   const normA = normalizeForComparison(a);
   const normB = normalizeForComparison(b);
 
-  if (normA === normB) return 1.0;
-  if (!normA || !normB) return 0;
+  if (normA === normB) return { score: 1.0 };
+  if (!normA || !normB) return { score: 0 };
+
+  // Phase-aware check: same base name but different phase number → medium confidence
+  const baseA = stripPhase(normA);
+  const baseB = stripPhase(normB);
+  const phaseA = extractPhase(normA);
+  const phaseB = extractPhase(normB);
+
+  if (baseA === baseB && baseA.length > 0 && phaseA !== phaseB && (phaseA || phaseB)) {
+    return { score: 0.7, matchReason: "same_project_different_phase" };
+  }
 
   const tokensA = normA.split(/\s+/).filter(Boolean);
   const tokensB = normB.split(/\s+/).filter(Boolean);
 
-  if (tokensA.length === 0 || tokensB.length === 0) return 0;
+  if (tokensA.length === 0 || tokensB.length === 0) return { score: 0 };
 
   let matchCount = 0;
   for (const t of tokensA) {
@@ -92,10 +119,10 @@ function computeSimilarity(a: string, b: string): number {
   const prefixSimilarity = commonPrefix / maxLen;
 
   if (normA.includes(normB) || normB.includes(normA)) {
-    return Math.max(0.85, tokenSimilarity, minLen / maxLen);
+    return { score: Math.max(0.85, tokenSimilarity, minLen / maxLen) };
   }
 
-  return Math.max(tokenSimilarity, prefixSimilarity);
+  return { score: Math.max(tokenSimilarity, prefixSimilarity) };
 }
 
 async function findProjectMatches(projectName: string): Promise<Array<{ projectId: number; projectName: string; confidence: number; matchReason: string }>> {
@@ -117,11 +144,13 @@ async function findProjectMatches(projectName: string): Promise<Array<{ projectI
       continue;
     }
 
-    const sim = computeSimilarity(projectName, p.projectName);
+    const { score: sim, matchReason: phaseReason } = computeSimilarity(projectName, p.projectName);
     if (sim >= 0.5) {
-      let reason = "fuzzy_match";
-      if (sim >= 0.85) reason = "high_confidence_match";
-      else if (sim >= 0.7) reason = "medium_confidence_match";
+      let reason = phaseReason || "fuzzy_match";
+      if (!phaseReason) {
+        if (sim >= 0.85) reason = "high_confidence_match";
+        else if (sim >= 0.7) reason = "medium_confidence_match";
+      }
       matches.push({ projectId: p.id, projectName: p.projectName, confidence: Math.round(sim * 100) / 100, matchReason: reason });
     }
   }
@@ -470,6 +499,107 @@ router.get("/api/smart-import/history/:projectName", requireAuth, async (req: Re
   }
 });
 
+// GET /api/smart-import/health-dashboard — Import health across all projects
+router.get("/api/smart-import/health-dashboard", requireAuth, requirePermission("smart_import", "view"), async (_req: Request, res: Response) => {
+  try {
+    // Get the latest committed run per project
+    const allRuns = await db.select({
+      id: smartImportRuns.id,
+      projectName: smartImportRuns.projectName,
+      projectId: smartImportRuns.projectId,
+      status: smartImportRuns.status,
+      committedAt: smartImportRuns.committedAt,
+      uploadedAt: smartImportRuns.uploadedAt,
+    })
+      .from(smartImportRuns)
+      .orderBy(sql`${smartImportRuns.committedAt} DESC NULLS LAST, ${smartImportRuns.uploadedAt} DESC`);
+
+    // Aggregate per project
+    const projectMap = new Map<string, {
+      projectName: string;
+      projectId: number | null;
+      lastImportDate: string | null;
+      lastImportStatus: string;
+      totalImportRuns: number;
+    }>();
+
+    for (const run of allRuns) {
+      if (!projectMap.has(run.projectName)) {
+        projectMap.set(run.projectName, {
+          projectName: run.projectName,
+          projectId: run.projectId,
+          lastImportDate: run.status === "COMMITTED" && run.committedAt ? run.committedAt.toISOString() : null,
+          lastImportStatus: run.status,
+          totalImportRuns: 0,
+        });
+      }
+      const entry = projectMap.get(run.projectName)!;
+      entry.totalImportRuns++;
+      // Update last committed date if this is a committed run and we don't have one yet
+      if (!entry.lastImportDate && run.status === "COMMITTED" && run.committedAt) {
+        entry.lastImportDate = run.committedAt.toISOString();
+        entry.lastImportStatus = "COMMITTED";
+      }
+    }
+
+    // Get unresolved issue counts per project (from latest run only)
+    const latestRunIds = new Map<string, number>();
+    for (const run of allRuns) {
+      if (!latestRunIds.has(run.projectName)) {
+        latestRunIds.set(run.projectName, run.id);
+      }
+    }
+    const issueCountMap = new Map<string, number>();
+    for (const [projectName, latestRunId] of latestRunIds) {
+      const unresolvedCount = await db.select({ count: sql<number>`count(*)` })
+        .from(importIssues)
+        .where(and(eq(importIssues.importRunId, latestRunId), eq(importIssues.resolved, false)));
+      issueCountMap.set(projectName, Number(unresolvedCount[0]?.count || 0));
+    }
+
+    // Also include projects that have never been imported
+    const allProjects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
+      .from(projectInfo);
+    for (const proj of allProjects) {
+      if (proj.projectName && !projectMap.has(proj.projectName)) {
+        projectMap.set(proj.projectName, {
+          projectName: proj.projectName,
+          projectId: proj.id,
+          lastImportDate: null,
+          lastImportStatus: "NEVER",
+          totalImportRuns: 0,
+        });
+      }
+    }
+
+    const now = new Date();
+    const dashboard = Array.from(projectMap.values()).map(p => {
+      const daysSinceLastImport = p.lastImportDate
+        ? Math.floor((now.getTime() - new Date(p.lastImportDate).getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+      const staleness: "fresh" | "aging" | "stale" | "never" =
+        daysSinceLastImport === null ? "never" :
+        daysSinceLastImport <= 14 ? "fresh" :
+        daysSinceLastImport <= 30 ? "aging" : "stale";
+      return {
+        ...p,
+        daysSinceLastImport,
+        staleness,
+        unresolvedIssueCount: issueCountMap.get(p.projectName) || 0,
+      };
+    });
+
+    // Sort: stale first, then aging, fresh, never
+    const stalenessOrder: Record<string, number> = { stale: 0, aging: 1, never: 2, fresh: 3 };
+    dashboard.sort((a, b) => (stalenessOrder[a.staleness] ?? 9) - (stalenessOrder[b.staleness] ?? 9));
+
+    res.json(dashboard);
+  } catch (err: any) {
+    console.error("[smart-import] GET health-dashboard error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/smart-import/pending-runs (must be BEFORE :runId to avoid route conflict)
 router.get("/api/smart-import/pending-runs", requireAuth, requirePermission("smart_import", "view"), async (_req: Request, res: Response) => {
   try {
@@ -606,6 +736,126 @@ router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Re
     });
   } catch (err: any) {
     console.error("[smart-import] GET run error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/smart-import/:runId/diff — Compute delta between incoming data and existing DB records
+router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    const summary = run.summaryJson as any;
+    if (!summary?.normalization) return res.json({ diff: null });
+
+    const norm = summary.normalization;
+    const projectName = run.projectName;
+    const projectId = run.projectId;
+
+    const diff: Record<string, { added: number; modified: number; removed: number; unchanged: number; details: any[] }> = {};
+
+    // Plan tasks diff
+    if (Array.isArray(norm.planTasks) && norm.planTasks.length > 0) {
+      const existingTasks = projectId
+        ? await db.select({ title: workItems.title, startDate: workItems.startDate, endDate: workItems.endDate, ownerName: workItems.ownerName })
+            .from(workItems)
+            .where(and(eq(workItems.projectId, projectId), eq(workItems.source, "SMART_IMPORT")))
+        : [];
+      const existingMap = new Map(existingTasks.map(t => [`${t.title}::${t.startDate || ""}`, t]));
+      let added = 0, modified = 0, unchanged = 0;
+      const details: any[] = [];
+      const matchedKeys = new Set<string>();
+
+      for (const task of norm.planTasks) {
+        const key = `${task.taskName}::${task.startDate || ""}`;
+        if (existingMap.has(key)) {
+          matchedKeys.add(key);
+          const existing = existingMap.get(key)!;
+          const changes: string[] = [];
+          if (task.endDate !== existing.endDate) changes.push(`endDate: ${existing.endDate || "—"} → ${task.endDate || "—"}`);
+          if (task.owner !== existing.ownerName) changes.push(`owner: ${existing.ownerName || "—"} → ${task.owner || "—"}`);
+          if (changes.length > 0) {
+            modified++;
+            if (details.length < 20) details.push({ type: "modified", name: task.taskName, changes });
+          } else {
+            unchanged++;
+          }
+        } else {
+          added++;
+          if (details.length < 20) details.push({ type: "added", name: task.taskName });
+        }
+      }
+      const removed = existingTasks.length - matchedKeys.size;
+      diff.plan = { added, modified, removed, unchanged, details };
+    }
+
+    // Revenue diff
+    if (Array.isArray(norm.revenueLines) && norm.revenueLines.length > 0) {
+      const existingRevenue = projectId
+        ? await db.select({ milestoneName: normalizedRevenueLines.milestoneName, amountExVat: normalizedRevenueLines.amountExVat, invoiceNumber: normalizedRevenueLines.invoiceNumber })
+            .from(normalizedRevenueLines)
+            .where(eq(normalizedRevenueLines.projectId, projectId))
+        : [];
+      const existingMap = new Map(existingRevenue.map(r => [`${r.milestoneName}::${r.amountExVat || ""}`, r]));
+      let added = 0, modified = 0, unchanged = 0;
+      const details: any[] = [];
+      const matchedKeys = new Set<string>();
+
+      for (const line of norm.revenueLines) {
+        const key = `${line.milestoneName}::${line.amountExVat || ""}`;
+        if (existingMap.has(key)) {
+          matchedKeys.add(key);
+          const existing = existingMap.get(key)!;
+          const changes: string[] = [];
+          if ((line.invoiceNumber || null) !== (existing.invoiceNumber || null)) changes.push(`invoiceNumber: ${existing.invoiceNumber || "—"} → ${line.invoiceNumber || "—"}`);
+          if (changes.length > 0) {
+            modified++;
+            if (details.length < 20) details.push({ type: "modified", name: line.milestoneName, changes });
+          } else {
+            unchanged++;
+          }
+        } else {
+          added++;
+          if (details.length < 20) details.push({ type: "added", name: line.milestoneName });
+        }
+      }
+      const removed = existingRevenue.length - matchedKeys.size;
+      diff.revenue = { added, modified, removed, unchanged, details };
+    }
+
+    // Cost lines diff
+    if (Array.isArray(norm.costLines) && norm.costLines.length > 0) {
+      const existingCost = projectId
+        ? await db.select({ description: normalizedCostLines.description, amountExVat: normalizedCostLines.amountExVat, invoiceNumber: normalizedCostLines.invoiceNumber })
+            .from(normalizedCostLines)
+            .where(eq(normalizedCostLines.projectId, projectId))
+        : [];
+      const existingMap = new Map(existingCost.map(c => [`${c.description}::${c.amountExVat || ""}::${c.invoiceNumber || ""}`, c]));
+      let added = 0, modified = 0, unchanged = 0;
+      const details: any[] = [];
+      const matchedKeys = new Set<string>();
+
+      for (const line of norm.costLines) {
+        const key = `${line.description}::${line.amountExVat || ""}::${line.invoiceNumber || ""}`;
+        if (existingMap.has(key)) {
+          matchedKeys.add(key);
+          unchanged++;
+        } else {
+          added++;
+          if (details.length < 20) details.push({ type: "added", name: line.description || line.costCategory });
+        }
+      }
+      const removed = existingCost.length - matchedKeys.size;
+      diff.cost = { added, modified: 0, removed, unchanged, details };
+    }
+
+    res.json({ diff });
+  } catch (err: any) {
+    console.error("[smart-import] GET diff error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1564,6 +1814,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               sourceSheet: t.sourceSheet,
               sourceRow: t.sourceRow,
               importRunId: runId,
+              subProjectName: merged.subProjectName || null,
             };
             const rowOverrides = manualOverrideMap.get(t.sourceRow);
             if (rowOverrides) {
@@ -1692,6 +1943,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               sourceRow: r.sourceRow,
               importRunId: runId,
               turnaroundDays: merged.turnaroundDays,
+              subProjectName: merged.subProjectName || null,
             };
           });
         if (revValues.length > 0) {
@@ -1701,10 +1953,25 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
 
       if (Array.isArray(norm.revenueLines) && projectName) {
-        const oldInflows = await tx.select({ rowNumber: programInflows.rowNumber, inBank: programInflows.inBank })
+        const oldInflows = await tx.select({
+          rowNumber: programInflows.rowNumber,
+          inBank: programInflows.inBank,
+          milestoneName: programInflows.milestoneName,
+          milestoneAmount: programInflows.milestoneAmount,
+        })
           .from(programInflows)
           .where(eq(programInflows.projectName, projectName));
-        const oldInBankMap = new Map(oldInflows.filter(r => r.rowNumber != null).map(r => [r.rowNumber!, r.inBank]));
+
+        // Build composite key map: "milestoneName::amount" → { inBank, rowNumber }
+        const oldCompositeMap = new Map<string, { inBank: number | null; rowNumber: number | null }>();
+        const oldRowMap = new Map<number, number | null>();
+        for (const r of oldInflows) {
+          if (r.rowNumber != null) oldRowMap.set(r.rowNumber, r.inBank);
+          if (r.milestoneName) {
+            const key = `${r.milestoneName}::${r.milestoneAmount || ""}`;
+            oldCompositeMap.set(key, { inBank: r.inBank, rowNumber: r.rowNumber });
+          }
+        }
 
         await tx.delete(programInflows).where(eq(programInflows.projectName, projectName));
         if (norm.revenueLines.length > 0) {
@@ -1717,18 +1984,37 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               const ov = revOverrides.get(r.sourceRow);
               const m = ov ? { ...r, ...ov } : r;
               milestoneIdx++;
-              const prevInBank = oldInBankMap.get(r.sourceRow);
+              const name = m.milestoneName || m.description || null;
+              const amount = m.amountExVat ? String(m.amountExVat) : null;
+
+              // Composite match first (name + amount), then fall back to row number
+              let prevInBank: number | null | undefined = undefined;
+              const compositeKey = name ? `${name}::${amount || ""}` : null;
+              if (compositeKey && oldCompositeMap.has(compositeKey)) {
+                const match = oldCompositeMap.get(compositeKey)!;
+                prevInBank = match.inBank;
+                // Warn if the milestone moved rows
+                if (match.rowNumber != null && match.rowNumber !== r.sourceRow) {
+                  console.log(`[SmartImport] Revenue milestone '${name}' moved from row ${match.rowNumber} to row ${r.sourceRow}. Status preserved.`);
+                }
+              }
+              // Fall back to row number match
+              if (prevInBank === undefined && oldRowMap.has(r.sourceRow)) {
+                prevInBank = oldRowMap.get(r.sourceRow) ?? null;
+              }
+
               return {
                 projectName,
                 rowNumber: r.sourceRow,
                 milestoneNo: String(milestoneIdx),
-                milestoneName: m.milestoneName || m.description || null,
-                milestoneAmount: m.amountExVat ? String(m.amountExVat) : null,
+                milestoneName: name,
+                milestoneAmount: amount,
                 plannedPaymentDate: m.expectedPaymentDate || null,
                 milestoneInvoiceNumber: m.invoiceNumber || null,
                 invoiceRaisedDate: m.invoiceDate || null,
                 paymentReceivedDate: m.paidDate || null,
                 inBank: prevInBank != null ? prevInBank : (m.inBankDate ? 1 : 0),
+                subProjectName: m.subProjectName || null,
                 dataSource: "SMART_IMPORT",
                 projectId: projectId || null,
                 importRunId: runId,
@@ -1841,18 +2127,19 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               sourceRow: c.sourceRow,
               importRunId: runId,
               turnaroundDays: merged.turnaroundDays,
-              _budgetQty: merged.budgetQty || null,
-              _budgetRate: merged.budgetRate || null,
-              _budgetTotal: merged.budgetTotal || null,
-              _budgetCos: merged.budgetCos || null,
+              budgetQty: merged.budgetQty || null,
+              budgetRate: merged.budgetRate || null,
+              budgetTotal: merged.budgetTotal || null,
+              budgetCos: merged.budgetCos || null,
+              revenueRecognitionAmount: merged.revenueRecognitionAmount || null,
+              forecastPaymentDate: merged.forecastPaymentDate || null,
+              subProjectName: merged.subProjectName || null,
               _actualCos: merged.actualCos || null,
-              _revenueRecognitionAmount: merged.revenueRecognitionAmount || null,
-              _forecastPaymentDate: merged.forecastPaymentDate || null,
             };
           });
         if (costValues.length > 0) {
           const normalizedInserts = costValues.map((c: any) => {
-            const { _budgetQty, _budgetRate, _budgetTotal, _budgetCos, _actualCos, _revenueRecognitionAmount, _forecastPaymentDate, ...normalized } = c;
+            const { _actualCos, ...normalized } = c;
             return normalized;
           });
           await tx.insert(normalizedCostLines).values(normalizedInserts);
@@ -1946,8 +2233,11 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
                 expenseInvoiceNumber: m.invoiceNumber || null,
                 expenseInvoicedDate: m.invoiceDate || null,
                 invoiceDateFontColor: m.invoiceDateFontColor || null,
+                invoiceDateConfirmed: m.invoiceDateFontColor === "black",
                 expensePaymentDate: m.paidDate || null,
                 paymentDateFontColor: m.paidDateFontColor || null,
+                paymentDateConfirmed: m.paidDateFontColor === "black",
+                subProjectName: m.subProjectName || null,
                 dataSource: "SMART_IMPORT",
                 projectId: projectId || null,
                 importRunId: runId,
@@ -2024,6 +2314,10 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           if (cs.plannedExpenditure != null) vals.plannedExpenditure = String(cs.plannedExpenditure);
           if (cs.plannedProfit != null) vals.plannedProfit = String(cs.plannedProfit);
           if (cs.plannedMargin != null) vals.plannedMargin = String(cs.plannedMargin);
+          if (cs.actualRevenue != null) vals.actualRevenue = String(cs.actualRevenue);
+          if (cs.actualExpenditure != null) vals.actualExpenditure = String(cs.actualExpenditure);
+          if (cs.actualProfit != null) vals.actualProfit = String(cs.actualProfit);
+          if (cs.actualMargin != null) vals.actualMargin = String(cs.actualMargin);
           if (existing) {
             await tx.update(projectRevenueSummary).set(vals).where(eq(projectRevenueSummary.id, existing.id));
           } else {

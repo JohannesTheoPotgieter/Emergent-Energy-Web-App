@@ -295,6 +295,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   const [edits, setEdits] = useState<Map<number, Record<string, string>>>(new Map());
   const [editingCell, setEditingCell] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [subProjectFilter, setSubProjectFilter] = useState<string>("all");
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(() => {
     return new Set(COLUMNS.filter(c => c.defaultVisible).map(c => c.key));
@@ -691,8 +692,11 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     if (statusFilter !== "all") {
       data = data.filter(e => e.cosStatus === statusFilter || e.paymentStatus === statusFilter);
     }
+    if (subProjectFilter !== "all") {
+      data = data.filter((e: any) => e.subProjectName === subProjectFilter);
+    }
     return data;
-  }, [items, edits, statusFilter]);
+  }, [items, edits, statusFilter, subProjectFilter]);
 
   const categoryGroups = useMemo(() => {
     const groupMap = new Map<string, CategoryGroup>();
@@ -1453,6 +1457,25 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             { value: "Planned", label: `Planned (${kpis.countByCos.Planned})` },
           ]}
         />
+
+        {/* Sub-project filter (only visible for multi-project/Ad Hoc trackers) */}
+        {(() => {
+          const subProjects = [...new Set(items.map((e: any) => e.subProjectName).filter(Boolean))];
+          if (subProjects.length === 0) return null;
+          return (
+            <SearchableSelect
+              value={subProjectFilter}
+              onValueChange={setSubProjectFilter}
+              placeholder="Sub-project"
+              triggerClassName="w-[160px] h-7 text-xs"
+              data-testid="select-sub-project-filter"
+              options={[
+                { value: "all", label: "All Sub-Projects" },
+                ...subProjects.map(sp => ({ value: sp, label: sp })),
+              ]}
+            />
+          );
+        })()}
 
         <div className="ml-auto flex items-center gap-2">
           {isAdmin && (

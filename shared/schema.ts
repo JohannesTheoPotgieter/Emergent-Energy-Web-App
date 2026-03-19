@@ -156,6 +156,7 @@ export const programExpense = pgTable("program_expense", {
   computedForecastPaymentDate: text("computed_forecast_payment_date"),
   supplierName: text("supplier_name"),
   isManual: boolean("is_manual").default(false),
+  subProjectName: text("sub_project_name"),
   dataSource: text("data_source").default("SMART_IMPORT"),
   projectId: integer("project_id").references(() => projectInfo.id),
   importRunId: integer("import_run_id"),
@@ -184,6 +185,7 @@ export const programInflows = pgTable("program_inflows", {
   inBank: integer("in_bank").default(0),
   inflowLineHash: text("inflow_line_hash"),
   computedForecastReceiptDate: text("computed_forecast_receipt_date"),
+  subProjectName: text("sub_project_name"),
   dataSource: text("data_source").default("SMART_IMPORT"),
   projectId: integer("project_id").references(() => projectInfo.id),
   importRunId: integer("import_run_id"),
@@ -3910,6 +3912,7 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   sourceRow: integer("source_row"),
   importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
   turnaroundDays: integer("turnaround_days"),
+  subProjectName: text("sub_project_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true } as any);
@@ -4014,6 +4017,14 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   patternClassifiedAt: timestamp("pattern_classified_at"),
   patternInferredType: text("pattern_inferred_type"),
   noRevenueLinked: boolean("no_revenue_linked").default(false),
+  // Budget reference fields (read-only, from left pane of Expenditure Breakdown)
+  budgetQty: text("budget_qty"),
+  budgetRate: text("budget_rate"),
+  budgetTotal: text("budget_total"),
+  budgetCos: text("budget_cos"),
+  revenueRecognitionAmount: text("revenue_recognition_amount"),
+  forecastPaymentDate: text("forecast_payment_date"),
+  subProjectName: text("sub_project_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true } as any);
@@ -5260,6 +5271,7 @@ export const workItems = pgTable("work_items", {
   recurrenceDaysOfWeek: text("recurrence_days_of_week"),
   recurrenceEndDate: text("recurrence_end_date"),
   recurrenceParentId: integer("recurrence_parent_id"),
+  subProjectName: text("sub_project_name"),
 });
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;
