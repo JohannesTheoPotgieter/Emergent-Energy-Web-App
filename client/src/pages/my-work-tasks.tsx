@@ -566,13 +566,23 @@ export default function MyWorkTasksPage() {
     onError: () => { toast({ title: "Failed to create subtask", variant: "destructive" }); },
   });
 
+  const [boardCompletionDialog, setBoardCompletionDialog] = useState<{ task: UnifiedTask } | null>(null);
+  const [boardCompletionComments, setBoardCompletionComments] = useState("");
+
   const boardStatusMutation = useMutation({
-    mutationFn: async ({ task, newStatus }: { task: UnifiedTask; newStatus: string }) => {
+    mutationFn: async ({ task, newStatus, outcomeComments }: { task: UnifiedTask; newStatus: string; outcomeComments?: string }) => {
       if (task._source === "personal") {
         await apiRequest("PATCH", `/api/mytool/tasks/${task._rawId}`, { status: newStatus });
       } else if (task._source === "tr_register") {
+        if (newStatus === "complete" && !task.notes?.trim() && !outcomeComments?.trim()) {
+          throw new Error("__NEEDS_COMMENTS__");
+        }
         const trStatus = newStatus === "complete" ? "Completed" : "Active";
         const endpoint = newStatus === "complete" ? `/api/tr-register/${task._rawId}/complete` : `/api/tr-register/${task._rawId}`;
+        if (newStatus === "complete" && outcomeComments?.trim()) {
+          const saveRes = await fetch(`/api/tr-register/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ outcomeComments: outcomeComments.trim() }) });
+          if (!saveRes.ok) { throw new Error("Failed to save outcome comments"); }
+        }
         const res = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify(newStatus === "complete" ? {} : { status: trStatus }) });
         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       } else if (task._source === "operational") {
@@ -595,8 +605,14 @@ export default function MyWorkTasksPage() {
         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       }
     },
-    onSuccess: () => { invalidateAll(); toast({ title: "Status updated" }); },
-    onError: (err: any) => { toast({ title: err.message || "Failed to update status", variant: "destructive" }); },
+    onSuccess: () => { invalidateAll(); setBoardCompletionDialog(null); setBoardCompletionComments(""); toast({ title: "Status updated" }); },
+    onError: (err: any, variables: any) => {
+      if (err.message === "__NEEDS_COMMENTS__") {
+        setBoardCompletionDialog({ task: variables.task });
+      } else {
+        toast({ title: err.message || "Failed to update status", variant: "destructive" });
+      }
+    },
   });
 
   const dismissNotifMutation = useMutation({
@@ -680,6 +696,14 @@ export default function MyWorkTasksPage() {
   const handleOpenSource = useCallback((task: UnifiedTask) => {
     const href = task.sourceHref || (task._source === "personal" ? `/my-work/tasks?itemKey=${encodeURIComponent(task._key)}` : null);
     if (!href) {
+      handleOpenDrawer(task);
+      return;
+    }
+
+    // If the sourceHref points to the current page (e.g. /my-work/tasks?itemKey=...),
+    // open the drawer directly instead of navigating — navigation to the same route
+    // won't re-trigger the useEffect that reads the query param.
+    if (!isExternalHref(href) && href.startsWith("/my-work/tasks")) {
       handleOpenDrawer(task);
       return;
     }
@@ -1197,6 +1221,36 @@ export default function MyWorkTasksPage() {
       {drawerOpen && drawerTask && (<TaskDetailDrawer task={drawerTask} open={drawerOpen} onOpenChange={(open) => setDrawerOpen(open)} onInvalidate={invalidateAll} />)}
       {unifiedDetailOpen && unifiedDetailTaskFresh && (<TaskDetailPanel task={unifiedDetailTaskFresh} open={unifiedDetailOpen} onOpenChange={setUnifiedDetailOpen} onInvalidate={invalidateAll} allProjects={allProjects} canReassign={canReassignTask(unifiedDetailTaskFresh)} taskTypeLabel={taskTypeLabel(unifiedDetailTaskFresh)} />)}
 
+      {/* Board-level completion dialog for TR register items dragged to Complete */}
+      <Dialog open={!!boardCompletionDialog} onOpenChange={(open) => { if (!open) { setBoardCompletionDialog(null); setBoardCompletionComments(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" /> Complete Action</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-1">
+            <p className="text-xs font-medium">{boardCompletionDialog?.task.title}</p>
+            <p className="text-xs text-muted-foreground">Outcome comments are required before completing this action.</p>
+            <Textarea
+              value={boardCompletionComments}
+              onChange={e => setBoardCompletionComments(e.target.value)}
+              placeholder="Describe the outcome of this action..."
+              className="min-h-[80px] text-xs"
+              data-testid="input-board-completion-comments"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button size="sm" variant="outline" onClick={() => { setBoardCompletionDialog(null); setBoardCompletionComments(""); }}>Cancel</Button>
+            <Button size="sm" disabled={!boardCompletionComments.trim() || boardStatusMutation.isPending} onClick={() => {
+              if (boardCompletionDialog) {
+                boardStatusMutation.mutate({ task: boardCompletionDialog.task, newStatus: "complete", outcomeComments: boardCompletionComments });
+              }
+            }} data-testid="btn-board-confirm-complete">
+              {boardStatusMutation.isPending ? <><Loader2 className="h-3 w-3 animate-spin mr-1.5" /> Completing...</> : "Complete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="max-w-[95vw] sm:max-w-lg">
           <DialogHeader>
@@ -1578,6 +1632,15 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
   const [editNotes, setEditNotes] = useState(task.notes || "");
   const [detailTab, setDetailTab] = useState("details");
 
+  // Sync editNotes when the task data refreshes (e.g. after invalidation)
+  const prevTaskKeyRef = useRef(task._key);
+  useEffect(() => {
+    if (prevTaskKeyRef.current !== task._key || editingField !== "notes") {
+      setEditNotes(task.notes || "");
+    }
+    prevTaskKeyRef.current = task._key;
+  }, [task._key, task.notes, editingField]);
+
   const STATUS_LABEL_MAP: Record<string, string> = { todo: "To Do", in_progress: "In Progress", blocked: "Blocked", review: "Review", complete: "Complete", cancelled: "Cancelled", inbox: "To Do", done: "Complete", planned: "To Do", waiting: "Blocked" };
   const STATUS_COLOR_MAP: Record<string, string> = { todo: "bg-muted text-muted-foreground border-border", in_progress: "bg-blue-100 text-blue-700 border-blue-200", blocked: "bg-red-100 text-red-700 border-red-200", review: "bg-amber-100 text-amber-700 border-amber-200", complete: "bg-emerald-100 text-emerald-700 border-emerald-200", cancelled: "bg-muted text-muted-foreground border-border", inbox: "bg-muted text-muted-foreground border-border", done: "bg-emerald-100 text-emerald-700 border-emerald-200", waiting: "bg-amber-100 text-amber-700 border-amber-200" };
   const statusLabel = STATUS_LABEL_MAP[task.status] || task.status;
@@ -1586,11 +1649,22 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
   const statusColor = STATUS_COLOR_MAP[task.status] || "bg-muted text-muted-foreground border-border";
   const isOverdue = (() => { if (!task.dueAt || task.status === "complete" || task.status === "done" || task.status === "cancelled") return false; try { return isPast(parseISO(task.dueAt)); } catch { return false; } })();
 
+  const [completionDialogOpen, setCompletionDialogOpen] = useState(false);
+  const [completionComments, setCompletionComments] = useState("");
+
   const updateStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
       if (task._source === "tr_register") {
+        if (newStatus === "complete" && !task.notes?.trim() && !completionComments.trim()) {
+          throw new Error("__NEEDS_COMMENTS__");
+        }
         const trStatus = newStatus === "complete" ? "Completed" : "Active";
         const endpoint = newStatus === "complete" ? `/api/tr-register/${task._rawId}/complete` : `/api/tr-register/${task._rawId}`;
+        // If completing and outcomeComments were provided via the dialog, save them first
+        if (newStatus === "complete" && completionComments.trim()) {
+          const saveRes = await fetch(`/api/tr-register/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ outcomeComments: completionComments.trim() }) });
+          if (!saveRes.ok) { throw new Error("Failed to save outcome comments"); }
+        }
         const res = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify(newStatus === "complete" ? {} : { status: trStatus }) });
         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       } else if (task._source === "operational") {
@@ -1617,8 +1691,14 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       }
     },
-    onSuccess: () => { onInvalidate(); toast({ title: "Status updated" }); },
-    onError: (err: any) => { toast({ title: err.message || "Failed to update status", variant: "destructive" }); },
+    onSuccess: () => { onInvalidate(); setCompletionDialogOpen(false); setCompletionComments(""); toast({ title: "Status updated" }); },
+    onError: (err: any) => {
+      if (err.message === "__NEEDS_COMMENTS__") {
+        setCompletionDialogOpen(true);
+      } else {
+        toast({ title: err.message || "Failed to update status", variant: "destructive" });
+      }
+    },
   });
 
   const dismissMutation = useMutation({
@@ -1751,17 +1831,17 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
                 </div>
               )}
 
-              {(task.notes || task.description) && (
+              {(task.notes || task.description || canEditInline) && (
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Notes</Label>
+                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">{task._source === "tr_register" ? "Outcome Comments" : "Notes"}</Label>
                     {canEditInline && editingField !== "notes" && (
-                      <button onClick={() => { setEditNotes(task.notes || ""); setEditingField("notes"); }} className="text-[10px] text-primary hover:underline">Edit</button>
+                      <button onClick={() => { setEditNotes(task.notes || ""); setEditingField("notes"); }} className="text-[10px] text-primary hover:underline">{task.notes || task.description ? "Edit" : "Add"}</button>
                     )}
                   </div>
                   {editingField === "notes" ? (
                     <div className="space-y-1.5">
-                      <Textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} className="min-h-[60px] text-xs" />
+                      <Textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} className="min-h-[60px] text-xs" placeholder={task._source === "tr_register" ? "Outcome comments are required before completing this action..." : "Add notes..."} />
                       <div className="flex gap-1.5">
                         <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => setEditingField(null)}>Cancel</Button>
                         <Button size="sm" className="h-6 text-xs" onClick={() => {
@@ -1773,8 +1853,10 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
                         }} disabled={updateTrFieldMutation.isPending}>Save</Button>
                       </div>
                     </div>
-                  ) : (
+                  ) : (task.notes || task.description) ? (
                     <p className="text-xs text-foreground whitespace-pre-wrap bg-muted/30 rounded-md p-2.5 leading-relaxed" data-testid="text-unified-notes">{task.notes || task.description}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic bg-muted/20 rounded-md p-2.5">{task._source === "tr_register" ? "No outcome comments yet. Required before completing." : "No notes yet."}</p>
                   )}
                 </div>
               )}
@@ -1832,6 +1914,31 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
           </TabsContent>
         </Tabs>
       </SheetContent>
+
+      {/* Completion dialog for TR register items requiring outcomeComments */}
+      <Dialog open={completionDialogOpen} onOpenChange={setCompletionDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" /> Complete Action</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-1">
+            <p className="text-xs text-muted-foreground">Outcome comments are required before completing this action.</p>
+            <Textarea
+              value={completionComments}
+              onChange={e => setCompletionComments(e.target.value)}
+              placeholder="Describe the outcome of this action..."
+              className="min-h-[80px] text-xs"
+              data-testid="input-completion-comments"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button size="sm" variant="outline" onClick={() => { setCompletionDialogOpen(false); setCompletionComments(""); }}>Cancel</Button>
+            <Button size="sm" disabled={!completionComments.trim() || updateStatusMutation.isPending} onClick={() => updateStatusMutation.mutate("complete")} data-testid="btn-confirm-complete">
+              {updateStatusMutation.isPending ? <><Loader2 className="h-3 w-3 animate-spin mr-1.5" /> Completing...</> : "Complete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }
