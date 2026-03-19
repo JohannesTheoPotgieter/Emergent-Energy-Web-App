@@ -3820,6 +3820,7 @@ function SmartImportGovernancePanel({
             </div>
           )}
           </div>
+          </>
         )}
       </CardContent>
     </Card>
