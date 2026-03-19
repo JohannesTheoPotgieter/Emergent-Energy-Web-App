@@ -1,3 +1,42 @@
+// GC-005: Configurable RAG thresholds — single source of truth for all screens
+export interface RagThresholds {
+  schedule: { amberMax: number }; // overdue task count: 0 = green, <= amberMax = amber, > amberMax = red
+  cost: { greenMax: number; amberMax: number }; // cost ratio: < greenMax = green, <= amberMax = amber, > amberMax = red
+  quality: { requireAllGatesPassed: boolean }; // if true, all gates must pass for green
+}
+
+export const DEFAULT_RAG_THRESHOLDS: RagThresholds = {
+  schedule: { amberMax: 3 },
+  cost: { greenMax: 0.9, amberMax: 1.0 },
+  quality: { requireAllGatesPassed: true },
+};
+
+export function computeScheduleRag(overdueCount: number, thresholds: RagThresholds = DEFAULT_RAG_THRESHOLDS): "green" | "amber" | "red" {
+  if (overdueCount === 0) return "green";
+  return overdueCount <= thresholds.schedule.amberMax ? "amber" : "red";
+}
+
+export function computeCostRag(costRatio: number, thresholds: RagThresholds = DEFAULT_RAG_THRESHOLDS): "green" | "amber" | "red" {
+  if (costRatio < thresholds.cost.greenMax) return "green";
+  return costRatio <= thresholds.cost.amberMax ? "amber" : "red";
+}
+
+export function computeQualityRag(
+  hasChecklist: boolean, gatesPassed: number, gatesTotal: number, approvedItems: number,
+  thresholds: RagThresholds = DEFAULT_RAG_THRESHOLDS,
+): "green" | "amber" | "red" {
+  if (!hasChecklist) return "red";
+  if (thresholds.quality.requireAllGatesPassed && gatesPassed === gatesTotal && gatesTotal > 0) return "green";
+  if (approvedItems > 0) return "amber";
+  return "red";
+}
+
+export function computeOverallRag(schedule: "green" | "amber" | "red", cost: "green" | "amber" | "red", quality: "green" | "amber" | "red"): "green" | "amber" | "red" {
+  if (schedule === "red" || cost === "red" || quality === "red") return "red";
+  if (schedule === "amber" || cost === "amber" || quality === "amber") return "amber";
+  return "green";
+}
+
 export type KpiSourceLayer = "foundation" | "business_logic" | "derived_kpi" | "view_model";
 
 export interface KpiDefinition {

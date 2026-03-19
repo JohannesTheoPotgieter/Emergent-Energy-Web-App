@@ -48,6 +48,7 @@ import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
 import { PageShell } from "@/components/layout/page-shell";
 import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
+import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
 import { usePermission } from "@/hooks/use-permissions";
 import { type NextMilestoneSummary } from "@/lib/next-milestone";
 
@@ -1003,6 +1004,27 @@ export default function ProjectDetailPage() {
     enabled: !!projectName,
   });
 
+  // GC-003: Server-side KPI health summary — single source of truth
+  const { data: healthSummary } = useQuery<{
+    schedule: { rag: string; overdueTasks: number; completionPct: number };
+    cost: { rag: string; ratio: number; totalExpenses: number; budgetTotal: number };
+    quality: { rag: string; gatesTotal: number; gatesPassed: number; totalItems: number; approvedItems: number; progressPct: number };
+    revenue: { contractValue: number; realisedPct: number; totalPaidInflows: number };
+    cos: { realisedPct: number; totalRealised: number };
+    engineering: { progressPct: number; totalTasks: number; completedTasks: number };
+    overall: { rag: string };
+    alerts: { overduePlanTasks: number; overdueEngineeringTasks: number; pendingQualityApprovals: number };
+  }>({
+    queryKey: ["health-summary", projectName],
+    queryFn: async () => {
+      const res = await engFetch(`/api/projects/${encodeURIComponent(projectName)}/health-summary`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!projectName,
+    staleTime: 30_000,
+  });
+
   if (!projectName) {
     return (
       <div className="space-y-6">
@@ -1058,10 +1080,12 @@ export default function ProjectDetailPage() {
   const isAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
   const canSetRag = ['admin', 'COO_ADMIN', 'CEO_ADMIN', 'CCO'].includes(user?.role || '');
   const ragStatus = projectInfo?.rag_status || null;
+
+  // GC-003: Prefer server-computed KPIs (healthSummary) with client-side fallback
   const totalRevenueActual = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
-  const contractValue = projectInfo?.contract_value || totalRevenueActual || 0;
+  const contractValue = healthSummary?.revenue.contractValue ?? projectInfo?.contract_value ?? totalRevenueActual ?? 0;
   const totalBudgetFromExpenses = (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
-  const budgetTotal = projectInfo?.budget_total || totalBudgetFromExpenses || 0;
+  const budgetTotal = healthSummary?.cost.budgetTotal ?? projectInfo?.budget_total ?? totalBudgetFromExpenses ?? 0;
 
   const planTasks = projectPlanData as any[];
   const today = new Date().toISOString().split("T")[0];
@@ -1076,23 +1100,21 @@ export default function ProjectDetailPage() {
     const pctNorm = pct > 1 ? pct : pct * 100;
     return pctNorm >= 100;
   });
-  const planCompletionPct = planTasks.length > 0 ? (completedPlanTasks.length / planTasks.length) * 100 : 0;
-  const scheduleRag: "green" | "amber" | "red" = overduePlanTasks.length === 0 ? "green" : overduePlanTasks.length <= 3 ? "amber" : "red";
+  const planCompletionPct = healthSummary?.schedule.completionPct ?? (planTasks.length > 0 ? (completedPlanTasks.length / planTasks.length) * 100 : 0);
+  const scheduleRag: "green" | "amber" | "red" = (healthSummary?.schedule.rag as any) ?? computeScheduleRag(overduePlanTasks.length);
 
-  const totalExpenses = (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
-  const costRatio = budgetTotal > 0 ? totalExpenses / budgetTotal : 0;
-  const costRag: "green" | "amber" | "red" = costRatio < 0.9 ? "green" : costRatio <= 1 ? "amber" : "red";
+  const totalExpenses = healthSummary?.cost.totalExpenses ?? (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
+  const costRatio = healthSummary?.cost.ratio ?? (budgetTotal > 0 ? totalExpenses / budgetTotal : 0);
+  const costRag: "green" | "amber" | "red" = (healthSummary?.cost.rag as any) ?? computeCostRag(costRatio);
 
   const qualitySummary = qualityData as any;
   const qualityPhases = qualitySummary?.phases || [];
-  const qualityGatesTotal = qualityPhases.length;
-  const qualityGatesPassed = qualityPhases.filter((p: any) => p.applicableItems > 0 && p.approvedItems >= p.applicableItems).length;
-  const qualityTotalItems = qualityPhases.reduce((s: number, p: any) => s + (p.applicableItems || 0), 0);
-  const qualityApprovedItems = qualityPhases.reduce((s: number, p: any) => s + (p.approvedItems || 0), 0);
-  const qualityProgressPct = qualityTotalItems > 0 ? (qualityApprovedItems / qualityTotalItems) * 100 : 0;
-  const qualityRag: "green" | "amber" | "red" = qualitySummary?.hasChecklist
-    ? (qualityGatesPassed === qualityGatesTotal && qualityGatesTotal > 0 ? "green" : qualityApprovedItems > 0 ? "amber" : "red")
-    : "red";
+  const qualityGatesTotal = healthSummary?.quality.gatesTotal ?? qualityPhases.length;
+  const qualityGatesPassed = healthSummary?.quality.gatesPassed ?? qualityPhases.filter((p: any) => p.applicableItems > 0 && p.approvedItems >= p.applicableItems).length;
+  const qualityTotalItems = healthSummary?.quality.totalItems ?? qualityPhases.reduce((s: number, p: any) => s + (p.applicableItems || 0), 0);
+  const qualityApprovedItems = healthSummary?.quality.approvedItems ?? qualityPhases.reduce((s: number, p: any) => s + (p.approvedItems || 0), 0);
+  const qualityProgressPct = healthSummary?.quality.progressPct ?? (qualityTotalItems > 0 ? (qualityApprovedItems / qualityTotalItems) * 100 : 0);
+  const qualityRag: "green" | "amber" | "red" = (healthSummary?.quality.rag as any) ?? computeQualityRag(!!qualitySummary?.hasChecklist, qualityGatesPassed, qualityGatesTotal, qualityApprovedItems);
 
   const revTabMilestones: any[] = revenueTrustData?.milestones || [];
 
@@ -1125,21 +1147,21 @@ export default function ProjectDetailPage() {
     return null;
   }, [revTabMilestones]);
 
-  const totalPaidInflows = revTabMilestones
+  const totalPaidInflows = healthSummary?.revenue.totalPaidInflows ?? revTabMilestones
     .filter((m: any) => m.status === 'inBank')
     .reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
-  const revenueRealisedPct = contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0;
+  const revenueRealisedPct = healthSummary?.revenue.realisedPct ?? (contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0);
 
-  const totalRealisedCos = (expenseData as any[]).reduce((s: number, e: any) => {
+  const totalRealisedCos = healthSummary?.cos.totalRealised ?? (expenseData as any[]).reduce((s: number, e: any) => {
     if (isCosRealised(e)) return s + (Number(e.expenseActualTotal) || 0);
     return s;
   }, 0);
   const cosDenominator = totalExpenses > 0 ? totalExpenses : budgetTotal;
-  const cosRealisedPct = cosDenominator > 0 ? (totalRealisedCos / cosDenominator) * 100 : 0;
+  const cosRealisedPct = healthSummary?.cos.realisedPct ?? (cosDenominator > 0 ? (totalRealisedCos / cosDenominator) * 100 : 0);
   const marginDelta = revenueRealisedPct - cosRealisedPct;
 
   const hasRedRag = scheduleRag === "red" || costRag === "red" || qualityRag === "red";
-  const overallRag: "green" | "amber" | "red" = hasRedRag ? "red" : (scheduleRag === "amber" || costRag === "amber" || qualityRag === "amber") ? "amber" : "green";
+  const overallRag: "green" | "amber" | "red" = (healthSummary?.overall.rag as any) ?? computeOverallRag(scheduleRag, costRag, qualityRag);
   const commercialPendingCount = Math.max(revTabMilestones.filter((m: any) => m.status !== 'inBank').length, 0);
   const unpaidExpenseCount = Math.max((expenseData as any[]).filter((e: any) => !isExpensePaid(e)).length, 0);
   const revenueReconciliation = revenueTrustData?.reconciliation;
@@ -1161,7 +1183,8 @@ export default function ProjectDetailPage() {
     ...((expenditureTrustData?.riskSignals || []) as any[]),
   ].slice(0, 6);
   const dependencyCount = pdTicketsData.length;
-  const overdueEngineeringCount = (engDataForAlerts?.tasks || []).filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "COMPLETE").length;
+  // GC-010: Normalize engineering status casing for overdue count
+  const overdueEngineeringCount = healthSummary?.alerts.overdueEngineeringTasks ?? (engDataForAlerts?.tasks || []).filter((t: any) => t.dueDate && t.dueDate < today && String(t.status).toUpperCase() !== "COMPLETE").length;
   const topAlerts = [
     { label: "Overdue plan tasks", count: overduePlanTasks.length, action: () => openExecutionArea("delivery", "task-grid") },
     { label: "Overdue engineering tasks", count: overdueEngineeringCount, action: () => openExecutionArea("engineering", "eng-tasks") },
@@ -1175,18 +1198,20 @@ export default function ProjectDetailPage() {
   };
 
   const engStages = engStagesData?.stages || [];
+  // GC-010: Normalize engineering status casing — compare case-insensitively
   const engStageTotalTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.length || 0), 0);
-  const engStageCompletedTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.filter((t: any) => t.status === "complete").length || 0), 0);
-  const engCompletedStages = engStages.filter((s: any) => s.status === "complete").length;
-  const engActiveStage = engStages.find((s: any) => s.status === "in_progress") || engStages.find((s: any) => s.status === "not_started");
+  const engStageCompletedTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.filter((t: any) => String(t.status).toLowerCase() === "complete").length || 0), 0);
+  const engCompletedStages = engStages.filter((s: any) => String(s.status).toLowerCase() === "complete").length;
+  const engActiveStage = engStages.find((s: any) => String(s.status).toLowerCase() === "in_progress") || engStages.find((s: any) => String(s.status).toLowerCase() === "not_started");
 
   const engBoardTasks = engDataForAlerts?.tasks || [];
   const engBoardTotal = engBoardTasks.length;
-  const engBoardCompleted = engBoardTasks.filter((t: any) => t.status === "COMPLETE").length;
+  // GC-010: Normalize engineering status casing
+  const engBoardCompleted = engBoardTasks.filter((t: any) => String(t.status).toUpperCase() === "COMPLETE").length;
 
   const engTotalTasks = engStageTotalTasks + engBoardTotal;
   const engCompletedTasks = engStageCompletedTasks + engBoardCompleted;
-  const engStagePct = engTotalTasks > 0 ? (engCompletedTasks / engTotalTasks) * 100 : 0;
+  const engStagePct = healthSummary?.engineering.progressPct ?? (engTotalTasks > 0 ? (engCompletedTasks / engTotalTasks) * 100 : 0);
 
 
 
@@ -1219,6 +1244,24 @@ export default function ProjectDetailPage() {
         pmAssignableUsers={pmAssignableUsers || []}
         onPhaseChangeClick={() => setPhaseModalOpen(true)}
       />
+
+      {/* GC-012: Contract value reconciliation warning */}
+      {(() => {
+        const projectContractValue = Number(projectInfo?.contract_value) || 0;
+        const revenueMilestoneTotal = totalRevenueActual;
+        const hasContractMismatch = projectContractValue > 0 && revenueMilestoneTotal > 0
+          && Math.abs(projectContractValue - revenueMilestoneTotal) / projectContractValue > 0.01;
+        return hasContractMismatch ? (
+          <div className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs text-orange-800" data-testid="contract-value-mismatch">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              Contract value mismatch: Project info shows <strong>R{projectContractValue.toLocaleString()}</strong> but
+              revenue milestones total <strong>R{revenueMilestoneTotal.toLocaleString()}</strong>
+              {` (${((revenueMilestoneTotal - projectContractValue) / projectContractValue * 100).toFixed(1)}% difference)`}
+            </span>
+          </div>
+        ) : null;
+      })()}
 
       {topAlerts.length > 0 && (
         <div className="flex flex-wrap gap-1.5" data-testid="cockpit-exception-strip">
