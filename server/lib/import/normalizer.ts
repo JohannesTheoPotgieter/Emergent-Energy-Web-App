@@ -24,6 +24,7 @@ export interface NormalizationResult {
     indentLevel: number;
     sourceSheet: string;
     sourceRow: number;
+    subProjectName: string | null;
   }>;
   revenueLines: Array<{
     description: string | null;
@@ -43,6 +44,7 @@ export interface NormalizationResult {
     sourceSheet: string;
     sourceRow: number;
     turnaroundDays: number | null;
+    subProjectName: string | null;
   }>;
   costLines: Array<{
     costCategory: string | null;
@@ -71,6 +73,7 @@ export interface NormalizationResult {
     sourceSheet: string;
     sourceRow: number;
     turnaroundDays: number | null;
+    subProjectName: string | null;
   }>;
   executionPhases: Array<{
     phaseName: string;
@@ -266,7 +269,8 @@ function extractPlanTasks(
   mapping: MappingResult,
   sheetName: string,
   startRow: number,
-  endRow: number
+  endRow: number,
+  isMultiProject: boolean = false
 ): { tasks: NormalizationResult["planTasks"]; phases: NormalizationResult["executionPhases"] } {
   const rawTasks: Array<{
     taskName: string;
@@ -285,6 +289,7 @@ function extractPlanTasks(
     comment: string | null;
     sourceSheet: string;
     sourceRow: number;
+    subProjectName: string | null;
   }> = [];
   const phases: NormalizationResult["executionPhases"] = [];
 
@@ -303,6 +308,8 @@ function extractPlanTasks(
   const commentCol = getColIndex(mapping, "comment");
 
   let currentPhase: string | null = null;
+  let currentSubProject: string | null = null;
+  const subProjectPattern = /^project\s+activit(?:y|ies)\s*[-–—:]\s*(.+)/i;
 
   for (let i = startRow; i < Math.min(endRow, data.length); i++) {
     const row = data[i];
@@ -317,8 +324,20 @@ function extractPlanTasks(
     if (taskName && (taskName.toLowerCase() === "high level programme" || taskName.toLowerCase() === "high level program")) continue;
     if (taskName && taskName.toLowerCase().includes("end of sheet")) continue;
 
+    // Detect sub-project parent rows in multi-project trackers
+    if (isMultiProject && taskName) {
+      const spMatch = taskName.match(subProjectPattern);
+      if (spMatch) {
+        currentSubProject = spMatch[1].trim();
+      }
+    }
+
     if (taskNo) {
+      // In multi-project mode, prefix WBS codes to prevent collisions
       taskNo = normalizeTaskNo(taskNo);
+      if (isMultiProject && currentSubProject) {
+        taskNo = `${currentSubProject}::${taskNo}`;
+      }
     }
 
     if (phaseCol >= 0) {
@@ -370,6 +389,7 @@ function extractPlanTasks(
       comment: commentCol >= 0 ? cellStr(row, commentCol) : null,
       sourceSheet: sheetName,
       sourceRow: i + 1,
+      subProjectName: currentSubProject,
     });
   }
 
@@ -438,7 +458,8 @@ function extractRevenueLines(
   startRow: number,
   endRow: number,
   issues: IssueEntry[],
-  ws?: ExcelJS.Worksheet
+  ws?: ExcelJS.Worksheet,
+  isMultiProject: boolean = false
 ): NormalizationResult["revenueLines"] {
   const lines: NormalizationResult["revenueLines"] = [];
 
@@ -465,6 +486,23 @@ function extractRevenueLines(
 
     const lowerName = milestoneName.toLowerCase();
     if (lowerName.includes("end of sheet") || lowerName.startsWith("key") || lowerName.includes("red font") || lowerName.includes("contains an error")) break;
+
+    // Skip zero-revenue placeholders: "SubProject - No Revenue" with R0
+    if (lowerName.includes("no revenue")) {
+      if (isMultiProject) {
+        const spName = milestoneName.split(/\s*[-–—]\s*/)[0].trim();
+        issues.push({
+          severity: "INFO",
+          section: "REVENUE",
+          message: `Sub-project '${spName}' has no revenue — skipped. Revenue lines will only be created when milestones with values are added to the tracker.`,
+          suggestedAction: null,
+          issueType: "ZERO_REVENUE_SUBPROJECT",
+          issueFingerprint: makeFingerprint("ZERO_REVENUE_SUBPROJECT", "REVENUE", spName),
+          payloadJson: { subProjectName: spName, row: i + 1 },
+        });
+      }
+      continue;
+    }
 
     const amountExVat = amountCol >= 0 ? parseNumber(row[amountCol]) : null;
     const vat = vatCol >= 0 ? parseNumber(row[vatCol]) : null;
@@ -549,6 +587,15 @@ function extractRevenueLines(
       paidDateConfirmed = fc.isBlack;
     }
 
+    // Extract sub-project name from milestone: "SubProject - Milestone" → SubProject
+    let subProjectName: string | null = null;
+    if (isMultiProject && milestoneName) {
+      const parts = milestoneName.split(/\s*[-–—]\s*/);
+      if (parts.length >= 2) {
+        subProjectName = parts[0].trim();
+      }
+    }
+
     lines.push({
       description: milestoneName,
       milestoneName,
@@ -567,6 +614,7 @@ function extractRevenueLines(
       sourceSheet: sheetName,
       sourceRow: i + 1,
       turnaroundDays,
+      subProjectName,
     });
   }
 
@@ -579,6 +627,18 @@ function getBudgetColIndex(budgetMappings: MappingResult["budgetMappings"], fiel
   return m ? m.colIndex : -1;
 }
 
+/**
+ * Extracts sub-project name from a category string like "1. Products - Magic Co"
+ * Returns null if no sub-project pattern is found.
+ */
+function extractSubProjectFromCategory(category: string | null): string | null {
+  if (!category) return null;
+  // Pattern: "{number}. {category} - {subProjectName}"
+  const match = category.match(/^\d+\.?\s*[^-–—]+\s*[-–—]\s*(.+)/);
+  if (match) return match[1].trim();
+  return null;
+}
+
 function extractCostLines(
   data: any[][],
   mapping: MappingResult,
@@ -586,7 +646,8 @@ function extractCostLines(
   startRow: number,
   endRow: number,
   issues: IssueEntry[],
-  ws?: ExcelJS.Worksheet
+  ws?: ExcelJS.Worksheet,
+  isMultiProject: boolean = false
 ): { lines: NormalizationResult["costLines"]; counterparties: string[] } {
   const lines: NormalizationResult["costLines"] = [];
   const counterpartySet = new Set<string>();
@@ -738,6 +799,9 @@ function extractCostLines(
     const revenueRecognitionAmount = revenueRecogCol >= 0 ? parseNumber(row[revenueRecogCol]) : null;
     const forecastPaymentDate = forecastPayDateCol >= 0 ? parseDate(row[forecastPayDateCol]) : null;
 
+    // Extract sub-project name from category in multi-project trackers
+    const subProjectName = isMultiProject ? extractSubProjectFromCategory(rawCategory) : null;
+
     lines.push({
       costCategory: category,
       counterpartyName: counterparty,
@@ -765,6 +829,7 @@ function extractCostLines(
       sourceSheet: sheetName,
       sourceRow: i + 1,
       turnaroundDays,
+      subProjectName,
     });
   }
 
@@ -783,6 +848,22 @@ export function normalizeData(
   let executionPhases: NormalizationResult["executionPhases"] = [];
   let counterpartyNames: string[] = [];
   let costedSummary: NormalizationResult["costedSummary"] = null;
+
+  const isMultiProject = detection.multiProject?.isMultiProject === true;
+  const subProjects = detection.multiProject?.subProjects || [];
+
+  // Generate INFO issue for multi-project trackers
+  if (isMultiProject && subProjects.length > 0) {
+    issues.push({
+      severity: "INFO",
+      section: "GENERAL",
+      message: `This file contains ${subProjects.length} sub-projects: ${subProjects.join(", ")}. Each line will be tagged with its sub-project name.`,
+      suggestedAction: null,
+      issueType: "MULTI_PROJECT_DETECTED",
+      issueFingerprint: makeFingerprint("MULTI_PROJECT_DETECTED", "GENERAL", "multi_project"),
+      payloadJson: { subProjectCount: subProjects.length, subProjects },
+    });
+  }
 
   // Generate INFO issues for superseded sheets (e.g., Sheet1 skipped in favor of dedicated sheet)
   for (const um of detection.unmatched) {
@@ -812,7 +893,8 @@ export function normalizeData(
       case "PLAN": {
         const result = extractPlanTasks(
           data, mapping, section.sheetName,
-          section.dataStartRowIndex, section.dataEndRowIndex
+          section.dataStartRowIndex, section.dataEndRowIndex,
+          isMultiProject
         );
         planTasks = result.tasks;
 
@@ -861,7 +943,8 @@ export function normalizeData(
       case "REVENUE": {
         revenueLines = extractRevenueLines(
           data, mapping, section.sheetName,
-          section.dataStartRowIndex, section.dataEndRowIndex, issues, ws
+          section.dataStartRowIndex, section.dataEndRowIndex, issues, ws,
+          isMultiProject
         );
         if (!costedSummary) {
           costedSummary = extractCostedSummary(data, section.headerRowIndex);
@@ -871,7 +954,8 @@ export function normalizeData(
       case "EXPENDITURE": {
         const result = extractCostLines(
           data, mapping, section.sheetName,
-          section.dataStartRowIndex, section.dataEndRowIndex, issues, ws
+          section.dataStartRowIndex, section.dataEndRowIndex, issues, ws,
+          isMultiProject
         );
         costLines = result.lines;
         counterpartyNames = result.counterparties;

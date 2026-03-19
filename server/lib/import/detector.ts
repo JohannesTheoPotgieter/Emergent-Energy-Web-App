@@ -39,6 +39,11 @@ export interface DetectionResult {
     omHandoverDate: string | null;
     clientHandoverDate: string | null;
   } | null;
+  /** Multi-project tracker info (e.g., FY 2026 Adhoc) */
+  multiProject?: {
+    isMultiProject: boolean;
+    subProjects: string[];
+  };
 }
 
 function isExcludedSheet(sheetName: string): boolean {
@@ -559,6 +564,41 @@ export function sheetNameConfidenceAdjustment(sheetName: string, sectionKey: str
   return 0;
 }
 
+/**
+ * Scans plan data for "Project Activities - {name}" parent rows to detect
+ * multi-project (ad-hoc) trackers. Returns array of sub-project names.
+ */
+export function detectMultiProjectSubProjects(
+  data: any[][],
+  dataStartRow: number,
+  dataEndRow: number
+): string[] {
+  const subProjects: string[] = [];
+  const pattern = /^project\s+activit(?:y|ies)\s*[-–—:]\s*(.+)/i;
+
+  for (let i = dataStartRow; i < Math.min(dataEndRow, data.length); i++) {
+    const row = data[i];
+    if (!row) continue;
+
+    // Check columns B (1) and C (2) for the parent row pattern
+    for (const colIdx of [1, 2, 0]) {
+      const cell = row[colIdx];
+      if (!cell) continue;
+      const text = String(cell).trim();
+      const match = text.match(pattern);
+      if (match) {
+        const name = match[1].trim();
+        if (name && !subProjects.includes(name)) {
+          subProjects.push(name);
+        }
+        break;
+      }
+    }
+  }
+
+  return subProjects;
+}
+
 export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
   const sections: DetectedSection[] = [];
   const unmatched: { sheetName: string; reason: string }[] = [];
@@ -769,6 +809,30 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
     }
   }
 
+  // Multi-project detection: check for "Project Activities - {name}" parent rows in PLAN data
+  let multiProject: DetectionResult["multiProject"];
+  const planSection = sections.find(s => s.section === "PLAN");
+  if (planSection) {
+    const planWs = workbook.getWorksheet(planSection.sheetName);
+    if (planWs) {
+      const planData = worksheetToArray(planWs);
+      const subProjects = detectMultiProjectSubProjects(planData, planSection.dataStartRowIndex, planSection.dataEndRowIndex);
+      if (subProjects.length >= 2) {
+        multiProject = { isMultiProject: true, subProjects };
+        console.log(`[Detector] Multi-project tracker detected: ${subProjects.length} sub-projects: ${subProjects.join(", ")}`);
+      }
+    }
+  }
+
+  // Filename-based signal: "adhoc" or "ad hoc" in any detected project name
+  if (!multiProject && projectInfo?.name) {
+    const nameLower = projectInfo.name.toLowerCase();
+    if (nameLower.includes("adhoc") || nameLower.includes("ad hoc") || nameLower.includes("ad-hoc")) {
+      // Mark as potential multi-project but with empty sub-projects until confirmed by data
+      console.log(`[Detector] Filename/project name suggests ad-hoc tracker but no sub-project rows detected`);
+    }
+  }
+
   console.log(`[Detector] Final: ${sections.length} sections detected, ${unmatched.length} unmatched`);
-  return { sections, unmatched, projectInfo };
+  return { sections, unmatched, projectInfo, multiProject };
 }
