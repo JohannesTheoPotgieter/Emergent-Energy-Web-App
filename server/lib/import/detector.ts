@@ -3,6 +3,9 @@ import ExcelJS from "exceljs";
 import { SECTION_ANCHORS, getSynonymsForSection } from "./synonyms";
 import { normalizeHeader, getCellRawValue, worksheetToArray, parseDate, parseNumber } from "./utils";
 
+/** Known template layout variants — extensible chain of pattern checks */
+export type LayoutVariant = "EE_STANDARD" | "MONDI_LEGACY" | "UNKNOWN";
+
 export interface DetectedSection {
   section: "PLAN" | "REVENUE" | "EXPENDITURE";
   sheetName: string;
@@ -15,6 +18,8 @@ export interface DetectedSection {
   budgetColRange?: { start: number; end: number };
   /** Column range for actual (right) pane, if dual-pane detected */
   actualColRange?: { start: number; end: number };
+  /** Detected template layout variant for this section */
+  layoutVariant?: LayoutVariant;
   confidence: number;
 }
 
@@ -323,6 +328,45 @@ function computeConfidence(
   return Math.min(1, anchorScore * requiredScore + nameBonus);
 }
 
+/**
+ * Detects the Project Plan template layout variant by inspecting metadata
+ * cells.  Designed as an extensible chain — add new patterns here.
+ */
+export function detectPlanLayoutVariant(ws: ExcelJS.Worksheet): LayoutVariant {
+  const cell = (r: number, c: number): string => {
+    const v = getCellRawValue(ws.getRow(r).getCell(c));
+    return v ? String(v).toLowerCase().trim() : "";
+  };
+
+  // LAYOUT A — "EE Standard": C2 contains "PROJECT PLAN", C3 contains "PROJECT SIZE"
+  if (cell(2, 3).includes("project plan") && cell(3, 3).includes("project size")) {
+    return "EE_STANDARD";
+  }
+
+  // LAYOUT B — "Mondi/Legacy": A1 contains "Project Plan", B5 contains "Project Start" or B6 contains "Project Name"
+  if (cell(1, 1).includes("project plan") && (cell(5, 2).includes("project start") || cell(6, 2).includes("project name"))) {
+    return "MONDI_LEGACY";
+  }
+
+  // Fallback: check for EE Standard header pattern in rows 2-7
+  for (let r = 2; r <= 7; r++) {
+    const c3 = cell(r, 3);
+    if (c3.includes("project plan") || c3.includes("project size") || c3.includes("project developer")) {
+      return "EE_STANDARD";
+    }
+  }
+
+  // Fallback: check for Mondi pattern in rows 1-6
+  if (cell(1, 1).includes("project") || cell(5, 2).includes("project") || cell(6, 2).includes("project")) {
+    const headerRow8 = cell(8, 1);
+    if (headerRow8.includes("wbs")) {
+      return "MONDI_LEGACY";
+    }
+  }
+
+  return "UNKNOWN";
+}
+
 function extractProjectInfo(
   ws: ExcelJS.Worksheet,
   headerRowIndex: number = 50
@@ -555,6 +599,13 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
         console.log(`[Detector] ${sectionKey}: WARNING — no pane gap detected, treating as single-table mode`);
       }
 
+      // Detect layout variant for PLAN sections
+      let layoutVariant: LayoutVariant | undefined;
+      if (sectionKey === "PLAN") {
+        layoutVariant = detectPlanLayoutVariant(bestCandidate.ws);
+        console.log(`[Detector] PLAN: layout variant detected as "${layoutVariant}"`);
+      }
+
       sections.push({
         section: sectionKey as DetectedSection["section"],
         sheetName: bestCandidate.ws.name,
@@ -565,6 +616,7 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
         budgetHeaders: bestCandidate.headerResult.budgetHeaders,
         budgetColRange,
         actualColRange,
+        layoutVariant,
         confidence: bestCandidate.confidence,
       });
 
