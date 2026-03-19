@@ -53,6 +53,12 @@ function isExcludedSheet(sheetName: string): boolean {
   return suffixPattern.test(norm) || bracketPattern.test(norm) || norm.includes("backup") || norm.includes("archive") || norm.includes("copy of");
 }
 
+/** Detect Purchase Order sheets (Mondi variant has 14 PO-specific sheets like "PO-Modules", "PO - ABB Switchgear") */
+function isPurchaseOrderSheet(sheetName: string): boolean {
+  const norm = sheetName.trim();
+  return /^PO[\s\-]/i.test(norm);
+}
+
 function fuzzySheetMatch(sheetName: string, candidates: string[]): boolean {
   const norm = sheetName.toLowerCase().trim();
   if (isExcludedSheet(sheetName)) return false;
@@ -626,6 +632,7 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
     for (const ws of workbook.worksheets) {
       if (claimedSheets.has(ws.name)) continue;
       if (isExcludedSheet(ws.name)) continue;
+      if (isPurchaseOrderSheet(ws.name)) continue; // PO sheets handled separately after detection
 
       const nameMatched = fuzzySheetMatch(ws.name, anchor.sheetNames);
 
@@ -751,6 +758,11 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
       continue;
     }
 
+    if (isPurchaseOrderSheet(ws.name)) {
+      unmatched.push({ sheetName: ws.name, reason: "Purchase Order sheet — use Load PO function to import" });
+      continue;
+    }
+
     const data = worksheetToArray(ws);
     if (data.length === 0) {
       unmatched.push({ sheetName: ws.name, reason: "Empty sheet" });
@@ -831,6 +843,13 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
       // Mark as potential multi-project but with empty sub-projects until confirmed by data
       console.log(`[Detector] Filename/project name suggests ad-hoc tracker but no sub-project rows detected`);
     }
+  }
+
+  // Count PO sheets and log them
+  const poSheets = unmatched.filter(u => u.reason.startsWith("Purchase Order sheet"));
+  if (poSheets.length > 0) {
+    const poNames = poSheets.map(u => u.sheetName).join(", ");
+    console.log(`[Detector] Found ${poSheets.length} Purchase Order sheets: ${poNames}`);
   }
 
   console.log(`[Detector] Final: ${sections.length} sections detected, ${unmatched.length} unmatched`);
