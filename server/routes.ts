@@ -9864,8 +9864,9 @@ export async function registerRoutes(
   // Delete dependency
   app.delete("/api/dependencies/:depId", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { depId } = req.params;
-      await storage.deleteDependency(parseInt(depId));
+      const depId = parseInt(req.params.depId);
+      if (isNaN(depId)) return res.status(400).json({ error: "Invalid dependency ID" });
+      await storage.deleteDependency(depId);
       logAuditFromReq(req, { entityType: "dependency", action: "delete", entityId: depId, changesJson: { description: "Dependency deleted" } });
       res.json({ success: true });
     } catch (error: any) {
@@ -9922,10 +9923,11 @@ export async function registerRoutes(
   // Update schedule change notice (mark as notified/documented)
   app.patch("/api/change-notices/:noticeId", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { noticeId } = req.params;
+      const noticeId = parseInt(req.params.noticeId);
+      if (isNaN(noticeId)) return res.status(400).json({ error: "Invalid notice ID" });
       const { clientNotified, documentationUpdated, userNote } = req.body;
 
-      const updated = await storage.updateChangeNotice(parseInt(noticeId), {
+      const updated = await storage.updateChangeNotice(noticeId, {
         clientNotified: clientNotified !== undefined ? clientNotified : undefined,
         documentationUpdated: documentationUpdated !== undefined ? documentationUpdated : undefined,
         userNote: userNote !== undefined ? userNote : undefined,
@@ -11902,7 +11904,9 @@ export async function registerRoutes(
 
   app.delete("/api/task-comments/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      await storage.deleteTaskComment(parseInt(req.params.id));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await storage.deleteTaskComment(id);
       logAuditFromReq(req, { entityType: "task_comment", action: "delete", entityId: req.params.id, changesJson: { description: "Task comment deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -11937,7 +11941,9 @@ export async function registerRoutes(
 
   app.delete("/api/task-checklists/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      await storage.deleteTaskChecklist(parseInt(req.params.id));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await storage.deleteTaskChecklist(id);
       logAuditFromReq(req, { entityType: "task_checklist", action: "delete", entityId: req.params.id, changesJson: { description: "Task checklist deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -11957,7 +11963,9 @@ export async function registerRoutes(
 
   app.patch("/api/task-checklist-items/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const updated = await storage.updateChecklistItem(parseInt(req.params.id), req.body);
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const updated = await storage.updateChecklistItem(id, req.body);
       logAuditFromReq(req, { entityType: "checklist_item", action: "update", entityId: req.params.id, changesJson: { description: "Checklist item updated" } });
       res.json(updated);
     } catch (err: any) {
@@ -11967,7 +11975,9 @@ export async function registerRoutes(
 
   app.delete("/api/task-checklist-items/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      await storage.deleteChecklistItem(parseInt(req.params.id));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await storage.deleteChecklistItem(id);
       logAuditFromReq(req, { entityType: "checklist_item", action: "delete", entityId: req.params.id, changesJson: { description: "Checklist item deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -11998,7 +12008,9 @@ export async function registerRoutes(
 
   app.delete("/api/task-attachments/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      await storage.deleteTaskAttachment(parseInt(req.params.id));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await storage.deleteTaskAttachment(id);
       logAuditFromReq(req, { entityType: "task_attachment", action: "delete", entityId: req.params.id, changesJson: { description: "Task attachment deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -13240,6 +13252,7 @@ export async function registerRoutes(
       if (!isCOO) return res.status(403).json({ error: "Only COO/CEO can resolve notifications" });
 
       const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       const { resolution } = req.body;
 
       await db.update(planEditNotifications).set({
@@ -13304,7 +13317,9 @@ export async function registerRoutes(
 
   app.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const updated = await storage.updateKeyDateMapping(parseInt(req.params.id), req.body);
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const updated = await storage.updateKeyDateMapping(id, req.body);
       logAuditFromReq(req, { entityType: "key_date_mapping", entityId: req.params.id, action: "update", changesJson: req.body });
       res.json(updated);
     } catch (err: any) {
@@ -13314,7 +13329,9 @@ export async function registerRoutes(
 
   app.delete("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      await storage.deleteKeyDateMapping(parseInt(req.params.id));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await storage.deleteKeyDateMapping(id);
       logAuditFromReq(req, { entityType: "key_date_mapping", entityId: req.params.id, action: "delete" });
       res.json({ success: true });
     } catch (err: any) {
@@ -13460,7 +13477,9 @@ export async function registerRoutes(
 
   app.patch("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const updated = await storage.updateWritebackMapping(parseInt(req.params.id), req.body);
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const updated = await storage.updateWritebackMapping(id, req.body);
       logAuditFromReq(req, { entityType: "writeback_mapping", action: "update", entityId: req.params.id, changesJson: { description: "Writeback mapping updated" } });
       res.json(updated);
     } catch (err: any) {
@@ -13470,7 +13489,9 @@ export async function registerRoutes(
 
   app.delete("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      await storage.deleteWritebackMapping(parseInt(req.params.id));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await storage.deleteWritebackMapping(id);
       logAuditFromReq(req, { entityType: "writeback_mapping", action: "delete", entityId: req.params.id, changesJson: { description: "Writeback mapping deleted" } });
       res.json({ success: true });
     } catch (err: any) {
