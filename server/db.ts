@@ -1166,6 +1166,58 @@ async function ensureSqliteSchema() {
     try { await db.run(sql.raw(`ALTER TABLE lost_deals ADD COLUMN fye_year INTEGER NOT NULL DEFAULT 2026`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE lost_deals ADD COLUMN created_by INTEGER`)); } catch {}
 
+    // Microsoft Sync tables (ms_accounts, ms_objects, project_links)
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS ms_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        tenant_id TEXT NOT NULL,
+        ms_user_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        display_name TEXT,
+        refresh_token_encrypted TEXT,
+        sso_access_token TEXT,
+        sso_token_expires_at TEXT,
+        connected_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        status TEXT DEFAULT 'active'
+      )
+    `);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS ms_objects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        ms_id TEXT NOT NULL,
+        subject_or_title TEXT,
+        preview TEXT,
+        web_link TEXT,
+        sender_or_organizer TEXT,
+        received_or_start_datetime TEXT,
+        end_datetime TEXT,
+        last_synced_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        action_required INTEGER DEFAULT 0,
+        is_read INTEGER DEFAULT 1,
+        importance TEXT,
+        linked_project_id INTEGER,
+        linked_task_id INTEGER,
+        metadata TEXT,
+        dismissed INTEGER DEFAULT 0
+      )
+    `);
+    await db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS ms_objects_user_type_msid ON ms_objects(user_id, type, ms_id)`);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS project_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ms_object_id INTEGER NOT NULL,
+        project_id INTEGER NOT NULL,
+        linked_by_user_id INTEGER NOT NULL,
+        linked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        note TEXT
+      )
+    `);
+
     // Add missing columns to project_info (safe ALTERs — all columns from Drizzle schema)
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN signed_status TEXT NOT NULL DEFAULT 'NONE'`)); } catch {}

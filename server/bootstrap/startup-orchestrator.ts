@@ -303,6 +303,56 @@ async function runAdditiveSchemaAlignments() {
       );
       ALTER TABLE lost_deals ADD COLUMN IF NOT EXISTS fye_year INTEGER NOT NULL DEFAULT 2026;
       ALTER TABLE lost_deals ADD COLUMN IF NOT EXISTS created_by INTEGER;
+
+      -- Microsoft Sync tables (ms_accounts, ms_objects, project_links)
+      DO $$ BEGIN CREATE TYPE ms_account_status AS ENUM ('active', 'disconnected', 'expired'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+      DO $$ BEGIN CREATE TYPE ms_object_type AS ENUM ('email', 'event', 'teams', 'sharepoint_file'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+      CREATE TABLE IF NOT EXISTS ms_accounts (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        tenant_id TEXT NOT NULL,
+        ms_user_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        display_name TEXT,
+        refresh_token_encrypted TEXT,
+        sso_access_token TEXT,
+        sso_token_expires_at TIMESTAMP,
+        connected_at TIMESTAMP DEFAULT NOW(),
+        status ms_account_status DEFAULT 'active'
+      );
+
+      CREATE TABLE IF NOT EXISTS ms_objects (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        type ms_object_type NOT NULL,
+        ms_id TEXT NOT NULL,
+        subject_or_title TEXT,
+        preview TEXT,
+        web_link TEXT,
+        sender_or_organizer TEXT,
+        received_or_start_datetime TIMESTAMP,
+        end_datetime TIMESTAMP,
+        last_synced_at TIMESTAMP DEFAULT NOW(),
+        action_required BOOLEAN DEFAULT false,
+        is_read BOOLEAN DEFAULT true,
+        importance TEXT,
+        linked_project_id INTEGER,
+        linked_task_id INTEGER,
+        metadata JSONB,
+        dismissed BOOLEAN DEFAULT false
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS ms_objects_user_type_msid ON ms_objects(user_id, type, ms_id);
+
+      CREATE TABLE IF NOT EXISTS project_links (
+        id SERIAL PRIMARY KEY,
+        ms_object_id INTEGER NOT NULL,
+        project_id INTEGER NOT NULL,
+        linked_by_user_id INTEGER NOT NULL,
+        linked_at TIMESTAMP DEFAULT NOW(),
+        note TEXT
+      );
+
       CREATE TABLE IF NOT EXISTS fye_kpi_counters (
         id SERIAL PRIMARY KEY,
         fye_year INTEGER NOT NULL UNIQUE,
