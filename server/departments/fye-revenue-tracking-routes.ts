@@ -1103,11 +1103,17 @@ router.get(
 
       const data = JSON.parse(row.snapshotData);
       const workbook = new ExcelJS.Workbook();
+      const redFont = { color: { argb: "FFDC2626" } };
+      const headerFill: ExcelJS.FillPattern = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8E8" } };
+      const randFmt = '#,##0;[Red]-#,##0';
+      const pctFmt = '0.0%;[Red]-0.0%';
 
       // Sheet 1: Dashboard
       const dashSheet = workbook.addWorksheet("Dashboard");
       const monthLabels = data.dashboard.months.map((m: any) => m.label);
-      dashSheet.addRow(["", ...monthLabels, "Total"]).font = { bold: true };
+      const hdrRow = dashSheet.addRow(["", ...monthLabels, "Total"]);
+      hdrRow.font = { bold: true };
+      hdrRow.fill = headerFill;
 
       const sections = [
         { title: "Revenue Tracking", key: "revenue" },
@@ -1119,18 +1125,26 @@ router.get(
 
       for (const sec of sections) {
         dashSheet.addRow([]);
-        dashSheet.addRow([sec.title]).font = { bold: true, size: 11 };
+        const secRow = dashSheet.addRow([sec.title]);
+        secRow.font = { bold: true, size: 11 };
         for (const rt of rowTypes) {
           const vals = data.dashboard.months.map((m: any) => m[sec.key]?.[rt] ?? null);
           const nonNull = vals.filter((v: any) => v !== null);
           const total = nonNull.length > 0 ? nonNull.reduce((a: number, b: number) => a + b, 0) : null;
-          dashSheet.addRow([rowLabels[rt], ...vals, total]);
+          const xlRow = dashSheet.addRow([rowLabels[rt], ...vals, total]);
+          // Apply Rand formatting and red for negatives
+          for (let c = 2; c <= xlRow.cellCount; c++) {
+            const cell = xlRow.getCell(c);
+            if (typeof cell.value === "number") {
+              cell.numFmt = randFmt;
+              if ((cell.value as number) < 0) cell.font = redFont;
+            }
+          }
         }
       }
 
-      // Style dashboard
       dashSheet.getColumn(1).width = 20;
-      for (let i = 2; i <= monthLabels.length + 2; i++) dashSheet.getColumn(i).width = 14;
+      for (let i = 2; i <= monthLabels.length + 2; i++) dashSheet.getColumn(i).width = 16;
 
       // Sheet 2: FYE Detail
       const detailSheet = workbook.addWorksheet("FYE Detail");
@@ -1138,35 +1152,60 @@ router.get(
       // Summary
       const t = data.detail.totals;
       detailSheet.addRow(["Summary"]).font = { bold: true, size: 12 };
-      detailSheet.addRow(["Budget Revenue", t.budgetRevenue]);
-      detailSheet.addRow(["Budget COS", t.budgetCos]);
-      detailSheet.addRow(["Budget GP", t.budgetGp]);
-      detailSheet.addRow(["Actual Revenue", t.actualRevenue]);
-      detailSheet.addRow(["Actual Expense", t.actualExpense]);
-      detailSheet.addRow(["Actual GP", t.actualGp]);
+      const summaryFields = [
+        ["Budget Revenue", t.budgetRevenue], ["Budget COS", t.budgetCos], ["Budget GP", t.budgetGp],
+        ["Actual Revenue", t.actualRevenue], ["Actual Expense", t.actualExpense], ["Actual GP", t.actualGp],
+      ];
+      for (const [label, val] of summaryFields) {
+        const r = detailSheet.addRow([label, val]);
+        r.getCell(2).numFmt = randFmt;
+        if (typeof val === "number" && val < 0) r.getCell(2).font = redFont;
+      }
       detailSheet.addRow([]);
 
       // Project table
-      detailSheet.addRow(["Project Name", "Business Developer", "Size (kWp)", "Status", "Budget Revenue", "Budget COS", "Budget GP", "Actual Revenue", "Actual Expense", "Actual GP"]).font = { bold: true };
+      const projHdr = detailSheet.addRow(["Project Name", "Business Developer", "Size (kWp)", "Status", "Budget Revenue", "Budget COS", "Budget GP", "Actual Revenue", "Actual Expense", "Actual GP"]);
+      projHdr.font = { bold: true };
+      projHdr.fill = headerFill;
       for (const p of data.detail.projects) {
-        detailSheet.addRow([p.projectName, p.businessDeveloper, p.sizeKwp, p.status, p.budgetRevenue, p.budgetCos, p.budgetGp, p.actualRevenue, p.actualExpense, p.actualGp]);
+        const r = detailSheet.addRow([p.projectName, p.businessDeveloper, p.sizeKwp, p.status, p.budgetRevenue, p.budgetCos, p.budgetGp, p.actualRevenue, p.actualExpense, p.actualGp]);
+        for (let c = 5; c <= 10; c++) {
+          r.getCell(c).numFmt = randFmt;
+          if (typeof r.getCell(c).value === "number" && (r.getCell(c).value as number) < 0) r.getCell(c).font = redFont;
+        }
+      }
+      // Totals row
+      const totRow = detailSheet.addRow(["TOTALS", "", "", "", t.budgetRevenue, t.budgetCos, t.budgetGp, t.actualRevenue, t.actualExpense, t.actualGp]);
+      totRow.font = { bold: true };
+      for (let c = 5; c <= 10; c++) {
+        totRow.getCell(c).numFmt = randFmt;
+        if (typeof totRow.getCell(c).value === "number" && (totRow.getCell(c).value as number) < 0) totRow.getCell(c).font = { bold: true, ...redFont };
       }
       detailSheet.addRow([]);
 
       // Pipeline
       detailSheet.addRow(["Pipeline Deals (>= 75%)"]).font = { bold: true, size: 11 };
-      detailSheet.addRow(["Project Name", "Developer", "Location", "Size (kWp)", "Probability %", "Solar Revenue", "BESS Revenue", "GP%", "Forecast GP"]).font = { bold: true };
+      const pipHdr = detailSheet.addRow(["Project Name", "Developer", "Location", "Size (kWp)", "Probability %", "Solar Revenue", "BESS Revenue", "GP%", "Forecast GP"]);
+      pipHdr.font = { bold: true };
+      pipHdr.fill = headerFill;
       for (const p of data.pipeline) {
         const s = parseFloat(p.solarRevenue || "0"), b = parseFloat(p.bessRevenue || "0"), gp = p.forecastGpPct ? parseFloat(p.forecastGpPct) : null;
-        detailSheet.addRow([p.projectName, p.projectDeveloper, p.location, p.sizeKwp, p.dealProbabilityPct, s, b, gp != null ? gp * 100 : null, gp != null ? gp * (s + b) : null]);
+        const r = detailSheet.addRow([p.projectName, p.projectDeveloper, p.location, p.sizeKwp, p.dealProbabilityPct, s, b, gp != null ? gp : null, gp != null ? gp * (s + b) : null]);
+        r.getCell(6).numFmt = randFmt;
+        r.getCell(7).numFmt = randFmt;
+        if (gp != null) r.getCell(8).numFmt = pctFmt;
+        r.getCell(9).numFmt = randFmt;
       }
       detailSheet.addRow([]);
 
       // Lost Deals
       detailSheet.addRow(["Lost Deals"]).font = { bold: true, size: 11 };
-      detailSheet.addRow(["Deal Name", "Deal Value", "Business Developer", "Lost Reason"]).font = { bold: true };
+      const lostHdr = detailSheet.addRow(["Deal Name", "Deal Value", "Business Developer", "Lost Reason"]);
+      lostHdr.font = { bold: true };
+      lostHdr.fill = headerFill;
       for (const d of data.lostDeals) {
-        detailSheet.addRow([d.dealName, parseFloat(d.dealValue || "0"), d.businessDeveloper, d.lostReason]);
+        const r = detailSheet.addRow([d.dealName, parseFloat(d.dealValue || "0"), d.businessDeveloper, d.lostReason]);
+        r.getCell(2).numFmt = randFmt;
       }
       detailSheet.addRow([]);
 
@@ -1174,7 +1213,8 @@ router.get(
       detailSheet.addRow(["KPI Counters"]).font = { bold: true, size: 11 };
       detailSheet.addRow(["Brought In", data.kpi.broughtIn]);
       detailSheet.addRow(["Signed", data.kpi.signed]);
-      detailSheet.addRow(["Total", data.kpi.total]);
+      const kpiTotal = detailSheet.addRow(["Total", data.kpi.total]);
+      kpiTotal.font = { bold: true };
 
       detailSheet.getColumn(1).width = 30;
       for (let i = 2; i <= 10; i++) detailSheet.getColumn(i).width = 16;
