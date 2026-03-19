@@ -436,10 +436,12 @@ export function registerTaskManagementRoutes(app: Express) {
       if (!Number.isFinite(id) || id <= 0) {
         return res.status(400).json({ error: "Invalid task ID" });
       }
-      await db
+      const [deleted] = await db
         .update(workItems)
         .set({ deletedAt: new Date() })
-        .where(eq(workItems.id, id));
+        .where(eq(workItems.id, id))
+        .returning({ id: workItems.id });
+      if (!deleted) return res.status(404).json({ error: "Task not found" });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -454,6 +456,19 @@ export function registerTaskManagementRoutes(app: Express) {
 
       if (!taskIds || !Array.isArray(taskIds) || taskIds.length === 0) {
         return res.status(400).json({ error: "taskIds array is required" });
+      }
+      if (!updates || typeof updates !== "object") {
+        return res.status(400).json({ error: "updates object is required" });
+      }
+
+      const validStatuses = ["Not Started", "In Progress", "Complete", "Delayed", "On Hold", "QC APPROVED", "NEEDS APPROVAL"];
+      const validPriorities = ["Critical", "High", "Medium", "Low"];
+
+      if (updates.status && !validStatuses.includes(updates.status)) {
+        return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
+      }
+      if (updates.priority && !validPriorities.includes(updates.priority)) {
+        return res.status(400).json({ error: `Invalid priority. Must be one of: ${validPriorities.join(", ")}` });
       }
 
       const allowed: Record<string, any> = { updatedAt: new Date() };
