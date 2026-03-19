@@ -11,7 +11,7 @@ import {
   notifications, notificationThrottle, spFilePointers,
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
   qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory,
-  projectEngApprovals, projectEngStages, engStageTemplates,
+  projectEngApprovals, projectEngStages, projectEngTasks, engStageTemplates,
   dashboardWidgetConfig, DEFAULT_WIDGET_ORDER,
   workItems, workItemAssignments,
   msObjects,
@@ -466,6 +466,24 @@ export function registerEngineeringRoutes(app: Express) {
         microsoftByProject.set(projectKey, list);
       }
 
+      // Build stage context map for tasks linked to engineering stages
+      const allWorkItemIds = tasks.map((t: any) => t.workItemId || t.id).filter(Boolean);
+      const stageLinks = allWorkItemIds.length > 0
+        ? await db.select({
+            workItemId: projectEngTasks.workItemId,
+            stageName: engStageTemplates.name,
+          })
+          .from(projectEngTasks)
+          .innerJoin(projectEngStages, eq(projectEngTasks.projectEngStageId, projectEngStages.id))
+          .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
+          .where(sql`${projectEngTasks.workItemId} IN (${sql.join(allWorkItemIds.map((id: number) => sql`${id}`), sql`, `)})`)
+        : [];
+
+      const stageContextMap = new Map<number, string>();
+      for (const sl of stageLinks) {
+        if (sl.workItemId) stageContextMap.set(sl.workItemId, sl.stageName);
+      }
+
       const enriched = tasks.map((t: any) => {
         const resolvedAssigneeIds = Array.from(
           new Set([
@@ -535,11 +553,14 @@ export function registerEngineeringRoutes(app: Express) {
           deliverableContextLabel: deliverableLinks?.sourceContextLabel || null,
           projectHref: projectLinks?.projectHref || null,
           sourceHref: projectLinks?.sourceHref || null,
-          sourceContextLabel: projectLinks?.sourceContextLabel || null,
+          sourceContextLabel: stageContextMap.has(t.workItemId || t.id)
+            ? `Engineering Stage: ${stageContextMap.get(t.workItemId || t.id)}`
+            : (projectLinks?.sourceContextLabel || null),
           externalHref: projectLinks?.externalHref || null,
           hasMicrosoftContext: rawMicrosoftItems.length > 0,
           microsoftActionRequiredCount,
           relatedMicrosoftItems,
+          stageContext: stageContextMap.get(t.workItemId || t.id) || null,
         };
       });
       res.json(enriched);
