@@ -129,7 +129,7 @@ router.get(
       const budgetCosByMonth: Record<string, number> = {};
       try {
         const budgetRows = await db
-          .select()
+          .select({ monthKey: fyeBudgets.monthKey, budgetType: fyeBudgets.budgetType, amount: fyeBudgets.amount })
           .from(fyeBudgets)
           .where(eq(fyeBudgets.fye, String(fye)));
 
@@ -475,7 +475,10 @@ router.get(
   async (req, res) => {
     try {
       const fye = String(req.query.fye || getCurrentFye());
-      const rows = await db.select().from(fyeBudgets).where(eq(fyeBudgets.fye, fye));
+      const rows = await db.select({
+        id: fyeBudgets.id, projectName: fyeBudgets.projectName, fye: fyeBudgets.fye,
+        monthKey: fyeBudgets.monthKey, budgetType: fyeBudgets.budgetType, amount: fyeBudgets.amount,
+      }).from(fyeBudgets).where(eq(fyeBudgets.fye, fye));
       res.json(rows);
     } catch (error: any) {
       res.status(500).json({ error: "Failed to fetch budgets", message: error?.message });
@@ -502,7 +505,7 @@ router.post(
 
       // Upsert
       const existing = await db
-        .select()
+        .select({ id: fyeBudgets.id })
         .from(fyeBudgets)
         .where(
           and(
@@ -526,15 +529,8 @@ router.post(
           .where(eq(projectInfo.projectName, data.projectName))
           .limit(1);
 
-        await db.insert(fyeBudgets).values({
-          projectId: proj?.id || null,
-          projectName: data.projectName,
-          fye: data.fye,
-          monthKey: data.monthKey,
-          budgetType: data.budgetType,
-          amount: String(data.amount),
-          updatedBy: userId,
-        });
+        await db.run(sql`INSERT INTO fye_budgets (project_id, project_name, fye, month_key, budget_type, amount, updated_by, created_at, updated_at)
+          VALUES (${proj?.id || null}, ${data.projectName}, ${data.fye}, ${data.monthKey}, ${data.budgetType}, ${String(data.amount)}, ${userId || null}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
       }
 
       res.json({ ok: true });
@@ -601,25 +597,10 @@ router.post(
       const data = pipelineSchema.parse(req.body);
       const userId = (req as any).user?.id;
 
-      const [row] = await db
-        .insert(forecastPipeline)
-        .values({
-          fyeYear: data.fyeYear || getCurrentFye(),
-          projectName: data.projectName,
-          projectDeveloper: data.projectDeveloper || null,
-          location: data.location || null,
-          sizeKwp: data.sizeKwp != null ? String(data.sizeKwp) : null,
-          dealProbabilityPct: data.dealProbabilityPct,
-          forecastSignatureDate: data.forecastSignatureDate || null,
-          solarRevenue: data.solarRevenue != null ? String(data.solarRevenue) : "0",
-          bessRevenue: data.bessRevenue != null ? String(data.bessRevenue) : "0",
-          forecastGpPct: data.forecastGpPct != null ? String(data.forecastGpPct) : null,
-          notes: data.notes || null,
-          createdBy: userId,
-          updatedBy: userId,
-        })
-        .returning();
+      await db.run(sql`INSERT INTO forecast_pipeline (fye_year, project_name, project_developer, location, size_kwp, deal_probability_pct, forecast_signature_date, solar_revenue, bess_revenue, forecast_gp_pct, notes, status, created_by, updated_by, created_at, updated_at)
+        VALUES (${data.fyeYear || getCurrentFye()}, ${data.projectName}, ${data.projectDeveloper || null}, ${data.location || null}, ${data.sizeKwp != null ? String(data.sizeKwp) : null}, ${data.dealProbabilityPct}, ${data.forecastSignatureDate || null}, ${data.solarRevenue != null ? String(data.solarRevenue) : "0"}, ${data.bessRevenue != null ? String(data.bessRevenue) : "0"}, ${data.forecastGpPct != null ? String(data.forecastGpPct) : null}, ${data.notes || null}, 'active', ${userId || null}, ${userId || null}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
 
+      const [row] = await db.select({ id: forecastPipeline.id, projectName: forecastPipeline.projectName }).from(forecastPipeline).orderBy(desc(forecastPipeline.id)).limit(1);
       res.json(row);
     } catch (error: any) {
       res.status(400).json({ error: "Failed to create pipeline entry", message: error?.message });
@@ -720,21 +701,10 @@ router.post(
       const data = lostDealSchema.parse(req.body);
       const userId = (req as any).user?.id;
 
-      const [row] = await db
-        .insert(lostDeals)
-        .values({
-          fyeYear: data.fyeYear || getCurrentFye(),
-          dealName: data.dealName,
-          dealValue: data.dealValue != null ? String(data.dealValue) : null,
-          businessDeveloper: data.businessDeveloper || null,
-          lostReason: data.lostReason || null,
-          lostDate: data.lostDate || null,
-          notes: data.notes || null,
-          createdBy: userId,
-          updatedBy: userId,
-        })
-        .returning();
+      await db.run(sql`INSERT INTO lost_deals (fye_year, deal_name, deal_value, business_developer, lost_reason, lost_date, notes, created_by, updated_by, created_at, updated_at)
+        VALUES (${data.fyeYear || getCurrentFye()}, ${data.dealName}, ${data.dealValue != null ? String(data.dealValue) : null}, ${data.businessDeveloper || null}, ${data.lostReason || null}, ${data.lostDate || null}, ${data.notes || null}, ${userId || null}, ${userId || null}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
 
+      const [row] = await db.select({ id: lostDeals.id, dealName: lostDeals.dealName }).from(lostDeals).orderBy(desc(lostDeals.id)).limit(1);
       res.json(row);
     } catch (error: any) {
       res.status(400).json({ error: "Failed to create lost deal", message: error?.message });
@@ -854,7 +824,7 @@ async function collectSnapshotData(fye: number) {
   const budgetRevByMonth: Record<string, number> = {};
   const budgetCosByMonth: Record<string, number> = {};
   try {
-    const budgetRows = await db.select().from(fyeBudgets).where(eq(fyeBudgets.fye, String(fye)));
+    const budgetRows = await db.select({ monthKey: fyeBudgets.monthKey, budgetType: fyeBudgets.budgetType, amount: fyeBudgets.amount }).from(fyeBudgets).where(eq(fyeBudgets.fye, String(fye)));
     for (const b of budgetRows) {
       const amt = safeNum(b.amount);
       if (b.budgetType === "revenue") budgetRevByMonth[b.monthKey] = (budgetRevByMonth[b.monthKey] || 0) + amt;
