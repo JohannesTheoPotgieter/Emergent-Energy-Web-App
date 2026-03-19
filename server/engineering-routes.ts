@@ -360,40 +360,47 @@ export function registerEngineeringRoutes(app: Express) {
       const canViewAllMicrosoftContext = MICROSOFT_ADMIN_ROLES.has(getUserRole(req));
       const currentUserId = getUser(req).id;
 
-      const [deliverableRows, microsoftRows] = await Promise.all([
-        visibleProjectIds.length > 0
-          ? db.select({
-              id: deliverables.id,
-              projectId: deliverables.projectId,
-              title: deliverables.title,
-              status: deliverables.status,
-              updatedAt: deliverables.updatedAt,
-            })
-            .from(deliverables)
-            .where(inArray(deliverables.projectId, visibleProjectIds))
-            .orderBy(desc(deliverables.updatedAt))
-          : Promise.resolve([]),
-        visibleProjectIds.length > 0
-          ? db.select({
-              id: msObjects.id,
-              userId: msObjects.userId,
-              linkedProjectId: msObjects.linkedProjectId,
-              linkedTaskId: msObjects.linkedTaskId,
-              type: msObjects.type,
-              subjectOrTitle: msObjects.subjectOrTitle,
-              webLink: msObjects.webLink,
-              actionRequired: msObjects.actionRequired,
-              receivedOrStartDatetime: msObjects.receivedOrStartDatetime,
-            })
-            .from(msObjects)
-            .where(and(
-              inArray(msObjects.linkedProjectId, visibleProjectIds),
-              ne(msObjects.dismissed, true),
-              ...(canViewAllMicrosoftContext ? [] : [eq(msObjects.userId, currentUserId)]),
-            ))
-            .orderBy(desc(msObjects.receivedOrStartDatetime))
-          : Promise.resolve([]),
-      ]);
+      // Non-fatal enrichment - if deliverables/microsoft queries fail, tasks still load
+      let deliverableRows: any[] = [];
+      let microsoftRows: any[] = [];
+      try {
+        [deliverableRows, microsoftRows] = await Promise.all([
+          visibleProjectIds.length > 0
+            ? db.select({
+                id: deliverables.id,
+                projectId: deliverables.projectId,
+                title: deliverables.title,
+                status: deliverables.status,
+                updatedAt: deliverables.updatedAt,
+              })
+              .from(deliverables)
+              .where(inArray(deliverables.projectId, visibleProjectIds))
+              .orderBy(desc(deliverables.updatedAt))
+            : Promise.resolve([]),
+          visibleProjectIds.length > 0
+            ? db.select({
+                id: msObjects.id,
+                userId: msObjects.userId,
+                linkedProjectId: msObjects.linkedProjectId,
+                linkedTaskId: msObjects.linkedTaskId,
+                type: msObjects.type,
+                subjectOrTitle: msObjects.subjectOrTitle,
+                webLink: msObjects.webLink,
+                actionRequired: msObjects.actionRequired,
+                receivedOrStartDatetime: msObjects.receivedOrStartDatetime,
+              })
+              .from(msObjects)
+              .where(and(
+                inArray(msObjects.linkedProjectId, visibleProjectIds),
+                ne(msObjects.dismissed, true),
+                ...(canViewAllMicrosoftContext ? [] : [eq(msObjects.userId, currentUserId)]),
+              ))
+              .orderBy(desc(msObjects.receivedOrStartDatetime))
+            : Promise.resolve([]),
+        ]);
+      } catch (enrichErr: any) {
+        console.warn("[Engineering] Non-fatal enrichment error (deliverables/microsoft):", enrichErr.message);
+      }
 
       const deliverablesByProject = new Map<number, Array<{
         id: number;
@@ -437,22 +444,25 @@ export function registerEngineeringRoutes(app: Express) {
         microsoftByProject.set(projectKey, list);
       }
 
-      // Build stage context map for tasks linked to engineering stages
+      // Build stage context map for tasks linked to engineering stages (non-fatal)
       const allWorkItemIds = tasks.map((t: any) => t.workItemId || t.id).filter(Boolean);
-      const stageLinks = allWorkItemIds.length > 0
-        ? await db.select({
-            workItemId: projectEngTasks.workItemId,
-            stageName: engStageTemplates.name,
-          })
-          .from(projectEngTasks)
-          .innerJoin(projectEngStages, eq(projectEngTasks.projectEngStageId, projectEngStages.id))
-          .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
-          .where(sql`${projectEngTasks.workItemId} IN (${sql.join(allWorkItemIds.map((id: number) => sql`${id}`), sql`, `)})`)
-        : [];
-
       const stageContextMap = new Map<number, string>();
-      for (const sl of stageLinks) {
-        if (sl.workItemId) stageContextMap.set(sl.workItemId, sl.stageName);
+      try {
+        const stageLinks = allWorkItemIds.length > 0
+          ? await db.select({
+              workItemId: projectEngTasks.workItemId,
+              stageName: engStageTemplates.name,
+            })
+            .from(projectEngTasks)
+            .innerJoin(projectEngStages, eq(projectEngTasks.projectEngStageId, projectEngStages.id))
+            .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
+            .where(sql`${projectEngTasks.workItemId} IN (${sql.join(allWorkItemIds.map((id: number) => sql`${id}`), sql`, `)})`)
+          : [];
+        for (const sl of stageLinks) {
+          if (sl.workItemId) stageContextMap.set(sl.workItemId, sl.stageName);
+        }
+      } catch (stageErr: any) {
+        console.warn("[Engineering] Non-fatal stage context error:", stageErr.message);
       }
 
       const enriched = tasks.map((t: any) => {

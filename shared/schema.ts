@@ -5281,6 +5281,17 @@ export const workItems = pgTable("work_items", {
   recurrenceEndDate: text("recurrence_end_date"),
   recurrenceParentId: integer("recurrence_parent_id"),
   subProjectName: text("sub_project_name"),
+  // Engineering-specific columns (migrated from operational_tasks)
+  holdReason: text("hold_reason"),
+  blockedType: text("blocked_type"),
+  approvalRequired: boolean("approval_required").notNull().default(false),
+  linkedPlanItemId: integer("linked_plan_item_id"),
+  linkedDeliverableId: integer("linked_deliverable_id"),
+  linkedQualityItemInstanceId: integer("linked_quality_item_instance_id"),
+  completedAt: timestamp("completed_at"),
+  trackingRag: text("tracking_rag"),
+  taskTypeTag: text("task_type_tag"),
+  blockerReason: text("blocker_reason"),
 });
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;
