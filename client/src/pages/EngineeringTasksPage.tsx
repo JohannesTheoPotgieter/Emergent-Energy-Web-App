@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { HoldReasonDialog } from "@/components/HoldReasonDialog";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,6 +71,7 @@ import {
   Save,
   RotateCw,
   ArrowRightLeft,
+  RefreshCw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -731,9 +734,9 @@ function KanbanColumn({
             <TaskCard key={task.id} task={task} onClick={() => onCardClick(task)} onStatusChange={onStatusChange} onPriorityChange={onPriorityChange} onDueDateChange={onDueDateChange} compact={compact} selected={selectedTaskIds?.has(task.id)} onToggleSelect={onToggleSelect} />
           ))}
           {tasks.length === 0 && (
-            <div className="text-center py-8 text-xs text-muted-foreground/40">
+            <div className="text-center py-8 text-xs text-muted-foreground/50">
               <Circle className="h-5 w-5 mx-auto mb-1 opacity-30" />
-              Empty
+              No tasks in this column
             </div>
           )}
         </div>
@@ -1175,7 +1178,6 @@ function TaskDetailDrawer({
   };
 
   const handleStatusChange = (newStatus: string) => {
-    const task = tasks.find(t => t.id === taskId);
     if (!task) return;
     if (!canTransition(task.status, newStatus)) {
       toast({ title: "Transition not allowed", description: `Cannot move task from ${getTaskStatusLabel(task.status)} to ${getTaskStatusLabel(newStatus)}.`, variant: "destructive" });
@@ -1218,6 +1220,7 @@ function TaskDetailDrawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="task-detail-drawer">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <ErrorBoundary>
       <div className="relative w-full max-w-full sm:max-w-2xl bg-background border-l shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-2 min-w-0">
@@ -2348,57 +2351,15 @@ function TaskDetailDrawer({
         </ScrollArea>
       </div>
 
-      <Dialog open={drawerHoldDialog} onOpenChange={setDrawerHoldDialog}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <PauseCircle className="h-5 w-5 text-amber-500" />
-              Hold Reason Required
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 pt-2">
-            <p className="text-sm text-muted-foreground">Please provide a reason for putting this task on hold.</p>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Blocked Type *</label>
-              <SearchableSelect
-                value={drawerBlockedType}
-                onValueChange={setDrawerBlockedType}
-                placeholder="Internal or External..."
-                triggerClassName="h-9"
-                options={[
-                  { value: "Internal", label: "Internal" },
-                  { value: "External", label: "External" },
-                ]}
-                data-testid="select-drawer-blocked-type"
-              />
-            </div>
-            <Textarea
-              value={drawerHoldReason}
-              onChange={(e) => setDrawerHoldReason(e.target.value)}
-              placeholder="e.g. Waiting for client approval, materials delayed..."
-              className="min-h-[80px]"
-              data-testid="input-drawer-hold-reason"
-            />
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setDrawerHoldDialog(false)} data-testid="btn-drawer-hold-cancel">Cancel</Button>
-              <Button
-                size="sm"
-                className="bg-amber-600 hover:bg-amber-700"
-                disabled={!drawerHoldReason.trim() || !drawerBlockedType}
-                onClick={() => {
-                  updateMutation.mutate({ status: "HOLD", holdReason: drawerHoldReason.trim(), blockedType: drawerBlockedType });
-                  setDrawerHoldDialog(false);
-                  setDrawerHoldReason("");
-                  setDrawerBlockedType("");
-                }}
-                data-testid="btn-drawer-hold-confirm"
-              >
-                Put on Hold
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <HoldReasonDialog
+        open={drawerHoldDialog}
+        onOpenChange={setDrawerHoldDialog}
+        onConfirm={(reason, blockedType) => {
+          updateMutation.mutate({ status: "HOLD", holdReason: reason, blockedType });
+        }}
+        testIdPrefix="drawer-hold"
+      />
+      </ErrorBoundary>
     </div>
   );
 }
@@ -2436,7 +2397,7 @@ function ProjectKanbanView({
     projects: { projectName: string; displayName: string; phase: string; phaseLabel: string }[];
   }>({
     queryKey: ["eng-dashboard-projects"],
-    queryFn: () => engFetch("/api/eng/dashboard/projects"),
+    queryFn: () => engFetch("/api/eng/dashboard/projects").catch(() => ({ projects: [] })),
     staleTime: 30000,
   });
 
@@ -2732,29 +2693,77 @@ function PersonalKpiStrip({ tasks, myTasks }: { tasks: Task[]; myTasks: Task[] }
 
 function TimelineView({ tasks, onCardClick }: { tasks: Task[]; onCardClick: (task: Task) => void }) {
   const today = new Date();
+  const [zoomWeeks, setZoomWeeks] = useState<4 | 8 | 12 | 26>(8);
+  const [groupBy, setGroupBy] = useState<"project" | "assignee">("project");
+  const [visibleCount, setVisibleCount] = useState(50);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  const ZOOM_OPTIONS = [
+    { value: 4 as const, label: "4 wk" },
+    { value: 8 as const, label: "8 wk" },
+    { value: 12 as const, label: "12 wk" },
+    { value: 26 as const, label: "26 wk" },
+  ];
+
   const timelineTasks = useMemo(() => {
     return tasks
       .filter(t => t.dueDate && !isTaskComplete(t.status))
-      .sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime());
+      .sort((a, b) => {
+        const aOverdue = isOverdue(a.dueDate, a.status) ? 0 : 1;
+        const bOverdue = isOverdue(b.dueDate, b.status) ? 0 : 1;
+        if (aOverdue !== bOverdue) return aOverdue - bOverdue;
+        return new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime();
+      });
   }, [tasks]);
 
-  // Calculate 6-week window
   const startDate = new Date(today);
   startDate.setDate(startDate.getDate() - 7);
   const endDate = new Date(today);
-  endDate.setDate(endDate.getDate() + 35);
+  endDate.setDate(endDate.getDate() + zoomWeeks * 7);
   const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+  const pxPerDay = zoomWeeks <= 8 ? 16 : zoomWeeks <= 12 ? 12 : 8;
 
-  // Build week markers
-  const weeks: { date: Date; label: string }[] = [];
+  const weeks: { date: Date; label: string; isCurrent: boolean }[] = [];
   const weekStart = new Date(startDate);
   weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
+  const todayWeekStart = new Date(today);
+  todayWeekStart.setDate(todayWeekStart.getDate() - todayWeekStart.getDay() + 1);
   while (weekStart <= endDate) {
-    weeks.push({ date: new Date(weekStart), label: weekStart.toLocaleDateString("en-ZA", { day: "2-digit", month: "short" }) });
+    const isCurrent = weekStart.toDateString() === todayWeekStart.toDateString();
+    weeks.push({ date: new Date(weekStart), label: weekStart.toLocaleDateString("en-ZA", { day: "2-digit", month: "short" }), isCurrent });
     weekStart.setDate(weekStart.getDate() + 7);
   }
 
   const todayOffset = Math.max(0, Math.ceil((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+
+  // Group tasks
+  const grouped = useMemo(() => {
+    const groups = new Map<string, Task[]>();
+    const visibleTasks = timelineTasks.slice(0, visibleCount);
+    for (const t of visibleTasks) {
+      const key = groupBy === "project"
+        ? (t.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ") || "No Project")
+        : (t.assignees?.[0] || "Unassigned");
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(t);
+    }
+    return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [timelineTasks, visibleCount, groupBy]);
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const getBarColor = (task: Task) => {
+    if (isOverdue(task.dueDate, task.status)) return "bg-red-400";
+    if (task.status === "IN PROGRESS") return "bg-blue-400";
+    if (task.status === "HOLD") return "bg-amber-400";
+    return "bg-emerald-400";
+  };
 
   if (timelineTasks.length === 0) {
     return (
@@ -2766,68 +2775,134 @@ function TimelineView({ tasks, onCardClick }: { tasks: Task[]; onCardClick: (tas
   }
 
   return (
-    <div className="space-y-0 border rounded-lg overflow-hidden" data-testid="timeline-view">
-      {/* Header with week markers */}
-      <div className="flex border-b bg-muted/30">
-        <div className="w-[220px] shrink-0 p-2 text-[10px] font-semibold text-muted-foreground border-r">Task</div>
-        <div className="flex-1 relative" style={{ minWidth: `${totalDays * 16}px` }}>
-          <div className="flex h-full">
-            {weeks.map((w, i) => (
-              <div key={i} className="flex-1 text-[9px] text-muted-foreground px-1 py-2 border-r border-dashed" style={{ minWidth: `${7 * 16}px` }}>
-                {w.label}
-              </div>
-            ))}
-          </div>
-          {/* Today marker */}
-          <div
-            className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-10"
-            style={{ left: `${(todayOffset / totalDays) * 100}%` }}
-            title="Today"
-          />
+    <div className="space-y-2" data-testid="timeline-view">
+      {/* Toolbar: zoom + grouping */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-muted-foreground font-medium">Zoom:</span>
+          {ZOOM_OPTIONS.map(z => (
+            <Button key={z.value} variant={zoomWeeks === z.value ? "default" : "outline"} size="sm" className="h-6 text-[10px] px-2" onClick={() => setZoomWeeks(z.value)}>
+              {z.label}
+            </Button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-muted-foreground font-medium">Group:</span>
+          <Button variant={groupBy === "project" ? "default" : "outline"} size="sm" className="h-6 text-[10px] px-2" onClick={() => setGroupBy("project")}>Project</Button>
+          <Button variant={groupBy === "assignee" ? "default" : "outline"} size="sm" className="h-6 text-[10px] px-2" onClick={() => setGroupBy("assignee")}>Assignee</Button>
         </div>
       </div>
 
-      {/* Task rows */}
-      <div className="max-h-[500px] overflow-y-auto">
-        {timelineTasks.slice(0, 50).map(task => {
-          const due = new Date(task.dueDate!);
-          const start = task.startDate ? new Date(task.startDate) : new Date(due.getTime() - 7 * 24 * 60 * 60 * 1000);
-          const barStart = Math.max(0, Math.ceil((start.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
-          const barEnd = Math.ceil((due.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-          const barLeft = (barStart / totalDays) * 100;
-          const barWidth = Math.max(1, ((barEnd - barStart) / totalDays) * 100);
-          const overdue = isOverdue(task.dueDate, task.status);
-
-          return (
-            <div key={task.id} className="flex border-b hover:bg-muted/20 transition-colors group" onClick={() => onCardClick(task)}>
-              <div className="w-[220px] shrink-0 p-2 border-r cursor-pointer">
-                <p className="text-[11px] font-medium truncate leading-tight">{task.title}</p>
-                <div className="flex items-center gap-1 mt-0.5">
-                  <Badge className={`text-[8px] px-1 py-0 ${priorityColors[task.priority] || "bg-muted"}`}>{task.priority}</Badge>
-                  <span className={`text-[9px] ${overdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>{daysLabel(task.dueDate!)}</span>
-                </div>
-              </div>
-              <div className="flex-1 relative py-2" style={{ minWidth: `${totalDays * 16}px` }}>
-                <div
-                  className={`absolute h-5 rounded-full cursor-pointer transition-all ${overdue ? "bg-red-400" : task.status === "IN PROGRESS" ? "bg-blue-400" : task.status === "HOLD" ? "bg-amber-400" : "bg-emerald-400"}`}
-                  style={{ left: `${barLeft}%`, width: `${barWidth}%`, top: "50%", transform: "translateY(-50%)", minWidth: "8px" }}
-                  title={`${task.title} — ${formatDateShort(task.dueDate!)}`}
-                >
-                  {task.assignees?.[0] && (
-                    <span className="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-white border flex items-center justify-center text-[7px] font-bold">
-                      {task.assignees[0][0]}
-                    </span>
-                  )}
-                </div>
-                {/* Week grid lines */}
-                {weeks.map((_, i) => (
-                  <div key={i} className="absolute top-0 bottom-0 border-r border-dashed border-muted" style={{ left: `${((i + 1) * 7 / totalDays) * 100}%` }} />
-                ))}
-              </div>
-            </div>
-          );
-        })}
+      {/* Color legend */}
+      <div className="flex items-center gap-3 text-[9px] text-muted-foreground">
+        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-full bg-red-400 inline-block" /> Overdue</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-full bg-blue-400 inline-block" /> In Progress</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-full bg-amber-400 inline-block" /> On Hold</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-full bg-emerald-400 inline-block" /> On Track</span>
       </div>
+
+      <div className="border rounded-lg overflow-hidden">
+        {/* Sticky header with week markers */}
+        <div className="flex border-b bg-muted/30 sticky top-0 z-20">
+          <div className="w-[220px] shrink-0 p-2 text-[10px] font-semibold text-muted-foreground border-r">Task</div>
+          <div className="flex-1 relative overflow-hidden" style={{ minWidth: `${totalDays * pxPerDay}px` }}>
+            <div className="flex h-full">
+              {weeks.map((w, i) => (
+                <div key={i} className={`text-[9px] px-1 py-2 border-r border-dashed ${w.isCurrent ? "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 font-bold" : "text-muted-foreground"}`} style={{ minWidth: `${7 * pxPerDay}px` }}>
+                  {w.label}{w.isCurrent && " (now)"}
+                </div>
+              ))}
+            </div>
+            {/* Today marker in header */}
+            <div className="absolute top-0 bottom-0 w-[2px] bg-red-500 z-10" style={{ left: `${(todayOffset / totalDays) * 100}%` }}>
+              <span className="absolute -top-0 -left-3 text-[7px] font-bold text-red-600 bg-red-50 dark:bg-red-950 px-1 rounded">Today</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Task rows grouped */}
+        <div className="max-h-[500px] overflow-y-auto">
+          {grouped.map(([groupKey, groupTasks]) => (
+            <div key={groupKey}>
+              {/* Group header */}
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 bg-muted/50 border-b cursor-pointer hover:bg-muted/70"
+                onClick={() => toggleGroup(groupKey)}
+              >
+                {collapsedGroups.has(groupKey) ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                <span className="text-[11px] font-semibold">{groupKey}</span>
+                <span className="text-[9px] text-muted-foreground">({groupTasks.length})</span>
+              </div>
+
+              {!collapsedGroups.has(groupKey) && groupTasks.map(task => {
+                const due = new Date(task.dueDate!);
+                const start = task.startDate ? new Date(task.startDate) : new Date(due.getTime() - 7 * 24 * 60 * 60 * 1000);
+                const barStart = Math.max(0, Math.ceil((start.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+                const barEnd = Math.ceil((due.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+                const barLeft = (barStart / totalDays) * 100;
+                const barWidth = Math.max(1, ((barEnd - barStart) / totalDays) * 100);
+                const overdue = isOverdue(task.dueDate, task.status);
+                const assignee = task.assignees?.[0] || "Unassigned";
+
+                return (
+                  <div key={task.id} className="flex border-b hover:bg-muted/20 transition-colors group" onClick={() => onCardClick(task)}>
+                    <div className="w-[220px] shrink-0 p-2 border-r cursor-pointer">
+                      <p className="text-[11px] font-medium truncate leading-tight">{task.title}</p>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <Badge className={`text-[8px] px-1 py-0 ${priorityColors[task.priority] || "bg-muted"}`}>{task.priority}</Badge>
+                        <span className={`text-[9px] ${overdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>{daysLabel(task.dueDate!)}</span>
+                      </div>
+                    </div>
+                    <div className="flex-1 relative py-2" style={{ minWidth: `${totalDays * pxPerDay}px` }}>
+                      <TooltipProvider delayDuration={100}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div
+                              className={`absolute h-5 rounded-full cursor-pointer transition-all ${getBarColor(task)}`}
+                              style={{ left: `${barLeft}%`, width: `${barWidth}%`, top: "50%", transform: "translateY(-50%)", minWidth: "8px" }}
+                            >
+                              {task.assignees?.[0] && (
+                                <span className="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-white border flex items-center justify-center text-[7px] font-bold">
+                                  {task.assignees[0][0]}
+                                </span>
+                              )}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs max-w-[250px]">
+                            <p className="font-semibold">{task.title}</p>
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 mt-1 text-[10px]">
+                              <span className="text-muted-foreground">Status:</span><span>{task.status}</span>
+                              <span className="text-muted-foreground">Priority:</span><span>{task.priority}</span>
+                              <span className="text-muted-foreground">Assignee:</span><span>{assignee}</span>
+                              {task.startDate && <><span className="text-muted-foreground">Start:</span><span>{formatDateShort(task.startDate)}</span></>}
+                              <span className="text-muted-foreground">Due:</span><span className={overdue ? "text-red-600 font-semibold" : ""}>{formatDateShort(task.dueDate!)}</span>
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      {/* Week grid lines */}
+                      {weeks.map((_, i) => (
+                        <div key={i} className="absolute top-0 bottom-0 border-r border-dashed border-muted" style={{ left: `${((i + 1) * 7 / totalDays) * 100}%` }} />
+                      ))}
+                      {/* Today marker in rows */}
+                      <div className="absolute top-0 bottom-0 w-[2px] bg-red-500/40 z-10" style={{ left: `${(todayOffset / totalDays) * 100}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Show more */}
+      {visibleCount < timelineTasks.length && (
+        <div className="text-center">
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setVisibleCount(c => c + 50)}>
+            Show more ({timelineTasks.length - visibleCount} remaining)
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -2951,12 +3026,14 @@ function MyTasksView({
   onCardClick,
   onStatusChange,
   onPriorityChange,
+  filterStatuses = [],
 }: {
   tasks: Task[];
   myName: string;
   onCardClick: (task: Task) => void;
   onStatusChange: (id: number, status: string) => void;
   onPriorityChange: (id: number, priority: string) => void;
+  filterStatuses?: string[];
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -3506,7 +3583,7 @@ export default function EngineeringTasksPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedTask, showShortcuts]);
 
-  const { data: tasks = [], isLoading, error } = useQuery<Task[]>({
+  const { data: tasks = [], isLoading, error, refetch } = useQuery<Task[]>({
     queryKey: ["eng-tasks"],
     queryFn: () => engFetch("/api/eng/tasks"),
     refetchOnMount: "always",
@@ -3926,6 +4003,7 @@ export default function EngineeringTasksPage() {
   }, [tasks]);
 
   return (
+    <ErrorBoundary>
     <div data-testid="eng-tasks-page" className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -4148,10 +4226,13 @@ export default function EngineeringTasksPage() {
         <Card className="shadow-sm border-red-200 bg-red-50/60" data-testid="engineering-tasks-error-banner">
           <CardContent className="p-3 flex items-start gap-2 text-sm text-red-700">
             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-            <div>
+            <div className="flex-1">
               <p className="font-medium">Task data did not refresh cleanly.</p>
               <p className="text-xs text-red-600/90">{(error as Error).message || "Unknown error"}</p>
             </div>
+            <Button variant="outline" size="sm" className="shrink-0 h-7 text-xs border-red-300 text-red-700 hover:bg-red-100" onClick={() => refetch()} data-testid="btn-retry-tasks">
+              <RefreshCw className="h-3 w-3 mr-1" /> Retry
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -4320,6 +4401,14 @@ export default function EngineeringTasksPage() {
         <div className="flex justify-center py-16">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
+      ) : !error && tasks.length === 0 ? (
+        <Card className="shadow-sm" data-testid="engineering-tasks-empty-state">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <ListTodo className="h-12 w-12 text-muted-foreground/30 mb-3" />
+            <h3 className="text-lg font-medium text-muted-foreground">No engineering tasks yet</h3>
+            <p className="text-sm text-muted-foreground/70 mt-1 max-w-md">Create your first task to get started, or generate tasks from an engineering stage checklist.</p>
+          </CardContent>
+        </Card>
       ) : viewMode === "board" ? (
         <>
         <div className="flex items-center gap-2 flex-wrap" data-testid="board-toolbar">
@@ -4481,6 +4570,7 @@ export default function EngineeringTasksPage() {
           onCardClick={setSelectedTask}
           onStatusChange={handleStatusChange}
           onPriorityChange={handlePriorityChange}
+          filterStatuses={filterStatuses}
         />
       ) : viewMode === "projects" ? (
         <ProjectKanbanView
@@ -4515,57 +4605,17 @@ export default function EngineeringTasksPage() {
         />
       )}
 
-      <Dialog open={!!holdDialog} onOpenChange={(open) => { if (!open) setHoldDialog(null); }}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <PauseCircle className="h-5 w-5 text-amber-500" />
-              Hold Reason Required
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 pt-2">
-            <p className="text-sm text-muted-foreground">Please provide a reason for putting this task on hold.</p>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Blocked Type *</label>
-              <SearchableSelect
-                value={holdDialog?.blockedType || ""}
-                onValueChange={(v) => setHoldDialog(prev => prev ? { ...prev, blockedType: v } : null)}
-                placeholder="Internal or External..."
-                triggerClassName="h-9"
-                options={[
-                  { value: "Internal", label: "Internal" },
-                  { value: "External", label: "External" },
-                ]}
-                data-testid="select-hold-blocked-type"
-              />
-            </div>
-            <Textarea
-              value={holdDialog?.reason || ""}
-              onChange={(e) => setHoldDialog(prev => prev ? { ...prev, reason: e.target.value } : null)}
-              placeholder="e.g. Waiting for client approval, materials delayed..."
-              className="min-h-[80px]"
-              data-testid="input-hold-reason"
-            />
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setHoldDialog(null)} data-testid="btn-hold-cancel">Cancel</Button>
-              <Button
-                size="sm"
-                className="bg-amber-600 hover:bg-amber-700"
-                disabled={!holdDialog?.reason?.trim() || !holdDialog?.blockedType}
-                onClick={() => {
-                  if (holdDialog && holdDialog.reason.trim() && holdDialog.blockedType) {
-                    updateStatusMutation.mutate({ taskId: holdDialog.taskId, status: "HOLD", holdReason: holdDialog.reason.trim(), blockedType: holdDialog.blockedType });
-                    setHoldDialog(null);
-                  }
-                }}
-                data-testid="btn-hold-confirm"
-              >
-                Put on Hold
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <HoldReasonDialog
+        open={!!holdDialog}
+        onOpenChange={(open) => { if (!open) setHoldDialog(null); }}
+        onConfirm={(reason, blockedType) => {
+          if (holdDialog) {
+            updateStatusMutation.mutate({ taskId: holdDialog.taskId, status: "HOLD", holdReason: reason, blockedType });
+            setHoldDialog(null);
+          }
+        }}
+        testIdPrefix="hold"
+      />
 
       {showShortcuts && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowShortcuts(false)}>
@@ -4595,5 +4645,6 @@ export default function EngineeringTasksPage() {
         </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 }

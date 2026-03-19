@@ -31,10 +31,12 @@ import MyToolMeetingsPage from "@/pages/my-tool-meetings";
 import QmDashboardPage from "@/pages/qm-dashboard";
 import EngineeringDashboardPage from "@/pages/engineering-dashboard";
 import EngineeringTasksPage from "@/pages/engineering-tasks";
+import EngineeringAuditPage from "@/pages/engineering-audit";
 import RoleSettingsPage from "@/pages/role-settings";
 import LifecycleBoardPage from "@/pages/lifecycle-board";
 import ExecutionBoardPage from "@/pages/execution-board";
 import SmartImportPage from "@/pages/smart-import";
+import SharePointIntakePage from "@/pages/SharePointIntakePage";
 import InvoicePatternsPage from "@/pages/invoice-patterns";
 import SubcontractorDashboardPage from "@/pages/subcontractor-dashboard";
 import CounterpartiesPage from "@/pages/counterparties";
@@ -121,11 +123,13 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   QmDashboardPage,
   EngineeringDashboardPage,
   EngineeringTasksPage,
+  EngineeringAuditPage,
   LifecycleBoardPage,
   ExecutionBoardPage,
   MyToolMeetingsPage,
   RoleSettingsPage,
   SmartImportPage,
+  SharePointIntakePage,
   InvoicePatternsPage,
   SubcontractorDashboardPage,
   CounterpartiesPage,

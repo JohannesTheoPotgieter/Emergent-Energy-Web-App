@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +31,8 @@ import {
   Play,
   FolderOpen,
   HardDrive,
+  FileSignature,
+  Mail,
 } from "lucide-react";
 import { exportStagePack, exportAllStagesPack } from "@/lib/stage-export";
 
@@ -37,6 +40,7 @@ function engFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = { ...(options?.headers as any || {}) };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (options?.body && typeof options.body === "string") headers["Content-Type"] = "application/json";
   return fetch(url, { ...options, headers, credentials: "include" });
 }
 
@@ -81,6 +85,55 @@ export default function EngineeringStagesTab({ projectId, projectName, isAdmin, 
 
   const stages = stagesData?.stages || [];
 
+  // CP Signed gate
+  const [cpDialogOpen, setCpDialogOpen] = useState(false);
+  const [cpEvidenceType, setCpEvidenceType] = useState<"file_upload" | "email_reference">("email_reference");
+  const [cpEmailSubject, setCpEmailSubject] = useState("");
+  const [cpEmailDate, setCpEmailDate] = useState("");
+
+  const { data: cpStatus } = useQuery<{
+    cpSigned: boolean;
+    cpSignedDate: string | null;
+    cpSignedByName: string | null;
+    cpEvidenceType: string | null;
+    pmTaskPackCreated: boolean;
+    engPostCpTaskPackCreated: boolean;
+  }>({
+    queryKey: ["cp-status", projectId],
+    queryFn: async () => {
+      const res = await engFetch(`/api/projects/${projectId}/cp-status`);
+      if (!res.ok) return { cpSigned: false, cpSignedDate: null, cpSignedByName: null, cpEvidenceType: null, pmTaskPackCreated: false, engPostCpTaskPackCreated: false };
+      return res.json();
+    },
+  });
+
+  const cpMutation = useMutation({
+    mutationFn: async (data: { evidenceType: string; emailSubject?: string; emailDate?: string }) => {
+      const res = await engFetch(`/api/projects/${projectId}/mark-cp-signed`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed" }));
+        throw new Error(err.error || "Failed to mark CP signed");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["cp-status", projectId] });
+      qc.invalidateQueries({ queryKey: ["eng-tasks"] });
+      setCpDialogOpen(false);
+      setCpEmailSubject("");
+      setCpEmailDate("");
+      const msg = data.alreadySigned
+        ? "CP was already signed."
+        : `CP Signed! Created ${data.pmTasksCreated} PM tasks and ${data.engTasksCreated} engineering tasks.`;
+      toast({ title: "CP Signed", description: msg });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   async function handleGenerate() {
     setGenerating(true);
     try {
@@ -119,6 +172,37 @@ export default function EngineeringStagesTab({ projectId, projectName, isAdmin, 
   return (
     <div className="flex gap-4 h-[calc(100vh-300px)] min-h-[500px]" data-testid="eng-stages-panel">
       <div className="w-72 shrink-0 space-y-2 overflow-y-auto pr-2">
+        {/* CP Signed Status */}
+        <Card className={`${cpStatus?.cpSigned ? "border-green-300 bg-green-50/50 dark:bg-green-950/20" : "border-amber-300 bg-amber-50/50 dark:bg-amber-950/20"}`}>
+          <CardContent className="p-3">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-1.5">
+                <FileSignature className={`h-4 w-4 ${cpStatus?.cpSigned ? "text-green-600" : "text-amber-600"}`} />
+                <span className="text-xs font-semibold">Cost Proposal</span>
+              </div>
+              <Badge className={`text-[10px] ${cpStatus?.cpSigned ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                {cpStatus?.cpSigned ? "Signed" : "Pending"}
+              </Badge>
+            </div>
+            {cpStatus?.cpSigned ? (
+              <div className="text-[10px] text-muted-foreground space-y-0.5">
+                <p>Signed {cpStatus.cpSignedDate} by {cpStatus.cpSignedByName || "COO"}</p>
+                <p>Evidence: {cpStatus.cpEvidenceType === "email_reference" ? "Email" : "File upload"}</p>
+                <div className="flex gap-1 mt-1">
+                  {cpStatus.pmTaskPackCreated && <Badge variant="outline" className="text-[9px]">PM Pack</Badge>}
+                  {cpStatus.engPostCpTaskPackCreated && <Badge variant="outline" className="text-[9px]">Eng Pack</Badge>}
+                </div>
+              </div>
+            ) : isCoo ? (
+              <Button size="sm" className="w-full h-7 text-xs mt-1 bg-amber-600 hover:bg-amber-700" onClick={() => setCpDialogOpen(true)} data-testid="btn-mark-cp-signed">
+                Mark CP Signed
+              </Button>
+            ) : (
+              <p className="text-[10px] text-muted-foreground mt-1">COO must mark the Cost Proposal as signed.</p>
+            )}
+          </CardContent>
+        </Card>
+
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-semibold">Stages</h3>
           <Button
@@ -177,6 +261,81 @@ export default function EngineeringStagesTab({ projectId, projectName, isAdmin, 
         )}
       </div>
     </div>
+
+    {/* CP Signed Evidence Dialog */}
+    <Dialog open={cpDialogOpen} onOpenChange={setCpDialogOpen}>
+      <DialogContent className="sm:max-w-[450px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileSignature className="h-5 w-5 text-amber-600" />
+            Mark Cost Proposal as Signed
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 pt-2">
+          <div>
+            <Label className="text-xs">Evidence Type *</Label>
+            <SearchableSelect
+              value={cpEvidenceType}
+              onValueChange={(v) => setCpEvidenceType(v as any)}
+              placeholder="Select..."
+              triggerClassName="h-9 mt-1"
+              options={[
+                { value: "email_reference", label: "Email Reference" },
+                { value: "file_upload", label: "File Upload" },
+              ]}
+              data-testid="select-cp-evidence-type"
+            />
+          </div>
+          {cpEvidenceType === "email_reference" && (
+            <>
+              <div>
+                <Label className="text-xs">Email Subject *</Label>
+                <Input
+                  value={cpEmailSubject}
+                  onChange={e => setCpEmailSubject(e.target.value)}
+                  placeholder="e.g. RE: Cost Proposal - Approved"
+                  className="h-9 mt-1"
+                  data-testid="input-cp-email-subject"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Email Date</Label>
+                <Input
+                  type="date"
+                  value={cpEmailDate}
+                  onChange={e => setCpEmailDate(e.target.value)}
+                  className="h-9 mt-1"
+                  data-testid="input-cp-email-date"
+                />
+              </div>
+            </>
+          )}
+          {cpEvidenceType === "file_upload" && (
+            <p className="text-xs text-muted-foreground">Upload the signed CP document via the deliverables section, then reference it here.</p>
+          )}
+          <p className="text-xs text-muted-foreground bg-muted p-2 rounded">
+            This will create PM default tasks (6) and Engineering post-CP tasks (4) for this project.
+          </p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => setCpDialogOpen(false)}>Cancel</Button>
+          <Button
+            size="sm"
+            className="bg-amber-600 hover:bg-amber-700"
+            disabled={cpMutation.isPending || (cpEvidenceType === "email_reference" && !cpEmailSubject.trim())}
+            onClick={() => cpMutation.mutate({
+              evidenceType: cpEvidenceType,
+              emailSubject: cpEmailSubject.trim() || undefined,
+              emailDate: cpEmailDate || undefined,
+            })}
+            data-testid="btn-confirm-cp-signed"
+          >
+            {cpMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <FileSignature className="h-3.5 w-3.5 mr-1" />}
+            Confirm CP Signed
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -893,6 +1052,7 @@ function DeliverablesSection({ stageId, projectId, templates, uploaded }: {
   }
 
   return (
+    <ErrorBoundary>
     <div className="space-y-3">
       {templates.map((dt: any) => {
         const files = uploaded.filter((u: any) => u.deliverableTemplateId === dt.id);
@@ -1141,5 +1301,6 @@ function ApprovalRow({ approval, projectId, stageId, userRole, isCoo }: {
         )}
       </CardContent>
     </Card>
+    </ErrorBoundary>
   );
 }
