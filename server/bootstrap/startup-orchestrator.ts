@@ -165,6 +165,14 @@ async function runAdditiveSchemaAlignments() {
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_end_date TEXT;
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_parent_id INTEGER;
 
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS data_source TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS project_id INTEGER;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
+      ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS data_source TEXT;
+      ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS project_id INTEGER;
+      ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
+      ALTER TABLE project_revenue_summary ADD COLUMN IF NOT EXISTS project_id INTEGER;
+
       INSERT INTO task_tags (name, color, category) VALUES
         ('Bug', '#ef4444', 'BUG'),
         ('Improvement', '#f59e0b', 'IMPROVEMENT'),
