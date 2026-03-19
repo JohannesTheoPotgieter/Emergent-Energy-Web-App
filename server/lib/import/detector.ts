@@ -3,6 +3,9 @@ import ExcelJS from "exceljs";
 import { SECTION_ANCHORS, getSynonymsForSection } from "./synonyms";
 import { normalizeHeader, getCellRawValue, worksheetToArray, parseDate, parseNumber } from "./utils";
 
+/** Known template layout variants — extensible chain of pattern checks */
+export type LayoutVariant = "EE_STANDARD" | "MONDI_LEGACY" | "UNKNOWN";
+
 export interface DetectedSection {
   section: "PLAN" | "REVENUE" | "EXPENDITURE";
   sheetName: string;
@@ -11,6 +14,12 @@ export interface DetectedSection {
   dataEndRowIndex: number;
   detectedHeaders: { colIndex: number; rawHeader: string; normalizedHeader: string }[];
   budgetHeaders?: { colIndex: number; rawHeader: string; normalizedHeader: string }[];
+  /** Column range for budget (left) pane, if dual-pane detected */
+  budgetColRange?: { start: number; end: number };
+  /** Column range for actual (right) pane, if dual-pane detected */
+  actualColRange?: { start: number; end: number };
+  /** Detected template layout variant for this section */
+  layoutVariant?: LayoutVariant;
   confidence: number;
 }
 
@@ -30,6 +39,11 @@ export interface DetectionResult {
     omHandoverDate: string | null;
     clientHandoverDate: string | null;
   } | null;
+  /** Multi-project tracker info (e.g., FY 2026 Adhoc) */
+  multiProject?: {
+    isMultiProject: boolean;
+    subProjects: string[];
+  };
 }
 
 function isExcludedSheet(sheetName: string): boolean {
@@ -37,6 +51,12 @@ function isExcludedSheet(sheetName: string): boolean {
   const suffixPattern = /[\s\-_]+old$/;
   const bracketPattern = /\(old\)/;
   return suffixPattern.test(norm) || bracketPattern.test(norm) || norm.includes("backup") || norm.includes("archive") || norm.includes("copy of");
+}
+
+/** Detect Purchase Order sheets (Mondi variant has 14 PO-specific sheets like "PO-Modules", "PO - ABB Switchgear") */
+function isPurchaseOrderSheet(sheetName: string): boolean {
+  const norm = sheetName.trim();
+  return /^PO[\s\-]/i.test(norm);
 }
 
 function fuzzySheetMatch(sheetName: string, candidates: string[]): boolean {
@@ -89,6 +109,43 @@ function scoreRowAsHeader(row: any[], anchorPhrases: string[], allSynonymPhrases
   return anchorHits * 2 + synonymHits;
 }
 
+/**
+ * Detects a "pane gap" in a header row — an empty column sitting between two
+ * populated header regions.  Used to split dual-pane layouts such as
+ * Expenditure Breakdown (budget left, actual right).
+ * Returns the 0-based column index of the gap, or -1 if none found.
+ */
+export function findPaneGapColumn(headerRow: any[]): number {
+  // Build a bitmap of populated columns
+  const populated: boolean[] = headerRow.map(
+    cell => cell != null && String(cell).trim() !== ""
+  );
+
+  // Walk through and find the first empty column that has populated columns
+  // on BOTH sides (at least 2 populated before and 2 after).
+  for (let c = 1; c < populated.length - 1; c++) {
+    if (populated[c]) continue; // not a gap
+
+    // Count populated columns before the gap
+    let beforeCount = 0;
+    for (let b = 0; b < c; b++) {
+      if (populated[b]) beforeCount++;
+    }
+
+    // Count populated columns after the gap
+    let afterCount = 0;
+    for (let a = c + 1; a < populated.length; a++) {
+      if (populated[a]) afterCount++;
+    }
+
+    if (beforeCount >= 2 && afterCount >= 2) {
+      return c;
+    }
+  }
+
+  return -1;
+}
+
 function findHeaderRow(
   data: any[][],
   sectionKey: string,
@@ -120,6 +177,7 @@ function findHeaderRow(
 
   let actualSectionStartCol = -1;
   if (sectionKey === "EXPENDITURE") {
+    // Method 1: Scan for "actual expenditure" label above header row
     for (let scanRow = 0; scanRow < Math.min(data.length, bestRowIndex); scanRow++) {
       const scanRowData = data[scanRow];
       if (!scanRowData) continue;
@@ -131,6 +189,23 @@ function findHeaderRow(
         }
       }
       if (actualSectionStartCol >= 0) break;
+    }
+
+    // Method 2: Detect pane gap — an empty column between two populated header regions
+    if (actualSectionStartCol < 0) {
+      const headerRow = data[bestRowIndex];
+      if (headerRow) {
+        const gapCol = findPaneGapColumn(headerRow);
+        if (gapCol >= 0) {
+          // The actual pane starts at the first populated column after the gap
+          for (let c = gapCol + 1; c < headerRow.length; c++) {
+            if (headerRow[c] != null && String(headerRow[c]).trim() !== "") {
+              actualSectionStartCol = c;
+              break;
+            }
+          }
+        }
+      }
     }
   }
 
@@ -262,6 +337,45 @@ function computeConfidence(
   const nameBonus = nameMatched ? 0.1 : 0;
 
   return Math.min(1, anchorScore * requiredScore + nameBonus);
+}
+
+/**
+ * Detects the Project Plan template layout variant by inspecting metadata
+ * cells.  Designed as an extensible chain — add new patterns here.
+ */
+export function detectPlanLayoutVariant(ws: ExcelJS.Worksheet): LayoutVariant {
+  const cell = (r: number, c: number): string => {
+    const v = getCellRawValue(ws.getRow(r).getCell(c));
+    return v ? String(v).toLowerCase().trim() : "";
+  };
+
+  // LAYOUT A — "EE Standard": C2 contains "PROJECT PLAN", C3 contains "PROJECT SIZE"
+  if (cell(2, 3).includes("project plan") && cell(3, 3).includes("project size")) {
+    return "EE_STANDARD";
+  }
+
+  // LAYOUT B — "Mondi/Legacy": A1 contains "Project Plan", B5 contains "Project Start" or B6 contains "Project Name"
+  if (cell(1, 1).includes("project plan") && (cell(5, 2).includes("project start") || cell(6, 2).includes("project name"))) {
+    return "MONDI_LEGACY";
+  }
+
+  // Fallback: check for EE Standard header pattern in rows 2-7
+  for (let r = 2; r <= 7; r++) {
+    const c3 = cell(r, 3);
+    if (c3.includes("project plan") || c3.includes("project size") || c3.includes("project developer")) {
+      return "EE_STANDARD";
+    }
+  }
+
+  // Fallback: check for Mondi pattern in rows 1-6
+  if (cell(1, 1).includes("project") || cell(5, 2).includes("project") || cell(6, 2).includes("project")) {
+    const headerRow8 = cell(8, 1);
+    if (headerRow8.includes("wbs")) {
+      return "MONDI_LEGACY";
+    }
+  }
+
+  return "UNKNOWN";
 }
 
 function extractProjectInfo(
@@ -418,6 +532,79 @@ function deriveKeyDatesFromPlan(
   return result;
 }
 
+/**
+ * Returns true if the sheet name is a generic name (Sheet1, Sheet2, etc.)
+ * that should be deprioritized when a dedicated sheet exists.
+ */
+export function isGenericSheetName(sheetName: string): boolean {
+  return /^sheet\s*\d+$/i.test(sheetName.trim());
+}
+
+/**
+ * Computes a sheet name confidence adjustment:
+ * - Dedicated section keyword matches get a bonus
+ * - Generic sheet names (Sheet1, Sheet2, Sheet3) get a penalty
+ */
+export function sheetNameConfidenceAdjustment(sheetName: string, sectionKey: string): number {
+  const norm = sheetName.toLowerCase().trim();
+
+  // Penalty for generic sheet names
+  if (isGenericSheetName(sheetName)) {
+    return -30;
+  }
+
+  // Bonus for dedicated section keyword matches
+  const dedicatedNames: Record<string, string[]> = {
+    PLAN: ["project plan", "programme", "schedule"],
+    REVENUE: ["revenue tracking", "revenue"],
+    EXPENDITURE: ["expenditure breakdown", "expenditure"],
+  };
+
+  const keywords = dedicatedNames[sectionKey] || [];
+  for (const kw of keywords) {
+    if (norm.includes(kw) || kw.includes(norm)) {
+      return 50;
+    }
+  }
+
+  return 0;
+}
+
+/**
+ * Scans plan data for "Project Activities - {name}" parent rows to detect
+ * multi-project (ad-hoc) trackers. Returns array of sub-project names.
+ */
+export function detectMultiProjectSubProjects(
+  data: any[][],
+  dataStartRow: number,
+  dataEndRow: number
+): string[] {
+  const subProjects: string[] = [];
+  const pattern = /^project\s+activit(?:y|ies)\s*[-–—:]\s*(.+)/i;
+
+  for (let i = dataStartRow; i < Math.min(dataEndRow, data.length); i++) {
+    const row = data[i];
+    if (!row) continue;
+
+    // Check columns B (1) and C (2) for the parent row pattern
+    for (const colIdx of [1, 2, 0]) {
+      const cell = row[colIdx];
+      if (!cell) continue;
+      const text = String(cell).trim();
+      const match = text.match(pattern);
+      if (match) {
+        const name = match[1].trim();
+        if (name && !subProjects.includes(name)) {
+          subProjects.push(name);
+        }
+        break;
+      }
+    }
+  }
+
+  return subProjects;
+}
+
 export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
   const sections: DetectedSection[] = [];
   const unmatched: { sheetName: string; reason: string }[] = [];
@@ -431,18 +618,21 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
   for (const sectionKey of Object.keys(SECTION_ANCHORS)) {
     const anchor = SECTION_ANCHORS[sectionKey];
 
-    let bestCandidate: {
+    // Collect ALL candidates for this section to enable priority comparison
+    const allCandidates: {
       ws: ExcelJS.Worksheet;
       headerResult: NonNullable<ReturnType<typeof findHeaderRow>>;
       confidence: number;
+      effectiveConfidence: number;
       dataStartRow: number;
       dataEndRow: number;
       nameMatched: boolean;
-    } | null = null;
+    }[] = [];
 
     for (const ws of workbook.worksheets) {
       if (claimedSheets.has(ws.name)) continue;
       if (isExcludedSheet(ws.name)) continue;
+      if (isPurchaseOrderSheet(ws.name)) continue; // PO sheets handled separately after detection
 
       const nameMatched = fuzzySheetMatch(ws.name, anchor.sheetNames);
 
@@ -455,14 +645,12 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
         const dataStartRow = headerResult.rowIndex + 1;
         const dataEndRow = findDataEndRow(data, dataStartRow, data[0]?.length || 0);
         const confidence = computeConfidence(sectionKey, headerResult.headers, nameMatched);
+        const sheetAdj = sheetNameConfidenceAdjustment(ws.name, sectionKey);
+        const effectiveConfidence = (nameMatched ? confidence + 0.5 : confidence) + sheetAdj;
 
-        console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" nameMatch=${nameMatched}, headerRow=${headerResult.rowIndex}, headers=${headerResult.headers.length}, confidence=${confidence.toFixed(2)}`);
+        console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" nameMatch=${nameMatched}, headerRow=${headerResult.rowIndex}, headers=${headerResult.headers.length}, confidence=${confidence.toFixed(2)}, sheetAdj=${sheetAdj}, effective=${effectiveConfidence.toFixed(2)}`);
 
-        const effectiveConfidence = nameMatched ? confidence + 0.5 : confidence;
-
-        if (!bestCandidate || effectiveConfidence > (bestCandidate.nameMatched ? bestCandidate.confidence + 0.5 : bestCandidate.confidence)) {
-          bestCandidate = { ws, headerResult, confidence, dataStartRow, dataEndRow, nameMatched };
-        }
+        allCandidates.push({ ws, headerResult, confidence, effectiveConfidence, dataStartRow, dataEndRow, nameMatched });
       } else if (nameMatched) {
         console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" nameMatch=true but no header row found (data rows: ${data.length}), trying relaxed scan`);
         const relaxedResult = findHeaderRow(data, sectionKey, 200);
@@ -470,16 +658,60 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
           const dataStartRow = relaxedResult.rowIndex + 1;
           const dataEndRow = findDataEndRow(data, dataStartRow, data[0]?.length || 0);
           const confidence = computeConfidence(sectionKey, relaxedResult.headers, true);
-          console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" relaxed scan found headerRow=${relaxedResult.rowIndex}, confidence=${confidence.toFixed(2)}`);
-          const effectiveConfidence = confidence + 0.5;
-          if (!bestCandidate || effectiveConfidence > (bestCandidate.nameMatched ? bestCandidate.confidence + 0.5 : bestCandidate.confidence)) {
-            bestCandidate = { ws, headerResult: relaxedResult, confidence, dataStartRow, dataEndRow, nameMatched: true };
-          }
+          const sheetAdj = sheetNameConfidenceAdjustment(ws.name, sectionKey);
+          const effectiveConfidence = confidence + 0.5 + sheetAdj;
+          console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" relaxed scan found headerRow=${relaxedResult.rowIndex}, confidence=${confidence.toFixed(2)}, sheetAdj=${sheetAdj}, effective=${effectiveConfidence.toFixed(2)}`);
+          allCandidates.push({ ws, headerResult: relaxedResult, confidence, effectiveConfidence, dataStartRow, dataEndRow, nameMatched: true });
+        }
+      }
+    }
+
+    // Sort candidates by effective confidence (highest first)
+    allCandidates.sort((a, b) => b.effectiveConfidence - a.effectiveConfidence);
+
+    const bestCandidate = allCandidates.length > 0 ? allCandidates[0] : null;
+
+    // Log skipped generic sheets that were superseded by a dedicated sheet
+    if (bestCandidate && allCandidates.length > 1) {
+      for (let i = 1; i < allCandidates.length; i++) {
+        const loser = allCandidates[i];
+        if (isGenericSheetName(loser.ws.name)) {
+          const dataRows = loser.dataEndRow - loser.dataStartRow;
+          const winnerDataRows = bestCandidate.dataEndRow - bestCandidate.dataStartRow;
+          unmatched.push({
+            sheetName: loser.ws.name,
+            reason: `Superseded by dedicated '${bestCandidate.ws.name}' sheet (${winnerDataRows} rows vs ${dataRows} rows)`,
+          });
+          console.log(`[Detector] ${sectionKey}: skipping "${loser.ws.name}" — superseded by "${bestCandidate.ws.name}" (${winnerDataRows} rows vs ${dataRows} rows)`);
+          claimedSheets.add(loser.ws.name);
         }
       }
     }
 
     if (bestCandidate) {
+      // Compute budget/actual column ranges from the split headers
+      let budgetColRange: DetectedSection["budgetColRange"];
+      let actualColRange: DetectedSection["actualColRange"];
+
+      if (bestCandidate.headerResult.budgetHeaders && bestCandidate.headerResult.budgetHeaders.length > 0) {
+        const bh = bestCandidate.headerResult.budgetHeaders;
+        budgetColRange = { start: bh[0].colIndex, end: bh[bh.length - 1].colIndex };
+        const ah = bestCandidate.headerResult.headers;
+        if (ah.length > 0) {
+          actualColRange = { start: ah[0].colIndex, end: ah[ah.length - 1].colIndex };
+        }
+        console.log(`[Detector] ${sectionKey}: dual-pane detected — budget cols ${budgetColRange.start}-${budgetColRange.end}, actual cols ${actualColRange?.start}-${actualColRange?.end}`);
+      } else if (sectionKey === "EXPENDITURE") {
+        console.log(`[Detector] ${sectionKey}: WARNING — no pane gap detected, treating as single-table mode`);
+      }
+
+      // Detect layout variant for PLAN sections
+      let layoutVariant: LayoutVariant | undefined;
+      if (sectionKey === "PLAN") {
+        layoutVariant = detectPlanLayoutVariant(bestCandidate.ws);
+        console.log(`[Detector] PLAN: layout variant detected as "${layoutVariant}"`);
+      }
+
       sections.push({
         section: sectionKey as DetectedSection["section"],
         sheetName: bestCandidate.ws.name,
@@ -488,6 +720,9 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
         dataEndRowIndex: bestCandidate.dataEndRow,
         detectedHeaders: bestCandidate.headerResult.headers,
         budgetHeaders: bestCandidate.headerResult.budgetHeaders,
+        budgetColRange,
+        actualColRange,
+        layoutVariant,
         confidence: bestCandidate.confidence,
       });
 
@@ -520,6 +755,11 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
 
     if (isExcludedSheet(ws.name)) {
       unmatched.push({ sheetName: ws.name, reason: "Excluded (old/backup/archive)" });
+      continue;
+    }
+
+    if (isPurchaseOrderSheet(ws.name)) {
+      unmatched.push({ sheetName: ws.name, reason: "Purchase Order sheet — use Load PO function to import" });
       continue;
     }
 
@@ -581,6 +821,37 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
     }
   }
 
+  // Multi-project detection: check for "Project Activities - {name}" parent rows in PLAN data
+  let multiProject: DetectionResult["multiProject"];
+  const planSection = sections.find(s => s.section === "PLAN");
+  if (planSection) {
+    const planWs = workbook.getWorksheet(planSection.sheetName);
+    if (planWs) {
+      const planData = worksheetToArray(planWs);
+      const subProjects = detectMultiProjectSubProjects(planData, planSection.dataStartRowIndex, planSection.dataEndRowIndex);
+      if (subProjects.length >= 2) {
+        multiProject = { isMultiProject: true, subProjects };
+        console.log(`[Detector] Multi-project tracker detected: ${subProjects.length} sub-projects: ${subProjects.join(", ")}`);
+      }
+    }
+  }
+
+  // Filename-based signal: "adhoc" or "ad hoc" in any detected project name
+  if (!multiProject && projectInfo?.name) {
+    const nameLower = projectInfo.name.toLowerCase();
+    if (nameLower.includes("adhoc") || nameLower.includes("ad hoc") || nameLower.includes("ad-hoc")) {
+      // Mark as potential multi-project but with empty sub-projects until confirmed by data
+      console.log(`[Detector] Filename/project name suggests ad-hoc tracker but no sub-project rows detected`);
+    }
+  }
+
+  // Count PO sheets and log them
+  const poSheets = unmatched.filter(u => u.reason.startsWith("Purchase Order sheet"));
+  if (poSheets.length > 0) {
+    const poNames = poSheets.map(u => u.sheetName).join(", ");
+    console.log(`[Detector] Found ${poSheets.length} Purchase Order sheets: ${poNames}`);
+  }
+
   console.log(`[Detector] Final: ${sections.length} sections detected, ${unmatched.length} unmatched`);
-  return { sections, unmatched, projectInfo };
+  return { sections, unmatched, projectInfo, multiProject };
 }

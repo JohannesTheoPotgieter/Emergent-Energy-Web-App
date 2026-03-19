@@ -3,9 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { statusColorClasses, priorityColorClasses } from "@/lib/status-colors";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Loader2, Plus, Search, FileEdit, Filter, AlertTriangle } from "lucide-react";
+import { Loader2, Plus, Search, FileEdit, Filter, AlertTriangle, AlertCircle, ArrowRight } from "lucide-react";
 import { useLocation } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
 
@@ -141,7 +142,7 @@ export default function PdTicketsPage() {
         </Card>
       ) : (
         <div className="overflow-x-auto border rounded-lg">
-          <table className="w-full text-sm min-w-[1000px]">
+          <table className="w-full text-sm min-w-[1100px]">
             <thead>
               <tr className="bg-muted/40 border-b text-[11px] text-muted-foreground">
                 <th className="text-left p-2.5 pl-3">Project / Site</th>
@@ -153,6 +154,7 @@ export default function PdTicketsPage() {
                 <th className="text-left p-2.5">Days In Progress</th>
                 <th className="text-left p-2.5">Developer</th>
                 <th className="text-left p-2.5">Tasks</th>
+                <th className="text-left p-2.5">Next Action</th>
                 <th className="text-left p-2.5">Designer</th>
               </tr>
             </thead>
@@ -169,8 +171,8 @@ export default function PdTicketsPage() {
                     <td className="p-2.5 pl-3 font-medium">{t.projectSiteName}</td>
                     <td className="p-2.5 text-muted-foreground">{row.clientName || "—"}</td>
                     <td className="p-2.5"><Badge variant="outline" className="text-[10px]">{t.requestType}</Badge></td>
-                    <td className="p-2.5"><Badge className={`text-[10px] ${priorityColor(t.priority)}`}>{t.priority}</Badge></td>
-                    <td className="p-2.5"><Badge className={`text-[10px] ${statusColor(t.status)}`}>{t.status}</Badge></td>
+                    <td className="p-2.5"><Badge className={`text-[10px] ${priorityColorClasses(t.priority)}`}>{t.priority}</Badge></td>
+                    <td className="p-2.5"><Badge className={`text-[10px] ${statusColorClasses(t.status)}`}>{t.status}</Badge></td>
                     <td className={`p-2.5 ${overdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
                       <div className="flex items-center gap-1.5">
                         <span>{t.dueDate || "—"}</span>
@@ -194,6 +196,17 @@ export default function PdTicketsPage() {
                         <span className="text-[10px] text-muted-foreground">—</span>
                       )}
                     </td>
+                    <td className="p-2.5">
+                      {(() => {
+                        if (t.status === "Completed" || t.status === "Cancelled") return <span className="text-[10px] text-muted-foreground">Done</span>;
+                        if (overdue) return <span className="text-[10px] text-red-600 font-medium flex items-center gap-0.5"><AlertCircle className="h-3 w-3" />Overdue — follow up</span>;
+                        if (t.status === "On Hold") return <span className="text-[10px] text-orange-600 font-medium">Unblock to resume</span>;
+                        if (t.status === "Draft") return <span className="text-[10px] text-violet-600 font-medium flex items-center gap-0.5"><ArrowRight className="h-3 w-3" />Start ticket</span>;
+                        if (row.taskTotal > 0 && row.taskCompleted < row.taskTotal) return <span className="text-[10px] text-blue-600 font-medium">{row.taskTotal - row.taskCompleted} task{row.taskTotal - row.taskCompleted !== 1 ? "s" : ""} remaining</span>;
+                        if (row.taskTotal > 0 && row.taskCompleted === row.taskTotal) return <span className="text-[10px] text-green-600 font-medium">Ready to complete</span>;
+                        return <span className="text-[10px] text-muted-foreground">In progress</span>;
+                      })()}
+                    </td>
                     <td className="p-2.5 text-muted-foreground">{row.designerName || "—"}</td>
                   </tr>
                 );
@@ -206,17 +219,3 @@ export default function PdTicketsPage() {
   );
 }
 
-function statusColor(s: string) {
-  if (s === "Completed") return "bg-green-100 text-green-700";
-  if (s === "In Progress") return "bg-blue-100 text-blue-700";
-  if (s === "On Hold") return "bg-orange-100 text-orange-700";
-  if (s === "Cancelled") return "bg-muted text-muted-foreground";
-  return "bg-muted text-foreground";
-}
-
-function priorityColor(p: string) {
-  if (p === "Critical") return "bg-red-100 text-red-700";
-  if (p === "High") return "bg-orange-100 text-orange-700";
-  if (p === "Low") return "bg-green-100 text-green-700";
-  return "bg-blue-100 text-blue-700";
-}

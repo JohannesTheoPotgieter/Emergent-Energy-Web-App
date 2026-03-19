@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useWalkthroughCompleted } from "@/hooks/use-guidance";
 import {
   X, ChevronRight, ChevronLeft, Sparkles, Search,
-  BarChart3, Bell, ListTodo, ShieldCheck, DollarSign,
+  BarChart3, ListTodo, ShieldCheck, DollarSign,
   Trophy, Layout, Compass, Wrench, ClipboardCheck,
   Settings, FileSpreadsheet, Users, TrendingUp,
   Briefcase, Star, Shield, Building2,
@@ -98,7 +98,7 @@ function getTutorialSteps(role: string): TutorialStep[] {
     description: isPM
       ? "Your top 5 most urgent items — overdue plan tasks, pending approvals for your projects, and actions you need to take. Sorted by urgency so you know what to tackle first."
       : isExco
-      ? "The most urgent items across the business — overdue tasks, pending approvals, and action-required notifications. A quick way to see what needs attention right now."
+      ? "The most urgent items across the business — overdue tasks and pending approvals. A quick way to see what needs attention right now."
       : "Your top 5 most urgent items sorted by urgency. Overdue tasks come first, then actions needed, then approvals.",
     icon: <ListTodo className="h-5 w-5" />,
     position: "bottom",
@@ -107,7 +107,7 @@ function getTutorialSteps(role: string): TutorialStep[] {
   steps.push({
     targetSelector: '[data-testid="stat-cards"]',
     title: "At-a-Glance Stats",
-    description: "Quick overview of your workload: unread notifications, open tasks, pending approvals, and overdue items. Click any card to jump to that section.",
+    description: "Quick overview of your workload: open tasks, pending approvals, and overdue items. Click any card to jump to that section.",
     icon: <BarChart3 className="h-5 w-5" />,
     position: "top",
   });
@@ -123,16 +123,6 @@ function getTutorialSteps(role: string): TutorialStep[] {
       position: "top",
     });
   }
-
-  steps.push({
-    targetSelector: '[data-testid="card-notifications"]',
-    title: "Notifications",
-    description: isExco
-      ? "Updates on project movements, approval requests, and team actions. Amber items are action-required — they need your decision before work can proceed."
-      : "Stay on top of updates, approvals, and action-required items. Amber items need your attention. Mark them as read when done.",
-    icon: <Bell className="h-5 w-5" />,
-    position: "top",
-  });
 
   steps.push({
     targetSelector: "nav",

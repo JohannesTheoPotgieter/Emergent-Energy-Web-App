@@ -128,17 +128,31 @@ async function bootstrap() {
   logStartupSummary(report, log);
 
   const port = parseInt(process.env.PORT || "5000", 10);
-  const listenOptions: { port: number; host: string; reusePort?: boolean } = {
-    port,
-    host: "0.0.0.0",
-  };
-  if (process.platform !== "win32") {
-    listenOptions.reusePort = true;
-  }
-
-  httpServer.listen(listenOptions, () => {
+  httpServer.listen(port, "0.0.0.0", () => {
     log(`serving on port ${port}`, "Startup");
   });
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error("[Bootstrap] Fatal error:", err);
+  process.exit(1);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[Process] Uncaught exception:", err);
+});
+process.on("unhandledRejection", (err) => {
+  console.error("[Process] Unhandled rejection:", err);
+});
+process.on("beforeExit", (code) => {
+  console.error("[Process] beforeExit with code:", code);
+});
+process.on("exit", (code) => {
+  console.error("[Process] exit with code:", code);
+});
+process.on("SIGTERM", () => {
+  console.error("[Process] Received SIGTERM");
+});
+process.on("SIGINT", () => {
+  console.error("[Process] Received SIGINT");
+});

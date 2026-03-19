@@ -8,7 +8,7 @@ import fs from "fs";
 import {
   taskComments, taskActivityLog, taskWatchers, taskDeliverables,
   deliverables, deliverableVersions, deliverableFiles, deliverableEvents,
-  notifications, notificationThrottle, spFilePointers,
+  spFilePointers,
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
   qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory,
   projectEngApprovals, projectEngStages, projectEngTasks, engStageTemplates,
@@ -137,48 +137,17 @@ function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "epm_challenge_required", message: "EPM access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
 
-async function createNotification(recipientUserId: number, eventType: string, title: string, body: string | null, opts: {
+// Notifications feature removed – keep function signature as no-op so callers don't break
+async function createNotification(_recipientUserId: number, _eventType: string, _title: string, _body: string | null, _opts: {
   projectName?: string; linkedTaskId?: number; linkedDeliverableId?: number; linkedWarningId?: number; linkedPlanItemId?: number;
 } = {}) {
-  const throttleKey = `${eventType}:${opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0}`;
-  const existing = await db.select().from(notificationThrottle)
-    .where(and(
-      eq(notificationThrottle.recipientUserId, recipientUserId),
-      eq(notificationThrottle.eventType, eventType),
-      eq(notificationThrottle.entityType, throttleKey.split(':')[0] || 'generic'),
-      eq(notificationThrottle.entityId, opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0),
-      gt(notificationThrottle.lastSentAt, new Date(Date.now() - 24 * 60 * 60 * 1000))
-    ));
-
-  if (existing.length > 0) return null;
-
-  const [notif] = await db.insert(notifications).values({
-    recipientUserId,
-    eventType,
-    title,
-    body,
-    projectName: opts.projectName || null,
-    linkedTaskId: opts.linkedTaskId || null,
-    linkedDeliverableId: opts.linkedDeliverableId || null,
-    linkedWarningId: opts.linkedWarningId || null,
-    linkedPlanItemId: opts.linkedPlanItemId || null,
-  }).returning();
-
-  await db.insert(notificationThrottle).values({
-    recipientUserId,
-    eventType,
-    entityType: throttleKey.split(':')[0] || 'generic',
-    entityId: opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0,
-  }).onConflictDoNothing();
-
-  return notif;
+  return null;
 }
 
 export function registerEngineeringRoutes(app: Express) {
 
   app.use("/api/eng", jwtAuth);
   app.use("/api/deliverables", jwtAuth);
-  app.use("/api/notifications", jwtAuth);
   app.use("/api/project-team", jwtAuth);
   app.use("/api/home", jwtAuth);
   app.use("/api/dashboard", jwtAuth);
@@ -238,7 +207,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== PROJECT TEAM MEMBERSHIP ==========
 
-  app.get("/api/project-team/:projectName", requireAuth, async (req, res) => {
+  app.get("/api/project-team/:projectName", requireAuth, requirePermission("engineering", "view"), async (req, res) => {
     try {
       const members = await db.select({
         id: projectTeamMembers.id,
@@ -274,7 +243,9 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.delete("/api/project-team/:id", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
-      await db.delete(projectTeamMembers).where(eq(projectTeamMembers.id, parseInt(req.params.id)));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await db.delete(projectTeamMembers).where(eq(projectTeamMembers.id, id));
       logAuditFromReq(req, { entityType: "project_team", entityId: req.params.id, action: "delete", changesJson: { description: "Team member removed" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -366,7 +337,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== ENHANCED TASK OPERATIONS ==========
 
-  app.get("/api/eng/tasks", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const { projectName, status, phase, ownerUserId, projectId } = req.query;
       const tasks = await listEngineeringWorkItems({
@@ -570,7 +541,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks", requireAuth, async (req, res) => {
+  app.post("/api/eng/tasks", requireAuth, requirePermission("eng_tasks", "create"), async (req, res) => {
     try {
       const data = req.body;
       if (!TASK_STATUSES.includes(data.status)) {
@@ -632,7 +603,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng/tasks/:id", requireAuth, async (req, res) => {
+  app.patch("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
@@ -1200,7 +1171,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/eng/tasks/:id/deliverables", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks/:id/deliverables", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deliverables = await db.select({
@@ -1240,7 +1211,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng/deliverables/:id/acknowledge", requireAuth, async (req, res) => {
+  app.patch("/api/eng/deliverables/:id/acknowledge", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const [deliverable] = await db.select().from(taskDeliverables).where(eq(taskDeliverables.id, id));
@@ -1283,7 +1254,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/eng/deliverables/:id/download", requireAuth, async (req, res) => {
+  app.get("/api/eng/deliverables/:id/download", requireAuth, requirePermission("deliverables", "view"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const [deliverable] = await db.select().from(taskDeliverables).where(eq(taskDeliverables.id, id));
@@ -1375,7 +1346,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/link", requireAuth, async (req, res) => {
+  app.post("/api/eng/tasks/:id/link", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { linkedPlanItemId, linkedDeliverableId, linkedQualityItemInstanceId } = req.body;
@@ -1400,7 +1371,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/eng/tasks/:id/watchers", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const watchers = await db.select({
         id: taskWatchers.id, userId: taskWatchers.userId,
@@ -1416,7 +1387,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/watchers", requireAuth, async (req, res) => {
+  app.post("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
       const taskId = parseInt(req.params.id);
       const userId = parseInt(req.body.userId);
@@ -1455,7 +1426,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/eng/tasks/:taskId/watchers/:userId", requireAuth, async (req, res) => {
+  app.delete("/api/eng/tasks/:taskId/watchers/:userId", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
       const taskId = parseInt(req.params.taskId);
       const userId = parseInt(req.params.userId);
@@ -1486,7 +1457,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== TASK DETAIL ENDPOINTS ==========
 
-  app.get("/api/eng/tasks/:id", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const task = await getEngineeringWorkItemById(id);
@@ -1498,7 +1469,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/eng/tasks/:id/comments", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const comments = await db.select({
         id: taskComments.id,
@@ -1519,7 +1490,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/comments", requireAuth, async (req, res) => {
+  app.post("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
       const taskId = parseInt(req.params.id);
       const { body } = req.body;
@@ -1546,7 +1517,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/eng/tasks/:id/activity", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks/:id/activity", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const activity = await db.select({
         id: taskActivityLog.id,
@@ -1570,7 +1541,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/eng/tasks/:id/subtasks", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const parentId = parseInt(req.params.id);
       const allItems = await listEngineeringWorkItems({});
@@ -1582,7 +1553,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/tasks/:id/subtasks", requireAuth, async (req, res) => {
+  app.post("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "create"), async (req, res) => {
     try {
       const parentId = parseInt(req.params.id);
       const parent = await getEngineeringWorkItemById(parentId);
@@ -1721,7 +1692,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/deliverables/:id", requireAuth, async (req, res) => {
+  app.patch("/api/deliverables/:id", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
@@ -1859,9 +1830,11 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.patch("/api/deliverables/files/:fileId/approve", requireAuth, requireAuthority("deliverables", "approve"), async (req, res) => {
     try {
+      const fileId = parseInt(req.params.fileId);
+      if (isNaN(fileId)) return res.status(400).json({ error: "Invalid file ID" });
       const [file] = await db.update(deliverableFiles)
         .set({ isApproved: true })
-        .where(eq(deliverableFiles.id, parseInt(req.params.fileId)))
+        .where(eq(deliverableFiles.id, fileId))
         .returning();
       logAuditFromReq(req, { entityType: "deliverable", entityId: req.params.fileId, action: "approve", changesJson: { description: "Deliverable file approved" } });
       res.json(file);
@@ -1871,268 +1844,9 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  // ========== NOTIFICATIONS ==========
-
-  app.get("/api/notifications", requireAuth, async (req, res) => {
-    try {
-      const userId = getUser(req).id;
-      const { unreadOnly, eventType, search, limit: rawLimit, offset: rawOffset } = req.query;
-      const conditions = [eq(notifications.recipientUserId, userId)];
-      if (unreadOnly === "true") conditions.push(eq(notifications.isRead, false));
-      if (typeof eventType === "string" && eventType) conditions.push(eq(notifications.eventType, eventType));
-      if (typeof search === "string" && search.trim()) {
-        const term = `%${search.trim().toLowerCase()}%`;
-        conditions.push(sql`(LOWER(${notifications.title}) LIKE ${term} OR LOWER(COALESCE(${notifications.body},'')) LIKE ${term} OR LOWER(COALESCE(${notifications.projectName},'')) LIKE ${term})`);
-      }
-
-      const pageLimit = Math.min(parseInt(rawLimit as string) || 100, 200);
-      const pageOffset = parseInt(rawOffset as string) || 0;
-
-      const result = await db.select().from(notifications)
-        .where(and(...conditions))
-        .orderBy(desc(notifications.createdAt))
-        .limit(pageLimit)
-        .offset(pageOffset);
-
-      const [countResult] = await db.select({ total: sql<number>`count(*)::int` })
-        .from(notifications)
-        .where(and(...conditions));
-
-      res.json({ items: result, total: countResult?.total || 0 });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
-    }
-  });
-
-  app.get("/api/notifications/event-types", requireAuth, async (req, res) => {
-    try {
-      const userId = getUser(req).id;
-      const result = await db.selectDistinct({ eventType: notifications.eventType })
-        .from(notifications)
-        .where(eq(notifications.recipientUserId, userId))
-        .orderBy(notifications.eventType);
-      res.json(result.map(r => r.eventType).filter(Boolean));
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
-    }
-  });
-
-  app.get("/api/notifications/unread-count", requireAuth, async (req, res) => {
-    try {
-      const userId = getUser(req).id;
-      const [result] = await db.select({ count: sql<number>`count(*)::int` })
-        .from(notifications)
-        .where(and(eq(notifications.recipientUserId, userId), eq(notifications.isRead, false)));
-      res.json({ count: result?.count || 0 });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
-    }
-  });
-
-  app.post("/api/notifications/mark-read", requireAuth, async (req, res) => {
-    try {
-      const { notificationIds } = req.body;
-      if (Array.isArray(notificationIds) && notificationIds.length > 0) {
-        await db.update(notifications)
-          .set({ isRead: true, readAt: new Date() })
-          .where(and(
-            inArray(notifications.id, notificationIds),
-            eq(notifications.recipientUserId, getUser(req).id)
-          ));
-      }
-      res.json({ success: true });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
-    }
-  });
-
-  app.post("/api/notifications/mark-all-read", requireAuth, async (req, res) => {
-    try {
-      await db.update(notifications)
-        .set({ isRead: true, readAt: new Date() })
-        .where(and(
-          eq(notifications.recipientUserId, getUser(req).id),
-          eq(notifications.isRead, false)
-        ));
-      res.json({ success: true });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
-    }
-  });
-
-  app.post("/api/notifications/:id/confirm", requireAuth, async (req, res) => {
-    try {
-      const notifId = parseInt(req.params.id);
-      const userId = getUser(req).id;
-      if (isNaN(notifId)) return res.status(400).json({ error: "Invalid notification ID" });
-
-      const [notif] = await db.select().from(notifications).where(eq(notifications.id, notifId));
-      if (!notif) return res.status(404).json({ error: "Notification not found" });
-      if (notif.recipientUserId !== userId) return res.status(403).json({ error: "You can only confirm your own notifications" });
-      if (!notif.requiresConfirmation) return res.status(400).json({ error: "This notification does not require confirmation" });
-      if (notif.confirmedAt) return res.status(400).json({ error: "Already confirmed" });
-
-      const [confirmer] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
-
-      await db.update(notifications)
-        .set({ confirmedByUserId: userId, confirmedAt: new Date(), isRead: true, readAt: new Date() })
-        .where(eq(notifications.id, notifId));
-
-      const relatedNotifs = await db.select().from(notifications)
-        .where(and(
-          eq(notifications.eventType, notif.eventType),
-          eq(notifications.requiresConfirmation, true),
-          isNull(notifications.confirmedAt),
-          eq(notifications.changeDetails, notif.changeDetails!),
-          ne(notifications.id, notifId)
-        ));
-
-      for (const related of relatedNotifs) {
-        await db.update(notifications)
-          .set({ confirmedByUserId: userId, confirmedAt: new Date(), isRead: true, readAt: new Date() })
-          .where(eq(notifications.id, related.id));
-      }
-
-      logAuditFromReq(req, { entityType: "notification", entityId: String(notifId), action: "update", changesJson: { description: "Notification confirmed", eventType: notif.eventType, relatedCount: relatedNotifs.length } });
-      res.json({ success: true, confirmedBy: confirmer?.name || "Unknown", confirmedAt: new Date() });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
-    }
-  });
-
-  app.get("/api/excel-updates", requireAuth, async (req, res) => {
-    try {
-      const user = getUser(req);
-      const userId = user.id;
-      const userRole = user.role;
-      const { status, search, limit: rawLimit, offset: rawOffset } = req.query;
-      const pageLimit = Math.min(parseInt(rawLimit as string) || 50, 200);
-      const pageOffset = parseInt(rawOffset as string) || 0;
-
-      const excelEventTypes = ["excel_sync_confirmation", "plan.change_confirmation"];
-      const adminRoles = ["COO_ADMIN", "CEO_ADMIN"];
-      const isAdmin = adminRoles.includes(userRole);
-
-      const conditions: any[] = [
-        inArray(notifications.eventType, excelEventTypes),
-      ];
-      if (!isAdmin) {
-        conditions.push(eq(notifications.recipientUserId, userId));
-      }
-
-      if (status === "pending") conditions.push(isNull(notifications.confirmedAt));
-      if (status === "confirmed") conditions.push(sql`${notifications.confirmedAt} IS NOT NULL`);
-      if (typeof search === "string" && search.trim()) {
-        const term = `%${search.trim().toLowerCase()}%`;
-        conditions.push(sql`(LOWER(${notifications.title}) LIKE ${term} OR LOWER(COALESCE(${notifications.body},'')) LIKE ${term} OR LOWER(COALESCE(${notifications.projectName},'')) LIKE ${term})`);
-      }
-
-      const whereClause = and(...conditions);
-
-      const baseConditions: any[] = [
-        inArray(notifications.eventType, excelEventTypes),
-      ];
-      if (!isAdmin) {
-        baseConditions.push(eq(notifications.recipientUserId, userId));
-      }
-
-      const [items, [countResult], [pendingCountResult], [confirmedCountResult], projectsResult] = await Promise.all([
-        db.select().from(notifications)
-          .where(whereClause)
-          .orderBy(desc(notifications.createdAt))
-          .limit(pageLimit)
-          .offset(pageOffset),
-        db.select({ total: sql<number>`count(*)::int` })
-          .from(notifications).where(whereClause),
-        db.select({ count: sql<number>`count(*)::int` })
-          .from(notifications)
-          .where(and(
-            ...baseConditions,
-            isNull(notifications.confirmedAt)
-          )),
-        db.select({ count: sql<number>`count(*)::int` })
-          .from(notifications)
-          .where(and(
-            ...baseConditions,
-            sql`${notifications.confirmedAt} IS NOT NULL`
-          )),
-        db.selectDistinct({ projectName: notifications.projectName })
-          .from(notifications)
-          .where(and(...baseConditions))
-          .orderBy(notifications.projectName),
-      ]);
-
-      res.json({
-        items,
-        total: countResult?.total || 0,
-        pendingCount: pendingCountResult?.count || 0,
-        confirmedCount: confirmedCountResult?.count || 0,
-        projects: projectsResult.map(p => p.projectName).filter(Boolean),
-      });
-    } catch (err: any) {
-      console.error("[ExcelUpdates] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
-    }
-  });
-
-  app.post("/api/excel-updates/bulk-confirm", requireAuth, async (req, res) => {
-    try {
-      const userId = getUser(req).id;
-      const { notificationIds } = req.body;
-
-      if (!Array.isArray(notificationIds) || notificationIds.length === 0) {
-        return res.status(400).json({ error: "notificationIds array is required" });
-      }
-
-      const [confirmer] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
-      const now = new Date();
-
-      const toConfirm = await db.select().from(notifications)
-        .where(and(
-          inArray(notifications.id, notificationIds),
-          eq(notifications.recipientUserId, userId),
-          eq(notifications.requiresConfirmation, true),
-          isNull(notifications.confirmedAt)
-        ));
-
-      if (toConfirm.length === 0) {
-        return res.json({ success: true, confirmedCount: 0 });
-      }
-
-      await db.update(notifications)
-        .set({ confirmedByUserId: userId, confirmedAt: now, isRead: true, readAt: now })
-        .where(and(
-          inArray(notifications.id, toConfirm.map(n => n.id)),
-          eq(notifications.recipientUserId, userId)
-        ));
-
-      logAuditFromReq(req, {
-        entityType: "notification",
-        action: "bulk_confirm",
-        changesJson: { description: "Bulk Excel update confirmation", count: toConfirm.length, ids: toConfirm.map(n => n.id) },
-      });
-
-      res.json({
-        success: true,
-        confirmedCount: toConfirm.length,
-        confirmedBy: confirmer?.name || "Unknown",
-        confirmedAt: now,
-      });
-    } catch (err: any) {
-      console.error("[ExcelUpdates] Bulk confirm error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
-    }
-  });
-
   // ========== SHAREPOINT FILE POINTERS ==========
 
-  app.get("/api/eng/file-pointers/:entityType/:entityId", requireAuth, async (req, res) => {
+  app.get("/api/eng/file-pointers/:entityType/:entityId", requireAuth, requirePermission("engineering", "view"), async (req, res) => {
     try {
       const result = await db.select().from(spFilePointers)
         .where(and(
@@ -2147,7 +1861,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/file-pointers", requireAuth, async (req, res) => {
+  app.post("/api/eng/file-pointers", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
       const { entityType, entityId, spSiteId, spDriveId, spFileItemId, fileName, label, siteId, driveId, fileItemId, webUrl } = req.body;
       const [pointer] = await db.insert(spFilePointers).values({
@@ -2168,9 +1882,11 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/eng/file-pointers/:id", requireAuth, async (req, res) => {
+  app.delete("/api/eng/file-pointers/:id", requireAuth, requirePermission("engineering", "delete"), async (req, res) => {
     try {
-      await db.delete(spFilePointers).where(eq(spFilePointers.id, parseInt(req.params.id)));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await db.delete(spFilePointers).where(eq(spFilePointers.id, id));
       logAuditFromReq(req, { entityType: "file_pointer", entityId: req.params.id, action: "delete", changesJson: { description: "File pointer deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -2273,7 +1989,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/eng/warnings", requireAuth, async (req, res) => {
+  app.get("/api/eng/warnings", requireAuth, requirePermission("engineering", "view"), async (req, res) => {
     try {
       const { projectName, severity, status, warningType } = req.query;
       const conditions: any[] = [];
@@ -2292,9 +2008,10 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng/warnings/:id", requireAuth, async (req, res) => {
+  app.patch("/api/eng/warnings/:id", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       const updates = { ...req.body, updatedAt: new Date() };
       const [updated] = await db.update(qcWarning).set(updates).where(eq(qcWarning.id, id)).returning();
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(id), action: "update", changesJson: { description: "Warning updated", status: req.body.status } });
@@ -2315,7 +2032,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng/warnings/:id/acknowledge", requireAuth, async (req, res) => {
+  app.post("/api/eng/warnings/:id/acknowledge", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       await db.insert(qcWarningEvent).values({
@@ -3263,7 +2980,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== PROJECT PHASE MANAGEMENT ==========
 
-  app.patch("/api/projects/:projectId/phase", jwtAuth, requireAuth, async (req, res) => {
+  app.patch("/api/projects/:projectId/phase", jwtAuth, requireAuth, requirePermission("lifecycle", "edit"), async (req, res) => {
     try {
       const user = getUser(req);
       if (user.role !== "admin") {
@@ -3370,7 +3087,7 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/projects/:projectId/phase-history", jwtAuth, requireAuth, async (req, res) => {
+  app.get("/api/projects/:projectId/phase-history", jwtAuth, requireAuth, requirePermission("lifecycle", "view"), async (req, res) => {
     try {
       const projectId = parseInt(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -3402,7 +3119,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== PROJECT ENGINEERING TASKS (for project detail page) ==========
 
-  app.get("/api/projects/:projectId/eng-tasks", jwtAuth, requireAuth, async (req, res) => {
+  app.get("/api/projects/:projectId/eng-tasks", jwtAuth, requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const projectId = parseInt(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -3529,35 +3246,12 @@ export function registerEngineeringRoutes(app: Express) {
       };
 
       const [
-        unreadNotifs,
-        actionNotifs,
-        recentNotifs,
         myTasks,
         engApprovals,
         qcItems,
         deliverableItems,
         projectsAtRisk,
       ] = await Promise.all([
-        db.select({ count: sql<number>`count(*)::int` })
-          .from(notifications)
-          .where(and(eq(notifications.recipientUserId, userId), eq(notifications.isRead, false))),
-
-        db.select()
-          .from(notifications)
-          .where(and(
-            eq(notifications.recipientUserId, userId),
-            eq(notifications.requiresConfirmation, true),
-            isNull(notifications.confirmedAt),
-          ))
-          .orderBy(desc(notifications.createdAt))
-          .limit(10),
-
-        db.select()
-          .from(notifications)
-          .where(and(eq(notifications.recipientUserId, userId), eq(notifications.isRead, false)))
-          .orderBy(desc(notifications.createdAt))
-          .limit(8),
-
         db.select({
           id: workItems.id,
           title: workItems.title,
@@ -3728,9 +3422,9 @@ export function registerEngineeringRoutes(app: Express) {
       );
 
       res.json({
-        unreadCount: (unreadNotifs[0] as any)?.count || 0,
-        actionRequired: actionNotifs,
-        recentNotifications: recentNotifs,
+        unreadCount: 0,
+        actionRequired: [],
+        recentNotifications: [],
         myTasks: myTasks,
         overdueTaskCount: overdueTasks.length,
         pendingApprovals: pendingApprovals.slice(0, 10),

@@ -7,12 +7,16 @@ function read(relPath: string) {
 }
 
 describe("smart import storage retention", () => {
-  it("prunes stored workbook files so only the latest two copies per source file remain on disk", () => {
+  it("uses memory storage (no disk writes) and prunes old DB import runs", () => {
     const source = read("server/smart-import-routes.ts");
 
-    expect(source).toContain("async function pruneStoredUploadFiles");
-    expect(source).toContain("const suffix = `_${sanitizedOriginal}`;");
-    expect(source).toContain("const filesToDelete = matchingFiles.slice(keepLatest);");
-    expect(source).toContain("await pruneStoredUploadFiles(fileName, 2);");
+    // Memory storage, no disk storage
+    expect(source).toContain("multer.memoryStorage()");
+    expect(source).not.toContain("multer.diskStorage");
+    expect(source).not.toContain("uploadDir");
+
+    // DB-level pruning keeps latest + fallback
+    expect(source).toContain("async function pruneOldImportRuns");
+    expect(source).toContain("await pruneOldImportRuns(run.projectName, run.id)");
   });
 });

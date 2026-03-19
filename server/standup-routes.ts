@@ -3,11 +3,11 @@ import { db } from "./db";
 import { eq, and, desc, asc, sql, inArray, isNull, count } from "drizzle-orm";
 import {
   standupSchedules, standupParticipants, standupEntries,
-  notifications, notificationThrottle,
   users, projectInfo, workItems, workItemStatusHistory,
   type InsertStandupSchedule, type InsertStandupEntry, type InsertStandupParticipant,
 } from "@shared/schema";
 import { getEffectiveUser, requireAuth } from "./auth-context";
+import { requirePermission } from "./permission-middleware";
 
 type AppUser = { id: number; email: string; name: string; role: string };
 
@@ -78,7 +78,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Create a standup schedule */
-  app.post("/api/standups/schedules", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/standups/schedules", requireAuth, requirePermission("standups", "create"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const { name, teamLabel, projectId, cadence, cadenceDays, anchorDate, deadlineTime } = req.body;
@@ -108,9 +108,9 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Update a standup schedule */
-  app.patch("/api/standups/schedules/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/standups/schedules/:id", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       const updates: Partial<InsertStandupSchedule> = {};
       const allowed = ["name", "teamLabel", "projectId", "cadence", "cadenceDays", "anchorDate", "deadlineTime", "isActive"] as const;
       for (const key of allowed) {
@@ -131,9 +131,9 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Delete a standup schedule */
-  app.delete("/api/standups/schedules/:id", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/standups/schedules/:id", requireAuth, requirePermission("standups", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       await db.delete(standupSchedules).where(eq(standupSchedules.id, id));
       res.json({ success: true });
     } catch (err: any) {
@@ -146,7 +146,7 @@ export function registerStandupRoutes(app: Express) {
   /** List participants for a schedule */
   app.get("/api/standups/schedules/:id/participants", requireAuth, async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.id);
+      const scheduleId = parseInt(req.params.id as string);
       const participants = await db
         .select({
           id: standupParticipants.id,
@@ -171,7 +171,7 @@ export function registerStandupRoutes(app: Express) {
   /** Add participant to schedule */
   app.post("/api/standups/schedules/:id/participants", requireAuth, async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.id);
+      const scheduleId = parseInt(req.params.id as string);
       const { userId, isRequired } = req.body;
 
       const [participant] = await db.insert(standupParticipants).values({
@@ -189,8 +189,8 @@ export function registerStandupRoutes(app: Express) {
   /** Remove participant from schedule */
   app.delete("/api/standups/schedules/:scheduleId/participants/:userId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.scheduleId);
-      const userId = parseInt(req.params.userId);
+      const scheduleId = parseInt(req.params.scheduleId as string);
+      const userId = parseInt(req.params.userId as string);
 
       await db.delete(standupParticipants).where(
         and(
@@ -324,7 +324,7 @@ export function registerStandupRoutes(app: Express) {
   /** Update a standup entry */
   app.patch("/api/standups/entries/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       const { whatIDid, whatImDoing, blockers, mood } = req.body;
 
       const [updated] = await db
@@ -346,7 +346,7 @@ export function registerStandupRoutes(app: Express) {
   /** List entries for a schedule on a specific date */
   app.get("/api/standups/entries/:scheduleId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.scheduleId);
+      const scheduleId = parseInt(req.params.scheduleId as string);
       const date = (req.query.date as string) || today();
 
       const entries = await db
@@ -381,7 +381,7 @@ export function registerStandupRoutes(app: Express) {
   /** Standup history for a schedule (with pagination and search) */
   app.get("/api/standups/entries/:scheduleId/history", requireAuth, async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.scheduleId);
+      const scheduleId = parseInt(req.params.scheduleId as string);
       const limit = parseInt(req.query.limit as string) || 20;
       const offset = parseInt(req.query.offset as string) || 0;
       const search = req.query.search as string;
@@ -425,7 +425,7 @@ export function registerStandupRoutes(app: Express) {
   /** Standup analytics for a schedule */
   app.get("/api/standups/analytics/:scheduleId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const scheduleId = parseInt(req.params.scheduleId);
+      const scheduleId = parseInt(req.params.scheduleId as string);
 
       // Total entries
       const [totalResult] = await db

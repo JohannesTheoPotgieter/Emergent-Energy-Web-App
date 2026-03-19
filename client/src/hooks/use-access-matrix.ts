@@ -6,6 +6,7 @@ import { useAuth } from "./use-auth";
 
 interface PermissionsResponse {
   entityPermissions?: Record<string, Record<string, boolean>> | null;
+  userOverrides?: Record<string, boolean> | null;
 }
 
 export function useAccessMatrix() {
@@ -31,15 +32,24 @@ export function useAccessMatrix() {
     return (entity: PermissionEntity, action: PermissionAction) => {
       if (!effectiveRole) return false;
 
+      // Check user-specific overrides first (highest priority)
+      const overrideKey = `${entity}:${action}`;
+      const userOverrides = permissions?.userOverrides;
+      if (userOverrides && overrideKey in userOverrides) {
+        return userOverrides[overrideKey];
+      }
+
+      // Then check DB entity permission overrides
       const entityPermissions = permissions?.entityPermissions as Partial<Record<PermissionEntity, Record<string, boolean>>> | undefined;
       const explicit = entityPermissions?.[entity];
       if (explicit && typeof explicit[action] === "boolean") {
         return explicit[action] === true;
       }
 
+      // Fall back to hardcoded defaults
       return checkPermission(effectiveRole, entity, action);
     };
-  }, [effectiveRole, permissions?.entityPermissions]);
+  }, [effectiveRole, permissions?.entityPermissions, permissions?.userOverrides]);
 
   const canViewPath = useMemo(() => {
     return (path: string) => {

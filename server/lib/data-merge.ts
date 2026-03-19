@@ -84,9 +84,12 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     expensePaymentDate: cost.paidDate,
     expenseActualTotal: cost.amountExVat,
     expensePoNumber: cost.poNumber,
-    budgetTotal: null,
+    budgetQty: (cost as any).budgetQty ?? null,
+    budgetRateUnit: (cost as any).budgetRate ?? null,
+    budgetTotal: (cost as any).budgetTotal ?? null,
+    budgetCosTotal: (cost as any).budgetCos ?? null,
     actualCosTotal: cost.amountExVat,
-    forecastPaymentDate: null,
+    forecastPaymentDate: (cost as any).forecastPaymentDate ?? null,
     computedForecastPaymentDate: null,
     computedState,
     invoiceDateConfirmed: rawInvoiceDateConfirmed ?? false,
@@ -95,7 +98,11 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     paymentDateFontColor,
     supplierName: cost.counterpartyName,
     noRevenueLinked: cost.noRevenueLinked ?? false,
+    subProjectName: (cost as any).subProjectName ?? null,
+    revenueRecognitionAmount: (cost as any).revenueRecognitionAmount ?? null,
     _isNormalized: true,
+    _sourceRow: (cost as any).sourceRow || cost.id,
+    _cosRealisedFlag: (cost as any).cosRealised ?? false,
   };
 }
 
@@ -123,6 +130,7 @@ export function adaptRevenueToInflow(rev: NormalizedRevenueLine, resolvedName: s
     inBankDate: rev.inBankDate,
     inBank,
     effectiveDate: rev.paidDate || rev.inBankDate || rev.expectedPaymentDate || rev.invoiceDate,
+    subProjectName: (rev as any).subProjectName ?? null,
     _isNormalized: true,
   };
 }

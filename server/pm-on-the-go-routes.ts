@@ -1,22 +1,17 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { sql, eq, and, gt } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import {
   projectInfo,
   pmSiteVisits,
   pmOnTheGoActions,
-  pmComplianceTracking,
   pmModePreferences,
-  notifications,
-  notificationThrottle,
-  users,
 } from "@shared/schema";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { isOutlookConfigured, sendMail } from "./outlook";
-import { sendExcelSyncNotification } from "./excel-sync-notifications";
+// import { isOutlookConfigured, sendMail } from "./outlook"; // removed with notifications
 import { logAuditFromReq } from "./audit-logger";
 
 const photoUploadDir = path.join(process.cwd(), "uploads", "pm-photos");
@@ -92,7 +87,7 @@ async function requirePmAssignment(req: Request, res: Response, next: NextFuncti
     if (rows.length === 0) {
       return res.status(404).json({ error: "Project not found" });
     }
-    if (rows[0].pmUserId !== user.id) {
+    if (!rows[0].pmUserId || rows[0].pmUserId !== user.id) {
       return res.status(403).json({ error: "You are not assigned to this project" });
     }
     next();
@@ -106,100 +101,27 @@ function getUser(req: Request): { id: number; name: string; role: string; email:
   return { id: u.id, name: u.name, role: u.role, email: u.email };
 }
 
-const DEDUP_WINDOW_MS = 2 * 60 * 1000;
-
+// Notifications feature removed - throttledNotify is now a no-op
 async function throttledNotify(
-  recipientUserId: number,
-  eventType: string,
-  title: string,
-  body: string | null,
-  opts: { projectName?: string } = {}
+  _recipientUserId: number,
+  _eventType: string,
+  _title: string,
+  _body: string | null,
+  _opts: { projectName?: string } = {}
 ) {
-  const existing = await db
-    .select()
-    .from(notificationThrottle)
-    .where(
-      and(
-        eq(notificationThrottle.recipientUserId, recipientUserId),
-        eq(notificationThrottle.eventType, eventType),
-        eq(notificationThrottle.entityType, "pm_otg"),
-        gt(notificationThrottle.lastSentAt, new Date(Date.now() - DEDUP_WINDOW_MS))
-      )
-    );
-  if (existing.length > 0) return;
-
-  await db.insert(notifications).values({
-    recipientUserId,
-    eventType,
-    title,
-    body,
-    projectName: opts.projectName || null,
-  });
-  await db
-    .insert(notificationThrottle)
-    .values({
-      recipientUserId,
-      eventType,
-      entityType: "pm_otg",
-      entityId: 0,
-    })
-    .onConflictDoNothing();
+  // no-op: notifications feature removed
 }
 
-async function getNotificationRecipients(projectId: number): Promise<{ id: number; email: string; name: string }[]> {
-  const targetRoles = ["PROGRAM_MANAGER", "COO_ADMIN"];
-
-  const project = await db
-    .select({ phase: projectInfo.phase })
-    .from(projectInfo)
-    .where(eq(projectInfo.id, projectId))
-    .limit(1);
-
-  const isConstruction =
-    project.length > 0 &&
-    ["Construction", "Commissioning"].some((p) =>
-      (project[0].phase || "").toLowerCase().includes(p.toLowerCase())
-    );
-
-  if (isConstruction) {
-    targetRoles.push("CONSTRUCTION_MANAGER");
-  }
-
-  const recipients = await db.execute(
-    sql`SELECT id, email, name FROM users WHERE role = ANY(${`{${targetRoles.join(",")}}`}::text[])`
-  );
-  return (recipients.rows as any[]).map((r) => ({
-    id: r.id,
-    email: r.email,
-    name: r.name,
-  }));
-}
-
+// Notifications feature removed - notifyAndEmail is now a no-op
 async function notifyAndEmail(
-  projectId: number,
-  eventType: string,
-  title: string,
-  body: string,
-  projectName: string,
-  actorName: string
+  _projectId: number,
+  _eventType: string,
+  _title: string,
+  _body: string,
+  _projectName: string,
+  _actorName: string
 ) {
-  const recipients = await getNotificationRecipients(projectId);
-  for (const r of recipients) {
-    await throttledNotify(r.id, eventType, title, body, { projectName });
-  }
-
-  if (isOutlookConfigured() && recipients.length > 0) {
-    try {
-      await sendMail({
-        to: recipients.map((r) => r.email),
-        subject: `[PM On-The-Go] ${title}`,
-        body: `${actorName} — ${body}\n\nProject: ${projectName}`,
-        bodyType: "Text",
-      });
-    } catch (err: any) {
-      console.warn("[PM-OTG] Email send failed:", err.message);
-    }
-  }
+  // no-op: notifications feature removed
 }
 
 function getWeekStart(): string {
@@ -505,14 +427,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           );
         }
 
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `Site visit logged by ${user.name}. Safety: ${safetyStatus || "clear"}.`,
-          details: { actionType: "site_visit", safetyStatus, visitId: visit.id },
-        }).catch(() => {});
-
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(visit.id), action: "create", projectName: pName, changesJson: { description: "Site visit logged", safetyStatus, photoCount: photoIds.length } });
         res.json({ success: true, visit });
       } catch (err: any) {
@@ -563,14 +477,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           user.name
         );
 
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `PO request ${poNumber} by ${user.name}.`,
-          details: { actionType: "generate_po", poNumber, amount, supplier },
-        }).catch(() => {});
-
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "PO request generated", poNumber, amount, supplier } });
         res.json({ success: true, action });
       } catch (err: any) {
@@ -618,14 +524,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           pName,
           user.name
         );
-
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `Invoice ${invoiceNumber} linked by ${user.name}.`,
-          details: { actionType: "link_invoice", invoiceNumber, amount, poReference },
-        }).catch(() => {});
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Invoice linked", invoiceNumber, amount, poReference } });
         res.json({ success: true, action });
@@ -676,14 +574,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           user.name
         );
 
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `Variation order raised by ${user.name} for R${parseFloat(amount).toLocaleString()}.`,
-          details: { actionType: "raise_variation", amount, description, justification },
-        }).catch(() => {});
-
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Variation order raised", amount, justification } });
         res.json({ success: true, action });
       } catch (err: any) {
@@ -731,14 +621,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           pName,
           user.name
         );
-
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `Delay of ${daysDelayed || "?"} days logged by ${user.name}.`,
-          details: { actionType: "log_delay", daysDelayed, impact, description },
-        }).catch(() => {});
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Delay logged", daysDelayed, impact } });
         res.json({ success: true, action });
@@ -788,14 +670,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           user.name
         );
 
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `${severity} risk logged by ${user.name}.`,
-          details: { actionType: "log_risk", severity, description, mitigationNotes },
-        }).catch(() => {});
-
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Risk logged", severity, mitigationNotes } });
         res.json({ success: true, action });
       } catch (err: any) {
@@ -837,13 +711,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           .returning();
 
         const pName = await getProjectName(projectId);
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `Photo uploaded by ${user.name}.`,
-          details: { actionType: "upload_photo", caption },
-        }).catch(() => {});
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Photo uploaded", caption } });
         res.json({ success: true, action, photoUrl });
@@ -892,14 +759,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           pName,
           user.name
         );
-
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `Progress updated to ${pct}% by ${user.name}.`,
-          details: { actionType: "update_progress", progressPercent: pct, notes },
-        }).catch(() => {});
 
         const weekStart = getWeekStart();
         await db.execute(sql`
@@ -967,14 +826,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           pName,
           user.name
         );
-
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `Project escalated by ${user.name}. Level: ${escalationLevel || "High"}.`,
-          details: { actionType: "escalate", escalationLevel, urgency, description },
-        }).catch(() => {});
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Escalation raised", escalationLevel, urgency } });
         res.json({ success: true, action });

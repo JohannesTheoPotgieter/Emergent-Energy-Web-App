@@ -71,6 +71,12 @@ function isEngineer(role: string): boolean {
   return ENGINEER_ROLES.includes(role) || role === QA_ROLE;
 }
 
+function requireEngineerOrAdmin(req: Request, res: Response, next: NextFunction) {
+  const role = getUser(req).role;
+  if (isEngineer(role) || isCoo(role)) return next();
+  res.status(403).json({ error: "forbidden", message: "Insufficient role for this action" });
+}
+
 export async function generateEngStagesForProject(
   projectId: number,
   userId: number,
@@ -193,7 +199,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/templates/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/eng-stages/templates/:id", jwtAuth, requireAuth, requireEngineerOrAdmin, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
@@ -209,7 +215,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng-stages/templates/:id/tasks", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/eng-stages/templates/:id/tasks", jwtAuth, requireAuth, requireEngineerOrAdmin, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
@@ -233,7 +239,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/template-tasks/:taskId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/eng-stages/template-tasks/:taskId", jwtAuth, requireAuth, requireEngineerOrAdmin, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
@@ -255,7 +261,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/eng-stages/template-tasks/:taskId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/eng-stages/template-tasks/:taskId", jwtAuth, requireAuth, requireEngineerOrAdmin, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
@@ -270,7 +276,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng-stages/templates/:id/deliverables", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/eng-stages/templates/:id/deliverables", jwtAuth, requireAuth, requireEngineerOrAdmin, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
@@ -293,7 +299,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/template-deliverables/:delId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/eng-stages/template-deliverables/:delId", jwtAuth, requireAuth, requireEngineerOrAdmin, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
@@ -315,7 +321,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/eng-stages/template-deliverables/:delId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/eng-stages/template-deliverables/:delId", jwtAuth, requireAuth, requireEngineerOrAdmin, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });

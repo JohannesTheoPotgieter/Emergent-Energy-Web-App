@@ -9,8 +9,6 @@ import {
   smartImportRuns,
   auditEvents,
   importIssues,
-  notifications,
-  planEditNotifications,
 } from "@shared/schema";
 import { getFeatureFlag, getRolloutFeatureFlags, setFeatureFlag } from "./lib/feature-flags";
 import { ROLLOUT_FEATURE_FLAGS } from "@shared/feature-flags";
@@ -520,17 +518,8 @@ router.get("/api/admin/control-center/import-governance", requireAuth, requireAd
         FROM smart_import_runs
         GROUP BY status
       `).then((r: any) => r.rows || r),
-      db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM notifications
-        WHERE event_type IN ('excel_sync_confirmation', 'plan.change_confirmation')
-          AND confirmed_at IS NULL
-      `).then((r: any) => r.rows || r),
-      db.execute(sql`
-        SELECT COUNT(*)::int AS count
-        FROM plan_edit_notifications
-        WHERE status = 'pending'
-      `).then((r: any) => r.rows || r),
+      Promise.resolve([{ count: 0 }]),
+      Promise.resolve([{ count: 0 }]),
       db
         .select({
           id: smartImportRuns.id,

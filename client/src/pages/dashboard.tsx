@@ -1,13 +1,21 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Link } from "wouter";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Link, useSearch, useLocation } from "wouter";
+import { severityStyle, ragBadgeClasses } from "@/lib/status-colors";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageShell } from "@/components/layout/page-shell";
 import {
-  Activity,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid,
+  Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
+} from "recharts";
+import {
   AlertCircle,
   ArrowRight,
   CalendarDays,
@@ -25,9 +33,17 @@ import {
   Filter,
   RotateCcw,
   ExternalLink,
-  BarChart3,
   Wrench,
   HandshakeIcon,
+  Sun,
+  Wind,
+  Zap,
+  Battery,
+  Leaf,
+  RefreshCw,
+  AlertTriangle,
+  BarChart3,
+  Activity,
 } from "lucide-react";
 type DashboardResponse = {
   meta: { fyStart: string; fyEnd: string };
@@ -35,20 +51,78 @@ type DashboardResponse = {
   options: { portfolios: string[]; pms: string[]; pds: string[]; executionPhases: string[]; rags: string[] };
   projects: any[];
   actionCenter: Record<string, any[]>;
+  charts: {
+    datasets: Array<{
+      id: string; label: string; description: string;
+      dimensionKey: string; dimensionLabel: string;
+      metrics: Array<{ key: string; label: string; format: string; color: string }>;
+      rows: any[];
+    }>;
+    presets: any[];
+  };
 };
+
+/* ── branded chart palette ── */
+const CHART_COLORS = {
+  revenue: "#059669",   // emerald-600
+  cos: "#ea580c",       // orange-600
+  gp: "#0d9488",        // teal-600
+  actual: "#047857",    // emerald-700
+  planned: "#2563eb",   // blue-600
+};
+
+const chartMoney = (v: number) => {
+  if (Math.abs(v) >= 1_000_000) return `R${(v / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(v) >= 1_000) return `R${(v / 1_000).toFixed(0)}K`;
+  return `R${v.toFixed(0)}`;
+};
+
+/* ── skeleton loaders ── */
+function KpiSkeleton() {
+  return (
+    <Card className="border-border/50 energy-card">
+      <CardContent className="p-4 space-y-2">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="h-7 w-20" />
+        <Skeleton className="h-3 w-32" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function TableSkeleton() {
+  return (
+    <div className="space-y-1 p-4">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="flex gap-3 items-center py-2">
+          <Skeleton className="h-4 w-36" />
+          <Skeleton className="h-4 w-16 hidden lg:block" />
+          <Skeleton className="h-5 w-12" />
+          <Skeleton className="h-4 w-14 ml-auto" />
+          <Skeleton className="h-4 w-14 hidden md:block" />
+          <Skeleton className="h-4 w-16 hidden lg:block" />
+          <Skeleton className="h-4 w-4" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ChartSkeleton() {
+  return (
+    <div className="h-[280px] flex items-center justify-center">
+      <div className="text-center space-y-2">
+        <Skeleton className="h-6 w-6 mx-auto rounded-full" />
+        <Skeleton className="h-3 w-24 mx-auto" />
+      </div>
+    </div>
+  );
+}
 
 
 const money = (n: number | null | undefined) =>
   `R ${(Number(n || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const pct = (n: number | null | undefined) => (n == null ? "-" : `${Number(n).toFixed(1)}%`);
-
-function severityStyle(severity: string) {
-  const s = severity?.toLowerCase();
-  if (s === "critical") return { bg: "bg-red-50 border-red-200", text: "text-red-700", dot: "bg-red-500" };
-  if (s === "high") return { bg: "bg-orange-50 border-orange-200", text: "text-orange-700", dot: "bg-orange-500" };
-  if (s === "medium") return { bg: "bg-amber-50 border-amber-200", text: "text-amber-700", dot: "bg-amber-500" };
-  return { bg: "bg-slate-50 border-slate-200", text: "text-slate-600", dot: "bg-slate-400" };
-}
 
 function queueMeta(key: string) {
   switch (key) {
@@ -187,8 +261,8 @@ function UpcomingEventsSection({ events }: { events: UpcomingEvent[] }) {
                           R {Number(ev.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </span>
                       )}
-                      {ev.projectId && (
-                        <Link href={`/projects/${ev.projectId}`}>
+                      {ev.projectName && (
+                        <Link href={`/project/${encodeURIComponent(ev.projectName)}`}>
                           <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600 shrink-0">
                             <ArrowRight className="w-3.5 h-3.5" />
                           </Button>
@@ -317,32 +391,47 @@ function UpcomingFinancialsSection({ data }: { data: FinancialsResponse | undefi
   );
 }
 
-function ragBadge(rag: string) {
-  if (rag === "Red") return "bg-red-100 text-red-700 border-red-200";
-  if (rag === "Amber") return "bg-amber-100 text-amber-700 border-amber-200";
-  if (rag === "Green") return "bg-emerald-100 text-emerald-700 border-emerald-200";
-  return "bg-slate-100 text-slate-500 border-slate-200";
-}
-
 export default function DashboardPage() {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
-  const [filters, setFilters] = useState({
-    search: "",
-    portfolio: "all",
-    pm: "all",
-    pd: "all",
-    executionPhase: "all",
-    rag: "all",
-    exceptionOnly: false,
-    behindPlanOnly: false,
-    inflowRiskOnly: false,
-    outflowRiskOnly: false,
-    engineeringBlockersOnly: false,
-    qualityIssuesOnly: false,
-    pendingApprovalsOnly: false,
-    staleImportsOnly: false,
-  });
+  const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set());
+
+  /* ── URL filter sync ── */
+  const searchString = useSearch();
+  const [, navigate] = useLocation();
+
+  const defaultFilters = {
+    search: "", portfolio: "all", pm: "all", pd: "all",
+    executionPhase: "all", rag: "all",
+    exceptionOnly: false, behindPlanOnly: false, inflowRiskOnly: false,
+    outflowRiskOnly: false, engineeringBlockersOnly: false,
+    qualityIssuesOnly: false, pendingApprovalsOnly: false, staleImportsOnly: false,
+  };
+
+  const filtersFromUrl = useMemo(() => {
+    const params = new URLSearchParams(searchString);
+    const f = { ...defaultFilters };
+    for (const [k, v] of params.entries()) {
+      if (k in f) {
+        if (typeof (f as any)[k] === "boolean") (f as any)[k] = v === "true";
+        else (f as any)[k] = v;
+      }
+    }
+    return f;
+  }, [searchString]);
+
+  const filters = filtersFromUrl;
+
+  const setFilters = useCallback((updater: ((prev: typeof defaultFilters) => typeof defaultFilters) | typeof defaultFilters) => {
+    const next = typeof updater === "function" ? updater(filters) : updater;
+    const params = new URLSearchParams();
+    Object.entries(next).forEach(([k, v]) => {
+      if (typeof v === "boolean") { if (v) params.set(k, "true"); }
+      else if (v && v !== "all") params.set(k, v);
+    });
+    const qs = params.toString();
+    navigate(qs ? `/dashboard?${qs}` : "/dashboard", { replace: true });
+  }, [filters, navigate]);
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -356,31 +445,34 @@ export default function DashboardPage() {
     return params.toString();
   }, [filters]);
 
-  const { data, isLoading } = useQuery<DashboardResponse>({
+  const { data, isLoading, isError, error, refetch } = useQuery<DashboardResponse>({
     queryKey: ["/api/program-dashboard", query],
     queryFn: async () => {
       const res = await fetch(`/api/program-dashboard${query ? `?${query}` : ""}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) throw new Error(`Dashboard request failed (${res.status})`);
       return res.json();
     },
+    refetchOnWindowFocus: true,
   });
 
   const { data: upcomingData } = useQuery<{ rangeStart: string; rangeEnd: string; events: UpcomingEvent[] }>({
     queryKey: ["/api/upcoming-events"],
     queryFn: async () => {
       const res = await fetch("/api/upcoming-events", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) throw new Error("Failed to fetch events");
       return res.json();
     },
+    refetchOnWindowFocus: true,
   });
 
   const { data: financialsData } = useQuery<FinancialsResponse>({
     queryKey: ["/api/upcoming-financials"],
     queryFn: async () => {
       const res = await fetch("/api/upcoming-financials", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) throw new Error("Failed to fetch financials");
       return res.json();
     },
+    refetchOnWindowFocus: true,
   });
 
   const opts = data?.options || { portfolios: [], pms: [], pds: [], executionPhases: [], rags: [] };
@@ -426,38 +518,42 @@ export default function DashboardPage() {
 
 
   return (
-    <div className="ee-page p-0 pb-8" data-testid="execution-dashboard-page">
+    <PageShell className="p-0" data-testid="execution-dashboard-page">
+      {/* ── Error banner ── */}
+      {isError && (
+        <div className="rounded-lg border border-red-200 bg-red-50/80 p-4 flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-red-800">Failed to load dashboard</p>
+            <p className="text-xs text-red-600 mt-0.5">{(error as Error)?.message || "An unexpected error occurred"}</p>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => refetch()} className="shrink-0 gap-1.5 border-red-200 text-red-700 hover:bg-red-100">
+            <RefreshCw className="w-3.5 h-3.5" /> Retry
+          </Button>
+        </div>
+      )}
+
+      {/* ── Header with energy accent ── */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Execution Dashboard</h1>
-          {data?.meta && (
-            <p className="text-muted-foreground text-sm mt-1">
-              FY {data.meta.fyStart} – {data.meta.fyEnd}
-            </p>
-          )}
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200/60 animate-solar-pulse">
+            <Zap className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">Execution Dashboard</h1>
+            {data?.meta && (
+              <p className="text-muted-foreground text-sm mt-0.5 flex items-center gap-1.5">
+                <Leaf className="w-3 h-3 text-emerald-500" />
+                FY {data.meta.fyStart} – {data.meta.fyEnd}
+              </p>
+            )}
+          </div>
         </div>
         {hasActiveFilters && (
           <Button
             variant="outline"
             size="sm"
-            onClick={() =>
-              setFilters({
-                search: "",
-                portfolio: "all",
-                pm: "all",
-                pd: "all",
-                executionPhase: "all",
-                rag: "all",
-                exceptionOnly: false,
-                behindPlanOnly: false,
-                inflowRiskOnly: false,
-                outflowRiskOnly: false,
-                engineeringBlockersOnly: false,
-                qualityIssuesOnly: false,
-                pendingApprovalsOnly: false,
-                staleImportsOnly: false,
-              })
-            }
+            onClick={() => setFilters(defaultFilters)}
             className="gap-1.5 text-muted-foreground"
           >
             <RotateCcw className="w-3.5 h-3.5" />
@@ -466,7 +562,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <Card className="border-border/50">
+      <Card className="border-border/50 animate-energy-flow">
         <CardContent className="p-3 space-y-2.5">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">
             <Input
@@ -540,40 +636,80 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      <p className="text-[13px] text-muted-foreground -mt-2">Unresolved execution and cash-risk items requiring intervention.</p>
+      <p className="text-[13px] text-muted-foreground -mt-2">Portfolio health at a glance — powered by live project data.</p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Card className="border-border/50" data-testid="kpi-urgent-risk">
-          <CardContent className="p-4">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Execution Risk</p>
-            <p className="text-2xl font-semibold font-mono text-red-700">{Number(data?.kpis?.projectsBehindPlan || 0) + Number(data?.kpis?.openEngineeringBlockers || 0) + Number(data?.kpis?.staleImports || 0)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Behind plan + blockers + stale imports</p>
-          </CardContent>
-        </Card>
+      {/* ── KPI strip (expanded) ── */}
+      <TooltipProvider delayDuration={200}>
+        {isLoading && !data ? (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+            {Array.from({ length: 8 }).map((_, i) => <KpiSkeleton key={i} />)}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+            {([
+              { label: "Active Projects", value: String(data?.kpis?.activeDashboardProjects ?? 0), icon: <Sun className="w-4 h-4 text-amber-500" />, color: "text-foreground", tip: "Projects with committed imports and FY activity" },
+              { label: "Avg Progress", value: pct(data?.kpis?.averageActualProgressPct), icon: <Activity className="w-4 h-4 text-emerald-500" />, color: "text-emerald-700", tip: `Actual ${pct(data?.kpis?.averageActualProgressPct)} vs Expected ${pct(data?.kpis?.averageExpectedProgressPct)}` },
+              { label: "Behind Plan", value: String(data?.kpis?.projectsBehindPlan ?? 0), icon: <Clock className="w-4 h-4 text-red-500" />, color: Number(data?.kpis?.projectsBehindPlan || 0) > 0 ? "text-red-700" : "text-foreground", tip: "Projects >5% behind expected progress" },
+              { label: "Planned Revenue", value: money(data?.kpis?.plannedRevenueFy), icon: <Zap className="w-4 h-4 text-emerald-500 animate-glow-pulse" />, color: "text-foreground", tip: "Total planned revenue for the financial year" },
+              { label: "Received Inflow", value: money(data?.kpis?.receivedInflowFy), icon: <Battery className="w-4 h-4 text-emerald-600" />, color: "text-emerald-700", tip: "Cash received and confirmed in bank" },
+              { label: "Open Receivables", value: money(data?.kpis?.openInflowFy), icon: <TrendingUp className="w-4 h-4 text-amber-500" />, color: "text-amber-700", tip: "Outstanding inflow requiring follow-up" },
+              { label: "Gross Profit", value: money(data?.kpis?.grossProfitFy), icon: <Wind className="w-4 h-4 text-teal-500" />, color: Number(data?.kpis?.grossProfitFy || 0) >= 0 ? "text-teal-700" : "text-red-700", tip: `GP Margin: ${data?.kpis?.grossMarginPctFy != null ? Number(data.kpis.grossMarginPctFy).toFixed(1) + "%" : "-"}` },
+              { label: "Open Expenditure", value: money(data?.kpis?.openExpenditureFy), icon: <TrendingDown className="w-4 h-4 text-orange-500" />, color: "text-orange-700", tip: "Supplier spend outstanding this FY" },
+            ] as const).map((kpi) => (
+              <Tooltip key={kpi.label}>
+                <TooltipTrigger asChild>
+                  <Card className="border-border/50 energy-card cursor-default" data-testid={`kpi-${kpi.label.toLowerCase().replace(/\s+/g, "-")}`}>
+                    <CardContent className="p-3">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        {kpi.icon}
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground truncate">{kpi.label}</p>
+                      </div>
+                      <p className={`text-lg font-semibold font-mono ${kpi.color}`}>{kpi.value}</p>
+                    </CardContent>
+                  </Card>
+                </TooltipTrigger>
+                <TooltipContent side="bottom"><p>{kpi.tip}</p></TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        )}
 
-        <Card className="border-border/50" data-testid="kpi-financial-intervention">
-          <CardContent className="p-4">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Open Receivables</p>
-            <p className="text-2xl font-semibold font-mono text-amber-700">{money(data?.kpis?.openInflowFy)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Outstanding inflow requiring follow-up</p>
-          </CardContent>
-        </Card>
+        {/* ── Secondary KPI row ── */}
+        {data?.kpis && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            {([
+              { label: "Paid Expenditure", value: money(data.kpis.paidExpenditureFy), color: "text-emerald-700", tip: "Confirmed paid supplier spend" },
+              { label: "Eng. Blockers", value: String(data.kpis.openEngineeringBlockers ?? 0), color: Number(data.kpis.openEngineeringBlockers || 0) > 0 ? "text-violet-700" : "text-foreground", tip: "Open engineering stage items" },
+              { label: "Quality Warnings", value: String(data.kpis.openQualityWarnings ?? 0), color: Number(data.kpis.openQualityWarnings || 0) > 0 ? "text-amber-700" : "text-foreground", tip: "Open quality issues" },
+              { label: "Pending Approvals", value: String(data.kpis.pendingApprovals ?? 0), color: Number(data.kpis.pendingApprovals || 0) > 0 ? "text-blue-700" : "text-foreground", tip: "Decisions awaiting sign-off" },
+              { label: "Stale Imports", value: String(data.kpis.staleImports ?? 0), color: Number(data.kpis.staleImports || 0) > 0 ? "text-red-700" : "text-foreground", tip: "Projects with imports older than 7 days" },
+              { label: "Planned Expenditure", value: money(data.kpis.plannedExpenditureFy), color: "text-foreground", tip: "Total budgeted expenditure for the FY" },
+            ] as const).map((kpi) => (
+              <Tooltip key={kpi.label}>
+                <TooltipTrigger asChild>
+                  <Card className="border-border/50 energy-card cursor-default">
+                    <CardContent className="p-3">
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground truncate mb-1">{kpi.label}</p>
+                      <p className={`text-base font-semibold font-mono ${kpi.color}`}>{kpi.value}</p>
+                    </CardContent>
+                  </Card>
+                </TooltipTrigger>
+                <TooltipContent side="bottom"><p>{kpi.tip}</p></TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        )}
+      </TooltipProvider>
 
-        <Card className="border-border/50" data-testid="kpi-cash-protection">
-          <CardContent className="p-4">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Open Expenditure</p>
-            <p className="text-2xl font-semibold font-mono text-orange-700">{money(data?.kpis?.openExpenditureFy)}</p>
-            <p className="text-xs text-muted-foreground mt-1">Supplier spend outstanding this FY</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card className="border-border" data-testid="immediate-intervention-queue">
+      <Card className="border-border energy-card" data-testid="immediate-intervention-queue">
         <CardContent className="p-4 md:p-5">
           <div className="flex items-center justify-between gap-3 mb-4">
-            <div>
+            <div className="flex items-center gap-2">
+              <Wind className="w-4 h-4 text-sky-500" />
+              <div>
               <h2 className="text-sm font-semibold">Action Centre</h2>
               <p className="text-xs text-muted-foreground mt-0.5">{totalActionItems} items requiring attention</p>
+            </div>
             </div>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -581,7 +717,8 @@ export default function DashboardPage() {
               const rows = data?.actionCenter?.[k] || [];
               const isCollapsed = collapsedQueues.has(k);
               const meta = queueMeta(k);
-              const showMax = 5;
+              const isQueueExpanded = expandedQueues.has(k);
+              const showMax = isQueueExpanded ? rows.length : 5;
               const visibleRows = isCollapsed ? [] : rows.slice(0, showMax);
 
               return (
@@ -622,10 +759,17 @@ export default function DashboardPage() {
                               </div>
                             );
                           })}
-                          {rows.length > showMax && (
-                            <div className="px-4 py-2 text-xs text-emerald-600 cursor-pointer hover:underline">
-                              Show {rows.length - showMax} more...
-                            </div>
+                          {rows.length > 5 && (
+                            <button
+                              onClick={() => setExpandedQueues(prev => {
+                                const next = new Set(prev);
+                                if (next.has(k)) next.delete(k); else next.add(k);
+                                return next;
+                              })}
+                              className="w-full px-4 py-2 text-xs text-emerald-600 cursor-pointer hover:underline hover:bg-muted/20 text-left transition-colors"
+                            >
+                              {isQueueExpanded ? "Show less" : `Show ${rows.length - 5} more...`}
+                            </button>
                           )}
                         </>
                       )}
@@ -637,6 +781,64 @@ export default function DashboardPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Monthly Forecast Chart ── */}
+      {(() => {
+        const ds = data?.charts?.datasets?.find((d: any) => d.id === "monthlyForecast");
+        const rows = ds?.rows || [];
+        if (isLoading && !data) return (
+          <Card className="border-border energy-card">
+            <CardContent className="p-4 md:p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <BarChart3 className="w-4 h-4 text-emerald-500" />
+                <h2 className="text-sm font-semibold">FY Revenue & Cost Forecast</h2>
+              </div>
+              <ChartSkeleton />
+            </CardContent>
+          </Card>
+        );
+        if (rows.length === 0) return null;
+        return (
+          <Card className="border-border energy-card" data-testid="forecast-chart">
+            <CardContent className="p-4 md:p-5">
+              <div className="flex items-center gap-2 mb-1">
+                <BarChart3 className="w-4 h-4 text-emerald-500" />
+                <h2 className="text-sm font-semibold">FY Revenue & Cost Forecast</h2>
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">{ds?.description}</p>
+              <ResponsiveContainer width="100%" height={280}>
+                <AreaChart data={rows} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                  <defs>
+                    <linearGradient id="gradRevenue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={CHART_COLORS.revenue} stopOpacity={0.2} />
+                      <stop offset="95%" stopColor={CHART_COLORS.revenue} stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="gradCos" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={CHART_COLORS.cos} stopOpacity={0.2} />
+                      <stop offset="95%" stopColor={CHART_COLORS.cos} stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="gradGp" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={CHART_COLORS.gp} stopOpacity={0.2} />
+                      <stop offset="95%" stopColor={CHART_COLORS.gp} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/40" />
+                  <XAxis dataKey="period" tick={{ fontSize: 11 }} className="text-muted-foreground" />
+                  <YAxis tickFormatter={chartMoney} tick={{ fontSize: 11 }} className="text-muted-foreground" width={60} />
+                  <RechartsTooltip
+                    formatter={(value: number, name: string) => [chartMoney(value), name]}
+                    contentStyle={{ borderRadius: 8, border: "1px solid var(--border)", fontSize: 12 }}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                  <Area type="monotone" dataKey="plannedRevenue" name="Revenue" stroke={CHART_COLORS.revenue} fill="url(#gradRevenue)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="plannedCos" name="COS" stroke={CHART_COLORS.cos} fill="url(#gradCos)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="grossProfit" name="Gross Profit" stroke={CHART_COLORS.gp} fill="url(#gradGp)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       <UpcomingEventsSection events={upcomingData?.events || []} />
       <UpcomingFinancialsSection data={financialsData} />
@@ -650,9 +852,10 @@ export default function DashboardPage() {
           ? new Date(`${data.kpis.currentMonth}-01T00:00:00`).toLocaleDateString("en-ZA", { month: "long", year: "numeric" })
           : "This Month";
         return (
-          <Card className="border-border" data-testid="cos-tracker-card">
+          <Card className="border-border energy-card" data-testid="cos-tracker-card">
             <CardContent className="p-4 md:p-5">
-              <div className="mb-3">
+              <div className="mb-3 flex items-center gap-2">
+                <Battery className="w-4 h-4 text-emerald-500" />
                 <h2 className="text-sm font-semibold">COS Planned vs Realised</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">{monthStr}</p>
               </div>
@@ -681,9 +884,9 @@ export default function DashboardPage() {
                     <span>Realisation progress</span>
                     <span>{realisedPct.toFixed(1)}%</span>
                   </div>
-                  <div className="w-full bg-slate-200 rounded-full h-2.5">
+                  <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
                     <div
-                      className={`h-2.5 rounded-full transition-all ${realisedPct >= 80 ? "bg-emerald-500" : realisedPct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
+                      className={`h-2.5 rounded-full transition-all energy-progress-bar ${realisedPct >= 80 ? "bg-emerald-500" : realisedPct >= 50 ? "bg-amber-500" : "bg-red-500"}`}
                       style={{ width: `${Math.min(realisedPct, 100)}%` }}
                     />
                   </div>
@@ -694,16 +897,17 @@ export default function DashboardPage() {
         );
       })()}
 
-      <Card className="border-border">
+      <Card className="border-border energy-card">
         <CardContent className="p-4">
           <div className="flex items-center gap-2 mb-3">
+            <Sun className="w-4 h-4 text-amber-500" />
             <h2 className="text-sm font-semibold">Project Portfolio</h2>
             <Badge variant="secondary" className="text-[11px] font-mono">
               {(data?.projects || []).length}
             </Badge>
           </div>
-          {isLoading ? (
-            <div className="text-center py-10 text-sm text-muted-foreground">Loading projects...</div>
+          {isLoading && !data ? (
+            <TableSkeleton />
           ) : (
             <div className="rounded-lg border border-border">
               <table className="w-full text-sm" data-testid="execution-dashboard-table">
@@ -716,7 +920,7 @@ export default function DashboardPage() {
                     <th className="text-right py-2 px-2 font-medium hidden md:table-cell">Variance</th>
                     <th className="text-right py-2 px-2 font-medium hidden lg:table-cell">Open Inflow</th>
                     <th className="text-right py-2 px-2 font-medium hidden lg:table-cell">Open Exp.</th>
-                    <th className="text-right py-2 px-2 font-medium hidden md:table-cell">GP %</th>
+                    <th className="text-right py-2 px-2 font-medium hidden md:table-cell" title="Planned gross margin based on planned revenue and expenditure">Plan GP %</th>
                     <th className="text-center py-2 px-2 font-medium">Issues</th>
                     <th className="w-8 py-2 px-1"></th>
                   </tr>
@@ -738,7 +942,7 @@ export default function DashboardPage() {
                           </td>
                           <td className="py-2.5 px-2 text-muted-foreground text-xs hidden lg:table-cell">{p.pm || "-"}</td>
                           <td className="py-2.5 px-2 text-center">
-                            <Badge className={`text-[10px] ${ragBadge(p.rag || "Unknown")}`}>{p.rag || "-"}</Badge>
+                            <Badge className={`text-[10px] ${ragBadgeClasses(p.rag || "Unknown")}`}>{p.rag || "-"}</Badge>
                           </td>
                           <td className="py-2.5 px-2 text-right">
                             <span className="tabular-nums font-medium text-sm">{pct(p.actualProgressPct)}</span>
@@ -749,7 +953,7 @@ export default function DashboardPage() {
                           </td>
                           <td className="py-2.5 px-2 text-right tabular-nums text-sm text-amber-600 hidden lg:table-cell">{money(p.openInflowFy)}</td>
                           <td className="py-2.5 px-2 text-right tabular-nums text-sm text-amber-600 hidden lg:table-cell">{money(p.openExpenditureFy)}</td>
-                          <td className="py-2.5 px-2 text-right tabular-nums text-sm font-medium hidden md:table-cell">{pct((p.grossMarginPctFy || 0) * 100)}</td>
+                          <td className="py-2.5 px-2 text-right tabular-nums text-sm font-medium hidden md:table-cell">{p.plannedRevenueFy > 0 ? pct(p.grossMarginPctFy || 0) : <span className="text-muted-foreground">-</span>}</td>
                           <td className="py-2.5 px-2 text-center">
                             {p.criticalActionCount > 0 ? (
                               <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">{p.criticalActionCount}</Badge>
@@ -791,7 +995,7 @@ export default function DashboardPage() {
                                     <p><span className="text-muted-foreground">Expenditure:</span> {money(p.plannedExpenditureFy)}</p>
                                     <p><span className="text-muted-foreground">Paid:</span> <span className="text-emerald-600">{money(p.paidExpenditureFy)}</span></p>
                                     <p><span className="text-muted-foreground">Open Exp:</span> <span className="text-amber-600">{money(p.openExpenditureFy)}</span></p>
-                                    <p><span className="text-muted-foreground">GP Margin:</span> <span className="font-medium">{pct((p.grossMarginPctFy || 0) * 100)}</span></p>
+                                    <p><span className="text-muted-foreground">Plan GP Margin:</span> <span className="font-medium">{pct(p.grossMarginPctFy || 0)}</span></p>
                                   </div>
                                 </div>
                                 <div className="rounded-lg border border-border/50 p-3">
@@ -824,17 +1028,12 @@ export default function DashboardPage() {
                 </tbody>
               </table>
               {(data?.projects || []).length === 0 && (
-                <div className="text-center py-12">
-                  <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center mx-auto mb-3">
-                    <FolderOpen className="w-6 h-6 text-muted-foreground" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">No projects match current filters</p>
-                </div>
+                <EmptyState title="No projects match current filters" className="border-0 rounded-none" />
               )}
             </div>
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

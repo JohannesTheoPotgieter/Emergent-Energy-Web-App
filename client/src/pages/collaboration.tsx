@@ -677,226 +677,6 @@ function SyncedTeamsTab() {
   );
 }
 
-function SyncedNotificationsTab() {
-  const [, navigate] = useLocation();
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const [filterStatus, setFilterStatus] = useState<"all" | "unread" | "action_required">("all");
-  const [page, setPage] = useState(0);
-  const pageSize = 20;
-
-  const { data: msActionItems = [], isLoading: loadingMs } = useQuery<any[]>({
-    queryKey: ["ms-objects-mine", "action-required"],
-    queryFn: async () => {
-      const res = await fetch("/api/ms-objects/mine?action_required=true", { headers: authHeaders(), credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    staleTime: 30_000,
-  });
-
-  const { data: notificationsData, isLoading: loadingNotifs } = useQuery<any>({
-    queryKey: ["collab-notifications", filterStatus, page],
-    queryFn: async () => {
-      const params = new URLSearchParams({ limit: String(pageSize), offset: String(page * pageSize) });
-      if (filterStatus === "unread") params.set("unreadOnly", "true");
-      if (filterStatus === "action_required") params.set("eventType", "plan.change_confirmation");
-      const res = await fetch(`/api/notifications?${params}`, { headers: authHeaders(), credentials: "include" });
-      if (!res.ok) return { notifications: [], total: 0 };
-      return res.json();
-    },
-    staleTime: 15_000,
-  });
-
-  const markReadMutation = useMutation({
-    mutationFn: async (ids: number[]) => {
-      await fetch("/api/notifications/mark-read", {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ ids }),
-      });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["collab-notifications"] });
-      qc.invalidateQueries({ queryKey: ["notifications-unread-count"] });
-    },
-  });
-
-  const markAllReadMutation = useMutation({
-    mutationFn: async () => {
-      await fetch("/api/notifications/mark-all-read", {
-        method: "POST",
-        headers: authHeaders(),
-        credentials: "include",
-      });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["collab-notifications"] });
-      qc.invalidateQueries({ queryKey: ["notifications-unread-count"] });
-      toast({ title: "All notifications marked as read" });
-    },
-  });
-
-  const confirmMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await fetch(`/api/notifications/${id}/confirm`, {
-        method: "POST",
-        headers: authHeaders(),
-        credentials: "include",
-      });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["collab-notifications"] });
-      toast({ title: "Confirmed" });
-    },
-  });
-
-  const notifications = notificationsData?.notifications || [];
-  const total = notificationsData?.total || 0;
-  const isLoading = loadingMs || loadingNotifs;
-
-  return (
-    <div className="space-y-4" data-testid="synced-notifications-tab">
-      {msActionItems.length > 0 && (
-        <Card className="border-amber-200 bg-amber-50/30">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
-              Action Required from Microsoft ({msActionItems.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="divide-y rounded-lg border bg-background">
-              {msActionItems.slice(0, 5).map((item: any) => (
-                <div
-                  key={item.id}
-                  className="flex items-center gap-3 px-3 py-2"
-                  data-testid={`ms-action-item-${item.id}`}
-                >
-                  <div className="flex-shrink-0">
-                    {item.type === "email" ? <Mail className="h-4 w-4 text-amber-600" /> :
-                     item.type === "teams" ? <MessageSquare className="h-4 w-4 text-purple-600" /> :
-                     <Bell className="h-4 w-4 text-blue-600" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm truncate">{item.subjectOrTitle || "Untitled"}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {item.type} · {item.receivedOrStartDatetime ? format(parseISO(item.receivedOrStartDatetime), "MMM d") : ""}
-                    </p>
-                  </div>
-                  {item.webLink && (
-                    <a href={item.webLink} target="_blank" rel="noopener noreferrer">
-                      <Button variant="outline" size="sm" className="text-xs h-7" data-testid={`ms-action-open-${item.id}`}>
-                        Open <ExternalLink className="h-3 w-3 ml-1" />
-                      </Button>
-                    </a>
-                  )}
-                </div>
-              ))}
-              {msActionItems.length > 5 && (
-                <div className="px-3 py-2 text-xs text-muted-foreground text-center">
-                  +{msActionItems.length - 5} more items requiring action
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Button
-            variant={filterStatus === "all" ? "default" : "outline"} size="sm"
-            onClick={() => { setFilterStatus("all"); setPage(0); }}
-            data-testid="synced-notif-filter-all"
-          >All</Button>
-          <Button
-            variant={filterStatus === "unread" ? "default" : "outline"} size="sm"
-            onClick={() => { setFilterStatus("unread"); setPage(0); }}
-            data-testid="synced-notif-filter-unread"
-          >Unread</Button>
-          <Button
-            variant={filterStatus === "action_required" ? "default" : "outline"} size="sm"
-            onClick={() => { setFilterStatus("action_required"); setPage(0); }}
-            data-testid="synced-notif-filter-action"
-          >Action Required</Button>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => markAllReadMutation.mutate()} data-testid="synced-notif-mark-all-read">
-          <CheckCheck className="h-4 w-4 mr-1" /> Mark All Read
-        </Button>
-      </div>
-
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : notifications.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <BellOff className="h-10 w-10 text-muted-foreground mb-3" />
-          <p className="text-muted-foreground text-sm">No notifications</p>
-        </div>
-      ) : (
-        <>
-          <div className="divide-y rounded-lg border">
-            {notifications.map((n: any) => {
-              const info = getEventTypeInfo(n.eventType || "");
-              const Icon = info.icon;
-              return (
-                <div
-                  key={n.id}
-                  className={`flex items-start gap-3 px-4 py-3 ${n.readAt ? "" : "bg-blue-50/30"}`}
-                  data-testid={`synced-notif-item-${n.id}`}
-                >
-                  <div className={`flex-shrink-0 rounded-full p-1.5 mt-0.5 ${info.color}`}>
-                    <Icon className="h-3.5 w-3.5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className={`text-[10px] ${info.color}`}>{info.label}</Badge>
-                      {!n.readAt && <div className="h-2 w-2 rounded-full bg-blue-500" />}
-                    </div>
-                    <p className="text-sm mt-1">{n.message || n.title || "Notification"}</p>
-                    {n.projectName && <p className="text-xs text-muted-foreground mt-0.5">{n.projectName}</p>}
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {n.createdAt ? format(parseISO(n.createdAt), "MMM d, h:mm a") : ""}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {!n.readAt && (
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => markReadMutation.mutate([n.id])} data-testid={`synced-notif-read-${n.id}`}>
-                        <Check className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                    {n.eventType === "plan.change_confirmation" && !n.confirmedAt && (
-                      <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => confirmMutation.mutate(n.id)} data-testid={`synced-notif-confirm-${n.id}`}>
-                        Confirm
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {total > pageSize && (
-            <div className="flex items-center justify-between">
-              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)} data-testid="synced-notif-prev">
-                <ChevronLeft className="h-4 w-4 mr-1" /> Previous
-              </Button>
-              <span className="text-sm text-muted-foreground">
-                {page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of {total}
-              </span>
-              <Button variant="outline" size="sm" disabled={(page + 1) * pageSize >= total} onClick={() => setPage(p => p + 1)} data-testid="synced-notif-next">
-                Next <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
 function SyncedSharePointTab() {
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const [tagTarget, setTagTarget] = useState<any>(null);
@@ -1678,169 +1458,6 @@ function getEventTypeInfo(eventType: string) {
   return EVENT_TYPE_LABELS[eventType] || { label: eventType, icon: Bell, color: "text-muted-foreground bg-muted" };
 }
 
-function NotificationsTab() {
-  const [, navigate] = useLocation();
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const [filterStatus, setFilterStatus] = useState<"all" | "unread" | "action_required">("all");
-  const [page, setPage] = useState(0);
-  const pageSize = 20;
-
-  const { data: notificationsData, isLoading } = useQuery<any>({
-    queryKey: ["collab-notifications", filterStatus, page],
-    queryFn: async () => {
-      const params = new URLSearchParams({ limit: String(pageSize), offset: String(page * pageSize) });
-      if (filterStatus === "unread") params.set("unreadOnly", "true");
-      if (filterStatus === "action_required") params.set("eventType", "plan.change_confirmation");
-      const res = await fetch(`/api/notifications?${params}`, { headers: authHeaders(), credentials: "include" });
-      if (!res.ok) return { notifications: [], total: 0 };
-      return res.json();
-    },
-    staleTime: 15_000,
-  });
-
-  const markReadMutation = useMutation({
-    mutationFn: async (ids: number[]) => {
-      await fetch("/api/notifications/mark-read", {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ ids }),
-      });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["collab-notifications"] });
-      qc.invalidateQueries({ queryKey: ["notifications-unread-count"] });
-    },
-  });
-
-  const markAllReadMutation = useMutation({
-    mutationFn: async () => {
-      await fetch("/api/notifications/mark-all-read", {
-        method: "POST",
-        headers: authHeaders(),
-        credentials: "include",
-      });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["collab-notifications"] });
-      qc.invalidateQueries({ queryKey: ["notifications-unread-count"] });
-      toast({ title: "All notifications marked as read" });
-    },
-  });
-
-  const confirmMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await fetch(`/api/notifications/${id}/confirm`, {
-        method: "POST",
-        headers: authHeaders(),
-        credentials: "include",
-      });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["collab-notifications"] });
-      toast({ title: "Confirmed" });
-    },
-  });
-
-  const notifications = notificationsData?.notifications || [];
-  const total = notificationsData?.total || 0;
-
-  return (
-    <div className="space-y-4" data-testid="notifications-tab">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Button
-            variant={filterStatus === "all" ? "default" : "outline"} size="sm"
-            onClick={() => { setFilterStatus("all"); setPage(0); }}
-            data-testid="notif-filter-all"
-          >All</Button>
-          <Button
-            variant={filterStatus === "unread" ? "default" : "outline"} size="sm"
-            onClick={() => { setFilterStatus("unread"); setPage(0); }}
-            data-testid="notif-filter-unread"
-          >Unread</Button>
-          <Button
-            variant={filterStatus === "action_required" ? "default" : "outline"} size="sm"
-            onClick={() => { setFilterStatus("action_required"); setPage(0); }}
-            data-testid="notif-filter-action"
-          >Action Required</Button>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => markAllReadMutation.mutate()} data-testid="notif-mark-all-read">
-          <CheckCheck className="h-4 w-4 mr-1" /> Mark All Read
-        </Button>
-      </div>
-
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : notifications.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <BellOff className="h-10 w-10 text-muted-foreground mb-3" />
-          <p className="text-muted-foreground text-sm">No notifications</p>
-        </div>
-      ) : (
-        <>
-          <div className="divide-y rounded-lg border">
-            {notifications.map((n: any) => {
-              const info = getEventTypeInfo(n.eventType || "");
-              const Icon = info.icon;
-              return (
-                <div
-                  key={n.id}
-                  className={`flex items-start gap-3 px-4 py-3 ${n.readAt ? "" : "bg-blue-50/30"}`}
-                  data-testid={`notif-item-${n.id}`}
-                >
-                  <div className={`flex-shrink-0 rounded-full p-1.5 mt-0.5 ${info.color}`}>
-                    <Icon className="h-3.5 w-3.5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className={`text-[10px] ${info.color}`}>{info.label}</Badge>
-                      {!n.readAt && <div className="h-2 w-2 rounded-full bg-blue-500" />}
-                    </div>
-                    <p className="text-sm mt-1">{n.message || n.title || "Notification"}</p>
-                    {n.projectName && <p className="text-xs text-muted-foreground mt-0.5">{n.projectName}</p>}
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {n.createdAt ? format(parseISO(n.createdAt), "MMM d, h:mm a") : ""}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {!n.readAt && (
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => markReadMutation.mutate([n.id])} data-testid={`notif-read-${n.id}`}>
-                        <Check className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                    {n.eventType === "plan.change_confirmation" && !n.confirmedAt && (
-                      <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => confirmMutation.mutate(n.id)} data-testid={`notif-confirm-${n.id}`}>
-                        Confirm
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {total > pageSize && (
-            <div className="flex items-center justify-between">
-              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)} data-testid="notif-prev">
-                <ChevronLeft className="h-4 w-4 mr-1" /> Previous
-              </Button>
-              <span className="text-sm text-muted-foreground">
-                {page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of {total}
-              </span>
-              <Button variant="outline" size="sm" disabled={(page + 1) * pageSize >= total} onClick={() => setPage(p => p + 1)} data-testid="notif-next">
-                Next <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
 function TeamsChatSection() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
@@ -2063,31 +1680,20 @@ export default function CollaborationPage() {
   const { user } = useAuth();
   const { allowed, loading: permLoading } = usePermission("pd_collaboration", "view");
   const urlTab = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tab") : null;
-  const validTabs = ["calendar", "email", "teams", "sharepoint", "notifications"];
+  const validTabs = ["calendar", "email", "teams", "sharepoint"];
   const [activeTab, setActiveTab] = useState(urlTab && validTabs.includes(urlTab) ? urlTab : "email");
   const unifiedFlag = useUnifiedWorkFlag();
-
-  const { data: unreadCount } = useQuery<{ count: number }>({
-    queryKey: ["notifications-unread-count"],
-    queryFn: async () => {
-      const res = await fetch("/api/notifications/unread-count", { headers: authHeaders(), credentials: "include" });
-      if (!res.ok) return { count: 0 };
-      return res.json();
-    },
-    refetchInterval: 30_000,
-  });
 
   const tabLabels: Record<string, string> = {
     calendar: "Calendar",
     email: "Email",
     teams: "Teams Chat",
     sharepoint: "SharePoint",
-    notifications: "Notifications",
   };
   const collaborationTitle = unifiedFlag ? "Collaboration" : "Collaboration Hub";
   const collaborationDescription = unifiedFlag
     ? `Microsoft 365 communications stay tied to project context, conversion rules, and action ownership${user?.displayName ? ` for ${user.displayName}` : ""}.`
-    : `Your Microsoft 365 tools, files, and notifications stay in one app-managed workspace${user?.displayName ? ` for ${user.displayName}` : ""}.`;
+    : `Your Microsoft 365 tools and files stay in one app-managed workspace${user?.displayName ? ` for ${user.displayName}` : ""}.`;
 
   if (permLoading) {
     return (
@@ -2123,7 +1729,6 @@ export default function CollaborationPage() {
         description={collaborationDescription}
         badges={[
           { label: tabLabels[activeTab] || "Email", icon: <MessageSquare className="h-3.5 w-3.5" /> },
-          { label: `${unreadCount?.count || 0} unread alerts`, icon: <Bell className="h-3.5 w-3.5" /> },
           { label: unifiedFlag ? "Unified work enabled" : "Classic hub mode", icon: <Link2 className="h-3.5 w-3.5" /> },
         ]}
       />
@@ -2131,18 +1736,17 @@ export default function CollaborationPage() {
 
       <WorkspaceNotice
         title="Microsoft-linked work stays inside the app's operating model"
-        description="Tag messages and files to projects, convert conversations into tasks, and keep notifications visible in the same role-aware workspace."
+        description="Tag messages and files to projects, convert conversations into tasks, and keep everything visible in the same role-aware workspace."
         icon={<Link2 className="h-4 w-4" />}
         tone="microsoft"
       >
         <Badge variant="secondary">Project tagging</Badge>
         <Badge variant="secondary">Task conversion</Badge>
-        <Badge variant="secondary">Role-aware notifications</Badge>
         <Badge variant="secondary">Native Microsoft actions</Badge>
       </WorkspaceNotice>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5 rounded-xl bg-muted/60 p-1">
+        <TabsList className="grid w-full grid-cols-4 rounded-xl bg-muted/60 p-1">
           <TabsTrigger value="calendar" className="flex items-center gap-1.5 rounded-lg" data-testid="tab-calendar">
             <Calendar className="h-4 w-4" />
             <span className="hidden sm:inline">Calendar</span>
@@ -2159,15 +1763,6 @@ export default function CollaborationPage() {
             <FolderOpen className="h-4 w-4" />
             <span className="hidden sm:inline">SharePoint</span>
           </TabsTrigger>
-          <TabsTrigger value="notifications" className="relative flex items-center gap-1.5 rounded-lg" data-testid="tab-notifications">
-            <Bell className="h-4 w-4" />
-            <span className="hidden sm:inline">Notifications</span>
-            {(unreadCount?.count || 0) > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
-                {unreadCount!.count > 99 ? "99+" : unreadCount!.count}
-              </span>
-            )}
-          </TabsTrigger>
         </TabsList>
 
         <div className="mt-4">
@@ -2182,9 +1777,6 @@ export default function CollaborationPage() {
           </TabsContent>
           <TabsContent value="sharepoint">
             {unifiedFlag ? <SyncedSharePointTab /> : <SharePointTab />}
-          </TabsContent>
-          <TabsContent value="notifications">
-            {unifiedFlag ? <SyncedNotificationsTab /> : <NotificationsTab />}
           </TabsContent>
         </div>
       </Tabs>

@@ -814,22 +814,7 @@ router.post("/api/outlook/email-to-task", requireAuth, requireAdmin, async (req,
         newValue: `Created from ${sourceLabel}`,
       });
 
-      if (assigneeUserId && parseInt(String(assigneeUserId)) !== userId) {
-        try {
-          const { notifications } = await import("@shared/schema");
-          await db.insert(notifications).values({
-            recipientUserId: parseInt(String(assigneeUserId)),
-            eventType: "task.assigned",
-            title: `New task assigned: ${subject}`,
-            body: `You've been assigned a task from ${sourceLabel}: "${subject}" on project ${projectName}`,
-            projectName,
-            linkedTaskId: opTask.id,
-            isRead: false,
-          });
-        } catch (notifErr) {
-          console.error("[Email-to-task] Notification error:", notifErr);
-        }
-      }
+      // Notifications feature removed - task assignment notification is now a no-op
     } else if (targetType === "new") {
       const task = await storage.createMytoolTask({
         ownerUserId: userId,
