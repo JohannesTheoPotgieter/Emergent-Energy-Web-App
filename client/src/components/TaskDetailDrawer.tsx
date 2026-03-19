@@ -114,7 +114,7 @@ export default function TaskDetailDrawer({
     ? ["baseline-task-detail", taskId, projectName]
     : ["operational-task-detail", taskId];
 
-  const { data, isLoading } = useQuery<TaskDetailResponse | null>({
+  const { data, isLoading, isError, error } = useQuery<TaskDetailResponse | null>({
     queryKey: detailQueryKey,
     queryFn: async () => {
       if (isBaselineTask) {
@@ -371,6 +371,16 @@ export default function TaskDetailDrawer({
             {isLoading ? (
               <div className="flex items-center justify-center py-12" data-testid="task-detail-loading">
                 <span className="text-muted-foreground">Loading…</span>
+              </div>
+            ) : isError ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-2" data-testid="task-detail-error">
+                <span className="text-destructive font-medium">Failed to load task</span>
+                <span className="text-xs text-muted-foreground max-w-[300px] text-center">
+                  {error instanceof Error ? error.message : "A database or network error occurred. Please try again."}
+                </span>
+                <Button variant="outline" size="sm" className="mt-2" onClick={() => queryClient.invalidateQueries({ queryKey: detailQueryKey })}>
+                  Retry
+                </Button>
               </div>
             ) : !data ? (
               <div className="flex items-center justify-center py-12" data-testid="task-detail-empty">
