@@ -3998,7 +3998,7 @@ export async function registerRoutes(
 
       // Build override lookup sets so dashboard aggregates respect manual overrides
       const inBankOverrideSet = new Set(
-        revOverrides.filter((o: any) => o.overrideValue === "1").map((o: any) => `${o.projectName}::${o.sourceRow ?? o.rowNumber}`)
+        revOverrides.filter((o: any) => o.overrideValue === "1").map((o: any) => `${o.projectName}::${o.rowNumber}`)
       );
       const cosOverrideByKey = new Map<string, string>();
       for (const co of cosOverrides) {
@@ -4191,7 +4191,7 @@ export async function registerRoutes(
 
       const visibleProjectNames = new Set(projects.map((p: any) => String(p.projectName || '').toLowerCase()));
       const visibleProjectIds = new Set(projects.map((p: any) => Number(p.projectId)).filter((id: number) => Number.isFinite(id)));
-      const visibleProjectInfo = allProjectInfo.filter((info: any) => visibleProjectIds.has(Number(info.id)));
+      const visibleProjectInfo = scopedProjectInfo.filter((info: any) => visibleProjectIds.has(Number(info.id)));
       const monthLabel = (monthKey: string) => {
         try {
           return format(new Date(`${monthKey}-01T00:00:00`), "MMM yyyy");
@@ -4709,7 +4709,7 @@ export async function registerRoutes(
           qualityIssues: qual,
           pendingApprovalsDecisions: pending,
         },
-        projects,
+        projects: projects.map(({ _taskWeight, _taskActual, _taskExpected, _engOpen, _qualityOpen, _approvalsPending, _inflowRisk, _outflowRisk, __hasFyItem, ...rest }: any) => rest),
         charts: chartDatasets,
         options: {
           portfolios: Array.from(new Set(projects.map((p: any) => p.portfolio).filter(Boolean))).sort(),
