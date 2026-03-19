@@ -2720,7 +2720,7 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'ms_integration'
   | 'my_work' | 'ms_sync' | 'project_tagging' | 'database_migration'
   | 'revenue_tracker' | 'gp_tracker' | 'work_items'
-  | 'task_management' | 'standups' | 'fye_revenue_tracking';
+  | 'task_management' | 'standups' | 'fye_revenue_tracking' | 'reports';
 export type PermissionAction = 'view' | 'create' | 'edit' | 'approve' | 'override' | 'delete';
 export const AUTHORITY_ACTIONS = [
   'view',
