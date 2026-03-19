@@ -9,6 +9,8 @@ export async function registerCoreRoutes(app: Express) {
   registerEngineeringRoutes(app);
   const { registerEngStageRoutes } = await import("../eng-stage-routes");
   registerEngStageRoutes(app);
+  const { registerEngineeringIntakeRoutes } = await import("../engineering-intake-routes");
+  registerEngineeringIntakeRoutes(app);
   const { registerLifecycleRoutes } = await import("../lifecycle-routes");
   registerLifecycleRoutes(app);
   const { registerReportRoutes } = await import("../report-routes");
