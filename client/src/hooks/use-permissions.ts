@@ -5,6 +5,7 @@ import { checkPermission, normalizeRoleForPermissions, PermissionEntity, Permiss
 interface PermissionsResponse {
   role?: string;
   entityPermissions?: Record<string, Record<string, boolean>> | null;
+  userOverrides?: Record<string, boolean> | null;
 }
 
 export function usePermission(entity: PermissionEntity, action: PermissionAction): { allowed: boolean; loading: boolean } {
@@ -32,12 +33,21 @@ export function usePermission(entity: PermissionEntity, action: PermissionAction
     return { allowed: false, loading: false };
   }
 
+  // Check user-specific overrides first (highest priority)
+  const overrideKey = `${entity}:${action}`;
+  const userOverrides = permissions?.userOverrides;
+  if (userOverrides && overrideKey in userOverrides) {
+    return { allowed: userOverrides[overrideKey], loading: false };
+  }
+
+  // Then check DB entity permission overrides
   const ep = permissions?.entityPermissions;
   if (ep && ep[entity]) {
     if (ep[entity][action] === true) return { allowed: true, loading: false };
     if (ep[entity][action] === false) return { allowed: false, loading: false };
   }
 
+  // Fall back to hardcoded defaults
   const allowed = checkPermission(normalizeRoleForPermissions(user.role), entity, action);
   return { allowed, loading: false };
 }
