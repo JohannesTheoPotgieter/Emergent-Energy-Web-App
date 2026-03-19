@@ -1060,6 +1060,24 @@ async function ensureSqliteSchema() {
       )
     `);
 
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS fye_kpi_counters (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fye_year INTEGER NOT NULL UNIQUE,
+        brought_in INTEGER NOT NULL DEFAULT 0,
+        signed INTEGER NOT NULL DEFAULT 0,
+        updated_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Add fye_year and created_by to forecast_pipeline and lost_deals
+    try { await db.run(sql.raw(`ALTER TABLE forecast_pipeline ADD COLUMN fye_year INTEGER NOT NULL DEFAULT 2026`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE forecast_pipeline ADD COLUMN created_by INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE lost_deals ADD COLUMN fye_year INTEGER NOT NULL DEFAULT 2026`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE lost_deals ADD COLUMN created_by INTEGER`)); } catch {}
+
     // Add missing columns to project_info (safe ALTERs — all columns from Drizzle schema)
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN signed_status TEXT NOT NULL DEFAULT 'NONE'`)); } catch {}
