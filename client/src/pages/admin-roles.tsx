@@ -98,7 +98,6 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   smart_import: "Smart Import — Excel data import",
   data_import: "Data Import tools",
   data_export: "Data Export tools",
-  excel_updates: "Excel Updates — batch data updates",
   database_migration: "Database Migration tools",
   ms_integration: "Microsoft 365 integration setup",
   ms_sync: "MS Graph Sync — calendar, email, Teams",
@@ -127,7 +126,6 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   pd_raid: "Project detail > RAID log (Risks, Actions, Issues)",
 
   dashboard_widgets: "Home dashboard — widget cards & charts",
-  excel_sync_ack: "Smart Import — sync acknowledgement panel",
   financial_integration: "Financial Integration — rule-based matching",
   financial_linking: "Financial Linking — expense/revenue pairing",
   governance: "Governance — phase gate & compliance controls",
@@ -177,7 +175,7 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   admin: {
     label: "Admin",
-    entities: ["admin", "admin_roles", "smart_import", "data_import", "data_export", "excel_updates", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail"],
+    entities: ["admin", "admin_roles", "smart_import", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail"],
   },
   project_detail: {
     label: "Project Detail Tabs",
@@ -185,7 +183,7 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   other: {
     label: "Other Permissions",
-    entities: ["dashboard_widgets", "excel_sync_ack", "financial_integration", "financial_linking", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items"],
+    entities: ["dashboard_widgets", "financial_integration", "financial_linking", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items"],
   },
 };
 
