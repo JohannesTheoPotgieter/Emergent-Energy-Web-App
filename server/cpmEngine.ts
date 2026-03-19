@@ -59,17 +59,6 @@ function toWorkingDays(date: Date, referenceDate: Date): number {
   return count;
 }
 
-function fromWorkingDays(workingDays: number, referenceDate: Date): Date {
-  const d = new Date(referenceDate);
-  let remaining = workingDays;
-  while (remaining > 0) {
-    d.setDate(d.getDate() + 1);
-    const dow = d.getDay();
-    if (dow !== 0 && dow !== 6) remaining--;
-  }
-  return d;
-}
-
 function calculateWorkingDuration(startDate: Date, endDate: Date): number {
   let count = 0;
   const d = new Date(startDate);

@@ -15,15 +15,23 @@ import {
   insertBudgetSchema,
   msObjects,
   normalizedRevenueLines,
-  notifications,
   OVERRIDE_CATEGORIES,
   projectInfo,
   users,
 } from "@shared/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
+import {
+  STATIC_COS_BUDGET_FY26,
+  extractMonthKey,
+  allocateRevenue,
+  isCosRealised as isCosRealisedShared,
+  normalizeProjectName,
+  mapToSortedArray,
+  currentMonthKey as getCurrentMonthKey,
+  parseExpenseAmount,
+} from "../lib/calculations/financeUtils";
 import { recordOverride } from "../lib/audit/diff-engine";
-import { sendExcelSyncNotification } from "../excel-sync-notifications";
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from "../work-items-adapter";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
@@ -61,22 +69,7 @@ async function createPendingEditRequest(
     status: "pending",
   }).returning();
 
-  const recipients = await db.select({ id: users.id }).from(users)
-    .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
-  const [requestor] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
-
-  for (const r of recipients) {
-    if (r.id === userId) continue;
-    await db.insert(notifications).values({
-      recipientUserId: r.id,
-      eventType: "financial.edit_request",
-      title: `Edit Request: ${projectName}`,
-      body: `${requestor?.name || "A PM"} submitted a ${editType} edit requiring approval. ${editSummary}`,
-      projectName,
-      requiresConfirmation: true,
-      changeDetails: JSON.stringify({ requestId: saved.id, editType, editSummary }),
-    });
-  }
+  // Notifications feature removed - financial edit request notifications are now no-ops
 
   return saved;
 }
@@ -90,10 +83,28 @@ function isDateConfirmed(confirmed: boolean | null | undefined, fontColor: strin
   return false;
 }
 
+// Delegates to shared utility in financeUtils.ts (aligned with classifyCosStatus).
+// Respects COS overrides and the cosRealised boolean from normalizedCostLines.
 function isCosRealised(exp: any): boolean {
-  const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
-  const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
-  return hasInvoice && hasInvDate;
+  return isCosRealisedShared(exp);
+}
+
+// Loads COS status overrides and enriches expense records so isCosRealised() respects them.
+async function loadCosOverrides(): Promise<Map<string, string>> {
+  const overrides = await db.select().from(cosStatusOverrides);
+  const map = new Map<string, string>();
+  for (const o of overrides) {
+    map.set(`${o.projectName}::${o.rowNumber}`, o.overrideStatus);
+  }
+  return map;
+}
+
+function enrichWithOverrides(expenses: any[], cosOverrideMap: Map<string, string>): void {
+  for (const exp of expenses) {
+    const key = `${exp.projectName}::${exp._sourceRow || exp.rowNumber}`;
+    const override = cosOverrideMap.get(key);
+    if (override) exp._cosOverrideStatus = override;
+  }
 }
 
 function isCashflowConfirmed(exp: any): boolean {
@@ -692,10 +703,12 @@ router.get("/api/program/cos", requireAuth, async (req, res) => {
     const { projectName, startDate, endDate, atRiskDays = '30' } = req.query;
     const atRiskDaysNum = parseInt(atRiskDays as string, 10) || 30;
 
-    const [allExpenses, latestRefresh] = await Promise.all([
+    const [allExpenses, latestRefresh, cosOverrideMapCos] = await Promise.all([
       storage.getAllProgramExpenses(),
-      storage.getLatestRefresh()
+      storage.getLatestRefresh(),
+      loadCosOverrides(),
     ]);
+    enrichWithOverrides(allExpenses, cosOverrideMapCos);
 
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
@@ -888,12 +901,21 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       }
 
       let projectOutflowsSum = 0;
+      let pastDueUnpaidSum = 0;
+      const todayStr = new Date().toISOString().split('T')[0];
       for (const expense of allExpenses) {
         if (projectFilters && !projectFilters.has(expense.projectName || "")) continue;
-        const d = expense.expensePaymentDate;
+        // Use effective payment date: actual payment date, then forecast, then linked task
+        const d = expense.expensePaymentDate || (expense as any).forecastPaymentDate || (expense as any).computedForecastPaymentDate || null;
         if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
         if (d >= weekStart && d < weekEnd && expense.expenseActualTotal) {
-          projectOutflowsSum += parseFloat(expense.expenseActualTotal) || 0;
+          const amt = parseFloat(expense.expenseActualTotal) || 0;
+          projectOutflowsSum += amt;
+          // Flag past-due unpaid: payment date in past, but not confirmed out of bank
+          const payDateConfirmed = expense.expensePaymentDate && isDateConfirmed((expense as any).paymentDateConfirmed, (expense as any).paymentDateFontColor);
+          if (d < todayStr && !payDateConfirmed && amt > 0) {
+            pastDueUnpaidSum += amt;
+          }
         }
       }
 
@@ -922,6 +944,7 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
         weekEnd,
         projectInflows: projectInflowsSum,
         projectOutflows: projectOutflowsSum,
+        pastDueUnpaid: pastDueUnpaidSum,
         openingBalance,
         computedOpening,
         hasManualOverride,
@@ -1166,6 +1189,12 @@ router.post("/api/tracker-monthly", requireAuth, requireTrackerPermission("edit"
     if (!trackerType || !monthKey) {
       return res.status(400).json({ error: "trackerType and monthKey required" });
     }
+    if (!/^\d{4}-\d{2}$/.test(monthKey)) {
+      return res.status(400).json({ error: "monthKey must be in YYYY-MM format" });
+    }
+    if (!["COS", "REV", "GP"].includes(trackerType)) {
+      return res.status(400).json({ error: "trackerType must be COS, REV, or GP" });
+    }
     const result = await storage.upsertTrackerMonthlyManual({
       trackerType,
       monthKey,
@@ -1235,14 +1264,14 @@ router.get("/api/rev-tracker", requireAuth, requireAdmin, async (req, res) => {
       const budget = manual?.budget ? parseFloat(manual.budget) : 0;
 
       const variance = planned - budget;
-      const variancePct = budget !== 0 ? (planned - budget) / budget : 0;
+      const variancePct = budget !== 0 ? ((planned - budget) / budget) * 100 : 0;
 
       ytdPlanned += planned;
       ytdRealised += realised;
       ytdOutstanding += outstanding;
       ytdBudget += budget;
       const ytdVariance = ytdPlanned - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? (ytdPlanned - ytdBudget) / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? ((ytdPlanned - ytdBudget) / ytdBudget) * 100 : 0;
 
       months.push({
         monthKey,
@@ -1273,14 +1302,16 @@ router.get("/api/rev-tracker", requireAuth, requireAdmin, async (req, res) => {
 
 router.get("/api/cos-tracker", requireAuth, async (req, res) => {
   try {
-    const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans] = await Promise.all([
+    const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans, cosOverrideMap] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getTrackerMonthlyManual('COS'),
       storage.getAllProgramInflows(),
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),
       storage.getAllProjectPlans(),
+      loadCosOverrides(),
     ]);
+    enrichWithOverrides(allProgramExpenses, cosOverrideMap);
     const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
     const revByMonth = new Map<string, number>();
@@ -1339,31 +1370,13 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       }
     }
 
-    const staticCosBudget: Record<string, number> = {
-      '2025-09': 8083466.99,
-      '2025-10': 16346971.77,
-      '2025-11': 20803804.86,
-      '2025-12': 12381055.48,
-      '2026-01': 12395435.22,
-      '2026-02': 20724666.08,
-      '2026-03': 30199956.69,
-      '2026-04': 21137178.14,
-      '2026-05': 31405517.81,
-      '2026-06': 41720854.07,
-      '2026-07': 30116780.50,
-      '2026-08': 73983803.91,
-    };
+    // Uses shared static COS budget from financeUtils.ts (single source of truth)
+    const staticCosBudget = STATIC_COS_BUDGET_FY26;
 
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
 
     let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdRevRealised = 0;
-
-    function mapToArray(m: Map<string, number>): { projectName: string; value: number }[] {
-      const arr: { projectName: string; value: number }[] = [];
-      m.forEach((v, k) => arr.push({ projectName: k, value: v }));
-      return arr.sort((a, b) => b.value - a.value);
-    }
 
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(startMonth);
@@ -1383,7 +1396,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[monthKey] ?? 0);
 
       const variance = totalCOS - budget;
-      const variancePct = budget !== 0 ? variance / budget : 0;
+      const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
       const revRealised = revByMonth.get(monthKey) ?? 0;
       ytdCOS += totalCOS;
@@ -1392,7 +1405,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       ytdRevRealised += revRealised;
       const ytdUnrealised = ytdCOS - ytdRealised;
       const ytdVariance = ytdCOS - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
       months.push({
         monthKey,
@@ -1411,8 +1424,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         ytdVariance,
         ytdVariancePct,
         ytdRevRealised,
-        cosProjects: mapToArray(bucket?.projects ?? new Map()),
-        realisedProjects: mapToArray(realisedBucket?.projects ?? new Map()),
+        cosProjects: mapToSortedArray(bucket?.projects ?? new Map()),
+        realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
         unrealisedProjects: (() => {
           const cosPs = bucket?.projects ?? new Map<string, number>();
           const realPs = realisedBucket?.projects ?? new Map<string, number>();
@@ -1421,7 +1434,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
             const diff = v - (realPs.get(k) || 0);
             if (diff !== 0) unrealMap.set(k, diff);
           });
-          return mapToArray(unrealMap);
+          return mapToSortedArray(unrealMap);
         })(),
       });
     }
@@ -1509,14 +1522,14 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
       const unrealisedCOS = totalCOS - realisedCOS;
       const budget = budgetByMonth.get(monthKey) ?? 0;
       const variance = totalCOS - budget;
-      const variancePct = budget !== 0 ? variance / budget : 0;
+      const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
       ytdCOS += totalCOS;
       ytdRealised += realisedCOS;
       ytdBudget += budget;
       const ytdUnrealised = ytdCOS - ytdRealised;
       const ytdVariance = ytdCOS - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
       const monthItems = itemsByMonth.get(monthKey) || [];
 
@@ -1556,7 +1569,11 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     const match = monthKey.match(/^(\d{4})-(\d{2})$/);
     if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
-    const allExpenses = await storage.getAllProgramExpenses();
+    const [allExpenses, cosOverrideMapMD] = await Promise.all([
+      storage.getAllProgramExpenses(),
+      loadCosOverrides(),
+    ]);
+    enrichWithOverrides(allExpenses, cosOverrideMapMD);
 
     interface LineItem {
       id: number;
@@ -1597,11 +1614,10 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       }
 
       const nowD = new Date();
-      const curMK = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
-      const isFutureMonth = itemMonthKey ? itemMonthKey > curMK : false;
+      const currentMonthKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
 
-      const isRealised = isCosRealised(exp) && !isFutureMonth;
-      const isConfirmedPayment = isCashflowConfirmed(exp) && !isFutureMonth;
+      const isRealised = isCosRealised(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
+      const isConfirmedPayment = isCashflowConfirmed(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
 
       let cosState = 'Planned';
       if (isConfirmedPayment) {
@@ -1684,18 +1700,22 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
       return res.status(400).json({ error: "Cannot mark as realised without an invoice number" });
     }
 
-    await storage.updateProgramExpenseFields(id, {
+    if (realised && !expense.expenseInvoicedDate) {
+      return res.status(400).json({ error: "Cannot mark as realised without an invoice date" });
+    }
+
+    const updated = await storage.updateProgramExpenseFields(id, {
       invoiceDateConfirmed: realised,
     });
 
-    const updatedExpenses = await storage.getAllProgramExpenses();
-    const updatedExpense = updatedExpenses.find(e => e.id === id);
-    if (updatedExpense) {
-      const newState = classifyExpenseState(updatedExpense as any);
-      await storage.updateProgramExpenseFields(id, {
-        computedState: newState,
-      });
+    if (!updated) {
+      return res.status(500).json({ error: "Failed to update expense fields" });
     }
+
+    const newState = classifyExpenseState(updated as any);
+    await storage.updateProgramExpenseFields(id, {
+      computedState: newState,
+    });
 
     res.json({ success: true, id, realised });
   } catch (error) {
@@ -1809,14 +1829,14 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
       const manual = manualBudgetMap.get(monthKey);
       const budget = manual?.budget ? parseFloat(manual.budget) : 0;
       const variance = totalRevenue - budget;
-      const variancePct = budget !== 0 ? variance / budget : 0;
+      const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
       ytdRevenue += totalRevenue;
       ytdRealised += realisedRevenue;
       ytdBudget += budget;
       const ytdUnrealised = ytdRevenue - ytdRealised;
       const ytdVariance = ytdRevenue - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
       const monthItems = itemsByMonth.get(monthKey) || [];
 
@@ -1854,35 +1874,23 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
 
 router.get("/api/gp-tracker", requireAuth, async (req, res) => {
   try {
-    const [allExpenses, allInflowsRaw, revManualEntries, cosManualEntries] = await Promise.all([
+    const [allExpenses, allInflowsRaw, revManualEntries, cosManualEntries, cosOverrideMap] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
       storage.getTrackerMonthlyManual('REV'),
       storage.getTrackerMonthlyManual('COS'),
+      loadCosOverrides(),
     ]);
+    enrichWithOverrides(allExpenses, cosOverrideMap);
 
     const revManualBudgetMap = new Map(revManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
     const cosManualBudgetMap = new Map(cosManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
 
-    const staticCosBudgetGP: Record<string, number> = {
-      '2025-09': 8083466.99,
-      '2025-10': 16346971.77,
-      '2025-11': 20803804.86,
-      '2025-12': 12381055.48,
-      '2026-01': 12395435.22,
-      '2026-02': 20724666.08,
-      '2026-03': 30199956.69,
-      '2026-04': 21137178.14,
-      '2026-05': 31405517.81,
-      '2026-06': 41720854.07,
-      '2026-07': 30116780.50,
-      '2026-08': 73983803.91,
-    };
-
+    // Uses shared static COS budget from financeUtils.ts (single source of truth)
     function getCosBudget(monthKey: string): number {
       const manual = cosManualBudgetMap.get(monthKey);
       if (manual && manual !== 0) return manual;
-      return staticCosBudgetGP[monthKey] ?? 0;
+      return STATIC_COS_BUDGET_FY26[monthKey] ?? 0;
     }
 
     const revByProject = new Map<string, number>();
@@ -2023,10 +2031,12 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
 router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = decodeURIComponent(String(req.params.projectName || ""));
-    const [projectExpenses, revLines] = await Promise.all([
+    const [projectExpenses, revLines, cosOverrideMapProj] = await Promise.all([
       storage.getProgramExpensesByProject(projectName),
       storage.getProgramInflowsByProject(projectName),
+      loadCosOverrides(),
     ]);
+    enrichWithOverrides(projectExpenses, cosOverrideMapProj);
 
     const totalMilestoneRevenue = revLines.reduce((s: number, r: any) => {
       const amt = parseFloat(r.milestoneAmount as string) || 0;
@@ -2158,13 +2168,110 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res)
   }
 });
 
+// GP Tracker — month detail drill-down (line-item level)
+router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
+  try {
+    const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
+    if (!monthKey) return res.status(400).json({ error: "monthKey required" });
+
+    const keyMatch = monthKey.match(/^(\d{4})-(\d{2})$/);
+    if (!keyMatch) return res.status(400).json({ error: "Invalid monthKey format" });
+
+    const [allExpenses, allInflowsRaw, cosOverrideMapGPD] = await Promise.all([
+      storage.getAllProgramExpenses(),
+      storage.getAllProgramInflows(),
+      loadCosOverrides(),
+    ]);
+    enrichWithOverrides(allExpenses, cosOverrideMapGPD);
+
+    const revByProject = new Map<string, number>();
+    for (const rev of allInflowsRaw) {
+      const pName = normalizeProjectName(rev.projectName);
+      const amt = parseFloat(rev.milestoneAmount as string) || 0;
+      revByProject.set(pName, (revByProject.get(pName) || 0) + amt);
+    }
+
+    const cosByProject = new Map<string, number>();
+    for (const exp of allExpenses) {
+      const amount = parseExpenseAmount(exp);
+      if (amount === 0) continue;
+      const pName = normalizeProjectName(exp.projectName);
+      cosByProject.set(pName, (cosByProject.get(pName) || 0) + amount);
+    }
+
+    const curMK = getCurrentMonthKey();
+    const items: any[] = [];
+
+    for (const exp of allExpenses) {
+      const amount = parseExpenseAmount(exp);
+      if (amount === 0) continue;
+
+      const itemMonthKey = extractMonthKey(exp.expenseInvoicedDate as string | null);
+      if (itemMonthKey !== monthKey) continue;
+
+      const pName = normalizeProjectName(exp.projectName);
+      if (project && pName !== project) continue;
+
+      const totalCOSProject = cosByProject.get(pName) || 1;
+      const totalRevProject = revByProject.get(pName) || 0;
+      const isNoRevLinked = !!(exp as any).noRevenueLinked;
+      const revenueAmount = allocateRevenue(amount, totalCOSProject, totalRevProject, isNoRevLinked);
+      const gpAmount = revenueAmount - amount;
+
+      const cosRealised = isCosRealised(exp) && itemMonthKey <= curMK;
+      const gpState = cosRealised ? 'Realised' : 'Unrealised';
+
+      if (stateFilter && stateFilter.toLowerCase() !== gpState.toLowerCase()) continue;
+
+      items.push({
+        id: exp.id,
+        projectName: pName,
+        category: exp.expenseCategory || null,
+        lineItem: exp.expenseLineItem || null,
+        costAmount: amount,
+        revenueAmount,
+        gpAmount,
+        gpPct: revenueAmount !== 0 ? (gpAmount / revenueAmount) * 100 : 0,
+        invoiceNumber: exp.expenseInvoiceNumber || null,
+        poNumber: exp.expensePoNumber || null,
+        invoiceDate: exp.expenseInvoicedDate || null,
+        supplier: exp.supplierName || null,
+        isRealised: cosRealised,
+        noRevenueLinked: isNoRevLinked,
+        gpState,
+      });
+    }
+
+    items.sort((a, b) => b.gpAmount - a.gpAmount);
+
+    const realisedGP = items.filter(i => i.isRealised).reduce((s, i) => s + i.gpAmount, 0);
+    const unrealisedGP = items.filter(i => !i.isRealised).reduce((s, i) => s + i.gpAmount, 0);
+
+    res.json({
+      monthKey,
+      lineCount: items.length,
+      totalRevenue: items.reduce((s, i) => s + i.revenueAmount, 0),
+      totalCOS: items.reduce((s, i) => s + i.costAmount, 0),
+      totalGP: items.reduce((s, i) => s + i.gpAmount, 0),
+      realisedGP,
+      unrealisedGP,
+      items,
+    });
+  } catch (error) {
+    console.error("GP tracker month-detail error:", error);
+    res.status(500).json({ error: "Failed to fetch GP tracker month detail" });
+  }
+});
+
 router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
   try {
-    const [allExpenses, allInflowsRaw, manualEntries] = await Promise.all([
+    const [allExpenses, allInflowsRaw, manualEntries, cosOverrideMap] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
       storage.getTrackerMonthlyManual('REV'),
+      loadCosOverrides(),
     ]);
+    enrichWithOverrides(allExpenses, cosOverrideMap);
 
     const manualBudgetMap = new Map(manualEntries.map(e => [e.monthKey, e]));
 
@@ -2225,12 +2332,6 @@ router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_track
       }
     }
 
-    function mapToArray(m: Map<string, number>): { projectName: string; value: number }[] {
-      const arr: { projectName: string; value: number }[] = [];
-      m.forEach((v, k) => arr.push({ projectName: k, value: v }));
-      return arr.sort((a, b) => b.value - a.value);
-    }
-
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
     let ytdRevenue = 0, ytdRealised = 0, ytdBudget = 0;
@@ -2252,14 +2353,14 @@ router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_track
       const manual = manualBudgetMap.get(monthKey);
       const budget = manual?.budget ? parseFloat(manual.budget) : 0;
       const variance = totalRevenue - budget;
-      const variancePct = budget !== 0 ? variance / budget : 0;
+      const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
       ytdRevenue += totalRevenue;
       ytdRealised += realisedRevenue;
       ytdBudget += budget;
       const ytdUnrealised = ytdRevenue - ytdRealised;
       const ytdVariance = ytdRevenue - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
       months.push({
         monthKey,
@@ -2276,8 +2377,8 @@ router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_track
         ytdBudget,
         ytdVariance,
         ytdVariancePct,
-        revProjects: mapToArray(bucket?.projects ?? new Map()),
-        realisedProjects: mapToArray(realisedBucket?.projects ?? new Map()),
+        revProjects: mapToSortedArray(bucket?.projects ?? new Map()),
+        realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
         unrealisedProjects: (() => {
           const revPs = bucket?.projects ?? new Map<string, number>();
           const realPs = realisedBucket?.projects ?? new Map<string, number>();
@@ -2286,7 +2387,7 @@ router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_track
             const diff = v - (realPs.get(k) || 0);
             if (diff !== 0) unrealMap.set(k, diff);
           });
-          return mapToArray(unrealMap);
+          return mapToSortedArray(unrealMap);
         })(),
       });
     }
@@ -2310,9 +2411,11 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
     const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
     if (!monthKey) return res.status(400).json({ error: "monthKey required" });
 
-    const allExpenses = project
-      ? await storage.getProgramExpensesByProject(project)
-      : await storage.getAllProgramExpenses();
+    const [allExpenses, cosOverrideMapRMD] = await Promise.all([
+      project ? storage.getProgramExpensesByProject(project) : storage.getAllProgramExpenses(),
+      loadCosOverrides(),
+    ]);
+    enrichWithOverrides(allExpenses, cosOverrideMapRMD);
 
     const allInflowsRaw = project
       ? await storage.getProgramInflowsByProject(project)
@@ -2750,14 +2853,6 @@ router.post("/api/cashflow/planning-overrides", requireAuth, requireAdmin, async
       console.warn("[audit] Planning override audit failed (non-blocking):", auditErr.message);
     }
 
-    sendExcelSyncNotification({
-      projectName: req.body?.projectName || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "cashflow_override",
-      changeDescription: "Cashflow planning override applied",
-      details: req.body,
-    });
-
     res.json({ message: "Planning overrides saved", count: saved.length, overrides: saved });
   } catch (error) {
     res.status(500).json({
@@ -2904,14 +2999,6 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
     } catch (auditErr: any) {
       console.warn("[audit] Revenue override audit failed:", auditErr.message);
     }
-
-    sendExcelSyncNotification({
-      projectName: projectNames[0] || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "revenue_override",
-      changeDescription: "Revenue tracking override applied",
-      details: req.body,
-    });
 
     res.json({ message: "Revenue tracking overrides saved", count: saved.length, overrides: saved });
   } catch (error) {
@@ -3202,7 +3289,7 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     const costedExpenditureFinal = plannedExpenditureVal;
 
     const actualRevenue = inBankTotal;
-    const actualProfit = actualRevenue - actualExpenditure;
+    const actualProfit = actualRevenue - allExpenditure;
     const actualMargin = actualRevenue > 0 ? actualProfit / actualRevenue : 0;
 
     const liveRevenue = totalContract;
@@ -3322,7 +3409,7 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
         },
         actual: {
           revenue: actualRevenue,
-          expenditure: actualExpenditure,
+          expenditure: allExpenditure,
           profit: actualProfit,
           margin: actualMargin,
         },
@@ -3438,14 +3525,6 @@ router.post("/api/revenue-tab/:projectName/costed", requireAuth, requireAdminOrF
       console.warn("[audit] Costed values audit failed:", auditErr.message);
     }
 
-    sendExcelSyncNotification({
-      projectName,
-      changedByUserId: userId,
-      changeType: "project_revenue_summary_override",
-      changeDescription: "Project costed revenue/expenditure updated",
-      details: { revenue, expenditure, changeReason: auditComment, changeCategory: auditCategory },
-    });
-
     res.json(saved);
   } catch (error) {
     console.error("Save costed error:", error);
@@ -3548,14 +3627,6 @@ router.post("/api/revenue-tab/:projectName/link-task", requireAuth, requireAdmin
       console.warn("[audit] Milestone task link audit failed:", auditErr.message);
     }
 
-    sendExcelSyncNotification({
-      projectName,
-      changedByUserId: userId,
-      changeType: "milestone_task_linked",
-      changeDescription: `Milestone ${milestoneRowNumber} linked to task ${taskId}`,
-      details: { milestoneRowNumber, taskId },
-    });
-
     res.json(link);
   } catch (error) {
     console.error("Link task error:", error);
@@ -3585,14 +3656,6 @@ router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireA
       await storage.upsertMilestoneTaskLink(projectName, milestoneRowNumber, 0);
       await storage.updateMilestoneDateOverride(projectName, milestoneRowNumber, dateOverride, reason || null);
     }
-
-    sendExcelSyncNotification({
-      projectName: decodeURIComponent(req.params.projectName),
-      changedByUserId: (req as any).user?.id,
-      changeType: "revenue_date_override",
-      changeDescription: "Revenue date override applied",
-      details: req.body,
-    });
 
     try {
       await recordOverride({
@@ -3792,14 +3855,6 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
       console.warn("[audit] Expenditure override audit failed:", auditErr.message);
     }
 
-    sendExcelSyncNotification({
-      projectName: projectNames[0] || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "expenditure_override",
-      changeDescription: "Expenditure override applied",
-      details: req.body,
-    });
-
     res.json({ message: "Expenditure overrides saved and applied", count: saved.length, overrides: saved });
   } catch (error) {
     console.error("Failed to save expenditure overrides:", error);
@@ -3839,14 +3894,6 @@ router.post("/api/expense-task-links/:projectName", requireAuth, requireAdminOrF
     }
     const link = await storage.upsertExpenseTaskLink(req.params.projectName, expenseId, taskId, (req.user as any)?.id);
 
-    sendExcelSyncNotification({
-      projectName: decodeURIComponent(req.params.projectName),
-      changedByUserId: (req as any).user?.id,
-      changeType: "expense_task_linked",
-      changeDescription: `Expense ${expenseId} linked to task ${taskId}`,
-      details: { expenseId, taskId },
-    });
-
     try {
       await recordOverride({
         actorUserId: (req as any).user?.id,
@@ -3876,14 +3923,6 @@ router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, re
     const expenseId = parseInt(req.params.expenseId);
     await storage.deleteExpenseTaskLink(req.params.projectName, expenseId);
 
-    sendExcelSyncNotification({
-      projectName: decodeURIComponent(req.params.projectName),
-      changedByUserId: (req as any).user?.id,
-      changeType: "expense_task_unlinked",
-      changeDescription: `Expense ${expenseId} unlinked from task`,
-      details: { expenseId },
-    });
-
     try {
       await recordOverride({
         actorUserId: (req as any).user?.id,
@@ -3911,14 +3950,6 @@ router.post("/api/expense-task-links/:projectName/:expenseId/date-override", req
   try {
     const { dateOverride, reason } = req.body;
     await storage.updateExpenseTaskLinkDateOverride(req.params.projectName, parseInt(req.params.expenseId), dateOverride, reason);
-
-    sendExcelSyncNotification({
-      projectName: decodeURIComponent(req.params.projectName),
-      changedByUserId: (req as any).user?.id,
-      changeType: "expense_date_override",
-      changeDescription: "Expense task link date override applied",
-      details: req.body,
-    });
 
     res.json({ success: true });
   } catch (error) {
@@ -3950,14 +3981,6 @@ router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res
       lineStatus: 'Planned',
     });
 
-    sendExcelSyncNotification({
-      projectName: projectName || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "expense_line_added",
-      changeDescription: "Manual expense line added",
-      details: req.body,
-    });
-
     res.json(newExpense);
   } catch (error) {
     console.error("Add expense line error:", error);
@@ -3979,14 +4002,6 @@ router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req,
       rowType: 'category',
       expenseCategory: categoryName,
       expenseLineItem: categoryName,
-    });
-
-    sendExcelSyncNotification({
-      projectName: projectName || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "expense_category_added",
-      changeDescription: `New expense category added: ${categoryName}`,
-      details: req.body,
     });
 
     res.json(newCategory);
@@ -4027,14 +4042,6 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
       lineStatus: 'Planned',
     });
     await storage.upsertExpenseTaskLink(projectName, newExpense.id, taskId, (req.user as any)?.id);
-
-    sendExcelSyncNotification({
-      projectName: projectName || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "task_to_expense_line",
-      changeDescription: "Plan task inserted as expense line",
-      details: req.body,
-    });
 
     res.json(newExpense);
   } catch (error) {
@@ -4113,8 +4120,9 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
       const hasInvoice = !!(exp.expenseInvoiceNumber && exp.expenseInvoiceNumber.trim());
       const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
 
+      const invDateConfirmed = hasInvDate && isDateConfirmed(exp.invoiceDateConfirmed, exp.invoiceDateFontColor);
       let cosStatus: string;
-      if (hasInvoice && hasInvDate) {
+      if (hasInvoice && hasInvDate && invDateConfirmed) {
         cosStatus = 'COS Realised';
       } else if (hasPO || hasInvoice) {
         cosStatus = 'Committed';
@@ -4418,14 +4426,6 @@ router.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, require
       }
     } catch (auditErr: any) { console.warn("[audit] Finance revenue override audit failed:", auditErr.message); }
 
-    sendExcelSyncNotification({
-      projectName: overrides[0]?.projectName || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "finance_revenue_override",
-      changeDescription: "Finance revenue override applied",
-      details: req.body,
-    });
-
     res.json({ message: "Finance revenue overrides saved", count: saved.length, overrides: saved });
   } catch (error) {
     res.status(500).json({ error: "Failed to save finance revenue overrides", message: error instanceof Error ? error.message : "Failed to save finance revenue overrides" });
@@ -4487,14 +4487,6 @@ router.post("/api/finance/cos/overrides", requireAuth, requireAdmin, requirePerm
         });
       }
     } catch (auditErr: any) { console.warn("[audit] Finance COS override audit failed:", auditErr.message); }
-
-    sendExcelSyncNotification({
-      projectName: overrides[0]?.projectName || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "finance_cos_override",
-      changeDescription: "Finance COS override applied",
-      details: req.body,
-    });
 
     res.json({ message: "Finance COS overrides saved", count: saved.length, overrides: saved });
   } catch (error) {

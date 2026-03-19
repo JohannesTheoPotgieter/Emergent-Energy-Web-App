@@ -125,6 +125,37 @@ async function runAdditiveSchemaAlignments() {
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
 
+      -- Permission system: user overrides + audit log
+      ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS permission_version INTEGER NOT NULL DEFAULT 1;
+
+      CREATE TABLE IF NOT EXISTS user_permission_overrides (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        entity TEXT NOT NULL,
+        action TEXT NOT NULL,
+        allowed BOOLEAN NOT NULL DEFAULT true,
+        scope TEXT,
+        granted_by INTEGER REFERENCES users(id),
+        reason TEXT,
+        expires_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT upo_unique_user_entity_action UNIQUE (user_id, entity, action)
+      );
+      CREATE INDEX IF NOT EXISTS idx_upo_user_id ON user_permission_overrides(user_id);
+
+      CREATE TABLE IF NOT EXISTS permission_audit_log (
+        id SERIAL PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        target_role TEXT,
+        target_user_id INTEGER,
+        changed_by_user_id INTEGER REFERENCES users(id),
+        changed_by_role TEXT,
+        change_detail JSONB NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_pal_event_type ON permission_audit_log(event_type);
+      CREATE INDEX IF NOT EXISTS idx_pal_target_role ON permission_audit_log(target_role);
+
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS estimate_minutes INTEGER;
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_category TEXT;
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT false;
@@ -133,6 +164,14 @@ async function runAdditiveSchemaAlignments() {
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_days_of_week TEXT;
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_end_date TEXT;
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_parent_id INTEGER;
+
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS data_source TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS project_id INTEGER;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
+      ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS data_source TEXT;
+      ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS project_id INTEGER;
+      ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
+      ALTER TABLE project_revenue_summary ADD COLUMN IF NOT EXISTS project_id INTEGER;
 
       INSERT INTO task_tags (name, color, category) VALUES
         ('Bug', '#ef4444', 'BUG'),
@@ -146,6 +185,136 @@ async function runAdditiveSchemaAlignments() {
         ('High Priority', '#f97316', 'CUSTOM'),
         ('Low Priority', '#94a3b8', 'CUSTOM')
       ON CONFLICT (name) DO NOTHING;
+
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+      ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+      ALTER TABLE cashflow_points ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES project_info(id);
+
+      -- Smart-Import: program_expense budget + actual columns
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_qty NUMERIC(12,4);
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_rate_unit NUMERIC(15,2);
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_total NUMERIC(15,2);
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_cos_total NUMERIC(15,2);
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS forecast_payment_date TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_qty NUMERIC(12,4);
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_rate_unit NUMERIC(15,2);
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_actual_total NUMERIC(15,2);
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_po_number TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_invoice_number TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_invoiced_date TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_confirmed BOOLEAN DEFAULT FALSE;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_font_color TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_payment_date TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS payment_date_confirmed BOOLEAN DEFAULT FALSE;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS payment_date_font_color TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS revenue_amount NUMERIC(15,2);
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS actual_cos_total NUMERIC(15,2);
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS line_status TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_line_hash TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_state TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_forecast_payment_date TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS supplier_name TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT';
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS project_id INTEGER;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+
+      -- Normalized cost/revenue lines: sub_project_name + budget fields
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS budget_qty TEXT;
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS budget_rate TEXT;
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS budget_total TEXT;
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS budget_cos TEXT;
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS revenue_recognition_amount TEXT;
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS forecast_payment_date TEXT;
+      ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
+
+      -- Smart-Import: program_inflows columns
+      ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
+      ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT';
+      ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS project_id INTEGER;
+      ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
+      ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+
+      -- FYE Revenue Tracking tables
+      CREATE TABLE IF NOT EXISTS fye_budgets (
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER REFERENCES project_info(id),
+        project_name TEXT NOT NULL,
+        fye TEXT NOT NULL,
+        month_key TEXT NOT NULL,
+        budget_type TEXT NOT NULL,
+        amount DECIMAL(15,2) NOT NULL DEFAULT 0,
+        updated_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS forecast_pipeline (
+        id SERIAL PRIMARY KEY,
+        fye_year INTEGER NOT NULL DEFAULT 2026,
+        project_name TEXT NOT NULL,
+        project_developer TEXT,
+        location TEXT,
+        size_kwp DECIMAL(12,2),
+        deal_probability_pct INTEGER NOT NULL DEFAULT 75,
+        forecast_signature_date TEXT,
+        solar_revenue DECIMAL(15,2) DEFAULT 0,
+        bess_revenue DECIMAL(15,2) DEFAULT 0,
+        forecast_gp_pct DECIMAL(6,4) DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'active',
+        notes TEXT,
+        created_by INTEGER REFERENCES users(id),
+        updated_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      ALTER TABLE forecast_pipeline ADD COLUMN IF NOT EXISTS fye_year INTEGER NOT NULL DEFAULT 2026;
+      ALTER TABLE forecast_pipeline ADD COLUMN IF NOT EXISTS created_by INTEGER;
+      CREATE TABLE IF NOT EXISTS lost_deals (
+        id SERIAL PRIMARY KEY,
+        fye_year INTEGER NOT NULL DEFAULT 2026,
+        deal_name TEXT NOT NULL,
+        deal_value DECIMAL(15,2),
+        business_developer TEXT,
+        lost_reason TEXT,
+        lost_date TEXT,
+        notes TEXT,
+        created_by INTEGER REFERENCES users(id),
+        updated_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      ALTER TABLE lost_deals ADD COLUMN IF NOT EXISTS fye_year INTEGER NOT NULL DEFAULT 2026;
+      ALTER TABLE lost_deals ADD COLUMN IF NOT EXISTS created_by INTEGER;
+      CREATE TABLE IF NOT EXISTS fye_kpi_counters (
+        id SERIAL PRIMARY KEY,
+        fye_year INTEGER NOT NULL UNIQUE,
+        brought_in INTEGER NOT NULL DEFAULT 0,
+        signed INTEGER NOT NULL DEFAULT 0,
+        updated_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS fye_report_snapshots (
+        id SERIAL PRIMARY KEY,
+        fye_year INTEGER NOT NULL,
+        snapshot_month INTEGER NOT NULL,
+        snapshot_date TEXT NOT NULL,
+        snapshot_label TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        snapshot_data TEXT NOT NULL,
+        notes TEXT,
+        created_by INTEGER,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        submitted_by INTEGER,
+        submitted_at TIMESTAMP,
+        approved_by INTEGER,
+        approved_at TIMESTAMP
+      );
     `));
     console.log("[Schema] Additive alignments completed");
   } catch (err: any) {

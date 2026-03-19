@@ -24,6 +24,7 @@ export interface NormalizationResult {
     indentLevel: number;
     sourceSheet: string;
     sourceRow: number;
+    subProjectName: string | null;
   }>;
   revenueLines: Array<{
     description: string | null;
@@ -43,6 +44,7 @@ export interface NormalizationResult {
     sourceSheet: string;
     sourceRow: number;
     turnaroundDays: number | null;
+    subProjectName: string | null;
   }>;
   costLines: Array<{
     costCategory: string | null;
@@ -71,6 +73,7 @@ export interface NormalizationResult {
     sourceSheet: string;
     sourceRow: number;
     turnaroundDays: number | null;
+    subProjectName: string | null;
   }>;
   executionPhases: Array<{
     phaseName: string;
@@ -82,6 +85,10 @@ export interface NormalizationResult {
     plannedExpenditure: number | null;
     plannedProfit: number | null;
     plannedMargin: number | null;
+    actualRevenue: number | null;
+    actualExpenditure: number | null;
+    actualProfit: number | null;
+    actualMargin: number | null;
   } | null;
   issues: Array<{
     severity: "INFO" | "WARNING" | "BLOCKER";
@@ -109,6 +116,10 @@ function extractCostedSummary(
   let plannedExpenditure: number | null = null;
   let plannedProfit: number | null = null;
   let plannedMargin: number | null = null;
+  let actualRevenue: number | null = null;
+  let actualExpenditure: number | null = null;
+  let actualProfit: number | null = null;
+  let actualMargin: number | null = null;
 
   const scanEnd = Math.min(headerRowIndex, data.length);
   for (let i = 0; i < scanEnd; i++) {
@@ -119,16 +130,23 @@ function extractCostedSummary(
       const cellVal = String(row[c] || "").toLowerCase().trim();
       if (!cellVal) continue;
 
+      // Planned/costed value: first numeric value after the label (column D)
       const valueCol = findNumericValueInRow(row, c + 1);
+      // Actual value: look further right (column F, typically c+3 or c+4)
+      const actualCol = findNumericValueInRow(row, c + 3);
 
-      if (cellVal.includes("planned revenue") || (cellVal.includes("planned") && cellVal.includes("revenue"))) {
+      if (cellVal.includes("planned revenue") || (cellVal.includes("planned") && cellVal.includes("revenue")) || cellVal === "revenue") {
         if (valueCol !== null) plannedRevenue = valueCol;
-      } else if (cellVal.includes("planned expenditure") || (cellVal.includes("planned") && cellVal.includes("expend"))) {
+        if (actualCol !== null) actualRevenue = actualCol;
+      } else if (cellVal.includes("planned expenditure") || (cellVal.includes("planned") && cellVal.includes("expend")) || cellVal === "expenditure") {
         if (valueCol !== null) plannedExpenditure = valueCol;
-      } else if (cellVal.includes("planned profit") || (cellVal.includes("planned") && cellVal.includes("profit"))) {
+        if (actualCol !== null) actualExpenditure = actualCol;
+      } else if (cellVal.includes("planned profit") || (cellVal.includes("planned") && cellVal.includes("profit")) || cellVal === "profit") {
         if (valueCol !== null) plannedProfit = valueCol;
-      } else if (cellVal.includes("planned margin") || (cellVal.includes("planned") && cellVal.includes("margin"))) {
+        if (actualCol !== null) actualProfit = actualCol;
+      } else if (cellVal.includes("planned margin") || (cellVal.includes("planned") && cellVal.includes("margin")) || cellVal === "margin") {
         if (valueCol !== null) plannedMargin = valueCol;
+        if (actualCol !== null) actualMargin = actualCol;
       }
     }
   }
@@ -144,13 +162,43 @@ function extractCostedSummary(
     }
   }
 
-  return { plannedRevenue, plannedExpenditure, plannedProfit, plannedMargin };
+  if (actualRevenue !== null && actualExpenditure !== null) {
+    if (actualProfit === null) {
+      actualProfit = actualRevenue - actualExpenditure;
+    }
+    if (actualMargin === null && actualRevenue > 0) {
+      actualMargin = (actualRevenue - actualExpenditure) / actualRevenue;
+    }
+  }
+
+  return { plannedRevenue, plannedExpenditure, plannedProfit, plannedMargin, actualRevenue, actualExpenditure, actualProfit, actualMargin };
+}
+
+// Excel formula error values — these corrupt data and should be replaced with null
+const EXCEL_ERROR_VALUES = new Set(["#REF!", "#DIV/0!", "#VALUE!", "#N/A", "#NAME?", "#NULL!", "#NUM!"]);
+
+/**
+ * Check if a cell value is an Excel error. Returns the error string if so, null otherwise.
+ * Also handles ExcelJS error object format: { error: "#REF!" }
+ */
+function getExcelError(value: any): string | null {
+  if (value == null) return null;
+  // ExcelJS error object format
+  if (typeof value === "object" && value.error && typeof value.error === "string") {
+    if (EXCEL_ERROR_VALUES.has(value.error)) return value.error;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (EXCEL_ERROR_VALUES.has(trimmed)) return trimmed;
+  }
+  return null;
 }
 
 function findNumericValueInRow(row: any[], startCol: number): number | null {
   for (let c = startCol; c < Math.min(row.length, startCol + 5); c++) {
     const v = row[c];
     if (v == null) continue;
+    if (getExcelError(v) !== null) continue;
     const n = typeof v === "number" ? v : parseFloat(String(v).replace(/[\s,R]/g, ""));
     if (!isNaN(n) && n !== 0) return n;
   }
@@ -166,7 +214,53 @@ function cellStr(row: any[], colIndex: number): string | null {
   if (colIndex < 0 || colIndex >= row.length) return null;
   const v = row[colIndex];
   if (v == null || String(v).trim() === "") return null;
+  if (getExcelError(v) !== null) return null;
   return String(v).trim();
+}
+
+/**
+ * Robust font color extraction with fallback chain.
+ * Handles: direct ARGB, direct RGB, theme colors, themed objects, and edge cases.
+ * Returns null/unconfirmed as safe default when color can't be resolved.
+ */
+function extractFontColorHex(fontColor: any): string | null {
+  if (!fontColor) return null;
+  // Direct ARGB: "FFFF0000" → strip alpha → "FF0000"
+  if (fontColor.argb && typeof fontColor.argb === "string") {
+    const argb = fontColor.argb;
+    return argb.length === 8 ? argb.substring(2).toLowerCase() : argb.toLowerCase();
+  }
+  // Direct RGB: "FF0000"
+  if (fontColor.rgb && typeof fontColor.rgb === "string") {
+    return fontColor.rgb.toLowerCase();
+  }
+  // Theme color resolution — standard Excel theme defaults:
+  // theme 0 = white (window background), theme 1 = black (window text)
+  // theme 2-3 = other system colors, theme 4+ = accent colors
+  if (fontColor.theme != null && typeof fontColor.theme === "number") {
+    // Apply tint if present (tint=0 or absent means pure theme color)
+    const tint = fontColor.tint || 0;
+    if (fontColor.theme === 1 && Math.abs(tint) < 0.2) return "000000"; // black
+    if (fontColor.theme === 0 && Math.abs(tint) < 0.2) return "ffffff"; // white
+    // Cannot reliably resolve other theme colors without the workbook theme XML
+    return null;
+  }
+  return null;
+}
+
+function classifyColorHex(hex: string | null): { color: string | null; isBlack: boolean } {
+  if (!hex) return { color: null, isBlack: false };
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return { color: null, isBlack: false };
+  const isBlack = (r < 40 && g < 40 && b < 40);
+  const isRedish = r > 150 && g < 80 && b < 80;
+  const isBlueish = b > 150 && r < 80 && g < 80;
+  if (isBlack) return { color: "black", isBlack: true };
+  if (isRedish) return { color: "red", isBlack: false };
+  if (isBlueish) return { color: "blue", isBlack: false };
+  return { color: hex, isBlack: false };
 }
 
 function getCellFontColor(ws: ExcelJS.Worksheet, rowIdx: number, colIdx: number): { color: string | null; isBlack: boolean } {
@@ -174,28 +268,16 @@ function getCellFontColor(ws: ExcelJS.Worksheet, rowIdx: number, colIdx: number)
     const cell = ws.getRow(rowIdx + 1).getCell(colIdx + 1);
     if (!cell || !cell.value) return { color: null, isBlack: false };
     const font = cell.font;
+    // No font or no color specified → Excel default = black
     if (!font || !font.color) {
       return { color: "black", isBlack: true };
     }
-    if (font.color.theme !== undefined && !font.color.argb) {
-      if (font.color.theme === 1 || font.color.theme === 0) {
-        return { color: "black", isBlack: true };
-      }
+    const hex = extractFontColorHex(font.color);
+    if (hex === null) {
+      // Unresolvable theme/color → treat as unconfirmed (safe default)
+      return { color: null, isBlack: false };
     }
-    const argb = (font.color.argb || "").toLowerCase();
-    if (!argb) return { color: "black", isBlack: true };
-    const colorHex = argb.length === 8 ? argb.substring(2) : argb;
-    const isBlack = colorHex === "000000" || argb === "ff000000";
-    const r = parseInt(colorHex.substring(0, 2), 16);
-    const g = parseInt(colorHex.substring(2, 4), 16);
-    const b = parseInt(colorHex.substring(4, 6), 16);
-    const isRedish = r > 150 && g < 80 && b < 80;
-    const isBlueish = b > 150 && r < 80 && g < 80;
-    const isDark = r < 40 && g < 40 && b < 40;
-    if (isBlack || isDark) return { color: "black", isBlack: true };
-    if (isRedish) return { color: "red", isBlack: false };
-    if (isBlueish) return { color: "blue", isBlack: false };
-    return { color: argb, isBlack: false };
+    return classifyColorHex(hex);
   } catch {
     return { color: null, isBlack: false };
   }
@@ -228,16 +310,21 @@ function deriveCostStatus(
 
 function normalizeTaskNo(raw: string): string {
   const trimmed = raw.trim();
+  // First: handle raw numeric values (from Excel) that may have floating-point drift.
+  // E.g. 1.2000000000000002 → "1.2", 2.3000000000000003 → "2.3"
+  // We do this BEFORE dot-splitting so "1.2000000000000002" doesn't get split wrong.
+  const numVal = parseFloat(trimmed);
+  if (!isNaN(numVal) && isFinite(numVal) && String(numVal) === trimmed) {
+    // This was a plain number (not a multi-level WBS like "1.2.3")
+    return parseFloat(numVal.toFixed(10)).toString();
+  }
+  // Multi-level dot-separated WBS codes like "1.2.3" or "10.1.2"
   if (/^\d+(\.\d+)*$/.test(trimmed)) {
     const parts = trimmed.split(".");
     return parts.map(p => {
       const n = parseInt(p, 10);
       return isNaN(n) ? p : String(n);
     }).join(".");
-  }
-  const numVal = parseFloat(trimmed);
-  if (!isNaN(numVal) && isFinite(numVal)) {
-    return parseFloat(numVal.toFixed(10)).toString();
   }
   return trimmed;
 }
@@ -266,7 +353,8 @@ function extractPlanTasks(
   mapping: MappingResult,
   sheetName: string,
   startRow: number,
-  endRow: number
+  endRow: number,
+  isMultiProject: boolean = false
 ): { tasks: NormalizationResult["planTasks"]; phases: NormalizationResult["executionPhases"] } {
   const rawTasks: Array<{
     taskName: string;
@@ -285,6 +373,7 @@ function extractPlanTasks(
     comment: string | null;
     sourceSheet: string;
     sourceRow: number;
+    subProjectName: string | null;
   }> = [];
   const phases: NormalizationResult["executionPhases"] = [];
 
@@ -303,6 +392,8 @@ function extractPlanTasks(
   const commentCol = getColIndex(mapping, "comment");
 
   let currentPhase: string | null = null;
+  let currentSubProject: string | null = null;
+  const subProjectPattern = /^project\s+activit(?:y|ies)\s*[-–—:]\s*(.+)/i;
 
   for (let i = startRow; i < Math.min(endRow, data.length); i++) {
     const row = data[i];
@@ -317,8 +408,20 @@ function extractPlanTasks(
     if (taskName && (taskName.toLowerCase() === "high level programme" || taskName.toLowerCase() === "high level program")) continue;
     if (taskName && taskName.toLowerCase().includes("end of sheet")) continue;
 
+    // Detect sub-project parent rows in multi-project trackers
+    if (isMultiProject && taskName) {
+      const spMatch = taskName.match(subProjectPattern);
+      if (spMatch) {
+        currentSubProject = spMatch[1].trim();
+      }
+    }
+
     if (taskNo) {
+      // In multi-project mode, prefix WBS codes to prevent collisions
       taskNo = normalizeTaskNo(taskNo);
+      if (isMultiProject && currentSubProject) {
+        taskNo = `${currentSubProject}::${taskNo}`;
+      }
     }
 
     if (phaseCol >= 0) {
@@ -370,6 +473,7 @@ function extractPlanTasks(
       comment: commentCol >= 0 ? cellStr(row, commentCol) : null,
       sourceSheet: sheetName,
       sourceRow: i + 1,
+      subProjectName: currentSubProject,
     });
   }
 
@@ -438,7 +542,8 @@ function extractRevenueLines(
   startRow: number,
   endRow: number,
   issues: IssueEntry[],
-  ws?: ExcelJS.Worksheet
+  ws?: ExcelJS.Worksheet,
+  isMultiProject: boolean = false
 ): NormalizationResult["revenueLines"] {
   const lines: NormalizationResult["revenueLines"] = [];
 
@@ -457,6 +562,22 @@ function extractRevenueLines(
     const row = data[i];
     if (!row) continue;
 
+    // Scan for Excel formula errors in this row and generate warnings
+    for (let c = 0; c < row.length; c++) {
+      const errVal = getExcelError(row[c]);
+      if (errVal) {
+        issues.push({
+          severity: "WARNING",
+          section: "REVENUE",
+          message: `Excel formula error '${errVal}' found at ${sheetName} row ${i + 1}, col ${c + 1}. Value replaced with null.`,
+          suggestedAction: "Review the original spreadsheet for broken formulas",
+          issueType: "EXCEL_ERROR",
+          issueFingerprint: makeFingerprint("EXCEL_ERROR", "REVENUE", `R${i + 1}C${c + 1}`),
+          payloadJson: { row: i + 1, col: c + 1, error: errVal },
+        });
+      }
+    }
+
     const milestoneName = cellStr(row, milestoneNameCol);
     if (!milestoneName) continue;
 
@@ -465,6 +586,23 @@ function extractRevenueLines(
 
     const lowerName = milestoneName.toLowerCase();
     if (lowerName.includes("end of sheet") || lowerName.startsWith("key") || lowerName.includes("red font") || lowerName.includes("contains an error")) break;
+
+    // Skip zero-revenue placeholders: "SubProject - No Revenue" with R0
+    if (lowerName.includes("no revenue")) {
+      if (isMultiProject) {
+        const spName = milestoneName.split(/\s*[-–—]\s*/)[0].trim();
+        issues.push({
+          severity: "INFO",
+          section: "REVENUE",
+          message: `Sub-project '${spName}' has no revenue — skipped. Revenue lines will only be created when milestones with values are added to the tracker.`,
+          suggestedAction: null,
+          issueType: "ZERO_REVENUE_SUBPROJECT",
+          issueFingerprint: makeFingerprint("ZERO_REVENUE_SUBPROJECT", "REVENUE", spName),
+          payloadJson: { subProjectName: spName, row: i + 1 },
+        });
+      }
+      continue;
+    }
 
     const amountExVat = amountCol >= 0 ? parseNumber(row[amountCol]) : null;
     const vat = vatCol >= 0 ? parseNumber(row[vatCol]) : null;
@@ -549,6 +687,15 @@ function extractRevenueLines(
       paidDateConfirmed = fc.isBlack;
     }
 
+    // Extract sub-project name from milestone: "SubProject - Milestone" → SubProject
+    let subProjectName: string | null = null;
+    if (isMultiProject && milestoneName) {
+      const parts = milestoneName.split(/\s*[-–—]\s*/);
+      if (parts.length >= 2) {
+        subProjectName = parts[0].trim();
+      }
+    }
+
     lines.push({
       description: milestoneName,
       milestoneName,
@@ -567,6 +714,7 @@ function extractRevenueLines(
       sourceSheet: sheetName,
       sourceRow: i + 1,
       turnaroundDays,
+      subProjectName,
     });
   }
 
@@ -579,6 +727,18 @@ function getBudgetColIndex(budgetMappings: MappingResult["budgetMappings"], fiel
   return m ? m.colIndex : -1;
 }
 
+/**
+ * Extracts sub-project name from a category string like "1. Products - Magic Co"
+ * Returns null if no sub-project pattern is found.
+ */
+function extractSubProjectFromCategory(category: string | null): string | null {
+  if (!category) return null;
+  // Pattern: "{number}. {category} - {subProjectName}"
+  const match = category.match(/^\d+\.?\s*[^-–—]+\s*[-–—]\s*(.+)/);
+  if (match) return match[1].trim();
+  return null;
+}
+
 function extractCostLines(
   data: any[][],
   mapping: MappingResult,
@@ -586,7 +746,8 @@ function extractCostLines(
   startRow: number,
   endRow: number,
   issues: IssueEntry[],
-  ws?: ExcelJS.Worksheet
+  ws?: ExcelJS.Worksheet,
+  isMultiProject: boolean = false
 ): { lines: NormalizationResult["costLines"]; counterparties: string[] } {
   const lines: NormalizationResult["costLines"] = [];
   const counterpartySet = new Set<string>();
@@ -619,6 +780,22 @@ function extractCostLines(
   for (let i = startRow; i < Math.min(endRow, data.length); i++) {
     const row = data[i];
     if (!row) continue;
+
+    // Scan for Excel formula errors in this row and generate warnings
+    for (let c = 0; c < row.length; c++) {
+      const errVal = getExcelError(row[c]);
+      if (errVal) {
+        issues.push({
+          severity: "WARNING",
+          section: "EXPENDITURE",
+          message: `Excel formula error '${errVal}' found at ${sheetName} row ${i + 1}, col ${c + 1}. Value replaced with null.`,
+          suggestedAction: "Review the original spreadsheet for broken formulas",
+          issueType: "EXCEL_ERROR",
+          issueFingerprint: makeFingerprint("EXCEL_ERROR", "EXPENDITURE", `R${i + 1}C${c + 1}`),
+          payloadJson: { row: i + 1, col: c + 1, error: errVal },
+        });
+      }
+    }
 
     const rawCategory = cellStr(row, categoryCol);
     const description = cellStr(row, descCol);
@@ -738,6 +915,9 @@ function extractCostLines(
     const revenueRecognitionAmount = revenueRecogCol >= 0 ? parseNumber(row[revenueRecogCol]) : null;
     const forecastPaymentDate = forecastPayDateCol >= 0 ? parseDate(row[forecastPayDateCol]) : null;
 
+    // Extract sub-project name from category in multi-project trackers
+    const subProjectName = isMultiProject ? extractSubProjectFromCategory(rawCategory) : null;
+
     lines.push({
       costCategory: category,
       counterpartyName: counterparty,
@@ -765,6 +945,7 @@ function extractCostLines(
       sourceSheet: sheetName,
       sourceRow: i + 1,
       turnaroundDays,
+      subProjectName,
     });
   }
 
@@ -784,6 +965,52 @@ export function normalizeData(
   let counterpartyNames: string[] = [];
   let costedSummary: NormalizationResult["costedSummary"] = null;
 
+  const isMultiProject = detection.multiProject?.isMultiProject === true;
+  const subProjects = detection.multiProject?.subProjects || [];
+
+  // Generate INFO issue for multi-project trackers
+  if (isMultiProject && subProjects.length > 0) {
+    issues.push({
+      severity: "INFO",
+      section: "GENERAL",
+      message: `This file contains ${subProjects.length} sub-projects: ${subProjects.join(", ")}. Each line will be tagged with its sub-project name.`,
+      suggestedAction: null,
+      issueType: "MULTI_PROJECT_DETECTED",
+      issueFingerprint: makeFingerprint("MULTI_PROJECT_DETECTED", "GENERAL", "multi_project"),
+      payloadJson: { subProjectCount: subProjects.length, subProjects },
+    });
+  }
+
+  // Generate INFO issues for superseded sheets (e.g., Sheet1 skipped in favor of dedicated sheet)
+  for (const um of detection.unmatched) {
+    if (um.reason.startsWith("Superseded by dedicated")) {
+      issues.push({
+        severity: "INFO",
+        section: "GENERAL",
+        message: `Sheet '${um.sheetName}' contains legacy data but was skipped — ${um.reason}.`,
+        suggestedAction: null,
+        issueType: "SHEET_SUPERSEDED",
+        issueFingerprint: makeFingerprint("SHEET_SUPERSEDED", "GENERAL", um.sheetName),
+        payloadJson: { sheetName: um.sheetName, reason: um.reason },
+      });
+    }
+  }
+
+  // Generate INFO issue for Purchase Order sheets
+  const poSheets = detection.unmatched.filter(u => u.reason.startsWith("Purchase Order sheet"));
+  if (poSheets.length > 0) {
+    const poNames = poSheets.map(u => u.sheetName).join(", ");
+    issues.push({
+      severity: "INFO",
+      section: "GENERAL",
+      message: `Found ${poSheets.length} Purchase Order sheet${poSheets.length > 1 ? "s" : ""} (${poNames}). These are not imported by Smart Import. Use the Load Purchase Order function instead.`,
+      suggestedAction: "Use Load PO function to import these sheets",
+      issueType: "PO_SHEETS_DETECTED",
+      issueFingerprint: makeFingerprint("PO_SHEETS_DETECTED", "GENERAL", "po_sheets"),
+      payloadJson: { count: poSheets.length, sheetNames: poSheets.map(u => u.sheetName) },
+    });
+  }
+
   for (const section of detection.sections) {
     const mapping = mappings.find(m => m.section === section.section);
     if (!mapping) continue;
@@ -797,9 +1024,36 @@ export function normalizeData(
       case "PLAN": {
         const result = extractPlanTasks(
           data, mapping, section.sheetName,
-          section.dataStartRowIndex, section.dataEndRowIndex
+          section.dataStartRowIndex, section.dataEndRowIndex,
+          isMultiProject
         );
         planTasks = result.tasks;
+
+        // Generate INFO issue when project metadata is missing (e.g., MONDI_LEGACY layout)
+        if (detection.projectInfo) {
+          const pi = detection.projectInfo;
+          if (!pi.sizeKwp && !pi.pd && !pi.pm && !pi.contractValue && !pi.phase) {
+            issues.push({
+              severity: "INFO",
+              section: "PLAN",
+              message: "Project metadata (size, PD, PM, contract value, phase) not found in tracker. Please assign manually in the Section Detection step.",
+              suggestedAction: "Edit project info fields",
+              issueType: "MISSING_METADATA",
+              issueFingerprint: makeFingerprint("MISSING_METADATA", "PLAN", "project_info"),
+              payloadJson: { layoutVariant: section.layoutVariant || "UNKNOWN" },
+            });
+          }
+        } else {
+          issues.push({
+            severity: "INFO",
+            section: "PLAN",
+            message: "Project metadata (size, PD, PM, contract value, phase) not found in tracker. Please assign manually in the Section Detection step.",
+            suggestedAction: "Edit project info fields",
+            issueType: "MISSING_METADATA",
+            issueFingerprint: makeFingerprint("MISSING_METADATA", "PLAN", "project_info"),
+            payloadJson: { layoutVariant: section.layoutVariant || "UNKNOWN" },
+          });
+        }
 
         if (detection.projectInfo) {
           const phaseLabels = [
@@ -820,7 +1074,8 @@ export function normalizeData(
       case "REVENUE": {
         revenueLines = extractRevenueLines(
           data, mapping, section.sheetName,
-          section.dataStartRowIndex, section.dataEndRowIndex, issues, ws
+          section.dataStartRowIndex, section.dataEndRowIndex, issues, ws,
+          isMultiProject
         );
         if (!costedSummary) {
           costedSummary = extractCostedSummary(data, section.headerRowIndex);
@@ -830,13 +1085,19 @@ export function normalizeData(
       case "EXPENDITURE": {
         const result = extractCostLines(
           data, mapping, section.sheetName,
-          section.dataStartRowIndex, section.dataEndRowIndex, issues, ws
+          section.dataStartRowIndex, section.dataEndRowIndex, issues, ws,
+          isMultiProject
         );
         costLines = result.lines;
         counterpartyNames = result.counterparties;
         break;
       }
     }
+  }
+
+  // Expenditure Tracking Reconciliation: compare breakdown line totals vs tracking summary
+  if (costLines.length > 0) {
+    reconcileExpenditureTracking(workbook, costLines, detection, issues);
   }
 
   return {
@@ -848,4 +1109,182 @@ export function normalizeData(
     costedSummary,
     issues,
   };
+}
+
+/**
+ * Read the "Expenditure Tracking" summary sheet and compare its category totals
+ * against the imported Expenditure Breakdown line totals. Generates advisory issues
+ * for any mismatches to flag potential missed rows or mapping errors.
+ */
+function reconcileExpenditureTracking(
+  workbook: ExcelJS.Workbook,
+  costLines: NormalizationResult["costLines"],
+  detection: DetectionResult,
+  issues: IssueEntry[]
+): void {
+  // Find the "Expenditure Tracking" sheet — it's the summary sheet, not the breakdown
+  const expSection = detection.sections.find(s => s.section === "EXPENDITURE");
+  const breakdownSheetName = expSection?.sheetName || "";
+
+  // Look for a separate "Expenditure Tracking" sheet (not the one used for breakdown)
+  const trackingSheetNames = ["expenditure tracking", "expenditure summary"];
+  let trackingWs: ExcelJS.Worksheet | undefined;
+  for (const ws of workbook.worksheets) {
+    const lowerName = ws.name.toLowerCase().trim();
+    if (lowerName === breakdownSheetName.toLowerCase()) continue; // skip breakdown sheet
+    if (trackingSheetNames.some(n => lowerName === n || lowerName.includes("expenditure tracking"))) {
+      trackingWs = ws;
+      break;
+    }
+  }
+  if (!trackingWs) return; // No tracking sheet found — skip gracefully
+
+  const data = worksheetToArray(trackingWs);
+  if (data.length < 5) return;
+
+  // Read category totals from tracking sheet (rows 9-23 typically)
+  // Format: B=number, D=category name, H or F=actual total
+  const trackingCategories = new Map<string, { name: string; total: number }>();
+  let trackingGrandTotal: number | null = null;
+
+  // First, try to find the grand total (usually around row 5 or a row labeled "Total")
+  for (let i = 0; i < Math.min(data.length, 30); i++) {
+    const row = data[i];
+    if (!row) continue;
+
+    for (let c = 0; c < Math.min(row.length, 10); c++) {
+      const cellVal = String(row[c] || "").toLowerCase().trim();
+      if (cellVal === "total" || cellVal === "grand total" || cellVal.includes("total expenditure")) {
+        // Look for numeric total in columns to the right
+        for (let nc = c + 1; nc < Math.min(row.length, c + 8); nc++) {
+          const val = row[nc];
+          if (val != null && typeof val === "number" && val !== 0) {
+            trackingGrandTotal = val;
+            break;
+          }
+          if (val != null && typeof val === "string") {
+            const parsed = parseFloat(String(val).replace(/[\s,R$]/g, ""));
+            if (!isNaN(parsed) && parsed !== 0) {
+              trackingGrandTotal = parsed;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Category rows: look for numbered categories like "1. Panels", "2. Inverters"
+    for (let c = 0; c < Math.min(row.length, 6); c++) {
+      const cellVal = String(row[c] || "").trim();
+      const catMatch = cellVal.match(/^(\d+)\.\s*(.+)/);
+      if (catMatch) {
+        const catNum = catMatch[1];
+        const catName = cellVal;
+        // Find amount in the row (scan right for numeric value)
+        let amount: number | null = null;
+        for (let nc = c + 1; nc < Math.min(row.length, c + 10); nc++) {
+          const val = row[nc];
+          if (val != null && typeof val === "number" && val !== 0) {
+            amount = val;
+            break;
+          }
+        }
+        if (amount !== null) {
+          trackingCategories.set(catNum, { name: catName, total: amount });
+        }
+      }
+    }
+  }
+
+  if (trackingCategories.size === 0 && trackingGrandTotal === null) return;
+
+  // Group breakdown lines by category and sum amounts
+  const breakdownByCategory = new Map<string, { name: string; total: number }>();
+  let breakdownGrandTotal = 0;
+
+  for (const line of costLines) {
+    const amount = parseFloat(String(line.amountExVat || 0));
+    if (isNaN(amount)) continue;
+    breakdownGrandTotal += amount;
+
+    const catName = line.costCategory || "Uncategorized";
+    const catNumMatch = catName.match(/^(\d+)/);
+    const catKey = catNumMatch ? catNumMatch[1] : catName;
+
+    if (breakdownByCategory.has(catKey)) {
+      breakdownByCategory.get(catKey)!.total += amount;
+    } else {
+      breakdownByCategory.set(catKey, { name: catName, total: amount });
+    }
+  }
+
+  // Compare category totals
+  for (const [catNum, tracking] of trackingCategories) {
+    const breakdown = breakdownByCategory.get(catNum);
+    if (!breakdown) {
+      issues.push({
+        severity: "WARNING",
+        section: "EXPENDITURE",
+        message: `Expenditure category '${tracking.name}' found in Tracking summary (R ${tracking.total.toLocaleString()}) but no matching lines in Breakdown.`,
+        suggestedAction: "Verify the category exists in Expenditure Breakdown",
+        issueType: "RECONCILIATION_MISSING_CATEGORY",
+        issueFingerprint: makeFingerprint("RECONCILIATION_MISSING_CATEGORY", "EXPENDITURE", catNum),
+        payloadJson: { category: tracking.name, trackingTotal: tracking.total },
+      });
+      continue;
+    }
+
+    const variance = Math.abs(breakdown.total - tracking.total);
+    const variancePct = tracking.total !== 0 ? (variance / Math.abs(tracking.total)) * 100 : 0;
+
+    if (variancePct > 1) {
+      issues.push({
+        severity: "WARNING",
+        section: "EXPENDITURE",
+        message: `Expenditure category '${tracking.name}' breakdown total (R ${breakdown.total.toLocaleString()}) differs from tracking summary (R ${tracking.total.toLocaleString()}) by R ${variance.toLocaleString()} (${variancePct.toFixed(1)}%). Verify no rows were missed.`,
+        suggestedAction: "Compare the Expenditure Breakdown lines against the Tracking summary",
+        issueType: "RECONCILIATION_VARIANCE",
+        issueFingerprint: makeFingerprint("RECONCILIATION_VARIANCE", "EXPENDITURE", catNum),
+        payloadJson: { category: tracking.name, breakdownTotal: breakdown.total, trackingTotal: tracking.total, variancePct },
+      });
+    } else if (variance > 0) {
+      issues.push({
+        severity: "INFO",
+        section: "EXPENDITURE",
+        message: `Expenditure category '${tracking.name}' has minor rounding difference: breakdown R ${breakdown.total.toLocaleString()} vs tracking R ${tracking.total.toLocaleString()}.`,
+        suggestedAction: null,
+        issueType: "RECONCILIATION_ROUNDING",
+        issueFingerprint: makeFingerprint("RECONCILIATION_ROUNDING", "EXPENDITURE", catNum),
+        payloadJson: { category: tracking.name, breakdownTotal: breakdown.total, trackingTotal: tracking.total },
+      });
+    }
+  }
+
+  // Compare grand totals
+  if (trackingGrandTotal !== null) {
+    const grandVariance = Math.abs(breakdownGrandTotal - trackingGrandTotal);
+    const grandPct = trackingGrandTotal !== 0 ? (grandVariance / Math.abs(trackingGrandTotal)) * 100 : 0;
+
+    if (grandPct > 1) {
+      issues.push({
+        severity: "WARNING",
+        section: "EXPENDITURE",
+        message: `Expenditure grand total from Breakdown (R ${breakdownGrandTotal.toLocaleString()}) differs from Tracking summary (R ${trackingGrandTotal.toLocaleString()}) by R ${grandVariance.toLocaleString()} (${grandPct.toFixed(1)}%). Some rows may have been missed.`,
+        suggestedAction: "Review the Expenditure Breakdown for missed or skipped rows",
+        issueType: "RECONCILIATION_GRAND_TOTAL",
+        issueFingerprint: makeFingerprint("RECONCILIATION_GRAND_TOTAL", "EXPENDITURE", "grand_total"),
+        payloadJson: { breakdownTotal: breakdownGrandTotal, trackingTotal: trackingGrandTotal, variancePct: grandPct },
+      });
+    } else if (grandVariance > 0) {
+      issues.push({
+        severity: "INFO",
+        section: "EXPENDITURE",
+        message: `Expenditure grand totals have minor rounding difference: breakdown R ${breakdownGrandTotal.toLocaleString()} vs tracking R ${trackingGrandTotal.toLocaleString()}.`,
+        suggestedAction: null,
+        issueType: "RECONCILIATION_GRAND_TOTAL_OK",
+        issueFingerprint: makeFingerprint("RECONCILIATION_GRAND_TOTAL_OK", "EXPENDITURE", "grand_total"),
+        payloadJson: { breakdownTotal: breakdownGrandTotal, trackingTotal: trackingGrandTotal },
+      });
+    }
+  }
 }

@@ -18,44 +18,32 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
     steps: [],
   },
 
-  "/dashboard": {
+  "/execution-board": {
     id: "execution-dashboard",
-    title: "Execution Board",
+    title: "Execution Dashboard",
     steps: [
       {
-        title: "Execution Board",
-        description: "This is your company-wide project overview. It shows KPIs, project health, Gantt chart, and financial summaries across all active projects.",
+        title: "Execution Dashboard",
+        description: "Your consolidated post-handover execution view. See KPIs, action queues, project portfolio, and financial health for the current financial year.",
         position: "center",
       },
       {
-        targetSelector: '[data-testid="card-high-priority"]',
-        title: "High Priority Items",
-        description: "Projects needing urgent attention appear here — those behind schedule, over budget, or with blockers. Red borders indicate critical items.",
+        targetSelector: '[data-testid="btn-methodology"]',
+        title: "Data Methodology",
+        description: "Click 'Show Methodology' to see exactly how each metric is calculated, which database tables are used, and what time ranges apply. Builds trust in the numbers.",
         position: "bottom",
       },
       {
-        targetSelector: '[data-testid="card-pm-summary"]',
-        title: "PM Summary",
-        description: "A breakdown of project managers and their assigned projects with completion status. Quickly see which PMs are overloaded or have projects at risk.",
+        targetSelector: '[data-testid="filter-toggle-behindPlanOnly"]',
+        title: "Quick Filters",
+        description: "Use toggle filters to quickly isolate projects with specific issues — behind plan, inflow risk, engineering blockers, quality issues, or stale imports.",
         position: "bottom",
       },
       {
-        targetSelector: '[data-testid="card-projects-overview"]',
-        title: "Projects Overview",
-        description: "All active projects at a glance. See progress bars, phase badges, and quick links to drill into any project's details.",
-        position: "top",
-      },
-      {
-        targetSelector: '[data-testid="card-portfolio-gantt"]',
-        title: "Portfolio Gantt Chart",
-        description: "Visual timeline of all projects showing planned vs actual progress. Use the sort, phase, and PM filters to focus on what matters. Hover any bar for detailed metrics.",
-        position: "top",
-      },
-      {
-        targetSelector: '[data-testid="card-projects-by-phase"]',
-        title: "Projects by Phase",
-        description: "See how many projects are in each lifecycle phase — from Initial Assessment through to Handover. Helps identify bottlenecks in your pipeline.",
-        position: "top",
+        targetSelector: '[data-testid="tab-view-coo"]',
+        title: "Role-Based Views",
+        description: "Switch between COO, Program, Finance, and Construction views. Each lens shows role-specific summary cards and filters the action center to relevant queues.",
+        position: "bottom",
       },
     ],
   },
@@ -290,7 +278,7 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
     steps: [
       {
         title: "Collaboration Hub",
-        description: "All your Microsoft 365 tools and in-app notifications in one place. Switch between Calendar, Email, Teams Chat, SharePoint, and Notifications using the tabs.",
+        description: "All your Microsoft 365 tools in one place. Switch between Calendar, Email, Teams Chat, and SharePoint using the tabs.",
         position: "center",
       },
       {
@@ -315,12 +303,6 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
         targetSelector: '[data-testid="tab-sharepoint"]',
         title: "SharePoint Tab",
         description: "Browse your SharePoint document library. Navigate folders, preview files, download documents, or open them directly in SharePoint.",
-        position: "bottom",
-      },
-      {
-        targetSelector: '[data-testid="tab-notifications"]',
-        title: "Notifications Tab",
-        description: "All your in-app notifications: task assignments, approval requests, plan changes, and project updates. Filter by unread or action-required. Confirm plan changes directly here.",
         position: "bottom",
       },
     ],
@@ -355,35 +337,7 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
     ],
   },
 
-  "/pm-dashboard": {
-    id: "pm-dashboard",
-    title: "PM Dashboard",
-    steps: [
-      {
-        title: "PM Dashboard",
-        description: "A view-only overview for tracking project manager performance. See all PMs, their projects, and key metrics. Select a PM to see their individual workload.",
-        position: "center",
-      },
-      {
-        targetSelector: '[data-testid="pm-selector-trigger"]',
-        title: "Select a PM",
-        description: "Choose a specific project manager to see their assigned projects, task completion rates, and any overdue items. Defaults to showing all PMs.",
-        position: "bottom",
-      },
-      {
-        targetSelector: '[data-testid="pm-kpi-strip"]',
-        title: "PM KPIs",
-        description: "Key performance indicators for the selected PM: projects count, tasks completed, overdue items, and average completion rate.",
-        position: "bottom",
-      },
-      {
-        targetSelector: '[data-testid="pm-projects-grid"]',
-        title: "Project Cards",
-        description: "Each card shows a project the PM is responsible for, with progress, phase, financial summary, and priority items. Click a card to open the full project detail.",
-        position: "top",
-      },
-    ],
-  },
+  // /pm-dashboard redirects to /execution-board — tour is on that page
 
   "/leaderboard": {
     id: "leaderboard",
@@ -411,28 +365,6 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
         title: "Badge Collection",
         description: "View all available badges and which ones you've earned. Badges are awarded for milestones like completing 10 tasks, making your first import, or reaching a new level.",
         position: "bottom",
-      },
-    ],
-  },
-
-  "/notifications": {
-    id: "notification-center",
-    title: "Notification Center",
-    steps: [
-      {
-        title: "Notification Center",
-        description: "All your notifications in one place. See task assignments, approval requests, plan changes, deadline warnings, and project updates.",
-        position: "center",
-      },
-      {
-        title: "Notification Types",
-        description: "Notifications are colour-coded by type: blue for task assignments, amber for plan changes needing confirmation, purple for approval requests, red for warnings and overdue items.",
-        position: "center",
-      },
-      {
-        title: "Actions",
-        description: "Mark notifications as read individually or all at once. For plan change confirmations, click 'Confirm' to acknowledge the change — this also auto-confirms related notifications.",
-        position: "center",
       },
     ],
   },
@@ -599,7 +531,7 @@ export function getScreenTour(pathname: string): ScreenTourDef | null {
         },
         {
           title: "Collaboration Pillar",
-          description: "Project-specific chat, SharePoint files, approvals and deliverables, and notifications — all scoped to this project. Keep communication focused and trackable.",
+          description: "Project-specific chat, SharePoint files, and approvals — all scoped to this project. Keep communication focused and trackable.",
           position: "center",
         },
       ],

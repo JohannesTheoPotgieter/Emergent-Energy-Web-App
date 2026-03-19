@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { statusColorClasses, priorityColorClasses } from "@/lib/status-colors";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -138,8 +139,8 @@ export default function PdTicketDetailPage() {
               </h1>
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 <Badge variant="outline" className="text-[10px]">{t.requestType}</Badge>
-                <Badge className={`text-[10px] ${statusColor(t.status)}`}>{t.status}</Badge>
-                <Badge className={`text-[10px] ${priorityColor(t.priority)}`}>{t.priority}</Badge>
+                <Badge className={`text-[10px] ${statusColorClasses(t.status)}`}>{t.status}</Badge>
+                <Badge className={`text-[10px] ${priorityColorClasses(t.priority)}`}>{t.priority}</Badge>
                 {overdue && <Badge className="text-[10px] bg-red-100 text-red-700">Overdue</Badge>}
                 <span className="text-[11px] text-muted-foreground">Ticket #{t.id}</span>
               </div>
@@ -475,21 +476,6 @@ function InfoItem({ label, value, sub, icon, action }: { label: string; value: s
       {sub && <p className="text-[10px] text-muted-foreground">{sub}</p>}
     </div>
   );
-}
-
-function statusColor(s: string) {
-  if (s === "Completed") return "bg-green-100 text-green-700";
-  if (s === "In Progress") return "bg-blue-100 text-blue-700";
-  if (s === "On Hold") return "bg-orange-100 text-orange-700";
-  if (s === "Cancelled") return "bg-muted text-muted-foreground";
-  return "bg-muted text-foreground";
-}
-
-function priorityColor(p: string) {
-  if (p === "Critical") return "bg-red-100 text-red-700";
-  if (p === "High") return "bg-orange-100 text-orange-700";
-  if (p === "Low") return "bg-green-100 text-green-700";
-  return "bg-blue-100 text-blue-700";
 }
 
 function taskStatusColor(s: string) {

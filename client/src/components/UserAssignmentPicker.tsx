@@ -90,6 +90,13 @@ export default function UserAssignmentPicker({
   const [search, setSearch] = useState("");
   const [directoryMode, setDirectoryMode] = useState<"internal" | "external">("internal");
   const inputRef = useRef<HTMLInputElement>(null);
+  const [localAssignments, setLocalAssignments] = useState<CanonicalAssignment[] | null>(null);
+
+  useEffect(() => {
+    if (assignments) {
+      setLocalAssignments(null);
+    }
+  }, [assignments]);
 
   const { data: assignables = [] } = useQuery<AssignableDirectoryEntry[]>({
     queryKey: ["/api/assignables", taskSource],
@@ -97,18 +104,34 @@ export default function UserAssignmentPicker({
     staleTime: 60000,
   });
 
+  const safeTaskId = Number.isFinite(taskId) && taskId > 0 ? taskId : null;
+
+  const { data: fetchedAssignments } = useQuery<CanonicalAssignment[]>({
+    queryKey: ["/api/entity-assignments", taskSource, taskId],
+    queryFn: async () => {
+      const res = await fetch(`/api/entity-assignments/${encodeURIComponent(taskSource)}/${taskId}`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !assignments && !!safeTaskId,
+    staleTime: 30000,
+  });
+
+  const effectiveAssignments = assignments ?? fetchedAssignments ?? null;
+
   const reassignMutation = useMutation({
     mutationFn: async (payload: { assigneeType: AssigneeType | null; assigneeId: number | null }) => {
-      const numericTaskId = Number(taskId);
-      const numericAssigneeId = payload.assigneeId != null ? Number(payload.assigneeId) : null;
-      if (!numericTaskId || isNaN(numericTaskId)) {
+      if (!safeTaskId) {
         throw new Error(`Invalid task ID: ${taskId}`);
       }
-      if (numericAssigneeId != null && isNaN(numericAssigneeId)) {
+      const numericAssigneeId = payload.assigneeId != null ? Number(payload.assigneeId) : null;
+      if (numericAssigneeId != null && (!Number.isFinite(numericAssigneeId) || numericAssigneeId <= 0)) {
         throw new Error(`Invalid assignee ID: ${payload.assigneeId}`);
       }
-      const requestBody = { taskId: numericTaskId, taskSource, assigneeType: payload.assigneeType, assigneeId: numericAssigneeId };
-      console.log("[Assignment] Sending reassign request:", requestBody);
+      const requestBody = { taskId: safeTaskId, taskSource, assigneeType: payload.assigneeType, assigneeId: numericAssigneeId };
       const res = await fetch("/api/tasks/reassign", {
         method: "PATCH",
         credentials: "include",
@@ -120,14 +143,32 @@ export default function UserAssignmentPicker({
         console.error("[Assignment] Reassign failed:", res.status, body);
         throw new Error(body?.error || `Failed to reassign (${res.status})`);
       }
-      console.log("[Assignment] Reassign succeeded:", body);
       return body;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data?.assignments) {
+        setLocalAssignments(data.assignments);
+      } else if (data?.assignment) {
+        setLocalAssignments([{
+          id: 0,
+          entityType: "work_item",
+          entityId: taskId,
+          assignmentRole: "ASSIGNEE",
+          assigneeType: data.assignment.assigneeType,
+          assigneeId: data.assignment.assigneeId,
+          displayLabel: data.assignment.displayName,
+          displayLabelSnapshot: data.assignment.displayName,
+          secondaryLabel: data.assignment.email || "",
+          active: true,
+        }]);
+      } else {
+        setLocalAssignments([]);
+      }
       for (const key of invalidateKeys) {
         queryClient.invalidateQueries({ queryKey: [key] });
       }
       queryClient.invalidateQueries({ queryKey: ["/api/assignables"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/entity-assignments", taskSource, taskId] });
       onSuccess?.();
       toast({ title: "Assignment updated" });
       setOpen(false);
@@ -148,7 +189,8 @@ export default function UserAssignmentPicker({
   const internalAssignables = assignables.filter((entry) => entry.assigneeType === "internal_user");
   const externalAssignables = assignables.filter((entry) => entry.assigneeType !== "internal_user");
 
-  const canonicalAssignments = (assignments || []).filter((assignment) => assignment.active);
+  const effectiveAssignmentSource = localAssignments ?? assignments ?? [];
+  const canonicalAssignments = effectiveAssignmentSource.filter((assignment) => assignment.active);
   const internalAssignments = canonicalAssignments.filter((assignment) => assignment.assigneeType === "internal_user");
   const externalAssignments = canonicalAssignments.filter((assignment) => assignment.assigneeType !== "internal_user");
 
@@ -159,9 +201,9 @@ export default function UserAssignmentPicker({
       username: assignment.displayLabel,
       role: assignment.secondaryLabel || "",
     }))
-    : [...(resolvedUsers || [])];
+    : localAssignments != null ? [] : [...(resolvedUsers || [])];
 
-  if (effectiveResolved.length === 0 && textNames && internalAssignables.length > 0) {
+  if (effectiveResolved.length === 0 && localAssignments == null && textNames && internalAssignables.length > 0) {
     const resolvedIds = new Set(effectiveResolved.map((user) => user.id));
     for (const textName of textNames) {
       if (!textName?.trim() || textName.startsWith("counterparty:") || textName.startsWith("contact:")) continue;
@@ -278,15 +320,15 @@ export default function UserAssignmentPicker({
         </span>
       )}
 
-      <Popover open={open} onOpenChange={(next) => { if (!disabled) setOpen(next); }}>
+      <Popover open={open} onOpenChange={(next) => { if (!disabled && safeTaskId) setOpen(next); }}>
         <PopoverTrigger asChild>
           <Button
             variant="ghost"
             size="icon"
             className={`${isXs ? 'h-5 w-5' : 'h-6 w-6'} rounded-full border border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50 text-muted-foreground hover:text-blue-600 transition-colors`}
             data-testid={`btn-assign-${taskSource}-${taskId}`}
-            title={disabled ? (disabledReason || "You do not have permission to assign this task") : "Assign user"}
-            disabled={disabled}
+            title={!safeTaskId ? "Cannot assign — invalid task" : disabled ? (disabledReason || "You do not have permission to assign this task") : "Assign user"}
+            disabled={disabled || !safeTaskId}
           >
             <UserPlus className={isXs ? "h-3 w-3" : "h-3.5 w-3.5"} />
           </Button>

@@ -295,12 +295,14 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   const [edits, setEdits] = useState<Map<number, Record<string, string>>>(new Map());
   const [editingCell, setEditingCell] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [subProjectFilter, setSubProjectFilter] = useState<string>("all");
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(() => {
     return new Set(COLUMNS.filter(c => c.defaultVisible).map(c => c.key));
   });
   const [linkingExpenseId, setLinkingExpenseId] = useState<number | null>(null);
   const [taskSearchTerm, setTaskSearchTerm] = useState("");
+  const [taskLinkPrompt, setTaskLinkPrompt] = useState<{ expenseId: number; taskId: number; taskTitle: string; taskDueDate: string | null; currentPaymentDate: string | null } | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerFilter, setDrawerFilter] = useState<Record<string, string>>({});
   const [addLineOpen, setAddLineOpen] = useState(false);
@@ -361,6 +363,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       editRequests: FinanceGovernanceGroup;
       microsoft: MicrosoftFinanceSummary;
       recentChanges: FinanceRecentChange[];
+      costedExpenditure?: number;
     };
     riskSignals?: FinanceRiskSignal[];
   }>({
@@ -660,24 +663,30 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   }, [items]);
 
   const kpis = useMemo(() => {
-    const totalBudget = items.reduce((sum, e) => sum + (parseFloat(e.budgetTotal || "0")), 0);
-    const totalActual = items.reduce((sum, e) => sum + (parseFloat(e.expenseActualTotal || "0")), 0);
-    const cosRealised = items.filter(e => e.cosStatus === "COS Realised").reduce((s, e) => s + (parseFloat(e.expenseActualTotal || "0")), 0);
-    const totalOutOfBank = items.filter(e => e.paymentStatus === "Out of Bank").reduce((s, e) => s + (parseFloat(e.expenseActualTotal || "0")), 0);
+    // Apply local edits so KPIs update immediately on user changes
+    const editedItems = items.map((row) => {
+      const rowEdits = edits.get(row.id);
+      return rowEdits ? { ...row, ...rowEdits } : row;
+    });
+    const itemBudgetSum = editedItems.reduce((sum, e) => sum + (parseFloat(e.budgetTotal || "0")), 0);
+    const managedCosted = reconciliation?.costedExpenditure;
+    const totalBudget = (managedCosted && managedCosted > 0) ? managedCosted : itemBudgetSum;
+    const totalActual = editedItems.reduce((sum, e) => sum + (parseFloat(e.expenseActualTotal || "0")), 0);
+    const cosRealised = editedItems.filter(e => e.cosStatus === "COS Realised").reduce((s, e) => s + (parseFloat(e.expenseActualTotal || "0")), 0);
+    const totalOutOfBank = editedItems.filter(e => e.paymentStatus === "Out of Bank").reduce((s, e) => s + (parseFloat(e.expenseActualTotal || "0")), 0);
     const variance = totalBudget - totalActual;
-    const gpPercent = totalBudget > 0 ? ((variance / totalBudget) * 100) : 0;
     const countByCos = {
-      "COS Realised": items.filter(e => e.cosStatus === "COS Realised").length,
-      "Committed": items.filter(e => e.cosStatus === "Committed").length,
-      "Planned": items.filter(e => e.cosStatus === "Planned").length,
+      "COS Realised": editedItems.filter(e => e.cosStatus === "COS Realised").length,
+      "Committed": editedItems.filter(e => e.cosStatus === "Committed").length,
+      "Planned": editedItems.filter(e => e.cosStatus === "Planned").length,
     };
     const countByPayment = {
-      "Out of Bank": items.filter(e => e.paymentStatus === "Out of Bank").length,
-      "Payment Planned": items.filter(e => e.paymentStatus === "Payment Planned").length,
-      "Planned": items.filter(e => e.paymentStatus === "Planned").length,
+      "Out of Bank": editedItems.filter(e => e.paymentStatus === "Out of Bank").length,
+      "Payment Planned": editedItems.filter(e => e.paymentStatus === "Payment Planned").length,
+      "Planned": editedItems.filter(e => e.paymentStatus === "Planned").length,
     };
-    return { totalBudget, totalActual, cosRealised, totalOutOfBank, variance, gpPercent, countByCos, countByPayment, totalItems: items.length };
-  }, [items]);
+    return { totalBudget, totalActual, cosRealised, totalOutOfBank, variance, countByCos, countByPayment, totalItems: editedItems.length };
+  }, [items, edits, reconciliation]);
 
   const filteredItems = useMemo(() => {
     let data = items.map((row) => {
@@ -691,8 +700,11 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     if (statusFilter !== "all") {
       data = data.filter(e => e.cosStatus === statusFilter || e.paymentStatus === statusFilter);
     }
+    if (subProjectFilter !== "all") {
+      data = data.filter((e: any) => e.subProjectName === subProjectFilter);
+    }
     return data;
-  }, [items, edits, statusFilter]);
+  }, [items, edits, statusFilter, subProjectFilter]);
 
   const categoryGroups = useMemo(() => {
     const groupMap = new Map<string, CategoryGroup>();
@@ -1082,7 +1094,14 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             ) : (
               filteredTasks.map((t: any) => (
                 <button key={t.id} className="w-full text-left px-2 py-1.5 text-[11px] hover:bg-blue-50 border-b last:border-b-0 flex items-center gap-1"
-                  onClick={() => linkTaskMutation.mutate({ expenseId: exp.id, taskId: t.id })} data-testid={`option-exp-task-${t.id}`}>
+                  onClick={() => {
+                    const taskDueDate = t.dueDate || t.endDate || null;
+                    if (taskDueDate) {
+                      setTaskLinkPrompt({ expenseId: exp.id, taskId: t.id, taskTitle: t.title, taskDueDate, currentPaymentDate: exp.expensePaymentDate || exp.forecastPaymentDate || null });
+                    } else {
+                      linkTaskMutation.mutate({ expenseId: exp.id, taskId: t.id });
+                    }
+                  }} data-testid={`option-exp-task-${t.id}`}>
                   <Badge variant="outline" className={`text-[8px] px-1 py-0 shrink-0 ${
                     t.isBaseline ? "bg-purple-50 text-purple-700 border-purple-300" :
                     t.status === "Done" || t.status === "Complete" || t.status === "complete" ? "bg-green-50 text-green-700 border-green-300" :
@@ -1395,17 +1414,17 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             </div>
           </div>
         </div>
-        <div className={`bg-white rounded-xl shadow-sm border p-3 sm:p-4 hover:shadow-md transition-shadow ${kpis.totalBudget === 0 ? "border-slate-200" : kpis.gpPercent >= 20 ? "border-emerald-200" : kpis.gpPercent >= 10 ? "border-amber-200" : "border-red-200"}`}>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 sm:p-4 hover:shadow-md transition-shadow">
           <div className="flex items-start gap-3">
-            <div className={`rounded-xl p-2 shrink-0 ${kpis.totalBudget === 0 ? "bg-slate-100" : kpis.gpPercent >= 20 ? "bg-emerald-50" : kpis.gpPercent >= 10 ? "bg-amber-50" : "bg-red-50"}`}>
-              <Percent className={`h-4 w-4 ${kpis.totalBudget === 0 ? "text-slate-500" : kpis.gpPercent >= 20 ? "text-emerald-600" : kpis.gpPercent >= 10 ? "text-amber-600" : "text-red-600"}`} />
+            <div className="rounded-xl bg-slate-100 p-2 shrink-0">
+              <BarChart3 className="h-4 w-4 text-slate-600" />
             </div>
             <div className="min-w-0">
-              <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">GP%</span>
-              <div className={`text-base sm:text-lg font-bold font-mono mt-0.5 ${kpis.totalBudget === 0 ? "text-slate-400" : kpis.gpPercent >= 20 ? "text-emerald-600" : kpis.gpPercent >= 10 ? "text-amber-600" : "text-red-600"}`} data-testid="text-kpi-gp">
-                {kpis.totalBudget === 0 ? "N/A" : `${kpis.gpPercent.toFixed(1)}%`}
+              <span className="text-[10px] uppercase tracking-wider font-medium text-slate-500">Spend %</span>
+              <div className="text-base sm:text-lg font-bold font-mono mt-0.5 text-slate-700" data-testid="text-kpi-spend-pct">
+                {kpis.totalBudget === 0 ? "N/A" : `${((kpis.totalActual / kpis.totalBudget) * 100).toFixed(1)}%`}
               </div>
-              <div className="text-[10px] text-emerald-600 mt-0.5 cursor-pointer hover:text-emerald-700 font-medium transition-colors" onClick={() => setDrawerOpen(true)}>
+              <div className="text-[10px] text-blue-600 mt-0.5 cursor-pointer hover:text-blue-700 font-medium transition-colors" onClick={() => setDrawerOpen(true)}>
                 Drilldown →
               </div>
             </div>
@@ -1453,6 +1472,25 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             { value: "Planned", label: `Planned (${kpis.countByCos.Planned})` },
           ]}
         />
+
+        {/* Sub-project filter (only visible for multi-project/Ad Hoc trackers) */}
+        {(() => {
+          const subProjects = [...new Set(items.map((e: any) => e.subProjectName).filter(Boolean))];
+          if (subProjects.length === 0) return null;
+          return (
+            <SearchableSelect
+              value={subProjectFilter}
+              onValueChange={setSubProjectFilter}
+              placeholder="Sub-project"
+              triggerClassName="w-[160px] h-7 text-xs"
+              data-testid="select-sub-project-filter"
+              options={[
+                { value: "all", label: "All Sub-Projects" },
+                ...subProjects.map(sp => ({ value: sp, label: sp })),
+              ]}
+            />
+          );
+        })()}
 
         <div className="ml-auto flex items-center gap-2">
           {isAdmin && (
@@ -1951,6 +1989,52 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             >
               {cosOverrideMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
               Save Override
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Task Link Payment Date Prompt */}
+      <Dialog open={!!taskLinkPrompt} onOpenChange={(open) => { if (!open) setTaskLinkPrompt(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Link Task — Payment Date</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p>You are linking to: <strong>{taskLinkPrompt?.taskTitle}</strong></p>
+            {taskLinkPrompt?.taskDueDate && (
+              <p>Task due date: <strong>{taskLinkPrompt.taskDueDate}</strong></p>
+            )}
+            {taskLinkPrompt?.currentPaymentDate && (
+              <p>Current payment date: <strong>{taskLinkPrompt.currentPaymentDate}</strong></p>
+            )}
+            <p className="text-muted-foreground">Would you like to update the payment date to match the task due date, or keep the existing date?</p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setTaskLinkPrompt(null)}>Cancel</Button>
+            <Button variant="outline" size="sm" onClick={() => {
+              if (!taskLinkPrompt) return;
+              linkTaskMutation.mutate({ expenseId: taskLinkPrompt.expenseId, taskId: taskLinkPrompt.taskId });
+              setTaskLinkPrompt(null);
+            }}>
+              Keep Existing Date
+            </Button>
+            <Button size="sm" onClick={() => {
+              if (!taskLinkPrompt) return;
+              linkTaskMutation.mutate({ expenseId: taskLinkPrompt.expenseId, taskId: taskLinkPrompt.taskId });
+              // Update payment date via date-override endpoint
+              if (taskLinkPrompt.taskDueDate) {
+                authFetch(`/api/expense-task-links/${encodeURIComponent(projectName)}/${taskLinkPrompt.expenseId}/date-override`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ dateOverride: taskLinkPrompt.taskDueDate, reason: "Overwritten from linked task due date" }),
+                }).then(() => {
+                  queryClient.invalidateQueries({ queryKey: breakdownKey });
+                });
+              }
+              setTaskLinkPrompt(null);
+            }}>
+              Use Task Due Date
             </Button>
           </DialogFooter>
         </DialogContent>

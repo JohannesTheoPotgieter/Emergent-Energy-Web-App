@@ -17,7 +17,7 @@ import {
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
-  MessageSquare, FolderOpen, Bell, FileCheck,
+  MessageSquare, FolderOpen, FileCheck,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -38,7 +38,6 @@ import { ProjectChatTab } from "@/components/tabs/ProjectChatTab";
 import { LocalFolderTab } from "@/components/tabs/LocalFolderTab";
 import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
 import { ProjectTimelineTab } from "@/components/tabs/ProjectTimelineTab";
-import { ProjectNotificationsTab } from "@/components/tabs/ProjectNotificationsTab";
 import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
 import { ProjectChangeControlTab } from "@/components/tabs/ProjectChangeControlTab";
 import { ProjectProcurementTab } from "@/components/tabs/ProjectProcurementTab";
@@ -714,7 +713,6 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "sharepoint": { section: "collaboration", subTab: "sharepoint" },
   "local-files": { section: "collaboration", subTab: "local-files" },
   "approvals": { section: "collaboration", subTab: "approvals" },
-  "notifications": { section: "collaboration", subTab: "notifications" },
   "collaboration": { section: "collaboration", subTab: "chat" },
 };
 
@@ -738,7 +736,7 @@ export default function ProjectDetailPage() {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
   const projectName = params?.projectName ? decodeURIComponent(params.projectName) : "";
-  const { projectsSummary } = useProgramData();
+  const { projectsSummary, isLoading: programDataLoading } = useProgramData();
   const { user } = useAuth();
 
   useEffect(() => {
@@ -1014,6 +1012,39 @@ export default function ProjectDetailPage() {
     );
   }
 
+  if (programDataLoading) {
+    return (
+      <PageShell className="p-3 md:p-4">
+        <div className="flex flex-col items-center justify-center py-20 gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading project data...</p>
+        </div>
+      </PageShell>
+    );
+  }
+
+  if (projectsSummary && !projectInfo) {
+    return (
+      <PageShell className="p-3 md:p-4">
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
+            <AlertCircle className="w-8 h-8 text-muted-foreground" />
+          </div>
+          <div className="text-center space-y-1">
+            <h3 className="text-lg font-semibold text-foreground">Project Not Found</h3>
+            <p className="text-sm text-muted-foreground max-w-md">
+              The project "{projectName.replace(/_Tracker$/i, "").replace(/_/g, " ")}" was not found in the project list. It may not have been imported yet, or the URL may be incorrect.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setLocation("/projects")} className="mt-2">
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back to Project List
+          </Button>
+        </div>
+      </PageShell>
+    );
+  }
+
   const displayName = projectName.replace("_Tracker", "");
   const phase = projectInfo?.phase || null;
   const executionPhase = projectInfo?.execution_phase || phase || null;
@@ -1249,15 +1280,39 @@ export default function ProjectDetailPage() {
 
       {activeSection === "commercial" && canViewTab.finance && (
         <div className="space-y-2" data-testid="commercial-section">
+          {urlTab && ["expenditure", "revenue-tracking", "monthly-realisation", "revenue-tracker", "gp-tracker"].includes(urlTab) && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="tracker-breadcrumb">
+              <button
+                type="button"
+                className="flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                onClick={() => {
+                  const trackerMap: Record<string, string> = {
+                    "expenditure": "/cos-tracker",
+                    "monthly-realisation": "/cos-tracker",
+                    "revenue-tracking": "/revenue-tracker",
+                    "revenue-tracker": "/revenue-tracker",
+                    "gp-tracker": "/gp-tracker",
+                  };
+                  setLocation(trackerMap[urlTab] || "/cos-tracker");
+                }}
+                aria-label="Navigate back to portfolio tracker"
+              >
+                <ArrowLeft className="h-3 w-3" />
+                <span>Back to {urlTab === "gp-tracker" ? "GP Tracker" : urlTab === "revenue-tracking" || urlTab === "revenue-tracker" ? "Revenue Tracker" : "COS Tracker"}</span>
+              </button>
+              <span className="text-muted-foreground/40">/</span>
+              <span className="font-medium text-foreground">{projectName}</span>
+            </div>
+          )}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="commercial-sub-tabs">
             {[
-              { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
               { key: "revenue-tracking", label: "Inflows", icon: DollarSign, visible: canViewSubTab.revenue },
               { key: "expenditure", label: "COS / Costs", icon: CreditCard, visible: canViewSubTab.expenditure },
               { key: "monthly-realisation", label: "COS Tracker", icon: TrendingUp, visible: canViewSubTab.cosTracker },
               { key: "revenue-tracker", label: "Revenue", icon: TrendingUp, visible: canViewSubTab.cosTracker },
               { key: "gp-tracker", label: "GP", icon: BarChart3, visible: canViewSubTab.cosTracker },
               { key: "cashflow", label: "Cashflow", icon: Activity, visible: canViewSubTab.cashflow },
+              { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
               { key: "change-control", label: "Changes", icon: FileCheck, visible: true },
               { key: "subcontractors", label: "Subs", icon: Users, visible: canViewSubTab.subcontractors },
             ].filter(st => st.visible).map(st => (
@@ -1296,7 +1351,6 @@ export default function ProjectDetailPage() {
             {[
               { key: "chat", label: "Comms", icon: MessageSquare, visible: true },
               { key: "approvals", label: "Approvals", icon: FileCheck, visible: true },
-              { key: "notifications", label: "Alerts", icon: Bell, visible: true },
               { key: "local-files", label: "Docs", icon: FolderOpen, visible: true },
               { key: "timeline", label: "Timeline", icon: History, visible: canViewTab.history },
               { key: "history", label: "Audit", icon: History, visible: canViewTab.history },
@@ -1308,7 +1362,6 @@ export default function ProjectDetailPage() {
           </div>
           {activeSubTab === "chat" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
-          {activeSubTab === "notifications" && <ProjectNotificationsTab projectName={projectName} />}
           {activeSubTab === "local-files" && <LocalFolderTab projectName={projectName} />}
           {activeSubTab === "timeline" && canViewTab.history && <ProjectTimelineTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "history" && canViewTab.history && (

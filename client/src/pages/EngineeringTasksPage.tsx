@@ -1398,13 +1398,13 @@ function TaskDetailDrawer({
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Assignee</Label>
               <UserAssignmentPicker
-                taskId={task.id}
+                taskId={Number.isFinite(task.id) ? task.id : 0}
                 taskSource="plan"
                 resolvedUsers={task.resolvedAssignees || null}
                 textNames={task.assignees || null}
                 mode="multi"
                 size="sm"
-                invalidateKeys={[`/api/eng/tasks?projectName=${task.projectName}`, "/api/eng/tasks", "/api/my-work/all-tasks"]}
+                invalidateKeys={["eng-tasks", "/api/my-work/all-tasks"]}
               />
               {task.assignees && task.assignees.length > 1 && (
                 <div className="flex flex-wrap gap-1 mt-1">

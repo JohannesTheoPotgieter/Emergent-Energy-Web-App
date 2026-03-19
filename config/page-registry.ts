@@ -59,9 +59,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "knowledgeGame", path: "/knowledge-game", label: "Knowledge Game", iconKey: "Gamepad2", navGroup: "KNOWLEDGE", permissionEntity: "knowledge_game", showInSidebar: true, routeComponentKey: "KnowledgeGamePage" },
   { id: "departmentScores", path: "/department-scores", label: "Department Scores", iconKey: "BarChart3", navGroup: "KNOWLEDGE", permissionEntity: "department_scores", showInSidebar: true, routeComponentKey: "DepartmentScoresPage" },
   { id: "pmDashboard", path: "/pm-dashboard", label: "PM Dashboard", iconKey: "Briefcase", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pm_dashboard", showInSidebar: true, routeComponentKey: "PMDashboard", roleLandingEligibility: ["PROJECT_MANAGER_SITE"] },
-  { id: "excelUpdates", path: "/admin/excel-updates", label: "Excel Updates", iconKey: "ClipboardCheck", navGroup: "SYSTEM", permissionEntity: "excel_updates", showInSidebar: false, routeComponentKey: "ExcelUpdatesPage" },
   { id: "smartImportLegacyRedirect", path: "/smart-import", label: "Smart Import Legacy Redirect", redirectTo: "/admin/smart-import" },
-  { id: "excelUpdatesLegacyRedirect", path: "/excel-updates", label: "Excel Updates Legacy Redirect", redirectTo: "/admin/excel-updates" },
   { id: "portfolios", path: "/portfolios", label: "Portfolios", iconKey: "FolderOpen", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "portfolios", showInSidebar: true, routeComponentKey: "PortfoliosPage" },
   { id: "portfolioDetail", path: "/portfolios/:id", label: "Portfolio Detail", routeComponentKey: "PortfolioDetailPage" },
   { id: "pdDashboard", path: "/pd", label: "PD Dashboard", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdDashboardPage", aliases: ["/pd/dashboard"] },
@@ -96,6 +94,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "pdPmHandover", path: "/pd/handover/:projectId", label: "PD to PM Handover", routeComponentKey: "PdPmHandoverPage" },
   { id: "pmHandoverReview", path: "/pm/handover-review", label: "PM Handover Review", routeComponentKey: "PmHandoverReviewPage" },
   { id: "handoverControl", path: "/handover-control", label: "Handover Control", iconKey: "Handshake", navGroup: "PROJECTS", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "HandoverControlPage" },
+  { id: "fyeRevenueTracking", path: "/fye-revenue-tracking", label: "FYE Revenue Tracking", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "fye_revenue_tracking", showInSidebar: true, routeComponentKey: "FyeRevenueTrackingPage" },
 ];
 
 export const ROLE_LANDING_PAGE: Record<string, string> = PAGE_REGISTRY

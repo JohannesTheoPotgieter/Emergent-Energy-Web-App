@@ -1,4 +1,4 @@
-import type { DetectedSection } from "./detector";
+import type { DetectedSection, LayoutVariant } from "./detector";
 import { SECTION_ANCHORS, getSynonymsForSection } from "./synonyms";
 import { normalizeHeader, stringSimilarity, diceCoefficient } from "./utils";
 import type ExcelJS from "exceljs";
@@ -21,6 +21,8 @@ export interface MappingResult {
   unmappedHeaders: { colIndex: number; rawHeader: string }[];
   missingRequired: string[];
   overallConfidence: number;
+  /** Detected template layout variant, if available */
+  layoutVariant?: LayoutVariant;
 }
 
 function findBestMatch(
@@ -229,5 +231,6 @@ export function mapColumns(
     unmappedHeaders,
     missingRequired,
     overallConfidence,
+    layoutVariant: detectedSection.layoutVariant,
   };
 }

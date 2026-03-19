@@ -1,9 +1,12 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { apiRequest, getQueryFn, invalidateDashboardQueries } from "@/lib/queryClient";
 import {
   Bar,
@@ -25,8 +28,9 @@ import {
   ChevronRight,
   X,
   Search,
-  Info,
   Loader2,
+  AlertCircle,
+  HelpCircle,
 } from "lucide-react";
 
 interface ProjectBreakdown {
@@ -128,6 +132,7 @@ const ROW_DEFS: {
 ];
 
 function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "unrealised"; defaultProject?: string }) {
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<"all" | "realised" | "unrealised">(defaultFilter);
   const [projectFilter, setProjectFilter] = useState<string>(defaultProject);
@@ -191,8 +196,8 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex" data-testid="drawer-month-detail">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
+    <div className="fixed inset-0 z-50 flex" data-testid="drawer-month-detail" role="dialog" aria-modal="true" aria-label={`COS detail for ${monthLabel}`}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose} aria-hidden="true" />
       <div className="ml-auto relative w-full max-w-5xl bg-background shadow-2xl flex flex-col h-full animate-in slide-in-from-right duration-300">
         <div className="px-3 sm:px-6 py-4 sm:py-5 border-b bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
           <div>
@@ -201,8 +206,8 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
               COS Line Item Detail · {data?.lineCount ?? 0} items · {formatRand(data?.totalAmount ?? 0)}
             </p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors" data-testid="button-close-drawer">
-            <X className="h-5 w-5 text-muted-foreground" />
+          <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors" data-testid="button-close-drawer" aria-label="Close detail drawer">
+            <X className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
           </button>
         </div>
 
@@ -329,7 +334,15 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                       <td className="px-3 py-2.5 text-slate-500 group-hover:text-muted-foreground transition-colors">
                         {expandedId === item.id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                       </td>
-                      <td className="px-3 py-2.5 max-w-[150px] truncate font-medium text-foreground" title={item.projectName}>{item.projectName}</td>
+                      <td className="px-3 py-2.5 max-w-[150px] truncate font-medium" title={item.projectName}>
+                        <button
+                          type="button"
+                          className="text-blue-600 hover:text-blue-800 hover:underline transition-colors text-left truncate max-w-full"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(item.projectName)}?tab=expenditure`); }}
+                        >
+                          {item.projectName}
+                        </button>
+                      </td>
                       <td className="px-3 py-2.5 text-muted-foreground max-w-[110px] truncate" title={item.category || ""}>{item.category || "—"}</td>
                       <td className="px-3 py-2.5 max-w-[200px] truncate text-foreground" title={item.lineItem || ""}>{item.lineItem || "—"}</td>
                       <td className="px-3 py-2.5 text-center">
@@ -422,12 +435,13 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
 }
 
 export default function CosTracker() {
+  const [, navigate] = useLocation();
   const qc = useQueryClient();
   const [editing, setEditing] = useState<EditingCell | null>(null);
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [drawerMonth, setDrawerMonth] = useState<{ monthKey: string; monthLabel: string; defaultFilter?: "all" | "realised" | "unrealised"; defaultProject?: string } | null>(null);
 
-  const { data: months = [], isLoading } = useQuery<MonthData[]>({
+  const { data: months = [], isLoading, isError, error, refetch } = useQuery<MonthData[]>({
     queryKey: ["/api/cos-tracker"],
     staleTime: 30_000,
   });
@@ -529,25 +543,79 @@ export default function CosTracker() {
 
   const formatCell = (row: (typeof ROW_DEFS)[number], val: number) => {
     if (row.key === "variancePct" || row.key === "ytdVariancePct") {
-      return `${(val * 100).toFixed(1)}%`;
+      return `${val.toFixed(1)}%`;
     }
     return formatRand(val);
   };
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3" data-testid="loading-indicator">
-        <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
-        <span className="text-sm font-medium">Loading COS data…</span>
+      <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50" data-testid="loading-indicator">
+        <div className="bg-card border-b border-border/80 px-3 sm:px-6 py-4 sm:py-6 shadow-sm">
+          <div className="max-w-[1800px] mx-auto">
+            <Skeleton className="h-8 w-72 mb-2" />
+            <Skeleton className="h-4 w-96" />
+          </div>
+        </div>
+        <div className="max-w-[1800px] mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Card key={i} className="shadow-sm">
+                <CardContent className="pt-5 pb-4 px-4">
+                  <div className="flex items-start gap-3">
+                    <Skeleton className="h-10 w-10 rounded-xl" />
+                    <div className="flex-1">
+                      <Skeleton className="h-3 w-20 mb-2" />
+                      <Skeleton className="h-6 w-24" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <Card className="shadow-sm overflow-hidden">
+            <CardContent className="p-6">
+              <Skeleton className="h-[420px] w-full rounded-lg" />
+            </CardContent>
+          </Card>
+          <Card className="shadow-sm overflow-hidden">
+            <CardContent className="p-0">
+              <div className="px-5 py-3 border-b"><Skeleton className="h-5 w-32" /></div>
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="flex gap-2 px-5 py-2.5 border-b border-border/40">
+                  <Skeleton className="h-4 w-32" />
+                  {Array.from({ length: 6 }).map((_, j) => (
+                    <Skeleton key={j} className="h-4 w-20 ml-auto" />
+                  ))}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6 max-w-[1200px] mx-auto" data-testid="cos-tracker-error-state">
+        <Card className="border-red-200 bg-red-50/40">
+          <CardContent className="py-10 text-center space-y-3">
+            <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
+            <p className="text-sm font-semibold text-red-700">COS tracker data failed to load.</p>
+            <p className="text-xs text-red-600/90">{(error as Error)?.message || "An unexpected error occurred."}</p>
+            <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-cos-tracker">Retry</Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   const kpiCards = [
-    { id: "ytd-total-cos", label: "YTD COS (Finance)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "" },
-    { id: "ytd-realised", label: "YTD Realised (Paid)", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border" },
-    { id: "ytd-unrealised", label: "YTD Unrealised (Not Paid)", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200" },
-    { id: "ytd-budget", label: "YTD Costed", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "" },
+    { id: "ytd-total-cos", label: "YTD COS (Finance)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "", tooltip: "Year-to-date total Cost of Sales from the Finance COS sheet. Includes both realised (paid) and unrealised (unpaid) expenses." },
+    { id: "ytd-realised", label: "YTD Realised (Paid)", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border", tooltip: "COS where the invoice has been raised AND paid. These are confirmed, actual costs." },
+    { id: "ytd-unrealised", label: "YTD Unrealised (Not Paid)", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200", tooltip: "COS that is planned or committed but not yet paid. These are forecast costs still at risk of change." },
+    { id: "ytd-budget", label: "YTD Costed", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "", tooltip: "The manually entered costed budget for COS. Editable in the grid below. Used to calculate variance." },
     {
       id: "ytd-variance", label: "YTD Variance", value: formatRand(lastMonth?.ytdVariance ?? 0),
       icon: TrendingDown,
@@ -555,14 +623,16 @@ export default function CosTracker() {
       iconColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "text-green-600" : "text-red-600",
       valueColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "text-green-600" : "text-red-600",
       borderColor: (lastMonth?.ytdVariance ?? 0) <= 0 ? "border-green-200" : "border-red-200",
+      tooltip: "Difference between actual COS and costed budget (COS − Costed). Green = under budget, Red = over budget.",
     },
     {
-      id: "ytd-variance-pct", label: "YTD Variance %", value: `${((lastMonth?.ytdVariancePct ?? 0) * 100).toFixed(1)}%`,
+      id: "ytd-variance-pct", label: "YTD Variance %", value: `${(lastMonth?.ytdVariancePct ?? 0).toFixed(1)}%`,
       icon: Activity,
       iconBg: (lastMonth?.ytdVariancePct ?? 0) <= 0 ? "bg-green-100" : "bg-red-100",
       iconColor: (lastMonth?.ytdVariancePct ?? 0) <= 0 ? "text-green-600" : "text-red-600",
       valueColor: (lastMonth?.ytdVariancePct ?? 0) <= 0 ? "text-green-600" : "text-red-600",
       borderColor: (lastMonth?.ytdVariancePct ?? 0) <= 0 ? "border-green-200" : "border-red-200",
+      tooltip: "Variance as a percentage of the costed budget. Shows over/under-spend relative to plan.",
     },
   ];
 
@@ -597,25 +667,39 @@ export default function CosTracker() {
         </Card>
 
 
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-          {kpiCards.map((kpi) => (
-            <Card key={kpi.id} className={`shadow-sm hover:shadow-md transition-shadow ${kpi.borderColor}`} data-testid={`card-${kpi.id}`}>
-              <CardContent className="pt-5 pb-4 px-4">
-                <div className="flex items-start gap-3">
-                  <div className={`rounded-xl ${kpi.iconBg} p-2.5 shrink-0`}>
-                    <kpi.icon className={`h-5 w-5 ${kpi.iconColor}`} />
+        <TooltipProvider delayDuration={300}>
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4" role="region" aria-label="COS KPI Summary">
+            {kpiCards.map((kpi) => (
+              <Card key={kpi.id} className={`shadow-sm hover:shadow-md transition-shadow ${kpi.borderColor}`} data-testid={`card-${kpi.id}`}>
+                <CardContent className="pt-5 pb-4 px-4">
+                  <div className="flex items-start gap-3">
+                    <div className={`rounded-xl ${kpi.iconBg} p-2.5 shrink-0`}>
+                      <kpi.icon className={`h-5 w-5 ${kpi.iconColor}`} aria-hidden="true" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1">
+                        <p className="text-xs font-medium text-muted-foreground truncate">{kpi.label}</p>
+                        <UiTooltip>
+                          <TooltipTrigger asChild>
+                            <button type="button" className="text-muted-foreground/50 hover:text-muted-foreground transition-colors shrink-0" aria-label={`Info: ${kpi.label}`}>
+                              <HelpCircle className="h-3 w-3" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-[240px] text-xs leading-relaxed">
+                            {kpi.tooltip}
+                          </TooltipContent>
+                        </UiTooltip>
+                      </div>
+                      <p className={`text-xl font-bold font-mono mt-0.5 ${kpi.valueColor}`} data-testid={`text-${kpi.id}-value`}>
+                        {kpi.value}
+                      </p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-muted-foreground truncate">{kpi.label}</p>
-                    <p className={`text-xl font-bold font-mono mt-0.5 ${kpi.valueColor}`} data-testid={`text-${kpi.id}-value`}>
-                      {kpi.value}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TooltipProvider>
 
         <Card className="shadow-sm overflow-hidden">
           <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b px-3 sm:px-6 py-3 sm:py-4">
@@ -718,6 +802,8 @@ export default function CosTracker() {
                                 type="button"
                                 className="flex items-center gap-1.5 hover:text-blue-600 transition-colors group"
                                 onClick={() => toggleRow(row.key)}
+                                aria-expanded={isExpanded}
+                                aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${row.label} by project`}
                                 data-testid={`toggle-${row.key}`}
                               >
                                 <span className="text-slate-500 group-hover:text-blue-500 transition-colors">
@@ -787,9 +873,14 @@ export default function CosTracker() {
                             data-testid={`row-detail-${row.key}-${pName}`}
                           >
                             <td className="sticky left-0 z-10 bg-blue-50/30 backdrop-blur-sm pl-7 sm:pl-11 pr-2 sm:pr-4 py-1 sm:py-1.5 text-[10px] sm:text-xs text-muted-foreground truncate max-w-[140px] sm:max-w-[200px] border-r border-border" title={pName}>
-                              <span className="cursor-pointer hover:text-blue-600 hover:underline decoration-dashed underline-offset-2 transition-colors">
+                              <button
+                                type="button"
+                                className="cursor-pointer text-blue-600 hover:text-blue-800 hover:underline decoration-dashed underline-offset-2 transition-colors text-left"
+                                onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(pName)}?tab=expenditure`); }}
+                                aria-label={`View ${pName} expenditure details`}
+                              >
                                 {pName}
-                              </span>
+                              </button>
                             </td>
                             {months.map((m) => {
                               const projArr = row.projectsKey ? (m as any)[row.projectsKey] as ProjectBreakdown[] : [];

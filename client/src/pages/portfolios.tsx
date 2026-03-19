@@ -194,6 +194,57 @@ function FinanceCharts({ portfolio }: { portfolio: any }) {
   );
 }
 
+function ProjectDrillTable({ portfolio }: { portfolio: any }) {
+  const schedule = portfolio.projectSchedule || [];
+  const finance = portfolio.projectFinanceBreakdown || [];
+  const financeByName = new Map(finance.map((f: any) => [f.projectName, f]));
+
+  if (schedule.length === 0) return null;
+
+  return (
+    <div className="mt-4 rounded-lg border border-border/60 overflow-hidden">
+      <table className="w-full text-xs">
+        <thead className="bg-muted/40">
+          <tr>
+            <th className="text-left py-2 px-3 font-medium">Project</th>
+            <th className="text-left py-2 px-2 font-medium">Phase</th>
+            <th className="text-right py-2 px-2 font-medium">Actual %</th>
+            <th className="text-right py-2 px-2 font-medium">Expected %</th>
+            <th className="text-right py-2 px-2 font-medium">Variance</th>
+            <th className="text-right py-2 px-2 font-medium">Revenue</th>
+            <th className="text-right py-2 px-2 font-medium">GP %</th>
+            <th className="w-8 py-2 px-1"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {schedule.map((s: any) => {
+            const fin = financeByName.get(s.projectName) || {};
+            const delta = s.delta || 0;
+            return (
+              <tr key={s.projectName} className="border-t border-border/30 hover:bg-muted/20 transition-colors">
+                <td className="py-2 px-3 font-medium truncate max-w-[180px]">{s.projectName}</td>
+                <td className="py-2 px-2 text-muted-foreground">{s.phase || "-"}</td>
+                <td className="py-2 px-2 text-right tabular-nums font-medium">{(s.actualPct ?? 0).toFixed(1)}%</td>
+                <td className="py-2 px-2 text-right tabular-nums text-muted-foreground">{(s.expectedPct ?? 0).toFixed(1)}%</td>
+                <td className={`py-2 px-2 text-right tabular-nums font-medium ${delta < -5 ? "text-red-600" : delta < 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                  {delta > 0 ? "+" : ""}{delta.toFixed(1)}%
+                </td>
+                <td className="py-2 px-2 text-right tabular-nums">{fin.costedRevenue ? formatCurrency(fin.costedRevenue) : "-"}</td>
+                <td className="py-2 px-2 text-right tabular-nums">{fin.gpMarginPct ? `${fin.gpMarginPct}%` : "-"}</td>
+                <td className="py-2 px-1">
+                  <Link href={`/project/${encodeURIComponent(s.projectName)}`}>
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground hover:text-emerald-600 cursor-pointer" />
+                  </Link>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ScheduleCharts({ portfolio }: { portfolio: any }) {
   const schedule = portfolio.projectSchedule || [];
   const phaseCounts = portfolio.phaseCounts || {};
@@ -297,6 +348,8 @@ function ScheduleCharts({ portfolio }: { portfolio: any }) {
           </CardContent>
         </Card>
       )}
+
+      <ProjectDrillTable portfolio={portfolio} />
     </div>
   );
 }
