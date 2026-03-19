@@ -3,7 +3,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, desc, sql } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, projectPhaseHistory, users } from "@shared/schema";
+import { projectInfo, projectPhaseHistory, users, notifications } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
 import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
 import { storage } from "./storage";
@@ -786,6 +786,23 @@ export function registerHandoverRoutes(app: Express) {
         projectName: project?.projectName,
         changesJson: { rejectedBy: user?.name || "Unknown", reason },
       });
+
+      // Notify the PD owner about the rejection
+      const pdUserId = project?.pdUserId;
+      if (pdUserId) {
+        try {
+          await db.insert(notifications).values({
+            recipientUserId: pdUserId,
+            eventType: "handover.rejected",
+            title: `Handover rejected: ${project?.projectName || "Unknown project"}`,
+            body: `PM rejected the handover for "${project?.projectName || "project"}". Reason: ${reason}. Please review the feedback and resubmit.`,
+            projectName: project?.projectName || null,
+          });
+        } catch (notifErr: any) {
+          console.error("[handover] Failed to create PD rejection notification:", notifErr.message);
+        }
+      }
+
       res.json({ success: true, status: "REJECTED" });
     } catch (err: any) {
       console.error("[handover] reject error:", err);
