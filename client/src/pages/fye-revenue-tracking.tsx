@@ -315,7 +315,7 @@ function SummaryCards({ totals }: { totals: DetailData["totals"] }) {
     { label: "Actual Expense", value: formatRand(totals.actualExpense), icon: TrendingUp },
     { label: "Actual GP", value: formatRand(totals.actualGp), icon: Activity, negative: totals.actualGp < 0 },
     { label: "Budget GP%", value: formatPct(totals.budgetGpPct), icon: BarChart3 },
-    { label: "Actual GP%", value: formatPct(totals.actualGpPct), icon: BarChart3, negative: totals.actualGpPct < 0 },
+    { label: "Actual GP%", value: formatPct(totals.actualGpPct), icon: BarChart3, negative: totals.actualGpPct != null && totals.actualGpPct < 0 },
   ];
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
@@ -336,7 +336,7 @@ function DetailTab({ fye }: { fye: number }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [fundingFilter, setFundingFilter] = useState("");
 
-  const { data, isLoading, error } = useQuery<DetailData>({
+  const { data, isLoading, error, refetch } = useQuery<DetailData>({
     queryKey: [`/api/fye-revenue-tracking/detail?fye=${fye}`],
     queryFn: getQueryFn({ on401: "throw" }),
   });
@@ -408,7 +408,14 @@ function DetailTab({ fye }: { fye: number }) {
   };
 
   if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-32 w-full" />)}</div>;
-  if (error || !data) return <div className="text-center py-12 text-muted-foreground"><AlertCircle className="h-8 w-8 mx-auto mb-2" />Failed to load detail data</div>;
+  if (error || !data) return (
+    <div className="text-center py-12">
+      <AlertCircle className="h-8 w-8 mx-auto mb-2 text-red-500" />
+      <p className="text-sm font-medium text-foreground mb-1">Failed to load detail data</p>
+      <p className="text-xs text-muted-foreground mb-3">{(error as any)?.message || "Unknown error"}</p>
+      <Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="h-3.5 w-3.5 mr-1" />Retry</Button>
+    </div>
+  );
 
   const pipelineFiltered = (pipeline || []).filter((p) => p.dealProbabilityPct >= 75);
 
@@ -484,7 +491,7 @@ function DetailTab({ fye }: { fye: number }) {
                       <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.actualExpense)}</td>
                       <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGp < 0 && "text-red-600")}>{formatRand(p.actualGp)}</td>
                       <td className="text-right px-2 py-1.5 tabular-nums">{formatPct(p.budgetGpPct)}</td>
-                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGpPct < 0 && "text-red-600")}>{formatPct(p.actualGpPct)}</td>
+                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGpPct != null && p.actualGpPct < 0 && "text-red-600")}>{formatPct(p.actualGpPct)}</td>
                     </tr>
                   ))}
                   {/* Totals Row */}
@@ -497,8 +504,8 @@ function DetailTab({ fye }: { fye: number }) {
                     <td className="text-right px-2 py-2 tabular-nums">{formatRand(filteredTotals.actualRevenue)}</td>
                     <td className="text-right px-2 py-2 tabular-nums">{formatRand(filteredTotals.actualExpense)}</td>
                     <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.actualGp < 0 && "text-red-600")}>{formatRand(filteredTotals.actualGp)}</td>
-                    <td className="text-right px-2 py-2 tabular-nums">{formatPct(filteredTotals.budgetRevenue ? filteredTotals.budgetGp / filteredTotals.budgetRevenue : 0)}</td>
-                    <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.actualGp < 0 && "text-red-600")}>{formatPct(filteredTotals.actualRevenue ? filteredTotals.actualGp / filteredTotals.actualRevenue : 0)}</td>
+                    <td className="text-right px-2 py-2 tabular-nums">{formatPct(filteredTotals.budgetRevenue ? filteredTotals.budgetGp / filteredTotals.budgetRevenue : null)}</td>
+                    <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.actualGp < 0 && "text-red-600")}>{formatPct(filteredTotals.actualRevenue ? filteredTotals.actualGp / filteredTotals.actualRevenue : null)}</td>
                   </tr>
                 </>
               )}
