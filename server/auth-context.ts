@@ -333,7 +333,12 @@ async function resolveBearerUser(req: Request): Promise<AuthenticatedUser | null
     return null;
   }
 
-  const user = await fetchUserById(payload.userId);
+  const userId = Number(payload.userId);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    authDebug("resolveBearerUser.invalidUserId", { rawUserId: payload.userId });
+    return null;
+  }
+  const user = await fetchUserById(userId);
   if (!user) {
     return null;
   }

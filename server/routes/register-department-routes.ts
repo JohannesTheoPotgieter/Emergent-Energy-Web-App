@@ -9,4 +9,6 @@ export async function registerDepartmentRoutes(app: Express) {
   app.use(financialIntegrationRouter);
   const { registerFinanceRoutes } = await import("../departments/finance-routes");
   registerFinanceRoutes(app);
+  const { registerFyeRevenueTrackingRoutes } = await import("../departments/fye-revenue-tracking-routes");
+  registerFyeRevenueTrackingRoutes(app);
 }

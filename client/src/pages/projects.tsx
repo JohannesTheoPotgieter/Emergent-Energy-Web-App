@@ -2128,7 +2128,7 @@ export default function ProjectsSummary() {
         actions={
           <>
             <Button asChild variant="outline" size="sm">
-              <Link href="/pm-dashboard">Execution Overview</Link>
+              <Link href="/execution-board">Execution Overview</Link>
             </Button>
             <Button asChild variant="ghost" size="sm">
               <Link href="/execution-board">Open Work Plan / Board</Link>

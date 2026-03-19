@@ -286,6 +286,12 @@ export function registerPdRoutes(app: Express) {
       if (!body.requestType) {
         return res.status(400).json({ error: "Request Type is required" });
       }
+      if (!body.projectId) {
+        return res.status(400).json({ error: "Project linkage is required. Please link this ticket to a project for lifecycle tracking." });
+      }
+      if (!body.dueDate) {
+        return res.status(400).json({ error: "Due date is required for SLA tracking." });
+      }
 
       const [ticket] = await db.insert(pdTickets).values({
         clientId: body.clientId || null,
