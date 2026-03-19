@@ -1,6 +1,5 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  ClipboardCheck,
   FileSpreadsheet,
   Gauge,
   ScrollText,
@@ -10,7 +9,6 @@ import {
 export type AdminSurfaceId =
   | "control-center"
   | "smart-import"
-  | "excel-updates"
   | "roles"
   | "audit-log";
 
@@ -36,13 +34,6 @@ export const ADMIN_SURFACES: AdminSurfaceMeta[] = [
     path: "/admin/smart-import",
     description: "Controlled intake, review, and commit of Excel tracker data.",
     icon: FileSpreadsheet,
-  },
-  {
-    id: "excel-updates",
-    label: "Excel Updates",
-    path: "/admin/excel-updates",
-    description: "Pending source confirmations and tracker reconciliation work.",
-    icon: ClipboardCheck,
   },
   {
     id: "roles",

@@ -2713,10 +2713,10 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'ee_info_lifecycle' | 'ee_info_departments' | 'ee_info_processes' | 'ee_info_templates'
   | 'teams_chat' | 'financial_integration' | 'pd_collaboration' | 'operational_tasks' | 'gamification'
   | 'dashboard_widgets' | 'pm_on_the_go' | 'weekly_review_wizard' | 'project_creation' | 'financial_linking'
-  | 'collaboration_hub' | 'sharepoint_files' | 'project_chat' | 'deliverables' | 'excel_sync_ack'
+  | 'collaboration_hub' | 'sharepoint_files' | 'project_chat' | 'deliverables'
   | 'data_import' | 'data_export' | 'audit_trail'
   | 'ms_integration'
-  | 'my_work' | 'ms_sync' | 'project_tagging' | 'excel_updates' | 'database_migration'
+  | 'my_work' | 'ms_sync' | 'project_tagging' | 'database_migration'
   | 'revenue_tracker' | 'gp_tracker' | 'work_items'
   | 'task_management' | 'standups';
 export type PermissionAction = 'view' | 'create' | 'edit' | 'approve' | 'override' | 'delete';
@@ -3542,15 +3542,6 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
-    entity: 'excel_sync_ack',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CONSTRUCTION_MANAGER', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CONSTRUCTION_MANAGER', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-  },
-  {
     entity: 'data_import',
     view_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -3609,15 +3600,6 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     view_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-  },
-  {
-    entity: 'excel_updates',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
