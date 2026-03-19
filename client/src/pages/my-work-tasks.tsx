@@ -471,7 +471,7 @@ export default function MyWorkTasksPage() {
         _key: `notif-${n.id}`, _source: "notifications", _sourceLabel: "Notification",
         _sourceColor: "bg-orange-50 border-orange-200 text-orange-700", _rawId: safeId(n.id), id: safeId(n.id),
         title: n.title || "", status: "todo" as TaskStatus,
-        priority: n.eventType === "excel_sync_confirmation" ? "normal" : "high",
+        priority: "high" as const,
         projectName: n.projectName || n.project_name || null, dueAt: null,
         createdAt: n.createdAt || n.created_at || null, updatedAt: n.updatedAt || n.updated_at || null, notes: n.body || null,
       }, n));

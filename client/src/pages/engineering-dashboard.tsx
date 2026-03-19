@@ -47,7 +47,6 @@ import {
   MessageSquare,
   Activity,
   ArrowLeft,
-  X,
   MoreHorizontal,
   ArrowRightLeft,
   ClipboardCopy,
@@ -56,6 +55,7 @@ import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { engFetch, engPatch, engPost } from "@/lib/eng-fetch";
 import { PHASE_COLORS } from "@/lib/phase-colors";
+import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 
 interface StandupTask {
   id: number;
@@ -123,15 +123,6 @@ interface StandupData {
 
 // PHASE_COLORS imported from @/lib/phase-colors
 
-
-const priorityColors: Record<string, string> = {
-  "Critical": "text-red-600",
-  "Urgent": "text-red-600",
-  "High": "text-orange-600",
-  "Med": "text-yellow-600",
-  "Medium": "text-yellow-600",
-  "Low": "text-muted-foreground",
-};
 
 const priorityBorderDash: Record<string, string> = {
   "Critical": "border-l-red-600",
@@ -1365,6 +1356,7 @@ export default function EngineeringDashboard() {
   const userRole = (user as any)?.role || "";
   const managerRoles = ["admin", "eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
   const isManagerRole = isAdmin || managerRoles.includes(userRole);
+  const { toast } = useToast();
   const [showAllTasks, setShowAllTasks] = useState(isManagerRole);
   const [standupMode, setStandupMode] = useState(false);
   const fullName = user?.name || "";
@@ -1377,6 +1369,32 @@ export default function EngineeringDashboard() {
     queryFn: () => engFetch(`/api/eng/dashboard/standup${assigneeParam}`),
     refetchOnMount: "always",
     staleTime: 0,
+  });
+
+  const engAttentionItems = useMemo((): AttentionItem[] => {
+    if (!data?.summary) return [];
+    const s = data.summary;
+    const items: AttentionItem[] = [];
+    if (s.overdueTasks > 0) items.push({ label: "Overdue Tasks", value: s.overdueTasks, color: "text-red-600 bg-red-50 border-red-200", href: "/engineering/tasks?dueDate=overdue" });
+    if (s.holdTasks > 0) items.push({ label: "On Hold", value: s.holdTasks, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/engineering/tasks?status=HOLD" });
+    if (s.needsApprovalCount > 0) items.push({ label: "Needs Approval", value: s.needsApprovalCount, color: "text-violet-700 bg-violet-50 border-violet-200", href: "/engineering/tasks?status=NEEDS+APPROVAL" });
+    if (s.upcomingThisWeekCount > 0) items.push({ label: "Due This Week", value: s.upcomingThisWeekCount, color: "text-blue-700 bg-blue-50 border-blue-200", href: "/engineering/tasks?dueDate=this_week" });
+    return items;
+  }, [data?.summary]);
+
+  const summary = data?.summary;
+  const blockers = data?.blockers;
+  const recentlyCompleted = data?.recentlyCompleted ?? [];
+  const upcomingThisWeek = data?.upcomingThisWeek ?? [];
+  const needsApproval = data?.needsApproval ?? [];
+  const inProgressHighlights = data?.inProgressHighlights ?? [];
+  const workload = data?.workload ?? [];
+  const projectHealth = data?.projectHealth ?? [];
+  const statusPipeline = data?.statusPipeline ?? {};
+  const totalBlockers = (blockers?.hold?.length ?? 0) + (blockers?.overdue?.length ?? 0);
+
+  const todayFormatted = new Date().toLocaleDateString("en-ZA", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric"
   });
 
   if (isLoading) {
@@ -1397,7 +1415,7 @@ export default function EngineeringDashboard() {
     );
   }
 
-  if (error || !data) {
+  if (error || !data || !summary) {
     return (
       <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
         <SectionHeader
@@ -1416,13 +1434,6 @@ export default function EngineeringDashboard() {
       </PageShell>
     );
   }
-
-  const { summary, blockers, recentlyCompleted, upcomingThisWeek, needsApproval, inProgressHighlights, workload, projectHealth } = data;
-  const totalBlockers = blockers.hold.length + blockers.overdue.length;
-
-  const todayFormatted = new Date().toLocaleDateString("en-ZA", {
-    weekday: "long", day: "numeric", month: "long", year: "numeric"
-  });
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
@@ -1581,6 +1592,7 @@ export default function EngineeringDashboard() {
         </>
       ) : (
       <>
+      <AttentionBadges items={engAttentionItems} threshold={5} testId="eng-attention-needed" />
       <KpiStrip summary={summary} />
 
       {totalBlockers > 0 && (
@@ -1696,7 +1708,7 @@ export default function EngineeringDashboard() {
               {(() => {
                 const statusOrder = ["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "QC APPROVED", "PROVIDE FEEDBACK", "PROJECTS ASSISTANCE", "HOLD", "COMPLETE"];
                                 const total = summary.totalTasks || 1;
-                return Object.entries(data.statusPipeline)
+                return Object.entries(statusPipeline)
                   .sort(([a], [b]) => {
                     const ai = statusOrder.indexOf(a);
                     const bi = statusOrder.indexOf(b);

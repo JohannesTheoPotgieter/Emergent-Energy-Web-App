@@ -6,17 +6,14 @@ import {
   projectInfo,
   pmSiteVisits,
   pmOnTheGoActions,
-  pmComplianceTracking,
   pmModePreferences,
   notifications,
   notificationThrottle,
-  users,
 } from "@shared/schema";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { isOutlookConfigured, sendMail } from "./outlook";
-import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
 
 const photoUploadDir = path.join(process.cwd(), "uploads", "pm-photos");
@@ -92,7 +89,7 @@ async function requirePmAssignment(req: Request, res: Response, next: NextFuncti
     if (rows.length === 0) {
       return res.status(404).json({ error: "Project not found" });
     }
-    if (rows[0].pmUserId !== user.id) {
+    if (!rows[0].pmUserId || rows[0].pmUserId !== user.id) {
       return res.status(403).json({ error: "You are not assigned to this project" });
     }
     next();
@@ -505,14 +502,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           );
         }
 
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `Site visit logged by ${user.name}. Safety: ${safetyStatus || "clear"}.`,
-          details: { actionType: "site_visit", safetyStatus, visitId: visit.id },
-        }).catch(() => {});
-
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(visit.id), action: "create", projectName: pName, changesJson: { description: "Site visit logged", safetyStatus, photoCount: photoIds.length } });
         res.json({ success: true, visit });
       } catch (err: any) {
@@ -563,14 +552,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           user.name
         );
 
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `PO request ${poNumber} by ${user.name}.`,
-          details: { actionType: "generate_po", poNumber, amount, supplier },
-        }).catch(() => {});
-
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "PO request generated", poNumber, amount, supplier } });
         res.json({ success: true, action });
       } catch (err: any) {
@@ -618,14 +599,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           pName,
           user.name
         );
-
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `Invoice ${invoiceNumber} linked by ${user.name}.`,
-          details: { actionType: "link_invoice", invoiceNumber, amount, poReference },
-        }).catch(() => {});
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Invoice linked", invoiceNumber, amount, poReference } });
         res.json({ success: true, action });
@@ -676,14 +649,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           user.name
         );
 
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `Variation order raised by ${user.name} for R${parseFloat(amount).toLocaleString()}.`,
-          details: { actionType: "raise_variation", amount, description, justification },
-        }).catch(() => {});
-
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Variation order raised", amount, justification } });
         res.json({ success: true, action });
       } catch (err: any) {
@@ -731,14 +696,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           pName,
           user.name
         );
-
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `Delay of ${daysDelayed || "?"} days logged by ${user.name}.`,
-          details: { actionType: "log_delay", daysDelayed, impact, description },
-        }).catch(() => {});
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Delay logged", daysDelayed, impact } });
         res.json({ success: true, action });
@@ -788,14 +745,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           user.name
         );
 
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `${severity} risk logged by ${user.name}.`,
-          details: { actionType: "log_risk", severity, description, mitigationNotes },
-        }).catch(() => {});
-
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Risk logged", severity, mitigationNotes } });
         res.json({ success: true, action });
       } catch (err: any) {
@@ -837,13 +786,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           .returning();
 
         const pName = await getProjectName(projectId);
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `Photo uploaded by ${user.name}.`,
-          details: { actionType: "upload_photo", caption },
-        }).catch(() => {});
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Photo uploaded", caption } });
         res.json({ success: true, action, photoUrl });
@@ -892,14 +834,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           pName,
           user.name
         );
-
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `Progress updated to ${pct}% by ${user.name}.`,
-          details: { actionType: "update_progress", progressPercent: pct, notes },
-        }).catch(() => {});
 
         const weekStart = getWeekStart();
         await db.execute(sql`
@@ -967,14 +901,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
           pName,
           user.name
         );
-
-        sendExcelSyncNotification({
-          projectName: pName,
-          changedByUserId: user.id,
-          changeType: "pm_otg_action",
-          changeDescription: `Project escalated by ${user.name}. Level: ${escalationLevel || "High"}.`,
-          details: { actionType: "escalate", escalationLevel, urgency, description },
-        }).catch(() => {});
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Escalation raised", escalationLevel, urgency } });
         res.json({ success: true, action });

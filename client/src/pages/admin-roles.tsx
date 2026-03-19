@@ -19,8 +19,9 @@ import {
   type RoleSummary,
   type UserSummary,
 } from "./admin-roles.utils";
-import { AlertTriangle, Check, ChevronDown, ChevronRight, Eye, EyeOff, Pencil, Plus, Save, Search, Shield, ShieldCheck, Trash2, Users, UserCheck, Lock, X, ToggleLeft, ToggleRight } from "lucide-react";
-import type { PermissionAction } from "@shared/schema";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, Clock, Eye, EyeOff, FileText, Pencil, Plus, Save, Search, Shield, ShieldCheck, Trash2, Users, UserCheck, Lock, X, ToggleLeft, ToggleRight } from "lucide-react";
+import type { PermissionAction, PermissionEntity } from "@shared/schema";
+import { ENTITY_PERMISSION_DEFAULTS } from "@shared/schema";
 
 const DEPARTMENTS = [
   "Executive", "Engineering", "Finance", "Operations", "Project Development",
@@ -98,8 +99,13 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   smart_import: "Smart Import — Excel data import",
   data_import: "Data Import tools",
   data_export: "Data Export tools",
-  excel_updates: "Excel Updates — batch data updates",
   database_migration: "Database Migration tools",
+  task_management: "Task Management — create, edit, assign, delete tasks",
+  handover: "PD-PM Handover — submit, approve, reject, reopen handovers",
+  standups: "Standups — manage standup schedules and entries",
+  reports: "Reports — view project plan, cost, quality, resource reports",
+  counterparties: "Counterparties — manage external counterparty records",
+  commissioning: "Commissioning — manage commissioning items and evidence",
   ms_integration: "Microsoft 365 integration setup",
   ms_sync: "MS Graph Sync — calendar, email, Teams",
   activity_log: "Activity Log — system change audit",
@@ -127,7 +133,6 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   pd_raid: "Project detail > RAID log (Risks, Actions, Issues)",
 
   dashboard_widgets: "Home dashboard — widget cards & charts",
-  excel_sync_ack: "Smart Import — sync acknowledgement panel",
   financial_integration: "Financial Integration — rule-based matching",
   financial_linking: "Financial Linking — expense/revenue pairing",
   governance: "Governance — phase gate & compliance controls",
@@ -153,7 +158,7 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   project_management: {
     label: "Project Management",
-    entities: ["projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_review_wizard", "portfolios", "portfolio_detail"],
+    entities: ["projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_review_wizard", "portfolios", "portfolio_detail", "handover", "commissioning", "task_management", "standups"],
   },
   engineering: {
     label: "Engineering",
@@ -165,7 +170,7 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   finance: {
     label: "Finance",
-    entities: ["cashflow", "cos", "revenue_tracker", "gp_tracker", "financials", "procurement", "subcontractors", "invoice_patterns"],
+    entities: ["cashflow", "cos", "revenue_tracker", "gp_tracker", "financials", "procurement", "counterparties", "subcontractors", "invoice_patterns"],
   },
   knowledge: {
     label: "Knowledge",
@@ -173,11 +178,11 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   collaboration: {
     label: "Collaboration",
-    entities: ["teams_chat", "project_chat", "collaboration_hub", "sharepoint_files", "meetings"],
+    entities: ["teams_chat", "project_chat", "collaboration_hub", "sharepoint_files", "meetings", "reports"],
   },
   admin: {
     label: "Admin",
-    entities: ["admin", "admin_roles", "smart_import", "data_import", "data_export", "excel_updates", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail"],
+    entities: ["admin", "admin_roles", "smart_import", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail"],
   },
   project_detail: {
     label: "Project Detail Tabs",
@@ -185,7 +190,7 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   other: {
     label: "Other Permissions",
-    entities: ["dashboard_widgets", "excel_sync_ack", "financial_integration", "financial_linking", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items"],
+    entities: ["dashboard_widgets", "financial_integration", "financial_linking", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items"],
   },
 };
 
@@ -277,9 +282,17 @@ export default function AdminRolesPage() {
             <TabsTrigger value="users" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-5 py-2 text-sm font-medium" data-testid="tab-users">
               Users
             </TabsTrigger>
+            <TabsTrigger value="overrides" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-5 py-2 text-sm font-medium" data-testid="tab-overrides">
+              User Overrides
+            </TabsTrigger>
+            <TabsTrigger value="audit" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-5 py-2 text-sm font-medium" data-testid="tab-audit">
+              Permission Audit Log
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="roles" className="mt-4"><RolesControlCenter /></TabsContent>
           <TabsContent value="users" className="mt-4"><GlobalUsersView /></TabsContent>
+          <TabsContent value="overrides" className="mt-4"><UserOverridesView /></TabsContent>
+          <TabsContent value="audit" className="mt-4"><PermissionAuditLogView /></TabsContent>
         </Tabs>
       </div>
     </AdminPageShell>
@@ -1055,4 +1068,351 @@ function GlobalUsersView() {
       </Dialog>
     </Card>
   );
+}
+
+// ========== USER OVERRIDES VIEW ==========
+
+interface UserOverrideRow {
+  id: number;
+  userId: number;
+  entity: string;
+  action: string;
+  allowed: boolean;
+  scope: string | null;
+  reason: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+function UserOverridesView() {
+  const { toast } = useToast();
+  const [users, setUsers] = useState<UserSummary[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [overrides, setOverrides] = useState<UserOverrideRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newEntity, setNewEntity] = useState("");
+  const [newAction, setNewAction] = useState<string>("view");
+  const [newAllowed, setNewAllowed] = useState(true);
+  const [newReason, setNewReason] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const loadUsers = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/users", { headers: authHeaders(), credentials: "include" });
+      const data = await res.json();
+      setUsers(Array.isArray(data) ? data : []);
+    } catch { setUsers([]); }
+    setLoading(false);
+  };
+
+  const loadOverrides = async (userId: number) => {
+    try {
+      const res = await fetch(`/api/admin/user-overrides/${userId}`, { headers: authHeaders(), credentials: "include" });
+      const data = await res.json();
+      setOverrides(Array.isArray(data) ? data : []);
+    } catch { setOverrides([]); }
+  };
+
+  useEffect(() => { void loadUsers(); }, []);
+  useEffect(() => { if (selectedUserId) void loadOverrides(selectedUserId); else setOverrides([]); }, [selectedUserId]);
+
+  const handleAdd = async () => {
+    if (!selectedUserId || !newEntity || !newAction) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/user-overrides", {
+        method: "POST",
+        headers: authHeaders(),
+        credentials: "include",
+        body: JSON.stringify({ userId: selectedUserId, entity: newEntity, action: newAction, allowed: newAllowed, reason: newReason || null }),
+      });
+      if (res.ok) {
+        toast({ title: "Override added" });
+        setShowAdd(false);
+        setNewEntity("");
+        setNewAction("view");
+        setNewAllowed(true);
+        setNewReason("");
+        void loadOverrides(selectedUserId);
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error, variant: "destructive" });
+      }
+    } catch { toast({ title: "Error", variant: "destructive" }); }
+    setSaving(false);
+  };
+
+  const handleDelete = async (overrideId: number) => {
+    try {
+      const res = await fetch(`/api/admin/user-overrides/${overrideId}`, { method: "DELETE", headers: authHeaders(), credentials: "include" });
+      if (res.ok) {
+        toast({ title: "Override removed" });
+        if (selectedUserId) void loadOverrides(selectedUserId);
+      }
+    } catch { toast({ title: "Error", variant: "destructive" }); }
+  };
+
+  const selectedUser = users.find((u) => u.id === selectedUserId);
+  const entityOptions = ENTITY_PERMISSION_DEFAULTS.map((e) => e.entity);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <UserCheck className="h-5 w-5 text-blue-600" />
+          User Permission Overrides
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Grant or revoke specific permissions for individual users, overriding their role defaults.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-4">
+          <div className="w-72">
+            <Label className="text-xs text-gray-500 mb-1 block">Select User</Label>
+            <SearchableSelect
+              options={users.map((u) => ({ value: String(u.id), label: `${u.name} (${u.role})` }))}
+              value={selectedUserId ? String(selectedUserId) : ""}
+              onValueChange={(v) => setSelectedUserId(v ? Number(v) : null)}
+              placeholder="Choose a user..."
+            />
+          </div>
+          {selectedUserId && (
+            <Button size="sm" className="mt-5 bg-blue-600 hover:bg-blue-700" onClick={() => setShowAdd(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Add Override
+            </Button>
+          )}
+        </div>
+
+        {selectedUser && (
+          <div className="text-sm text-gray-600">
+            Showing overrides for <strong>{selectedUser.name}</strong> (Role: <Badge variant="outline">{selectedUser.role}</Badge>)
+          </div>
+        )}
+
+        {overrides.length > 0 ? (
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Entity</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Action</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Access</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Reason</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Expires</th>
+                  <th className="px-4 py-2 text-right font-medium text-gray-600">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {overrides.map((o) => (
+                  <tr key={o.id} className="border-t hover:bg-gray-50/50">
+                    <td className="px-4 py-2 font-mono text-xs">{o.entity}</td>
+                    <td className="px-4 py-2 font-mono text-xs">{o.action}</td>
+                    <td className="px-4 py-2">
+                      <Badge variant={o.allowed ? "default" : "destructive"} className={o.allowed ? "bg-emerald-100 text-emerald-700 border-emerald-200" : ""}>
+                        {o.allowed ? "Granted" : "Denied"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2 text-xs text-gray-500">{o.reason || "—"}</td>
+                    <td className="px-4 py-2 text-xs text-gray-500">{o.expiresAt ? new Date(o.expiresAt).toLocaleDateString() : "Never"}</td>
+                    <td className="px-4 py-2 text-right">
+                      <Button variant="ghost" size="sm" onClick={() => handleDelete(o.id)}>
+                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : selectedUserId ? (
+          <div className="text-center py-8 text-gray-400 text-sm">No user-specific overrides. This user uses their role defaults only.</div>
+        ) : null}
+      </CardContent>
+
+      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Permission Override</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-xs">Entity</Label>
+              <SearchableSelect
+                options={entityOptions.map((e) => ({ value: e, label: `${e} — ${ENTITY_DESCRIPTIONS[e] || e}` }))}
+                value={newEntity}
+                onValueChange={setNewEntity}
+                placeholder="Select entity..."
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Action</Label>
+              <SearchableSelect
+                options={["view", "create", "edit", "approve", "override", "delete"].map((a) => ({ value: a, label: a }))}
+                value={newAction}
+                onValueChange={setNewAction}
+                placeholder="Select action..."
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <Label className="text-xs">Access</Label>
+              <Switch checked={newAllowed} onCheckedChange={setNewAllowed} />
+              <span className="text-sm">{newAllowed ? "Grant" : "Deny"}</span>
+            </div>
+            <div>
+              <Label className="text-xs">Reason (optional)</Label>
+              <Input value={newReason} onChange={(e) => setNewReason(e.target.value)} placeholder="Why this override exists..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
+            <Button onClick={handleAdd} disabled={saving || !newEntity || !newAction} className="bg-blue-600 hover:bg-blue-700">
+              {saving ? "Saving..." : "Add Override"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
+// ========== PERMISSION AUDIT LOG VIEW ==========
+
+interface AuditLogEntry {
+  id: number;
+  eventType: string;
+  targetRole: string | null;
+  targetUserId: number | null;
+  targetUserName: string | null;
+  changedByUserId: number | null;
+  changedByName: string | null;
+  changedByRole: string | null;
+  changeDetail: Record<string, any>;
+  createdAt: string;
+}
+
+function PermissionAuditLogView() {
+  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [eventTypeFilter, setEventTypeFilter] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: "100" });
+      if (eventTypeFilter) params.set("eventType", eventTypeFilter);
+      const res = await fetch(`/api/admin/permission-audit-log?${params}`, { headers: authHeaders(), credentials: "include" });
+      const data = await res.json();
+      setEntries(Array.isArray(data?.entries) ? data.entries : []);
+    } catch { setEntries([]); }
+    setLoading(false);
+  };
+
+  useEffect(() => { void load(); }, [eventTypeFilter]);
+
+  const eventTypes = ["role_created", "role_updated", "role_deleted", "role_cloned", "role_archived", "user_role_changed", "user_override_added", "user_override_removed"];
+
+  const formatEventType = (type: string) => {
+    return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
+  const getEventColor = (type: string): string => {
+    if (type.includes("deleted") || type.includes("removed")) return "bg-red-100 text-red-700 border-red-200";
+    if (type.includes("created") || type.includes("added") || type.includes("cloned")) return "bg-emerald-100 text-emerald-700 border-emerald-200";
+    if (type.includes("updated") || type.includes("changed")) return "bg-blue-100 text-blue-700 border-blue-200";
+    return "bg-gray-100 text-gray-700 border-gray-200";
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <FileText className="h-5 w-5 text-purple-600" />
+          Permission Audit Log
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Track all role changes, permission updates, user overrides, and access control events.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-64">
+            <SearchableSelect
+              options={[{ value: "", label: "All Events" }, ...eventTypes.map((t) => ({ value: t, label: formatEventType(t) }))]}
+              value={eventTypeFilter}
+              onValueChange={setEventTypeFilter}
+              placeholder="Filter by event type..."
+            />
+          </div>
+          <Button variant="outline" size="sm" onClick={load}>
+            Refresh
+          </Button>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-8 text-gray-400 text-sm">Loading audit log...</div>
+        ) : entries.length === 0 ? (
+          <div className="text-center py-8 text-gray-400 text-sm">No permission audit events recorded yet.</div>
+        ) : (
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Time</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Event</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Target</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Changed By</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((entry) => (
+                  <tr key={entry.id} className="border-t hover:bg-gray-50/50">
+                    <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">
+                      <Clock className="h-3 w-3 inline mr-1" />
+                      {new Date(entry.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2">
+                      <Badge variant="outline" className={getEventColor(entry.eventType)}>
+                        {formatEventType(entry.eventType)}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2 text-xs">
+                      {entry.targetRole && <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">{entry.targetRole}</span>}
+                      {entry.targetUserName && <span className="ml-1 text-gray-600">{entry.targetUserName}</span>}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-gray-600">
+                      {entry.changedByName || "System"}
+                      {entry.changedByRole && <span className="text-gray-400 ml-1">({entry.changedByRole})</span>}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-gray-500 max-w-xs truncate">
+                      {summarizeChangeDetail(entry.changeDetail)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function summarizeChangeDetail(detail: Record<string, any>): string {
+  if (!detail) return "";
+  const parts: string[] = [];
+  if (detail.entity) parts.push(`Entity: ${detail.entity}`);
+  if (detail.action) parts.push(`Action: ${detail.action}`);
+  if (detail.previousRole && detail.newRole) parts.push(`${detail.previousRole} → ${detail.newRole}`);
+  if (detail.label) parts.push(`Label: ${detail.label}`);
+  if (detail.sourceRole) parts.push(`Cloned from: ${detail.sourceRole}`);
+  if (typeof detail.allowed === "boolean") parts.push(detail.allowed ? "Granted" : "Denied");
+  if (detail.reason) parts.push(`Reason: ${detail.reason}`);
+  if (detail.sections) parts.push(`Sections: ${Array.isArray(detail.sections) ? detail.sections.length : "updated"}`);
+  if (detail.hasEntityPermChanges) parts.push("Entity perms updated");
+  if (detail.hasAuthorityModelChanges) parts.push("Authority model updated");
+  return parts.join(" | ") || JSON.stringify(detail).slice(0, 80);
 }

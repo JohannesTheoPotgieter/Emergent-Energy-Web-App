@@ -3,8 +3,6 @@
 
 import { Express, Request, Response, NextFunction, Router } from "express";
 import multer from "multer";
-import fs from "fs";
-import path from "path";
 import crypto from "crypto";
 import { logAuditFromReq } from "./audit-logger";
 import { db } from "./db";
@@ -163,36 +161,39 @@ function extractProjectNameFromFilename(fileName: string): string {
   return name || "Untitled Project";
 }
 
-function sanitizeUploadFileName(fileName: string): string {
-  return fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
-}
+/**
+ * Prune old import runs in the DB: keep the current run + latest 2 committed runs as fallback.
+ * Stale non-committed runs (PREVIEW/AWAITING_REVIEW/FAILED) are cleaned up.
+ */
+async function pruneOldImportRuns(projectName: string, currentRunId: number): Promise<void> {
+  try {
+    const runs = await db
+      .select({ id: smartImportRuns.id, status: smartImportRuns.status })
+      .from(smartImportRuns)
+      .where(eq(smartImportRuns.projectName, projectName))
+      .orderBy(desc(smartImportRuns.uploadedAt));
 
-function extractStoredUploadTimestamp(fileName: string): number {
-  const match = fileName.match(/^(\d+)_/);
-  return match ? Number(match[1]) : 0;
-}
-
-async function pruneStoredUploadFiles(originalFileName: string, keepLatest = 2): Promise<void> {
-  const sanitizedOriginal = sanitizeUploadFileName(originalFileName);
-  const suffix = `_${sanitizedOriginal}`;
-  const files = await fs.promises.readdir(uploadDir, { withFileTypes: true });
-  const matchingFiles = files
-    .filter((entry) => entry.isFile() && entry.name.endsWith(suffix))
-    .map((entry) => entry.name)
-    .sort((left, right) => extractStoredUploadTimestamp(right) - extractStoredUploadTimestamp(left));
-
-  const filesToDelete = matchingFiles.slice(keepLatest);
-  await Promise.all(
-    filesToDelete.map(async (fileName) => {
-      try {
-        await fs.promises.unlink(path.join(uploadDir, fileName));
-      } catch (error: any) {
-        if (error?.code !== "ENOENT") {
-          console.warn(`[SmartImport] Failed to prune stored upload ${fileName}:`, error?.message || error);
-        }
+    const keepIds = new Set<number>([currentRunId]);
+    let committedKept = 0;
+    for (const run of runs) {
+      if (run.status === "COMMITTED" && committedKept < 2) {
+        keepIds.add(run.id);
+        committedKept++;
       }
-    }),
-  );
+    }
+
+    const idsToDelete = runs
+      .filter((r) => !keepIds.has(r.id) && r.status !== "COMMITTED")
+      .map((r) => r.id);
+
+    if (idsToDelete.length > 0) {
+      await db.delete(importIssues).where(inArray(importIssues.runId, idsToDelete));
+      await db.delete(smartImportRuns).where(inArray(smartImportRuns.id, idsToDelete));
+      console.log(`[SmartImport] Pruned ${idsToDelete.length} stale import runs for "${projectName}"`);
+    }
+  } catch (err: any) {
+    console.warn(`[SmartImport] Failed to prune old import runs:`, err?.message || err);
+  }
 }
 
 function formatImportIssueForCommit(issue: any) {
@@ -211,25 +212,14 @@ function formatImportIssueForCommit(issue: any) {
 
 const router = Router();
 
-const uploadDir = path.join(process.cwd(), "uploads");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, uploadDir),
-    filename: (_req, file, cb) => {
-      const timestamp = Date.now();
-      const sanitized = sanitizeUploadFileName(file.originalname);
-      cb(null, `${timestamp}_${sanitized}`);
-    },
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const isXlsx =
       file.mimetype === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-      file.originalname.toLowerCase().endsWith(".xlsx");
+      file.originalname.toLowerCase().endsWith(".xlsx") ||
+      file.originalname.toLowerCase().endsWith(".xlsm");
     if (isXlsx) {
       cb(null, true);
     } else {
@@ -302,16 +292,9 @@ router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_im
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const filePath = req.file.path;
     const fileName = req.file.originalname;
     const projectId = req.query.projectId ? parseInt(req.query.projectId as string) : null;
-
-    let buffer: Buffer;
-    try {
-      buffer = fs.readFileSync(filePath);
-    } catch (readErr: any) {
-      return res.status(400).json({ error: "Failed to read uploaded file" });
-    }
+    const buffer = req.file.buffer;
 
     console.log(`[SmartImport] Processing file: ${fileName} (${buffer.length} bytes)`);
 
@@ -437,7 +420,8 @@ router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_im
       changesJson: { fileName, fileHash, sections: preview.detection.sections.length, issues: preview.normalization.issues.length, autoMappedProjectId, rerunDetected: !!rerunWarning },
     });
 
-    await pruneStoredUploadFiles(fileName, 2);
+    // Prune old DB import runs: keep latest + one fallback per project
+    await pruneOldImportRuns(run.projectName, run.id);
 
     res.json({
       runId: run.id,
@@ -1745,6 +1729,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
                 invoiceRaisedDate: m.invoiceDate || null,
                 paymentReceivedDate: m.paidDate || null,
                 inBank: prevInBank != null ? prevInBank : (m.inBankDate ? 1 : 0),
+                dataSource: "SMART_IMPORT",
+                projectId: projectId || null,
+                importRunId: runId,
               };
             });
           if (piValues.length > 0) {
@@ -1961,6 +1948,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
                 invoiceDateFontColor: m.invoiceDateFontColor || null,
                 expensePaymentDate: m.paidDate || null,
                 paymentDateFontColor: m.paidDateFontColor || null,
+                dataSource: "SMART_IMPORT",
+                projectId: projectId || null,
+                importRunId: runId,
               };
             });
           if (peValues.length > 0) {

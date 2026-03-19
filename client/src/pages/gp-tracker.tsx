@@ -4,16 +4,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ComposedChart, Line,
 } from "recharts";
 import {
   DollarSign, TrendingUp, Activity, Percent, Search,
-  Target, ChevronDown, ChevronRight, X,
+  Target, ChevronDown, ChevronRight, X, HelpCircle,
 } from "lucide-react";
 import { useLocation } from "wouter";
-import { EnergyLoader } from "@/components/ui/energy-loader";
 
 function authHeaders() {
   const token = localStorage.getItem("auth_token");
@@ -33,14 +34,26 @@ function formatPercent(val: number | null | undefined): string {
   return `${val.toFixed(1)}%`;
 }
 
-function KpiCard({ icon: Icon, label, value, sub, color }: {
-  icon: any; label: string; value: string; sub?: string; color?: string;
+function KpiCard({ icon: Icon, label, value, sub, color, tooltip }: {
+  icon: any; label: string; value: string; sub?: string; color?: string; tooltip?: string;
 }) {
   return (
     <Card data-testid={`kpi-${label.toLowerCase().replace(/\s+/g, '-')}`}>
       <CardContent className="p-4">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-          <Icon className={`h-3.5 w-3.5 ${color || ""}`} /> {label}
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+          <Icon className={`h-3.5 w-3.5 ${color || ""}`} aria-hidden="true" /> {label}
+          {tooltip && (
+            <UiTooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-muted-foreground/50 hover:text-muted-foreground transition-colors" aria-label={`Info: ${label}`}>
+                  <HelpCircle className="h-3 w-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[220px] text-xs leading-relaxed">
+                {tooltip}
+              </TooltipContent>
+            </UiTooltip>
+          )}
         </div>
         <p className="text-xl font-bold">{value}</p>
         {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
@@ -179,8 +192,39 @@ export default function GpTrackerPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-[60vh]" data-testid="gp-tracker-page">
-        <EnergyLoader size="lg" label="Loading GP tracker..." />
+      <div className="p-6 space-y-6 max-w-[1600px] mx-auto" data-testid="gp-tracker-page">
+        <div>
+          <Skeleton className="h-8 w-48 mb-2" />
+          <Skeleton className="h-4 w-96" />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <Skeleton className="h-3 w-16 mb-2" />
+                <Skeleton className="h-6 w-20" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card>
+          <CardContent className="p-4">
+            <Skeleton className="h-[280px] w-full rounded-lg" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <Skeleton className="h-5 w-32 mb-3" />
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex gap-3 py-2">
+                <Skeleton className="h-4 w-28" />
+                {Array.from({ length: 5 }).map((_, j) => (
+                  <Skeleton key={j} className="h-4 w-16 ml-auto" />
+                ))}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -237,16 +281,18 @@ export default function GpTrackerPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-        <KpiCard icon={DollarSign} label="Total Revenue" value={formatRand(totalRevenue)} color="text-blue-500" />
-        <KpiCard icon={TrendingUp} label="Total COS" value={formatRand(totalCOS)} color="text-red-500" />
-        <KpiCard icon={Activity} label="Total GP" value={formatRand(totalGP)} color={totalGP >= 0 ? "text-emerald-500" : "text-red-500"} />
-        <KpiCard icon={Percent} label="GP%" value={formatPercent(overallGpPct)} color={overallGpPct >= 15 ? "text-emerald-500" : "text-red-500"} />
-        <KpiCard icon={Activity} label="YTD GP" value={formatRand(ytdGP)} color={ytdGP >= 0 ? "text-emerald-500" : "text-red-500"} />
-        <KpiCard icon={Target} label="YTD Budget" value={formatRand(ytdBudget)} color="text-purple-500" />
-        <KpiCard icon={Activity} label="YTD Variance" value={formatRand(ytdVariance)} color={ytdVariance >= 0 ? "text-emerald-500" : "text-red-500"} />
-        <KpiCard icon={Percent} label="YTD GP%" value={formatPercent(ytdGpPct)} color={ytdGpPct >= 15 ? "text-emerald-500" : "text-red-500"} />
-      </div>
+      <TooltipProvider delayDuration={300}>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3" role="region" aria-label="GP KPI Summary">
+          <KpiCard icon={DollarSign} label="Total Revenue" value={formatRand(totalRevenue)} color="text-blue-500" tooltip="Sum of all milestone revenue across all projects for the financial year." />
+          <KpiCard icon={TrendingUp} label="Total COS" value={formatRand(totalCOS)} color="text-red-500" tooltip="Sum of all Cost of Sales across all projects for the financial year." />
+          <KpiCard icon={Activity} label="Total GP" value={formatRand(totalGP)} color={totalGP >= 0 ? "text-emerald-500" : "text-red-500"} tooltip="Gross Profit = Total Revenue minus Total COS. Green if positive, red if loss-making." />
+          <KpiCard icon={Percent} label="GP%" value={formatPercent(overallGpPct)} color={overallGpPct >= 15 ? "text-emerald-500" : "text-red-500"} tooltip="Gross Profit as a percentage of revenue. Target is >= 15%." />
+          <KpiCard icon={Activity} label="YTD GP" value={formatRand(ytdGP)} color={ytdGP >= 0 ? "text-emerald-500" : "text-red-500"} tooltip="Year-to-date cumulative Gross Profit." />
+          <KpiCard icon={Target} label="YTD Budget" value={formatRand(ytdBudget)} color="text-purple-500" tooltip="Year-to-date GP budget based on revenue and COS budget entries." />
+          <KpiCard icon={Activity} label="YTD Variance" value={formatRand(ytdVariance)} color={ytdVariance >= 0 ? "text-emerald-500" : "text-red-500"} tooltip="Difference between actual GP and budget GP. Positive = outperforming." />
+          <KpiCard icon={Percent} label="YTD GP%" value={formatPercent(ytdGpPct)} color={ytdGpPct >= 15 ? "text-emerald-500" : "text-red-500"} tooltip="Year-to-date GP percentage. Green if >= 15% target." />
+        </div>
+      </TooltipProvider>
 
       <Card>
         <CardContent className="p-4">
@@ -271,14 +317,17 @@ export default function GpTrackerPage() {
 
       <Card>
         <CardContent className="p-4">
-          <div
+          <button
+            type="button"
             className="flex items-center gap-2 cursor-pointer select-none mb-2"
             onClick={() => setShowMonthly(!showMonthly)}
+            aria-expanded={showMonthly}
+            aria-label={`${showMonthly ? 'Collapse' : 'Expand'} Monthly Tracking`}
             data-testid="button-toggle-monthly"
           >
             {showMonthly ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             <h3 className="text-sm font-semibold">Monthly Tracking</h3>
-          </div>
+          </button>
           {showMonthly && (
             <div className="overflow-x-auto">
               <table className="w-full text-xs border-collapse">
@@ -331,14 +380,17 @@ export default function GpTrackerPage() {
 
       <Card>
         <CardContent className="p-4">
-          <div
+          <button
+            type="button"
             className="flex items-center gap-2 cursor-pointer select-none mb-2"
             onClick={() => setShowYtd(!showYtd)}
+            aria-expanded={showYtd}
+            aria-label={`${showYtd ? 'Collapse' : 'Expand'} Year-to-Date Tracking`}
             data-testid="button-toggle-ytd"
           >
             {showYtd ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             <h3 className="text-sm font-semibold">Year-to-Date Tracking</h3>
-          </div>
+          </button>
           {showYtd && (
             <div className="overflow-x-auto">
               <table className="w-full text-xs border-collapse">
@@ -374,14 +426,17 @@ export default function GpTrackerPage() {
 
       <Card>
         <CardContent className="p-4">
-          <div
+          <button
+            type="button"
             className="flex items-center gap-2 cursor-pointer select-none mb-2"
             onClick={() => setShowProjects(!showProjects)}
+            aria-expanded={showProjects}
+            aria-label={`${showProjects ? 'Collapse' : 'Expand'} Project GP Breakdown`}
             data-testid="button-toggle-projects"
           >
             {showProjects ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             <h3 className="text-sm font-semibold">Project GP Breakdown</h3>
-          </div>
+          </button>
           {showProjects && (
             <>
               <div className="relative w-60 mb-3">

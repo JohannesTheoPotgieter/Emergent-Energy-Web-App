@@ -449,7 +449,6 @@ export default function AdminControlCenterPage() {
       title: "Imports",
       items: [
         { label: "Smart Import", path: "/admin/smart-import", icon: FileUp },
-        { label: "Excel Updates", path: "/admin/excel-updates", icon: FolderOpen },
       ],
     },
     {

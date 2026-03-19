@@ -14,7 +14,7 @@ import {
   notifications, notificationThrottle,
   users, projectInfo,
 } from "@shared/schema";
-import { requireAuthority, requirePermission } from "./permission-middleware";
+import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
@@ -78,18 +78,6 @@ async function resolveProjectIdForItemInstance(itemInstanceId: number): Promise<
   `);
   const value = rows.rows?.[0]?.project_id;
   return typeof value === "number" ? value : null;
-}
-
-function requireQmChallenge(req: Request, res: Response, next: NextFunction) {
-  if (isAdminRole(getUserRole(req))) return next();
-  if ((req.session as any)?.qmChallengePassed) return next();
-  res.status(403).json({ error: "qm_challenge_required", message: "Quality Manager access code required", code: "QM_CHALLENGE_REQUIRED" });
-}
-
-function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
-  if (isAdminRole(getUserRole(req))) return next();
-  if ((req.session as any)?.epmChallengePassed) return next();
-  res.status(403).json({ error: "epm_challenge_required", message: "Engineering Program Manager access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
 
 function requireAdminOrQm(req: Request, res: Response, next: NextFunction) {
@@ -524,7 +512,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== TEMPLATES (admin read) ==========
 
-  app.get("/api/quality/templates", requireAuth, async (req, res) => {
+  app.get("/api/quality/templates", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const templates = await db.select().from(qcTemplate);
       res.json(templates);
@@ -534,7 +522,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.get("/api/quality/templates/:templateId", requireAuth, async (req, res) => {
+  app.get("/api/quality/templates/:templateId", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const tid = parseInt(String(req.params.templateId), 10);
       const [tmpl] = await db.select().from(qcTemplate).where(eq(qcTemplate.id, tid));
@@ -558,7 +546,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== PROJECT CHECKLIST ==========
 
-  app.get("/api/quality/project/:projectName/checklist", requireAuth, async (req, res) => {
+  app.get("/api/quality/project/:projectName/checklist", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       let [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
@@ -725,7 +713,7 @@ export function registerQualityRoutes(app: Express) {
 
       const assignments = await getAssignmentsForEntity("quality_item", itemId, "ASSIGNEE");
       const pName = decodeURIComponent(String(req.params.projectName));
-      recalculateWarnings(pName).catch(() => {});
+      recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
 
 
       logAuditFromReq(req, {
@@ -783,7 +771,7 @@ export function registerQualityRoutes(app: Express) {
 
       const [updated] = await db.update(qcItemInstance).set(updates).where(eq(qcItemInstance.id, itemId)).returning();
       const pName = decodeURIComponent(String(req.params.projectName));
-      recalculateWarnings(pName).catch(() => {});
+      recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: approved ? "approve" : "update", projectName: pName, changesJson: { description: approved ? "Quality item approved" : "Quality item approval revoked" } });
       res.json(updated);
     } catch (err: any) {
@@ -792,7 +780,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const { evidenceUrl, evidenceNote } = req.body;
@@ -879,7 +867,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, qmApprovalUpload.single("file"), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, requireAdminOrQm, qmApprovalUpload.single("file"), async (req, res) => {
     try {
       const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const projectName = decodeURIComponent(String(req.params.projectName));
@@ -916,7 +904,7 @@ export function registerQualityRoutes(app: Express) {
         { projectName }
       );
 
-      recalculateWarnings(projectName).catch(() => {});
+      recalculateWarnings(projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
 
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName, changesJson: { description: "Sent for approval", approverUserId } });
@@ -931,7 +919,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/quality/evidence/:evidenceId", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.delete("/api/quality/evidence/:evidenceId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
     try {
       await db.delete(qcItemEvidence).where(eq(qcItemEvidence.id, parseInt(String(req.params.evidenceId), 10)));
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.evidenceId), action: "delete", changesJson: { description: "Evidence deleted" } });
@@ -1011,7 +999,7 @@ export function registerQualityRoutes(app: Express) {
         await tx.delete(qcItemInstance).where(eq(qcItemInstance.id, itemId));
       });
 
-      recalculateWarnings(pName).catch(() => {});
+      recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
 
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "delete", projectName: pName, changesJson: { description: "Quality item deleted" } });
@@ -1024,7 +1012,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== RISK ANSWERS ==========
 
-  app.post("/api/quality/project/:projectName/risk-answer", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/project/:projectName/risk-answer", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const { riskAnswerId, answerYesno, answerText, answerNumber } = req.body;
       const updates: any = { lastUpdatedBy: getUser(req).id, lastUpdatedAt: new Date() };
@@ -1034,7 +1022,7 @@ export function registerQualityRoutes(app: Express) {
 
       const [updated] = await db.update(qcRiskAnswer).set(updates).where(eq(qcRiskAnswer.id, riskAnswerId)).returning();
       const pName = decodeURIComponent(String(req.params.projectName));
-      recalculateWarnings(pName).catch(() => {});
+      recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
 
 
       logAuditFromReq(req, { entityType: "qc_risk_answer", entityId: String(riskAnswerId), action: "update", projectName: pName, changesJson: { description: "Risk answer updated", answerYesno, answerText } });
@@ -1047,7 +1035,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== WARNINGS ==========
 
-  app.get("/api/quality/project/:projectName/warnings", requireAuth, async (req, res) => {
+  app.get("/api/quality/project/:projectName/warnings", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const warnings = await db.select().from(qcWarning)
@@ -1060,7 +1048,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.get("/api/quality/warnings", requireAuth, async (req, res) => {
+  app.get("/api/quality/warnings", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const statusFilter = req.query.status as string;
       let storedWarnings: any[];
@@ -1115,7 +1103,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/warning/:warningId/acknowledge", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/warning/:warningId/acknowledge", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const warningId = parseInt(String(req.params.warningId), 10);
       const { note } = req.body;
@@ -1136,7 +1124,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/warning/:warningId/resolve", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/warning/:warningId/resolve", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const warningId = parseInt(String(req.params.warningId), 10);
       const { note } = req.body;
@@ -1159,7 +1147,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== PLAN LINKS ==========
 
-  app.get("/api/quality/project/:projectName/plan-links", requireAuth, async (req, res) => {
+  app.get("/api/quality/project/:projectName/plan-links", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const links = await db.select().from(qcPlanLink).where(eq(qcPlanLink.projectName, projectName));
@@ -1170,7 +1158,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/plan-link", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/project/:projectName/plan-link", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const { planItemId, itemInstanceId, phaseId, linkType } = req.body;
@@ -1179,7 +1167,7 @@ export function registerQualityRoutes(app: Express) {
       const [link] = await db.insert(qcPlanLink).values({
         projectName, planItemId, itemInstanceId: itemInstanceId || null, phaseId: phaseId || null, linkType: linkType || "phase_task",
       }).returning();
-      recalculateWarnings(projectName).catch(() => {});
+      recalculateWarnings(projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(link.id), action: "create", projectName, changesJson: { description: "Plan link created", planItemId } });
       res.json(link);
     } catch (err: any) {
@@ -1188,11 +1176,11 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/quality/plan-link/:linkId", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.delete("/api/quality/plan-link/:linkId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
     try {
       const [deletedLink] = await db.select().from(qcPlanLink).where(eq(qcPlanLink.id, parseInt(String(req.params.linkId), 10)));
       await db.delete(qcPlanLink).where(eq(qcPlanLink.id, parseInt(String(req.params.linkId), 10)));
-      if (deletedLink) recalculateWarnings(deletedLink.projectName).catch(() => {});
+      if (deletedLink) recalculateWarnings(deletedLink.projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.linkId), action: "delete", projectName: deletedLink?.projectName, changesJson: { description: "Plan link deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -1203,7 +1191,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== QUALITY SUMMARY (for dashboard) ==========
 
-  app.get("/api/quality/project/:projectName/summary", requireAuth, async (req, res) => {
+  app.get("/api/quality/project/:projectName/summary", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.projectName, projectName));
@@ -1328,7 +1316,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.get("/api/quality/project/:projectName/workspace", requireAuth, async (req, res) => {
+  app.get("/api/quality/project/:projectName/workspace", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const userId = getUser(req).id;
@@ -1393,7 +1381,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== ALL ITEMS (flat list for bottom-up view) ==========
 
-  app.get("/api/quality/all-items", requireAuth, async (req, res) => {
+  app.get("/api/quality/all-items", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectFilter = req.query.project as string | undefined;
       const phaseFilter = req.query.phase as string | undefined;
@@ -1507,7 +1495,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== CHECKLISTS LIST ==========
 
-  app.get("/api/quality/checklists", requireAuth, async (req, res) => {
+  app.get("/api/quality/checklists", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const allChecklists = await db.select().from(qcChecklist);
       const projectIds = uniqueNumberList(allChecklists.map((checklist) => checklist.projectId));
@@ -1661,7 +1649,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== GLOBAL QUALITY DASHBOARD ==========
 
-  app.get("/api/quality/dashboard", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.get("/api/quality/dashboard", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const allChecklists = await db.select().from(qcChecklist);
       const allWarnings = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
@@ -1779,7 +1767,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== WARNING ENGINE ==========
 
-  app.post("/api/quality/project/:projectName/recalculate-warnings", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/project/:projectName/recalculate-warnings", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const count = await recalculateWarnings(projectName);
@@ -1793,7 +1781,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== POST-MORTEM ==========
 
-  app.get("/api/quality/postmortem/:projectName", requireAuth, async (req, res) => {
+  app.get("/api/quality/postmortem/:projectName", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const [pm] = await db.select().from(qcPostmortem).where(eq(qcPostmortem.projectName, projectName));
@@ -1810,7 +1798,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/postmortem/:projectName", requireAuth, requireAdminOrQm, async (req, res) => {
+  app.post("/api/quality/postmortem/:projectName", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const { metricInputs } = req.body;
@@ -1930,7 +1918,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== PLAN WARNINGS FOR TASK VIEW ==========
 
-  app.get("/api/quality/plan-warnings/:projectName", requireAuth, async (req, res) => {
+  app.get("/api/quality/plan-warnings/:projectName", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const warnings = await db.select().from(qcWarning)
