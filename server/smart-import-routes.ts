@@ -3146,6 +3146,14 @@ export function registerSmartImportRoutes(app: Express) {
         ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS project_id INTEGER;
         ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
         ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+        ALTER TABLE work_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+        ALTER TABLE work_item_assignments ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+        ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+        ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+        ALTER TABLE invoice_pattern_matches ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+        ALTER TABLE normalized_execution_phases ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+        ALTER TABLE project_revenue_summary ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+        ALTER TABLE project_plan ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
       `));
       console.log("[SmartImport] Ensured program_expense/program_inflows columns exist");
     } catch (e: any) {
