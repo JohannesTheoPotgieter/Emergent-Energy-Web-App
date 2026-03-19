@@ -66,8 +66,10 @@ import {
   lostDeals,
   pdTickets,
   fyeKpiCounters,
+  fyeReportSnapshots,
 } from "@shared/schema";
 import { eq, and, sql, gte, lte, desc, inArray } from "drizzle-orm";
+import ExcelJS from "exceljs";
 import { extractMonthKey, parseExpenseAmount } from "../lib/calculations/financeUtils";
 
 const router = Router();
@@ -835,6 +837,356 @@ router.get(
       res.json({ broughtIn, signed, total: broughtIn + signed });
     } catch (error: any) {
       res.status(500).json({ error: "Failed to fetch KPIs", message: error?.message });
+    }
+  }
+);
+
+// ─── Seed Data (idempotent) ───
+// ─── Snapshot data collector ───
+async function collectSnapshotData(fye: number) {
+  const monthKeys = getFyeMonthKeys(fye);
+  const fyeStart = `${fye - 1}-09`;
+  const fyeEnd = `${fye}-08`;
+  const now = new Date();
+  const currentMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  // Budget
+  const budgetRevByMonth: Record<string, number> = {};
+  const budgetCosByMonth: Record<string, number> = {};
+  try {
+    const budgetRows = await db.select().from(fyeBudgets).where(eq(fyeBudgets.fye, String(fye)));
+    for (const b of budgetRows) {
+      const amt = safeNum(b.amount);
+      if (b.budgetType === "revenue") budgetRevByMonth[b.monthKey] = (budgetRevByMonth[b.monthKey] || 0) + amt;
+      else if (b.budgetType === "cos") budgetCosByMonth[b.monthKey] = (budgetCosByMonth[b.monthKey] || 0) + amt;
+    }
+  } catch {}
+
+  // Actual Revenue
+  const allInflows = await db.select({ projectName: programInflows.projectName, milestoneAmount: programInflows.milestoneAmount, paymentReceivedDate: programInflows.paymentReceivedDate }).from(programInflows);
+  const actualRevByMonth: Record<string, number> = {};
+  for (const inf of allInflows) {
+    if (!inf.paymentReceivedDate) continue;
+    const mk = extractMonthKey(inf.paymentReceivedDate);
+    if (mk && monthKeys.includes(mk)) actualRevByMonth[mk] = (actualRevByMonth[mk] || 0) + safeNum(inf.milestoneAmount);
+  }
+
+  // Actual COS
+  const allExpenses = await db.select({ projectName: programExpense.projectName, rowType: programExpense.rowType, expenseActualTotal: programExpense.expenseActualTotal, actualCosTotal: programExpense.actualCosTotal, expenseInvoicedDate: programExpense.expenseInvoicedDate }).from(programExpense);
+  const actualCosByMonth: Record<string, number> = {};
+  for (const exp of allExpenses) {
+    if (exp.rowType != null && exp.rowType !== "item") continue;
+    const mk = extractMonthKey(exp.expenseInvoicedDate);
+    if (mk && monthKeys.includes(mk)) {
+      const amt = safeNum(exp.actualCosTotal || exp.expenseActualTotal);
+      if (amt !== 0) actualCosByMonth[mk] = (actualCosByMonth[mk] || 0) + amt;
+    }
+  }
+
+  // Captured
+  const capturedRevByMonth: Record<string, number> = {};
+  const capturedCosByMonth: Record<string, number> = {};
+  try {
+    const cRev = await db.select({ monthEndDate: financeRevenueMonthly.monthEndDate, value: financeRevenueMonthly.value }).from(financeRevenueMonthly);
+    for (const r of cRev) { const mk = extractMonthKey(r.monthEndDate); if (mk && monthKeys.includes(mk)) capturedRevByMonth[mk] = (capturedRevByMonth[mk] || 0) + safeNum(r.value); }
+    const cCos = await db.select({ monthEndDate: financeCosMonthly.monthEndDate, value: financeCosMonthly.value }).from(financeCosMonthly);
+    for (const r of cCos) { const mk = extractMonthKey(r.monthEndDate); if (mk && monthKeys.includes(mk)) capturedCosByMonth[mk] = (capturedCosByMonth[mk] || 0) + safeNum(r.value); }
+  } catch {}
+
+  // Dashboard months
+  const dashboardMonths = monthKeys.map((mk) => {
+    const bRev = budgetRevByMonth[mk] || 0, bCos = budgetCosByMonth[mk] || 0;
+    const isPast = mk <= currentMk;
+    const aRev = isPast ? (actualRevByMonth[mk] || 0) : null;
+    const aCos = isPast ? (actualCosByMonth[mk] || 0) : null;
+    const cRev = capturedRevByMonth[mk] || null;
+    const cCos = capturedCosByMonth[mk] || null;
+    const afRev = isPast ? (actualRevByMonth[mk] || 0) : bRev;
+    const afCos = isPast ? (actualCosByMonth[mk] || 0) : bCos;
+    return {
+      monthKey: mk, label: monthKeyToLabel(mk),
+      revenue: { budget: bRev, actualForecast: afRev, actual: aRev, captured: cRev !== null ? cRev : (isPast ? 0 : null) },
+      cos: { budget: bCos, actualForecast: afCos, actual: aCos, captured: cCos !== null ? cCos : (isPast ? 0 : null) },
+      gp: { budget: bRev - bCos, actualForecast: afRev - afCos, actual: aRev !== null && aCos !== null ? aRev - aCos : null, captured: cRev !== null && cCos !== null ? cRev - cCos : (isPast ? 0 : null) },
+    };
+  });
+
+  // Detail projects
+  const projects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName, sizeKwp: projectInfo.sizeKwp, pd: projectInfo.pd, constructionStartDate: projectInfo.constructionStartDate, commissioningDate: projectInfo.commissioningDate, phase: projectInfo.phase, signedStatus: projectInfo.signedStatus, isActive: projectInfo.isActive, contractValue: projectInfo.contractValue }).from(projectInfo);
+  const activeProjects = projects.filter((p) => p.isActive !== false);
+
+  // Compute per-project financials
+  const inflowsByProject = new Map<string, { budget: number; actual: number }>();
+  for (const inf of allInflows) {
+    if (!inflowsByProject.has(inf.projectName)) inflowsByProject.set(inf.projectName, { budget: 0, actual: 0 });
+    const e = inflowsByProject.get(inf.projectName)!;
+    e.budget += safeNum(inf.milestoneAmount);
+    if (inf.paymentReceivedDate) { const mk = extractMonthKey(inf.paymentReceivedDate); if (mk && mk >= fyeStart && mk <= fyeEnd) e.actual += safeNum(inf.milestoneAmount); }
+  }
+  const expensesByProject = new Map<string, { budget: number; actual: number }>();
+  for (const exp of allExpenses) {
+    if (exp.rowType != null && exp.rowType !== "item") continue;
+    if (!expensesByProject.has(exp.projectName)) expensesByProject.set(exp.projectName, { budget: 0, actual: 0 });
+    const e = expensesByProject.get(exp.projectName)!;
+    const amt = safeNum(exp.actualCosTotal || exp.expenseActualTotal);
+    e.budget += amt;
+    if (exp.expenseInvoicedDate) { const mk = extractMonthKey(exp.expenseInvoicedDate); if (mk && mk >= fyeStart && mk <= fyeEnd) e.actual += amt; }
+  }
+
+  const projectRows = activeProjects.map((p) => {
+    const inf = inflowsByProject.get(p.projectName) || { budget: 0, actual: 0 };
+    const exp = expensesByProject.get(p.projectName) || { budget: 0, actual: 0 };
+    return { projectName: p.projectName, businessDeveloper: p.pd, province: null, sizeKwp: safeNum(p.sizeKwp), status: p.phase, budgetRevenue: inf.budget, budgetCos: exp.budget, budgetGp: inf.budget - exp.budget, actualRevenue: inf.actual, actualExpense: exp.actual, actualGp: inf.actual - exp.actual, budgetGpPct: safeDivide(inf.budget - exp.budget, inf.budget), actualGpPct: safeDivide(inf.actual - exp.actual, inf.actual) };
+  });
+  const totals = projectRows.reduce((a, r) => ({ budgetRevenue: a.budgetRevenue + r.budgetRevenue, budgetCos: a.budgetCos + r.budgetCos, budgetGp: a.budgetGp + r.budgetGp, actualRevenue: a.actualRevenue + r.actualRevenue, actualExpense: a.actualExpense + r.actualExpense, actualGp: a.actualGp + r.actualGp }), { budgetRevenue: 0, budgetCos: 0, budgetGp: 0, actualRevenue: 0, actualExpense: 0, actualGp: 0 });
+
+  // Pipeline
+  let pipelineRows: any[] = [];
+  try {
+    pipelineRows = await db.select({ id: forecastPipeline.id, projectName: forecastPipeline.projectName, projectDeveloper: forecastPipeline.projectDeveloper, location: forecastPipeline.location, sizeKwp: forecastPipeline.sizeKwp, dealProbabilityPct: forecastPipeline.dealProbabilityPct, forecastSignatureDate: forecastPipeline.forecastSignatureDate, solarRevenue: forecastPipeline.solarRevenue, bessRevenue: forecastPipeline.bessRevenue, forecastGpPct: forecastPipeline.forecastGpPct }).from(forecastPipeline).where(and(eq(forecastPipeline.status, "active"), eq(forecastPipeline.fyeYear, fye)));
+  } catch {}
+
+  // Lost deals
+  let lostDealRows: any[] = [];
+  try {
+    lostDealRows = await db.select({ id: lostDeals.id, dealName: lostDeals.dealName, dealValue: lostDeals.dealValue, businessDeveloper: lostDeals.businessDeveloper, lostReason: lostDeals.lostReason, lostDate: lostDeals.lostDate }).from(lostDeals).where(eq(lostDeals.fyeYear, fye));
+  } catch {}
+
+  // KPIs
+  let kpi = { broughtIn: 0, signed: 0, total: 0 };
+  try {
+    const [counter] = await db.select({ broughtIn: fyeKpiCounters.broughtIn, signed: fyeKpiCounters.signed }).from(fyeKpiCounters).where(eq(fyeKpiCounters.fyeYear, fye));
+    if (counter) kpi = { broughtIn: counter.broughtIn, signed: counter.signed, total: counter.broughtIn + counter.signed };
+  } catch {}
+
+  return {
+    dashboard: { months: dashboardMonths, monthKeys },
+    detail: { projects: projectRows, totals: { ...totals, budgetGpPct: safeDivide(totals.budgetGp, totals.budgetRevenue), actualGpPct: safeDivide(totals.actualGp, totals.actualRevenue) } },
+    pipeline: pipelineRows,
+    lostDeals: lostDealRows,
+    kpi,
+  };
+}
+
+/** Map calendar month to FYE month index (Sep=1, Oct=2, ..., Aug=12) */
+function calendarToFyeMonth(calMonth: number): number {
+  return calMonth >= 9 ? calMonth - 8 : calMonth + 4;
+}
+
+// ─── Snapshot CRUD ───
+
+router.post(
+  "/api/fye-revenue-tracking/snapshots",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "edit"),
+  async (req, res) => {
+    try {
+      const schema = z.object({
+        fyeYear: z.number().optional(),
+        snapshotLabel: z.string().min(1),
+        notes: z.string().optional(),
+      });
+      const data = schema.parse(req.body);
+      const fye = data.fyeYear || getCurrentFye();
+      const userId = (req as any).user?.id;
+      const now = new Date();
+      const snapshotMonth = calendarToFyeMonth(now.getMonth() + 1);
+
+      const snapshotData = await collectSnapshotData(fye);
+
+      await db.run(sql`INSERT INTO fye_report_snapshots (fye_year, snapshot_month, snapshot_date, snapshot_label, status, snapshot_data, notes, created_by, created_at)
+        VALUES (${fye}, ${snapshotMonth}, ${now.toISOString().slice(0, 10)}, ${data.snapshotLabel}, 'draft', ${JSON.stringify(snapshotData)}, ${data.notes || null}, ${userId || null}, CURRENT_TIMESTAMP)`);
+
+      // Get the inserted row id
+      const [last] = await db.select({ id: fyeReportSnapshots.id, snapshotLabel: fyeReportSnapshots.snapshotLabel, status: fyeReportSnapshots.status }).from(fyeReportSnapshots).orderBy(desc(fyeReportSnapshots.id)).limit(1);
+
+      res.json({ id: last.id, snapshotLabel: last.snapshotLabel, status: last.status, message: "Snapshot created as draft" });
+    } catch (error: any) {
+      console.error("Snapshot create error:", error);
+      res.status(400).json({ error: "Failed to create snapshot", message: error?.message });
+    }
+  }
+);
+
+router.get(
+  "/api/fye-revenue-tracking/snapshots",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (req, res) => {
+    try {
+      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
+      const rows = await db.select({
+        id: fyeReportSnapshots.id,
+        fyeYear: fyeReportSnapshots.fyeYear,
+        snapshotMonth: fyeReportSnapshots.snapshotMonth,
+        snapshotDate: fyeReportSnapshots.snapshotDate,
+        snapshotLabel: fyeReportSnapshots.snapshotLabel,
+        status: fyeReportSnapshots.status,
+        notes: fyeReportSnapshots.notes,
+        createdBy: fyeReportSnapshots.createdBy,
+        createdAt: fyeReportSnapshots.createdAt,
+        submittedAt: fyeReportSnapshots.submittedAt,
+        approvedAt: fyeReportSnapshots.approvedAt,
+      }).from(fyeReportSnapshots).where(eq(fyeReportSnapshots.fyeYear, fye)).orderBy(desc(fyeReportSnapshots.snapshotDate));
+      res.json(rows);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to list snapshots", message: error?.message });
+    }
+  }
+);
+
+router.get(
+  "/api/fye-revenue-tracking/snapshots/:id",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      const [row] = await db.select().from(fyeReportSnapshots).where(eq(fyeReportSnapshots.id, id));
+      if (!row) return res.status(404).json({ error: "Snapshot not found" });
+      res.json({ ...row, snapshotData: JSON.parse(row.snapshotData) });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch snapshot", message: error?.message });
+    }
+  }
+);
+
+router.put(
+  "/api/fye-revenue-tracking/snapshots/:id/submit",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "edit"),
+  async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      const userId = (req as any).user?.id;
+      const [row] = await db.select({ status: fyeReportSnapshots.status }).from(fyeReportSnapshots).where(eq(fyeReportSnapshots.id, id));
+      if (!row) return res.status(404).json({ error: "Snapshot not found" });
+      if (row.status !== "draft") return res.status(400).json({ error: "Only draft snapshots can be submitted" });
+
+      await db.run(sql`UPDATE fye_report_snapshots SET status = 'submitted', submitted_by = ${userId || null}, submitted_at = CURRENT_TIMESTAMP WHERE id = ${id}`);
+      res.json({ ok: true, status: "submitted" });
+    } catch (error: any) {
+      res.status(400).json({ error: "Failed to submit snapshot", message: error?.message });
+    }
+  }
+);
+
+router.put(
+  "/api/fye-revenue-tracking/snapshots/:id/approve",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "edit"),
+  async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      const userId = (req as any).user?.id;
+      const [row] = await db.select({ status: fyeReportSnapshots.status }).from(fyeReportSnapshots).where(eq(fyeReportSnapshots.id, id));
+      if (!row) return res.status(404).json({ error: "Snapshot not found" });
+      if (row.status !== "submitted") return res.status(400).json({ error: "Only submitted snapshots can be approved" });
+
+      await db.run(sql`UPDATE fye_report_snapshots SET status = 'approved', approved_by = ${userId || null}, approved_at = CURRENT_TIMESTAMP WHERE id = ${id}`);
+      res.json({ ok: true, status: "approved" });
+    } catch (error: any) {
+      res.status(400).json({ error: "Failed to approve snapshot", message: error?.message });
+    }
+  }
+);
+
+router.get(
+  "/api/fye-revenue-tracking/snapshots/:id/export",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      const [row] = await db.select().from(fyeReportSnapshots).where(eq(fyeReportSnapshots.id, id));
+      if (!row) return res.status(404).json({ error: "Snapshot not found" });
+
+      const data = JSON.parse(row.snapshotData);
+      const workbook = new ExcelJS.Workbook();
+
+      // Sheet 1: Dashboard
+      const dashSheet = workbook.addWorksheet("Dashboard");
+      const monthLabels = data.dashboard.months.map((m: any) => m.label);
+      dashSheet.addRow(["", ...monthLabels, "Total"]).font = { bold: true };
+
+      const sections = [
+        { title: "Revenue Tracking", key: "revenue" },
+        { title: "COS Tracking", key: "cos" },
+        { title: "GP Tracking", key: "gp" },
+      ];
+      const rowTypes = ["budget", "actualForecast", "actual", "captured"];
+      const rowLabels: Record<string, string> = { budget: "Budget", actualForecast: "Actual + Forecast", actual: "Actual", captured: "Captured Data" };
+
+      for (const sec of sections) {
+        dashSheet.addRow([]);
+        dashSheet.addRow([sec.title]).font = { bold: true, size: 11 };
+        for (const rt of rowTypes) {
+          const vals = data.dashboard.months.map((m: any) => m[sec.key]?.[rt] ?? null);
+          const nonNull = vals.filter((v: any) => v !== null);
+          const total = nonNull.length > 0 ? nonNull.reduce((a: number, b: number) => a + b, 0) : null;
+          dashSheet.addRow([rowLabels[rt], ...vals, total]);
+        }
+      }
+
+      // Style dashboard
+      dashSheet.getColumn(1).width = 20;
+      for (let i = 2; i <= monthLabels.length + 2; i++) dashSheet.getColumn(i).width = 14;
+
+      // Sheet 2: FYE Detail
+      const detailSheet = workbook.addWorksheet("FYE Detail");
+
+      // Summary
+      const t = data.detail.totals;
+      detailSheet.addRow(["Summary"]).font = { bold: true, size: 12 };
+      detailSheet.addRow(["Budget Revenue", t.budgetRevenue]);
+      detailSheet.addRow(["Budget COS", t.budgetCos]);
+      detailSheet.addRow(["Budget GP", t.budgetGp]);
+      detailSheet.addRow(["Actual Revenue", t.actualRevenue]);
+      detailSheet.addRow(["Actual Expense", t.actualExpense]);
+      detailSheet.addRow(["Actual GP", t.actualGp]);
+      detailSheet.addRow([]);
+
+      // Project table
+      detailSheet.addRow(["Project Name", "Business Developer", "Size (kWp)", "Status", "Budget Revenue", "Budget COS", "Budget GP", "Actual Revenue", "Actual Expense", "Actual GP"]).font = { bold: true };
+      for (const p of data.detail.projects) {
+        detailSheet.addRow([p.projectName, p.businessDeveloper, p.sizeKwp, p.status, p.budgetRevenue, p.budgetCos, p.budgetGp, p.actualRevenue, p.actualExpense, p.actualGp]);
+      }
+      detailSheet.addRow([]);
+
+      // Pipeline
+      detailSheet.addRow(["Pipeline Deals (>= 75%)"]).font = { bold: true, size: 11 };
+      detailSheet.addRow(["Project Name", "Developer", "Location", "Size (kWp)", "Probability %", "Solar Revenue", "BESS Revenue", "GP%", "Forecast GP"]).font = { bold: true };
+      for (const p of data.pipeline) {
+        const s = parseFloat(p.solarRevenue || "0"), b = parseFloat(p.bessRevenue || "0"), gp = p.forecastGpPct ? parseFloat(p.forecastGpPct) : null;
+        detailSheet.addRow([p.projectName, p.projectDeveloper, p.location, p.sizeKwp, p.dealProbabilityPct, s, b, gp != null ? gp * 100 : null, gp != null ? gp * (s + b) : null]);
+      }
+      detailSheet.addRow([]);
+
+      // Lost Deals
+      detailSheet.addRow(["Lost Deals"]).font = { bold: true, size: 11 };
+      detailSheet.addRow(["Deal Name", "Deal Value", "Business Developer", "Lost Reason"]).font = { bold: true };
+      for (const d of data.lostDeals) {
+        detailSheet.addRow([d.dealName, parseFloat(d.dealValue || "0"), d.businessDeveloper, d.lostReason]);
+      }
+      detailSheet.addRow([]);
+
+      // KPIs
+      detailSheet.addRow(["KPI Counters"]).font = { bold: true, size: 11 };
+      detailSheet.addRow(["Brought In", data.kpi.broughtIn]);
+      detailSheet.addRow(["Signed", data.kpi.signed]);
+      detailSheet.addRow(["Total", data.kpi.total]);
+
+      detailSheet.getColumn(1).width = 30;
+      for (let i = 2; i <= 10; i++) detailSheet.getColumn(i).width = 16;
+
+      const safeLabel = row.snapshotLabel.replace(/[^a-zA-Z0-9_-]/g, "_");
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="FYE_${row.fyeYear}_Revenue_Tracking_${safeLabel}.xlsx"`);
+      await workbook.xlsx.write(res);
+      res.end();
+    } catch (error: any) {
+      console.error("Snapshot export error:", error);
+      res.status(500).json({ error: "Failed to export snapshot", message: error?.message });
     }
   }
 );
