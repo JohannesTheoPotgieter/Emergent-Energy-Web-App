@@ -198,12 +198,8 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
           AND status NOT IN ('complete', 'skipped')`
     );
 
-    const unreadNotifications = await execCount(
-      sql`SELECT COUNT(*)::int as cnt FROM notifications 
-          WHERE recipient_user_id = ${uid} 
-          AND is_read = false 
-          AND created_at < NOW() - INTERVAL '3 days'`
-    );
+    // Notifications feature removed - always return 0
+    const unreadNotifications = 0;
 
     const overdueQmTasks = await execCount(
       sql`SELECT COUNT(*)::int as cnt FROM qc_item_instance qi
@@ -614,7 +610,7 @@ export function registerGamificationRoutes(app: Express) {
         execItems(sql`SELECT COALESCE(description, 'Warning') as name, project_name as project, created_at::text as date FROM qc_warning WHERE owner_user_id = ${userId} AND status IN ('open', 'in_progress') ORDER BY created_at DESC NULLS LAST LIMIT 100`),
         execItems(sql`SELECT COALESCE(t.title, 'Task') as name, pi.project_name as project, t.due_date as date FROM project_eng_tasks t LEFT JOIN project_eng_stages s ON t.stage_id = s.id LEFT JOIN project_info pi ON s.project_id = pi.id WHERE t.owner_user_id = ${userId} AND t.due_date IS NOT NULL AND t.due_date != '' AND NULLIF(t.due_date, '')::date < CURRENT_DATE AND t.status NOT IN ('complete', 'skipped') ORDER BY t.due_date ASC LIMIT 100`),
         execItems(sql`SELECT COALESCE(qi.item_name, 'QM Item') as name, qc.project_name as project, qi.end_date as date FROM qc_item_instance qi JOIN qc_checklist qc ON qi.checklist_id = qc.id JOIN project_info pi ON qc.project_name = pi.project_name WHERE (pi.pm_user_id = ${userId} OR LOWER(TRIM(pi.pm)) = LOWER(TRIM(${userName}))) AND qi.end_date IS NOT NULL AND qi.end_date != '' AND NULLIF(qi.end_date, '')::date < CURRENT_DATE AND qi.approved = false AND qi.is_applicable = true ORDER BY qi.end_date ASC LIMIT 100`),
-        execItems(sql`SELECT COALESCE(title, 'Notification') as name, '' as project, created_at::text as date FROM notifications WHERE recipient_user_id = ${userId} AND is_read = false AND created_at < NOW() - INTERVAL '3 days' ORDER BY created_at ASC LIMIT 100`),
+        Promise.resolve([]), // Notifications feature removed - unread notifications query skipped
       ]);
 
       res.json({

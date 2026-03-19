@@ -813,7 +813,7 @@ router.post("/api/admin/wipe-all-data", requireAuth, requirePermission('admin', 
       'mytool_dod_templates', 'mytool_email_links', 'mytool_timeblocks',
       'mytool_settings', 'mytool_user_preferences',
       'weekly_reviews', 'snapshot_metrics', 'snapshots',
-      'notifications', 'notification_throttle',
+      // 'notifications', 'notification_throttle', // Notifications feature removed
       'sp_file_pointers', 'sp_files', 'sp_list_config', 'sp_settings', 'mock_sp_items',
       'approvals', 'audit_events', 'error_logs', 'refresh_logs',
       'project_editable_fields', 'project_notes', 'project_phase_history',

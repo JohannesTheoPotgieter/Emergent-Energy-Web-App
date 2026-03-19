@@ -3,7 +3,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { requireAuth, requireAdmin } from "./shared-middleware";
 import { storage } from "../storage";
 import { db } from "../db";
-import { financialEditRequests, financialIntegrationRules, notifications, users, workItems, projectInfo, expenseTaskLinks, milestoneTaskLinks } from "@shared/schema";
+import { financialEditRequests, financialIntegrationRules, users, workItems, projectInfo, expenseTaskLinks, milestoneTaskLinks } from "@shared/schema";
 import { eq, and, inArray, isNull, desc, sql } from "drizzle-orm";
 
 const router = Router();
@@ -83,79 +83,26 @@ async function detectExpenditureImpact(projectName: string, taskIds: number[]): 
   return false;
 }
 
+// Notifications feature removed - sendFinancialWarningNotifications is now a no-op
 async function sendFinancialWarningNotifications(
-  projectName: string,
-  editSummary: string,
-  flags: { isCriticalPath: boolean; affectsRevenue: boolean; affectsExpenditure: boolean; affectsQuality: boolean },
-  requestedByUserId: number,
-  requestId: number
+  _projectName: string,
+  _editSummary: string,
+  _flags: { isCriticalPath: boolean; affectsRevenue: boolean; affectsExpenditure: boolean; affectsQuality: boolean },
+  _requestedByUserId: number,
+  _requestId: number
 ) {
-  try {
-    const recipients = await db.select({ id: users.id, name: users.name, role: users.role })
-      .from(users)
-      .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
-
-    const [requestor] = await db.select({ name: users.name }).from(users).where(eq(users.id, requestedByUserId));
-
-    const flagLabels: string[] = [];
-    if (flags.isCriticalPath) flagLabels.push("Critical Path");
-    if (flags.affectsRevenue) flagLabels.push("Revenue Impact");
-    if (flags.affectsExpenditure) flagLabels.push("Expenditure Impact");
-    if (flags.affectsQuality) flagLabels.push("Quality Impact");
-
-    const severity = flags.isCriticalPath ? "CRITICAL" : flagLabels.length > 1 ? "HIGH" : "MEDIUM";
-
-    for (const recipient of recipients) {
-      if (recipient.id === requestedByUserId) continue;
-      await db.insert(notifications).values({
-        recipientUserId: recipient.id,
-        eventType: "financial.edit_request",
-        title: `[${severity}] Edit Request: ${projectName}`,
-        body: `${requestor?.name || "Someone"} submitted an edit requiring approval. ${editSummary}${flagLabels.length > 0 ? ` Flags: ${flagLabels.join(", ")}` : ""}`,
-        projectName,
-        requiresConfirmation: true,
-        changeDetails: JSON.stringify({
-          requestId,
-          projectName,
-          flags,
-          severity,
-          editSummary,
-          requestedBy: requestor?.name,
-          timestamp: new Date().toISOString(),
-        }),
-      });
-    }
-  } catch (err: any) {
-    console.warn("[fin-integration] Failed to send warning notifications:", err.message);
-  }
+  // no-op: notifications feature removed
 }
 
+// Notifications feature removed - sendIntegrationWarningNotifications is now a no-op
 async function sendIntegrationWarningNotifications(
-  projectName: string,
-  warningType: string,
-  title: string,
-  body: string,
-  linkedTaskId?: number
+  _projectName: string,
+  _warningType: string,
+  _title: string,
+  _body: string,
+  _linkedTaskId?: number
 ) {
-  try {
-    const recipients = await db.select({ id: users.id })
-      .from(users)
-      .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
-
-    for (const r of recipients) {
-      await db.insert(notifications).values({
-        recipientUserId: r.id,
-        eventType: `financial.warning.${warningType}`,
-        title,
-        body,
-        projectName,
-        linkedPlanItemId: linkedTaskId || null,
-        isRead: false,
-      });
-    }
-  } catch (err: any) {
-    console.warn("[fin-integration] Warning notification failed:", err.message);
-  }
+  // no-op: notifications feature removed
 }
 
 router.post("/api/financial-edit-requests", requireAuth, requireFinancialEditor, async (req: Request, res: Response) => {
@@ -310,15 +257,7 @@ router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFina
       .where(eq(financialEditRequests.id, requestId))
       .returning();
 
-    const [reviewer] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
-    await db.insert(notifications).values({
-      recipientUserId: existing.requestedByUserId,
-      eventType: "financial.edit_approved",
-      title: `Edit Approved: ${existing.projectName}`,
-      body: `${reviewer?.name || "A reviewer"} approved your edit request. ${existing.editSummary}${comment ? ` Comment: ${comment}` : ""}`,
-      projectName: existing.projectName,
-      isRead: false,
-    });
+    // Notifications feature removed - approval notification is now a no-op
 
     res.json({ message: "Edit request approved", request: updated });
   } catch (error: any) {
@@ -352,15 +291,7 @@ router.post("/api/financial-edit-requests/:id/reject", requireAuth, requireFinan
       .where(eq(financialEditRequests.id, requestId))
       .returning();
 
-    const [reviewer] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
-    await db.insert(notifications).values({
-      recipientUserId: existing.requestedByUserId,
-      eventType: "financial.edit_rejected",
-      title: `Edit Rejected: ${existing.projectName}`,
-      body: `${reviewer?.name || "A reviewer"} rejected your edit request. Reason: ${comment.trim()}`,
-      projectName: existing.projectName,
-      isRead: false,
-    });
+    // Notifications feature removed - rejection notification is now a no-op
 
     res.json({ message: "Edit request rejected", request: updated });
   } catch (error: any) {

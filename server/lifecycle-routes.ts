@@ -1845,7 +1845,7 @@ export function registerLifecycleRoutes(app: Express) {
         await tx.execute(sql`DELETE FROM financial_edit_requests WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM financial_integration_rules WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM schedule_change_notice WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM notifications WHERE project_name = ${pN}`);
+        // Notifications feature removed - notifications table delete skipped
         await tx.execute(sql`DELETE FROM project_team_members WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM project_editable_fields WHERE project_name = ${pN}`);
         await tx.execute(sql`DELETE FROM company_projects WHERE project_name = ${pN}`);
