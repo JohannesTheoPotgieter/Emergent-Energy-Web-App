@@ -108,6 +108,13 @@ export async function generateEngStagesForProject(
       .orderBy(engTaskTemplates.sequence);
 
     for (const tt of taskTemplates) {
+      // Idempotency: check if a work_item already exists for this stage+template combo
+      const [existingStageTask] = await db.select({ id: projectEngTasks.id, workItemId: projectEngTasks.workItemId })
+        .from(projectEngTasks)
+        .where(and(eq(projectEngTasks.projectEngStageId, stage.id), eq(projectEngTasks.taskTemplateId, tt.id)));
+
+      if (existingStageTask) continue; // Already generated — skip
+
       const wi = await createEngineeringWorkItem({
         projectId,
         title: `[${template.name}] ${tt.title}`,
@@ -912,9 +919,17 @@ export function registerEngStageRoutes(app: Express) {
       await db.update(projectEngStages).set({ status: "complete", completedAt: new Date() })
         .where(eq(projectEngStages.id, stageId));
 
-      const [stageProj] = await db.select({ projectName: projectInfo.projectName })
-        .from(projectInfo).where(eq(projectInfo.id, stage.projectId));
-      if (stageProj) {
+      // Sync all linked work_items to COMPLETE
+      const stageTasks = await db.select({ workItemId: projectEngTasks.workItemId })
+        .from(projectEngTasks)
+        .where(eq(projectEngTasks.projectEngStageId, stageId));
+      for (const st of stageTasks) {
+        if (st.workItemId) {
+          await updateEngineeringWorkItem(st.workItemId, {
+            status: "COMPLETE",
+            completedAt: new Date(),
+          });
+        }
       }
 
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "approve", changesJson: { description: "Stage completed", stageName: stage.templateName } });
@@ -942,12 +957,16 @@ export function registerEngStageRoutes(app: Express) {
         overrideReason: reason,
       }).where(eq(projectEngStages.id, stageId));
 
-      const [overrideStage] = await db.select({ projectId: projectEngStages.projectId })
-        .from(projectEngStages).where(eq(projectEngStages.id, stageId));
-      if (overrideStage) {
-        const [proj] = await db.select({ projectName: projectInfo.projectName })
-          .from(projectInfo).where(eq(projectInfo.id, overrideStage.projectId));
-        if (proj) {
+      // Sync all linked work_items to COMPLETE on override
+      const overrideStageTasks = await db.select({ workItemId: projectEngTasks.workItemId })
+        .from(projectEngTasks)
+        .where(eq(projectEngTasks.projectEngStageId, stageId));
+      for (const st of overrideStageTasks) {
+        if (st.workItemId) {
+          await updateEngineeringWorkItem(st.workItemId, {
+            status: "COMPLETE",
+            completedAt: new Date(),
+          });
         }
       }
 
