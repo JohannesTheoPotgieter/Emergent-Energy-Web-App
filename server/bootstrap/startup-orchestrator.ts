@@ -216,9 +216,21 @@ async function runAdditiveSchemaAlignments() {
       ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_forecast_payment_date TEXT;
       ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS supplier_name TEXT;
       ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
       ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT';
       ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS project_id INTEGER;
       ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
+
+      -- Normalized cost/revenue lines: sub_project_name + budget fields
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS budget_qty TEXT;
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS budget_rate TEXT;
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS budget_total TEXT;
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS budget_cos TEXT;
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS revenue_recognition_amount TEXT;
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS forecast_payment_date TEXT;
+      ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
 
       -- Smart-Import: program_inflows columns
       ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
