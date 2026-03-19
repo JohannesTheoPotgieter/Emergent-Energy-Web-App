@@ -983,6 +983,107 @@ async function ensureSqliteSchema() {
     `);
     await db.run(sql`CREATE INDEX IF NOT EXISTS idx_task_time_entries_item ON task_time_entries(work_item_id)`);
 
+    // FYE Revenue Tracking tables
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS project_revenue_summary (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_name TEXT NOT NULL UNIQUE,
+        planned_revenue REAL,
+        planned_expenditure REAL,
+        planned_profit REAL,
+        planned_margin REAL,
+        actual_revenue REAL,
+        actual_expenditure REAL,
+        actual_profit REAL,
+        actual_margin REAL,
+        vo_pm_limit REAL,
+        current_vo_total REAL,
+        project_id INTEGER,
+        captured_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS fye_budgets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        project_name TEXT NOT NULL,
+        fye TEXT NOT NULL,
+        month_key TEXT NOT NULL,
+        budget_type TEXT NOT NULL,
+        amount TEXT NOT NULL DEFAULT '0',
+        updated_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS forecast_pipeline (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_name TEXT NOT NULL,
+        project_developer TEXT,
+        location TEXT,
+        size_kwp TEXT,
+        deal_probability_pct INTEGER NOT NULL DEFAULT 0,
+        forecast_signature_date TEXT,
+        solar_revenue TEXT DEFAULT '0',
+        bess_revenue TEXT DEFAULT '0',
+        forecast_gp_pct TEXT DEFAULT '0',
+        notes TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        updated_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS lost_deals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        deal_name TEXT NOT NULL,
+        deal_value TEXT,
+        business_developer TEXT,
+        lost_reason TEXT,
+        lost_date TEXT,
+        notes TEXT,
+        updated_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS pd_tickets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_site_name TEXT,
+        province TEXT,
+        ticket_number TEXT,
+        status TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Add missing columns to project_info (safe ALTERs)
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN signed_status TEXT NOT NULL DEFAULT 'NONE'`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN construction_start_date TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN commissioning_date TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN signed_date TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN archived_status TEXT NOT NULL DEFAULT 'ACTIVE'`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN execution_phase TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN pd TEXT`)); } catch {}
+
+    // Add missing columns to program_expense (safe ALTERs)
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN row_type TEXT DEFAULT 'item'`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN actual_cos_total REAL`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN budget_qty REAL`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN budget_rate_unit REAL`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN budget_total REAL`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN budget_cos_total REAL`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN supplier_name TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN project_id INTEGER`)); } catch {}
+
+    // Add missing columns to program_inflows (safe ALTERs)
+    try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN in_bank INTEGER DEFAULT 0`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN project_id INTEGER`)); } catch {}
+
     console.log('[DB] SQLite schema verified');
   } catch (err: any) {
     console.error('[DB] Error creating SQLite schema:', err.message);
