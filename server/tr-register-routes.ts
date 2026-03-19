@@ -8,6 +8,7 @@ import {
   type TrItemProjectLink, type TrSuggestionDecision, type ProjectInfo,
 } from "@shared/schema";
 import { resolveNameToUserId } from "./user-resolver";
+import { requirePermission } from "./permission-middleware";
 
 type AppUser = { id: number; email: string; name: string; role: string; };
 
