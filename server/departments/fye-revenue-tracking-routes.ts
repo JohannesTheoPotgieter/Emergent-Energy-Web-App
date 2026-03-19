@@ -49,7 +49,7 @@
  */
 
 import { Router, type Express } from "express";
-import { requireAuth } from "../shared-middleware";
+import { requireAuth } from "../auth-context";
 import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
 import { z } from "zod";
@@ -285,8 +285,8 @@ router.get(
       }
 
       const projectRows = projects.map((p) => {
-        const summary = revSummaryMap.get(p.projectName);
-        const editable = editableMap.get(p.projectName);
+        const summary = revSummaryMap.get(p.projectName) as any;
+        const editable = editableMap.get(p.projectName) as any;
         const budgetRev = safeNum(summary?.plannedRevenue);
         const budgetCos = safeNum(summary?.plannedExpenditure);
         const actualRev = safeNum(summary?.actualRevenue);
@@ -494,7 +494,7 @@ router.put(
   requirePermission("fye_revenue_tracking", "edit"),
   async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       const userId = (req as any).user?.id;
       const data = req.body;
 
@@ -524,7 +524,7 @@ router.delete(
   requirePermission("fye_revenue_tracking", "delete"),
   async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       // Soft delete - set status to archived
       await db
         .update(forecastPipeline)
@@ -595,7 +595,7 @@ router.put(
   requirePermission("fye_revenue_tracking", "edit"),
   async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       const userId = (req as any).user?.id;
       const data = req.body;
 
@@ -622,7 +622,7 @@ router.delete(
   requirePermission("fye_revenue_tracking", "delete"),
   async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       await db.delete(lostDeals).where(eq(lostDeals.id, id));
       res.json({ ok: true });
     } catch (error: any) {
