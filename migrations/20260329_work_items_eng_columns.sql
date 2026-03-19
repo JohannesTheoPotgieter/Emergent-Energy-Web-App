@@ -11,3 +11,6 @@ ALTER TABLE work_items ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
 ALTER TABLE work_items ADD COLUMN IF NOT EXISTS tracking_rag TEXT;
 ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_type_tag TEXT;
 ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocker_reason TEXT;
+
+-- Link stage tasks to canonical work items
+ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS work_item_id INTEGER REFERENCES work_items(id);

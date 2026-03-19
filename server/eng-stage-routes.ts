@@ -16,8 +16,10 @@ import {
   projectEngApprovals,
   projectInfo,
   users,
+  workItems,
 } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
+import { createEngineeringWorkItem, updateEngineeringWorkItem } from "./work-items-adapter";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "eng-deliverables");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -106,10 +108,20 @@ export async function generateEngStagesForProject(
       .orderBy(engTaskTemplates.sequence);
 
     for (const tt of taskTemplates) {
+      const wi = await createEngineeringWorkItem({
+        projectId,
+        title: `[${template.name}] ${tt.title}`,
+        status: "TO DO",
+        priority: "Med",
+        phase: template.name,
+        createdBy: userId,
+      });
+
       await db.insert(projectEngTasks).values({
         projectEngStageId: stage.id,
         taskTemplateId: tt.id,
         status: "pending",
+        workItemId: wi.id,
       });
       tasksCreated++;
     }
@@ -590,6 +602,22 @@ export function registerEngStageRoutes(app: Express) {
       if (hasDeliverable !== undefined) updates.hasDeliverable = hasDeliverable;
 
       await db.update(projectEngTasks).set(updates).where(eq(projectEngTasks.id, taskId));
+
+      // Sync stage task status to linked work_item
+      if (existingTask.workItemId && status !== undefined) {
+        const statusMap: Record<string, string> = {
+          "pending": "TO DO",
+          "in_progress": "IN PROGRESS",
+          "complete": "COMPLETE",
+          "skipped": "COMPLETE",
+        };
+        const mappedStatus = statusMap[status] || "TO DO";
+        await updateEngineeringWorkItem(existingTask.workItemId, {
+          status: mappedStatus,
+          completedAt: status === "complete" ? new Date() : undefined,
+        });
+      }
+
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(taskId), action: "update", changesJson: { description: "Stage task updated", status, notes } });
 
       const [task] = await db.select({ stageId: projectEngTasks.projectEngStageId })
