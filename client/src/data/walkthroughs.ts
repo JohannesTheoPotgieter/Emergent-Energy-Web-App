@@ -552,10 +552,10 @@ export const WALKTHROUGHS: Walkthrough[] = [
     steps: [
       {
         stepNumber: 1,
-        title: "Open the PM Dashboard",
-        description: "Navigate to 'PM Dashboard' under PROJECT MANAGEMENT. This view is optimized for Project Managers to see all their assigned projects at a glance.",
-        targetPage: "/pm-dashboard",
-        tryIt: "Click 'PM Dashboard' in the sidebar to see your project overview.",
+        title: "Open the Execution Dashboard",
+        description: "Navigate to 'Execution Dashboard' under PROJECT MANAGEMENT. This consolidated view shows all your projects, KPIs, and action items at a glance.",
+        targetPage: "/execution-board",
+        tryIt: "Click 'Execution Dashboard' in the sidebar to see your project overview.",
       },
       {
         stepNumber: 2,
@@ -1300,10 +1300,10 @@ export const WALKTHROUGHS: Walkthrough[] = [
     steps: [
       {
         stepNumber: 1,
-        title: "Open the Execution Board",
-        description: "Navigate to 'Execution Board' under PROJECT MANAGEMENT. This shows the high-level executive dashboard with portfolio KPIs.",
-        targetPage: "/dashboard",
-        tryIt: "Click 'Execution Board' in the sidebar to see the executive view.",
+        title: "Open the Execution Dashboard",
+        description: "Navigate to 'Execution Dashboard' under PROJECT MANAGEMENT. This shows the consolidated execution view with portfolio KPIs and action center.",
+        targetPage: "/execution-board",
+        tryIt: "Click 'Execution Dashboard' in the sidebar to see the executive view.",
       },
       {
         stepNumber: 2,
