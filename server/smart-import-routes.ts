@@ -52,7 +52,7 @@ function normalizeForComparison(name: string): string {
   n = n.replace(/\b(rev|revision|version|ver|v)\s*\d+\b/gi, "");
   n = n.replace(/\bv\d+(\.\d+)*\b/gi, "");
   n = n.replace(/\b(tracker|template|copy|final|draft|updated|new|old)\b/gi, "");
-  n = n.replace(/\b(ph\d+|phase\s*\d+)\b/gi, "");
+  // Phase suffixes (ph1, phase 2, etc.) are PRESERVED to distinguish multi-phase projects
   n = n.replace(/\(\d+\)/g, "");
   n = n.replace(/\d{4}[-\/]\d{2}[-\/]\d{2}/g, "");
   n = n.replace(/\d{8,}/g, "");
@@ -61,20 +61,47 @@ function normalizeForComparison(name: string): string {
   return n;
 }
 
-function computeSimilarity(a: string, b: string): number {
-  if (a === b) return 1.0;
-  if (!a || !b) return 0;
+/**
+ * Strips phase suffixes from a normalized name to get the base project name.
+ * Used to detect same-project-different-phase scenarios.
+ */
+function stripPhase(normalized: string): string {
+  return normalized.replace(/\b(ph\s*\d+|phase\s*\d+)\b/gi, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Extracts the phase identifier from a normalized name (e.g., "ph2", "phase 1").
+ * Returns null if no phase found.
+ */
+function extractPhase(normalized: string): string | null {
+  const match = normalized.match(/\b(ph\s*\d+|phase\s*\d+)\b/i);
+  return match ? match[1].replace(/\s+/g, "").toLowerCase() : null;
+}
+
+function computeSimilarity(a: string, b: string): { score: number; matchReason?: string } {
+  if (a === b) return { score: 1.0 };
+  if (!a || !b) return { score: 0 };
 
   const normA = normalizeForComparison(a);
   const normB = normalizeForComparison(b);
 
-  if (normA === normB) return 1.0;
-  if (!normA || !normB) return 0;
+  if (normA === normB) return { score: 1.0 };
+  if (!normA || !normB) return { score: 0 };
+
+  // Phase-aware check: same base name but different phase number → medium confidence
+  const baseA = stripPhase(normA);
+  const baseB = stripPhase(normB);
+  const phaseA = extractPhase(normA);
+  const phaseB = extractPhase(normB);
+
+  if (baseA === baseB && baseA.length > 0 && phaseA !== phaseB && (phaseA || phaseB)) {
+    return { score: 0.7, matchReason: "same_project_different_phase" };
+  }
 
   const tokensA = normA.split(/\s+/).filter(Boolean);
   const tokensB = normB.split(/\s+/).filter(Boolean);
 
-  if (tokensA.length === 0 || tokensB.length === 0) return 0;
+  if (tokensA.length === 0 || tokensB.length === 0) return { score: 0 };
 
   let matchCount = 0;
   for (const t of tokensA) {
@@ -92,10 +119,10 @@ function computeSimilarity(a: string, b: string): number {
   const prefixSimilarity = commonPrefix / maxLen;
 
   if (normA.includes(normB) || normB.includes(normA)) {
-    return Math.max(0.85, tokenSimilarity, minLen / maxLen);
+    return { score: Math.max(0.85, tokenSimilarity, minLen / maxLen) };
   }
 
-  return Math.max(tokenSimilarity, prefixSimilarity);
+  return { score: Math.max(tokenSimilarity, prefixSimilarity) };
 }
 
 async function findProjectMatches(projectName: string): Promise<Array<{ projectId: number; projectName: string; confidence: number; matchReason: string }>> {
@@ -117,11 +144,13 @@ async function findProjectMatches(projectName: string): Promise<Array<{ projectI
       continue;
     }
 
-    const sim = computeSimilarity(projectName, p.projectName);
+    const { score: sim, matchReason: phaseReason } = computeSimilarity(projectName, p.projectName);
     if (sim >= 0.5) {
-      let reason = "fuzzy_match";
-      if (sim >= 0.85) reason = "high_confidence_match";
-      else if (sim >= 0.7) reason = "medium_confidence_match";
+      let reason = phaseReason || "fuzzy_match";
+      if (!phaseReason) {
+        if (sim >= 0.85) reason = "high_confidence_match";
+        else if (sim >= 0.7) reason = "medium_confidence_match";
+      }
       matches.push({ projectId: p.id, projectName: p.projectName, confidence: Math.round(sim * 100) / 100, matchReason: reason });
     }
   }
