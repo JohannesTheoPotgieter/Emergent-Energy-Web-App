@@ -523,7 +523,7 @@ router.get("/api/admin/control-center/import-governance", requireAuth, requireAd
       db.execute(sql`
         SELECT COUNT(*)::int AS count
         FROM notifications
-        WHERE event_type IN ('excel_sync_confirmation', 'plan.change_confirmation')
+        WHERE event_type IN ('plan.change_confirmation')
           AND confirmed_at IS NULL
       `).then((r: any) => r.rows || r),
       db.execute(sql`

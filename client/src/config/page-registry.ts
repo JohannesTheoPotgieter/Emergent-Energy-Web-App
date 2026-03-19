@@ -62,7 +62,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "eeInfo", path: "/ee-info", label: "Emergent Energy Info", iconKey: "Leaf", navGroup: "KNOWLEDGE", permissionEntity: "ee_info", showInSidebar: true, routeComponentKey: "EeInfoPage" },
   { id: "training", path: "/training", label: "Training", iconKey: "GraduationCap", navGroup: "KNOWLEDGE", permissionEntity: "training", showInSidebar: true, routeComponentKey: "TrainingPage" },
   { id: "pmDashboard", path: "/pm-dashboard", label: "PM Dashboard (Legacy)", permissionEntity: "execution_board", redirectTo: "/execution-board" },
-  { id: "excelUpdates", path: "/admin/excel-updates", label: "Excel Updates", iconKey: "ClipboardCheck", navGroup: "SYSTEM", permissionEntity: "excel_updates", showInSidebar: false, routeComponentKey: "ExcelUpdatesPage" },
   { id: "portfolios", path: "/portfolios", label: "Portfolios", iconKey: "FolderOpen", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "portfolios", showInSidebar: true, routeComponentKey: "PortfoliosPage" },
   { id: "portfolioDetail", path: "/portfolios/:id", label: "Portfolio Detail", routeComponentKey: "PortfolioDetailPage" },
   { id: "pdDashboard", path: "/pd", label: "PD Dashboard", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdDashboardPage", aliases: ["/pd/dashboard"] },
