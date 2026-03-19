@@ -11,6 +11,10 @@ export interface DetectedSection {
   dataEndRowIndex: number;
   detectedHeaders: { colIndex: number; rawHeader: string; normalizedHeader: string }[];
   budgetHeaders?: { colIndex: number; rawHeader: string; normalizedHeader: string }[];
+  /** Column range for budget (left) pane, if dual-pane detected */
+  budgetColRange?: { start: number; end: number };
+  /** Column range for actual (right) pane, if dual-pane detected */
+  actualColRange?: { start: number; end: number };
   confidence: number;
 }
 
@@ -89,6 +93,43 @@ function scoreRowAsHeader(row: any[], anchorPhrases: string[], allSynonymPhrases
   return anchorHits * 2 + synonymHits;
 }
 
+/**
+ * Detects a "pane gap" in a header row — an empty column sitting between two
+ * populated header regions.  Used to split dual-pane layouts such as
+ * Expenditure Breakdown (budget left, actual right).
+ * Returns the 0-based column index of the gap, or -1 if none found.
+ */
+export function findPaneGapColumn(headerRow: any[]): number {
+  // Build a bitmap of populated columns
+  const populated: boolean[] = headerRow.map(
+    cell => cell != null && String(cell).trim() !== ""
+  );
+
+  // Walk through and find the first empty column that has populated columns
+  // on BOTH sides (at least 2 populated before and 2 after).
+  for (let c = 1; c < populated.length - 1; c++) {
+    if (populated[c]) continue; // not a gap
+
+    // Count populated columns before the gap
+    let beforeCount = 0;
+    for (let b = 0; b < c; b++) {
+      if (populated[b]) beforeCount++;
+    }
+
+    // Count populated columns after the gap
+    let afterCount = 0;
+    for (let a = c + 1; a < populated.length; a++) {
+      if (populated[a]) afterCount++;
+    }
+
+    if (beforeCount >= 2 && afterCount >= 2) {
+      return c;
+    }
+  }
+
+  return -1;
+}
+
 function findHeaderRow(
   data: any[][],
   sectionKey: string,
@@ -120,6 +161,7 @@ function findHeaderRow(
 
   let actualSectionStartCol = -1;
   if (sectionKey === "EXPENDITURE") {
+    // Method 1: Scan for "actual expenditure" label above header row
     for (let scanRow = 0; scanRow < Math.min(data.length, bestRowIndex); scanRow++) {
       const scanRowData = data[scanRow];
       if (!scanRowData) continue;
@@ -131,6 +173,23 @@ function findHeaderRow(
         }
       }
       if (actualSectionStartCol >= 0) break;
+    }
+
+    // Method 2: Detect pane gap — an empty column between two populated header regions
+    if (actualSectionStartCol < 0) {
+      const headerRow = data[bestRowIndex];
+      if (headerRow) {
+        const gapCol = findPaneGapColumn(headerRow);
+        if (gapCol >= 0) {
+          // The actual pane starts at the first populated column after the gap
+          for (let c = gapCol + 1; c < headerRow.length; c++) {
+            if (headerRow[c] != null && String(headerRow[c]).trim() !== "") {
+              actualSectionStartCol = c;
+              break;
+            }
+          }
+        }
+      }
     }
   }
 
@@ -480,6 +539,22 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
     }
 
     if (bestCandidate) {
+      // Compute budget/actual column ranges from the split headers
+      let budgetColRange: DetectedSection["budgetColRange"];
+      let actualColRange: DetectedSection["actualColRange"];
+
+      if (bestCandidate.headerResult.budgetHeaders && bestCandidate.headerResult.budgetHeaders.length > 0) {
+        const bh = bestCandidate.headerResult.budgetHeaders;
+        budgetColRange = { start: bh[0].colIndex, end: bh[bh.length - 1].colIndex };
+        const ah = bestCandidate.headerResult.headers;
+        if (ah.length > 0) {
+          actualColRange = { start: ah[0].colIndex, end: ah[ah.length - 1].colIndex };
+        }
+        console.log(`[Detector] ${sectionKey}: dual-pane detected — budget cols ${budgetColRange.start}-${budgetColRange.end}, actual cols ${actualColRange?.start}-${actualColRange?.end}`);
+      } else if (sectionKey === "EXPENDITURE") {
+        console.log(`[Detector] ${sectionKey}: WARNING — no pane gap detected, treating as single-table mode`);
+      }
+
       sections.push({
         section: sectionKey as DetectedSection["section"],
         sheetName: bestCandidate.ws.name,
@@ -488,6 +563,8 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
         dataEndRowIndex: bestCandidate.dataEndRow,
         detectedHeaders: bestCandidate.headerResult.headers,
         budgetHeaders: bestCandidate.headerResult.budgetHeaders,
+        budgetColRange,
+        actualColRange,
         confidence: bestCandidate.confidence,
       });
 

@@ -1841,18 +1841,18 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               sourceRow: c.sourceRow,
               importRunId: runId,
               turnaroundDays: merged.turnaroundDays,
-              _budgetQty: merged.budgetQty || null,
-              _budgetRate: merged.budgetRate || null,
-              _budgetTotal: merged.budgetTotal || null,
-              _budgetCos: merged.budgetCos || null,
+              budgetQty: merged.budgetQty || null,
+              budgetRate: merged.budgetRate || null,
+              budgetTotal: merged.budgetTotal || null,
+              budgetCos: merged.budgetCos || null,
+              revenueRecognitionAmount: merged.revenueRecognitionAmount || null,
+              forecastPaymentDate: merged.forecastPaymentDate || null,
               _actualCos: merged.actualCos || null,
-              _revenueRecognitionAmount: merged.revenueRecognitionAmount || null,
-              _forecastPaymentDate: merged.forecastPaymentDate || null,
             };
           });
         if (costValues.length > 0) {
           const normalizedInserts = costValues.map((c: any) => {
-            const { _budgetQty, _budgetRate, _budgetTotal, _budgetCos, _actualCos, _revenueRecognitionAmount, _forecastPaymentDate, ...normalized } = c;
+            const { _actualCos, ...normalized } = c;
             return normalized;
           });
           await tx.insert(normalizedCostLines).values(normalizedInserts);

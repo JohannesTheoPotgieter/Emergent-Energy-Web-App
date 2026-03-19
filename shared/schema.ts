@@ -4014,6 +4014,13 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   patternClassifiedAt: timestamp("pattern_classified_at"),
   patternInferredType: text("pattern_inferred_type"),
   noRevenueLinked: boolean("no_revenue_linked").default(false),
+  // Budget reference fields (read-only, from left pane of Expenditure Breakdown)
+  budgetQty: text("budget_qty"),
+  budgetRate: text("budget_rate"),
+  budgetTotal: text("budget_total"),
+  budgetCos: text("budget_cos"),
+  revenueRecognitionAmount: text("revenue_recognition_amount"),
+  forecastPaymentDate: text("forecast_payment_date"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true } as any);
