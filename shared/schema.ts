@@ -2718,7 +2718,7 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'ms_integration'
   | 'my_work' | 'ms_sync' | 'project_tagging' | 'excel_updates' | 'database_migration'
   | 'revenue_tracker' | 'gp_tracker' | 'work_items'
-  | 'task_management' | 'standups';
+  | 'task_management' | 'standups' | 'fye_revenue_tracking';
 export type PermissionAction = 'view' | 'create' | 'edit' | 'approve' | 'override' | 'delete';
 export const AUTHORITY_ACTIONS = [
   'view',
@@ -3628,6 +3628,15 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'fye_revenue_tracking',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'ACCOUNTANT', 'PROJECT_DEVELOPER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
@@ -5784,3 +5793,61 @@ export const projectLinkageReviewQueue = pgTable("project_linkage_review_queue",
 export const insertProjectLinkageReviewQueueSchema = createInsertSchema(projectLinkageReviewQueue).omit({ id: true, createdAt: true } as any);
 export type InsertProjectLinkageReviewQueue = z.infer<typeof insertProjectLinkageReviewQueueSchema>;
 export type ProjectLinkageReviewQueue = typeof projectLinkageReviewQueue.$inferSelect;
+
+// ===================== FYE REVENUE TRACKING =====================
+
+// FYE Budget table - monthly budget entries for Revenue/COS per project
+export const fyeBudgets = pgTable("fye_budgets", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  projectName: text("project_name").notNull(),
+  fye: text("fye").notNull(), // e.g. "2026" means Sep 2025 - Aug 2026
+  monthKey: text("month_key").notNull(), // "YYYY-MM"
+  budgetType: text("budget_type").notNull(), // "revenue" or "cos"
+  amount: decimal("amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  updatedBy: integer("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertFyeBudgetSchema = createInsertSchema(fyeBudgets).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertFyeBudget = z.infer<typeof insertFyeBudgetSchema>;
+export type FyeBudget = typeof fyeBudgets.$inferSelect;
+
+// Forecast Pipeline table - deals with probability >= 75%
+export const forecastPipeline = pgTable("forecast_pipeline", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  projectDeveloper: text("project_developer"),
+  location: text("location"),
+  sizeKwp: decimal("size_kwp", { precision: 12, scale: 2 }),
+  dealProbabilityPct: integer("deal_probability_pct").notNull().default(75),
+  forecastSignatureDate: text("forecast_signature_date"),
+  solarRevenue: decimal("solar_revenue", { precision: 15, scale: 2 }).default("0"),
+  bessRevenue: decimal("bess_revenue", { precision: 15, scale: 2 }).default("0"),
+  forecastGpPct: decimal("forecast_gp_pct", { precision: 6, scale: 4 }).default("0"),
+  status: text("status").notNull().default("active"), // "active" or "archived"
+  notes: text("notes"),
+  updatedBy: integer("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertForecastPipelineSchema = createInsertSchema(forecastPipeline).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertForecastPipeline = z.infer<typeof insertForecastPipelineSchema>;
+export type ForecastPipeline = typeof forecastPipeline.$inferSelect;
+
+// Lost Deals table
+export const lostDeals = pgTable("lost_deals", {
+  id: serial("id").primaryKey(),
+  dealName: text("deal_name").notNull(),
+  dealValue: decimal("deal_value", { precision: 15, scale: 2 }),
+  businessDeveloper: text("business_developer"),
+  lostReason: text("lost_reason"),
+  lostDate: text("lost_date"),
+  notes: text("notes"),
+  updatedBy: integer("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertLostDealSchema = createInsertSchema(lostDeals).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertLostDeal = z.infer<typeof insertLostDealSchema>;
+export type LostDeal = typeof lostDeals.$inferSelect;
