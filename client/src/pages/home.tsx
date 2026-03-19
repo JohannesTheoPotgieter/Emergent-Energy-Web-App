@@ -392,7 +392,7 @@ function getRoleKpis(
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Inflow Received (FY)" value={money(kpis.receivedInflowFy)} loading={isLoading} testId="text-inflow-received" />
-            <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Gross Margin" value={kpis.grossMarginPctFy != null ? `${(Number(kpis.grossMarginPctFy) * 100).toFixed(1)}%` : "—"} loading={isLoading} testId="text-gp-pct" />
+            <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Gross Margin" value={kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "—"} loading={isLoading} testId="text-gp-pct" />
             <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Gross Profit (FY)" value={money(kpis.grossProfitFy)} loading={isLoading} testId="text-gross-profit" />
             <KpiCard icon={<Clock className="w-4 h-4" />} label="Behind Plan" value={kpis.projectsBehindPlan ?? "—"} loading={isLoading} testId="text-behind-plan" />
           </div>
@@ -404,7 +404,7 @@ function getRoleKpis(
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Inflow Received (FY)" value={money(kpis.receivedInflowFy)} loading={isLoading} testId="text-inflow-received" />
           <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Open Inflow (FY)" value={money(kpis.openInflowFy)} loading={isLoading} testId="text-open-inflow" />
-          <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Gross Margin" value={kpis.grossMarginPctFy != null ? `${(Number(kpis.grossMarginPctFy) * 100).toFixed(1)}%` : "—"} loading={isLoading} testId="text-gp-pct" />
+          <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Gross Margin" value={kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "—"} loading={isLoading} testId="text-gp-pct" />
           <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Gross Profit (FY)" value={money(kpis.grossProfitFy)} loading={isLoading} testId="text-gross-profit" />
           <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Planned Revenue (FY)" value={money(kpis.plannedRevenueFy)} loading={isLoading} testId="text-planned-revenue" />
           <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Paid Expenditure (FY)" value={money(kpis.paidExpenditureFy)} loading={isLoading} testId="text-paid-expenditure" />

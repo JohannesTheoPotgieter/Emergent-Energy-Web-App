@@ -100,9 +100,28 @@ function isDateConfirmed(confirmed: boolean | null | undefined, fontColor: strin
   return false;
 }
 
-// Delegates to shared utility in financeUtils.ts (aligned with classifyCosStatus)
+// Delegates to shared utility in financeUtils.ts (aligned with classifyCosStatus).
+// Respects COS overrides and the cosRealised boolean from normalizedCostLines.
 function isCosRealised(exp: any): boolean {
   return isCosRealisedShared(exp);
+}
+
+// Loads COS status overrides and enriches expense records so isCosRealised() respects them.
+async function loadCosOverrides(): Promise<Map<string, string>> {
+  const overrides = await db.select().from(cosStatusOverrides);
+  const map = new Map<string, string>();
+  for (const o of overrides) {
+    map.set(`${o.projectName}::${o.rowNumber}`, o.overrideStatus);
+  }
+  return map;
+}
+
+function enrichWithOverrides(expenses: any[], cosOverrideMap: Map<string, string>): void {
+  for (const exp of expenses) {
+    const key = `${exp.projectName}::${exp._sourceRow || exp.rowNumber}`;
+    const override = cosOverrideMap.get(key);
+    if (override) exp._cosOverrideStatus = override;
+  }
 }
 
 function isCashflowConfirmed(exp: any): boolean {
@@ -701,10 +720,12 @@ router.get("/api/program/cos", requireAuth, async (req, res) => {
     const { projectName, startDate, endDate, atRiskDays = '30' } = req.query;
     const atRiskDaysNum = parseInt(atRiskDays as string, 10) || 30;
 
-    const [allExpenses, latestRefresh] = await Promise.all([
+    const [allExpenses, latestRefresh, cosOverrideMapCos] = await Promise.all([
       storage.getAllProgramExpenses(),
-      storage.getLatestRefresh()
+      storage.getLatestRefresh(),
+      loadCosOverrides(),
     ]);
+    enrichWithOverrides(allExpenses, cosOverrideMapCos);
 
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
@@ -1250,14 +1271,14 @@ router.get("/api/rev-tracker", requireAuth, requireAdmin, async (req, res) => {
       const budget = manual?.budget ? parseFloat(manual.budget) : 0;
 
       const variance = planned - budget;
-      const variancePct = budget !== 0 ? (planned - budget) / budget : 0;
+      const variancePct = budget !== 0 ? ((planned - budget) / budget) * 100 : 0;
 
       ytdPlanned += planned;
       ytdRealised += realised;
       ytdOutstanding += outstanding;
       ytdBudget += budget;
       const ytdVariance = ytdPlanned - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? (ytdPlanned - ytdBudget) / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? ((ytdPlanned - ytdBudget) / ytdBudget) * 100 : 0;
 
       months.push({
         monthKey,
@@ -1288,14 +1309,16 @@ router.get("/api/rev-tracker", requireAuth, requireAdmin, async (req, res) => {
 
 router.get("/api/cos-tracker", requireAuth, async (req, res) => {
   try {
-    const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans] = await Promise.all([
+    const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans, cosOverrideMap] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getTrackerMonthlyManual('COS'),
       storage.getAllProgramInflows(),
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),
       storage.getAllProjectPlans(),
+      loadCosOverrides(),
     ]);
+    enrichWithOverrides(allProgramExpenses, cosOverrideMap);
     const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
     const revByMonth = new Map<string, number>();
@@ -1380,7 +1403,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[monthKey] ?? 0);
 
       const variance = totalCOS - budget;
-      const variancePct = budget !== 0 ? variance / budget : 0;
+      const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
       const revRealised = revByMonth.get(monthKey) ?? 0;
       ytdCOS += totalCOS;
@@ -1389,7 +1412,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       ytdRevRealised += revRealised;
       const ytdUnrealised = ytdCOS - ytdRealised;
       const ytdVariance = ytdCOS - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
       months.push({
         monthKey,
@@ -1506,14 +1529,14 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
       const unrealisedCOS = totalCOS - realisedCOS;
       const budget = budgetByMonth.get(monthKey) ?? 0;
       const variance = totalCOS - budget;
-      const variancePct = budget !== 0 ? variance / budget : 0;
+      const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
       ytdCOS += totalCOS;
       ytdRealised += realisedCOS;
       ytdBudget += budget;
       const ytdUnrealised = ytdCOS - ytdRealised;
       const ytdVariance = ytdCOS - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
       const monthItems = itemsByMonth.get(monthKey) || [];
 
@@ -1553,7 +1576,11 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     const match = monthKey.match(/^(\d{4})-(\d{2})$/);
     if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
-    const allExpenses = await storage.getAllProgramExpenses();
+    const [allExpenses, cosOverrideMapMD] = await Promise.all([
+      storage.getAllProgramExpenses(),
+      loadCosOverrides(),
+    ]);
+    enrichWithOverrides(allExpenses, cosOverrideMapMD);
 
     interface LineItem {
       id: number;
@@ -1809,14 +1836,14 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
       const manual = manualBudgetMap.get(monthKey);
       const budget = manual?.budget ? parseFloat(manual.budget) : 0;
       const variance = totalRevenue - budget;
-      const variancePct = budget !== 0 ? variance / budget : 0;
+      const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
       ytdRevenue += totalRevenue;
       ytdRealised += realisedRevenue;
       ytdBudget += budget;
       const ytdUnrealised = ytdRevenue - ytdRealised;
       const ytdVariance = ytdRevenue - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
       const monthItems = itemsByMonth.get(monthKey) || [];
 
@@ -1854,12 +1881,14 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
 
 router.get("/api/gp-tracker", requireAuth, async (req, res) => {
   try {
-    const [allExpenses, allInflowsRaw, revManualEntries, cosManualEntries] = await Promise.all([
+    const [allExpenses, allInflowsRaw, revManualEntries, cosManualEntries, cosOverrideMap] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
       storage.getTrackerMonthlyManual('REV'),
       storage.getTrackerMonthlyManual('COS'),
+      loadCosOverrides(),
     ]);
+    enrichWithOverrides(allExpenses, cosOverrideMap);
 
     const revManualBudgetMap = new Map(revManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
     const cosManualBudgetMap = new Map(cosManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
@@ -2009,10 +2038,12 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
 router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = decodeURIComponent(String(req.params.projectName || ""));
-    const [projectExpenses, revLines] = await Promise.all([
+    const [projectExpenses, revLines, cosOverrideMapProj] = await Promise.all([
       storage.getProgramExpensesByProject(projectName),
       storage.getProgramInflowsByProject(projectName),
+      loadCosOverrides(),
     ]);
+    enrichWithOverrides(projectExpenses, cosOverrideMapProj);
 
     const totalMilestoneRevenue = revLines.reduce((s: number, r: any) => {
       const amt = parseFloat(r.milestoneAmount as string) || 0;
@@ -2153,10 +2184,12 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
     const keyMatch = monthKey.match(/^(\d{4})-(\d{2})$/);
     if (!keyMatch) return res.status(400).json({ error: "Invalid monthKey format" });
 
-    const [allExpenses, allInflowsRaw] = await Promise.all([
+    const [allExpenses, allInflowsRaw, cosOverrideMapGPD] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
+      loadCosOverrides(),
     ]);
+    enrichWithOverrides(allExpenses, cosOverrideMapGPD);
 
     const revByProject = new Map<string, number>();
     for (const rev of allInflowsRaw) {
@@ -2239,11 +2272,13 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
 
 router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
   try {
-    const [allExpenses, allInflowsRaw, manualEntries] = await Promise.all([
+    const [allExpenses, allInflowsRaw, manualEntries, cosOverrideMap] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
       storage.getTrackerMonthlyManual('REV'),
+      loadCosOverrides(),
     ]);
+    enrichWithOverrides(allExpenses, cosOverrideMap);
 
     const manualBudgetMap = new Map(manualEntries.map(e => [e.monthKey, e]));
 
@@ -2325,14 +2360,14 @@ router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_track
       const manual = manualBudgetMap.get(monthKey);
       const budget = manual?.budget ? parseFloat(manual.budget) : 0;
       const variance = totalRevenue - budget;
-      const variancePct = budget !== 0 ? variance / budget : 0;
+      const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
       ytdRevenue += totalRevenue;
       ytdRealised += realisedRevenue;
       ytdBudget += budget;
       const ytdUnrealised = ytdRevenue - ytdRealised;
       const ytdVariance = ytdRevenue - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
       months.push({
         monthKey,
@@ -2383,9 +2418,11 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
     const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
     if (!monthKey) return res.status(400).json({ error: "monthKey required" });
 
-    const allExpenses = project
-      ? await storage.getProgramExpensesByProject(project)
-      : await storage.getAllProgramExpenses();
+    const [allExpenses, cosOverrideMapRMD] = await Promise.all([
+      project ? storage.getProgramExpensesByProject(project) : storage.getAllProgramExpenses(),
+      loadCosOverrides(),
+    ]);
+    enrichWithOverrides(allExpenses, cosOverrideMapRMD);
 
     const allInflowsRaw = project
       ? await storage.getProgramInflowsByProject(project)

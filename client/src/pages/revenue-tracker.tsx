@@ -743,7 +743,7 @@ export default function RevenueTrackerPage() {
                               ? val < 0 ? "text-red-600 font-semibold" : val > 0 ? "text-green-600 font-semibold" : "text-slate-500"
                               : row.colorClass;
                             const isVarPct = row.key === "variancePct" || row.key === "ytdVariancePct";
-                            const displayVal = isVarPct ? `${(val * 100).toFixed(1)}%` : formatRand(val);
+                            const displayVal = isVarPct ? `${val.toFixed(1)}%` : formatRand(val);
                             return (
                               <td
                                 key={m.monthKey}
