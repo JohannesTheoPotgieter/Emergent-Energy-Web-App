@@ -112,7 +112,7 @@ export async function checkMilestoneNotifications() {
       const expPct = parseFloat(row.exp_pct) || 0;
       const delta = actPct - expPct;
 
-      if (delta < -10) {
+      if (delta < -15) {
         const projectDisplay = (row.project_name || "").replace(/_Tracker$/i, "").replace(/_/g, " ");
         await throttledNotify(row.pm_user_id, "project.behind_schedule",
           `${projectDisplay} is ${Math.abs(Math.round(delta))}% behind schedule`,

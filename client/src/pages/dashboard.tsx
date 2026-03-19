@@ -653,7 +653,7 @@ export default function DashboardPage() {
               { label: "Planned Revenue", value: money(data?.kpis?.plannedRevenueFy), icon: <Zap className="w-4 h-4 text-emerald-500 animate-glow-pulse" />, color: "text-foreground", tip: "Total planned revenue for the financial year" },
               { label: "Received Inflow", value: money(data?.kpis?.receivedInflowFy), icon: <Battery className="w-4 h-4 text-emerald-600" />, color: "text-emerald-700", tip: "Cash received and confirmed in bank" },
               { label: "Open Receivables", value: money(data?.kpis?.openInflowFy), icon: <TrendingUp className="w-4 h-4 text-amber-500" />, color: "text-amber-700", tip: "Outstanding inflow requiring follow-up" },
-              { label: "Gross Profit", value: money(data?.kpis?.grossProfitFy), icon: <Wind className="w-4 h-4 text-teal-500" />, color: Number(data?.kpis?.grossProfitFy || 0) >= 0 ? "text-teal-700" : "text-red-700", tip: `GP Margin: ${data?.kpis?.grossMarginPctFy != null ? (Number(data.kpis.grossMarginPctFy) * 100).toFixed(1) + "%" : "-"}` },
+              { label: "Gross Profit", value: money(data?.kpis?.grossProfitFy), icon: <Wind className="w-4 h-4 text-teal-500" />, color: Number(data?.kpis?.grossProfitFy || 0) >= 0 ? "text-teal-700" : "text-red-700", tip: `GP Margin: ${data?.kpis?.grossMarginPctFy != null ? Number(data.kpis.grossMarginPctFy).toFixed(1) + "%" : "-"}` },
               { label: "Open Expenditure", value: money(data?.kpis?.openExpenditureFy), icon: <TrendingDown className="w-4 h-4 text-orange-500" />, color: "text-orange-700", tip: "Supplier spend outstanding this FY" },
             ] as const).map((kpi) => (
               <Tooltip key={kpi.label}>
@@ -953,7 +953,7 @@ export default function DashboardPage() {
                           </td>
                           <td className="py-2.5 px-2 text-right tabular-nums text-sm text-amber-600 hidden lg:table-cell">{money(p.openInflowFy)}</td>
                           <td className="py-2.5 px-2 text-right tabular-nums text-sm text-amber-600 hidden lg:table-cell">{money(p.openExpenditureFy)}</td>
-                          <td className="py-2.5 px-2 text-right tabular-nums text-sm font-medium hidden md:table-cell">{p.plannedRevenueFy > 0 ? pct((p.grossMarginPctFy || 0) * 100) : <span className="text-muted-foreground">-</span>}</td>
+                          <td className="py-2.5 px-2 text-right tabular-nums text-sm font-medium hidden md:table-cell">{p.plannedRevenueFy > 0 ? pct(p.grossMarginPctFy || 0) : <span className="text-muted-foreground">-</span>}</td>
                           <td className="py-2.5 px-2 text-center">
                             {p.criticalActionCount > 0 ? (
                               <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">{p.criticalActionCount}</Badge>
@@ -995,7 +995,7 @@ export default function DashboardPage() {
                                     <p><span className="text-muted-foreground">Expenditure:</span> {money(p.plannedExpenditureFy)}</p>
                                     <p><span className="text-muted-foreground">Paid:</span> <span className="text-emerald-600">{money(p.paidExpenditureFy)}</span></p>
                                     <p><span className="text-muted-foreground">Open Exp:</span> <span className="text-amber-600">{money(p.openExpenditureFy)}</span></p>
-                                    <p><span className="text-muted-foreground">Plan GP Margin:</span> <span className="font-medium">{pct((p.grossMarginPctFy || 0) * 100)}</span></p>
+                                    <p><span className="text-muted-foreground">Plan GP Margin:</span> <span className="font-medium">{pct(p.grossMarginPctFy || 0)}</span></p>
                                   </div>
                                 </div>
                                 <div className="rounded-lg border border-border/50 p-3">

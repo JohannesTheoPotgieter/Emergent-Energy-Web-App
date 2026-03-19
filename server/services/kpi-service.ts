@@ -60,7 +60,7 @@ export function summarizeSchedule(items: ProjectCompletion[]) {
   const avgExpectedPct = valid.length > 0 ? Math.round((valid.reduce((s, i) => s + i.expectedPct, 0) / valid.length) * 10) / 10 : 0;
   const avgDelta = valid.length > 0 ? Math.round((valid.reduce((s, i) => s + i.delta, 0) / valid.length) * 10) / 10 : 0;
   const behindCount = items.filter((i) => i.delta < -5).length;
-  const atRiskCount = items.filter((i) => i.delta < -10).length;
+  const atRiskCount = items.filter((i) => i.delta < -15).length;
 
   return {
     avgActualPct,
