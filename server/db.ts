@@ -1072,6 +1072,25 @@ async function ensureSqliteSchema() {
       )
     `);
 
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS fye_report_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fye_year INTEGER NOT NULL,
+        snapshot_month INTEGER NOT NULL,
+        snapshot_date TEXT NOT NULL,
+        snapshot_label TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        snapshot_data TEXT NOT NULL,
+        notes TEXT,
+        created_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        submitted_by INTEGER,
+        submitted_at TEXT,
+        approved_by INTEGER,
+        approved_at TEXT
+      )
+    `);
+
     // Add fye_year and created_by to forecast_pipeline and lost_deals
     try { await db.run(sql.raw(`ALTER TABLE forecast_pipeline ADD COLUMN fye_year INTEGER NOT NULL DEFAULT 2026`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE forecast_pipeline ADD COLUMN created_by INTEGER`)); } catch {}

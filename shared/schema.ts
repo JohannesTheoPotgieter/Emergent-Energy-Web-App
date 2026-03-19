@@ -5869,3 +5869,22 @@ export const fyeKpiCounters = pgTable("fye_kpi_counters", {
 export const insertFyeKpiCounterSchema = createInsertSchema(fyeKpiCounters).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertFyeKpiCounter = z.infer<typeof insertFyeKpiCounterSchema>;
 export type FyeKpiCounter = typeof fyeKpiCounters.$inferSelect;
+
+// FYE Report Snapshots table — immutable month-end board reports
+export const fyeReportSnapshots = pgTable("fye_report_snapshots", {
+  id: serial("id").primaryKey(),
+  fyeYear: integer("fye_year").notNull(),
+  snapshotMonth: integer("snapshot_month").notNull(), // 1=Sep, 2=Oct, ..., 12=Aug
+  snapshotDate: text("snapshot_date").notNull(), // ISO date string
+  snapshotLabel: text("snapshot_label").notNull(),
+  status: text("status").notNull().default("draft"), // draft, submitted, approved
+  snapshotData: text("snapshot_data").notNull(), // JSON string with complete report
+  notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  submittedBy: integer("submitted_by").references(() => users.id),
+  submittedAt: timestamp("submitted_at"),
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+});
+export type FyeReportSnapshot = typeof fyeReportSnapshots.$inferSelect;
