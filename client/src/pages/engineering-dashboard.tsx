@@ -1461,6 +1461,14 @@ export default function EngineeringDashboard() {
               {standupMode ? "Exit Standup" : "Standup Mode"}
             </Button>
           )}
+          {isAdmin && (
+            <Link href="/engineering/audit">
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="btn-audit-log">
+                <Activity className="h-3.5 w-3.5" />
+                Audit Log
+              </Button>
+            </Link>
+          )}
           {standupMode && data && (
             <Button
               variant="outline"
