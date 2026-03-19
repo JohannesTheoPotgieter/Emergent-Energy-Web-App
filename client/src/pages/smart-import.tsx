@@ -3781,11 +3781,10 @@ function SmartImportGovernancePanel({
                 </div>
               </AdminQueryState>
             </div>
-          </div>
 
-          {/* Import Health Dashboard */}
-          {healthData.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-border" data-testid="health-dashboard">
+            {/* Import Health Dashboard */}
+            {healthData.length > 0 && (
+            <div className="col-span-full mt-3 pt-3 border-t border-border" data-testid="health-dashboard">
               <div className="flex items-center justify-between cursor-pointer" onClick={() => setHealthExpanded(!healthExpanded)}>
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Project Health</h4>
                 <div className="flex items-center gap-1.5">
@@ -3819,6 +3818,7 @@ function SmartImportGovernancePanel({
               )}
             </div>
           )}
+          </div>
         )}
       </CardContent>
     </Card>
