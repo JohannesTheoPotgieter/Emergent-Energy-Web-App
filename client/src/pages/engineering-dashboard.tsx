@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1416,6 +1417,7 @@ export default function EngineeringDashboard() {
   });
 
   return (
+    <ErrorBoundary>
     <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
       {!standupMode && (
         <SectionHeader
@@ -1804,5 +1806,6 @@ export default function EngineeringDashboard() {
       </>
       )}
     </PageShell>
+    </ErrorBoundary>
   );
 }
