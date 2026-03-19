@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { projectInfo, type ProjectInfo, smartImportRuns, normalizedCostLines, normalizedRevenueLines, workItems, manualEditFlags, cosStatusOverrides } from "@shared/schema";
+import { projectInfo, type ProjectInfo, smartImportRuns, normalizedCostLines, normalizedRevenueLines, workItems, manualEditFlags } from "@shared/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import ExcelJS from "exceljs";
@@ -263,7 +263,6 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
   app.get("/api/reports/project-plan", requireAuth, async (req, res) => {
     try {
       const projectFilter = req.query.projectName as string | undefined;
-      const programmeFilter = req.query.programme as string | undefined;
 
       let wiQuery = db.select().from(workItems)
         .where(and(
@@ -290,12 +289,12 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
       const projectIdSet = new Set(tasks.filter(t => t.projectId).map(t => t.projectId!));
       const projects = projectIdSet.size > 0
         ? await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo)
-            .where(inArray(projectInfo.id, [...projectIdSet]))
+            .where(inArray(projectInfo.id, [...projectIdSet] as number[]))
         : [];
       const projNameMap = new Map(projects.map(p => [p.id, p.projectName]));
 
       const rows = tasks.map(t => {
-        const pName = t.projectId ? projNameMap.get(t.projectId) || "" : "";
+        const pName = t.projectId ? (projNameMap.get(t.projectId) as string) || "" : "";
         const lastImport = importInfo.get(pName);
         const staleness = checkStaleness(lastImport?.committedAt);
 
@@ -430,7 +429,6 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
       }
 
       // Aggregate totals
-      let totalBudget = 0;
       let totalActuals = 0;
       let totalCosRealized = 0;
       for (const r of rows) {
@@ -523,13 +521,13 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
       const projectIdSet = new Set(tasks.filter(t => t.projectId).map(t => t.projectId!));
       const projects = projectIdSet.size > 0
         ? await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo)
-            .where(inArray(projectInfo.id, [...projectIdSet]))
+            .where(inArray(projectInfo.id, [...projectIdSet] as number[]))
         : [];
       const projNameMap = new Map(projects.map(p => [p.id, p.projectName]));
 
       if (projectFilter) {
         tasks = tasks.filter(t => {
-          const pName = t.projectId ? projNameMap.get(t.projectId) : "";
+          const pName = t.projectId ? (projNameMap.get(t.projectId) as string) : "";
           return pName?.toLowerCase().includes(projectFilter.toLowerCase());
         });
       }
@@ -559,7 +557,7 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
         else if (t.status === "In Progress" || t.status === "Active") r.inProgressTasks++;
         r.plannedHours += (t as any).plannedHours || 0;
         r.actualHours += (t as any).actualHours || 0;
-        const pName = t.projectId ? projNameMap.get(t.projectId) || "" : "";
+        const pName = t.projectId ? (projNameMap.get(t.projectId) as string) || "" : "";
         if (pName) r.projects.add(pName);
       }
 

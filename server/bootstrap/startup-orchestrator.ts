@@ -146,6 +146,10 @@ async function runAdditiveSchemaAlignments() {
         ('High Priority', '#f97316', 'CUSTOM'),
         ('Low Priority', '#94a3b8', 'CUSTOM')
       ON CONFLICT (name) DO NOTHING;
+
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+      ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+      ALTER TABLE cashflow_points ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES project_info(id);
     `));
     console.log("[Schema] Additive alignments completed");
   } catch (err: any) {

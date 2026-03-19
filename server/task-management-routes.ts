@@ -1,12 +1,10 @@
-import { Express, Request, Response } from "express";
+import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, asc, sql, inArray, isNull, count, ilike, or } from "drizzle-orm";
 import {
   workItems, workItemAssignments, workItemStatusHistory,
-  workItemComments, workItemAttachments,
   taskTags, workItemTags, taskTimeEntries,
   users, projectInfo,
-  type InsertWorkItem, type InsertTaskTag,
 } from "@shared/schema";
 import { getEffectiveUser, requireAuth } from "./auth-context";
 
@@ -38,7 +36,7 @@ export function registerTaskManagementRoutes(app: Express) {
       if (projectId) conditions.push(eq(workItems.projectId, parseInt(projectId as string)));
       if (status) conditions.push(eq(workItems.status, status as string));
       if (priority) conditions.push(eq(workItems.priority, priority as string));
-      if (workstream) conditions.push(eq(workItems.workstream, workstream as string));
+      if (workstream) conditions.push(eq(workItems.workstream, workstream as any));
       if (taskCategory) conditions.push(eq(workItems.taskCategory, taskCategory as string));
       if (assigneeId) conditions.push(eq(workItems.ownerUserId, parseInt(assigneeId as string)));
       if (search) {
@@ -152,7 +150,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       if (projectId) conditions.push(eq(workItems.projectId, parseInt(projectId as string)));
       if (assigneeId) conditions.push(eq(workItems.ownerUserId, parseInt(assigneeId as string)));
-      if (workstream) conditions.push(eq(workItems.workstream, workstream as string));
+      if (workstream) conditions.push(eq(workItems.workstream, workstream as any));
 
       const items = await db
         .select({
@@ -379,10 +377,13 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Update a task */
-  app.patch("/api/tasks/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/tasks/:id", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getUser(req);
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
+      if (!Number.isFinite(id) || id <= 0) {
+        return next();
+      }
       const body = req.body;
 
       // Get current item for status change tracking
@@ -429,11 +430,16 @@ export function registerTaskManagementRoutes(app: Express) {
   /** Soft-delete a task */
   app.delete("/api/tasks/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
-      await db
+      const id = parseInt(req.params.id as string);
+      if (!Number.isFinite(id) || id <= 0) {
+        return res.status(400).json({ error: "Invalid task ID" });
+      }
+      const [deleted] = await db
         .update(workItems)
         .set({ deletedAt: new Date() })
-        .where(eq(workItems.id, id));
+        .where(eq(workItems.id, id))
+        .returning({ id: workItems.id });
+      if (!deleted) return res.status(404).json({ error: "Task not found" });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -448,6 +454,19 @@ export function registerTaskManagementRoutes(app: Express) {
 
       if (!taskIds || !Array.isArray(taskIds) || taskIds.length === 0) {
         return res.status(400).json({ error: "taskIds array is required" });
+      }
+      if (!updates || typeof updates !== "object") {
+        return res.status(400).json({ error: "updates object is required" });
+      }
+
+      const validStatuses = ["Not Started", "In Progress", "Complete", "Delayed", "On Hold", "QC APPROVED", "NEEDS APPROVAL"];
+      const validPriorities = ["Critical", "High", "Medium", "Low"];
+
+      if (updates.status && !validStatuses.includes(updates.status)) {
+        return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(", ")}` });
+      }
+      if (updates.priority && !validPriorities.includes(updates.priority)) {
+        return res.status(400).json({ error: `Invalid priority. Must be one of: ${validPriorities.join(", ")}` });
       }
 
       const allowed: Record<string, any> = { updatedAt: new Date() };
@@ -484,7 +503,7 @@ export function registerTaskManagementRoutes(app: Express) {
   app.post("/api/tasks/:id/time", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const workItemId = parseInt(req.params.id);
+      const workItemId = parseInt(req.params.id as string);
       const { durationMinutes, description, date } = req.body;
 
       if (!durationMinutes || durationMinutes <= 0) {
@@ -508,7 +527,7 @@ export function registerTaskManagementRoutes(app: Express) {
   /** Get time entries for a task */
   app.get("/api/tasks/:id/time", requireAuth, async (req: Request, res: Response) => {
     try {
-      const workItemId = parseInt(req.params.id);
+      const workItemId = parseInt(req.params.id as string);
       const entries = await db
         .select({
           id: taskTimeEntries.id,
@@ -575,7 +594,7 @@ export function registerTaskManagementRoutes(app: Express) {
   /** Update a tag */
   app.patch("/api/tags/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       const { name, color, category } = req.body;
 
       const updates: Record<string, any> = {};
@@ -598,7 +617,7 @@ export function registerTaskManagementRoutes(app: Express) {
   /** Delete a tag */
   app.delete("/api/tags/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       await db.delete(taskTags).where(eq(taskTags.id, id));
       res.json({ success: true });
     } catch (err: any) {
@@ -609,7 +628,7 @@ export function registerTaskManagementRoutes(app: Express) {
   /** Assign tags to a task */
   app.post("/api/tasks/:id/tags", requireAuth, async (req: Request, res: Response) => {
     try {
-      const workItemId = parseInt(req.params.id);
+      const workItemId = parseInt(req.params.id as string);
       const { tagIds } = req.body;
 
       if (!tagIds || !Array.isArray(tagIds)) {
@@ -645,8 +664,8 @@ export function registerTaskManagementRoutes(app: Express) {
   /** Remove a tag from a task */
   app.delete("/api/tasks/:id/tags/:tagId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const workItemId = parseInt(req.params.id);
-      const tagId = parseInt(req.params.tagId);
+      const workItemId = parseInt(req.params.id as string);
+      const tagId = parseInt(req.params.tagId as string);
 
       await db.delete(workItemTags).where(
         and(

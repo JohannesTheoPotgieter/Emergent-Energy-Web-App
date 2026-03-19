@@ -50,15 +50,16 @@ export const TOP_SECTIONS: TopSection[] = [
   },
   {
     label: "Project Management",
-    path: "/dashboard",
-    match: (pathname) => startsWithAny(pathname, ["/dashboard", "/pm-dashboard", "/projects", "/execution-board", "/pm/approvals", "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/weekly-reviews", "/pm/handover-review", "/portfolios"]),
+    path: "/execution-board",
+    match: (pathname) => startsWithAny(pathname, ["/dashboard", "/pm-dashboard", "/projects", "/execution-board", "/pm/approvals", "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/weekly-reviews", "/pm/handover-review", "/portfolios", "/exceptions"]),
     secondary: [
-      { label: "Execution Dashboard", path: "/dashboard" },
+      { label: "Execution Dashboard", path: "/execution-board" },
       { label: "Project List", path: "/projects" },
+      { label: "Portfolios", path: "/portfolios" },
+      { label: "Exceptions", path: "/exceptions" },
       { label: "Deliverables", path: "/pm/deliverables" },
       { label: "Site / Execution Controls", path: "/handover-control" },
       { label: "PM On-The-Go", path: "/pm/on-the-go" },
-      { label: "Project Manager Dashboard", path: "/pm-dashboard" },
     ],
   },
   {
@@ -79,12 +80,13 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Finance",
     path: "/cashflow",
-    match: (pathname) => startsWithAny(pathname, ["/cashflow", "/cos", "/revenue-tracker", "/gp-tracker", "/invoice-patterns", "/counterparties", "/subcontractor-dashboard"]),
+    match: (pathname) => startsWithAny(pathname, ["/cashflow", "/cos", "/revenue-tracker", "/gp-tracker", "/invoice-patterns", "/counterparties", "/subcontractor-dashboard", "/fye-revenue-tracking"]),
     secondary: [
       { label: "Cashflow", path: "/cashflow" },
       { label: "Cost of Sales", path: "/cos" },
       { label: "Revenue", path: "/revenue-tracker" },
       { label: "Gross Profit", path: "/gp-tracker" },
+      { label: "FYE Revenue", path: "/fye-revenue-tracking" },
       { label: "Procurement", path: "/subcontractor-dashboard" },
       { label: "Counterparties", path: "/counterparties" },
     ],
@@ -147,14 +149,14 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
 
   const projectMatch = pathname.match(/^\/project\/([^/]+)/);
   if (projectMatch) return [
-    { label: "Project Management", path: "/dashboard" },
+    { label: "Project Management", path: "/execution-board" },
     { label: "Project List", path: "/projects" },
     { label: decodeURIComponent(projectMatch[1]) },
   ];
 
   const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)/);
   if (portfolioMatch) return [
-    { label: "Project Management", path: "/dashboard" },
+    { label: "Project Management", path: "/execution-board" },
     { label: "Portfolios", path: "/portfolios" },
     { label: decodeURIComponent(portfolioMatch[1]) },
   ];

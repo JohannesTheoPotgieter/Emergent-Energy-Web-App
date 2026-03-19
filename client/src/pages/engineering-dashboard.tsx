@@ -50,18 +50,13 @@ import {
   X,
   MoreHorizontal,
   ArrowRightLeft,
+  ClipboardCopy,
 } from "lucide-react";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
-
-async function engFetch(url: string) {
-  const token = localStorage.getItem("auth_token");
-  const headers: Record<string, string> = {};
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(url, { headers, credentials: "include" });
-  if (!res.ok) throw new Error("Failed to fetch");
-  return res.json();
-}
+import { engFetch, engPatch, engPost } from "@/lib/eng-fetch";
+import { PHASE_COLORS } from "@/lib/phase-colors";
+import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 
 interface StandupTask {
   id: number;
@@ -127,16 +122,7 @@ interface StandupData {
   statusPipeline: Record<string, number>;
 }
 
-const PHASE_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
-  P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", accent: "bg-slate-500" },
-  P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-50", text: "text-violet-700", accent: "bg-violet-500" },
-  P2_PD_PM_HANDOVER: { bg: "bg-indigo-50", text: "text-indigo-700", accent: "bg-indigo-500" },
-  P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-50", text: "text-blue-700", accent: "bg-blue-500" },
-  P4_CONSTRUCTION_INSTALLATION: { bg: "bg-amber-50", text: "text-amber-700", accent: "bg-amber-500" },
-  P5_COMMISSIONING_TESTING: { bg: "bg-orange-50", text: "text-orange-700", accent: "bg-orange-500" },
-  P6_HANDOVER_CLIENT_MATRIARCH: { bg: "bg-teal-50", text: "text-teal-700", accent: "bg-teal-500" },
-  P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-50", text: "text-emerald-700", accent: "bg-emerald-500" },
-};
+// PHASE_COLORS imported from @/lib/phase-colors
 
 
 const priorityColors: Record<string, string> = {
@@ -295,19 +281,23 @@ function CollapsibleSection({
 
 function KpiStrip({ summary }: { summary: StandupData["summary"] }) {
   const stats = [
-    { label: "Projects", value: summary.totalProjects, icon: <Layers className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false },
-    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false },
-    { label: "Overdue", value: summary.overdueTasks, icon: <AlertTriangle className="w-4 h-4" />, color: summary.overdueTasks > 0 ? "text-red-600" : "text-muted-foreground", bg: summary.overdueTasks > 0 ? "bg-red-50" : "bg-muted", border: summary.overdueTasks > 0 ? "border-red-200" : "", pulse: summary.overdueTasks > 0 },
-    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50" : "bg-muted", border: summary.holdTasks > 0 ? "border-amber-200" : "", pulse: false },
-    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50" : "bg-muted", border: summary.needsApprovalCount > 0 ? "border-purple-200" : "", pulse: false },
-    { label: "Due This Week", value: summary.upcomingThisWeekCount, icon: <Timer className="w-4 h-4" />, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200", pulse: false },
-    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", pulse: false },
+    { label: "Projects", value: summary.totalProjects, icon: <Layers className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-project-health", href: null },
+    { label: "Active", value: summary.activeTasks, icon: <ListTodo className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-200", pulse: false, scrollTo: "section-in-progress", href: "/engineering/tasks?status=IN+PROGRESS" },
+    { label: "Overdue", value: summary.overdueTasks, icon: <AlertTriangle className="w-4 h-4" />, color: summary.overdueTasks > 0 ? "text-red-600" : "text-muted-foreground", bg: summary.overdueTasks > 0 ? "bg-red-50" : "bg-muted", border: summary.overdueTasks > 0 ? "border-red-200" : "", pulse: summary.overdueTasks > 0, scrollTo: "section-blockers", href: "/engineering/tasks?dueDate=overdue" },
+    { label: "On Hold", value: summary.holdTasks, icon: <PauseCircle className="w-4 h-4" />, color: summary.holdTasks > 0 ? "text-amber-600" : "text-muted-foreground", bg: summary.holdTasks > 0 ? "bg-amber-50" : "bg-muted", border: summary.holdTasks > 0 ? "border-amber-200" : "", pulse: false, scrollTo: "section-blockers", href: "/engineering/tasks?status=HOLD" },
+    { label: "Approvals", value: summary.needsApprovalCount, icon: <ShieldAlert className="w-4 h-4" />, color: summary.needsApprovalCount > 0 ? "text-purple-600" : "text-muted-foreground", bg: summary.needsApprovalCount > 0 ? "bg-purple-50" : "bg-muted", border: summary.needsApprovalCount > 0 ? "border-purple-200" : "", pulse: false, scrollTo: "section-approvals", href: "/engineering/tasks?status=NEEDS+APPROVAL" },
+    { label: "Due This Week", value: summary.upcomingThisWeekCount, icon: <Timer className="w-4 h-4" />, color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-200", pulse: false, scrollTo: "section-due-this-week", href: "/engineering/tasks?dueDate=this_week" },
+    { label: "Done (24h)", value: summary.recentlyCompletedCount, icon: <CheckCircle2 className="w-4 h-4" />, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-200", pulse: false, scrollTo: "section-recently-completed", href: "/engineering/tasks?status=COMPLETE" },
   ];
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2" data-testid="standup-kpi-strip">
       {stats.map(s => (
-        <Card key={s.label} className={`overflow-hidden shadow-sm ${s.border} transition-all hover:shadow-md`}>
+        <Card
+          key={s.label}
+          className={`overflow-hidden shadow-sm ${s.border} transition-all hover:shadow-md cursor-pointer`}
+          onClick={() => s.href ? (window.location.href = s.href) : document.querySelector(`[data-testid="${s.scrollTo}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
+        >
           <CardContent className="p-3 flex items-center gap-2.5">
             <div className={`w-9 h-9 rounded-xl ${s.bg} flex items-center justify-center shrink-0 ${s.pulse ? "animate-pulse" : ""}`}>
               <span className={s.color}>{s.icon}</span>
@@ -353,7 +343,10 @@ function ProjectHealthGrid({ projects }: { projects: ProjectHealth[] }) {
                     {p.phaseLabel}
                   </span>
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${ragBg[p.rag]} ${ragText[p.rag]}`}>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md cursor-help ${ragBg[p.rag]} ${ragText[p.rag]}`}
+                  title={p.rag === "RED" ? "High risk: overdue tasks or >2 on hold" : p.rag === "AMBER" ? "At risk: tasks on hold or >3 due this week" : "On track: no overdue, minimal holds"}
+                >
                   {p.rag}
                 </span>
               </div>
@@ -401,7 +394,13 @@ function WorkloadTable({ workload }: { workload: WorkloadEntry[] }) {
         </thead>
         <tbody>
           {workload.map(w => (
-            <tr key={w.name} className="border-b last:border-b-0 hover:bg-muted/20 transition-colors" data-testid={`workload-row-${w.name}`}>
+            <tr
+              key={w.name}
+              className="border-b last:border-b-0 hover:bg-blue-50 transition-colors cursor-pointer"
+              onClick={() => window.location.href = `/engineering/tasks?assignee=${encodeURIComponent(w.name)}`}
+              title={`View ${w.name}'s tasks`}
+              data-testid={`workload-row-${w.name}`}
+            >
               <td className="px-3 py-2.5">
                 <div className="flex items-center gap-2">
                   <div className={`w-6 h-6 rounded-full ${getAvatarColor(w.name)} flex items-center justify-center shrink-0`}>
@@ -447,31 +446,7 @@ function WorkloadTable({ workload }: { workload: WorkloadEntry[] }) {
   );
 }
 
-async function engPatch(url: string, body: Record<string, any>) {
-  const token = localStorage.getItem("auth_token");
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(url, { method: "PATCH", headers, body: JSON.stringify(body), credentials: "include" });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Update failed" }));
-    const context = url.includes("/tasks/") ? "task update" : "update";
-    throw new Error(err.error || `Failed to save ${context} (${res.status})`);
-  }
-  return res.json();
-}
-
-async function engPost(url: string, body: Record<string, any>) {
-  const token = localStorage.getItem("auth_token");
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), credentials: "include" });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Action failed" }));
-    const context = url.includes("/comments") ? "comment" : url.includes("/watchers") ? "watcher update" : "action";
-    throw new Error(err.error || `Failed to complete ${context} (${res.status})`);
-  }
-  return res.json();
-}
+// engPatch, engPost imported from @/lib/eng-fetch
 
 interface FullTask {
   id: number;
@@ -1327,6 +1302,65 @@ function CompanyPrioritiesSection() {
   );
 }
 
+function ActivityFeed() {
+  const { data: auditData } = useQuery<{ entries: any[] }>({
+    queryKey: ["eng-activity-feed"],
+    queryFn: () => engFetch("/api/eng/audit-log?limit=15"),
+    refetchInterval: 60000,
+  });
+
+  const entries = auditData?.entries || [];
+
+  if (entries.length === 0) return null;
+
+  return (
+    <Card className="shadow-sm" data-testid="section-activity-feed">
+      <div className="px-4 py-3 border-b flex items-center gap-2">
+        <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center">
+          <Activity className="h-4 w-4 text-indigo-600" />
+        </div>
+        <span className="font-semibold text-sm">Recent Activity</span>
+        <span className="text-[10px] text-muted-foreground ml-auto">Live</span>
+      </div>
+      <CardContent className="p-0">
+        <div className="max-h-[280px] overflow-y-auto divide-y">
+          {entries.map((entry: any, i: number) => (
+            <div key={entry.id || i} className="px-4 py-2.5 flex items-start gap-2.5 hover:bg-muted/30 transition-colors text-xs">
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold text-white shrink-0 mt-0.5 ${
+                entry.actionType?.includes("status") ? "bg-blue-500" :
+                entry.actionType?.includes("comment") ? "bg-emerald-500" :
+                entry.actionType?.includes("created") ? "bg-purple-500" :
+                "bg-gray-400"
+              }`}>
+                {(entry.actorName || "?")[0]?.toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="leading-snug">
+                  <span className="font-semibold">{entry.actorName || "System"}</span>
+                  {" "}
+                  <span className="text-muted-foreground">
+                    {entry.actionType === "field_changed" && entry.fieldName === "status"
+                      ? `changed status → ${entry.newValue}`
+                      : entry.actionType === "comment_added"
+                      ? "added a comment"
+                      : entry.actionType === "created"
+                      ? "created a task"
+                      : `${entry.actionType?.replace(/_/g, " ")}`}
+                  </span>
+                </p>
+                {entry.taskTitle && <p className="text-muted-foreground truncate mt-0.5">{entry.taskTitle}</p>}
+              </div>
+              <span className="text-[9px] text-muted-foreground shrink-0 mt-0.5">
+                {entry.createdAt ? new Date(entry.createdAt).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" }) : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function EngineeringDashboard() {
   const { user, isAdmin } = useAuth();
   const userRole = (user as any)?.role || "";
@@ -1344,6 +1378,32 @@ export default function EngineeringDashboard() {
     queryFn: () => engFetch(`/api/eng/dashboard/standup${assigneeParam}`),
     refetchOnMount: "always",
     staleTime: 0,
+  });
+
+  const engAttentionItems = useMemo((): AttentionItem[] => {
+    if (!data?.summary) return [];
+    const s = data.summary;
+    const items: AttentionItem[] = [];
+    if (s.overdueTasks > 0) items.push({ label: "Overdue Tasks", value: s.overdueTasks, color: "text-red-600 bg-red-50 border-red-200", href: "/engineering/tasks?dueDate=overdue" });
+    if (s.holdTasks > 0) items.push({ label: "On Hold", value: s.holdTasks, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/engineering/tasks?status=HOLD" });
+    if (s.needsApprovalCount > 0) items.push({ label: "Needs Approval", value: s.needsApprovalCount, color: "text-violet-700 bg-violet-50 border-violet-200", href: "/engineering/tasks?status=NEEDS+APPROVAL" });
+    if (s.upcomingThisWeekCount > 0) items.push({ label: "Due This Week", value: s.upcomingThisWeekCount, color: "text-blue-700 bg-blue-50 border-blue-200", href: "/engineering/tasks?dueDate=this_week" });
+    return items;
+  }, [data?.summary]);
+
+  const summary = data?.summary;
+  const blockers = data?.blockers;
+  const recentlyCompleted = data?.recentlyCompleted ?? [];
+  const upcomingThisWeek = data?.upcomingThisWeek ?? [];
+  const needsApproval = data?.needsApproval ?? [];
+  const inProgressHighlights = data?.inProgressHighlights ?? [];
+  const workload = data?.workload ?? [];
+  const projectHealth = data?.projectHealth ?? [];
+  const statusPipeline = data?.statusPipeline ?? {};
+  const totalBlockers = (blockers?.hold?.length ?? 0) + (blockers?.overdue?.length ?? 0);
+
+  const todayFormatted = new Date().toLocaleDateString("en-ZA", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric"
   });
 
   if (isLoading) {
@@ -1364,7 +1424,7 @@ export default function EngineeringDashboard() {
     );
   }
 
-  if (error || !data) {
+  if (error || !data || !summary) {
     return (
       <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
         <SectionHeader
@@ -1383,13 +1443,6 @@ export default function EngineeringDashboard() {
       </PageShell>
     );
   }
-
-  const { summary, blockers, recentlyCompleted, upcomingThisWeek, needsApproval, inProgressHighlights, workload, projectHealth } = data;
-  const totalBlockers = blockers.hold.length + blockers.overdue.length;
-
-  const todayFormatted = new Date().toLocaleDateString("en-ZA", {
-    weekday: "long", day: "numeric", month: "long", year: "numeric"
-  });
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
@@ -1433,6 +1486,47 @@ export default function EngineeringDashboard() {
             >
               <LayoutGrid className="h-3.5 w-3.5" />
               {standupMode ? "Exit Standup" : "Standup Mode"}
+            </Button>
+          )}
+          {standupMode && data && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5"
+              onClick={() => {
+                const s = data.summary;
+                const lines = [
+                  `**Engineering Standup — ${new Date().toLocaleDateString("en-ZA", { weekday: "long", day: "2-digit", month: "short", year: "numeric" })}**`,
+                  "",
+                  `Projects: ${s.totalProjects} | Active: ${s.activeTasks} | Overdue: ${s.overdueTasks} | On Hold: ${s.holdTasks}`,
+                  "",
+                ];
+                if (data.blockers.overdue.length > 0) {
+                  lines.push(`**Overdue (${data.blockers.overdue.length}):**`);
+                  data.blockers.overdue.slice(0, 10).forEach(t => lines.push(`- ${t.title}${t.assignees?.length ? ` (${t.assignees[0]})` : ""}`));
+                  lines.push("");
+                }
+                if (data.blockers.hold.length > 0) {
+                  lines.push(`**On Hold (${data.blockers.hold.length}):**`);
+                  data.blockers.hold.slice(0, 10).forEach(t => lines.push(`- ${t.title}: ${t.holdReason || "no reason"}`));
+                  lines.push("");
+                }
+                if (data.needsApproval.length > 0) {
+                  lines.push(`**Needs Approval (${data.needsApproval.length}):**`);
+                  data.needsApproval.slice(0, 5).forEach(t => lines.push(`- ${t.title}`));
+                  lines.push("");
+                }
+                if (data.upcomingThisWeek.length > 0) {
+                  lines.push(`**Due This Week (${data.upcomingThisWeek.length}):**`);
+                  data.upcomingThisWeek.slice(0, 10).forEach(t => lines.push(`- ${t.title}${t.dueDate ? ` (${new Date(t.dueDate).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })})` : ""}`));
+                }
+                navigator.clipboard.writeText(lines.join("\n")).then(() => {
+                  toast({ title: "Standup copied", description: "Summary copied to clipboard" });
+                });
+              }}
+              data-testid="btn-copy-standup"
+            >
+              <ClipboardCopy className="h-3.5 w-3.5" /> Copy Standup
             </Button>
           )}
           {!standupMode && totalBlockers > 0 && (
@@ -1507,6 +1601,7 @@ export default function EngineeringDashboard() {
         </>
       ) : (
       <>
+      <AttentionBadges items={engAttentionItems} threshold={5} testId="eng-attention-needed" />
       <KpiStrip summary={summary} />
 
       {totalBlockers > 0 && (
@@ -1566,7 +1661,7 @@ export default function EngineeringDashboard() {
         {upcomingThisWeek.length > 0 ? (
           upcomingThisWeek.map(t => <TaskRow key={t.id} task={t} />)
         ) : (
-          <p className="text-xs text-muted-foreground p-4">No tasks due this week</p>
+          <p className="text-xs text-muted-foreground p-4">No tasks due this week — all clear for the next 7 days.</p>
         )}
       </CollapsibleSection>
 
@@ -1581,7 +1676,7 @@ export default function EngineeringDashboard() {
         {inProgressHighlights.length > 0 ? (
           inProgressHighlights.map(t => <TaskRow key={t.id} task={t} />)
         ) : (
-          <p className="text-xs text-muted-foreground p-4">No tasks in progress</p>
+          <p className="text-xs text-muted-foreground p-4">No tasks currently in progress. Check the task board for items to pick up.</p>
         )}
       </CollapsibleSection>
 
@@ -1622,7 +1717,7 @@ export default function EngineeringDashboard() {
               {(() => {
                 const statusOrder = ["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "QC APPROVED", "PROVIDE FEEDBACK", "PROJECTS ASSISTANCE", "HOLD", "COMPLETE"];
                                 const total = summary.totalTasks || 1;
-                return Object.entries(data.statusPipeline)
+                return Object.entries(statusPipeline)
                   .sort(([a], [b]) => {
                     const ai = statusOrder.indexOf(a);
                     const bi = statusOrder.indexOf(b);
@@ -1648,6 +1743,70 @@ export default function EngineeringDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <ActivityFeed />
+
+      {/* Stages Progress Matrix (#8) */}
+      {projectHealth.length > 0 && (
+        <Card className="shadow-sm" data-testid="section-stages-matrix">
+          <div className="px-4 py-3 border-b flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center">
+              <LayoutGrid className="h-4 w-4 text-violet-600" />
+            </div>
+            <span className="font-semibold text-sm">Stages Progress Matrix</span>
+            <span className="text-[10px] text-muted-foreground ml-auto">{projectHealth.length} projects</span>
+          </div>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/20">
+                    <th className="text-left px-3 py-2 font-semibold text-muted-foreground min-w-[150px]">Project</th>
+                    <th className="text-center px-2 py-2 font-semibold text-muted-foreground">Phase</th>
+                    <th className="text-center px-2 py-2 font-semibold text-muted-foreground min-w-[120px]">Progress</th>
+                    <th className="text-center px-2 py-2 font-semibold text-muted-foreground">Active</th>
+                    <th className="text-center px-2 py-2 font-semibold text-muted-foreground">Hold</th>
+                    <th className="text-center px-2 py-2 font-semibold text-muted-foreground">Overdue</th>
+                    <th className="text-center px-2 py-2 font-semibold text-muted-foreground">RAG</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projectHealth
+                    .sort((a, b) => {
+                      const ragOrder: Record<string, number> = { RED: 0, AMBER: 1, GREEN: 2 };
+                      return (ragOrder[a.rag] ?? 3) - (ragOrder[b.rag] ?? 3) || b.completion - a.completion;
+                    })
+                    .map(p => (
+                    <tr key={p.projectName} className="border-b hover:bg-muted/20 transition-colors">
+                      <td className="px-3 py-2 font-medium truncate max-w-[180px]">{p.displayName}</td>
+                      <td className="px-2 py-2 text-center">
+                        <span className="px-2 py-0.5 rounded-full bg-muted text-[9px] font-medium">{p.phaseLabel || p.phase || "—"}</span>
+                      </td>
+                      <td className="px-2 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 bg-muted/60 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${p.rag === "RED" ? "bg-red-400" : p.rag === "AMBER" ? "bg-amber-400" : "bg-emerald-400"}`}
+                              style={{ width: `${p.completion}%` }}
+                            />
+                          </div>
+                          <span className="font-mono text-[10px] w-8 text-right font-bold">{p.completion}%</span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-center font-mono font-bold">{p.active}</td>
+                      <td className="px-2 py-2 text-center font-mono font-bold">{p.hold > 0 ? <span className="text-amber-600">{p.hold}</span> : "—"}</td>
+                      <td className="px-2 py-2 text-center font-mono font-bold">{p.overdue > 0 ? <span className="text-red-600">{p.overdue}</span> : "—"}</td>
+                      <td className="px-2 py-2 text-center">
+                        <span className={`w-3 h-3 rounded-full inline-block ${p.rag === "RED" ? "bg-red-500" : p.rag === "AMBER" ? "bg-amber-500" : "bg-emerald-500"}`} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div>
         <div className="flex items-center gap-2 mb-3">

@@ -156,6 +156,9 @@ export const programExpense = pgTable("program_expense", {
   computedForecastPaymentDate: text("computed_forecast_payment_date"),
   supplierName: text("supplier_name"),
   isManual: boolean("is_manual").default(false),
+  dataSource: text("data_source").default("SMART_IMPORT"),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  importRunId: integer("import_run_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -181,6 +184,9 @@ export const programInflows = pgTable("program_inflows", {
   inBank: integer("in_bank").default(0),
   inflowLineHash: text("inflow_line_hash"),
   computedForecastReceiptDate: text("computed_forecast_receipt_date"),
+  dataSource: text("data_source").default("SMART_IMPORT"),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  importRunId: integer("import_run_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -220,6 +226,7 @@ export const projectRevenueSummary = pgTable("project_revenue_summary", {
   actualMargin: decimal("actual_margin", { precision: 6, scale: 4 }),
   voPmLimit: decimal("vo_pm_limit", { precision: 15, scale: 2 }),
   currentVoTotal: decimal("current_vo_total", { precision: 15, scale: 2 }),
+  projectId: integer("project_id").references(() => projectInfo.id),
   capturedAt: timestamp("captured_at").notNull().defaultNow(),
 });
 
@@ -384,6 +391,7 @@ export const cashflowPoints = pgTable("cashflow_points", {
   seriesName: text("series_name").notNull(), // e.g. "Planned Revenue", "ACTUAL CashFlow"
   pointDate: text("point_date").notNull(), // ISO date string for the week/date
   value: decimal("value", { precision: 15, scale: 2 }),
+  projectId: integer("project_id").references(() => projectInfo.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -2710,7 +2718,7 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'ms_integration'
   | 'my_work' | 'ms_sync' | 'project_tagging' | 'excel_updates' | 'database_migration'
   | 'revenue_tracker' | 'gp_tracker' | 'work_items'
-  | 'task_management' | 'standups';
+  | 'task_management' | 'standups' | 'fye_revenue_tracking';
 export type PermissionAction = 'view' | 'create' | 'edit' | 'approve' | 'override' | 'delete';
 export const AUTHORITY_ACTIONS = [
   'view',
@@ -3623,6 +3631,15 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
+  {
+    entity: 'fye_revenue_tracking',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'ACCOUNTANT', 'PROJECT_DEVELOPER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
 ];
 
 export function checkPermission(role: string, entity: PermissionEntity, action: PermissionAction): boolean {
@@ -3851,8 +3868,9 @@ export const normalizedPlanTasks = pgTable("normalized_plan_tasks", {
   scheduledDate: text("scheduled_date"),
   scheduledStartTime: text("scheduled_start_time"),
   scheduledEndTime: text("scheduled_end_time"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertNormalizedPlanTaskSchema = createInsertSchema(normalizedPlanTasks).omit({ id: true } as any);
+export const insertNormalizedPlanTaskSchema = createInsertSchema(normalizedPlanTasks).omit({ id: true, createdAt: true } as any);
 export type InsertNormalizedPlanTask = z.infer<typeof insertNormalizedPlanTaskSchema>;
 export type NormalizedPlanTask = typeof normalizedPlanTasks.$inferSelect;
 
@@ -3878,8 +3896,9 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   sourceRow: integer("source_row"),
   importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
   turnaroundDays: integer("turnaround_days"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true } as any);
+export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true } as any);
 export type InsertNormalizedRevenueLine = z.infer<typeof insertNormalizedRevenueLineSchema>;
 export type NormalizedRevenueLine = typeof normalizedRevenueLines.$inferSelect;
 
@@ -3975,14 +3994,15 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   status: costLineStatusEnum("cost_line_status").notNull().default('PLANNED'),
   sourceSheet: text("source_sheet"),
   sourceRow: integer("source_row"),
-  importRunId: integer("import_run_id").references(() => smartImportRuns.id),
+  importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
   turnaroundDays: integer("turnaround_days"),
   patternRuleId: integer("pattern_rule_id"),
   patternClassifiedAt: timestamp("pattern_classified_at"),
   patternInferredType: text("pattern_inferred_type"),
   noRevenueLinked: boolean("no_revenue_linked").default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true } as any);
+export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true } as any);
 export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;
 export type NormalizedCostLine = typeof normalizedCostLines.$inferSelect;
 
@@ -3994,8 +4014,9 @@ export const normalizedExecutionPhases = pgTable("normalized_execution_phases", 
   phaseDate: text("phase_date"),
   source: phaseSourceEnum("source").notNull().default('EXCEL_IMPORT'),
   importRunId: integer("import_run_id").references(() => smartImportRuns.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
-export const insertNormalizedExecutionPhaseSchema = createInsertSchema(normalizedExecutionPhases).omit({ id: true } as any);
+export const insertNormalizedExecutionPhaseSchema = createInsertSchema(normalizedExecutionPhases).omit({ id: true, createdAt: true } as any);
 export type InsertNormalizedExecutionPhase = z.infer<typeof insertNormalizedExecutionPhaseSchema>;
 export type NormalizedExecutionPhase = typeof normalizedExecutionPhases.$inferSelect;
 
@@ -5772,3 +5793,61 @@ export const projectLinkageReviewQueue = pgTable("project_linkage_review_queue",
 export const insertProjectLinkageReviewQueueSchema = createInsertSchema(projectLinkageReviewQueue).omit({ id: true, createdAt: true } as any);
 export type InsertProjectLinkageReviewQueue = z.infer<typeof insertProjectLinkageReviewQueueSchema>;
 export type ProjectLinkageReviewQueue = typeof projectLinkageReviewQueue.$inferSelect;
+
+// ===================== FYE REVENUE TRACKING =====================
+
+// FYE Budget table - monthly budget entries for Revenue/COS per project
+export const fyeBudgets = pgTable("fye_budgets", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  projectName: text("project_name").notNull(),
+  fye: text("fye").notNull(), // e.g. "2026" means Sep 2025 - Aug 2026
+  monthKey: text("month_key").notNull(), // "YYYY-MM"
+  budgetType: text("budget_type").notNull(), // "revenue" or "cos"
+  amount: decimal("amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  updatedBy: integer("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertFyeBudgetSchema = createInsertSchema(fyeBudgets).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertFyeBudget = z.infer<typeof insertFyeBudgetSchema>;
+export type FyeBudget = typeof fyeBudgets.$inferSelect;
+
+// Forecast Pipeline table - deals with probability >= 75%
+export const forecastPipeline = pgTable("forecast_pipeline", {
+  id: serial("id").primaryKey(),
+  projectName: text("project_name").notNull(),
+  projectDeveloper: text("project_developer"),
+  location: text("location"),
+  sizeKwp: decimal("size_kwp", { precision: 12, scale: 2 }),
+  dealProbabilityPct: integer("deal_probability_pct").notNull().default(75),
+  forecastSignatureDate: text("forecast_signature_date"),
+  solarRevenue: decimal("solar_revenue", { precision: 15, scale: 2 }).default("0"),
+  bessRevenue: decimal("bess_revenue", { precision: 15, scale: 2 }).default("0"),
+  forecastGpPct: decimal("forecast_gp_pct", { precision: 6, scale: 4 }).default("0"),
+  status: text("status").notNull().default("active"), // "active" or "archived"
+  notes: text("notes"),
+  updatedBy: integer("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertForecastPipelineSchema = createInsertSchema(forecastPipeline).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertForecastPipeline = z.infer<typeof insertForecastPipelineSchema>;
+export type ForecastPipeline = typeof forecastPipeline.$inferSelect;
+
+// Lost Deals table
+export const lostDeals = pgTable("lost_deals", {
+  id: serial("id").primaryKey(),
+  dealName: text("deal_name").notNull(),
+  dealValue: decimal("deal_value", { precision: 15, scale: 2 }),
+  businessDeveloper: text("business_developer"),
+  lostReason: text("lost_reason"),
+  lostDate: text("lost_date"),
+  notes: text("notes"),
+  updatedBy: integer("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertLostDealSchema = createInsertSchema(lostDeals).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertLostDeal = z.infer<typeof insertLostDealSchema>;
+export type LostDeal = typeof lostDeals.$inferSelect;
