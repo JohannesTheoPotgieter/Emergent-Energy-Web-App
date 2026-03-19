@@ -49,6 +49,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "executionBoardProgram", path: "/execution-board/program", label: "Program View", permissionEntity: "execution_board", routeComponentKey: "ExecutionBoardPage" },
   { id: "executionBoardConstruction", path: "/execution-board/construction", label: "Construction View", permissionEntity: "execution_board", routeComponentKey: "ExecutionBoardPage" },
   { id: "executionBoardFinance", path: "/execution-board/finance", label: "Program Finance", permissionEntity: "execution_board", routeComponentKey: "ExecutionBoardPage" },
+  { id: "executionBoardRealisation", path: "/execution-board/realisation", label: "Realisation KPIs", permissionEntity: "execution_board", routeComponentKey: "ExecutionBoardPage" },
   { id: "myToolMeetings", path: "/my-tool/meetings", label: "My Work Meetings (Legacy)", redirectTo: "/my-work/meetings" },
   { id: "smartImport", path: "/admin/smart-import", label: "Smart Import", iconKey: "FileSpreadsheet", navGroup: "SYSTEM", permissionEntity: "smart_import", showInSidebar: false, routeComponentKey: "SmartImportPage" },
   { id: "invoicePatterns", path: "/invoice-patterns", label: "Invoice Patterns", iconKey: "FileSpreadsheet", navGroup: "FINANCE", permissionEntity: "invoice_patterns", showInSidebar: true, routeComponentKey: "InvoicePatternsPage", labels: { redesigned: "Invoice Pattern Library" } },
