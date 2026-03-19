@@ -37,6 +37,7 @@ function engFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = { ...(options?.headers as any || {}) };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (options?.body && typeof options.body === "string") headers["Content-Type"] = "application/json";
   return fetch(url, { ...options, headers, credentials: "include" });
 }
 

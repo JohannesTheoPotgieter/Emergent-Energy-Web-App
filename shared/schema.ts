@@ -2568,6 +2568,7 @@ export const projectEngTasks = pgTable("project_eng_tasks", {
   completedAt: timestamp("completed_at"),
   completedBy: integer("completed_by").references(() => users.id),
   hasDeliverable: boolean("has_deliverable").notNull().default(false),
+  workItemId: integer("work_item_id").references(() => workItems.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertProjectEngTaskSchema = createInsertSchema(projectEngTasks).omit({ id: true, createdAt: true } as any);

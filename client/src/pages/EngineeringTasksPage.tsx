@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { HoldReasonDialog } from "@/components/HoldReasonDialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1175,7 +1176,6 @@ function TaskDetailDrawer({
   };
 
   const handleStatusChange = (newStatus: string) => {
-    const task = tasks.find(t => t.id === taskId);
     if (!task) return;
     if (!canTransition(task.status, newStatus)) {
       toast({ title: "Transition not allowed", description: `Cannot move task from ${getTaskStatusLabel(task.status)} to ${getTaskStatusLabel(newStatus)}.`, variant: "destructive" });
@@ -2348,57 +2348,14 @@ function TaskDetailDrawer({
         </ScrollArea>
       </div>
 
-      <Dialog open={drawerHoldDialog} onOpenChange={setDrawerHoldDialog}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <PauseCircle className="h-5 w-5 text-amber-500" />
-              Hold Reason Required
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 pt-2">
-            <p className="text-sm text-muted-foreground">Please provide a reason for putting this task on hold.</p>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Blocked Type *</label>
-              <SearchableSelect
-                value={drawerBlockedType}
-                onValueChange={setDrawerBlockedType}
-                placeholder="Internal or External..."
-                triggerClassName="h-9"
-                options={[
-                  { value: "Internal", label: "Internal" },
-                  { value: "External", label: "External" },
-                ]}
-                data-testid="select-drawer-blocked-type"
-              />
-            </div>
-            <Textarea
-              value={drawerHoldReason}
-              onChange={(e) => setDrawerHoldReason(e.target.value)}
-              placeholder="e.g. Waiting for client approval, materials delayed..."
-              className="min-h-[80px]"
-              data-testid="input-drawer-hold-reason"
-            />
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setDrawerHoldDialog(false)} data-testid="btn-drawer-hold-cancel">Cancel</Button>
-              <Button
-                size="sm"
-                className="bg-amber-600 hover:bg-amber-700"
-                disabled={!drawerHoldReason.trim() || !drawerBlockedType}
-                onClick={() => {
-                  updateMutation.mutate({ status: "HOLD", holdReason: drawerHoldReason.trim(), blockedType: drawerBlockedType });
-                  setDrawerHoldDialog(false);
-                  setDrawerHoldReason("");
-                  setDrawerBlockedType("");
-                }}
-                data-testid="btn-drawer-hold-confirm"
-              >
-                Put on Hold
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <HoldReasonDialog
+        open={drawerHoldDialog}
+        onOpenChange={setDrawerHoldDialog}
+        onConfirm={(reason, blockedType) => {
+          updateMutation.mutate({ status: "HOLD", holdReason: reason, blockedType });
+        }}
+        testIdPrefix="drawer-hold"
+      />
     </div>
   );
 }
@@ -2436,7 +2393,7 @@ function ProjectKanbanView({
     projects: { projectName: string; displayName: string; phase: string; phaseLabel: string }[];
   }>({
     queryKey: ["eng-dashboard-projects"],
-    queryFn: () => engFetch("/api/eng/dashboard/projects"),
+    queryFn: () => engFetch("/api/eng/dashboard/projects").catch(() => ({ projects: [] })),
     staleTime: 30000,
   });
 
@@ -2951,12 +2908,14 @@ function MyTasksView({
   onCardClick,
   onStatusChange,
   onPriorityChange,
+  filterStatuses = [],
 }: {
   tasks: Task[];
   myName: string;
   onCardClick: (task: Task) => void;
   onStatusChange: (id: number, status: string) => void;
   onPriorityChange: (id: number, priority: string) => void;
+  filterStatuses?: string[];
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -4481,6 +4440,7 @@ export default function EngineeringTasksPage() {
           onCardClick={setSelectedTask}
           onStatusChange={handleStatusChange}
           onPriorityChange={handlePriorityChange}
+          filterStatuses={filterStatuses}
         />
       ) : viewMode === "projects" ? (
         <ProjectKanbanView
@@ -4515,57 +4475,17 @@ export default function EngineeringTasksPage() {
         />
       )}
 
-      <Dialog open={!!holdDialog} onOpenChange={(open) => { if (!open) setHoldDialog(null); }}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <PauseCircle className="h-5 w-5 text-amber-500" />
-              Hold Reason Required
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 pt-2">
-            <p className="text-sm text-muted-foreground">Please provide a reason for putting this task on hold.</p>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Blocked Type *</label>
-              <SearchableSelect
-                value={holdDialog?.blockedType || ""}
-                onValueChange={(v) => setHoldDialog(prev => prev ? { ...prev, blockedType: v } : null)}
-                placeholder="Internal or External..."
-                triggerClassName="h-9"
-                options={[
-                  { value: "Internal", label: "Internal" },
-                  { value: "External", label: "External" },
-                ]}
-                data-testid="select-hold-blocked-type"
-              />
-            </div>
-            <Textarea
-              value={holdDialog?.reason || ""}
-              onChange={(e) => setHoldDialog(prev => prev ? { ...prev, reason: e.target.value } : null)}
-              placeholder="e.g. Waiting for client approval, materials delayed..."
-              className="min-h-[80px]"
-              data-testid="input-hold-reason"
-            />
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setHoldDialog(null)} data-testid="btn-hold-cancel">Cancel</Button>
-              <Button
-                size="sm"
-                className="bg-amber-600 hover:bg-amber-700"
-                disabled={!holdDialog?.reason?.trim() || !holdDialog?.blockedType}
-                onClick={() => {
-                  if (holdDialog && holdDialog.reason.trim() && holdDialog.blockedType) {
-                    updateStatusMutation.mutate({ taskId: holdDialog.taskId, status: "HOLD", holdReason: holdDialog.reason.trim(), blockedType: holdDialog.blockedType });
-                    setHoldDialog(null);
-                  }
-                }}
-                data-testid="btn-hold-confirm"
-              >
-                Put on Hold
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <HoldReasonDialog
+        open={!!holdDialog}
+        onOpenChange={(open) => { if (!open) setHoldDialog(null); }}
+        onConfirm={(reason, blockedType) => {
+          if (holdDialog) {
+            updateStatusMutation.mutate({ taskId: holdDialog.taskId, status: "HOLD", holdReason: reason, blockedType });
+            setHoldDialog(null);
+          }
+        }}
+        testIdPrefix="hold"
+      />
 
       {showShortcuts && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowShortcuts(false)}>
