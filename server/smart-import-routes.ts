@@ -3091,4 +3091,51 @@ router.post("/api/import-control-tower/retry/:runId", requireAuth, requirePermis
 
 export function registerSmartImportRoutes(app: Express) {
   app.use(router);
+
+  // Ensure program_expense and program_inflows have all required columns.
+  // These are additive ALTER TABLE statements (safe to re-run).
+  (async () => {
+    try {
+      const { getDbMode } = await import("./db");
+      if (getDbMode() === "sqlite") return;
+      const { sql: rawSql } = await import("drizzle-orm");
+      await db.execute(rawSql.raw(`
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_qty NUMERIC(12,4);
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_rate_unit NUMERIC(15,2);
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_total NUMERIC(15,2);
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_cos_total NUMERIC(15,2);
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS forecast_payment_date TEXT;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_qty NUMERIC(12,4);
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_rate_unit NUMERIC(15,2);
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_actual_total NUMERIC(15,2);
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_po_number TEXT;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_invoice_number TEXT;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_invoiced_date TEXT;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_confirmed BOOLEAN DEFAULT FALSE;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_font_color TEXT;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_payment_date TEXT;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS payment_date_confirmed BOOLEAN DEFAULT FALSE;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS payment_date_font_color TEXT;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS revenue_amount NUMERIC(15,2);
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS actual_cos_total NUMERIC(15,2);
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS line_status TEXT;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_line_hash TEXT;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_state TEXT;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_forecast_payment_date TEXT;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS supplier_name TEXT;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT';
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS project_id INTEGER;
+        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
+        ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
+        ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT';
+        ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS project_id INTEGER;
+        ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
+      `));
+      console.log("[SmartImport] Ensured program_expense/program_inflows columns exist");
+    } catch (e: any) {
+      console.warn("[SmartImport] Column check skipped:", e?.message?.slice(0, 80));
+    }
+  })();
 }
