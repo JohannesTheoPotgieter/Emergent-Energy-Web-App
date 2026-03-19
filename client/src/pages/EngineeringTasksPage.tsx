@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { HoldReasonDialog } from "@/components/HoldReasonDialog";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,7 @@ import {
   Save,
   RotateCw,
   ArrowRightLeft,
+  RefreshCw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -732,9 +734,9 @@ function KanbanColumn({
             <TaskCard key={task.id} task={task} onClick={() => onCardClick(task)} onStatusChange={onStatusChange} onPriorityChange={onPriorityChange} onDueDateChange={onDueDateChange} compact={compact} selected={selectedTaskIds?.has(task.id)} onToggleSelect={onToggleSelect} />
           ))}
           {tasks.length === 0 && (
-            <div className="text-center py-8 text-xs text-muted-foreground/40">
+            <div className="text-center py-8 text-xs text-muted-foreground/50">
               <Circle className="h-5 w-5 mx-auto mb-1 opacity-30" />
-              Empty
+              No tasks in this column
             </div>
           )}
         </div>
@@ -1218,6 +1220,7 @@ function TaskDetailDrawer({
   return (
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="task-detail-drawer">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <ErrorBoundary>
       <div className="relative w-full max-w-full sm:max-w-2xl bg-background border-l shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-2 min-w-0">
@@ -2356,6 +2359,7 @@ function TaskDetailDrawer({
         }}
         testIdPrefix="drawer-hold"
       />
+      </ErrorBoundary>
     </div>
   );
 }
@@ -3465,7 +3469,7 @@ export default function EngineeringTasksPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedTask, showShortcuts]);
 
-  const { data: tasks = [], isLoading, error } = useQuery<Task[]>({
+  const { data: tasks = [], isLoading, error, refetch } = useQuery<Task[]>({
     queryKey: ["eng-tasks"],
     queryFn: () => engFetch("/api/eng/tasks"),
     refetchOnMount: "always",
@@ -3885,6 +3889,7 @@ export default function EngineeringTasksPage() {
   }, [tasks]);
 
   return (
+    <ErrorBoundary>
     <div data-testid="eng-tasks-page" className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -4107,10 +4112,13 @@ export default function EngineeringTasksPage() {
         <Card className="shadow-sm border-red-200 bg-red-50/60" data-testid="engineering-tasks-error-banner">
           <CardContent className="p-3 flex items-start gap-2 text-sm text-red-700">
             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-            <div>
+            <div className="flex-1">
               <p className="font-medium">Task data did not refresh cleanly.</p>
               <p className="text-xs text-red-600/90">{(error as Error).message || "Unknown error"}</p>
             </div>
+            <Button variant="outline" size="sm" className="shrink-0 h-7 text-xs border-red-300 text-red-700 hover:bg-red-100" onClick={() => refetch()} data-testid="btn-retry-tasks">
+              <RefreshCw className="h-3 w-3 mr-1" /> Retry
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -4279,6 +4287,14 @@ export default function EngineeringTasksPage() {
         <div className="flex justify-center py-16">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
+      ) : !error && tasks.length === 0 ? (
+        <Card className="shadow-sm" data-testid="engineering-tasks-empty-state">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <ListTodo className="h-12 w-12 text-muted-foreground/30 mb-3" />
+            <h3 className="text-lg font-medium text-muted-foreground">No engineering tasks yet</h3>
+            <p className="text-sm text-muted-foreground/70 mt-1 max-w-md">Create your first task to get started, or generate tasks from an engineering stage checklist.</p>
+          </CardContent>
+        </Card>
       ) : viewMode === "board" ? (
         <>
         <div className="flex items-center gap-2 flex-wrap" data-testid="board-toolbar">
@@ -4515,5 +4531,6 @@ export default function EngineeringTasksPage() {
         </div>
       )}
     </div>
+    </ErrorBoundary>
   );
 }

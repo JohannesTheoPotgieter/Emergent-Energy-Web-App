@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -894,6 +895,7 @@ function DeliverablesSection({ stageId, projectId, templates, uploaded }: {
   }
 
   return (
+    <ErrorBoundary>
     <div className="space-y-3">
       {templates.map((dt: any) => {
         const files = uploaded.filter((u: any) => u.deliverableTemplateId === dt.id);
@@ -1142,5 +1144,6 @@ function ApprovalRow({ approval, projectId, stageId, userRole, isCoo }: {
         )}
       </CardContent>
     </Card>
+    </ErrorBoundary>
   );
 }
