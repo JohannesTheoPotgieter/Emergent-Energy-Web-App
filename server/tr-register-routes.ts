@@ -474,7 +474,8 @@ export function registerTrRegisterRoutes(app: Express) {
       if (!link) return res.status(404).json({ error: "Link not found" });
 
       if (link.autoCreatedPmTaskId) {
-        await db.delete(operationalTasks).where(eq(operationalTasks.id, link.autoCreatedPmTaskId));
+        // GC-002: Use soft-delete instead of hard-delete for data recovery
+        await db.update(operationalTasks).set({ deletedAt: new Date() }).where(eq(operationalTasks.id, link.autoCreatedPmTaskId));
       }
 
       await db.delete(trItemProjectLinks).where(eq(trItemProjectLinks.id, linkId));

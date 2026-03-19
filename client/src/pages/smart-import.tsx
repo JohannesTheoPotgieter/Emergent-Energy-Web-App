@@ -2844,8 +2844,24 @@ function PreviewCommitStep({
 
                 {manualEditsWarning.conflicts && manualEditsWarning.conflicts.length > 0 && (
                   <div className="mt-2 border border-amber-200 rounded-lg overflow-hidden bg-white">
-                    <div className="px-3 py-2 bg-amber-100/50 border-b border-amber-200">
-                      <p className="text-xs font-semibold text-amber-800">Manual edits detected — choose which to keep</p>
+                    <div className="px-3 py-2 bg-amber-100/50 border-b border-amber-200 flex items-center justify-between">
+                      {/* GC-006: Enhanced conflict summary with counters */}
+                      <p className="text-xs font-semibold text-amber-800">
+                        {manualEditsWarning.conflicts.length} manual edit{manualEditsWarning.conflicts.length !== 1 ? "s" : ""} detected — choose which to keep
+                      </p>
+                      <div className="flex gap-2 text-[10px]">
+                        <span className="text-emerald-700 font-medium">
+                          {Object.values(conflictResolutions).filter(v => v === "keep").length} keeping
+                        </span>
+                        <span className="text-slate-400">|</span>
+                        <span className="text-red-600 font-medium">
+                          {Object.values(conflictResolutions).filter(v => v === "import").length} overwriting
+                        </span>
+                        <span className="text-slate-400">|</span>
+                        <span className="text-slate-500 font-medium">
+                          {manualEditsWarning.conflicts.length - Object.keys(conflictResolutions).length} unresolved
+                        </span>
+                      </div>
                     </div>
                     <div className="max-h-[320px] overflow-y-auto">
                       <table className="w-full text-xs" data-testid="table-conflicts">
@@ -2929,7 +2945,8 @@ function PreviewCommitStep({
                       >
                         Overwrite All with Excel
                       </button>
-                      <span className="text-[10px] text-slate-400 ml-auto">You can still change individual fields after applying</span>
+                      {/* GC-006: Recommendation hint */}
+                      <span className="text-[10px] text-slate-400 ml-auto">Recommended: Keep manual edits unless the Excel file has newer data</span>
                     </div>
                   </div>
                 )}
