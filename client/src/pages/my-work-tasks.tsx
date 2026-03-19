@@ -277,6 +277,13 @@ export default function MyWorkTasksPage() {
   const openedQueryItemKeyRef = useRef<string | null>(null);
   const [draggedTask, setDraggedTask] = useState<UnifiedTask | null>(null);
   const [dropTargetCol, setDropTargetCol] = useState<TaskStatus | null>(null);
+  const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
+  const [bulkActionPending, setBulkActionPending] = useState(false);
+  const [swimlaneGroupBy, setSwimlaneGroupBy] = useState<"none" | "project" | "department" | "priority">("none");
+  const [savedPresets, setSavedPresets] = useState<{ name: string; filters: any }[]>(() => {
+    try { const raw = localStorage.getItem(`mw_filter_presets_${user?.id}`); return raw ? JSON.parse(raw) : []; } catch { return []; }
+  });
+  const [presetMenuOpen, setPresetMenuOpen] = useState(false);
   const [newTask, setNewTask] = useState({
     title: "", description: "", priority: "normal" as TaskPriority,
     status: "todo" as TaskStatus, dueDate: "", projectName: "",
@@ -566,13 +573,23 @@ export default function MyWorkTasksPage() {
     onError: () => { toast({ title: "Failed to create subtask", variant: "destructive" }); },
   });
 
+  const [boardCompletionDialog, setBoardCompletionDialog] = useState<{ task: UnifiedTask } | null>(null);
+  const [boardCompletionComments, setBoardCompletionComments] = useState("");
+
   const boardStatusMutation = useMutation({
-    mutationFn: async ({ task, newStatus }: { task: UnifiedTask; newStatus: string }) => {
+    mutationFn: async ({ task, newStatus, outcomeComments }: { task: UnifiedTask; newStatus: string; outcomeComments?: string }) => {
       if (task._source === "personal") {
         await apiRequest("PATCH", `/api/mytool/tasks/${task._rawId}`, { status: newStatus });
       } else if (task._source === "tr_register") {
+        if (newStatus === "complete" && !task.notes?.trim() && !outcomeComments?.trim()) {
+          throw new Error("__NEEDS_COMMENTS__");
+        }
         const trStatus = newStatus === "complete" ? "Completed" : "Active";
         const endpoint = newStatus === "complete" ? `/api/tr-register/${task._rawId}/complete` : `/api/tr-register/${task._rawId}`;
+        if (newStatus === "complete" && outcomeComments?.trim()) {
+          const saveRes = await fetch(`/api/tr-register/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ outcomeComments: outcomeComments.trim() }) });
+          if (!saveRes.ok) { throw new Error("Failed to save outcome comments"); }
+        }
         const res = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify(newStatus === "complete" ? {} : { status: trStatus }) });
         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       } else if (task._source === "operational") {
@@ -595,8 +612,14 @@ export default function MyWorkTasksPage() {
         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       }
     },
-    onSuccess: () => { invalidateAll(); toast({ title: "Status updated" }); },
-    onError: (err: any) => { toast({ title: err.message || "Failed to update status", variant: "destructive" }); },
+    onSuccess: () => { invalidateAll(); setBoardCompletionDialog(null); setBoardCompletionComments(""); toast({ title: "Status updated" }); },
+    onError: (err: any, variables: any) => {
+      if (err.message === "__NEEDS_COMMENTS__") {
+        setBoardCompletionDialog({ task: variables.task });
+      } else {
+        toast({ title: err.message || "Failed to update status", variant: "destructive" });
+      }
+    },
   });
 
   const dismissNotifMutation = useMutation({
@@ -680,6 +703,14 @@ export default function MyWorkTasksPage() {
   const handleOpenSource = useCallback((task: UnifiedTask) => {
     const href = task.sourceHref || (task._source === "personal" ? `/my-work/tasks?itemKey=${encodeURIComponent(task._key)}` : null);
     if (!href) {
+      handleOpenDrawer(task);
+      return;
+    }
+
+    // If the sourceHref points to the current page (e.g. /my-work/tasks?itemKey=...),
+    // open the drawer directly instead of navigating — navigation to the same route
+    // won't re-trigger the useEffect that reads the query param.
+    if (!isExternalHref(href) && href.startsWith("/my-work/tasks")) {
       handleOpenDrawer(task);
       return;
     }
@@ -881,6 +912,85 @@ export default function MyWorkTasksPage() {
     setDraggedTask(null);
   }, [draggedTask, boardStatusMutation]);
 
+  // --- Feature 2: Bulk status updates ---
+  const toggleTaskSelection = useCallback((key: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setSelectedTasks(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const selectAllVisible = useCallback(() => {
+    setSelectedTasks(new Set(filteredTasks.map(t => t._key)));
+  }, [filteredTasks]);
+
+  const clearSelection = useCallback(() => setSelectedTasks(new Set()), []);
+
+  const handleBulkStatusChange = useCallback(async (newStatus: string) => {
+    const tasks = filteredTasks.filter(t => selectedTasks.has(t._key));
+    if (tasks.length === 0) return;
+    setBulkActionPending(true);
+    let successCount = 0;
+    for (const task of tasks) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          boardStatusMutation.mutate({ task, newStatus }, {
+            onSuccess: () => { successCount++; resolve(); },
+            onError: (err: any) => { if (err.message !== "__NEEDS_COMMENTS__") reject(err); else resolve(); },
+          });
+        });
+      } catch { /* skip failed */ }
+    }
+    setBulkActionPending(false);
+    setSelectedTasks(new Set());
+    invalidateAll();
+    toast({ title: `${successCount} task${successCount !== 1 ? "s" : ""} updated` });
+  }, [filteredTasks, selectedTasks, boardStatusMutation, invalidateAll, toast]);
+
+  // --- Feature 7: Saved filter presets ---
+  const saveCurrentPreset = useCallback(() => {
+    const name = prompt("Preset name:");
+    if (!name?.trim()) return;
+    const preset = {
+      name: name.trim(),
+      filters: { sourceFilter, statusFilter, priorityFilter, projectFilter, overdueOnly, dueThisWeekOnly, blockedOnly, assignedScope, showCompleted, groomMode },
+    };
+    const updated = [...savedPresets, preset];
+    setSavedPresets(updated);
+    localStorage.setItem(`mw_filter_presets_${user?.id}`, JSON.stringify(updated));
+    toast({ title: `Preset "${name.trim()}" saved` });
+  }, [sourceFilter, statusFilter, priorityFilter, projectFilter, overdueOnly, dueThisWeekOnly, blockedOnly, assignedScope, showCompleted, groomMode, savedPresets, user?.id, toast]);
+
+  const loadPreset = useCallback((preset: { name: string; filters: any }) => {
+    const f = preset.filters;
+    if (f.sourceFilter) setSourceFilter(f.sourceFilter);
+    if (f.statusFilter) setStatusFilter(f.statusFilter);
+    if (f.priorityFilter) setPriorityFilter(f.priorityFilter);
+    if (f.projectFilter !== undefined) setProjectFilter(f.projectFilter);
+    if (f.overdueOnly !== undefined) setOverdueOnly(f.overdueOnly);
+    if (f.dueThisWeekOnly !== undefined) setDueThisWeekOnly(f.dueThisWeekOnly);
+    if (f.blockedOnly !== undefined) setBlockedOnly(f.blockedOnly);
+    if (f.assignedScope) setAssignedScope(f.assignedScope);
+    if (f.showCompleted !== undefined) setShowCompleted(f.showCompleted);
+    if (f.groomMode !== undefined) setGroomMode(f.groomMode);
+    setPresetMenuOpen(false);
+    toast({ title: `Loaded "${preset.name}"` });
+  }, [toast]);
+
+  const deletePreset = useCallback((idx: number) => {
+    const updated = savedPresets.filter((_, i) => i !== idx);
+    setSavedPresets(updated);
+    localStorage.setItem(`mw_filter_presets_${user?.id}`, JSON.stringify(updated));
+    toast({ title: "Preset removed" });
+  }, [savedPresets, user?.id, toast]);
+
+  // --- Feature 5: Column WIP limits ---
+  const [wipLimits] = useState<Record<string, number>>(() => {
+    try { const raw = localStorage.getItem(`mw_wip_limits_${user?.id}`); return raw ? JSON.parse(raw) : { in_progress: 8, review: 5 }; } catch { return { in_progress: 8, review: 5 }; }
+  });
+
   if (isLoading) {
     return (
       <PageShell className="max-w-6xl p-4 md:p-6" data-testid="my-work-tasks-page">
@@ -923,6 +1033,39 @@ export default function MyWorkTasksPage() {
               {hasCustomDefault && <Button variant="ghost" size="sm" className="h-7 px-1.5 text-xs text-muted-foreground hidden sm:inline-flex" onClick={handleResetDefaultView} data-testid="btn-reset-default-view" title="Reset default"><RotateCw className="h-3 w-3" /></Button>}
               <Button variant={showCompleted ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 gap-1 hidden sm:inline-flex ${showCompleted ? "bg-emerald-500 hover:bg-emerald-600 text-white" : ""}`} onClick={() => setShowCompleted(!showCompleted)} data-testid="button-show-completed"><CheckCircle2 className="h-3 w-3" /><span>{showCompleted ? `Done (${kpiStats.done})` : "Show Done"}</span></Button>
               <Button variant={groomMode ? "default" : "ghost"} size="sm" className={`h-7 text-xs px-2 gap-1 hidden sm:inline-flex ${groomMode ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}`} onClick={() => setGroomMode(!groomMode)} data-testid="button-groom-mode"><Eye className="h-3 w-3" /><span>{groomMode ? "Grooming" : "Groom"}</span></Button>
+              {/* Feature 7: Filter presets */}
+              <Popover open={presetMenuOpen} onOpenChange={setPresetMenuOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 hidden sm:inline-flex" data-testid="btn-presets"><BookOpen className="h-3 w-3" /> Presets</Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-2" align="end">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-1 pb-1">Saved Presets</p>
+                    {savedPresets.length === 0 && <p className="text-[10px] text-muted-foreground px-1 py-2">No saved presets yet</p>}
+                    {savedPresets.map((p, i) => (
+                      <div key={i} className="flex items-center gap-1 group">
+                        <button onClick={() => loadPreset(p)} className="flex-1 text-left text-xs px-2 py-1.5 rounded hover:bg-muted transition-colors">{p.name}</button>
+                        <button onClick={() => deletePreset(i)} className="opacity-0 group-hover:opacity-100 p-0.5 text-red-500 hover:bg-red-50 rounded transition-opacity"><X className="h-3 w-3" /></button>
+                      </div>
+                    ))}
+                    <Separator className="my-1" />
+                    <button onClick={saveCurrentPreset} className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted transition-colors flex items-center gap-1.5 text-primary"><Plus className="h-3 w-3" /> Save current filters</button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+              {/* Feature 9: Swimlane selector (board mode only) */}
+              {viewMode === "board" && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant={swimlaneGroupBy !== "none" ? "secondary" : "ghost"} size="sm" className="h-7 px-2 text-xs gap-1 hidden sm:inline-flex" data-testid="btn-swimlanes"><Columns3 className="h-3 w-3" /> {swimlaneGroupBy !== "none" ? `By ${swimlaneGroupBy}` : "Swimlanes"}</Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-40 p-1" align="end">
+                    {(["none", "project", "department", "priority"] as const).map(opt => (
+                      <button key={opt} onClick={() => setSwimlaneGroupBy(opt)} className={`w-full text-left text-xs px-2 py-1.5 rounded transition-colors ${swimlaneGroupBy === opt ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted"}`}>{opt === "none" ? "No grouping" : `By ${opt}`}</button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+              )}
               <Button size="sm" className="h-7 gap-1 text-xs shadow-sm" onClick={() => setCreateDialogOpen(true)} data-testid="button-new-task"><Plus className="h-3.5 w-3.5" /> <span className="hidden xs:inline">New</span></Button>
             </div>
           }
@@ -1102,6 +1245,21 @@ export default function MyWorkTasksPage() {
         </div>
       )}
 
+      {/* Feature 2: Bulk action bar */}
+      {selectedTasks.size > 0 && (
+        <div className="shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/30 bg-primary/5 mb-2 animate-in slide-in-from-top-2" data-testid="bulk-action-bar">
+          <span className="text-xs font-semibold text-primary">{selectedTasks.size} selected</span>
+          <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={selectAllVisible}>Select all ({filteredTasks.length})</Button>
+          <div className="w-px h-4 bg-border" />
+          <Button size="sm" variant="outline" className="h-6 text-xs gap-1" onClick={() => handleBulkStatusChange("todo")} disabled={bulkActionPending}><Circle className="h-3 w-3" /> To Do</Button>
+          <Button size="sm" variant="outline" className="h-6 text-xs gap-1" onClick={() => handleBulkStatusChange("in_progress")} disabled={bulkActionPending}><Clock className="h-3 w-3" /> In Progress</Button>
+          <Button size="sm" variant="outline" className="h-6 text-xs gap-1 text-emerald-600" onClick={() => handleBulkStatusChange("complete")} disabled={bulkActionPending}><CheckCircle2 className="h-3 w-3" /> Complete</Button>
+          <Button size="sm" variant="outline" className="h-6 text-xs gap-1 text-red-600" onClick={() => handleBulkStatusChange("blocked")} disabled={bulkActionPending}><AlertCircle className="h-3 w-3" /> Blocked</Button>
+          {bulkActionPending && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+          <Button size="sm" variant="ghost" className="h-6 text-xs ml-auto" onClick={clearSelection}><X className="h-3 w-3" /> Clear</Button>
+        </div>
+      )}
+
       {viewMode === "list" ? (
         <div className="flex-1 min-h-0 overflow-y-auto rounded-xl border border-border bg-card shadow-sm" data-testid="task-list">
           {filteredTasks.length === 0 ? (
@@ -1120,6 +1278,54 @@ export default function MyWorkTasksPage() {
         </div>
       ) : (
         <div className="flex-1 min-h-0 overflow-x-auto -mx-2 px-2">
+          {/* Feature 9: Swimlanes */}
+          {swimlaneGroupBy !== "none" ? (
+            <div className="space-y-4">
+              {(() => {
+                const groups = new Map<string, UnifiedTask[]>();
+                for (const t of filteredTasks) {
+                  const key = swimlaneGroupBy === "project" ? (t.projectName?.replace(/_Tracker.*$/i, "").replace(/_/g, " ") || "No Project")
+                    : swimlaneGroupBy === "department" ? (t.department || "No Department")
+                    : (t.priority || "normal");
+                  if (!groups.has(key)) groups.set(key, []);
+                  groups.get(key)!.push(t);
+                }
+                return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([groupName, groupTasks]) => (
+                  <div key={groupName} className="rounded-lg border border-border/50 bg-card/50">
+                    <div className="px-3 py-1.5 border-b bg-muted/30 flex items-center gap-2">
+                      <span className="text-[11px] font-semibold">{groupName}</span>
+                      <Badge variant="secondary" className="text-[9px] h-3.5 px-1">{groupTasks.length}</Badge>
+                    </div>
+                    <div className="grid grid-cols-5 gap-2 p-2 min-w-[900px] sm:min-w-[1000px]">
+                      {BOARD_COLUMNS.map(col => {
+                        const colTasks = groupTasks.filter(t => {
+                          if (col.key === "todo") return t.status === "todo" || t.status === "inbox" || t.status === "planned";
+                          if (col.key === "complete") return t.status === "complete" || t.status === "done" || t.status === "cancelled";
+                          return t.status === col.key;
+                        });
+                        return (
+                          <div key={col.key} className={`rounded-md border bg-muted/10 border-t-2 ${col.color}`}>
+                            <div className={`px-2 py-1 flex items-center justify-between ${col.headerBg}`}>
+                              <span className="text-[10px] font-semibold">{col.label}</span>
+                              <span className="text-[9px] text-muted-foreground">{colTasks.length}</span>
+                            </div>
+                            <div className="p-1 space-y-1 max-h-[200px] overflow-y-auto">
+                              {colTasks.map(task => (
+                                <div key={task._key} onClick={() => handleOpenSource(task)} className="bg-background rounded border p-1.5 cursor-pointer hover:shadow-sm hover:border-primary/30 transition-all">
+                                  <p className="text-[10px] font-medium leading-snug line-clamp-2">{task.title}</p>
+                                  {task.dueAt && <span className="text-[8px] text-muted-foreground">{smartDueLabel(task.dueAt).label}</span>}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          ) : (
           <div className="grid grid-cols-5 gap-2 h-full min-w-[900px] sm:min-w-[1000px]">
             {BOARD_COLUMNS.map(col => {
               const colTasks = filteredTasks.filter(t => {
@@ -1128,10 +1334,12 @@ export default function MyWorkTasksPage() {
                 return t.status === col.key;
               });
               const isDropTarget = dropTargetCol === col.key;
+              const wipLimit = wipLimits[col.key];
+              const isOverWip = wipLimit && colTasks.length > wipLimit;
               return (
                 <div
                   key={col.key}
-                  className={`flex flex-col min-h-0 rounded-lg border bg-muted/10 border-t-2 ${col.color} transition-all ${isDropTarget ? "border-primary/50 bg-primary/5 shadow-md" : ""}`}
+                  className={`flex flex-col min-h-0 rounded-lg border bg-muted/10 border-t-2 ${col.color} transition-all ${isDropTarget ? "border-primary/50 bg-primary/5 shadow-md" : ""} ${isOverWip ? "ring-1 ring-amber-400" : ""}`}
                   onDragOver={(e) => handleBoardDragOver(e, col.key)}
                   onDragLeave={() => setDropTargetCol(null)}
                   onDrop={(e) => handleBoardDrop(e, col.key)}
@@ -1142,7 +1350,10 @@ export default function MyWorkTasksPage() {
                       <span className={`w-2 h-2 rounded-full ${col.dotColor}`} />
                       <span className="text-[11px] font-semibold">{col.label}</span>
                     </div>
-                    <Badge variant="secondary" className="text-[10px] h-4 px-1 font-semibold">{colTasks.length}</Badge>
+                    <div className="flex items-center gap-1">
+                      {isOverWip && <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1 rounded" title={`WIP limit: ${wipLimit}`}>WIP</span>}
+                      <Badge variant="secondary" className={`text-[10px] h-4 px-1 font-semibold ${isOverWip ? "bg-amber-100 text-amber-700" : ""}`}>{colTasks.length}{wipLimit ? `/${wipLimit}` : ""}</Badge>
+                    </div>
                   </div>
                   <div className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-1.5 pt-1 space-y-1">
                     {colTasks.map(task => {
@@ -1161,9 +1372,12 @@ export default function MyWorkTasksPage() {
                           data-testid={`board-card-${task._key}`}
                         >
                           <div className="flex items-center gap-1 mb-1.5 flex-wrap">
+                            <button onClick={(e) => toggleTaskSelection(task._key, e)} className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 transition-colors ${selectedTasks.has(task._key) ? "bg-primary border-primary text-primary-foreground" : "border-border hover:border-primary/50"}`} data-testid={`board-select-${task._key}`}>{selectedTasks.has(task._key) && <CheckCircle2 className="h-2.5 w-2.5" />}</button>
                             <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold ${pb.class}`}>{pb.label}</span>
                             <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-medium border ${task._sourceColor}`}>{task._sourceLabel}</span>
                             {(task._trackingRole === "creator" || task._trackingRole === "both") && <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border bg-teal-50 border-teal-200 text-teal-700"><Eye className="h-2.5 w-2.5" />Tracking</span>}
+                            {/* Feature 10: Recurring task indicator */}
+                            {task.isRecurring && <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border bg-indigo-50 border-indigo-200 text-indigo-700" title={`Repeats ${task.recurrenceFrequency || "regularly"}`}><RotateCw className="h-2.5 w-2.5" /></span>}
                             {task.ragStatus && <span className={`inline-flex items-center gap-0.5 text-[9px] font-medium ${task.ragStatus === "Red" ? "text-red-600" : task.ragStatus === "Amber" ? "text-amber-600" : "text-green-600"}`}><span className={`w-1.5 h-1.5 rounded-full ${task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"}`} />{task.ragStatus}</span>}
                           </div>
                           <p className="text-[12px] font-medium leading-snug line-clamp-2 mb-1.5">{task.title}</p>
@@ -1175,6 +1389,13 @@ export default function MyWorkTasksPage() {
                             <div className="mt-1.5 flex items-center gap-1">
                               <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{ width: `${task.percentComplete}%` }} /></div>
                               <span className="text-[9px] font-medium text-muted-foreground">{task.percentComplete}%</span>
+                            </div>
+                          )}
+                          {/* Feature 4: Subtask count on board cards */}
+                          {task.subtaskCount && task.subtaskCount > 0 && (
+                            <div className="mt-1.5 flex items-center gap-1">
+                              <ListTodo className="h-2.5 w-2.5 text-muted-foreground" />
+                              <span className="text-[9px] text-muted-foreground">{task.subtaskCount} subtask{task.subtaskCount !== 1 ? "s" : ""}</span>
                             </div>
                           )}
                           {(task.resolvedAssignees || task.resolvedOwners || task.assignees || task.owners) && (
@@ -1191,11 +1412,42 @@ export default function MyWorkTasksPage() {
               );
             })}
           </div>
+          )}
         </div>
       )}
 
       {drawerOpen && drawerTask && (<TaskDetailDrawer task={drawerTask} open={drawerOpen} onOpenChange={(open) => setDrawerOpen(open)} onInvalidate={invalidateAll} />)}
       {unifiedDetailOpen && unifiedDetailTaskFresh && (<TaskDetailPanel task={unifiedDetailTaskFresh} open={unifiedDetailOpen} onOpenChange={setUnifiedDetailOpen} onInvalidate={invalidateAll} allProjects={allProjects} canReassign={canReassignTask(unifiedDetailTaskFresh)} taskTypeLabel={taskTypeLabel(unifiedDetailTaskFresh)} />)}
+
+      {/* Board-level completion dialog for TR register items dragged to Complete */}
+      <Dialog open={!!boardCompletionDialog} onOpenChange={(open) => { if (!open) { setBoardCompletionDialog(null); setBoardCompletionComments(""); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" /> Complete Action</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-1">
+            <p className="text-xs font-medium">{boardCompletionDialog?.task.title}</p>
+            <p className="text-xs text-muted-foreground">Outcome comments are required before completing this action.</p>
+            <Textarea
+              value={boardCompletionComments}
+              onChange={e => setBoardCompletionComments(e.target.value)}
+              placeholder="Describe the outcome of this action..."
+              className="min-h-[80px] text-xs"
+              data-testid="input-board-completion-comments"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button size="sm" variant="outline" onClick={() => { setBoardCompletionDialog(null); setBoardCompletionComments(""); }}>Cancel</Button>
+            <Button size="sm" disabled={!boardCompletionComments.trim() || boardStatusMutation.isPending} onClick={() => {
+              if (boardCompletionDialog) {
+                boardStatusMutation.mutate({ task: boardCompletionDialog.task, newStatus: "complete", outcomeComments: boardCompletionComments });
+              }
+            }} data-testid="btn-board-confirm-complete">
+              {boardStatusMutation.isPending ? <><Loader2 className="h-3 w-3 animate-spin mr-1.5" /> Completing...</> : "Complete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="max-w-[95vw] sm:max-w-lg">
@@ -1578,6 +1830,15 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
   const [editNotes, setEditNotes] = useState(task.notes || "");
   const [detailTab, setDetailTab] = useState("details");
 
+  // Sync editNotes when the task data refreshes (e.g. after invalidation)
+  const prevTaskKeyRef = useRef(task._key);
+  useEffect(() => {
+    if (prevTaskKeyRef.current !== task._key || editingField !== "notes") {
+      setEditNotes(task.notes || "");
+    }
+    prevTaskKeyRef.current = task._key;
+  }, [task._key, task.notes, editingField]);
+
   const STATUS_LABEL_MAP: Record<string, string> = { todo: "To Do", in_progress: "In Progress", blocked: "Blocked", review: "Review", complete: "Complete", cancelled: "Cancelled", inbox: "To Do", done: "Complete", planned: "To Do", waiting: "Blocked" };
   const STATUS_COLOR_MAP: Record<string, string> = { todo: "bg-muted text-muted-foreground border-border", in_progress: "bg-blue-100 text-blue-700 border-blue-200", blocked: "bg-red-100 text-red-700 border-red-200", review: "bg-amber-100 text-amber-700 border-amber-200", complete: "bg-emerald-100 text-emerald-700 border-emerald-200", cancelled: "bg-muted text-muted-foreground border-border", inbox: "bg-muted text-muted-foreground border-border", done: "bg-emerald-100 text-emerald-700 border-emerald-200", waiting: "bg-amber-100 text-amber-700 border-amber-200" };
   const statusLabel = STATUS_LABEL_MAP[task.status] || task.status;
@@ -1586,11 +1847,22 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
   const statusColor = STATUS_COLOR_MAP[task.status] || "bg-muted text-muted-foreground border-border";
   const isOverdue = (() => { if (!task.dueAt || task.status === "complete" || task.status === "done" || task.status === "cancelled") return false; try { return isPast(parseISO(task.dueAt)); } catch { return false; } })();
 
+  const [completionDialogOpen, setCompletionDialogOpen] = useState(false);
+  const [completionComments, setCompletionComments] = useState("");
+
   const updateStatusMutation = useMutation({
     mutationFn: async (newStatus: string) => {
       if (task._source === "tr_register") {
+        if (newStatus === "complete" && !task.notes?.trim() && !completionComments.trim()) {
+          throw new Error("__NEEDS_COMMENTS__");
+        }
         const trStatus = newStatus === "complete" ? "Completed" : "Active";
         const endpoint = newStatus === "complete" ? `/api/tr-register/${task._rawId}/complete` : `/api/tr-register/${task._rawId}`;
+        // If completing and outcomeComments were provided via the dialog, save them first
+        if (newStatus === "complete" && completionComments.trim()) {
+          const saveRes = await fetch(`/api/tr-register/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ outcomeComments: completionComments.trim() }) });
+          if (!saveRes.ok) { throw new Error("Failed to save outcome comments"); }
+        }
         const res = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify(newStatus === "complete" ? {} : { status: trStatus }) });
         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       } else if (task._source === "operational") {
@@ -1617,8 +1889,14 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
         if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || "Failed to update"); }
       }
     },
-    onSuccess: () => { onInvalidate(); toast({ title: "Status updated" }); },
-    onError: (err: any) => { toast({ title: err.message || "Failed to update status", variant: "destructive" }); },
+    onSuccess: () => { onInvalidate(); setCompletionDialogOpen(false); setCompletionComments(""); toast({ title: "Status updated" }); },
+    onError: (err: any) => {
+      if (err.message === "__NEEDS_COMMENTS__") {
+        setCompletionDialogOpen(true);
+      } else {
+        toast({ title: err.message || "Failed to update status", variant: "destructive" });
+      }
+    },
   });
 
   const dismissMutation = useMutation({
@@ -1647,8 +1925,64 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
     onError: () => { toast({ title: "Failed to update", variant: "destructive" }); },
   });
 
+  // Feature 6: Task comments/activity log
+  const [newComment, setNewComment] = useState("");
+  const commentsQueryKey = task._source === "operational" ? `/api/task-comments/${task._rawId}` : null;
+  const activityQueryKey = task._source === "operational" ? `/api/task-activity/${task._rawId}` : null;
+  const { data: taskComments = [] } = useQuery<any[]>({
+    queryKey: [commentsQueryKey],
+    queryFn: async () => {
+      if (!commentsQueryKey) return [];
+      const res = await fetch(commentsQueryKey, { headers: { ...getAuthHeaders() }, credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!commentsQueryKey,
+  });
+  const { data: taskActivity = [] } = useQuery<any[]>({
+    queryKey: [activityQueryKey],
+    queryFn: async () => {
+      if (!activityQueryKey) return [];
+      const res = await fetch(activityQueryKey, { headers: { ...getAuthHeaders() }, credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!activityQueryKey,
+  });
+  const addCommentMutation = useMutation({
+    mutationFn: async (body: string) => {
+      const res = await fetch("/api/task-comments", {
+        method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        credentials: "include", body: JSON.stringify({ taskId: task._rawId, body }),
+      });
+      if (!res.ok) throw new Error("Failed to add comment");
+    },
+    onSuccess: () => { setNewComment(""); queryClient.invalidateQueries({ queryKey: [commentsQueryKey] }); toast({ title: "Comment added" }); },
+    onError: () => { toast({ title: "Failed to add comment", variant: "destructive" }); },
+  });
+
+  // Feature 3: Due date editing
+  const [editingDueDate, setEditingDueDate] = useState(false);
+  const [editDueDateValue, setEditDueDateValue] = useState(task.dueAt ? task.dueAt.slice(0, 10) : "");
+  const updateDueDateMutation = useMutation({
+    mutationFn: async (newDate: string) => {
+      if (task._source === "tr_register") {
+        const res = await fetch(`/api/tr-register/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ dueDate: newDate || null }) });
+        if (!res.ok) throw new Error("Failed to update");
+      } else if (task._source === "personal") {
+        await apiRequest("PATCH", `/api/mytool/tasks/${task._rawId}`, { dueAt: newDate || null });
+      } else if (task._source === "plan") {
+        const res = await fetch(`/api/planning-tasks/${task._rawId}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ projectName: task.projectName || "", dueDate: newDate || null }) });
+        if (!res.ok) throw new Error("Failed to update");
+      }
+    },
+    onSuccess: () => { onInvalidate(); setEditingDueDate(false); toast({ title: "Due date updated" }); },
+    onError: () => { toast({ title: "Failed to update due date", variant: "destructive" }); },
+  });
+
   const canChangeStatus = ["operational", "approvals", "engineering_task", "quality_task", "tr_register", "plan"].includes(task._source);
   const canEditInline = task._source === "tr_register" || task._source === "plan";
+  const canEditDueDate = ["personal", "tr_register", "plan"].includes(task._source);
 
   const detailDue = smartDueLabel(task.dueAt);
   const detailDueStyle = DUE_URGENCY_STYLES[detailDue.urgency] || "";
@@ -1686,11 +2020,19 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
                 <FolderOpen className="h-3 w-3" /> {task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")} <Link2 className="h-3 w-3" />
               </button>
             )}
-            {detailDue.label && (
-              <span className={`flex items-center gap-1 text-[10px] rounded-md px-1.5 py-0.5 border ${detailDueStyle}`} data-testid="text-unified-due">
-                <Clock className="h-3 w-3" /> {detailDue.label}
-                {task.dueAt && <span className="text-[9px] opacity-70 ml-0.5">({(() => { try { return format(new Date(task.dueAt), "dd MMM yyyy"); } catch { return ""; } })()})</span>}
-              </span>
+            {(detailDue.label || canEditDueDate) && (
+              editingDueDate ? (
+                <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                  <input type="date" value={editDueDateValue} onChange={e => setEditDueDateValue(e.target.value)} className="text-[10px] h-6 px-1.5 rounded border border-border bg-background" />
+                  <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => { updateDueDateMutation.mutate(editDueDateValue); }} disabled={updateDueDateMutation.isPending}><Save className="h-3 w-3" /></Button>
+                  <Button size="sm" variant="ghost" className="h-5 w-5 p-0" onClick={() => setEditingDueDate(false)}><X className="h-3 w-3" /></Button>
+                </div>
+              ) : (
+                <button onClick={canEditDueDate ? () => { setEditDueDateValue(task.dueAt ? task.dueAt.slice(0, 10) : ""); setEditingDueDate(true); } : undefined} className={`flex items-center gap-1 text-[10px] rounded-md px-1.5 py-0.5 border ${detailDueStyle} ${canEditDueDate ? "hover:ring-1 hover:ring-primary/30 cursor-pointer" : ""}`} data-testid="text-unified-due">
+                  <Clock className="h-3 w-3" /> {detailDue.label || "Set due date"}
+                  {task.dueAt && <span className="text-[9px] opacity-70 ml-0.5">({(() => { try { return format(new Date(task.dueAt), "dd MMM yyyy"); } catch { return ""; } })()})</span>}
+                </button>
+              )
             )}
             {task.department && <span className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5"><Tag className="h-3 w-3" /> {task.department}</span>}
             {task.trId && <span className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5"><Hash className="h-3 w-3" /> {task.trId}</span>}
@@ -1710,6 +2052,7 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
           <TabsList className="shrink-0 mx-4 mt-2 h-8">
             <TabsTrigger value="details" className="text-xs h-7">Details</TabsTrigger>
             <TabsTrigger value="actions" className="text-xs h-7">Actions</TabsTrigger>
+            <TabsTrigger value="activity" className="text-xs h-7">Activity{taskComments.length > 0 ? ` (${taskComments.length})` : ""}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="details" className="flex-1 overflow-y-auto px-4 pb-4 mt-0">
@@ -1751,17 +2094,17 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
                 </div>
               )}
 
-              {(task.notes || task.description) && (
+              {(task.notes || task.description || canEditInline) && (
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Notes</Label>
+                    <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">{task._source === "tr_register" ? "Outcome Comments" : "Notes"}</Label>
                     {canEditInline && editingField !== "notes" && (
-                      <button onClick={() => { setEditNotes(task.notes || ""); setEditingField("notes"); }} className="text-[10px] text-primary hover:underline">Edit</button>
+                      <button onClick={() => { setEditNotes(task.notes || ""); setEditingField("notes"); }} className="text-[10px] text-primary hover:underline">{task.notes || task.description ? "Edit" : "Add"}</button>
                     )}
                   </div>
                   {editingField === "notes" ? (
                     <div className="space-y-1.5">
-                      <Textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} className="min-h-[60px] text-xs" />
+                      <Textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} className="min-h-[60px] text-xs" placeholder={task._source === "tr_register" ? "Outcome comments are required before completing this action..." : "Add notes..."} />
                       <div className="flex gap-1.5">
                         <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => setEditingField(null)}>Cancel</Button>
                         <Button size="sm" className="h-6 text-xs" onClick={() => {
@@ -1773,8 +2116,10 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
                         }} disabled={updateTrFieldMutation.isPending}>Save</Button>
                       </div>
                     </div>
-                  ) : (
+                  ) : (task.notes || task.description) ? (
                     <p className="text-xs text-foreground whitespace-pre-wrap bg-muted/30 rounded-md p-2.5 leading-relaxed" data-testid="text-unified-notes">{task.notes || task.description}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic bg-muted/20 rounded-md p-2.5">{task._source === "tr_register" ? "No outcome comments yet. Required before completing." : "No notes yet."}</p>
                   )}
                 </div>
               )}
@@ -1830,8 +2175,104 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
               )}
             </div>
           </TabsContent>
+
+          {/* Feature 6: Activity/Comments tab */}
+          <TabsContent value="activity" className="flex-1 overflow-y-auto px-4 pb-4 mt-0">
+            <div className="space-y-4 pt-3">
+              {/* Add comment */}
+              {task._source === "operational" && (
+                <div>
+                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5 block">Add Comment</Label>
+                  <div className="flex gap-1.5">
+                    <Textarea value={newComment} onChange={e => setNewComment(e.target.value)} placeholder="Write a comment..." className="min-h-[50px] text-xs flex-1" />
+                    <Button size="sm" className="h-8 px-2 self-end" disabled={!newComment.trim() || addCommentMutation.isPending} onClick={() => addCommentMutation.mutate(newComment.trim())} data-testid="btn-add-comment">
+                      {addCommentMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Post"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Comments list */}
+              {taskComments.length > 0 && (
+                <div>
+                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5 block">Comments ({taskComments.length})</Label>
+                  <div className="space-y-2">
+                    {taskComments.map((c: any) => (
+                      <div key={c.id} className="rounded-md border bg-muted/20 p-2.5">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-semibold">{c.authorName || c.author?.name || "Unknown"}</span>
+                          <span className="text-[9px] text-muted-foreground">{(() => { try { return formatDistanceToNow(new Date(c.createdAt || c.created_at), { addSuffix: true }); } catch { return ""; } })()}</span>
+                        </div>
+                        <p className="text-xs whitespace-pre-wrap leading-relaxed">{c.body || c.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Activity log */}
+              {taskActivity.length > 0 && (
+                <div>
+                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5 block">Activity Log</Label>
+                  <div className="space-y-1">
+                    {taskActivity.map((a: any) => (
+                      <div key={a.id} className="flex items-start gap-2 py-1.5 border-b border-border/30 last:border-0">
+                        <Activity className="h-3 w-3 text-muted-foreground mt-0.5 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[10px]">
+                            <span className="font-medium">{a.actorName || "System"}</span>
+                            {" "}{a.actionType === "status_change" ? "changed status" : a.actionType === "field_update" ? `updated ${a.fieldName}` : a.actionType}
+                            {a.oldValue && a.newValue && <span className="text-muted-foreground"> from <span className="font-medium">{a.oldValue}</span> to <span className="font-medium">{a.newValue}</span></span>}
+                          </p>
+                          <span className="text-[9px] text-muted-foreground">{(() => { try { return formatDistanceToNow(new Date(a.createdAt || a.created_at), { addSuffix: true }); } catch { return ""; } })()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {taskComments.length === 0 && taskActivity.length === 0 && task._source !== "operational" && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Activity className="h-6 w-6 mx-auto mb-2 opacity-40" />
+                  <p className="text-xs">Activity tracking is available for project tasks.</p>
+                </div>
+              )}
+              {taskComments.length === 0 && taskActivity.length === 0 && task._source === "operational" && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Activity className="h-6 w-6 mx-auto mb-2 opacity-40" />
+                  <p className="text-xs">No activity yet. Add a comment to start the conversation.</p>
+                </div>
+              )}
+            </div>
+          </TabsContent>
         </Tabs>
       </SheetContent>
+
+      {/* Completion dialog for TR register items requiring outcomeComments */}
+      <Dialog open={completionDialogOpen} onOpenChange={setCompletionDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-sm flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-emerald-600" /> Complete Action</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-1">
+            <p className="text-xs text-muted-foreground">Outcome comments are required before completing this action.</p>
+            <Textarea
+              value={completionComments}
+              onChange={e => setCompletionComments(e.target.value)}
+              placeholder="Describe the outcome of this action..."
+              className="min-h-[80px] text-xs"
+              data-testid="input-completion-comments"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button size="sm" variant="outline" onClick={() => { setCompletionDialogOpen(false); setCompletionComments(""); }}>Cancel</Button>
+            <Button size="sm" disabled={!completionComments.trim() || updateStatusMutation.isPending} onClick={() => updateStatusMutation.mutate("complete")} data-testid="btn-confirm-complete">
+              {updateStatusMutation.isPending ? <><Loader2 className="h-3 w-3 animate-spin mr-1.5" /> Completing...</> : "Complete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }
