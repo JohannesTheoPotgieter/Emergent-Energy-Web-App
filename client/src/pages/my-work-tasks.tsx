@@ -281,7 +281,7 @@ export default function MyWorkTasksPage() {
     title: "", description: "", priority: "normal" as TaskPriority,
     status: "todo" as TaskStatus, dueDate: "", projectName: "",
     department: "", ragStatus: "", type: "personal" as "personal" | "action",
-    assignees: [] as string[],
+    assignees: [] as { id: number; name: string }[],
   });
 
   useEffect(() => {
@@ -624,7 +624,8 @@ export default function MyWorkTasksPage() {
         department: newTask.department || "Engineering",
         ragStatus: newTask.ragStatus || "Green",
         dueDate: newTask.dueDate || null,
-        owners: newTask.assignees.length > 0 ? newTask.assignees : (user?.name ? [user.name] : []),
+        owners: newTask.assignees.length > 0 ? newTask.assignees.map(a => a.name) : (user?.name ? [user.name] : []),
+        ownerUserIds: newTask.assignees.length > 0 ? newTask.assignees.map(a => a.id) : (user?.id ? [user.id] : []),
         status: "Active",
         supportingInfo: newTask.description || "",
       });
@@ -646,7 +647,7 @@ export default function MyWorkTasksPage() {
         },
       });
     }
-    setNewTask({ title: "", description: "", priority: "normal", status: "todo", dueDate: "", projectName: "", department: "", ragStatus: "", type: "personal", assignees: [] });
+    setNewTask({ title: "", description: "", priority: "normal", status: "todo", dueDate: "", projectName: "", department: "", ragStatus: "", type: "personal", assignees: [] as { id: number; name: string }[] });
     setCreateDialogOpen(false);
   }, [newTask, createTaskMutation, createTrItemMutation, user]);
 
@@ -1289,7 +1290,7 @@ export default function MyWorkTasksPage() {
             </div>
             <div>
               <Label className="text-xs font-medium">Assign To</Label>
-              <AssignToSelector selected={newTask.assignees} onChange={a => setNewTask(t => ({ ...t, assignees: a }))} />
+              <AssignToSelector selected={newTask.assignees} onChange={(a: { id: number; name: string }[]) => setNewTask(t => ({ ...t, assignees: a }))} />
             </div>
             {newTask.type === "action" && (
               <div>
@@ -1835,7 +1836,7 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
   );
 }
 
-function AssignToSelector({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
+function AssignToSelector({ selected, onChange }: { selected: { id: number; name: string }[]; onChange: (v: { id: number; name: string }[]) => void }) {
   const { data: users = [] } = useQuery<{ id: number; name: string; username: string }[]>({
     queryKey: ["/api/users/assignable"],
     queryFn: async () => {
@@ -1848,26 +1849,23 @@ function AssignToSelector({ selected, onChange }: { selected: string[]; onChange
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
+  const selectedIds = new Set(selected.map(s => s.id));
+
   const filtered = users.filter(u =>
     !search.trim() || u.name?.toLowerCase().includes(search.toLowerCase()) || u.username?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const displayName = (nameVal: string) => {
-    const u = users.find(usr => usr.name === nameVal);
-    return u?.name || nameVal;
-  };
-
-  const toggle = (name: string) => {
-    onChange(selected.includes(name) ? selected.filter(n => n !== name) : [...selected, name]);
+  const toggle = (user: { id: number; name: string }) => {
+    onChange(selectedIds.has(user.id) ? selected.filter(s => s.id !== user.id) : [...selected, { id: user.id, name: user.name }]);
   };
 
   return (
     <div className="mt-1">
       <div className="flex flex-wrap gap-1 mb-1">
-        {selected.map(name => (
-          <span key={name} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 border border-blue-200 text-blue-700">
-            <User className="h-2.5 w-2.5" /> {displayName(name)}
-            <button onClick={() => onChange(selected.filter(n => n !== name))} className="hover:text-red-500" data-testid={`btn-remove-assignee-${name}`}><X className="h-2.5 w-2.5" /></button>
+        {selected.map(s => (
+          <span key={s.id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 border border-blue-200 text-blue-700">
+            <User className="h-2.5 w-2.5" /> {s.name}
+            <button onClick={() => onChange(selected.filter(x => x.id !== s.id))} className="hover:text-red-500" data-testid={`btn-remove-assignee-${s.id}`}><X className="h-2.5 w-2.5" /></button>
           </span>
         ))}
       </div>
@@ -1886,9 +1884,9 @@ function AssignToSelector({ selected, onChange }: { selected: string[]; onChange
           </div>
           <div className="p-0.5">
             {filtered.map(u => (
-              <button key={u.id} onClick={() => toggle(u.name)} className={`w-full flex items-center gap-1.5 px-1.5 py-1 rounded text-[11px] text-left transition-colors ${selected.includes(u.name) ? "bg-blue-50 text-blue-700" : "hover:bg-muted"}`} data-testid={`assign-user-${u.id}`}>
-                <span className={`w-3 h-3 rounded border flex items-center justify-center text-[8px] ${selected.includes(u.name) ? "bg-blue-500 border-blue-500 text-white" : "border-border"}`}>
-                  {selected.includes(u.name) ? "✓" : ""}
+              <button key={u.id} onClick={() => toggle(u)} className={`w-full flex items-center gap-1.5 px-1.5 py-1 rounded text-[11px] text-left transition-colors ${selectedIds.has(u.id) ? "bg-blue-50 text-blue-700" : "hover:bg-muted"}`} data-testid={`assign-user-${u.id}`}>
+                <span className={`w-3 h-3 rounded border flex items-center justify-center text-[8px] ${selectedIds.has(u.id) ? "bg-blue-500 border-blue-500 text-white" : "border-border"}`}>
+                  {selectedIds.has(u.id) ? "✓" : ""}
                 </span>
                 <span className="truncate">{u.name}</span>
               </button>

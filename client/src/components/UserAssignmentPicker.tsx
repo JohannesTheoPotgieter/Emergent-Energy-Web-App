@@ -90,6 +90,13 @@ export default function UserAssignmentPicker({
   const [search, setSearch] = useState("");
   const [directoryMode, setDirectoryMode] = useState<"internal" | "external">("internal");
   const inputRef = useRef<HTMLInputElement>(null);
+  const [localAssignments, setLocalAssignments] = useState<CanonicalAssignment[] | null>(null);
+
+  useEffect(() => {
+    if (assignments) {
+      setLocalAssignments(null);
+    }
+  }, [assignments]);
 
   const { data: assignables = [] } = useQuery<AssignableDirectoryEntry[]>({
     queryKey: ["/api/assignables", taskSource],
@@ -122,7 +129,25 @@ export default function UserAssignmentPicker({
       }
       return body;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data?.assignments) {
+        setLocalAssignments(data.assignments);
+      } else if (data?.assignment) {
+        setLocalAssignments([{
+          id: 0,
+          entityType: "work_item",
+          entityId: taskId,
+          assignmentRole: "ASSIGNEE",
+          assigneeType: data.assignment.assigneeType,
+          assigneeId: data.assignment.assigneeId,
+          displayLabel: data.assignment.displayName,
+          displayLabelSnapshot: data.assignment.displayName,
+          secondaryLabel: data.assignment.email || "",
+          active: true,
+        }]);
+      } else {
+        setLocalAssignments([]);
+      }
       for (const key of invalidateKeys) {
         queryClient.invalidateQueries({ queryKey: [key] });
       }
@@ -147,7 +172,8 @@ export default function UserAssignmentPicker({
   const internalAssignables = assignables.filter((entry) => entry.assigneeType === "internal_user");
   const externalAssignables = assignables.filter((entry) => entry.assigneeType !== "internal_user");
 
-  const canonicalAssignments = (assignments || []).filter((assignment) => assignment.active);
+  const effectiveAssignmentSource = localAssignments ?? assignments ?? [];
+  const canonicalAssignments = effectiveAssignmentSource.filter((assignment) => assignment.active);
   const internalAssignments = canonicalAssignments.filter((assignment) => assignment.assigneeType === "internal_user");
   const externalAssignments = canonicalAssignments.filter((assignment) => assignment.assigneeType !== "internal_user");
 
@@ -158,9 +184,9 @@ export default function UserAssignmentPicker({
       username: assignment.displayLabel,
       role: assignment.secondaryLabel || "",
     }))
-    : [...(resolvedUsers || [])];
+    : localAssignments != null ? [] : [...(resolvedUsers || [])];
 
-  if (effectiveResolved.length === 0 && textNames && internalAssignables.length > 0) {
+  if (effectiveResolved.length === 0 && localAssignments == null && textNames && internalAssignables.length > 0) {
     const resolvedIds = new Set(effectiveResolved.map((user) => user.id));
     for (const textName of textNames) {
       if (!textName?.trim() || textName.startsWith("counterparty:") || textName.startsWith("contact:")) continue;

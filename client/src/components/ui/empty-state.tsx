@@ -24,7 +24,7 @@ export function EmptyState({
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-lg border border-dashed border-border/60 p-6 text-center", className)}>
+    <div className={cn("rounded-xl border border-dashed border-border/60 p-6 text-center", className)}>
       <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center mx-auto mb-3">
         {icon || <FolderOpen className="w-6 h-6 text-muted-foreground" />}
       </div>
