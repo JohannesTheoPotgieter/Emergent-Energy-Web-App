@@ -255,6 +255,7 @@ async function runAdditiveSchemaAlignments() {
       );
       CREATE TABLE IF NOT EXISTS forecast_pipeline (
         id SERIAL PRIMARY KEY,
+        fye_year INTEGER NOT NULL DEFAULT 2026,
         project_name TEXT NOT NULL,
         project_developer TEXT,
         location TEXT,
@@ -266,21 +267,53 @@ async function runAdditiveSchemaAlignments() {
         forecast_gp_pct DECIMAL(6,4) DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'active',
         notes TEXT,
+        created_by INTEGER REFERENCES users(id),
         updated_by INTEGER REFERENCES users(id),
         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
+      ALTER TABLE forecast_pipeline ADD COLUMN IF NOT EXISTS fye_year INTEGER NOT NULL DEFAULT 2026;
+      ALTER TABLE forecast_pipeline ADD COLUMN IF NOT EXISTS created_by INTEGER;
       CREATE TABLE IF NOT EXISTS lost_deals (
         id SERIAL PRIMARY KEY,
+        fye_year INTEGER NOT NULL DEFAULT 2026,
         deal_name TEXT NOT NULL,
         deal_value DECIMAL(15,2),
         business_developer TEXT,
         lost_reason TEXT,
         lost_date TEXT,
         notes TEXT,
+        created_by INTEGER REFERENCES users(id),
         updated_by INTEGER REFERENCES users(id),
         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      ALTER TABLE lost_deals ADD COLUMN IF NOT EXISTS fye_year INTEGER NOT NULL DEFAULT 2026;
+      ALTER TABLE lost_deals ADD COLUMN IF NOT EXISTS created_by INTEGER;
+      CREATE TABLE IF NOT EXISTS fye_kpi_counters (
+        id SERIAL PRIMARY KEY,
+        fye_year INTEGER NOT NULL UNIQUE,
+        brought_in INTEGER NOT NULL DEFAULT 0,
+        signed INTEGER NOT NULL DEFAULT 0,
+        updated_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS fye_report_snapshots (
+        id SERIAL PRIMARY KEY,
+        fye_year INTEGER NOT NULL,
+        snapshot_month INTEGER NOT NULL,
+        snapshot_date TEXT NOT NULL,
+        snapshot_label TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        snapshot_data TEXT NOT NULL,
+        notes TEXT,
+        created_by INTEGER,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        submitted_by INTEGER,
+        submitted_at TIMESTAMP,
+        approved_by INTEGER,
+        approved_at TIMESTAMP
       );
     `));
     console.log("[Schema] Additive alignments completed");
