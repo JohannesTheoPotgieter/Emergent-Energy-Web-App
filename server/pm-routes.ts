@@ -249,10 +249,6 @@ export function registerPmRoutes(app: Express) {
         `
       );
 
-      const flaggedCos = { rows: [] as any[] };
-
-      const budgetOverruns = { rows: [] as any[] };
-
       const items: any[] = [];
 
       for (const t of overdueTasks.rows as any[]) {
@@ -300,31 +296,7 @@ export function registerPmRoutes(app: Express) {
         });
       }
 
-      for (const c of flaggedCos.rows as any[]) {
-        items.push({
-          type: "cos_flagged",
-          severity: "high",
-          projectName: c.project_name,
-          title: `${c.expense_category}: ${c.expense_line_item || "Unknown item"}`,
-          detail: `COS Flagged — black date but no invoice (R${(parseFloat(c.amount) || 0).toLocaleString()})`,
-          expenseId: c.id,
-          link: `/project/${encodeURIComponent(c.project_name)}?tab=money`,
-        });
-      }
 
-      for (const b of budgetOverruns.rows as any[]) {
-        const budget = parseFloat(b.total_budget) || 0;
-        const actual = parseFloat(b.total_actual) || 0;
-        const overrun = Math.round(((actual - budget) / budget) * 100);
-        items.push({
-          type: "budget_overrun",
-          severity: overrun > 20 ? "high" : "medium",
-          projectName: b.project_name,
-          title: `Cost overrun: ${overrun}%`,
-          detail: `Actual R${actual.toLocaleString()} vs Costed R${budget.toLocaleString()}`,
-          link: `/project/${encodeURIComponent(b.project_name)}?tab=money`,
-        });
-      }
 
       items.sort((a, b) => {
         const sevOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
