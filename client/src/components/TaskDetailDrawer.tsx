@@ -343,8 +343,8 @@ export default function TaskDetailDrawer({
 
 
   const guardedUpdateTask = (updates: Record<string, unknown>) => {
-    if (typeof updates.status === "string" && data) {
-      const blockedReason = getTaskWorkflowBlockReason(data as any, updates.status);
+    if (typeof updates.status === "string" && data?.task) {
+      const blockedReason = getTaskWorkflowBlockReason(data.task as any, updates.status);
       if (blockedReason) {
         toast({ title: "Status change blocked", description: blockedReason, variant: "destructive" });
         return;
@@ -747,11 +747,11 @@ function TaskDetailContent({
                 </label>
                 <div className="flex items-center gap-2 text-xs" data-testid="baseline-dates">
                   <Badge variant="outline" className="text-xs font-mono">
-                    {baselineStartDate ? format(new Date(baselineStartDate), "MMM d, yyyy") : "—"}
+                    {formatDate(baselineStartDate) || "—"}
                   </Badge>
                   <ArrowRight className="h-3 w-3 text-muted-foreground" />
                   <Badge variant="outline" className="text-xs font-mono">
-                    {baselineEndDate ? format(new Date(baselineEndDate), "MMM d, yyyy") : "—"}
+                    {formatDate(baselineEndDate) || "—"}
                   </Badge>
                 </div>
               </div>
