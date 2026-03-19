@@ -24,7 +24,7 @@ import {
 import { applyTemplate } from "./template-routes";
 import { requireAuthority, requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
-import { listEngineeringWorkItems, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject } from "./work-items-adapter";
+import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject, mapToOpsStatus } from "./work-items-adapter";
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
@@ -667,6 +667,9 @@ export function registerEngineeringRoutes(app: Express) {
         dueDate: updates.dueDate,
         percentComplete: updates.percentComplete !== undefined ? updates.percentComplete / 100 : undefined,
         ownerUserId: updates.ownerUserId,
+        holdReason: updates.holdReason,
+        blockedType: updates.blockedType,
+        completedAt: updates.status === "COMPLETE" ? new Date() : undefined,
       });
       if (!updated) return res.status(404).json({ error: "Task not found" });
 
@@ -708,7 +711,7 @@ export function registerEngineeringRoutes(app: Express) {
     const routeOverrideReason = typeof req.body?.routeOverrideReason === "string" ? req.body.routeOverrideReason.trim() : "";
 
     try {
-      const [existing] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
+      const existing = await getEngineeringWorkItemById(id);
       if (!existing) return res.status(404).json({ error: "Task not found" });
 
       try {
@@ -778,10 +781,8 @@ export function registerEngineeringRoutes(app: Express) {
         projectName: existing.projectName || undefined,
       });
 
-      const [updated] = await db.update(operationalTasks).set({
-        status: "NEEDS APPROVAL",
-        updatedAt: new Date(),
-      }).where(eq(operationalTasks.id, id)).returning();
+      const updated = await updateEngineeringWorkItem(id, { status: "NEEDS APPROVAL" });
+      if (!updated) return res.status(404).json({ error: "Task not found" });
 
       await db.insert(taskActivityLog).values({
         taskId: id,
@@ -818,7 +819,7 @@ export function registerEngineeringRoutes(app: Express) {
         await createNotification(updated.ownerUserId, "deliverable.submitted_for_approval",
           `Approval needed: ${updated.title}`,
           `Task "${updated.title}" has been sent for approval${file ? ` with attachment: ${file.originalname}` : ""}`,
-          { projectName: updated.projectName, linkedTaskId: id }
+          { projectName: existing.projectName, linkedTaskId: id }
         );
       }
 
@@ -917,8 +918,9 @@ export function registerEngineeringRoutes(app: Express) {
         changesJson: { canonicalSaved: true, localSaved: localResult.saved },
       });
 
+      const mappedTask = await getEngineeringWorkItemById(id);
       res.json({
-        ...updated,
+        ...(mappedTask || { id, title: updated.title, status: mapToOpsStatus(updated.status) }),
         uploadedFile: file ? { filename: file.filename, originalName: file.originalname, size: file.size } : null,
         sendResult: {
           canonicalSystemRecord: { saved: true },
@@ -948,7 +950,7 @@ export function registerEngineeringRoutes(app: Express) {
     const user = getUser(req);
 
     try {
-      const [existing] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
+      const existing = await getEngineeringWorkItemById(id);
       if (!existing) return res.status(404).json({ error: "Task not found" });
 
       const recipientUserId = parseInt(req.body.recipientUserId);
@@ -1320,9 +1322,7 @@ export function registerEngineeringRoutes(app: Express) {
       const updatedTasks = [];
       for (const taskId of taskIds) {
         if (updates.status) {
-          const [task] = await db.select({ id: operationalTasks.id, status: operationalTasks.status })
-            .from(operationalTasks)
-            .where(eq(operationalTasks.id, taskId));
+          const task = await getEngineeringWorkItemById(taskId);
           if (!task) continue;
           try {
             const context = await buildTaskWorkflowContext(taskId, task.status);
@@ -1335,14 +1335,18 @@ export function registerEngineeringRoutes(app: Express) {
           }
         }
 
-        const bulkSet: Record<string, any> = { ...updates, updatedAt: new Date() };
-        if (updates.status === "COMPLETE") bulkSet.completedAt = new Date();
-        const [updated] = await db.update(operationalTasks)
-          .set(bulkSet)
-          .where(eq(operationalTasks.id, taskId))
-          .returning();
+        const adapterUpdates: any = {};
+        if (updates.status) adapterUpdates.status = updates.status;
+        if (updates.holdReason !== undefined) adapterUpdates.holdReason = updates.holdReason;
+        if (updates.blockedType !== undefined) adapterUpdates.blockedType = updates.blockedType;
+        if (updates.priority !== undefined) adapterUpdates.priority = updates.priority;
+        if (updates.ownerUserId !== undefined) adapterUpdates.ownerUserId = updates.ownerUserId;
+        if (updates.status === "COMPLETE") adapterUpdates.completedAt = new Date();
+
+        const updated = await updateEngineeringWorkItem(taskId, adapterUpdates);
         if (updated) {
-          updatedTasks.push(updated);
+          const mapped = await getEngineeringWorkItemById(taskId);
+          if (mapped) updatedTasks.push(mapped);
           await db.insert(taskActivityLog).values({
             taskId, actorId: getUser(req).id,
             actionType: "bulk_updated",
@@ -1362,12 +1366,12 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id);
       const { linkedPlanItemId, linkedDeliverableId, linkedQualityItemInstanceId } = req.body;
-      const updates: any = { updatedAt: new Date() };
-      if (linkedPlanItemId !== undefined) updates.linkedPlanItemId = linkedPlanItemId;
-      if (linkedDeliverableId !== undefined) updates.linkedDeliverableId = linkedDeliverableId;
-      if (linkedQualityItemInstanceId !== undefined) updates.linkedQualityItemInstanceId = linkedQualityItemInstanceId;
 
-      const [updated] = await db.update(operationalTasks).set(updates).where(eq(operationalTasks.id, id)).returning();
+      const updated = await updateEngineeringWorkItem(id, {
+        linkedPlanItemId: linkedPlanItemId !== undefined ? linkedPlanItemId : undefined,
+        linkedDeliverableId: linkedDeliverableId !== undefined ? linkedDeliverableId : undefined,
+        linkedQualityItemInstanceId: linkedQualityItemInstanceId !== undefined ? linkedQualityItemInstanceId : undefined,
+      });
       if (!updated) return res.status(404).json({ error: "Task not found" });
 
       await db.insert(taskActivityLog).values({
@@ -1375,7 +1379,8 @@ export function registerEngineeringRoutes(app: Express) {
         actionType: "linked", newValue: JSON.stringify(req.body),
       });
 
-      res.json(updated);
+      const mapped = await getEngineeringWorkItemById(id);
+      res.json(mapped || { id: updated.id, workItemId: updated.id });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
       res.status(500).json({ error: "Internal server error" });
@@ -1471,7 +1476,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.get("/api/eng/tasks/:id", requireAuth, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const [task] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
+      const task = await getEngineeringWorkItemById(id);
       if (!task) return res.status(404).json({ error: "Task not found" });
       res.json(task);
     } catch (err: any) {
@@ -1554,9 +1559,9 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/tasks/:id/subtasks", requireAuth, async (req, res) => {
     try {
-      const subtasks = await db.select().from(operationalTasks)
-        .where(eq(operationalTasks.parentTaskId, parseInt(req.params.id)))
-        .orderBy(asc(operationalTasks.sortOrder));
+      const parentId = parseInt(req.params.id);
+      const allItems = await listEngineeringWorkItems({});
+      const subtasks = allItems.filter((item) => item.parentTaskId === parentId);
       res.json(subtasks);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
@@ -1567,7 +1572,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.post("/api/eng/tasks/:id/subtasks", requireAuth, async (req, res) => {
     try {
       const parentId = parseInt(req.params.id);
-      const [parent] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, parentId));
+      const parent = await getEngineeringWorkItemById(parentId);
       if (!parent) return res.status(404).json({ error: "Parent task not found" });
 
       const data = req.body;
@@ -1575,23 +1580,31 @@ export function registerEngineeringRoutes(app: Express) {
         return res.status(400).json({ error: "Subtask title is required" });
       }
 
-      const [subtask] = await db.insert(operationalTasks).values({
-        ...data,
-        parentTaskId: parentId,
-        projectName: data.projectName || parent.projectName,
+      const subtaskWorkItem = await createEngineeringWorkItem({
+        title: data.title,
+        description: data.description || null,
         status: data.status || "TO DO",
         priority: data.priority || "Med",
+        projectId: parent.projectId || null,
+        phase: data.phase || parent.phase || null,
+        ownerUserId: data.ownerUserId || null,
         createdBy: getUser(req).id,
-      }).returning();
+      });
+
+      // Set parentId on the newly created work item
+      await db.update(workItems)
+        .set({ parentId: parentId })
+        .where(eq(workItems.id, subtaskWorkItem.id));
 
       await db.insert(taskActivityLog).values({
         taskId: parentId,
         actorId: getUser(req).id,
         actionType: "subtask_created",
-        newValue: subtask.title,
+        newValue: data.title,
       });
 
-      res.json(subtask);
+      const mapped = await getEngineeringWorkItemById(subtaskWorkItem.id);
+      res.json(mapped || { id: subtaskWorkItem.id, title: data.title, status: "TO DO" });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
       res.status(500).json({ error: "Internal server error" });
@@ -2161,10 +2174,10 @@ export function registerEngineeringRoutes(app: Express) {
       const newWarnings: any[] = [];
       const today = new Date().toISOString().split('T')[0];
 
-      const taskConditions: any[] = [ne(operationalTasks.status, "COMPLETE")];
-      if (projectName) taskConditions.push(eq(operationalTasks.projectName, projectName));
-
-      const allTasks = await db.select().from(operationalTasks).where(and(...taskConditions));
+      const canonicalTasks = await listEngineeringWorkItems(
+        projectName ? { projectName } : {}
+      );
+      const allTasks = canonicalTasks.filter((t: any) => t.status !== "COMPLETE");
 
       for (const task of allTasks) {
         if (task.dueDate && task.dueDate < today && task.status !== "COMPLETE") {
@@ -2329,18 +2342,27 @@ export function registerEngineeringRoutes(app: Express) {
       sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
       const weekEndStr = sevenDaysOut.toISOString().split('T')[0];
 
-      const [rawTasks, allProjectInfoRows] = await Promise.all([
-        db.select().from(operationalTasks)
-          .orderBy(asc(operationalTasks.projectName), asc(operationalTasks.sortOrder)),
+      const [rawCanonicalTasks, allProjectInfoRows] = await Promise.all([
+        listEngineeringWorkItems({}),
         db.select({ projectName: projectInfo.projectName, phase: projectInfo.phase })
           .from(projectInfo),
       ]);
 
+      // Resolve assignee names from assigneeUserIds for standup filtering/workload
+      const { buildUserMap } = await import("./user-resolver");
+      const userMap = await buildUserMap();
+      const rawTasks = rawCanonicalTasks.map((t: any) => {
+        const assigneeNames = (t.assigneeUserIds || [])
+          .map((uid: number) => userMap.get(uid)?.name)
+          .filter(Boolean);
+        return { ...t, assignees: assigneeNames.length > 0 ? assigneeNames : null };
+      });
+
       const allTasks = assigneeFilter
-        ? rawTasks.filter(t => {
+        ? rawTasks.filter((t: any) => {
             if (!t.assignees || !Array.isArray(t.assignees)) return false;
-            const filterLower = assigneeFilter.toLowerCase();
-            return t.assignees.some(a => a && a.toLowerCase().startsWith(filterLower));
+            const filterLower = assigneeFilter!.toLowerCase();
+            return t.assignees.some((a: string) => a && a.toLowerCase().startsWith(filterLower));
           })
         : rawTasks;
 
@@ -2505,8 +2527,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.get("/api/eng/dashboard/projects", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
       const [allTasks, allProjectInfoRows] = await Promise.all([
-        db.select().from(operationalTasks)
-          .orderBy(asc(operationalTasks.projectName), asc(operationalTasks.sortOrder)),
+        listEngineeringWorkItems({}),
         db.select({ projectName: projectInfo.projectName, phase: projectInfo.phase })
           .from(projectInfo),
       ]);
@@ -2595,8 +2616,8 @@ export function registerEngineeringRoutes(app: Express) {
   app.get("/api/eng/dashboard/workload", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
       const allUsers = await db.select().from(users);
-      const allTasks = await db.select().from(operationalTasks)
-        .where(ne(operationalTasks.status, "COMPLETE"));
+      const allCanonical = await listEngineeringWorkItems({});
+      const allTasks = allCanonical.filter((t: any) => t.status !== "COMPLETE");
 
       const today = new Date().toISOString().split('T')[0];
       const endOfWeek = new Date();
@@ -2655,12 +2676,10 @@ export function registerEngineeringRoutes(app: Express) {
       twoWeeks.setDate(twoWeeks.getDate() + 14);
       const twoWeeksStr = twoWeeks.toISOString().split('T')[0];
 
-      const atRiskTasks = await db.select().from(operationalTasks)
-        .where(and(
-          ne(operationalTasks.status, "COMPLETE"),
-          sql`(${operationalTasks.dueDate} IS NOT NULL AND ${operationalTasks.dueDate} <= ${twoWeeksStr})`
-        ))
-        .orderBy(asc(operationalTasks.dueDate));
+      const allCanonical = await listEngineeringWorkItems({});
+      const atRiskTasks = allCanonical.filter((t: any) =>
+        t.status !== "COMPLETE" && t.dueDate && t.dueDate <= twoWeeksStr
+      ).sort((a: any, b: any) => (a.dueDate || "").localeCompare(b.dueDate || ""));
 
       const grouped = new Map<string, typeof atRiskTasks>();
       for (const t of atRiskTasks) {
@@ -2696,16 +2715,14 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/dashboard/deliverables-pipeline", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
+      const allCanonical = await listEngineeringWorkItems({});
       const taskStatuses = [
         "TO DO", "IN PROGRESS", "HOLD", "PROJECTS ASSISTANCE", "NEEDS APPROVAL",
         "QC APPROVED", "PROVIDE FEEDBACK", "OPERATIONAL APPROVAL", "COMPLETE"
       ];
       const pipeline: Record<string, number> = {};
       for (const s of taskStatuses) {
-        const [result] = await db.select({ count: sql<number>`count(*)::int` })
-          .from(operationalTasks)
-          .where(eq(operationalTasks.status, s));
-        pipeline[s] = result?.count || 0;
+        pipeline[s] = allCanonical.filter((t: any) => t.status === s).length;
       }
       res.json(pipeline);
     } catch (err: any) {
@@ -2716,14 +2733,11 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/dashboard/orphan-tasks", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
-      const orphans = await db.select().from(operationalTasks)
-        .where(and(
-          isNull(operationalTasks.linkedPlanItemId),
-          isNull(operationalTasks.linkedDeliverableId),
-          isNull(operationalTasks.linkedQualityItemInstanceId),
-          ne(operationalTasks.status, "COMPLETE")
-        ))
-        .orderBy(desc(operationalTasks.createdAt));
+      const allCanonical = await listEngineeringWorkItems({});
+      const orphans = allCanonical.filter((t: any) =>
+        !t.linkedPlanItemId && !t.linkedDeliverableId && !t.linkedQualityItemInstanceId &&
+        t.status !== "COMPLETE"
+      );
       res.json(orphans);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
