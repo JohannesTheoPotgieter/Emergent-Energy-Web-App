@@ -2056,6 +2056,10 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           if (cs.plannedExpenditure != null) vals.plannedExpenditure = String(cs.plannedExpenditure);
           if (cs.plannedProfit != null) vals.plannedProfit = String(cs.plannedProfit);
           if (cs.plannedMargin != null) vals.plannedMargin = String(cs.plannedMargin);
+          if (cs.actualRevenue != null) vals.actualRevenue = String(cs.actualRevenue);
+          if (cs.actualExpenditure != null) vals.actualExpenditure = String(cs.actualExpenditure);
+          if (cs.actualProfit != null) vals.actualProfit = String(cs.actualProfit);
+          if (cs.actualMargin != null) vals.actualMargin = String(cs.actualMargin);
           if (existing) {
             await tx.update(projectRevenueSummary).set(vals).where(eq(projectRevenueSummary.id, existing.id));
           } else {
