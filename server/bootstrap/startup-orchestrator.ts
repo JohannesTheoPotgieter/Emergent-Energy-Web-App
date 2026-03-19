@@ -219,12 +219,14 @@ async function runAdditiveSchemaAlignments() {
       ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT';
       ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS project_id INTEGER;
       ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
+      ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
 
       -- Smart-Import: program_inflows columns
       ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
       ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT';
       ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS project_id INTEGER;
       ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
+      ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
 
       -- FYE Revenue Tracking tables
       CREATE TABLE IF NOT EXISTS fye_budgets (
