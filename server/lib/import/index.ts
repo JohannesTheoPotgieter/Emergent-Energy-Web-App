@@ -41,6 +41,6 @@ export async function runSmartImportPreview(buffer: Buffer, fileName: string): P
   return { detection, mappings, normalization, hasBlockers, needsReview };
 }
 
-export { type DetectedSection, type DetectionResult } from "./detector";
+export { type DetectedSection, type DetectionResult, type LayoutVariant } from "./detector";
 export { type ColumnMapping, type MappingResult } from "./mapper";
 export { type NormalizationResult } from "./normalizer";

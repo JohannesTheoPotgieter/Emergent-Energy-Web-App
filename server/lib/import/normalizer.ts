@@ -801,6 +801,32 @@ export function normalizeData(
         );
         planTasks = result.tasks;
 
+        // Generate INFO issue when project metadata is missing (e.g., MONDI_LEGACY layout)
+        if (detection.projectInfo) {
+          const pi = detection.projectInfo;
+          if (!pi.sizeKwp && !pi.pd && !pi.pm && !pi.contractValue && !pi.phase) {
+            issues.push({
+              severity: "INFO",
+              section: "PLAN",
+              message: "Project metadata (size, PD, PM, contract value, phase) not found in tracker. Please assign manually in the Section Detection step.",
+              suggestedAction: "Edit project info fields",
+              issueType: "MISSING_METADATA",
+              issueFingerprint: makeFingerprint("MISSING_METADATA", "PLAN", "project_info"),
+              payloadJson: { layoutVariant: section.layoutVariant || "UNKNOWN" },
+            });
+          }
+        } else {
+          issues.push({
+            severity: "INFO",
+            section: "PLAN",
+            message: "Project metadata (size, PD, PM, contract value, phase) not found in tracker. Please assign manually in the Section Detection step.",
+            suggestedAction: "Edit project info fields",
+            issueType: "MISSING_METADATA",
+            issueFingerprint: makeFingerprint("MISSING_METADATA", "PLAN", "project_info"),
+            payloadJson: { layoutVariant: section.layoutVariant || "UNKNOWN" },
+          });
+        }
+
         if (detection.projectInfo) {
           const phaseLabels = [
             { name: "PD Handover", date: detection.projectInfo.pdHandoverDate },
