@@ -4153,6 +4153,11 @@ export async function registerRoutes(
         row.actualProgressPct = row._taskWeight > 0 ? row._taskActual / row._taskWeight : 0;
         row.expectedProgressPct = row._taskWeight > 0 ? row._taskExpected / row._taskWeight : 0;
         row.scheduleVariancePct = row.actualProgressPct - row.expectedProgressPct;
+        // Compute RAG from progress delta when manual ragStatus is absent (matching projects-summary)
+        if (row.rag === 'UNKNOWN') {
+          const delta = row.scheduleVariancePct;
+          row.rag = delta >= -5 ? 'Green' : delta >= -15 ? 'Amber' : 'Red';
+        }
         row.openInflowFy = row.plannedRevenueFy - row.receivedInflowFy;
         row.openExpenditureFy = row.plannedExpenditureFy - row.paidExpenditureFy;
         row.grossMarginPctFy = row.plannedRevenueFy > 0 ? (row.plannedRevenueFy - row.plannedExpenditureFy) / row.plannedRevenueFy : null;

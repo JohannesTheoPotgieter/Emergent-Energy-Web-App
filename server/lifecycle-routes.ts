@@ -3,7 +3,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns } from "@shared/schema";
+import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, revenueTrackingOverrides, cosStatusOverrides } from "@shared/schema";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
@@ -702,6 +702,7 @@ export function registerLifecycleRoutes(app: Express) {
   app.get("/api/lifecycle-board/execution-dashboard", requireAuth, async (_req: Request, res: Response) => {
     try {
       const fy = getCurrentFinancialYearBounds();
+      const today = new Date().toISOString().slice(0, 10);
       const activeProjects = await db.select({
         id: projectInfo.id,
         projectName: projectInfo.projectName,
@@ -710,7 +711,12 @@ export function registerLifecycleRoutes(app: Express) {
         executionPhase: projectInfo.executionPhase,
         ragStatus: projectInfo.ragStatus,
         archivedStatus: projectInfo.archivedStatus,
+        phase: projectInfo.phase,
       }).from(projectInfo).where(eq(projectInfo.archivedStatus, "ACTIVE"));
+
+      // Helpers matching program-dashboard logic
+      const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;
+      const isBlack = (v: any) => { const s = String(v || '').toLowerCase(); return s.includes('000000') || s.includes('black'); };
 
       const rawPlanTasks = await getAllPMWorkItemsAsProjectPlan();
       const planByNorm = new Map<string, { weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number; fyItems: number }>();
@@ -721,14 +727,29 @@ export function registerLifecycleRoutes(app: Express) {
         const entry = planByNorm.get(norm)!;
         const duration = Number(wi.durationDays || 1);
         const weight = Number.isFinite(duration) && duration > 0 ? duration : 1;
-        if (wi.actualPctComplete !== null && wi.actualPctComplete !== undefined) {
-          entry.weightedPct += Number(wi.actualPctComplete) * weight;
-          entry.totalWeight += weight;
-        }
+
+        // Actual % — use value if available, else 0
+        const actualPct = wi.actualPctComplete !== null && wi.actualPctComplete !== undefined
+          ? Number(wi.actualPctComplete) : 0;
+        entry.weightedPct += actualPct * weight;
+        entry.totalWeight += weight;
+
+        // Expected % — use value if available, else calculate from task dates (matching program-dashboard)
+        let expectedPct: number;
         if (wi.expectedPctComplete !== null && wi.expectedPctComplete !== undefined) {
-          entry.weightedExpPct += Number(wi.expectedPctComplete) * weight;
-          entry.totalExpWeight += weight;
+          expectedPct = Number(wi.expectedPctComplete);
+        } else {
+          const wiStart = (wi.actualStart || wi.startDate || '').slice(0, 10);
+          const wiEnd = (wi.actualEnd || wi.endDate || '').slice(0, 10);
+          if (wiStart && wiEnd && wiStart < wiEnd) {
+            expectedPct = today <= wiStart ? 0 : today >= wiEnd ? 1 : Math.max(0, Math.min(1, (new Date(today).getTime() - new Date(wiStart).getTime()) / (new Date(wiEnd).getTime() - new Date(wiStart).getTime())));
+          } else {
+            expectedPct = 0;
+          }
         }
+        entry.weightedExpPct += expectedPct * weight;
+        entry.totalExpWeight += weight;
+
         const planMembershipDate = pickFirstPopulatedDate(wi, [
           "plannedStart",
           "plannedEnd",
@@ -749,9 +770,11 @@ export function registerLifecycleRoutes(app: Express) {
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
         paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
         paidDate: normalizedRevenueLines.paidDate,
+        paidDateFontColor: normalizedRevenueLines.paidDateFontColor,
         inBankDate: normalizedRevenueLines.inBankDate,
         invoiceDate: normalizedRevenueLines.invoiceDate,
         expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
+        sourceRow: normalizedRevenueLines.sourceRow,
       }).from(normalizedRevenueLines);
 
       const costLines = await db.select({
@@ -761,53 +784,81 @@ export function registerLifecycleRoutes(app: Express) {
         invoiceNumber: normalizedCostLines.invoiceNumber,
         paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
         paidDate: normalizedCostLines.paidDate,
+        paidDateFontColor: normalizedCostLines.paidDateFontColor,
         invoiceDate: normalizedCostLines.invoiceDate,
         approvedDate: normalizedCostLines.approvedDate,
+        cosRealised: normalizedCostLines.cosRealised,
+        sourceRow: normalizedCostLines.sourceRow,
       }).from(normalizedCostLines);
 
-      const finByProjectId = new Map<number, { plannedRevenue: number; receivedInflow: number; plannedExpenditure: number; paidExpenditure: number; fyRevenueItems: number; fyCostItems: number }>();
-      const finByNorm = new Map<string, { plannedRevenue: number; receivedInflow: number; plannedExpenditure: number; paidExpenditure: number; fyRevenueItems: number; fyCostItems: number }>();
-      const emptyFin = () => ({ plannedRevenue: 0, receivedInflow: 0, plannedExpenditure: 0, paidExpenditure: 0, fyRevenueItems: 0, fyCostItems: 0 });
+      // Load revenue & COS overrides (matching program-dashboard)
+      const [revOverrides, cosOverrides] = await Promise.all([
+        db.select().from(revenueTrackingOverrides).where(eq(revenueTrackingOverrides.fieldName, "inBank")),
+        db.select().from(cosStatusOverrides),
+      ]);
+      const inBankOverrideSet = new Set<string>();
+      for (const o of revOverrides) {
+        if (String(o.overrideValue) === "1") inBankOverrideSet.add(`${o.projectName}::${o.rowNumber}`);
+      }
+      const cosOverrideByKey = new Map<string, string>();
+      for (const o of cosOverrides) {
+        cosOverrideByKey.set(`${o.projectName}::${o.rowNumber}`, o.overrideStatus);
+      }
+
+      const finByProjectId = new Map<number, { plannedRevenue: number; receivedInflow: number; plannedExpenditure: number; paidExpenditure: number; fyRevenueItems: number; fyCostItems: number; inflowRisk: number; outflowRisk: number }>();
+      const finByNorm = new Map<string, { plannedRevenue: number; receivedInflow: number; plannedExpenditure: number; paidExpenditure: number; fyRevenueItems: number; fyCostItems: number; inflowRisk: number; outflowRisk: number }>();
+      const emptyFin = () => ({ plannedRevenue: 0, receivedInflow: 0, plannedExpenditure: 0, paidExpenditure: 0, fyRevenueItems: 0, fyCostItems: 0, inflowRisk: 0, outflowRisk: 0 });
 
       for (const row of revenueLines) {
         const amount = parseFloat(row.amountExVat || "0") || 0;
-        const lineDate = pickFirstPopulatedDate(row as any, ["invoiceDate", "expectedPaymentDate", "paidDate", "inBankDate"]);
-        if (!isDateInRange(lineDate, fy.start, fy.end)) continue;
-        const received = Boolean(row.invoiceNumber) && (Boolean(row.paidDateConfirmed) || Boolean(row.inBankDate));
-        if (row.projectId) {
-          if (!finByProjectId.has(row.projectId)) finByProjectId.set(row.projectId, emptyFin());
-          const entry = finByProjectId.get(row.projectId)!;
+        const dateKey = pickFirstPopulatedDate(row as any, ["expectedPaymentDate", "invoiceDate", "paidDate", "inBankDate"]);
+        if (!isDateInRange(dateKey, fy.start, fy.end)) continue;
+        // Unified "received" logic: font-color black + paid date, OR paidDateConfirmed, OR inBankDate, OR manual override
+        const baseReceived = hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor);
+        const confirmedReceived = Boolean(row.paidDateConfirmed) || Boolean(row.inBankDate);
+        const overrideInBank = inBankOverrideSet.has(`${row.projectName}::${row.sourceRow}`);
+        const received = baseReceived || (hasText(row.invoiceNumber) && confirmedReceived) || overrideInBank;
+
+        const addTo = (entry: ReturnType<typeof emptyFin>) => {
           entry.plannedRevenue += amount;
           if (received) entry.receivedInflow += amount;
+          else if (dateKey && dateKey < today) entry.inflowRisk += amount;
           entry.fyRevenueItems += 1;
+        };
+        if (row.projectId) {
+          if (!finByProjectId.has(row.projectId)) finByProjectId.set(row.projectId, emptyFin());
+          addTo(finByProjectId.get(row.projectId)!);
         } else if (row.projectName) {
           const norm = normalizeName(row.projectName);
           if (!finByNorm.has(norm)) finByNorm.set(norm, emptyFin());
-          const entry = finByNorm.get(norm)!;
-          entry.plannedRevenue += amount;
-          if (received) entry.receivedInflow += amount;
-          entry.fyRevenueItems += 1;
+          addTo(finByNorm.get(norm)!);
         }
       }
 
       for (const row of costLines) {
         const amount = parseFloat(row.amountExVat || "0") || 0;
-        const lineDate = pickFirstPopulatedDate(row as any, ["invoiceDate", "approvedDate", "paidDate"]);
-        if (!isDateInRange(lineDate, fy.start, fy.end)) continue;
-        const paid = Boolean(row.invoiceNumber) && Boolean(row.paidDateConfirmed);
-        if (row.projectId) {
-          if (!finByProjectId.has(row.projectId)) finByProjectId.set(row.projectId, emptyFin());
-          const entry = finByProjectId.get(row.projectId)!;
+        const dateKey = pickFirstPopulatedDate(row as any, ["approvedDate", "invoiceDate", "paidDate"]);
+        if (!isDateInRange(dateKey, fy.start, fy.end)) continue;
+        // Unified "paid" logic: font-color + paid date, OR paidDateConfirmed, OR cosRealised, OR COS override
+        const basePaid = hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor);
+        const confirmedPaid = Boolean(row.paidDateConfirmed);
+        const cosOverrideStatus = cosOverrideByKey.get(`${row.projectName}::${row.sourceRow}`);
+        const isRealised = cosOverrideStatus ? cosOverrideStatus === 'COS Realised' : (row as any).cosRealised === true;
+        const paid = basePaid || (hasText(row.invoiceNumber) && confirmedPaid) || isRealised;
+
+        const addTo = (entry: ReturnType<typeof emptyFin>) => {
           entry.plannedExpenditure += amount;
           if (paid) entry.paidExpenditure += amount;
+          else if (dateKey && dateKey < today) entry.outflowRisk += amount;
           entry.fyCostItems += 1;
+        };
+        if (row.projectId) {
+          if (!finByProjectId.has(row.projectId)) finByProjectId.set(row.projectId, emptyFin());
+          addTo(finByProjectId.get(row.projectId)!);
         } else if (row.projectName) {
           const norm = normalizeName(row.projectName);
           if (!finByNorm.has(norm)) finByNorm.set(norm, emptyFin());
-          const entry = finByNorm.get(norm)!;
-          entry.plannedExpenditure += amount;
-          if (paid) entry.paidExpenditure += amount;
-          entry.fyCostItems += 1;
+          addTo(finByNorm.get(norm)!);
         }
       }
 
@@ -844,7 +895,7 @@ export function registerLifecycleRoutes(app: Express) {
 
       const actionRows: any[] = [];
       const projectRows: any[] = [];
-      const today = new Date();
+      const todayDt = new Date();
 
       for (const project of activeProjects) {
         const norm = normalizeName(project.projectName);
@@ -858,6 +909,19 @@ export function registerLifecycleRoutes(app: Express) {
         const expectedProgressPct = plan.totalExpWeight > 0 ? Number(((plan.weightedExpPct / plan.totalExpWeight) * 100).toFixed(1)) : null;
         const scheduleVariancePct = actualProgressPct !== null && expectedProgressPct !== null ? Number((actualProgressPct - expectedProgressPct).toFixed(1)) : null;
         const behindPlan = actualProgressPct !== null && expectedProgressPct !== null && actualProgressPct < expectedProgressPct - 5;
+
+        // Compute RAG from progress delta (matching projects-summary logic)
+        // Uses manual ragStatus if set, otherwise computes from schedule variance
+        let computedRag: string;
+        if (project.ragStatus) {
+          computedRag = project.ragStatus;
+        } else if (scheduleVariancePct !== null) {
+          // scheduleVariancePct is in percentage points (e.g., -5 means 5% behind)
+          // Thresholds: >= -5 is Green, >= -15 is Amber, < -15 is Red
+          computedRag = scheduleVariancePct >= -5 ? "Green" : scheduleVariancePct >= -15 ? "Amber" : "Red";
+        } else {
+          computedRag = "Unknown";
+        }
 
         const plannedRevenueFy = fin.plannedRevenue;
         const receivedInflowFy = fin.receivedInflow;
@@ -879,13 +943,13 @@ export function registerLifecycleRoutes(app: Express) {
         const projectApprovals = approvalRows.filter((a) => a.projectId === project.id && a.status === "pending");
 
         const latestImport = latestImportByProjectId.get(project.id) || latestImportByNorm.get(norm) || null;
-        const staleDays = latestImport ? Math.floor((today.getTime() - latestImport.getTime()) / (1000 * 60 * 60 * 24)) : null;
+        const staleDays = latestImport ? Math.floor((todayDt.getTime() - latestImport.getTime()) / (1000 * 60 * 60 * 24)) : null;
         const importFreshness = staleDays === null ? "Critical" : staleDays >= 14 ? "Critical" : staleDays >= 7 ? "Warning" : "Fresh";
 
-        const engineeringStatus = engBlockers.length > 0 ? "Blocked" : openEng.some((t) => t.dueDate && t.dueDate < today.toISOString().slice(0, 10)) ? "At Risk" : "On Track";
+        const engineeringStatus = engBlockers.length > 0 ? "Blocked" : openEng.some((t) => t.dueDate && t.dueDate < todayDt.toISOString().slice(0, 10)) ? "At Risk" : "On Track";
         const qualityStatus = criticalQuality.length > 0 ? "Blocked" : openQuality.length > 0 ? "At Risk" : "On Track";
-        const inflowRisk = openInflowFy > 0 && plannedRevenueFy > 0 && (openInflowFy / plannedRevenueFy) > 0.35;
-        const outflowRisk = openExpenditureFy > 0 && plannedExpenditureFy > 0 && (openExpenditureFy / plannedExpenditureFy) > 0.35;
+        const inflowRisk = fin.inflowRisk > 0 || (openInflowFy > 0 && plannedRevenueFy > 0 && (openInflowFy / plannedRevenueFy) > 0.35);
+        const outflowRisk = fin.outflowRisk > 0 || (openExpenditureFy > 0 && plannedExpenditureFy > 0 && (openExpenditureFy / plannedExpenditureFy) > 0.35);
         const criticalActionCount = [behindPlan, inflowRisk, outflowRisk, engBlockers.length > 0, criticalQuality.length > 0, projectApprovals.length > 0].filter(Boolean).length;
 
         if (behindPlan) actionRows.push({ projectId: project.id, projectName: project.projectName, queue: "Projects Behind Plan", issueTitle: `Actual ${actualProgressPct}% vs Expected ${expectedProgressPct}%`, severity: (expectedProgressPct! - actualProgressPct!) > 15 ? "Critical" : "High", owner: project.pm || project.pd || "Unassigned", dueDate: null, link: `/project/${encodeURIComponent(project.projectName)}?tab=plan` });
@@ -907,8 +971,8 @@ export function registerLifecycleRoutes(app: Express) {
           portfolio: "—",
           pm: project.pm,
           pd: project.pd,
-          executionPhase: project.executionPhase,
-          rag: project.ragStatus || "Unknown",
+          executionPhase: project.executionPhase || project.phase || null,
+          rag: computedRag,
           actualProgressPct,
           expectedProgressPct,
           scheduleVariancePct,

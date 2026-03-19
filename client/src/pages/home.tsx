@@ -470,21 +470,12 @@ function getRoleKpis(
 export default function HomePage() {
   const { user } = useAuth();
 
-  const { data: summaryData, isLoading: summaryLoading } = useQuery<any>({
-    queryKey: ["/api/projects-summary"],
-    queryFn: async () => {
-      const res = await fetch("/api/projects-summary", {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (!res.ok) return null;
-      return res.json();
-    },
-  });
-
+  // Single source of truth: use execution-dashboard for ALL KPIs and stats
+  // This ensures Home page numbers match the Execution Dashboard exactly
   const { data: dashData, isLoading: dashLoading } = useQuery<any>({
-    queryKey: ["/api/program-dashboard"],
+    queryKey: ["/api/lifecycle-board/execution-dashboard"],
     queryFn: async () => {
-      const res = await fetch("/api/program-dashboard", {
+      const res = await fetch("/api/lifecycle-board/execution-dashboard", {
         headers: { Authorization: `Bearer ${token()}` },
       });
       if (!res.ok) return null;
@@ -518,11 +509,12 @@ export default function HomePage() {
   const roleCategory = getRoleCategory(userRole);
   const roleLabel = getRoleLabel(userRole);
 
+  // Single source of truth: derive ALL stats from the execution-dashboard endpoint
+  // This ensures Home page KPIs match the Execution Dashboard exactly
   const stats = useMemo(() => {
-    const projects = Array.isArray(summaryData) ? summaryData : summaryData?.projects || [];
-    const active = projects.filter((p: any) => p.is_active === true);
+    const projects: any[] = dashData?.projects || [];
     const totalProjects = projects.length;
-    const activeProjects = active.length;
+    const activeProjects = totalProjects; // all projects from execution-dashboard are already active
 
     const constructionPhases = new Set(["construction", "qa"]);
     const companyPhases = new Set(["compliance handover", "handover", "financial close", "commercial close out", "dlp"]);
@@ -534,18 +526,18 @@ export default function HomePage() {
       return "pipeline";
     };
 
-    const inConstruction = active.filter((p: any) => getCategory(p.phase) === "construction").length;
-    const inCompany = active.filter((p: any) => getCategory(p.phase) === "company").length;
-    const inPipeline = active.filter((p: any) => getCategory(p.phase) === "pipeline").length;
+    const inConstruction = projects.filter((p: any) => getCategory(p.executionPhase) === "construction").length;
+    const inCompany = projects.filter((p: any) => getCategory(p.executionPhase) === "company").length;
+    const inPipeline = projects.filter((p: any) => getCategory(p.executionPhase) === "pipeline").length;
 
-    const greenProjects = active.filter((p: any) => p.rag_status === "Green").length;
-    const amberProjects = active.filter((p: any) => p.rag_status === "Amber").length;
-    const redProjects = active.filter((p: any) => p.rag_status === "Red").length;
+    const greenProjects = projects.filter((p: any) => p.rag === "Green").length;
+    const amberProjects = projects.filter((p: any) => p.rag === "Amber").length;
+    const redProjects = projects.filter((p: any) => p.rag === "Red").length;
     return { totalProjects, activeProjects, inConstruction, inCompany, inPipeline, greenProjects, amberProjects, redProjects };
-  }, [summaryData]);
+  }, [dashData]);
 
   const kpis = dashData?.kpis || {};
-  const isLoading = summaryLoading || dashLoading;
+  const isLoading = dashLoading;
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
