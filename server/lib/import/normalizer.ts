@@ -996,6 +996,21 @@ export function normalizeData(
     }
   }
 
+  // Generate INFO issue for Purchase Order sheets
+  const poSheets = detection.unmatched.filter(u => u.reason.startsWith("Purchase Order sheet"));
+  if (poSheets.length > 0) {
+    const poNames = poSheets.map(u => u.sheetName).join(", ");
+    issues.push({
+      severity: "INFO",
+      section: "GENERAL",
+      message: `Found ${poSheets.length} Purchase Order sheet${poSheets.length > 1 ? "s" : ""} (${poNames}). These are not imported by Smart Import. Use the Load Purchase Order function instead.`,
+      suggestedAction: "Use Load PO function to import these sheets",
+      issueType: "PO_SHEETS_DETECTED",
+      issueFingerprint: makeFingerprint("PO_SHEETS_DETECTED", "GENERAL", "po_sheets"),
+      payloadJson: { count: poSheets.length, sheetNames: poSheets.map(u => u.sheetName) },
+    });
+  }
+
   for (const section of detection.sections) {
     const mapping = mappings.find(m => m.section === section.section);
     if (!mapping) continue;

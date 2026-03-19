@@ -499,6 +499,107 @@ router.get("/api/smart-import/history/:projectName", requireAuth, async (req: Re
   }
 });
 
+// GET /api/smart-import/health-dashboard — Import health across all projects
+router.get("/api/smart-import/health-dashboard", requireAuth, requirePermission("smart_import", "view"), async (_req: Request, res: Response) => {
+  try {
+    // Get the latest committed run per project
+    const allRuns = await db.select({
+      id: smartImportRuns.id,
+      projectName: smartImportRuns.projectName,
+      projectId: smartImportRuns.projectId,
+      status: smartImportRuns.status,
+      committedAt: smartImportRuns.committedAt,
+      uploadedAt: smartImportRuns.uploadedAt,
+    })
+      .from(smartImportRuns)
+      .orderBy(sql`${smartImportRuns.committedAt} DESC NULLS LAST, ${smartImportRuns.uploadedAt} DESC`);
+
+    // Aggregate per project
+    const projectMap = new Map<string, {
+      projectName: string;
+      projectId: number | null;
+      lastImportDate: string | null;
+      lastImportStatus: string;
+      totalImportRuns: number;
+    }>();
+
+    for (const run of allRuns) {
+      if (!projectMap.has(run.projectName)) {
+        projectMap.set(run.projectName, {
+          projectName: run.projectName,
+          projectId: run.projectId,
+          lastImportDate: run.status === "COMMITTED" && run.committedAt ? run.committedAt.toISOString() : null,
+          lastImportStatus: run.status,
+          totalImportRuns: 0,
+        });
+      }
+      const entry = projectMap.get(run.projectName)!;
+      entry.totalImportRuns++;
+      // Update last committed date if this is a committed run and we don't have one yet
+      if (!entry.lastImportDate && run.status === "COMMITTED" && run.committedAt) {
+        entry.lastImportDate = run.committedAt.toISOString();
+        entry.lastImportStatus = "COMMITTED";
+      }
+    }
+
+    // Get unresolved issue counts per project (from latest run only)
+    const latestRunIds = new Map<string, number>();
+    for (const run of allRuns) {
+      if (!latestRunIds.has(run.projectName)) {
+        latestRunIds.set(run.projectName, run.id);
+      }
+    }
+    const issueCountMap = new Map<string, number>();
+    for (const [projectName, latestRunId] of latestRunIds) {
+      const unresolvedCount = await db.select({ count: sql<number>`count(*)` })
+        .from(importIssues)
+        .where(and(eq(importIssues.importRunId, latestRunId), eq(importIssues.resolved, false)));
+      issueCountMap.set(projectName, Number(unresolvedCount[0]?.count || 0));
+    }
+
+    // Also include projects that have never been imported
+    const allProjects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
+      .from(projectInfo);
+    for (const proj of allProjects) {
+      if (proj.projectName && !projectMap.has(proj.projectName)) {
+        projectMap.set(proj.projectName, {
+          projectName: proj.projectName,
+          projectId: proj.id,
+          lastImportDate: null,
+          lastImportStatus: "NEVER",
+          totalImportRuns: 0,
+        });
+      }
+    }
+
+    const now = new Date();
+    const dashboard = Array.from(projectMap.values()).map(p => {
+      const daysSinceLastImport = p.lastImportDate
+        ? Math.floor((now.getTime() - new Date(p.lastImportDate).getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+      const staleness: "fresh" | "aging" | "stale" | "never" =
+        daysSinceLastImport === null ? "never" :
+        daysSinceLastImport <= 14 ? "fresh" :
+        daysSinceLastImport <= 30 ? "aging" : "stale";
+      return {
+        ...p,
+        daysSinceLastImport,
+        staleness,
+        unresolvedIssueCount: issueCountMap.get(p.projectName) || 0,
+      };
+    });
+
+    // Sort: stale first, then aging, fresh, never
+    const stalenessOrder: Record<string, number> = { stale: 0, aging: 1, never: 2, fresh: 3 };
+    dashboard.sort((a, b) => (stalenessOrder[a.staleness] ?? 9) - (stalenessOrder[b.staleness] ?? 9));
+
+    res.json(dashboard);
+  } catch (err: any) {
+    console.error("[smart-import] GET health-dashboard error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/smart-import/pending-runs (must be BEFORE :runId to avoid route conflict)
 router.get("/api/smart-import/pending-runs", requireAuth, requirePermission("smart_import", "view"), async (_req: Request, res: Response) => {
   try {
@@ -635,6 +736,126 @@ router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Re
     });
   } catch (err: any) {
     console.error("[smart-import] GET run error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/smart-import/:runId/diff — Compute delta between incoming data and existing DB records
+router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    const summary = run.summaryJson as any;
+    if (!summary?.normalization) return res.json({ diff: null });
+
+    const norm = summary.normalization;
+    const projectName = run.projectName;
+    const projectId = run.projectId;
+
+    const diff: Record<string, { added: number; modified: number; removed: number; unchanged: number; details: any[] }> = {};
+
+    // Plan tasks diff
+    if (Array.isArray(norm.planTasks) && norm.planTasks.length > 0) {
+      const existingTasks = projectId
+        ? await db.select({ title: workItems.title, startDate: workItems.startDate, endDate: workItems.endDate, ownerName: workItems.ownerName })
+            .from(workItems)
+            .where(and(eq(workItems.projectId, projectId), eq(workItems.source, "SMART_IMPORT")))
+        : [];
+      const existingMap = new Map(existingTasks.map(t => [`${t.title}::${t.startDate || ""}`, t]));
+      let added = 0, modified = 0, unchanged = 0;
+      const details: any[] = [];
+      const matchedKeys = new Set<string>();
+
+      for (const task of norm.planTasks) {
+        const key = `${task.taskName}::${task.startDate || ""}`;
+        if (existingMap.has(key)) {
+          matchedKeys.add(key);
+          const existing = existingMap.get(key)!;
+          const changes: string[] = [];
+          if (task.endDate !== existing.endDate) changes.push(`endDate: ${existing.endDate || "—"} → ${task.endDate || "—"}`);
+          if (task.owner !== existing.ownerName) changes.push(`owner: ${existing.ownerName || "—"} → ${task.owner || "—"}`);
+          if (changes.length > 0) {
+            modified++;
+            if (details.length < 20) details.push({ type: "modified", name: task.taskName, changes });
+          } else {
+            unchanged++;
+          }
+        } else {
+          added++;
+          if (details.length < 20) details.push({ type: "added", name: task.taskName });
+        }
+      }
+      const removed = existingTasks.length - matchedKeys.size;
+      diff.plan = { added, modified, removed, unchanged, details };
+    }
+
+    // Revenue diff
+    if (Array.isArray(norm.revenueLines) && norm.revenueLines.length > 0) {
+      const existingRevenue = projectId
+        ? await db.select({ milestoneName: normalizedRevenueLines.milestoneName, amountExVat: normalizedRevenueLines.amountExVat, invoiceNumber: normalizedRevenueLines.invoiceNumber })
+            .from(normalizedRevenueLines)
+            .where(eq(normalizedRevenueLines.projectId, projectId))
+        : [];
+      const existingMap = new Map(existingRevenue.map(r => [`${r.milestoneName}::${r.amountExVat || ""}`, r]));
+      let added = 0, modified = 0, unchanged = 0;
+      const details: any[] = [];
+      const matchedKeys = new Set<string>();
+
+      for (const line of norm.revenueLines) {
+        const key = `${line.milestoneName}::${line.amountExVat || ""}`;
+        if (existingMap.has(key)) {
+          matchedKeys.add(key);
+          const existing = existingMap.get(key)!;
+          const changes: string[] = [];
+          if ((line.invoiceNumber || null) !== (existing.invoiceNumber || null)) changes.push(`invoiceNumber: ${existing.invoiceNumber || "—"} → ${line.invoiceNumber || "—"}`);
+          if (changes.length > 0) {
+            modified++;
+            if (details.length < 20) details.push({ type: "modified", name: line.milestoneName, changes });
+          } else {
+            unchanged++;
+          }
+        } else {
+          added++;
+          if (details.length < 20) details.push({ type: "added", name: line.milestoneName });
+        }
+      }
+      const removed = existingRevenue.length - matchedKeys.size;
+      diff.revenue = { added, modified, removed, unchanged, details };
+    }
+
+    // Cost lines diff
+    if (Array.isArray(norm.costLines) && norm.costLines.length > 0) {
+      const existingCost = projectId
+        ? await db.select({ description: normalizedCostLines.description, amountExVat: normalizedCostLines.amountExVat, invoiceNumber: normalizedCostLines.invoiceNumber })
+            .from(normalizedCostLines)
+            .where(eq(normalizedCostLines.projectId, projectId))
+        : [];
+      const existingMap = new Map(existingCost.map(c => [`${c.description}::${c.amountExVat || ""}::${c.invoiceNumber || ""}`, c]));
+      let added = 0, modified = 0, unchanged = 0;
+      const details: any[] = [];
+      const matchedKeys = new Set<string>();
+
+      for (const line of norm.costLines) {
+        const key = `${line.description}::${line.amountExVat || ""}::${line.invoiceNumber || ""}`;
+        if (existingMap.has(key)) {
+          matchedKeys.add(key);
+          unchanged++;
+        } else {
+          added++;
+          if (details.length < 20) details.push({ type: "added", name: line.description || line.costCategory });
+        }
+      }
+      const removed = existingCost.length - matchedKeys.size;
+      diff.cost = { added, modified: 0, removed, unchanged, details };
+    }
+
+    res.json({ diff });
+  } catch (err: any) {
+    console.error("[smart-import] GET diff error:", err);
     res.status(500).json({ error: err.message });
   }
 });

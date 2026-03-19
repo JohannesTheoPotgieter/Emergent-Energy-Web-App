@@ -121,18 +121,29 @@ interface FileUploadResult {
 function UploadStep({
   onUploaded,
   onBatchUploaded,
+  onResumeBatch,
 }: {
   onUploaded: (runId: number, preview: any) => void;
   onBatchUploaded?: (results: FileUploadResult[]) => void;
+  onResumeBatch?: () => void;
 }) {
   const [files, setFiles] = useState<FileUploadResult[]>([]);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+  const [pendingCount, setPendingCount] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  // Check for existing pending runs on mount
+  useEffect(() => {
+    fetch("/api/smart-import/pending-runs", { headers: getAuthHeaders() })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setPendingCount(Array.isArray(data) ? data.length : 0))
+      .catch(() => {});
+  }, []);
 
   const addFiles = (fileList: FileList | File[]) => {
     const newFiles: FileUploadResult[] = [];
@@ -479,6 +490,16 @@ function UploadStep({
               </>
             )}
           </Button>
+          {pendingCount > 0 && onResumeBatch && (
+            <Button
+              variant="outline"
+              onClick={onResumeBatch}
+              data-testid="btn-resume-batch"
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-2" />
+              Resume Previous Batch ({pendingCount})
+            </Button>
+          )}
         </div>
 
         {hasSuccessful && files.length > 1 && !uploading && (
@@ -749,14 +770,38 @@ function SectionDetectionStep({
         </Card>
       )}
 
-      {unmatchedSheets.length > 0 && (
+      {/* Purchase Order sheets — distinct section */}
+      {unmatchedSheets.filter((s: any) => s.reason?.startsWith("Purchase Order")).length > 0 && (
+        <Card className="bg-card rounded-xl shadow-sm border-blue-200" data-testid="po-sheets-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-blue-700 flex items-center gap-2">
+              <FileSpreadsheet className="w-4 h-4" />
+              Purchase Order Sheets
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1 text-xs text-muted-foreground mb-2">
+              {unmatchedSheets.filter((s: any) => s.reason?.startsWith("Purchase Order")).map((sheet: any, idx: number) => (
+                <li key={idx} className="flex items-center gap-2" data-testid={`po-sheet-${idx}`}>
+                  <FileSpreadsheet className="w-3 h-3 text-blue-500" />
+                  <span className="font-medium">{sheet.sheetName}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[10px] text-blue-600">These sheets are not imported by Smart Import. Use the Load Purchase Order function instead.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Other unmatched sheets */}
+      {unmatchedSheets.filter((s: any) => !s.reason?.startsWith("Purchase Order")).length > 0 && (
         <Card className="bg-card rounded-xl shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">Unmatched Sheets</CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="space-y-1 text-xs text-muted-foreground">
-              {unmatchedSheets.map((sheet: any, idx: number) => (
+              {unmatchedSheets.filter((s: any) => !s.reason?.startsWith("Purchase Order")).map((sheet: any, idx: number) => (
                 <li key={idx} className="flex items-center gap-2" data-testid={`unmatched-sheet-${idx}`}>
                   <X className="w-3 h-3 text-slate-500" />
                   <span className="font-medium">{typeof sheet === "string" ? sheet : sheet.name || sheet.sheetName}</span>
@@ -2276,6 +2321,17 @@ function PreviewCommitStep({
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
+  const [importDiff, setImportDiff] = useState<Record<string, { added: number; modified: number; removed: number; unchanged: number; details: any[] }> | null>(null);
+  const [diffExpanded, setDiffExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!runId) return;
+    fetch(`/api/smart-import/${runId}/diff`, { headers: getAuthHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.diff) setImportDiff(data.diff); })
+      .catch(() => {});
+  }, [runId]);
+
   const normalization = preview?.normalization || {};
   const detectedSections = preview?.detection?.sections || [];
 
@@ -2528,6 +2584,73 @@ function PreviewCommitStep({
                 );
               })()}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Import Diff / Changes card */}
+      {importDiff && Object.keys(importDiff).length > 0 && (
+        <Card className="bg-card rounded-xl shadow-sm" data-testid="import-diff-card">
+          <CardContent className="p-4">
+            <div
+              className="flex items-center justify-between cursor-pointer"
+              onClick={() => setDiffExpanded(!diffExpanded)}
+              data-testid="diff-toggle"
+            >
+              <p className="text-sm font-semibold">Changes vs Current Data</p>
+              {diffExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 text-xs">
+              {(() => {
+                const totals = Object.values(importDiff).reduce((acc, s) => ({
+                  added: acc.added + s.added,
+                  modified: acc.modified + s.modified,
+                  removed: acc.removed + s.removed,
+                  unchanged: acc.unchanged + s.unchanged,
+                }), { added: 0, modified: 0, removed: 0, unchanged: 0 });
+                return (
+                  <>
+                    <div className="bg-emerald-50 rounded-lg p-2.5 text-center">
+                      <div className="font-bold text-emerald-700">{totals.added}</div>
+                      <div className="text-[10px] text-emerald-600">New</div>
+                    </div>
+                    <div className="bg-blue-50 rounded-lg p-2.5 text-center">
+                      <div className="font-bold text-blue-700">{totals.modified}</div>
+                      <div className="text-[10px] text-blue-600">Modified</div>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-2.5 text-center">
+                      <div className="font-bold text-red-700">{totals.removed}</div>
+                      <div className="text-[10px] text-red-600">Removed</div>
+                    </div>
+                    <div className="bg-slate-50 rounded-lg p-2.5 text-center">
+                      <div className="font-bold text-slate-600">{totals.unchanged}</div>
+                      <div className="text-[10px] text-slate-500">Unchanged</div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+            {diffExpanded && (
+              <div className="mt-3 space-y-3">
+                {Object.entries(importDiff).map(([section, data]) => (
+                  <div key={section} className="border rounded-lg p-2.5">
+                    <p className="text-xs font-semibold capitalize mb-1.5">{section} — {data.added} new, {data.modified} modified, {data.removed} removed</p>
+                    {data.details.length > 0 && (
+                      <ul className="space-y-0.5 text-[10px] text-muted-foreground max-h-32 overflow-y-auto">
+                        {data.details.map((d: any, i: number) => (
+                          <li key={i} className="flex items-start gap-1.5">
+                            <span className={`font-medium flex-shrink-0 ${d.type === "added" ? "text-emerald-600" : d.type === "modified" ? "text-blue-600" : "text-red-600"}`}>
+                              {d.type === "added" ? "+" : d.type === "modified" ? "~" : "-"}
+                            </span>
+                            <span className="truncate">{d.name}{d.changes ? ` (${d.changes.join(", ")})` : ""}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -3544,11 +3667,29 @@ function SmartImportGovernancePanel({
   retryRecentRuns: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [healthData, setHealthData] = useState<any[]>([]);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthExpanded, setHealthExpanded] = useState(false);
+
+  useEffect(() => {
+    setHealthLoading(true);
+    fetch("/api/smart-import/health-dashboard", { headers: getAuthHeaders() })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setHealthData(Array.isArray(data) ? data : []))
+      .catch(() => setHealthData([]))
+      .finally(() => setHealthLoading(false));
+  }, []);
+
   const recentAttentionRuns = recentRuns.filter((run) => run.status !== "COMMITTED" || run.unresolvedBlockers > 0 || run.unresolvedWarnings > 0 || run.recordsFailed > 0).slice(0, 5);
 
   const withWarnings = pendingRuns.filter((run) => run.warningCount > 0).length;
   const blocked = pendingRuns.filter((run) => run.blockerCount > 0).length;
   const recentCommitted = recentRuns.filter(r => r.status === "COMMITTED").length;
+
+  const healthFresh = healthData.filter(p => p.staleness === "fresh").length;
+  const healthAging = healthData.filter(p => p.staleness === "aging").length;
+  const healthStale = healthData.filter(p => p.staleness === "stale").length;
+  const healthNever = healthData.filter(p => p.staleness === "never").length;
 
   return (
     <Card data-testid="governance-panel">
@@ -3641,6 +3782,43 @@ function SmartImportGovernancePanel({
               </AdminQueryState>
             </div>
           </div>
+
+          {/* Import Health Dashboard */}
+          {healthData.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-border" data-testid="health-dashboard">
+              <div className="flex items-center justify-between cursor-pointer" onClick={() => setHealthExpanded(!healthExpanded)}>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Project Health</h4>
+                <div className="flex items-center gap-1.5">
+                  {healthFresh > 0 && <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">{healthFresh} fresh</Badge>}
+                  {healthAging > 0 && <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0">{healthAging} aging</Badge>}
+                  {healthStale > 0 && <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px] px-1.5 py-0">{healthStale} stale</Badge>}
+                  {healthNever > 0 && <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-[10px] px-1.5 py-0">{healthNever} never</Badge>}
+                  {healthExpanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+                </div>
+              </div>
+              {healthExpanded && (
+                <div className="mt-2 space-y-1 max-h-[200px] overflow-y-auto">
+                  {healthData.filter(p => p.staleness !== "fresh").map((project, idx) => (
+                    <div key={idx} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 p-2 text-xs" data-testid={`health-project-${idx}`}>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium truncate">{project.projectName}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {project.staleness === "never" ? "Never imported" :
+                           `Last import ${project.daysSinceLastImport}d ago`}
+                          {project.unresolvedIssueCount > 0 ? ` \u2022 ${project.unresolvedIssueCount} issues` : ""}
+                        </p>
+                      </div>
+                      <Badge className={`text-[10px] px-1.5 py-0 ${
+                        project.staleness === "stale" ? "bg-red-50 text-red-700 border-red-200" :
+                        project.staleness === "aging" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                        "bg-slate-100 text-slate-600 border-slate-200"
+                      }`}>{project.staleness}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         )}
       </CardContent>
     </Card>
@@ -3851,7 +4029,7 @@ export default function SmartImportPage() {
           )}
 
           {step === 1 && (
-            <UploadStep onUploaded={handleUploaded} onBatchUploaded={handleBatchUploaded} />
+            <UploadStep onUploaded={handleUploaded} onBatchUploaded={handleBatchUploaded} onResumeBatch={() => setBulkMode(true)} />
           )}
 
           {step === 2 && preview && (
