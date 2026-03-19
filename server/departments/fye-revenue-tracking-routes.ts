@@ -121,21 +121,25 @@ router.get(
       const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
       const monthKeys = getFyeMonthKeys(fye);
 
-      // 1. Budget data from fye_budgets
-      const budgetRows = await db
-        .select()
-        .from(fyeBudgets)
-        .where(eq(fyeBudgets.fye, String(fye)));
-
+      // 1. Budget data from fye_budgets (may be empty if not yet entered)
       const budgetRevByMonth: Record<string, number> = {};
       const budgetCosByMonth: Record<string, number> = {};
-      for (const b of budgetRows) {
-        const amt = safeNum(b.amount);
-        if (b.budgetType === "revenue") {
-          budgetRevByMonth[b.monthKey] = (budgetRevByMonth[b.monthKey] || 0) + amt;
-        } else if (b.budgetType === "cos") {
-          budgetCosByMonth[b.monthKey] = (budgetCosByMonth[b.monthKey] || 0) + amt;
+      try {
+        const budgetRows = await db
+          .select()
+          .from(fyeBudgets)
+          .where(eq(fyeBudgets.fye, String(fye)));
+
+        for (const b of budgetRows) {
+          const amt = safeNum(b.amount);
+          if (b.budgetType === "revenue") {
+            budgetRevByMonth[b.monthKey] = (budgetRevByMonth[b.monthKey] || 0) + amt;
+          } else if (b.budgetType === "cos") {
+            budgetCosByMonth[b.monthKey] = (budgetCosByMonth[b.monthKey] || 0) + amt;
+          }
         }
+      } catch {
+        // fye_budgets table may not exist yet
       }
 
       // 2. Actual Revenue from program_inflows (payment received dates within FYE)
@@ -155,7 +159,9 @@ router.get(
       const allExpenses = await db.select().from(programExpense);
       const actualCosByMonth: Record<string, number> = {};
       for (const exp of allExpenses) {
-        if (exp.rowType !== "item") continue;
+        // Skip non-item rows (categories, subtotals, blanks).
+        // If rowType is null/undefined (SQLite may not have the column), treat as item.
+        if (exp.rowType != null && exp.rowType !== "item") continue;
         const mk = extractMonthKey(exp.expenseInvoicedDate);
         if (mk && monthKeys.includes(mk)) {
           const amt = safeNum(exp.actualCosTotal || exp.expenseActualTotal);
