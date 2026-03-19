@@ -65,6 +65,7 @@ import {
   forecastPipeline,
   lostDeals,
   pdTickets,
+  fyeKpiCounters,
 } from "@shared/schema";
 import { eq, and, sql, gte, lte, desc, inArray } from "drizzle-orm";
 import { extractMonthKey, parseExpenseAmount } from "../lib/calculations/financeUtils";
@@ -546,12 +547,28 @@ router.get(
   "/api/fye-revenue-tracking/pipeline",
   requireAuth,
   requirePermission("fye_revenue_tracking", "view"),
-  async (_req, res) => {
+  async (req, res) => {
     try {
+      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
       const rows = await db
-        .select()
+        .select({
+          id: forecastPipeline.id,
+          fyeYear: forecastPipeline.fyeYear,
+          projectName: forecastPipeline.projectName,
+          projectDeveloper: forecastPipeline.projectDeveloper,
+          location: forecastPipeline.location,
+          sizeKwp: forecastPipeline.sizeKwp,
+          dealProbabilityPct: forecastPipeline.dealProbabilityPct,
+          forecastSignatureDate: forecastPipeline.forecastSignatureDate,
+          solarRevenue: forecastPipeline.solarRevenue,
+          bessRevenue: forecastPipeline.bessRevenue,
+          forecastGpPct: forecastPipeline.forecastGpPct,
+          status: forecastPipeline.status,
+          notes: forecastPipeline.notes,
+          updatedAt: forecastPipeline.updatedAt,
+        })
         .from(forecastPipeline)
-        .where(eq(forecastPipeline.status, "active"))
+        .where(and(eq(forecastPipeline.status, "active"), eq(forecastPipeline.fyeYear, fye)))
         .orderBy(desc(forecastPipeline.updatedAt));
       res.json(rows);
     } catch (error: any) {
@@ -566,7 +583,8 @@ router.post(
   requirePermission("fye_revenue_tracking", "edit"),
   async (req, res) => {
     try {
-      const schema = z.object({
+      const pipelineSchema = z.object({
+        fyeYear: z.number().optional(),
         projectName: z.string().min(1),
         projectDeveloper: z.string().optional(),
         location: z.string().optional(),
@@ -575,15 +593,16 @@ router.post(
         forecastSignatureDate: z.string().optional(),
         solarRevenue: z.string().or(z.number()).optional(),
         bessRevenue: z.string().or(z.number()).optional(),
-        forecastGpPct: z.string().or(z.number()).optional(),
+        forecastGpPct: z.string().or(z.number()).nullable().optional(),
         notes: z.string().optional(),
       });
-      const data = schema.parse(req.body);
+      const data = pipelineSchema.parse(req.body);
       const userId = (req as any).user?.id;
 
       const [row] = await db
         .insert(forecastPipeline)
         .values({
+          fyeYear: data.fyeYear || getCurrentFye(),
           projectName: data.projectName,
           projectDeveloper: data.projectDeveloper || null,
           location: data.location || null,
@@ -592,8 +611,9 @@ router.post(
           forecastSignatureDate: data.forecastSignatureDate || null,
           solarRevenue: data.solarRevenue != null ? String(data.solarRevenue) : "0",
           bessRevenue: data.bessRevenue != null ? String(data.bessRevenue) : "0",
-          forecastGpPct: data.forecastGpPct != null ? String(data.forecastGpPct) : "0",
+          forecastGpPct: data.forecastGpPct != null ? String(data.forecastGpPct) : null,
           notes: data.notes || null,
+          createdBy: userId,
           updatedBy: userId,
         })
         .returning();
@@ -659,9 +679,20 @@ router.get(
   "/api/fye-revenue-tracking/lost-deals",
   requireAuth,
   requirePermission("fye_revenue_tracking", "view"),
-  async (_req, res) => {
+  async (req, res) => {
     try {
-      const rows = await db.select().from(lostDeals).orderBy(desc(lostDeals.updatedAt));
+      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
+      const rows = await db.select({
+        id: lostDeals.id,
+        fyeYear: lostDeals.fyeYear,
+        dealName: lostDeals.dealName,
+        dealValue: lostDeals.dealValue,
+        businessDeveloper: lostDeals.businessDeveloper,
+        lostReason: lostDeals.lostReason,
+        lostDate: lostDeals.lostDate,
+        notes: lostDeals.notes,
+        updatedAt: lostDeals.updatedAt,
+      }).from(lostDeals).where(eq(lostDeals.fyeYear, fye)).orderBy(desc(lostDeals.updatedAt));
       res.json(rows);
     } catch (error: any) {
       res.status(500).json({ error: "Failed to fetch lost deals", message: error?.message });
@@ -675,7 +706,8 @@ router.post(
   requirePermission("fye_revenue_tracking", "edit"),
   async (req, res) => {
     try {
-      const schema = z.object({
+      const lostDealSchema = z.object({
+        fyeYear: z.number().optional(),
         dealName: z.string().min(1),
         dealValue: z.string().or(z.number()).optional(),
         businessDeveloper: z.string().optional(),
@@ -683,18 +715,20 @@ router.post(
         lostDate: z.string().optional(),
         notes: z.string().optional(),
       });
-      const data = schema.parse(req.body);
+      const data = lostDealSchema.parse(req.body);
       const userId = (req as any).user?.id;
 
       const [row] = await db
         .insert(lostDeals)
         .values({
+          fyeYear: data.fyeYear || getCurrentFye(),
           dealName: data.dealName,
           dealValue: data.dealValue != null ? String(data.dealValue) : null,
           businessDeveloper: data.businessDeveloper || null,
           lostReason: data.lostReason || null,
           lostDate: data.lostDate || null,
           notes: data.notes || null,
+          createdBy: userId,
           updatedBy: userId,
         })
         .returning();
@@ -753,8 +787,32 @@ router.get(
   "/api/fye-revenue-tracking/kpis",
   requireAuth,
   requirePermission("fye_revenue_tracking", "view"),
-  async (_req, res) => {
+  async (req, res) => {
     try {
+      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
+
+      // Try fye_kpi_counters first (manually seeded/editable values)
+      try {
+        const [counter] = await db
+          .select({
+            broughtIn: fyeKpiCounters.broughtIn,
+            signed: fyeKpiCounters.signed,
+          })
+          .from(fyeKpiCounters)
+          .where(eq(fyeKpiCounters.fyeYear, fye));
+
+        if (counter) {
+          return res.json({
+            broughtIn: counter.broughtIn,
+            signed: counter.signed,
+            total: counter.broughtIn + counter.signed,
+          });
+        }
+      } catch {
+        // Table may not exist — fall through to derived
+      }
+
+      // Fallback: derive from project_info
       const projects = await db
         .select({
           id: projectInfo.id,
@@ -762,28 +820,101 @@ router.get(
           signedStatus: projectInfo.signedStatus,
           isActive: projectInfo.isActive,
         })
-        .from(projectInfo)
-        .where(eq(projectInfo.isActive, true));
+        .from(projectInfo);
 
-      // "Signed" = projects with signedStatus = 'SIGNED'
-      const signed = projects.filter((p) => p.signedStatus === "SIGNED").length;
-      // "Brought In" = active projects in execution phases (construction/commissioning/operations/complete/handover)
-      const broughtIn = projects.filter(
+      const activeProjects = projects.filter((p) => p.isActive !== false);
+      const signed = activeProjects.filter((p) => p.signedStatus === "SIGNED").length;
+      const broughtIn = activeProjects.filter(
         (p) =>
           p.phase &&
           ["Construction", "Commissioning", "Operations", "Complete", "Handover"].some((ph) =>
             (p.phase || "").toLowerCase().includes(ph.toLowerCase())
           )
       ).length;
-      const total = broughtIn + signed;
 
-      res.json({ broughtIn, signed, total });
+      res.json({ broughtIn, signed, total: broughtIn + signed });
     } catch (error: any) {
       res.status(500).json({ error: "Failed to fetch KPIs", message: error?.message });
     }
   }
 );
 
+// ─── Seed Data (idempotent) ───
+async function seedFyeData() {
+  try {
+    // Seed pipeline deals for FYE 2026
+    const existingPipeline = await db
+      .select({ id: forecastPipeline.id })
+      .from(forecastPipeline)
+      .limit(1);
+
+    if (existingPipeline.length === 0) {
+      const pipelineDeals = [
+        { fyeYear: 2026, projectName: "Engen Mbekweni", projectDeveloper: "Cole Bisset", location: "Paarl", sizeKwp: "130", dealProbabilityPct: 90, forecastSignatureDate: "2026-11-30", solarRevenue: "761633", bessRevenue: "0", forecastGpPct: "0.20", status: "active" },
+        { fyeYear: 2026, projectName: "Wolwendrift Trust", projectDeveloper: "Cole Bisset", location: "Cape Town", sizeKwp: "75", dealProbabilityPct: 95, forecastSignatureDate: "2025-11-24", solarRevenue: "1682698", bessRevenue: "0", forecastGpPct: "0.1958", status: "active" },
+        { fyeYear: 2026, projectName: "GIMCO-6th Avenue Shopping Centre", projectDeveloper: "Gordon Upton", location: "Port Elizabeth", sizeKwp: "250", dealProbabilityPct: 100, forecastSignatureDate: "2025-11-28", solarRevenue: "3414591.17", bessRevenue: "0", forecastGpPct: "0.1862", status: "active" },
+        { fyeYear: 2026, projectName: "Volvo Moffett Retail Park", projectDeveloper: "Gordon Upton", location: "Port Elizabeth", sizeKwp: "45", dealProbabilityPct: 100, forecastSignatureDate: "2025-12-31", solarRevenue: "1251129", bessRevenue: "631416", forecastGpPct: "0.20", status: "active" },
+        { fyeYear: 2026, projectName: "Moffett Retail Park deal", projectDeveloper: "Gordon Upton", location: "Port Elizabeth", sizeKwp: "715", dealProbabilityPct: 100, forecastSignatureDate: "2025-12-31", solarRevenue: "5669948", bessRevenue: "0", forecastGpPct: "0.1659", status: "active" },
+        { fyeYear: 2026, projectName: "Saxon Industrial Park", projectDeveloper: "Cole Bisset", location: "Cape Town", sizeKwp: "182", dealProbabilityPct: 80, forecastSignatureDate: "2026-02-09", solarRevenue: "1699292", bessRevenue: "0", forecastGpPct: "0.15", status: "active" },
+        { fyeYear: 2026, projectName: "SPEK deal", projectDeveloper: "Cole Bisset", location: "Cape Town", sizeKwp: "670", dealProbabilityPct: 75, forecastSignatureDate: "2026-02-23", solarRevenue: "5004014", bessRevenue: "0", forecastGpPct: "0.13", status: "active" },
+        { fyeYear: 2026, projectName: "Pangea Made - Finishing deal", projectDeveloper: "Gordon Upton", location: "Joburg", sizeKwp: "252", dealProbabilityPct: 80, forecastSignatureDate: "2026-02-27", solarRevenue: "2729166", bessRevenue: "0", forecastGpPct: "0.16", status: "active" },
+        { fyeYear: 2026, projectName: "Pangea Made - Cutting", projectDeveloper: "Gordon Upton", location: "Joburg", sizeKwp: "185", dealProbabilityPct: 80, forecastSignatureDate: "2026-02-27", solarRevenue: "1597247", bessRevenue: "0", forecastGpPct: "0.18", status: "active" },
+        { fyeYear: 2026, projectName: "WEG - 6 Laneshaw", projectDeveloper: "Cole Bisset", location: "Joburg", sizeKwp: "480", dealProbabilityPct: 80, forecastSignatureDate: "2026-03-23", solarRevenue: "9946481", bessRevenue: "5134357", forecastGpPct: "0.13", status: "active" },
+        { fyeYear: 2026, projectName: "Pick n Pay Bethal", projectDeveloper: "Megan Moore", location: "Gauteng", sizeKwp: "420", dealProbabilityPct: 80, forecastSignatureDate: "2026-03-31", solarRevenue: "3530327", bessRevenue: "0", forecastGpPct: "0.17", status: "active" },
+        { fyeYear: 2026, projectName: "Pick n Pay Secunda deal", projectDeveloper: "Megan Moore", location: "Joburg", sizeKwp: "303", dealProbabilityPct: 80, forecastSignatureDate: "2026-04-30", solarRevenue: "4351728", bessRevenue: "763673", forecastGpPct: "0.17", status: "active" },
+        { fyeYear: 2026, projectName: "Freshco", projectDeveloper: "Gordon Upton", location: "Port Elizabeth", sizeKwp: "350", dealProbabilityPct: 75, forecastSignatureDate: "2026-06-01", solarRevenue: "8456914", bessRevenue: "5018177", forecastGpPct: "0.10", status: "active" },
+        { fyeYear: 2026, projectName: "Wilec Clayville Deal", projectDeveloper: "Megan Moore", location: "Joburg", sizeKwp: "1200", dealProbabilityPct: 80, forecastSignatureDate: "2026-06-30", solarRevenue: "10191761", bessRevenue: "0", forecastGpPct: "0.11", status: "active" },
+        { fyeYear: 2026, projectName: "Unitrans Brackenfell", projectDeveloper: "Cole Bisset", location: "Cape Town", sizeKwp: "188", dealProbabilityPct: 95, forecastSignatureDate: "2025-12-10", solarRevenue: "1900000", bessRevenue: "3700000", forecastGpPct: null, status: "active" },
+      ];
+      for (const deal of pipelineDeals) {
+        await db.insert(forecastPipeline).values(deal as any);
+      }
+      console.log("[FYE Seed] Inserted 15 pipeline deals");
+    }
+
+    // Seed lost deals for FYE 2026
+    const existingLost = await db
+      .select({ id: lostDeals.id })
+      .from(lostDeals)
+      .limit(1);
+
+    if (existingLost.length === 0) {
+      const lostDealData = [
+        { fyeYear: 2026, dealName: "House Anand", dealValue: "1000000", businessDeveloper: "Gordon Upton", lostReason: "Wanted Sunsync instead of Victron" },
+        { fyeYear: 2026, dealName: "Volvo Trucks JetPark Phase 2", dealValue: "10443453.63", businessDeveloper: "Megan Moore", lostReason: "Lost tender - too expensive" },
+        { fyeYear: 2026, dealName: "Wanderers Club (Padel) deal", dealValue: "3970811", businessDeveloper: "Megan Moore", lostReason: "Went ahead with someone else connected to the board" },
+        { fyeYear: 2026, dealName: "Green Gate deal (DS) PEET", dealValue: "10862099", businessDeveloper: "Peet Verreynne", lostReason: "Lost to EP - PPA 10 cents cheaper" },
+        { fyeYear: 2026, dealName: "Volvo Trucks JetPark Phase 1", dealValue: "3142443.69", businessDeveloper: "Megan Moore", lostReason: "Lost tender - too expensive" },
+        { fyeYear: 2026, dealName: "Neulux Park deal", dealValue: "1968450", businessDeveloper: "Gordon Upton", lostReason: "Lost to someone else" },
+      ];
+      for (const deal of lostDealData) {
+        await db.insert(lostDeals).values(deal as any);
+      }
+      console.log("[FYE Seed] Inserted 6 lost deals");
+    }
+
+    // Seed KPI counters for FYE 2026
+    const existingKpi = await db
+      .select({ id: fyeKpiCounters.id })
+      .from(fyeKpiCounters)
+      .where(eq(fyeKpiCounters.fyeYear, 2026))
+      .limit(1);
+
+    if (existingKpi.length === 0) {
+      await db.insert(fyeKpiCounters).values({
+        fyeYear: 2026,
+        broughtIn: 26,
+        signed: 10,
+      } as any);
+      console.log("[FYE Seed] Inserted KPI counters for FYE 2026");
+    }
+  } catch (err: any) {
+    console.error("[FYE Seed] Error:", err.message);
+  }
+}
+
 export function registerFyeRevenueTrackingRoutes(app: Express) {
   app.use(router);
+  // Run seed on startup (idempotent)
+  seedFyeData().catch(() => {});
 }
