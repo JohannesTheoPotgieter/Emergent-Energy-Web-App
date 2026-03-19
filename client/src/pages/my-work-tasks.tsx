@@ -5,6 +5,7 @@ import { createTaskRequestId } from "@/lib/idempotency";
 import { useToast } from "@/hooks/use-toast";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import { useAuth } from "@/hooks/use-auth";
+import { normalizeToUniversalStatus } from "@shared/task-status";
 import { format, isPast, parseISO, formatDistanceToNow, differenceInCalendarDays, startOfDay } from "date-fns";
 import TaskDetailDrawer from "@/components/mytool/TaskDetailDrawer";
 import { TaskItem, TaskStatus, TaskPriority } from "@/components/mytool/TaskCard";
@@ -51,15 +52,9 @@ const BOARD_COLUMNS: { key: TaskStatus; label: string; color: string; dotColor: 
   { key: "complete", label: "Complete", color: "border-t-emerald-500", dotColor: "bg-emerald-500", headerBg: "bg-emerald-50" },
 ];
 
+// GC-009: Delegate to shared universal status normalizer
 function normalizeStatus(status: string): TaskStatus {
-  const s = status?.toLowerCase().trim() || "todo";
-  if (s === "todo" || s === "to do" || s === "to_do" || s === "not started" || s === "not_started" || s === "inbox" || s === "planned" || s === "new" || s === "open") return "todo";
-  if (s === "in progress" || s === "in_progress" || s === "active" || s === "pending" || s === "started" || s === "wip") return "in_progress";
-  if (s === "blocked" || s === "on hold" || s === "on_hold" || s === "waiting") return "blocked";
-  if (s === "review" || s === "in review" || s === "in_review" || s === "qa_review" || s === "needs review") return "review";
-  if (s === "done" || s === "complete" || s === "completed" || s === "closed" || s === "finished" || s === "resolved" || s === "pass") return "complete";
-  if (s === "cancelled" || s === "canceled" || s === "archived" || s === "removed") return "cancelled";
-  return "todo";
+  return normalizeToUniversalStatus(status) as TaskStatus;
 }
 
 function normalizePriority(priority: string): TaskPriority {
