@@ -143,7 +143,11 @@ router.get(
       }
 
       // 2. Actual Revenue from program_inflows (payment received dates within FYE)
-      const allInflows = await db.select().from(programInflows);
+      const allInflows = await db.select({
+        projectName: programInflows.projectName,
+        milestoneAmount: programInflows.milestoneAmount,
+        paymentReceivedDate: programInflows.paymentReceivedDate,
+      }).from(programInflows);
       const actualRevByMonth: Record<string, number> = {};
       for (const inf of allInflows) {
         // Only count as actual if payment was actually received
@@ -156,7 +160,13 @@ router.get(
       }
 
       // 3. Actual COS from program_expense (invoice dates within FYE)
-      const allExpenses = await db.select().from(programExpense);
+      const allExpenses = await db.select({
+        projectName: programExpense.projectName,
+        rowType: programExpense.rowType,
+        expenseActualTotal: programExpense.expenseActualTotal,
+        actualCosTotal: programExpense.actualCosTotal,
+        expenseInvoicedDate: programExpense.expenseInvoicedDate,
+      }).from(programExpense);
       const actualCosByMonth: Record<string, number> = {};
       for (const exp of allExpenses) {
         // Skip non-item rows (categories, subtotals, blanks).
@@ -172,7 +182,10 @@ router.get(
       }
 
       // 4. Captured data from finance_revenue_monthly / finance_cos_monthly
-      const capturedRevRows = await db.select().from(financeRevenueMonthly);
+      const capturedRevRows = await db.select({
+        monthEndDate: financeRevenueMonthly.monthEndDate,
+        value: financeRevenueMonthly.value,
+      }).from(financeRevenueMonthly);
       const capturedRevByMonth: Record<string, number> = {};
       for (const r of capturedRevRows) {
         const mk = extractMonthKey(r.monthEndDate);
@@ -181,7 +194,10 @@ router.get(
         }
       }
 
-      const capturedCosRows = await db.select().from(financeCosMonthly);
+      const capturedCosRows = await db.select({
+        monthEndDate: financeCosMonthly.monthEndDate,
+        value: financeCosMonthly.value,
+      }).from(financeCosMonthly);
       const capturedCosByMonth: Record<string, number> = {};
       for (const r of capturedCosRows) {
         const mk = extractMonthKey(r.monthEndDate);
@@ -281,7 +297,13 @@ router.get(
       // Try project_revenue_summary first (Postgres), fall back to computing from raw data
       let revSummaryMap = new Map<string, any>();
       try {
-        const revSummaries = await db.select().from(projectRevenueSummary);
+        const revSummaries = await db.select({
+          projectName: projectRevenueSummary.projectName,
+          plannedRevenue: projectRevenueSummary.plannedRevenue,
+          plannedExpenditure: projectRevenueSummary.plannedExpenditure,
+          actualRevenue: projectRevenueSummary.actualRevenue,
+          actualExpenditure: projectRevenueSummary.actualExpenditure,
+        }).from(projectRevenueSummary);
         if (revSummaries.length > 0) {
           revSummaryMap = new Map(revSummaries.map((r) => [r.projectName, r]));
         }
@@ -292,7 +314,11 @@ router.get(
       // If project_revenue_summary is empty, compute from raw data
       if (revSummaryMap.size === 0) {
         // Budget Revenue per project = SUM(milestone_amount) from all inflows
-        const allInflows = await db.select().from(programInflows);
+        const allInflows = await db.select({
+          projectName: programInflows.projectName,
+          milestoneAmount: programInflows.milestoneAmount,
+          paymentReceivedDate: programInflows.paymentReceivedDate,
+        }).from(programInflows);
         // Actual Revenue per project = SUM(milestone_amount) WHERE payment_received_date within FYE
         const inflowsByProject = new Map<string, { budget: number; actual: number }>();
         for (const inf of allInflows) {
@@ -310,7 +336,13 @@ router.get(
 
         // Budget COS per project = SUM(expense_actual_total) from all expenses
         // Actual COS per project = SUM(expense_actual_total) WHERE invoiced within FYE
-        const allExpenses = await db.select().from(programExpense);
+        const allExpenses = await db.select({
+          projectName: programExpense.projectName,
+          rowType: programExpense.rowType,
+          expenseActualTotal: programExpense.expenseActualTotal,
+          actualCosTotal: programExpense.actualCosTotal,
+          expenseInvoicedDate: programExpense.expenseInvoicedDate,
+        }).from(programExpense);
         const expensesByProject = new Map<string, { budget: number; actual: number }>();
         for (const exp of allExpenses) {
           // Skip non-item rows if rowType exists
@@ -341,13 +373,25 @@ router.get(
       }
 
       // Editable fields (for project type, funding type)
-      const editableFields = await db.select().from(projectEditableFields);
-      const editableMap = new Map(editableFields.map((e) => [e.projectName, e]));
+      let editableMap = new Map<string, any>();
+      try {
+        const editableFields = await db.select({
+          projectName: projectEditableFields.projectName,
+          costProposalType: projectEditableFields.costProposalType,
+          fundingType: projectEditableFields.fundingType,
+        }).from(projectEditableFields);
+        editableMap = new Map(editableFields.map((e) => [e.projectName, e]));
+      } catch {
+        // Table may have schema mismatch
+      }
 
       // PD tickets for province (use latest per project)
       let provinceMap = new Map<string, string>();
       try {
-        const tickets = await db.select().from(pdTickets);
+        const tickets = await db.select({
+          projectSiteName: pdTickets.projectSiteName,
+          province: pdTickets.province,
+        }).from(pdTickets);
         for (const t of tickets) {
           if (t.province && t.projectSiteName) {
             provinceMap.set(t.projectSiteName, t.province);
