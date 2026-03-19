@@ -46,7 +46,6 @@ import FeedbackPage from "@/pages/feedback";
 import EeInfoPage from "@/pages/ee-info";
 import TrainingPage from "@/pages/training";
 import PMDashboard from "@/pages/pm-dashboard";
-import ExcelUpdatesPage from "@/pages/excel-updates";
 import PortfoliosPage from "@/pages/portfolios";
 import PortfolioDetailPage from "@/pages/portfolio-detail";
 import PdDashboardPage from "@/pages/pd-dashboard";
@@ -137,7 +136,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   EeInfoPage,
   TrainingPage,
   PMDashboard,
-  ExcelUpdatesPage,
   PortfoliosPage,
   PortfolioDetailPage,
   PdDashboardPage,
