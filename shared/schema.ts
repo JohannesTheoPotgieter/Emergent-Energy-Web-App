@@ -87,6 +87,14 @@ export const projectInfo = pgTable("project_info", {
   archivedStatus: text("archived_status").notNull().default("ACTIVE"),
   pmUserId: integer("pm_user_id"),
   pdUserId: integer("pd_user_id"),
+  // CP Signed gate
+  cpSigned: boolean("cp_signed").notNull().default(false),
+  cpSignedDate: text("cp_signed_date"),
+  cpSignedByUserId: integer("cp_signed_by_user_id").references(() => users.id),
+  cpEvidenceType: text("cp_evidence_type"),
+  cpEvidenceRef: text("cp_evidence_ref"),
+  pmTaskPackCreated: boolean("pm_task_pack_created").notNull().default(false),
+  engPostCpTaskPackCreated: boolean("eng_post_cp_task_pack_created").notNull().default(false),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
@@ -2578,6 +2586,7 @@ export const projectEngTasks = pgTable("project_eng_tasks", {
   completedAt: timestamp("completed_at"),
   completedBy: integer("completed_by").references(() => users.id),
   hasDeliverable: boolean("has_deliverable").notNull().default(false),
+  workItemId: integer("work_item_id").references(() => workItems.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertProjectEngTaskSchema = createInsertSchema(projectEngTasks).omit({ id: true, createdAt: true } as any);

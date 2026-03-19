@@ -28,6 +28,9 @@ export async function runStartupSeeds(options: {
   const { seedIntakeTaskTemplates } = await import("../seed-intake-templates");
   await seedIntakeTaskTemplates().catch((err) => log(`[Seed] Intake templates error: ${err}`, "Startup"));
 
+  const { seedMockIntakeData } = await import("../seed-mock-intake");
+  await seedMockIntakeData().catch((err) => log(`[Seed] Mock intake data error: ${err}`, "Startup"));
+
   const { seedRolePermissions } = await import("../role-management");
   await seedRolePermissions().catch((err) => log(`[Seed] Role permissions error: ${err}`, "Startup"));
 

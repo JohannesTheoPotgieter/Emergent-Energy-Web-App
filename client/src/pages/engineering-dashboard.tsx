@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1436,6 +1437,7 @@ export default function EngineeringDashboard() {
   }
 
   return (
+    <ErrorBoundary>
     <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
       {!standupMode && (
         <SectionHeader
@@ -1478,6 +1480,14 @@ export default function EngineeringDashboard() {
               <LayoutGrid className="h-3.5 w-3.5" />
               {standupMode ? "Exit Standup" : "Standup Mode"}
             </Button>
+          )}
+          {isAdmin && (
+            <Link href="/engineering/audit">
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="btn-audit-log">
+                <Activity className="h-3.5 w-3.5" />
+                Audit Log
+              </Button>
+            </Link>
           )}
           {standupMode && data && (
             <Button
@@ -1825,5 +1835,6 @@ export default function EngineeringDashboard() {
       </>
       )}
     </PageShell>
+    </ErrorBoundary>
   );
 }
