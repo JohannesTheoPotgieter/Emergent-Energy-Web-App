@@ -83,10 +83,17 @@ async function initializeDatabase(): Promise<void> {
       
       if (isConnectable) {
         // Use Postgres
-        const pool = new pg.Pool({ 
+        const pool = new pg.Pool({
           connectionString: config.connectionString,
           connectionTimeoutMillis: 10000,
           query_timeout: 30000,
+          idleTimeoutMillis: 20000,
+          max: 10,
+          allowExitOnIdle: false,
+        });
+        // Robust pool error handling for Replit - prevent unhandled errors from crashing
+        pool.on('error', (err) => {
+          console.error('[DB] Pool background error (non-fatal):', err.message);
         });
         db = drizzle(pool, { schema });
         dbMode = 'postgres';
@@ -99,6 +106,25 @@ async function initializeDatabase(): Promise<void> {
           message: `Connected to PostgreSQL (${config.dbHost})`,
           host: config.dbHost,
         });
+
+        // Ensure engineering columns on work_items (idempotent DDL)
+        try {
+          await pool.query(`
+            ALTER TABLE work_items ADD COLUMN IF NOT EXISTS hold_reason TEXT;
+          `);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocked_type TEXT`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS approval_required BOOLEAN NOT NULL DEFAULT false`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_plan_item_id INTEGER`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_deliverable_id INTEGER`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_quality_item_instance_id INTEGER`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS tracking_rag TEXT`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_type_tag TEXT`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocker_reason TEXT`);
+          console.log('[DB] ✓ work_items engineering columns verified');
+        } catch (ddlErr: any) {
+          console.warn('[DB] work_items eng columns DDL warning (non-fatal):', ddlErr.message);
+        }
 
         // Ensure entity_assignments table exists (idempotent DDL)
         try {
@@ -838,6 +864,19 @@ async function ensureSqliteSchema() {
       )
     `);
     await db.run(sql`CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id, deleted_at)`);
+
+    // Engineering-specific columns for work_items (safe ALTERs)
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN hold_reason TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN blocked_type TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN approval_required INTEGER NOT NULL DEFAULT 0`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN linked_plan_item_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN linked_deliverable_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN linked_quality_item_instance_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN completed_at TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN tracking_rag TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN task_type_tag TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN blocker_reason TEXT`)); } catch {}
+
 
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS work_item_assignments (
