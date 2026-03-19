@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useState, useMemo, useCallback } from "react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,8 +13,8 @@ import {
 } from "recharts";
 import {
   DollarSign, TrendingUp, Activity, Search, Download,
-  ChevronDown, ChevronRight, AlertCircle, BarChart3, FileText,
-  Plus, Trash2,
+  AlertCircle, BarChart3, FileText,
+  Plus, Trash2, Pencil, RefreshCw, X,
 } from "lucide-react";
 
 // ─── Types ───
@@ -22,8 +22,8 @@ import {
 interface MonthMetric {
   budget: number;
   actualForecast: number;
-  actual: number;
-  captured: number;
+  actual: number | null;
+  captured: number | null;
 }
 
 interface DashboardMonth {
@@ -57,8 +57,8 @@ interface ProjectRow {
   actualRevenue: number;
   actualExpense: number;
   actualGp: number;
-  budgetGpPct: number;
-  actualGpPct: number;
+  budgetGpPct: number | null;
+  actualGpPct: number | null;
   signedStatus: string;
 }
 
@@ -72,8 +72,8 @@ interface DetailData {
     actualRevenue: number;
     actualExpense: number;
     actualGp: number;
-    budgetGpPct: number;
-    actualGpPct: number;
+    budgetGpPct: number | null;
+    actualGpPct: number | null;
   };
 }
 
@@ -115,16 +115,15 @@ function getCurrentFye(): number {
 }
 
 function formatRand(val: number | null | undefined): string {
-  if (val == null || isNaN(val)) return "R 0";
-  const abs = Math.abs(val);
+  if (val == null || isNaN(val)) return "–";
+  if (val === 0) return "R 0";
   const sign = val < 0 ? "-" : "";
-  if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}R ${Math.round(abs).toLocaleString()}`;
+  const abs = Math.abs(val);
+  return `${sign}R ${Math.round(abs).toLocaleString("en-ZA")}`;
 }
 
 function formatPct(val: number | null | undefined): string {
-  if (val == null || isNaN(val)) return "0.0%";
+  if (val == null || isNaN(val) || !isFinite(val)) return "N/A";
   return `${(val * 100).toFixed(1)}%`;
 }
 
