@@ -3,10 +3,8 @@ import { db } from "./db";
 import { eq, and, desc, asc, sql, inArray, isNull, count, ilike, or } from "drizzle-orm";
 import {
   workItems, workItemAssignments, workItemStatusHistory,
-  workItemComments, workItemAttachments,
   taskTags, workItemTags, taskTimeEntries,
   users, projectInfo,
-  type InsertWorkItem, type InsertTaskTag,
 } from "@shared/schema";
 import { getEffectiveUser, requireAuth } from "./auth-context";
 
@@ -38,7 +36,7 @@ export function registerTaskManagementRoutes(app: Express) {
       if (projectId) conditions.push(eq(workItems.projectId, parseInt(projectId as string)));
       if (status) conditions.push(eq(workItems.status, status as string));
       if (priority) conditions.push(eq(workItems.priority, priority as string));
-      if (workstream) conditions.push(eq(workItems.workstream, workstream as string));
+      if (workstream) conditions.push(eq(workItems.workstream, workstream as any));
       if (taskCategory) conditions.push(eq(workItems.taskCategory, taskCategory as string));
       if (assigneeId) conditions.push(eq(workItems.ownerUserId, parseInt(assigneeId as string)));
       if (search) {
@@ -152,7 +150,7 @@ export function registerTaskManagementRoutes(app: Express) {
 
       if (projectId) conditions.push(eq(workItems.projectId, parseInt(projectId as string)));
       if (assigneeId) conditions.push(eq(workItems.ownerUserId, parseInt(assigneeId as string)));
-      if (workstream) conditions.push(eq(workItems.workstream, workstream as string));
+      if (workstream) conditions.push(eq(workItems.workstream, workstream as any));
 
       const items = await db
         .select({
@@ -382,7 +380,7 @@ export function registerTaskManagementRoutes(app: Express) {
   app.patch("/api/tasks/:id", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getUser(req);
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       if (!Number.isFinite(id) || id <= 0) {
         return next();
       }
@@ -432,7 +430,7 @@ export function registerTaskManagementRoutes(app: Express) {
   /** Soft-delete a task */
   app.delete("/api/tasks/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       if (!Number.isFinite(id) || id <= 0) {
         return res.status(400).json({ error: "Invalid task ID" });
       }
@@ -505,7 +503,7 @@ export function registerTaskManagementRoutes(app: Express) {
   app.post("/api/tasks/:id/time", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const workItemId = parseInt(req.params.id);
+      const workItemId = parseInt(req.params.id as string);
       const { durationMinutes, description, date } = req.body;
 
       if (!durationMinutes || durationMinutes <= 0) {
@@ -529,7 +527,7 @@ export function registerTaskManagementRoutes(app: Express) {
   /** Get time entries for a task */
   app.get("/api/tasks/:id/time", requireAuth, async (req: Request, res: Response) => {
     try {
-      const workItemId = parseInt(req.params.id);
+      const workItemId = parseInt(req.params.id as string);
       const entries = await db
         .select({
           id: taskTimeEntries.id,
@@ -596,7 +594,7 @@ export function registerTaskManagementRoutes(app: Express) {
   /** Update a tag */
   app.patch("/api/tags/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       const { name, color, category } = req.body;
 
       const updates: Record<string, any> = {};
@@ -619,7 +617,7 @@ export function registerTaskManagementRoutes(app: Express) {
   /** Delete a tag */
   app.delete("/api/tags/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       await db.delete(taskTags).where(eq(taskTags.id, id));
       res.json({ success: true });
     } catch (err: any) {
@@ -630,7 +628,7 @@ export function registerTaskManagementRoutes(app: Express) {
   /** Assign tags to a task */
   app.post("/api/tasks/:id/tags", requireAuth, async (req: Request, res: Response) => {
     try {
-      const workItemId = parseInt(req.params.id);
+      const workItemId = parseInt(req.params.id as string);
       const { tagIds } = req.body;
 
       if (!tagIds || !Array.isArray(tagIds)) {
@@ -666,8 +664,8 @@ export function registerTaskManagementRoutes(app: Express) {
   /** Remove a tag from a task */
   app.delete("/api/tasks/:id/tags/:tagId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const workItemId = parseInt(req.params.id);
-      const tagId = parseInt(req.params.tagId);
+      const workItemId = parseInt(req.params.id as string);
+      const tagId = parseInt(req.params.tagId as string);
 
       await db.delete(workItemTags).where(
         and(
