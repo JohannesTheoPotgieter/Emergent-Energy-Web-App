@@ -1402,7 +1402,7 @@ function TaskDetailDrawer({
                 textNames={task.assignees || null}
                 mode="multi"
                 size="sm"
-                invalidateKeys={[`/api/eng/tasks?projectName=${task.projectName}`, "/api/eng/tasks", "/api/my-work/all-tasks"]}
+                invalidateKeys={["eng-tasks", "/api/my-work/all-tasks"]}
               />
               {task.assignees && task.assignees.length > 1 && (
                 <div className="flex flex-wrap gap-1 mt-1">

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, FileEdit, Plus, AlertTriangle, Clock, CheckCircle2, PauseCircle, FileStack } from "lucide-react";
+import { Loader2, FileEdit, Plus, AlertTriangle, Clock, CheckCircle2, PauseCircle, FileStack, ArrowRightCircle, Send, XCircle } from "lucide-react";
 import { statusColorClasses, priorityColorClasses } from "@/lib/status-colors";
 import { useLocation } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
@@ -27,6 +27,22 @@ export default function PdDashboardPage() {
   });
 
   const recentTickets = tickets.slice(0, 8);
+
+  const { data: handoverControl } = useQuery<{ items: any[] }>({
+    queryKey: ["/api/pd-pm-handover/control"],
+    queryFn: () => pdFetch("/api/pd-pm-handover/control"),
+    staleTime: 60_000,
+  });
+
+  const handoverStats = (() => {
+    const items = handoverControl?.items || [];
+    const awaitingPmReview = items.filter(i => i.handover_status === "SUBMITTED_FOR_PM_REVIEW").length;
+    const rejected = items.filter(i => i.handover_status === "REJECTED").length;
+    const drafts = items.filter(i => i.handover_status === "DRAFT").length;
+    const accepted = items.filter(i => i.handover_status === "ACCEPTED").length;
+    const overdueReview = items.filter(i => i.handover_status === "SUBMITTED_FOR_PM_REVIEW" && i.days_in_status > 5).length;
+    return { awaitingPmReview, rejected, drafts, accepted, overdueReview, total: items.length };
+  })();
 
   if (!permLoading && !canView) {
     return (
@@ -79,6 +95,41 @@ export default function PdDashboardPage() {
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+
+      {handoverStats.total > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">Handover Readiness</h2>
+            <Button variant="link" size="sm" onClick={() => navigate("/handover-control")} data-testid="link-handover-control">View control center</Button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: "Drafts (PD action)", value: handoverStats.drafts, icon: FileEdit, color: "text-slate-700 bg-slate-100" },
+              { label: "Awaiting PM Review", value: handoverStats.awaitingPmReview, icon: Send, color: "text-blue-700 bg-blue-100" },
+              { label: "Overdue Review (>5d)", value: handoverStats.overdueReview, icon: AlertTriangle, color: "text-red-700 bg-red-100" },
+              { label: "Accepted", value: handoverStats.accepted, icon: CheckCircle2, color: "text-green-700 bg-green-100" },
+            ].map(card => (
+              <Card key={card.label} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate("/handover-control")} data-testid={`handover-stat-${card.label.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}>
+                <CardContent className="p-3 flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${card.color}`}>
+                    <card.icon className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <span className="text-xl font-bold">{card.value}</span>
+                    <p className="text-[10px] text-muted-foreground leading-tight">{card.label}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          {handoverStats.rejected > 0 && (
+            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-xs text-red-700" data-testid="handover-rejected-alert">
+              <XCircle className="h-4 w-4 shrink-0" />
+              <span><strong>{handoverStats.rejected}</strong> handover{handoverStats.rejected !== 1 ? "s" : ""} rejected — PD action required to address feedback and resubmit.</span>
+            </div>
+          )}
         </div>
       )}
 

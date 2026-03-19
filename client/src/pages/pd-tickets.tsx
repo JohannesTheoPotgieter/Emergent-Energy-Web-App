@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { statusColorClasses, priorityColorClasses } from "@/lib/status-colors";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Loader2, Plus, Search, FileEdit, Filter, AlertTriangle } from "lucide-react";
+import { Loader2, Plus, Search, FileEdit, Filter, AlertTriangle, AlertCircle, ArrowRight } from "lucide-react";
 import { useLocation } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
 
@@ -142,7 +142,7 @@ export default function PdTicketsPage() {
         </Card>
       ) : (
         <div className="overflow-x-auto border rounded-lg">
-          <table className="w-full text-sm min-w-[1000px]">
+          <table className="w-full text-sm min-w-[1100px]">
             <thead>
               <tr className="bg-muted/40 border-b text-[11px] text-muted-foreground">
                 <th className="text-left p-2.5 pl-3">Project / Site</th>
@@ -154,6 +154,7 @@ export default function PdTicketsPage() {
                 <th className="text-left p-2.5">Days In Progress</th>
                 <th className="text-left p-2.5">Developer</th>
                 <th className="text-left p-2.5">Tasks</th>
+                <th className="text-left p-2.5">Next Action</th>
                 <th className="text-left p-2.5">Designer</th>
               </tr>
             </thead>
@@ -194,6 +195,17 @@ export default function PdTicketsPage() {
                       ) : (
                         <span className="text-[10px] text-muted-foreground">—</span>
                       )}
+                    </td>
+                    <td className="p-2.5">
+                      {(() => {
+                        if (t.status === "Completed" || t.status === "Cancelled") return <span className="text-[10px] text-muted-foreground">Done</span>;
+                        if (overdue) return <span className="text-[10px] text-red-600 font-medium flex items-center gap-0.5"><AlertCircle className="h-3 w-3" />Overdue — follow up</span>;
+                        if (t.status === "On Hold") return <span className="text-[10px] text-orange-600 font-medium">Unblock to resume</span>;
+                        if (t.status === "Draft") return <span className="text-[10px] text-violet-600 font-medium flex items-center gap-0.5"><ArrowRight className="h-3 w-3" />Start ticket</span>;
+                        if (row.taskTotal > 0 && row.taskCompleted < row.taskTotal) return <span className="text-[10px] text-blue-600 font-medium">{row.taskTotal - row.taskCompleted} task{row.taskTotal - row.taskCompleted !== 1 ? "s" : ""} remaining</span>;
+                        if (row.taskTotal > 0 && row.taskCompleted === row.taskTotal) return <span className="text-[10px] text-green-600 font-medium">Ready to complete</span>;
+                        return <span className="text-[10px] text-muted-foreground">In progress</span>;
+                      })()}
                     </td>
                     <td className="p-2.5 text-muted-foreground">{row.designerName || "—"}</td>
                   </tr>

@@ -1,4 +1,4 @@
-import { Express, Request, Response } from "express";
+import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, asc, sql, inArray, isNull, count, ilike, or } from "drizzle-orm";
 import {
@@ -379,10 +379,13 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Update a task */
-  app.patch("/api/tasks/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/tasks/:id", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getUser(req);
       const id = parseInt(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        return next();
+      }
       const body = req.body;
 
       // Get current item for status change tracking
@@ -430,6 +433,9 @@ export function registerTaskManagementRoutes(app: Express) {
   app.delete("/api/tasks/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        return res.status(400).json({ error: "Invalid task ID" });
+      }
       await db
         .update(workItems)
         .set({ deletedAt: new Date() })
