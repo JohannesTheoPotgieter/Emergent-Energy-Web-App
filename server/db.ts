@@ -557,8 +557,38 @@ async function ensureSqliteSchema() {
         entity_permissions TEXT,
         authority_model TEXT,
         is_system INTEGER NOT NULL DEFAULT 0,
+        permission_version INTEGER NOT NULL DEFAULT 1,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS user_permission_overrides (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        entity TEXT NOT NULL,
+        action TEXT NOT NULL,
+        allowed INTEGER NOT NULL DEFAULT 1,
+        scope TEXT,
+        granted_by INTEGER REFERENCES users(id),
+        reason TEXT,
+        expires_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, entity, action)
+      )
+    `);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS permission_audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT NOT NULL,
+        target_role TEXT,
+        target_user_id INTEGER,
+        changed_by_user_id INTEGER REFERENCES users(id),
+        changed_by_role TEXT,
+        change_detail TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
 

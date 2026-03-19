@@ -13,6 +13,7 @@ import {
   users,
 } from "@shared/schema";
 import { z } from "zod";
+import { requirePermission } from "./permission-middleware";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -113,7 +114,7 @@ export function registerMeetingRoutes(app: Express) {
   // ==================== MEETING MANAGEMENT ====================
   app.use("/api/meetings", jwtAuth);
 
-  app.get("/api/meetings", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+  app.get("/api/meetings", requireAuth, requirePermission("meetings", "view"), async (_req: Request, res: Response) => {
     try {
       const meetings = await db
         .select()
@@ -159,7 +160,7 @@ export function registerMeetingRoutes(app: Express) {
   });
 
   // ==================== WEBHOOK STATUS (must be before /:id) ====================
-  app.get("/api/meetings/webhook-status", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+  app.get("/api/meetings/webhook-status", requireAuth, requirePermission("meetings", "view"), async (_req: Request, res: Response) => {
     try {
       const allMeetings = await db.select({ id: meetingSummaries.id, source: meetingSummaries.source, createdAt: meetingSummaries.createdAt }).from(meetingSummaries);
       const allItems = await db.select({ id: meetingActionItems.id, status: meetingActionItems.status }).from(meetingActionItems);
@@ -187,7 +188,7 @@ export function registerMeetingRoutes(app: Express) {
   });
 
   // ==================== WEBHOOK INFO (must be before /:id) ====================
-  app.get("/api/meetings/webhook-info", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.get("/api/meetings/webhook-info", requireAuth, requirePermission("meetings", "view"), async (req: Request, res: Response) => {
     try {
       const host = req.headers.host || req.hostname;
       const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
@@ -198,7 +199,7 @@ export function registerMeetingRoutes(app: Express) {
     }
   });
 
-  app.get("/api/meetings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.get("/api/meetings/:id", requireAuth, requirePermission("meetings", "view"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       const [meeting] = await db.select().from(meetingSummaries).where(eq(meetingSummaries.id, id));
@@ -231,7 +232,7 @@ export function registerMeetingRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/meetings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.delete("/api/meetings/:id", requireAuth, requirePermission("meetings", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       await db.delete(meetingSummaries).where(eq(meetingSummaries.id, id));
@@ -243,7 +244,7 @@ export function registerMeetingRoutes(app: Express) {
 
   // ==================== ACTION ITEM MANAGEMENT ====================
 
-  app.patch("/api/meetings/action-items/:id/dismiss", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.patch("/api/meetings/action-items/:id/dismiss", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       const [updated] = await db
@@ -260,7 +261,7 @@ export function registerMeetingRoutes(app: Express) {
 
   // ==================== CONVERSION ENDPOINTS ====================
 
-  app.post("/api/meetings/action-items/:id/convert-to-task", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/meetings/action-items/:id/convert-to-task", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
       const actionItemId = parseInt(req.params.id);
       const userId = (req as any).user.id;
@@ -338,7 +339,7 @@ export function registerMeetingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/meetings/action-items/:id/convert-to-priority", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/meetings/action-items/:id/convert-to-priority", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
       const actionItemId = parseInt(req.params.id);
       const [actionItem] = await db.select().from(meetingActionItems).where(eq(meetingActionItems.id, actionItemId));
@@ -373,7 +374,7 @@ export function registerMeetingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/meetings/action-items/:id/convert-to-project", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/meetings/action-items/:id/convert-to-project", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
       const actionItemId = parseInt(req.params.id);
       const [actionItem] = await db.select().from(meetingActionItems).where(eq(meetingActionItems.id, actionItemId));
@@ -405,7 +406,7 @@ export function registerMeetingRoutes(app: Express) {
   });
 
   // ==================== MANUAL MEETING ENTRY ====================
-  app.post("/api/meetings/manual", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/meetings/manual", requireAuth, requirePermission("meetings", "create"), async (req: Request, res: Response) => {
     try {
       const body = req.body;
       const schema = z.object({
@@ -455,7 +456,7 @@ export function registerMeetingRoutes(app: Express) {
   });
 
   // ==================== TEST WEBHOOK ====================
-  app.post("/api/meetings/test-webhook", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+  app.post("/api/meetings/test-webhook", requireAuth, requirePermission("meetings", "edit"), async (_req: Request, res: Response) => {
     try {
       const testPayload = {
         meeting_id: `test_${Date.now()}`,

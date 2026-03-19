@@ -36,7 +36,7 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 
 
 export function registerCommissioningRoutes(app: Express) {
-  app.get("/api/commissioning/project/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/commissioning/project/:projectId", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
@@ -61,7 +61,7 @@ export function registerCommissioningRoutes(app: Express) {
     }
   });
 
-  app.get("/api/commissioning/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -80,7 +80,7 @@ export function registerCommissioningRoutes(app: Express) {
     }
   });
 
-  app.post("/api/commissioning", jwtAuth, requireAuth, requirePermission("projects", "create"), async (req: Request, res: Response) => {
+  app.post("/api/commissioning", jwtAuth, requireAuth, requirePermission("commissioning", "create"), async (req: Request, res: Response) => {
     try {
       const user = (req as any).user;
       const { projectId, itemType, title, description, ownerUserId, dueDate, gateId, category, sortOrder } = req.body;
@@ -113,7 +113,7 @@ export function registerCommissioningRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
+  app.patch("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -214,7 +214,7 @@ export function registerCommissioningRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("projects", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("commissioning", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -237,7 +237,7 @@ export function registerCommissioningRoutes(app: Express) {
     }
   });
 
-  app.get("/api/commissioning/progress/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/commissioning/progress/:projectId", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
@@ -262,7 +262,7 @@ export function registerCommissioningRoutes(app: Express) {
     }
   });
 
-  app.post("/api/commissioning/:id/evidence", jwtAuth, requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
+  app.post("/api/commissioning/:id/evidence", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -309,7 +309,7 @@ export function registerCommissioningRoutes(app: Express) {
     }
   });
 
-  app.get("/api/commissioning/:id/evidence-evaluation", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/commissioning/:id/evidence-evaluation", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });

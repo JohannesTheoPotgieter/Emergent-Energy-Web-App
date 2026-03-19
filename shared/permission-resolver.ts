@@ -12,7 +12,7 @@ import {
 export interface PermissionEvaluationResult {
   allowed: boolean;
   reason: string;
-  source: "db_override" | "default" | "none";
+  source: "user_override" | "db_override" | "default" | "none";
 }
 
 export interface AuthorityDelegationRule {

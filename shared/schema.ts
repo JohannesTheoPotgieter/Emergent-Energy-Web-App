@@ -3645,6 +3645,7 @@ export const rolePermissions = pgTable("role_permissions", {
   entityPermissions: jsonb("entity_permissions"),
   authorityModel: jsonb("authority_model"),
   isSystem: boolean("is_system").notNull().default(false),
+  permissionVersion: integer("permission_version").notNull().default(1),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -3652,6 +3653,37 @@ export const rolePermissions = pgTable("role_permissions", {
 export const insertRolePermissionSchema = createInsertSchema(rolePermissions).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertRolePermission = z.infer<typeof insertRolePermissionSchema>;
 export type RolePermission = typeof rolePermissions.$inferSelect;
+
+// ===================== USER PERMISSION OVERRIDES =====================
+
+export const userPermissionOverrides = pgTable("user_permission_overrides", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  entity: text("entity").notNull(),
+  action: text("action").notNull(),
+  allowed: boolean("allowed").notNull().default(true),
+  scope: text("scope"),
+  grantedBy: integer("granted_by").references(() => users.id),
+  reason: text("reason"),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export type UserPermissionOverride = typeof userPermissionOverrides.$inferSelect;
+export type InsertUserPermissionOverride = typeof userPermissionOverrides.$inferInsert;
+
+// ===================== PERMISSION AUDIT LOG =====================
+
+export const permissionAuditLog = pgTable("permission_audit_log", {
+  id: serial("id").primaryKey(),
+  eventType: text("event_type").notNull(),
+  targetRole: text("target_role"),
+  targetUserId: integer("target_user_id"),
+  changedByUserId: integer("changed_by_user_id").references(() => users.id),
+  changedByRole: text("changed_by_role"),
+  changeDetail: jsonb("change_detail").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export type PermissionAuditLogEntry = typeof permissionAuditLog.$inferSelect;
 
 export const mergeAuditLog = pgTable("merge_audit_log", {
   id: serial("id").primaryKey(),
