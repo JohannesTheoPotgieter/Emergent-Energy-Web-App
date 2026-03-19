@@ -96,6 +96,8 @@ export function invalidateDashboardQueries(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ["/api/lifecycle-board/projects"] });
   qc.invalidateQueries({ queryKey: ["/api/financial-headline"] });
   qc.invalidateQueries({ queryKey: ["/api/home/summary"] });
+  qc.invalidateQueries({ queryKey: ["/api/upcoming-events"] });
+  qc.invalidateQueries({ queryKey: ["/api/upcoming-financials"] });
   qc.invalidateQueries({ queryKey: ["dashboard"] });
   qc.invalidateQueries({ queryKey: ["overview"] });
   qc.invalidateQueries({ queryKey: ["projects-summary"] });

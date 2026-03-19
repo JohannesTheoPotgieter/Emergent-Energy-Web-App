@@ -125,6 +125,37 @@ async function runAdditiveSchemaAlignments() {
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
 
+      -- Permission system: user overrides + audit log
+      ALTER TABLE role_permissions ADD COLUMN IF NOT EXISTS permission_version INTEGER NOT NULL DEFAULT 1;
+
+      CREATE TABLE IF NOT EXISTS user_permission_overrides (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        entity TEXT NOT NULL,
+        action TEXT NOT NULL,
+        allowed BOOLEAN NOT NULL DEFAULT true,
+        scope TEXT,
+        granted_by INTEGER REFERENCES users(id),
+        reason TEXT,
+        expires_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT upo_unique_user_entity_action UNIQUE (user_id, entity, action)
+      );
+      CREATE INDEX IF NOT EXISTS idx_upo_user_id ON user_permission_overrides(user_id);
+
+      CREATE TABLE IF NOT EXISTS permission_audit_log (
+        id SERIAL PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        target_role TEXT,
+        target_user_id INTEGER,
+        changed_by_user_id INTEGER REFERENCES users(id),
+        changed_by_role TEXT,
+        change_detail JSONB NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_pal_event_type ON permission_audit_log(event_type);
+      CREATE INDEX IF NOT EXISTS idx_pal_target_role ON permission_audit_log(target_role);
+
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS estimate_minutes INTEGER;
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_category TEXT;
       ALTER TABLE work_items ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT false;
@@ -146,6 +177,53 @@ async function runAdditiveSchemaAlignments() {
         ('High Priority', '#f97316', 'CUSTOM'),
         ('Low Priority', '#94a3b8', 'CUSTOM')
       ON CONFLICT (name) DO NOTHING;
+
+      ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+      ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
+      ALTER TABLE cashflow_points ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES project_info(id);
+
+      -- FYE Revenue Tracking tables
+      CREATE TABLE IF NOT EXISTS fye_budgets (
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER REFERENCES project_info(id),
+        project_name TEXT NOT NULL,
+        fye TEXT NOT NULL,
+        month_key TEXT NOT NULL,
+        budget_type TEXT NOT NULL,
+        amount DECIMAL(15,2) NOT NULL DEFAULT 0,
+        updated_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS forecast_pipeline (
+        id SERIAL PRIMARY KEY,
+        project_name TEXT NOT NULL,
+        project_developer TEXT,
+        location TEXT,
+        size_kwp DECIMAL(12,2),
+        deal_probability_pct INTEGER NOT NULL DEFAULT 75,
+        forecast_signature_date TEXT,
+        solar_revenue DECIMAL(15,2) DEFAULT 0,
+        bess_revenue DECIMAL(15,2) DEFAULT 0,
+        forecast_gp_pct DECIMAL(6,4) DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'active',
+        notes TEXT,
+        updated_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS lost_deals (
+        id SERIAL PRIMARY KEY,
+        deal_name TEXT NOT NULL,
+        deal_value DECIMAL(15,2),
+        business_developer TEXT,
+        lost_reason TEXT,
+        lost_date TEXT,
+        notes TEXT,
+        updated_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
     `));
     console.log("[Schema] Additive alignments completed");
   } catch (err: any) {

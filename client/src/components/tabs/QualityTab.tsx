@@ -13,8 +13,7 @@ import { Label } from "@/components/ui/label";
 import {
   AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield,
   AlertTriangle, Clock, User, Lock, Link2, X, Plus, Trash2, Send, Loader2,
-  CheckCircle2, Upload, Paperclip, ExternalLink, UserPlus, SquareCheck,
-  Download, Eye
+  CheckCircle2, Upload, Paperclip, ExternalLink, UserPlus, SquareCheck
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
@@ -395,7 +394,13 @@ export function QualityTab({ projectName }: QualityTabProps) {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const MAX_EVIDENCE_FILE_SIZE = 50 * 1024 * 1024; // 50MB - matches server limit
+
   const handleEvidenceFileUpload = async (instanceId: number, file: File) => {
+    if (file.size > MAX_EVIDENCE_FILE_SIZE) {
+      toast({ title: "File too large", description: `Maximum file size is 50MB. Selected file is ${Math.round(file.size / (1024 * 1024))}MB.`, variant: "destructive" });
+      return;
+    }
     setEvidenceUploading(instanceId);
     try {
       const formData = new FormData();
@@ -414,6 +419,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
         throw new Error(err.error || "Upload failed");
       }
       queryClient.invalidateQueries({ queryKey: ["quality-checklist", projectName] });
+      invalidateAll();
       toast({ title: "Evidence uploaded" });
     } catch (err: any) {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
@@ -488,16 +494,33 @@ export function QualityTab({ projectName }: QualityTabProps) {
     const passed = applicable.filter((i: any) => getItemQmStatus(i) === "pass");
     const failed = applicable.filter((i: any) => getItemQmStatus(i) === "fail");
     const inReview = applicable.filter((i: any) => getItemQmStatus(i) === "review");
+    const na = allInstances.filter((i: any) => i.isApplicable === false);
     const unassigned = applicable.filter((i: any) => !i.primaryAssignment);
+    const overdue = applicable.filter((i: any) => {
+      const status = getItemQmStatus(i);
+      if (status === "pass" || status === "na") return false;
+      const dueDate = i.endDate || i.scheduledDate;
+      if (!dueDate) return false;
+      const due = new Date(String(dueDate).split("T")[0] + "T00:00:00").getTime();
+      return due < new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
+    });
+    const evidenceGap = applicable.filter((i: any) => {
+      const ti = (checklistData?.templateItems || []).find((t: any) => t.id === i.templateItemId);
+      return ti?.isEvidenceRequired && (checklistData?.evidence || []).filter((e: any) => e.itemInstanceId === i.id).length === 0;
+    });
     return {
       total: applicable.length,
       passed: passed.length,
       failed: failed.length,
       inReview: inReview.length,
+      na: na.length,
       unassigned: unassigned.length,
+      overdue: overdue.length,
+      evidenceGap: evidenceGap.length,
+      notStarted: applicable.length - passed.length - failed.length - inReview.length,
       percent: applicable.length > 0 ? Math.round((passed.length / applicable.length) * 100) : 0,
     };
-  }, [checklistData?.itemInstances]);
+  }, [checklistData?.itemInstances, checklistData?.templateItems, checklistData?.evidence]);
 
   if (isLoading) {
     return (
@@ -578,6 +601,18 @@ export function QualityTab({ projectName }: QualityTabProps) {
   const shouldShowItem = (instance: any) => {
     if (statusFilter === "all") return true;
     if (statusFilter === "unassigned") return !instance.primaryAssignment;
+    if (statusFilter === "overdue") {
+      const status = getItemQmStatus(instance);
+      if (status === "pass" || status === "na") return false;
+      const dueDate = instance.endDate || instance.scheduledDate;
+      if (!dueDate) return false;
+      const due = new Date(String(dueDate).split("T")[0] + "T00:00:00").getTime();
+      return due < new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
+    }
+    if (statusFilter === "evidence_gap") {
+      const ti = (checklistData?.templateItems || []).find((t: any) => t.id === instance.templateItemId);
+      return ti?.isEvidenceRequired && (checklistData?.evidence || []).filter((e: any) => e.itemInstanceId === instance.id).length === 0;
+    }
     return getItemQmStatus(instance) === statusFilter;
   };
 
@@ -587,11 +622,22 @@ export function QualityTab({ projectName }: QualityTabProps) {
   const selectedPhaseRiskQs = selectedPhaseId ? getPhaseRiskQuestions(selectedPhaseId) : [];
   const selectedPhaseLinkedTasks = selectedPhaseId ? getPhaseLinks(selectedPhaseId) : [];
 
-  const handleBulkStatusChange = (newStatus: string) => {
-    selectedItems.forEach(id => {
-      updateItemMutation.mutate({ itemInstanceId: id, updates: { qmStatus: newStatus } });
-    });
+  const handleBulkStatusChange = async (newStatus: string) => {
+    const ids = Array.from(selectedItems);
     setSelectedItems(new Set());
+    let failCount = 0;
+    for (const id of ids) {
+      try {
+        await updateItemMutation.mutateAsync({ itemInstanceId: id, updates: { qmStatus: newStatus } });
+      } catch {
+        failCount++;
+      }
+    }
+    if (failCount > 0) {
+      toast({ title: "Partial failure", description: `${failCount} of ${ids.length} item(s) failed to update.`, variant: "destructive" });
+    } else if (ids.length > 0) {
+      toast({ title: "Bulk update complete", description: `${ids.length} item(s) set to ${newStatus}.` });
+    }
   };
 
   const toggleItemSelection = (id: number) => {
@@ -793,7 +839,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
               {activeWarnings.map((w: any) => (
                 <div key={w.id} className="flex items-center gap-2 text-xs text-muted-foreground" data-testid={`warning-item-${w.id}`}>
                   <Badge className={getRiskSeverityColor(w.severity)} variant="outline">{w.severity}</Badge>
-                  <span className="flex-1">{w.message || w.warningType}</span>
+                  <span className="flex-1">{w.title || w.description || w.warningType}</span>
                 </div>
               ))}
             </div>
@@ -885,10 +931,12 @@ export function QualityTab({ projectName }: QualityTabProps) {
               <span className="text-xs font-semibold text-muted-foreground mr-1">Filter:</span>
               {[
                 { value: "all", label: "All", count: overallStats.total },
-                { value: "not_started", label: "Not Started", count: overallStats.total - overallStats.passed - overallStats.failed - overallStats.inReview },
+                { value: "not_started", label: "Not Started", count: overallStats.notStarted },
                 { value: "review", label: "Review", count: overallStats.inReview },
                 { value: "fail", label: "Failed", count: overallStats.failed },
                 { value: "pass", label: "Passed", count: overallStats.passed },
+                { value: "overdue", label: "Overdue", count: overallStats.overdue },
+                { value: "evidence_gap", label: "Evidence Gap", count: overallStats.evidenceGap },
                 { value: "unassigned", label: "Unassigned", count: overallStats.unassigned },
               ].map(f => (
                 <Button
@@ -1231,6 +1279,12 @@ export function QualityTab({ projectName }: QualityTabProps) {
 
                                     {canEdit && !instance.approved && (
                                       <div>
+                                        {governance.evidenceMissing && (
+                                          <div className="flex items-center gap-2 text-xs text-sky-700 bg-sky-50 border border-sky-200 rounded-lg p-2.5 mb-2" data-testid={`evidence-warning-${instance.id}`}>
+                                            <Paperclip className="w-3.5 h-3.5 shrink-0" />
+                                            <span>Evidence is required before this item can be sent for approval.</span>
+                                          </div>
+                                        )}
                                         {sendForApprovalItem === instance.id ? (
                                           <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                                             <Send className="w-4 h-4 text-amber-600 shrink-0" />
@@ -1245,7 +1299,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                             <Button
                                               size="sm"
                                               className="h-8 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700"
-                                              disabled={!sfaApprover || sendForApprovalMutation.isPending}
+                                              disabled={!sfaApprover || sendForApprovalMutation.isPending || governance.evidenceMissing}
                                               onClick={() => {
                                                 sendForApprovalMutation.mutate({
                                                   itemInstanceId: instance.id,
@@ -1263,6 +1317,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
                                             variant="outline"
                                             size="sm"
                                             className="h-8 text-xs gap-1.5 text-amber-600 border-amber-200 hover:bg-amber-50"
+                                            disabled={governance.evidenceMissing}
                                             onClick={() => setSendForApprovalItem(instance.id)}
                                             data-testid={`btn-send-for-approval-${instance.id}`}
                                           >
