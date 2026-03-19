@@ -1732,10 +1732,25 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
 
       if (Array.isArray(norm.revenueLines) && projectName) {
-        const oldInflows = await tx.select({ rowNumber: programInflows.rowNumber, inBank: programInflows.inBank })
+        const oldInflows = await tx.select({
+          rowNumber: programInflows.rowNumber,
+          inBank: programInflows.inBank,
+          milestoneName: programInflows.milestoneName,
+          milestoneAmount: programInflows.milestoneAmount,
+        })
           .from(programInflows)
           .where(eq(programInflows.projectName, projectName));
-        const oldInBankMap = new Map(oldInflows.filter(r => r.rowNumber != null).map(r => [r.rowNumber!, r.inBank]));
+
+        // Build composite key map: "milestoneName::amount" → { inBank, rowNumber }
+        const oldCompositeMap = new Map<string, { inBank: number | null; rowNumber: number | null }>();
+        const oldRowMap = new Map<number, number | null>();
+        for (const r of oldInflows) {
+          if (r.rowNumber != null) oldRowMap.set(r.rowNumber, r.inBank);
+          if (r.milestoneName) {
+            const key = `${r.milestoneName}::${r.milestoneAmount || ""}`;
+            oldCompositeMap.set(key, { inBank: r.inBank, rowNumber: r.rowNumber });
+          }
+        }
 
         await tx.delete(programInflows).where(eq(programInflows.projectName, projectName));
         if (norm.revenueLines.length > 0) {
@@ -1748,13 +1763,31 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               const ov = revOverrides.get(r.sourceRow);
               const m = ov ? { ...r, ...ov } : r;
               milestoneIdx++;
-              const prevInBank = oldInBankMap.get(r.sourceRow);
+              const name = m.milestoneName || m.description || null;
+              const amount = m.amountExVat ? String(m.amountExVat) : null;
+
+              // Composite match first (name + amount), then fall back to row number
+              let prevInBank: number | null | undefined = undefined;
+              const compositeKey = name ? `${name}::${amount || ""}` : null;
+              if (compositeKey && oldCompositeMap.has(compositeKey)) {
+                const match = oldCompositeMap.get(compositeKey)!;
+                prevInBank = match.inBank;
+                // Warn if the milestone moved rows
+                if (match.rowNumber != null && match.rowNumber !== r.sourceRow) {
+                  console.log(`[SmartImport] Revenue milestone '${name}' moved from row ${match.rowNumber} to row ${r.sourceRow}. Status preserved.`);
+                }
+              }
+              // Fall back to row number match
+              if (prevInBank === undefined && oldRowMap.has(r.sourceRow)) {
+                prevInBank = oldRowMap.get(r.sourceRow) ?? null;
+              }
+
               return {
                 projectName,
                 rowNumber: r.sourceRow,
                 milestoneNo: String(milestoneIdx),
-                milestoneName: m.milestoneName || m.description || null,
-                milestoneAmount: m.amountExVat ? String(m.amountExVat) : null,
+                milestoneName: name,
+                milestoneAmount: amount,
                 plannedPaymentDate: m.expectedPaymentDate || null,
                 milestoneInvoiceNumber: m.invoiceNumber || null,
                 invoiceRaisedDate: m.invoiceDate || null,

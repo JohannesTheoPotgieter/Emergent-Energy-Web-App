@@ -1080,6 +1080,11 @@ export function normalizeData(
     }
   }
 
+  // Expenditure Tracking Reconciliation: compare breakdown line totals vs tracking summary
+  if (costLines.length > 0) {
+    reconcileExpenditureTracking(workbook, costLines, detection, issues);
+  }
+
   return {
     planTasks,
     revenueLines,
@@ -1089,4 +1094,182 @@ export function normalizeData(
     costedSummary,
     issues,
   };
+}
+
+/**
+ * Read the "Expenditure Tracking" summary sheet and compare its category totals
+ * against the imported Expenditure Breakdown line totals. Generates advisory issues
+ * for any mismatches to flag potential missed rows or mapping errors.
+ */
+function reconcileExpenditureTracking(
+  workbook: ExcelJS.Workbook,
+  costLines: NormalizationResult["costLines"],
+  detection: DetectionResult,
+  issues: IssueEntry[]
+): void {
+  // Find the "Expenditure Tracking" sheet — it's the summary sheet, not the breakdown
+  const expSection = detection.sections.find(s => s.section === "EXPENDITURE");
+  const breakdownSheetName = expSection?.sheetName || "";
+
+  // Look for a separate "Expenditure Tracking" sheet (not the one used for breakdown)
+  const trackingSheetNames = ["expenditure tracking", "expenditure summary"];
+  let trackingWs: ExcelJS.Worksheet | undefined;
+  for (const ws of workbook.worksheets) {
+    const lowerName = ws.name.toLowerCase().trim();
+    if (lowerName === breakdownSheetName.toLowerCase()) continue; // skip breakdown sheet
+    if (trackingSheetNames.some(n => lowerName === n || lowerName.includes("expenditure tracking"))) {
+      trackingWs = ws;
+      break;
+    }
+  }
+  if (!trackingWs) return; // No tracking sheet found — skip gracefully
+
+  const data = worksheetToArray(trackingWs);
+  if (data.length < 5) return;
+
+  // Read category totals from tracking sheet (rows 9-23 typically)
+  // Format: B=number, D=category name, H or F=actual total
+  const trackingCategories = new Map<string, { name: string; total: number }>();
+  let trackingGrandTotal: number | null = null;
+
+  // First, try to find the grand total (usually around row 5 or a row labeled "Total")
+  for (let i = 0; i < Math.min(data.length, 30); i++) {
+    const row = data[i];
+    if (!row) continue;
+
+    for (let c = 0; c < Math.min(row.length, 10); c++) {
+      const cellVal = String(row[c] || "").toLowerCase().trim();
+      if (cellVal === "total" || cellVal === "grand total" || cellVal.includes("total expenditure")) {
+        // Look for numeric total in columns to the right
+        for (let nc = c + 1; nc < Math.min(row.length, c + 8); nc++) {
+          const val = row[nc];
+          if (val != null && typeof val === "number" && val !== 0) {
+            trackingGrandTotal = val;
+            break;
+          }
+          if (val != null && typeof val === "string") {
+            const parsed = parseFloat(String(val).replace(/[\s,R$]/g, ""));
+            if (!isNaN(parsed) && parsed !== 0) {
+              trackingGrandTotal = parsed;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Category rows: look for numbered categories like "1. Panels", "2. Inverters"
+    for (let c = 0; c < Math.min(row.length, 6); c++) {
+      const cellVal = String(row[c] || "").trim();
+      const catMatch = cellVal.match(/^(\d+)\.\s*(.+)/);
+      if (catMatch) {
+        const catNum = catMatch[1];
+        const catName = cellVal;
+        // Find amount in the row (scan right for numeric value)
+        let amount: number | null = null;
+        for (let nc = c + 1; nc < Math.min(row.length, c + 10); nc++) {
+          const val = row[nc];
+          if (val != null && typeof val === "number" && val !== 0) {
+            amount = val;
+            break;
+          }
+        }
+        if (amount !== null) {
+          trackingCategories.set(catNum, { name: catName, total: amount });
+        }
+      }
+    }
+  }
+
+  if (trackingCategories.size === 0 && trackingGrandTotal === null) return;
+
+  // Group breakdown lines by category and sum amounts
+  const breakdownByCategory = new Map<string, { name: string; total: number }>();
+  let breakdownGrandTotal = 0;
+
+  for (const line of costLines) {
+    const amount = parseFloat(String(line.amountExVat || 0));
+    if (isNaN(amount)) continue;
+    breakdownGrandTotal += amount;
+
+    const catName = line.costCategory || "Uncategorized";
+    const catNumMatch = catName.match(/^(\d+)/);
+    const catKey = catNumMatch ? catNumMatch[1] : catName;
+
+    if (breakdownByCategory.has(catKey)) {
+      breakdownByCategory.get(catKey)!.total += amount;
+    } else {
+      breakdownByCategory.set(catKey, { name: catName, total: amount });
+    }
+  }
+
+  // Compare category totals
+  for (const [catNum, tracking] of trackingCategories) {
+    const breakdown = breakdownByCategory.get(catNum);
+    if (!breakdown) {
+      issues.push({
+        severity: "WARNING",
+        section: "EXPENDITURE",
+        message: `Expenditure category '${tracking.name}' found in Tracking summary (R ${tracking.total.toLocaleString()}) but no matching lines in Breakdown.`,
+        suggestedAction: "Verify the category exists in Expenditure Breakdown",
+        issueType: "RECONCILIATION_MISSING_CATEGORY",
+        issueFingerprint: makeFingerprint("RECONCILIATION_MISSING_CATEGORY", "EXPENDITURE", catNum),
+        payloadJson: { category: tracking.name, trackingTotal: tracking.total },
+      });
+      continue;
+    }
+
+    const variance = Math.abs(breakdown.total - tracking.total);
+    const variancePct = tracking.total !== 0 ? (variance / Math.abs(tracking.total)) * 100 : 0;
+
+    if (variancePct > 1) {
+      issues.push({
+        severity: "WARNING",
+        section: "EXPENDITURE",
+        message: `Expenditure category '${tracking.name}' breakdown total (R ${breakdown.total.toLocaleString()}) differs from tracking summary (R ${tracking.total.toLocaleString()}) by R ${variance.toLocaleString()} (${variancePct.toFixed(1)}%). Verify no rows were missed.`,
+        suggestedAction: "Compare the Expenditure Breakdown lines against the Tracking summary",
+        issueType: "RECONCILIATION_VARIANCE",
+        issueFingerprint: makeFingerprint("RECONCILIATION_VARIANCE", "EXPENDITURE", catNum),
+        payloadJson: { category: tracking.name, breakdownTotal: breakdown.total, trackingTotal: tracking.total, variancePct },
+      });
+    } else if (variance > 0) {
+      issues.push({
+        severity: "INFO",
+        section: "EXPENDITURE",
+        message: `Expenditure category '${tracking.name}' has minor rounding difference: breakdown R ${breakdown.total.toLocaleString()} vs tracking R ${tracking.total.toLocaleString()}.`,
+        suggestedAction: null,
+        issueType: "RECONCILIATION_ROUNDING",
+        issueFingerprint: makeFingerprint("RECONCILIATION_ROUNDING", "EXPENDITURE", catNum),
+        payloadJson: { category: tracking.name, breakdownTotal: breakdown.total, trackingTotal: tracking.total },
+      });
+    }
+  }
+
+  // Compare grand totals
+  if (trackingGrandTotal !== null) {
+    const grandVariance = Math.abs(breakdownGrandTotal - trackingGrandTotal);
+    const grandPct = trackingGrandTotal !== 0 ? (grandVariance / Math.abs(trackingGrandTotal)) * 100 : 0;
+
+    if (grandPct > 1) {
+      issues.push({
+        severity: "WARNING",
+        section: "EXPENDITURE",
+        message: `Expenditure grand total from Breakdown (R ${breakdownGrandTotal.toLocaleString()}) differs from Tracking summary (R ${trackingGrandTotal.toLocaleString()}) by R ${grandVariance.toLocaleString()} (${grandPct.toFixed(1)}%). Some rows may have been missed.`,
+        suggestedAction: "Review the Expenditure Breakdown for missed or skipped rows",
+        issueType: "RECONCILIATION_GRAND_TOTAL",
+        issueFingerprint: makeFingerprint("RECONCILIATION_GRAND_TOTAL", "EXPENDITURE", "grand_total"),
+        payloadJson: { breakdownTotal: breakdownGrandTotal, trackingTotal: trackingGrandTotal, variancePct: grandPct },
+      });
+    } else if (grandVariance > 0) {
+      issues.push({
+        severity: "INFO",
+        section: "EXPENDITURE",
+        message: `Expenditure grand totals have minor rounding difference: breakdown R ${breakdownGrandTotal.toLocaleString()} vs tracking R ${trackingGrandTotal.toLocaleString()}.`,
+        suggestedAction: null,
+        issueType: "RECONCILIATION_GRAND_TOTAL_OK",
+        issueFingerprint: makeFingerprint("RECONCILIATION_GRAND_TOTAL_OK", "EXPENDITURE", "grand_total"),
+        payloadJson: { breakdownTotal: breakdownGrandTotal, trackingTotal: trackingGrandTotal },
+      });
+    }
+  }
 }
