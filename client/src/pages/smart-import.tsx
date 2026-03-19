@@ -2838,7 +2838,11 @@ function PreviewCommitStep({
               <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
               <div className="space-y-1">
                 <p className="text-sm font-medium text-amber-800">{duplicateProjectWarning.message}</p>
-                <p className="text-xs text-amber-600">Select an existing project to map to, or confirm creating a new one.</p>
+                <p className="text-xs text-amber-600">
+                  {duplicateProjectWarning.matchCandidates?.some((m: any) => m.matchReason === "same_project_different_phase")
+                    ? "This file appears to be a different phase of an existing project. Please confirm which project to map to."
+                    : "Select an existing project to map to, or confirm creating a new one."}
+                </p>
               </div>
             </div>
             <div className="space-y-2">
