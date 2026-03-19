@@ -1,19 +1,17 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { sql, eq, and, gt } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import {
   projectInfo,
   pmSiteVisits,
   pmOnTheGoActions,
   pmModePreferences,
-  notifications,
-  notificationThrottle,
 } from "@shared/schema";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { isOutlookConfigured, sendMail } from "./outlook";
+// import { isOutlookConfigured, sendMail } from "./outlook"; // removed with notifications
 import { logAuditFromReq } from "./audit-logger";
 
 const photoUploadDir = path.join(process.cwd(), "uploads", "pm-photos");
@@ -103,100 +101,27 @@ function getUser(req: Request): { id: number; name: string; role: string; email:
   return { id: u.id, name: u.name, role: u.role, email: u.email };
 }
 
-const DEDUP_WINDOW_MS = 2 * 60 * 1000;
-
+// Notifications feature removed - throttledNotify is now a no-op
 async function throttledNotify(
-  recipientUserId: number,
-  eventType: string,
-  title: string,
-  body: string | null,
-  opts: { projectName?: string } = {}
+  _recipientUserId: number,
+  _eventType: string,
+  _title: string,
+  _body: string | null,
+  _opts: { projectName?: string } = {}
 ) {
-  const existing = await db
-    .select()
-    .from(notificationThrottle)
-    .where(
-      and(
-        eq(notificationThrottle.recipientUserId, recipientUserId),
-        eq(notificationThrottle.eventType, eventType),
-        eq(notificationThrottle.entityType, "pm_otg"),
-        gt(notificationThrottle.lastSentAt, new Date(Date.now() - DEDUP_WINDOW_MS))
-      )
-    );
-  if (existing.length > 0) return;
-
-  await db.insert(notifications).values({
-    recipientUserId,
-    eventType,
-    title,
-    body,
-    projectName: opts.projectName || null,
-  });
-  await db
-    .insert(notificationThrottle)
-    .values({
-      recipientUserId,
-      eventType,
-      entityType: "pm_otg",
-      entityId: 0,
-    })
-    .onConflictDoNothing();
+  // no-op: notifications feature removed
 }
 
-async function getNotificationRecipients(projectId: number): Promise<{ id: number; email: string; name: string }[]> {
-  const targetRoles = ["PROGRAM_MANAGER", "COO_ADMIN"];
-
-  const project = await db
-    .select({ phase: projectInfo.phase })
-    .from(projectInfo)
-    .where(eq(projectInfo.id, projectId))
-    .limit(1);
-
-  const isConstruction =
-    project.length > 0 &&
-    ["Construction", "Commissioning"].some((p) =>
-      (project[0].phase || "").toLowerCase().includes(p.toLowerCase())
-    );
-
-  if (isConstruction) {
-    targetRoles.push("CONSTRUCTION_MANAGER");
-  }
-
-  const recipients = await db.execute(
-    sql`SELECT id, email, name FROM users WHERE role = ANY(${`{${targetRoles.join(",")}}`}::text[])`
-  );
-  return (recipients.rows as any[]).map((r) => ({
-    id: r.id,
-    email: r.email,
-    name: r.name,
-  }));
-}
-
+// Notifications feature removed - notifyAndEmail is now a no-op
 async function notifyAndEmail(
-  projectId: number,
-  eventType: string,
-  title: string,
-  body: string,
-  projectName: string,
-  actorName: string
+  _projectId: number,
+  _eventType: string,
+  _title: string,
+  _body: string,
+  _projectName: string,
+  _actorName: string
 ) {
-  const recipients = await getNotificationRecipients(projectId);
-  for (const r of recipients) {
-    await throttledNotify(r.id, eventType, title, body, { projectName });
-  }
-
-  if (isOutlookConfigured() && recipients.length > 0) {
-    try {
-      await sendMail({
-        to: recipients.map((r) => r.email),
-        subject: `[PM On-The-Go] ${title}`,
-        body: `${actorName} — ${body}\n\nProject: ${projectName}`,
-        bodyType: "Text",
-      });
-    } catch (err: any) {
-      console.warn("[PM-OTG] Email send failed:", err.message);
-    }
-  }
+  // no-op: notifications feature removed
 }
 
 function getWeekStart(): string {

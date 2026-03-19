@@ -3,7 +3,6 @@ import { db } from "./db";
 import { eq, and, desc, asc, sql, inArray, isNull, count } from "drizzle-orm";
 import {
   standupSchedules, standupParticipants, standupEntries,
-  notifications, notificationThrottle,
   users, projectInfo, workItems, workItemStatusHistory,
   type InsertStandupSchedule, type InsertStandupEntry, type InsertStandupParticipant,
 } from "@shared/schema";

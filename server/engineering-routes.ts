@@ -8,7 +8,7 @@ import fs from "fs";
 import {
   operationalTasks, taskComments, taskActivityLog, taskWatchers, taskDeliverables,
   deliverables, deliverableVersions, deliverableFiles, deliverableEvents,
-  notifications, notificationThrottle, spFilePointers,
+  spFilePointers,
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
   qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory,
   projectEngApprovals, projectEngStages, engStageTemplates,
@@ -137,48 +137,17 @@ function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "epm_challenge_required", message: "EPM access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
 
-async function createNotification(recipientUserId: number, eventType: string, title: string, body: string | null, opts: {
+// Notifications feature removed – keep function signature as no-op so callers don't break
+async function createNotification(_recipientUserId: number, _eventType: string, _title: string, _body: string | null, _opts: {
   projectName?: string; linkedTaskId?: number; linkedDeliverableId?: number; linkedWarningId?: number; linkedPlanItemId?: number;
 } = {}) {
-  const throttleKey = `${eventType}:${opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0}`;
-  const existing = await db.select().from(notificationThrottle)
-    .where(and(
-      eq(notificationThrottle.recipientUserId, recipientUserId),
-      eq(notificationThrottle.eventType, eventType),
-      eq(notificationThrottle.entityType, throttleKey.split(':')[0] || 'generic'),
-      eq(notificationThrottle.entityId, opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0),
-      gt(notificationThrottle.lastSentAt, new Date(Date.now() - 24 * 60 * 60 * 1000))
-    ));
-
-  if (existing.length > 0) return null;
-
-  const [notif] = await db.insert(notifications).values({
-    recipientUserId,
-    eventType,
-    title,
-    body,
-    projectName: opts.projectName || null,
-    linkedTaskId: opts.linkedTaskId || null,
-    linkedDeliverableId: opts.linkedDeliverableId || null,
-    linkedWarningId: opts.linkedWarningId || null,
-    linkedPlanItemId: opts.linkedPlanItemId || null,
-  }).returning();
-
-  await db.insert(notificationThrottle).values({
-    recipientUserId,
-    eventType,
-    entityType: throttleKey.split(':')[0] || 'generic',
-    entityId: opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0,
-  }).onConflictDoNothing();
-
-  return notif;
+  return null;
 }
 
 export function registerEngineeringRoutes(app: Express) {
 
   app.use("/api/eng", jwtAuth);
   app.use("/api/deliverables", jwtAuth);
-  app.use("/api/notifications", jwtAuth);
   app.use("/api/project-team", jwtAuth);
   app.use("/api/home", jwtAuth);
   app.use("/api/dashboard", jwtAuth);
@@ -1849,141 +1818,6 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  // ========== NOTIFICATIONS ==========
-
-  app.get("/api/notifications", requireAuth, async (req, res) => {
-    try {
-      const userId = getUser(req).id;
-      const { unreadOnly, eventType, search, limit: rawLimit, offset: rawOffset } = req.query;
-      const conditions = [eq(notifications.recipientUserId, userId)];
-      if (unreadOnly === "true") conditions.push(eq(notifications.isRead, false));
-      if (typeof eventType === "string" && eventType) conditions.push(eq(notifications.eventType, eventType));
-      if (typeof search === "string" && search.trim()) {
-        const term = `%${search.trim().toLowerCase()}%`;
-        conditions.push(sql`(LOWER(${notifications.title}) LIKE ${term} OR LOWER(COALESCE(${notifications.body},'')) LIKE ${term} OR LOWER(COALESCE(${notifications.projectName},'')) LIKE ${term})`);
-      }
-
-      const pageLimit = Math.min(parseInt(rawLimit as string) || 100, 200);
-      const pageOffset = parseInt(rawOffset as string) || 0;
-
-      const result = await db.select().from(notifications)
-        .where(and(...conditions))
-        .orderBy(desc(notifications.createdAt))
-        .limit(pageLimit)
-        .offset(pageOffset);
-
-      const [countResult] = await db.select({ total: sql<number>`count(*)::int` })
-        .from(notifications)
-        .where(and(...conditions));
-
-      res.json({ items: result, total: countResult?.total || 0 });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/notifications/event-types", requireAuth, async (req, res) => {
-    try {
-      const userId = getUser(req).id;
-      const result = await db.selectDistinct({ eventType: notifications.eventType })
-        .from(notifications)
-        .where(eq(notifications.recipientUserId, userId))
-        .orderBy(notifications.eventType);
-      res.json(result.map(r => r.eventType).filter(Boolean));
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/notifications/unread-count", requireAuth, async (req, res) => {
-    try {
-      const userId = getUser(req).id;
-      const [result] = await db.select({ count: sql<number>`count(*)::int` })
-        .from(notifications)
-        .where(and(eq(notifications.recipientUserId, userId), eq(notifications.isRead, false)));
-      res.json({ count: result?.count || 0 });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.post("/api/notifications/mark-read", requireAuth, async (req, res) => {
-    try {
-      const { notificationIds } = req.body;
-      if (Array.isArray(notificationIds) && notificationIds.length > 0) {
-        await db.update(notifications)
-          .set({ isRead: true, readAt: new Date() })
-          .where(and(
-            inArray(notifications.id, notificationIds),
-            eq(notifications.recipientUserId, getUser(req).id)
-          ));
-      }
-      res.json({ success: true });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.post("/api/notifications/mark-all-read", requireAuth, async (req, res) => {
-    try {
-      await db.update(notifications)
-        .set({ isRead: true, readAt: new Date() })
-        .where(and(
-          eq(notifications.recipientUserId, getUser(req).id),
-          eq(notifications.isRead, false)
-        ));
-      res.json({ success: true });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.post("/api/notifications/:id/confirm", requireAuth, async (req, res) => {
-    try {
-      const notifId = parseInt(req.params.id);
-      const userId = getUser(req).id;
-      if (isNaN(notifId)) return res.status(400).json({ error: "Invalid notification ID" });
-
-      const [notif] = await db.select().from(notifications).where(eq(notifications.id, notifId));
-      if (!notif) return res.status(404).json({ error: "Notification not found" });
-      if (notif.recipientUserId !== userId) return res.status(403).json({ error: "You can only confirm your own notifications" });
-      if (!notif.requiresConfirmation) return res.status(400).json({ error: "This notification does not require confirmation" });
-      if (notif.confirmedAt) return res.status(400).json({ error: "Already confirmed" });
-
-      const [confirmer] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
-
-      await db.update(notifications)
-        .set({ confirmedByUserId: userId, confirmedAt: new Date(), isRead: true, readAt: new Date() })
-        .where(eq(notifications.id, notifId));
-
-      const relatedNotifs = await db.select().from(notifications)
-        .where(and(
-          eq(notifications.eventType, notif.eventType),
-          eq(notifications.requiresConfirmation, true),
-          isNull(notifications.confirmedAt),
-          eq(notifications.changeDetails, notif.changeDetails!),
-          ne(notifications.id, notifId)
-        ));
-
-      for (const related of relatedNotifs) {
-        await db.update(notifications)
-          .set({ confirmedByUserId: userId, confirmedAt: new Date(), isRead: true, readAt: new Date() })
-          .where(eq(notifications.id, related.id));
-      }
-
-      logAuditFromReq(req, { entityType: "notification", entityId: String(notifId), action: "update", changesJson: { description: "Notification confirmed", eventType: notif.eventType, relatedCount: relatedNotifs.length } });
-      res.json({ success: true, confirmedBy: confirmer?.name || "Unknown", confirmedAt: new Date() });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
   // ========== SHAREPOINT FILE POINTERS ==========
 
   app.get("/api/eng/file-pointers/:entityType/:entityId", requireAuth, requirePermission("engineering", "view"), async (req, res) => {
@@ -3270,35 +3104,12 @@ export function registerEngineeringRoutes(app: Express) {
       };
 
       const [
-        unreadNotifs,
-        actionNotifs,
-        recentNotifs,
         myTasks,
         engApprovals,
         qcItems,
         deliverableItems,
         projectsAtRisk,
       ] = await Promise.all([
-        db.select({ count: sql<number>`count(*)::int` })
-          .from(notifications)
-          .where(and(eq(notifications.recipientUserId, userId), eq(notifications.isRead, false))),
-
-        db.select()
-          .from(notifications)
-          .where(and(
-            eq(notifications.recipientUserId, userId),
-            eq(notifications.requiresConfirmation, true),
-            isNull(notifications.confirmedAt),
-          ))
-          .orderBy(desc(notifications.createdAt))
-          .limit(10),
-
-        db.select()
-          .from(notifications)
-          .where(and(eq(notifications.recipientUserId, userId), eq(notifications.isRead, false)))
-          .orderBy(desc(notifications.createdAt))
-          .limit(8),
-
         db.select({
           id: operationalTasks.id,
           title: operationalTasks.title,
@@ -3467,9 +3278,9 @@ export function registerEngineeringRoutes(app: Express) {
       );
 
       res.json({
-        unreadCount: (unreadNotifs[0] as any)?.count || 0,
-        actionRequired: actionNotifs,
-        recentNotifications: recentNotifs,
+        unreadCount: 0,
+        actionRequired: [],
+        recentNotifications: [],
         myTasks: myTasks,
         overdueTaskCount: overdueTasks.length,
         pendingApprovals: pendingApprovals.slice(0, 10),
