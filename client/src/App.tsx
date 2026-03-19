@@ -31,6 +31,7 @@ import MyToolMeetingsPage from "@/pages/my-tool-meetings";
 import QmDashboardPage from "@/pages/qm-dashboard";
 import EngineeringDashboardPage from "@/pages/engineering-dashboard";
 import EngineeringTasksPage from "@/pages/engineering-tasks";
+import EngineeringAuditPage from "@/pages/engineering-audit";
 import RoleSettingsPage from "@/pages/role-settings";
 import LifecycleBoardPage from "@/pages/lifecycle-board";
 import ExecutionBoardPage from "@/pages/execution-board";
@@ -121,6 +122,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   QmDashboardPage,
   EngineeringDashboardPage,
   EngineeringTasksPage,
+  EngineeringAuditPage,
   LifecycleBoardPage,
   ExecutionBoardPage,
   MyToolMeetingsPage,
