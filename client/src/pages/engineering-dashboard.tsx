@@ -47,7 +47,6 @@ import {
   MessageSquare,
   Activity,
   ArrowLeft,
-  X,
   MoreHorizontal,
   ArrowRightLeft,
   ClipboardCopy,
@@ -124,15 +123,6 @@ interface StandupData {
 
 // PHASE_COLORS imported from @/lib/phase-colors
 
-
-const priorityColors: Record<string, string> = {
-  "Critical": "text-red-600",
-  "Urgent": "text-red-600",
-  "High": "text-orange-600",
-  "Med": "text-yellow-600",
-  "Medium": "text-yellow-600",
-  "Low": "text-muted-foreground",
-};
 
 const priorityBorderDash: Record<string, string> = {
   "Critical": "border-l-red-600",
@@ -1366,6 +1356,7 @@ export default function EngineeringDashboard() {
   const userRole = (user as any)?.role || "";
   const managerRoles = ["admin", "eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
   const isManagerRole = isAdmin || managerRoles.includes(userRole);
+  const { toast } = useToast();
   const [showAllTasks, setShowAllTasks] = useState(isManagerRole);
   const [standupMode, setStandupMode] = useState(false);
   const fullName = user?.name || "";
