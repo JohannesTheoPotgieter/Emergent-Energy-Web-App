@@ -5889,6 +5889,12 @@ export async function registerRoutes(
         expenses = applyExpenditureOverrides(expenses, overrides);
       }
 
+      // Sub-project filter (for multi-project/Ad Hoc trackers)
+      const subProject = req.query.subProject as string | undefined;
+      if (subProject) {
+        expenses = expenses.filter((e: any) => e.subProjectName === subProject);
+      }
+
       res.json(expenses);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch program expenses", message: "Failed to fetch program expenses" });
@@ -5937,6 +5943,12 @@ export async function registerRoutes(
           (i.paymentReceivedDate && i.paymentReceivedDate <= endDate) ||
           (i.plannedPaymentDate && i.plannedPaymentDate <= endDate)
         );
+      }
+
+      // Sub-project filter
+      const subProjectFilter = req.query.subProject as string | undefined;
+      if (subProjectFilter && inflows) {
+        inflows = inflows.filter((i: any) => i.subProjectName === subProjectFilter);
       }
 
       res.json(inflows);
