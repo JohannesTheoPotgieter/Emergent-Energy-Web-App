@@ -473,7 +473,7 @@ export function registerPortfolioRoutes(app: Express) {
           pm: p.pm,
           pd: p.pd,
           isActive: p.isActive,
-          ragStatus: comp.delta < -10 ? "RED" : comp.delta < -5 ? "AMBER" : "GREEN",
+          ragStatus: comp.delta < -15 ? "RED" : comp.delta < -5 ? "AMBER" : "GREEN",
           actualPct: comp.actualPct,
           expectedPct: comp.expectedPct,
           delta: comp.delta,

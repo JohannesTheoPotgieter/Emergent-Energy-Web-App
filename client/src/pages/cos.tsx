@@ -543,7 +543,7 @@ export default function CosTracker() {
 
   const formatCell = (row: (typeof ROW_DEFS)[number], val: number) => {
     if (row.key === "variancePct" || row.key === "ytdVariancePct") {
-      return `${(val * 100).toFixed(1)}%`;
+      return `${val.toFixed(1)}%`;
     }
     return formatRand(val);
   };
@@ -626,7 +626,7 @@ export default function CosTracker() {
       tooltip: "Difference between actual COS and costed budget (COS − Costed). Green = under budget, Red = over budget.",
     },
     {
-      id: "ytd-variance-pct", label: "YTD Variance %", value: `${((lastMonth?.ytdVariancePct ?? 0) * 100).toFixed(1)}%`,
+      id: "ytd-variance-pct", label: "YTD Variance %", value: `${(lastMonth?.ytdVariancePct ?? 0).toFixed(1)}%`,
       icon: Activity,
       iconBg: (lastMonth?.ytdVariancePct ?? 0) <= 0 ? "bg-green-100" : "bg-red-100",
       iconColor: (lastMonth?.ytdVariancePct ?? 0) <= 0 ? "text-green-600" : "text-red-600",

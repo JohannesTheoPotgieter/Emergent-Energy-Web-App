@@ -96,6 +96,8 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     supplierName: cost.counterpartyName,
     noRevenueLinked: cost.noRevenueLinked ?? false,
     _isNormalized: true,
+    _sourceRow: (cost as any).sourceRow || cost.id,
+    _cosRealisedFlag: (cost as any).cosRealised ?? false,
   };
 }
 
