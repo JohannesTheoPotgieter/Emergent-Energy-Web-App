@@ -33,6 +33,7 @@ interface CashflowWeek {
   computedOpex: number;
   hasOpexOverride: boolean;
   projectOutflows: number;
+  pastDueUnpaid: number;
   closingBalance: number;
   availablePayment: number;
 }
@@ -288,8 +289,13 @@ export function CashflowTab({ projectName, projectNames, title }: CashflowTabPro
                       <td className="px-4 py-2.5 text-right font-mono text-[13px] text-emerald-600">
                         {formatRand(week.projectInflows)}
                       </td>
-                      <td className="px-4 py-2.5 text-right font-mono text-[13px] text-red-500">
-                        {formatRand(week.projectOutflows)}
+                      <td className="px-4 py-2.5 text-right font-mono text-[13px]">
+                        <span className="text-red-500">{formatRand(week.projectOutflows)}</span>
+                        {(week.pastDueUnpaid || 0) > 0 && (
+                          <div className="text-[10px] font-semibold text-red-700 bg-red-100 rounded px-1 py-0.5 mt-0.5 inline-block" title="Past-due outflows not yet confirmed out of bank">
+                            {formatRand(week.pastDueUnpaid)} overdue
+                          </div>
+                        )}
                       </td>
                       <td className={`px-4 py-2.5 text-right font-mono text-[13px] font-bold ${(week.closingBalance || 0) >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                         {formatRand(week.closingBalance)}
