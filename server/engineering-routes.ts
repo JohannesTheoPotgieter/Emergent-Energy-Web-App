@@ -3112,6 +3112,155 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
+  // ========== CP SIGNED GATE ==========
+
+  const PM_DEFAULT_TASK_PACK = [
+    { title: "Contract Administration Setup", priority: "High", phase: "P2_PD_PM_HANDOVER" },
+    { title: "Project Kick-off Meeting", priority: "High", phase: "P2_PD_PM_HANDOVER" },
+    { title: "Resource Allocation Plan", priority: "Med", phase: "P2_PD_PM_HANDOVER" },
+    { title: "Schedule Baseline", priority: "High", phase: "P2_PD_PM_HANDOVER" },
+    { title: "Risk Register Initialization", priority: "Med", phase: "P2_PD_PM_HANDOVER" },
+    { title: "Communication Plan", priority: "Med", phase: "P2_PD_PM_HANDOVER" },
+  ];
+
+  const ENG_POST_CP_TASK_PACK = [
+    { title: "Detailed Design Initiation", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+    { title: "Equipment Procurement List", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+    { title: "Installation Methodology", priority: "Med", phase: "P4_CONSTRUCTION_INSTALLATION" },
+    { title: "Testing & Commissioning Plan", priority: "Med", phase: "P5_COMMISSIONING_TESTING" },
+  ];
+
+  app.post("/api/projects/:projectId/mark-cp-signed", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const projectId = parseInt(req.params.projectId);
+      const user = getUser(req);
+      const { evidenceType, emailSubject, emailDate, fileId } = req.body;
+
+      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      // Idempotency: already signed
+      if (project.cpSigned) {
+        return res.json({
+          success: true,
+          alreadySigned: true,
+          cpSignedDate: project.cpSignedDate,
+          message: "CP already marked as signed. No duplicates created.",
+        });
+      }
+
+      // Validate evidence
+      if (!evidenceType || !["file_upload", "email_reference"].includes(evidenceType)) {
+        return res.status(400).json({ error: "evidenceType must be 'file_upload' or 'email_reference'" });
+      }
+      if (evidenceType === "email_reference" && !emailSubject) {
+        return res.status(400).json({ error: "emailSubject required for email_reference evidence" });
+      }
+
+      const evidenceRef = evidenceType === "file_upload"
+        ? (fileId ? String(fileId) : null)
+        : JSON.stringify({ emailSubject, emailDate: emailDate || new Date().toISOString().split("T")[0] });
+
+      // Mark CP signed
+      await db.update(projectInfo).set({
+        cpSigned: true,
+        cpSignedDate: new Date().toISOString().split("T")[0],
+        cpSignedByUserId: user.id,
+        cpEvidenceType: evidenceType,
+        cpEvidenceRef: evidenceRef,
+        updatedAt: new Date(),
+      }).where(eq(projectInfo.id, projectId));
+
+      let pmTasksCreated = 0;
+      let engTasksCreated = 0;
+
+      // Create PM task pack (idempotent)
+      if (!project.pmTaskPackCreated) {
+        for (let i = 0; i < PM_DEFAULT_TASK_PACK.length; i++) {
+          const t = PM_DEFAULT_TASK_PACK[i];
+          await createEngineeringWorkItem({
+            projectId,
+            title: `[PM] ${t.title}`,
+            status: "TO DO",
+            priority: t.priority,
+            phase: t.phase,
+            createdBy: user.id,
+          });
+          pmTasksCreated++;
+        }
+        await db.update(projectInfo).set({ pmTaskPackCreated: true }).where(eq(projectInfo.id, projectId));
+      }
+
+      // Create Engineering post-CP task pack (idempotent)
+      if (!project.engPostCpTaskPackCreated) {
+        for (let i = 0; i < ENG_POST_CP_TASK_PACK.length; i++) {
+          const t = ENG_POST_CP_TASK_PACK[i];
+          await createEngineeringWorkItem({
+            projectId,
+            title: `[Eng Post-CP] ${t.title}`,
+            status: "TO DO",
+            priority: t.priority,
+            phase: t.phase,
+            createdBy: user.id,
+          });
+          engTasksCreated++;
+        }
+        await db.update(projectInfo).set({ engPostCpTaskPackCreated: true }).where(eq(projectInfo.id, projectId));
+      }
+
+      logAuditFromReq(req, {
+        entityType: "cp_signed_gate",
+        entityId: String(projectId),
+        action: "cp_signed",
+        projectName: project.projectName,
+        changesJson: { evidenceType, pmTasksCreated, engTasksCreated },
+      });
+
+      res.json({
+        success: true,
+        alreadySigned: false,
+        cpSignedDate: new Date().toISOString().split("T")[0],
+        pmTasksCreated,
+        engTasksCreated,
+        totalTasksCreated: pmTasksCreated + engTasksCreated,
+      });
+    } catch (err: any) {
+      console.error("[Engineering] CP Signed Error:", err);
+      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+    }
+  });
+
+  app.get("/api/projects/:projectId/cp-status", jwtAuth, requireAuth, async (req, res) => {
+    try {
+      const projectId = parseInt(req.params.projectId);
+      const [project] = await db.select({
+        cpSigned: projectInfo.cpSigned,
+        cpSignedDate: projectInfo.cpSignedDate,
+        cpSignedByUserId: projectInfo.cpSignedByUserId,
+        cpEvidenceType: projectInfo.cpEvidenceType,
+        cpEvidenceRef: projectInfo.cpEvidenceRef,
+        pmTaskPackCreated: projectInfo.pmTaskPackCreated,
+        engPostCpTaskPackCreated: projectInfo.engPostCpTaskPackCreated,
+      }).from(projectInfo).where(eq(projectInfo.id, projectId));
+
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      let signedByName: string | null = null;
+      if (project.cpSignedByUserId) {
+        const [signer] = await db.select({ name: users.name }).from(users).where(eq(users.id, project.cpSignedByUserId));
+        signedByName = signer?.name || null;
+      }
+
+      res.json({
+        ...project,
+        cpSignedByName: signedByName,
+      });
+    } catch (err: any) {
+      console.error("[Engineering] Error:", err);
+      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+    }
+  });
+
   // ========== PROJECT PHASE MANAGEMENT ==========
 
   app.patch("/api/projects/:projectId/phase", jwtAuth, requireAuth, async (req, res) => {

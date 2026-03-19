@@ -87,6 +87,14 @@ export const projectInfo = pgTable("project_info", {
   archivedStatus: text("archived_status").notNull().default("ACTIVE"),
   pmUserId: integer("pm_user_id"),
   pdUserId: integer("pd_user_id"),
+  // CP Signed gate
+  cpSigned: boolean("cp_signed").notNull().default(false),
+  cpSignedDate: text("cp_signed_date"),
+  cpSignedByUserId: integer("cp_signed_by_user_id").references(() => users.id),
+  cpEvidenceType: text("cp_evidence_type"),
+  cpEvidenceRef: text("cp_evidence_ref"),
+  pmTaskPackCreated: boolean("pm_task_pack_created").notNull().default(false),
+  engPostCpTaskPackCreated: boolean("eng_post_cp_task_pack_created").notNull().default(false),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
