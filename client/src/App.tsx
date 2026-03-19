@@ -77,6 +77,7 @@ import ActionLaunchpadPage from "@/pages/action-launchpad";
 import PdPmHandoverPage from "@/pages/pd-pm-handover";
 import PmHandoverReviewPage from "@/pages/pm-handover-review";
 import HandoverControlPage from "@/pages/handover-control";
+import FyeRevenueTrackingPage from "@/pages/fye-revenue-tracking";
 import TaskManagementPage from "@/pages/task-management";
 import StandupsPage from "@/pages/standups";
 import { useAuth } from "@/hooks/use-auth";
@@ -165,6 +166,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   PdPmHandoverPage,
   PmHandoverReviewPage,
   HandoverControlPage,
+  FyeRevenueTrackingPage,
   TaskManagementPage,
   StandupsPage,
 };

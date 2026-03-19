@@ -97,6 +97,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "handoverControl", path: "/handover-control", label: "Site / Execution Controls", iconKey: "Handshake", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "HandoverControlPage" },
   { id: "taskManagement", path: "/tasks", label: "Task Hub", iconKey: "LayoutGrid", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "task_management", showInSidebar: true, routeComponentKey: "TaskManagementPage", labels: { redesigned: "Task Management Hub" } },
   { id: "standups", path: "/standups", label: "Standups", iconKey: "Users", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "standups", showInSidebar: true, routeComponentKey: "StandupsPage", labels: { redesigned: "Bi-Daily Standups" } },
+  { id: "fyeRevenueTracking", path: "/fye-revenue-tracking", label: "FYE Revenue Tracking", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "fye_revenue_tracking", showInSidebar: true, routeComponentKey: "FyeRevenueTrackingPage" },
 ];
 
 export const ROLE_LANDING_PAGE: Record<string, string> = PAGE_REGISTRY

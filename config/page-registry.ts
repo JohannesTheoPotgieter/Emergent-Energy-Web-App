@@ -96,6 +96,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "pdPmHandover", path: "/pd/handover/:projectId", label: "PD to PM Handover", routeComponentKey: "PdPmHandoverPage" },
   { id: "pmHandoverReview", path: "/pm/handover-review", label: "PM Handover Review", routeComponentKey: "PmHandoverReviewPage" },
   { id: "handoverControl", path: "/handover-control", label: "Handover Control", iconKey: "Handshake", navGroup: "PROJECTS", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "HandoverControlPage" },
+  { id: "fyeRevenueTracking", path: "/fye-revenue-tracking", label: "FYE Revenue Tracking", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "fye_revenue_tracking", showInSidebar: true, routeComponentKey: "FyeRevenueTrackingPage" },
 ];
 
 export const ROLE_LANDING_PAGE: Record<string, string> = PAGE_REGISTRY
