@@ -5816,6 +5816,7 @@ export type FyeBudget = typeof fyeBudgets.$inferSelect;
 // Forecast Pipeline table - deals with probability >= 75%
 export const forecastPipeline = pgTable("forecast_pipeline", {
   id: serial("id").primaryKey(),
+  fyeYear: integer("fye_year").notNull().default(2026),
   projectName: text("project_name").notNull(),
   projectDeveloper: text("project_developer"),
   location: text("location"),
@@ -5824,9 +5825,10 @@ export const forecastPipeline = pgTable("forecast_pipeline", {
   forecastSignatureDate: text("forecast_signature_date"),
   solarRevenue: decimal("solar_revenue", { precision: 15, scale: 2 }).default("0"),
   bessRevenue: decimal("bess_revenue", { precision: 15, scale: 2 }).default("0"),
-  forecastGpPct: decimal("forecast_gp_pct", { precision: 6, scale: 4 }).default("0"),
+  forecastGpPct: decimal("forecast_gp_pct", { precision: 6, scale: 4 }),
   status: text("status").notNull().default("active"), // "active" or "archived"
   notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
   updatedBy: integer("updated_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -5838,12 +5840,14 @@ export type ForecastPipeline = typeof forecastPipeline.$inferSelect;
 // Lost Deals table
 export const lostDeals = pgTable("lost_deals", {
   id: serial("id").primaryKey(),
+  fyeYear: integer("fye_year").notNull().default(2026),
   dealName: text("deal_name").notNull(),
   dealValue: decimal("deal_value", { precision: 15, scale: 2 }),
   businessDeveloper: text("business_developer"),
   lostReason: text("lost_reason"),
   lostDate: text("lost_date"),
   notes: text("notes"),
+  createdBy: integer("created_by").references(() => users.id),
   updatedBy: integer("updated_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -5851,3 +5855,17 @@ export const lostDeals = pgTable("lost_deals", {
 export const insertLostDealSchema = createInsertSchema(lostDeals).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertLostDeal = z.infer<typeof insertLostDealSchema>;
 export type LostDeal = typeof lostDeals.$inferSelect;
+
+// FYE KPI Counters table - fallback when data cannot be derived from project_info
+export const fyeKpiCounters = pgTable("fye_kpi_counters", {
+  id: serial("id").primaryKey(),
+  fyeYear: integer("fye_year").notNull().unique(),
+  broughtIn: integer("brought_in").notNull().default(0),
+  signed: integer("signed").notNull().default(0),
+  updatedBy: integer("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertFyeKpiCounterSchema = createInsertSchema(fyeKpiCounters).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertFyeKpiCounter = z.infer<typeof insertFyeKpiCounterSchema>;
+export type FyeKpiCounter = typeof fyeKpiCounters.$inferSelect;
