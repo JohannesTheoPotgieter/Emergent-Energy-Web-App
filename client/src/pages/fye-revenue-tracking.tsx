@@ -165,13 +165,15 @@ function DashboardSection({
   const data = useMemo(() => {
     if (!isRunning) return months;
     // Cumulative
-    let cumBudget = 0, cumAF = 0, cumActual = 0, cumCaptured = 0;
+    let cumBudget = 0, cumAF = 0, cumActual: number | null = 0, cumCaptured: number | null = 0;
     return months.map((m) => {
       const metric = m[metricKey];
       cumBudget += metric.budget;
       cumAF += metric.actualForecast;
-      cumActual += metric.actual;
-      cumCaptured += metric.captured;
+      if (metric.actual !== null) cumActual = (cumActual || 0) + metric.actual;
+      else cumActual = cumActual || null;
+      if (metric.captured !== null) cumCaptured = (cumCaptured || 0) + metric.captured;
+      else cumCaptured = cumCaptured || null;
       return {
         ...m,
         [metricKey]: { budget: cumBudget, actualForecast: cumAF, actual: cumActual, captured: cumCaptured },
@@ -199,20 +201,23 @@ function DashboardSection({
           </thead>
           <tbody>
             {rows.map((row) => {
-              const vals = data.map((m) => (m[metricKey] as any)[row.key] as number);
-              const total = isRunning ? vals[vals.length - 1] || 0 : vals.reduce((a, b) => a + b, 0);
+              const vals = data.map((m) => (m[metricKey] as any)[row.key] as number | null);
+              const nonNullVals = vals.filter((v): v is number => v !== null);
+              const total = isRunning
+                ? vals[vals.length - 1]
+                : nonNullVals.length > 0 ? nonNullVals.reduce((a, b) => a + b, 0) : null;
               return (
                 <tr key={row.key} className="border-b last:border-0 hover:bg-muted/30">
                   <td className="px-3 py-1.5 sticky left-0 bg-white z-10">
                     <Badge variant="outline" className={cn("text-[10px] font-medium", row.color)}>{row.label}</Badge>
                   </td>
                   {vals.map((v, i) => (
-                    <td key={i} className={cn("text-right px-2 py-1.5 tabular-nums", v < 0 && "text-red-600 font-medium")}>
-                      {formatRand(v)}
+                    <td key={i} className={cn("text-right px-2 py-1.5 tabular-nums", v !== null && v < 0 && "text-red-600 font-medium")}>
+                      {v === null ? "–" : formatRand(v)}
                     </td>
                   ))}
-                  <td className={cn("text-right px-3 py-1.5 font-bold tabular-nums", total < 0 && "text-red-600")}>
-                    {formatRand(total)}
+                  <td className={cn("text-right px-3 py-1.5 font-bold tabular-nums", total !== null && total < 0 && "text-red-600")}>
+                    {total === null ? "–" : formatRand(total)}
                   </td>
                 </tr>
               );
@@ -266,13 +271,20 @@ function DashboardChart({
 }
 
 function DashboardTab({ fye }: { fye: number }) {
-  const { data, isLoading, error } = useQuery<DashboardData>({
+  const { data, isLoading, error, refetch } = useQuery<DashboardData>({
     queryKey: [`/api/fye-revenue-tracking/dashboard?fye=${fye}`],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 
   if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-40 w-full" />)}</div>;
-  if (error || !data) return <div className="text-center py-12 text-muted-foreground"><AlertCircle className="h-8 w-8 mx-auto mb-2" />Failed to load dashboard data</div>;
+  if (error || !data) return (
+    <div className="text-center py-12">
+      <AlertCircle className="h-8 w-8 mx-auto mb-2 text-red-500" />
+      <p className="text-sm font-medium text-foreground mb-1">Failed to load dashboard data</p>
+      <p className="text-xs text-muted-foreground mb-3">{(error as any)?.message || "Unknown error"}</p>
+      <Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="h-3.5 w-3.5 mr-1" />Retry</Button>
+    </div>
+  );
 
   const { months } = data;
 
