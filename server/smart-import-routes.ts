@@ -1310,6 +1310,8 @@ router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, req
 // POST /api/smart-import/:runId/commit
 router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
+    // Ensure DB columns exist before attempting any inserts
+    await ensureSchemaReady();
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
 
@@ -2771,6 +2773,8 @@ router.get("/api/smart-import/normalized/:projectName/expenditure", requireAuth,
 // POST /api/smart-import/bulk-commit
 router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
   try {
+    // Ensure DB columns exist before attempting any inserts
+    await ensureSchemaReady();
     const userId = (req as any).user?.id || null;
     const { runIds, acknowledgeManualEdits, forceCommit } = req.body || {};
 
@@ -3089,12 +3093,20 @@ router.post("/api/import-control-tower/retry/:runId", requireAuth, requirePermis
   }
 });
 
+// Promise that resolves once program_expense/program_inflows columns are verified.
+// Awaited by the commit handler to prevent race conditions on startup.
+let schemaReadyPromise: Promise<void> = Promise.resolve();
+
+export function ensureSchemaReady(): Promise<void> {
+  return schemaReadyPromise;
+}
+
 export function registerSmartImportRoutes(app: Express) {
   app.use(router);
 
   // Ensure program_expense and program_inflows have all required columns.
   // These are additive ALTER TABLE statements (safe to re-run).
-  (async () => {
+  schemaReadyPromise = (async () => {
     try {
       const { getDbMode } = await import("./db");
       if (getDbMode() === "sqlite") return;

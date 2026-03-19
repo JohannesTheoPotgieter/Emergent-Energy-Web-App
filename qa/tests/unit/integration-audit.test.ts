@@ -148,3 +148,41 @@ describe("Phase 6: Null safety for new fields", () => {
     expect(inflowBlock).toContain("(rev as any).subProjectName ?? null");
   });
 });
+
+describe("Schema safety: startup DDL prevents missing column errors", () => {
+  const routes = read("server/smart-import-routes.ts");
+
+  it("exports ensureSchemaReady for commit handlers to await", () => {
+    expect(routes).toContain("export function ensureSchemaReady()");
+  });
+
+  it("single-project commit handler awaits ensureSchemaReady", () => {
+    const commitBlock = routes.substring(routes.indexOf('"/api/smart-import/:runId/commit"'));
+    expect(commitBlock).toContain("await ensureSchemaReady()");
+  });
+
+  it("bulk-commit handler awaits ensureSchemaReady", () => {
+    const bulkBlock = routes.substring(routes.indexOf('"/api/smart-import/bulk-commit"'));
+    expect(bulkBlock).toContain("await ensureSchemaReady()");
+  });
+
+  it("startup DDL covers all program_expense columns from schema", () => {
+    expect(routes).toContain("ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_qty");
+    expect(routes).toContain("ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS sub_project_name");
+    expect(routes).toContain("ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_actual_total");
+    expect(routes).toContain("ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_confirmed");
+  });
+
+  it("startup DDL covers all program_inflows columns from schema", () => {
+    expect(routes).toContain("ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS sub_project_name");
+    expect(routes).toContain("ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS project_id");
+    expect(routes).toContain("ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS import_run_id");
+  });
+
+  it("migration file exists for program_expense/program_inflows columns", () => {
+    const migration = read("migrations/20260319_add_sub_project_to_expense_inflows.sql");
+    expect(migration).toContain("program_expense ADD COLUMN IF NOT EXISTS sub_project_name");
+    expect(migration).toContain("program_expense ADD COLUMN IF NOT EXISTS budget_qty");
+    expect(migration).toContain("program_inflows ADD COLUMN IF NOT EXISTS sub_project_name");
+  });
+});
