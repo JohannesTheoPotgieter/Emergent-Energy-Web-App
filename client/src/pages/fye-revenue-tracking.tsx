@@ -79,6 +79,7 @@ interface DetailData {
 
 interface PipelineRow {
   id: number;
+  fyeYear: number;
   projectName: string;
   projectDeveloper: string | null;
   location: string | null;
@@ -89,16 +90,19 @@ interface PipelineRow {
   bessRevenue: string | null;
   forecastGpPct: string | null;
   notes: string | null;
+  updatedAt: string | null;
 }
 
 interface LostDealRow {
   id: number;
+  fyeYear: number;
   dealName: string;
   dealValue: string | null;
   businessDeveloper: string | null;
   lostReason: string | null;
   lostDate: string | null;
   notes: string | null;
+  updatedAt: string | null;
 }
 
 interface KpiData {
@@ -333,7 +337,7 @@ function SummaryCards({ totals }: { totals: DetailData["totals"] }) {
 
 // ─── Editable Pipeline Section ───
 
-function PipelineSection({ pipeline, canEdit }: { pipeline: PipelineRow[]; canEdit: { allowed: boolean; loading: boolean } }) {
+function PipelineSection({ pipeline, canEdit, fye }: { pipeline: PipelineRow[]; canEdit: { allowed: boolean; loading: boolean }; fye: number }) {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const qc = useQueryClient();
@@ -345,19 +349,19 @@ function PipelineSection({ pipeline, canEdit }: { pipeline: PipelineRow[]; canEd
 
   const saveMutation = useMutation({
     mutationFn: async (data: typeof form & { id?: number }) => {
-      const payload = { ...data, dealProbabilityPct: Number(data.dealProbabilityPct), solarRevenue: data.solarRevenue || "0", bessRevenue: data.bessRevenue || "0", forecastGpPct: data.forecastGpPct || "0" };
+      const payload = { ...data, fyeYear: fye, dealProbabilityPct: Number(data.dealProbabilityPct), solarRevenue: data.solarRevenue || "0", bessRevenue: data.bessRevenue || "0", forecastGpPct: data.forecastGpPct || null };
       if (data.id) {
         await apiRequest("PUT", `/api/fye-revenue-tracking/pipeline/${data.id}`, payload);
       } else {
         await apiRequest("POST", "/api/fye-revenue-tracking/pipeline", payload);
       }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/pipeline"] }); setShowForm(false); setEditId(null); setForm(emptyForm); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/pipeline?fye=${fye}`] }); setShowForm(false); setEditId(null); setForm(emptyForm); },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/fye-revenue-tracking/pipeline/${id}`); },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/pipeline"] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/pipeline?fye=${fye}`] }); },
   });
 
   const startEdit = (p: PipelineRow) => {
@@ -461,7 +465,7 @@ function PipelineSection({ pipeline, canEdit }: { pipeline: PipelineRow[]; canEd
 
 // ─── Editable Lost Deals Section ───
 
-function LostDealsSection({ lostDeals, canEdit }: { lostDeals: LostDealRow[]; canEdit: { allowed: boolean; loading: boolean } }) {
+function LostDealsSection({ lostDeals, canEdit, fye }: { lostDeals: LostDealRow[]; canEdit: { allowed: boolean; loading: boolean }; fye: number }) {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const qc = useQueryClient();
@@ -471,18 +475,19 @@ function LostDealsSection({ lostDeals, canEdit }: { lostDeals: LostDealRow[]; ca
 
   const saveMutation = useMutation({
     mutationFn: async (data: typeof form & { id?: number }) => {
+      const payload = { ...data, fyeYear: fye };
       if (data.id) {
-        await apiRequest("PUT", `/api/fye-revenue-tracking/lost-deals/${data.id}`, data);
+        await apiRequest("PUT", `/api/fye-revenue-tracking/lost-deals/${data.id}`, payload);
       } else {
-        await apiRequest("POST", "/api/fye-revenue-tracking/lost-deals", data);
+        await apiRequest("POST", "/api/fye-revenue-tracking/lost-deals", payload);
       }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/lost-deals"] }); setShowForm(false); setEditId(null); setForm(emptyForm); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/lost-deals?fye=${fye}`] }); setShowForm(false); setEditId(null); setForm(emptyForm); },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/fye-revenue-tracking/lost-deals/${id}`); },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/lost-deals"] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/lost-deals?fye=${fye}`] }); },
   });
 
   const startEdit = (d: LostDealRow) => {
@@ -577,17 +582,17 @@ function DetailTab({ fye }: { fye: number }) {
   });
 
   const { data: pipeline } = useQuery<PipelineRow[]>({
-    queryKey: ["/api/fye-revenue-tracking/pipeline"],
+    queryKey: [`/api/fye-revenue-tracking/pipeline?fye=${fye}`],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 
   const { data: lostDeals } = useQuery<LostDealRow[]>({
-    queryKey: ["/api/fye-revenue-tracking/lost-deals"],
+    queryKey: [`/api/fye-revenue-tracking/lost-deals?fye=${fye}`],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 
   const { data: kpis } = useQuery<KpiData>({
-    queryKey: ["/api/fye-revenue-tracking/kpis"],
+    queryKey: [`/api/fye-revenue-tracking/kpis?fye=${fye}`],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 
@@ -750,10 +755,10 @@ function DetailTab({ fye }: { fye: number }) {
       </Card>
 
       {/* Forecast Pipeline */}
-      <PipelineSection pipeline={pipeline || []} canEdit={canEdit} />
+      <PipelineSection pipeline={pipeline || []} canEdit={canEdit} fye={fye} />
 
       {/* Lost Deals */}
-      <LostDealsSection lostDeals={lostDeals || []} canEdit={canEdit} />
+      <LostDealsSection lostDeals={lostDeals || []} canEdit={canEdit} fye={fye} />
 
       {/* KPI Counts */}
       {kpis && (
