@@ -395,22 +395,43 @@ export default function DashboardPage() {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
   const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set());
-  const [filters, setFilters] = useState({
-    search: "",
-    portfolio: "all",
-    pm: "all",
-    pd: "all",
-    executionPhase: "all",
-    rag: "all",
-    exceptionOnly: false,
-    behindPlanOnly: false,
-    inflowRiskOnly: false,
-    outflowRiskOnly: false,
-    engineeringBlockersOnly: false,
-    qualityIssuesOnly: false,
-    pendingApprovalsOnly: false,
-    staleImportsOnly: false,
-  });
+
+  /* ── URL filter sync ── */
+  const searchString = useSearch();
+  const [, navigate] = useLocation();
+
+  const defaultFilters = {
+    search: "", portfolio: "all", pm: "all", pd: "all",
+    executionPhase: "all", rag: "all",
+    exceptionOnly: false, behindPlanOnly: false, inflowRiskOnly: false,
+    outflowRiskOnly: false, engineeringBlockersOnly: false,
+    qualityIssuesOnly: false, pendingApprovalsOnly: false, staleImportsOnly: false,
+  };
+
+  const filtersFromUrl = useMemo(() => {
+    const params = new URLSearchParams(searchString);
+    const f = { ...defaultFilters };
+    for (const [k, v] of params.entries()) {
+      if (k in f) {
+        if (typeof (f as any)[k] === "boolean") (f as any)[k] = v === "true";
+        else (f as any)[k] = v;
+      }
+    }
+    return f;
+  }, [searchString]);
+
+  const filters = filtersFromUrl;
+
+  const setFilters = useCallback((updater: ((prev: typeof defaultFilters) => typeof defaultFilters) | typeof defaultFilters) => {
+    const next = typeof updater === "function" ? updater(filters) : updater;
+    const params = new URLSearchParams();
+    Object.entries(next).forEach(([k, v]) => {
+      if (typeof v === "boolean") { if (v) params.set(k, "true"); }
+      else if (v && v !== "all") params.set(k, v);
+    });
+    const qs = params.toString();
+    navigate(qs ? `/dashboard?${qs}` : "/dashboard", { replace: true });
+  }, [filters, navigate]);
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
