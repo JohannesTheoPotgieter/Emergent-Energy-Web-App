@@ -13,7 +13,7 @@
  * DASHBOARD:
  *   Budget Revenue (monthly)   → fye_budgets (budgetType="revenue") [editable by finance]
  *   Budget COS (monthly)       → fye_budgets (budgetType="cos") [editable by finance]
- *   Actual Revenue (monthly)   → program_inflows (milestoneAmount, keyed by paymentReceivedDate/effectiveDate) [read-only import]
+ *   Actual Revenue (monthly)   → program_inflows (milestoneAmount, keyed by paymentReceivedDate) [read-only import]
  *   Actual COS (monthly)       → program_expense (actualCosTotal/expenseActualTotal, keyed by expenseInvoicedDate) [read-only import]
  *   Captured Revenue           → finance_revenue_monthly (value, summed per monthEndDate) [read-only import]
  *   Captured COS               → finance_cos_monthly (value, summed per monthEndDate) [read-only import]
@@ -49,7 +49,7 @@
  */
 
 import { Router, type Express } from "express";
-import { requireAuth } from "../shared-middleware";
+import { requireAuth } from "../auth-context";
 import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
 import { z } from "zod";
@@ -99,9 +99,9 @@ function monthKeyToLabel(mk: string): string {
   return `${months[parseInt(m, 10) - 1]} ${y.slice(2)}`;
 }
 
-/** Safe divide, returns 0 on division by zero. */
-function safeDivide(num: number, den: number): number {
-  if (den === 0 || !isFinite(den)) return 0;
+/** Safe divide, returns null on division by zero. */
+function safeDivide(num: number, den: number): number | null {
+  if (den === 0 || !isFinite(den)) return null;
   return num / den;
 }
 
@@ -120,8 +120,6 @@ router.get(
     try {
       const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
       const monthKeys = getFyeMonthKeys(fye);
-      const fyeStart = `${fye - 1}-09-01`;
-      const fyeEnd = `${fye}-08-31`;
 
       // 1. Budget data from fye_budgets
       const budgetRows = await db
@@ -144,14 +142,12 @@ router.get(
       const allInflows = await db.select().from(programInflows);
       const actualRevByMonth: Record<string, number> = {};
       for (const inf of allInflows) {
-        const date = inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate;
-        const mk = extractMonthKey(date);
+        // Only count as actual if payment was actually received
+        if (!inf.paymentReceivedDate) continue;
+        const mk = extractMonthKey(inf.paymentReceivedDate);
         if (mk && monthKeys.includes(mk)) {
           const amt = safeNum(inf.milestoneAmount);
-          if (inf.paymentReceivedDate) {
-            // Only count as actual if payment received
-            actualRevByMonth[mk] = (actualRevByMonth[mk] || 0) + amt;
-          }
+          actualRevByMonth[mk] = (actualRevByMonth[mk] || 0) + amt;
         }
       }
 
@@ -188,19 +184,27 @@ router.get(
         }
       }
 
+      // Determine current month key for actual vs forecast split
+      const now = new Date();
+      const currentMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
       // Build monthly dashboard data
-      const currentMk = extractMonthKey(new Date().toISOString().slice(0, 10));
       const months = monthKeys.map((mk) => {
         const budgetRev = budgetRevByMonth[mk] || 0;
         const budgetCos = budgetCosByMonth[mk] || 0;
-        const actualRev = actualRevByMonth[mk] || 0;
-        const actualCos = actualCosByMonth[mk] || 0;
-        const capturedRev = capturedRevByMonth[mk] || 0;
-        const capturedCos = capturedCosByMonth[mk] || 0;
+        const isPastOrCurrent = mk <= currentMk;
+
+        // Actual values - only for past/current months, null for future
+        const actualRev = isPastOrCurrent ? (actualRevByMonth[mk] || 0) : null;
+        const actualCos = isPastOrCurrent ? (actualCosByMonth[mk] || 0) : null;
+
+        // Captured data
+        const capturedRev = capturedRevByMonth[mk] || null;
+        const capturedCos = capturedCosByMonth[mk] || null;
+
         // Actual + Forecast: use actual for past months, budget for future
-        const isPast = mk <= (currentMk || "");
-        const actualForecastRev = isPast ? actualRev : budgetRev;
-        const actualForecastCos = isPast ? actualCos : budgetCos;
+        const actualForecastRev = isPastOrCurrent ? (actualRevByMonth[mk] || 0) : budgetRev;
+        const actualForecastCos = isPastOrCurrent ? (actualCosByMonth[mk] || 0) : budgetCos;
 
         return {
           monthKey: mk,
@@ -209,19 +213,22 @@ router.get(
             budget: budgetRev,
             actualForecast: actualForecastRev,
             actual: actualRev,
-            captured: capturedRev,
+            captured: capturedRev !== null ? capturedRev : (isPastOrCurrent ? 0 : null),
           },
           cos: {
             budget: budgetCos,
             actualForecast: actualForecastCos,
             actual: actualCos,
-            captured: capturedCos,
+            captured: capturedCos !== null ? capturedCos : (isPastOrCurrent ? 0 : null),
           },
           gp: {
             budget: budgetRev - budgetCos,
             actualForecast: actualForecastRev - actualForecastCos,
-            actual: actualRev - actualCos,
-            captured: capturedRev - capturedCos,
+            actual: actualRev !== null && actualCos !== null ? actualRev - actualCos : null,
+            captured:
+              capturedRev !== null && capturedCos !== null
+                ? capturedRev - capturedCos
+                : isPastOrCurrent ? 0 : null,
           },
         };
       });
@@ -278,8 +285,8 @@ router.get(
       }
 
       const projectRows = projects.map((p) => {
-        const summary = revSummaryMap.get(p.projectName);
-        const editable = editableMap.get(p.projectName);
+        const summary = revSummaryMap.get(p.projectName) as any;
+        const editable = editableMap.get(p.projectName) as any;
         const budgetRev = safeNum(summary?.plannedRevenue);
         const budgetCos = safeNum(summary?.plannedExpenditure);
         const actualRev = safeNum(summary?.actualRevenue);
@@ -487,7 +494,7 @@ router.put(
   requirePermission("fye_revenue_tracking", "edit"),
   async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       const userId = (req as any).user?.id;
       const data = req.body;
 
@@ -517,7 +524,7 @@ router.delete(
   requirePermission("fye_revenue_tracking", "delete"),
   async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       // Soft delete - set status to archived
       await db
         .update(forecastPipeline)
@@ -588,7 +595,7 @@ router.put(
   requirePermission("fye_revenue_tracking", "edit"),
   async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       const userId = (req as any).user?.id;
       const data = req.body;
 
@@ -615,7 +622,7 @@ router.delete(
   requirePermission("fye_revenue_tracking", "delete"),
   async (req, res) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       await db.delete(lostDeals).where(eq(lostDeals.id, id));
       res.json({ ok: true });
     } catch (error: any) {
@@ -643,7 +650,7 @@ router.get(
 
       // "Signed" = projects with signedStatus = 'SIGNED'
       const signed = projects.filter((p) => p.signedStatus === "SIGNED").length;
-      // "Brought In" = active projects in execution phases (not signed yet or in construction/commissioning)
+      // "Brought In" = active projects in execution phases (construction/commissioning/operations/complete/handover)
       const broughtIn = projects.filter(
         (p) =>
           p.phase &&

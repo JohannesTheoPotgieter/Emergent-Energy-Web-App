@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import React, { useState, useMemo, useCallback } from "react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,8 +13,8 @@ import {
 } from "recharts";
 import {
   DollarSign, TrendingUp, Activity, Search, Download,
-  ChevronDown, ChevronRight, AlertCircle, BarChart3, FileText,
-  Plus, Trash2,
+  AlertCircle, BarChart3, FileText,
+  Plus, Trash2, Pencil, RefreshCw, X,
 } from "lucide-react";
 
 // ─── Types ───
@@ -22,8 +22,8 @@ import {
 interface MonthMetric {
   budget: number;
   actualForecast: number;
-  actual: number;
-  captured: number;
+  actual: number | null;
+  captured: number | null;
 }
 
 interface DashboardMonth {
@@ -57,8 +57,8 @@ interface ProjectRow {
   actualRevenue: number;
   actualExpense: number;
   actualGp: number;
-  budgetGpPct: number;
-  actualGpPct: number;
+  budgetGpPct: number | null;
+  actualGpPct: number | null;
   signedStatus: string;
 }
 
@@ -72,8 +72,8 @@ interface DetailData {
     actualRevenue: number;
     actualExpense: number;
     actualGp: number;
-    budgetGpPct: number;
-    actualGpPct: number;
+    budgetGpPct: number | null;
+    actualGpPct: number | null;
   };
 }
 
@@ -115,16 +115,15 @@ function getCurrentFye(): number {
 }
 
 function formatRand(val: number | null | undefined): string {
-  if (val == null || isNaN(val)) return "R 0";
-  const abs = Math.abs(val);
+  if (val == null || isNaN(val)) return "–";
+  if (val === 0) return "R 0";
   const sign = val < 0 ? "-" : "";
-  if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}R ${Math.round(abs).toLocaleString()}`;
+  const abs = Math.abs(val);
+  return `${sign}R ${Math.round(abs).toLocaleString("en-ZA")}`;
 }
 
 function formatPct(val: number | null | undefined): string {
-  if (val == null || isNaN(val)) return "0.0%";
+  if (val == null || isNaN(val) || !isFinite(val)) return "N/A";
   return `${(val * 100).toFixed(1)}%`;
 }
 
@@ -166,13 +165,15 @@ function DashboardSection({
   const data = useMemo(() => {
     if (!isRunning) return months;
     // Cumulative
-    let cumBudget = 0, cumAF = 0, cumActual = 0, cumCaptured = 0;
+    let cumBudget = 0, cumAF = 0, cumActual: number | null = 0, cumCaptured: number | null = 0;
     return months.map((m) => {
       const metric = m[metricKey];
       cumBudget += metric.budget;
       cumAF += metric.actualForecast;
-      cumActual += metric.actual;
-      cumCaptured += metric.captured;
+      if (metric.actual !== null) cumActual = (cumActual || 0) + metric.actual;
+      else cumActual = cumActual || null;
+      if (metric.captured !== null) cumCaptured = (cumCaptured || 0) + metric.captured;
+      else cumCaptured = cumCaptured || null;
       return {
         ...m,
         [metricKey]: { budget: cumBudget, actualForecast: cumAF, actual: cumActual, captured: cumCaptured },
@@ -200,20 +201,23 @@ function DashboardSection({
           </thead>
           <tbody>
             {rows.map((row) => {
-              const vals = data.map((m) => (m[metricKey] as any)[row.key] as number);
-              const total = isRunning ? vals[vals.length - 1] || 0 : vals.reduce((a, b) => a + b, 0);
+              const vals = data.map((m) => (m[metricKey] as any)[row.key] as number | null);
+              const nonNullVals = vals.filter((v): v is number => v !== null);
+              const total = isRunning
+                ? vals[vals.length - 1]
+                : nonNullVals.length > 0 ? nonNullVals.reduce((a, b) => a + b, 0) : null;
               return (
                 <tr key={row.key} className="border-b last:border-0 hover:bg-muted/30">
                   <td className="px-3 py-1.5 sticky left-0 bg-white z-10">
                     <Badge variant="outline" className={cn("text-[10px] font-medium", row.color)}>{row.label}</Badge>
                   </td>
                   {vals.map((v, i) => (
-                    <td key={i} className={cn("text-right px-2 py-1.5 tabular-nums", v < 0 && "text-red-600 font-medium")}>
-                      {formatRand(v)}
+                    <td key={i} className={cn("text-right px-2 py-1.5 tabular-nums", v !== null && v < 0 && "text-red-600 font-medium")}>
+                      {v === null ? "–" : formatRand(v)}
                     </td>
                   ))}
-                  <td className={cn("text-right px-3 py-1.5 font-bold tabular-nums", total < 0 && "text-red-600")}>
-                    {formatRand(total)}
+                  <td className={cn("text-right px-3 py-1.5 font-bold tabular-nums", total !== null && total < 0 && "text-red-600")}>
+                    {total === null ? "–" : formatRand(total)}
                   </td>
                 </tr>
               );
@@ -267,13 +271,20 @@ function DashboardChart({
 }
 
 function DashboardTab({ fye }: { fye: number }) {
-  const { data, isLoading, error } = useQuery<DashboardData>({
+  const { data, isLoading, error, refetch } = useQuery<DashboardData>({
     queryKey: [`/api/fye-revenue-tracking/dashboard?fye=${fye}`],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 
   if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-40 w-full" />)}</div>;
-  if (error || !data) return <div className="text-center py-12 text-muted-foreground"><AlertCircle className="h-8 w-8 mx-auto mb-2" />Failed to load dashboard data</div>;
+  if (error || !data) return (
+    <div className="text-center py-12">
+      <AlertCircle className="h-8 w-8 mx-auto mb-2 text-red-500" />
+      <p className="text-sm font-medium text-foreground mb-1">Failed to load dashboard data</p>
+      <p className="text-xs text-muted-foreground mb-3">{(error as any)?.message || "Unknown error"}</p>
+      <Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="h-3.5 w-3.5 mr-1" />Retry</Button>
+    </div>
+  );
 
   const { months } = data;
 
@@ -304,7 +315,7 @@ function SummaryCards({ totals }: { totals: DetailData["totals"] }) {
     { label: "Actual Expense", value: formatRand(totals.actualExpense), icon: TrendingUp },
     { label: "Actual GP", value: formatRand(totals.actualGp), icon: Activity, negative: totals.actualGp < 0 },
     { label: "Budget GP%", value: formatPct(totals.budgetGpPct), icon: BarChart3 },
-    { label: "Actual GP%", value: formatPct(totals.actualGpPct), icon: BarChart3, negative: totals.actualGpPct < 0 },
+    { label: "Actual GP%", value: formatPct(totals.actualGpPct), icon: BarChart3, negative: totals.actualGpPct != null && totals.actualGpPct < 0 },
   ];
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
@@ -320,12 +331,247 @@ function SummaryCards({ totals }: { totals: DetailData["totals"] }) {
   );
 }
 
+// ─── Editable Pipeline Section ───
+
+function PipelineSection({ pipeline, canEdit }: { pipeline: PipelineRow[]; canEdit: { allowed: boolean; loading: boolean } }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const qc = useQueryClient();
+
+  const pipelineFiltered = pipeline.filter((p) => p.dealProbabilityPct >= 75);
+
+  const emptyForm = { projectName: "", projectDeveloper: "", location: "", sizeKwp: "", dealProbabilityPct: 75, forecastSignatureDate: "", solarRevenue: "", bessRevenue: "", forecastGpPct: "", notes: "" };
+  const [form, setForm] = useState(emptyForm);
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: typeof form & { id?: number }) => {
+      const payload = { ...data, dealProbabilityPct: Number(data.dealProbabilityPct), solarRevenue: data.solarRevenue || "0", bessRevenue: data.bessRevenue || "0", forecastGpPct: data.forecastGpPct || "0" };
+      if (data.id) {
+        await apiRequest("PUT", `/api/fye-revenue-tracking/pipeline/${data.id}`, payload);
+      } else {
+        await apiRequest("POST", "/api/fye-revenue-tracking/pipeline", payload);
+      }
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/pipeline"] }); setShowForm(false); setEditId(null); setForm(emptyForm); },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/fye-revenue-tracking/pipeline/${id}`); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/pipeline"] }); },
+  });
+
+  const startEdit = (p: PipelineRow) => {
+    setForm({ projectName: p.projectName, projectDeveloper: p.projectDeveloper || "", location: p.location || "", sizeKwp: p.sizeKwp || "", dealProbabilityPct: p.dealProbabilityPct, forecastSignatureDate: p.forecastSignatureDate || "", solarRevenue: p.solarRevenue || "", bessRevenue: p.bessRevenue || "", forecastGpPct: p.forecastGpPct || "", notes: p.notes || "" });
+    setEditId(p.id);
+    setShowForm(true);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2 pt-3 px-4">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Forecasted Pipeline — 75% Probability and Higher
+          </CardTitle>
+          {canEdit.allowed && (
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setForm(emptyForm); setEditId(null); setShowForm(!showForm); }}>
+              {showForm ? <><X className="h-3 w-3 mr-1" />Cancel</> : <><Plus className="h-3 w-3 mr-1" />Add Deal</>}
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      {showForm && (
+        <CardContent className="pt-0 pb-3 px-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 p-3 bg-muted/30 rounded border text-xs">
+            <Input placeholder="Project Name *" value={form.projectName} onChange={(e) => setForm({ ...form, projectName: e.target.value })} className="h-7 text-xs" />
+            <Input placeholder="Developer" value={form.projectDeveloper} onChange={(e) => setForm({ ...form, projectDeveloper: e.target.value })} className="h-7 text-xs" />
+            <Input placeholder="Location" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="h-7 text-xs" />
+            <Input placeholder="Size (kWp)" value={form.sizeKwp} onChange={(e) => setForm({ ...form, sizeKwp: e.target.value })} className="h-7 text-xs" type="number" />
+            <Input placeholder="Probability %" value={form.dealProbabilityPct} onChange={(e) => setForm({ ...form, dealProbabilityPct: Number(e.target.value) })} className="h-7 text-xs" type="number" min={0} max={100} />
+            <Input placeholder="Forecast Sign Date" value={form.forecastSignatureDate} onChange={(e) => setForm({ ...form, forecastSignatureDate: e.target.value })} className="h-7 text-xs" type="date" />
+            <Input placeholder="Solar Revenue" value={form.solarRevenue} onChange={(e) => setForm({ ...form, solarRevenue: e.target.value })} className="h-7 text-xs" type="number" />
+            <Input placeholder="BESS Revenue" value={form.bessRevenue} onChange={(e) => setForm({ ...form, bessRevenue: e.target.value })} className="h-7 text-xs" type="number" />
+            <Input placeholder="Forecast GP% (0.20 = 20%)" value={form.forecastGpPct} onChange={(e) => setForm({ ...form, forecastGpPct: e.target.value })} className="h-7 text-xs" type="number" step="0.01" />
+            <div className="flex gap-1">
+              <Button size="sm" className="h-7 text-xs flex-1" disabled={!form.projectName || saveMutation.isPending} onClick={() => saveMutation.mutate(editId ? { ...form, id: editId } : form)}>
+                {saveMutation.isPending ? "Saving..." : editId ? "Update" : "Add"}
+              </Button>
+            </div>
+          </div>
+          {saveMutation.isError && <p className="text-xs text-red-500 mt-1">{(saveMutation.error as any)?.message || "Save failed"}</p>}
+        </CardContent>
+      )}
+      <CardContent className="p-0 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b bg-muted/40">
+              <th className="text-left px-3 py-2 font-medium">Project Name</th>
+              <th className="text-left px-2 py-2 font-medium">Developer</th>
+              <th className="text-left px-2 py-2 font-medium">Location</th>
+              <th className="text-right px-2 py-2 font-medium">Size (kWp)</th>
+              <th className="text-right px-2 py-2 font-medium">Probability %</th>
+              <th className="text-left px-2 py-2 font-medium">Forecast Sign Date</th>
+              <th className="text-right px-2 py-2 font-medium">Solar Revenue</th>
+              <th className="text-right px-2 py-2 font-medium">BESS Revenue</th>
+              <th className="text-right px-2 py-2 font-medium">Forecast GP%</th>
+              <th className="text-right px-2 py-2 font-medium">Forecast GP</th>
+              {canEdit.allowed && <th className="text-center px-2 py-2 font-medium w-16">Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {pipelineFiltered.length === 0 ? (
+              <tr><td colSpan={canEdit.allowed ? 11 : 10} className="text-center py-6 text-muted-foreground">No pipeline deals found</td></tr>
+            ) : (
+              pipelineFiltered.map((p) => {
+                const solar = parseFloat(p.solarRevenue || "0");
+                const bess = parseFloat(p.bessRevenue || "0");
+                const gpPct = parseFloat(p.forecastGpPct || "0");
+                const forecastGp = gpPct * (solar + bess);
+                return (
+                  <tr key={p.id} className="border-b hover:bg-muted/30">
+                    <td className="px-3 py-1.5 font-medium">{p.projectName}</td>
+                    <td className="px-2 py-1.5">{p.projectDeveloper || "–"}</td>
+                    <td className="px-2 py-1.5">{p.location || "–"}</td>
+                    <td className="text-right px-2 py-1.5 tabular-nums">{p.sizeKwp || "–"}</td>
+                    <td className="text-right px-2 py-1.5 tabular-nums">{p.dealProbabilityPct}%</td>
+                    <td className="px-2 py-1.5">{formatDate(p.forecastSignatureDate)}</td>
+                    <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(solar)}</td>
+                    <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(bess)}</td>
+                    <td className="text-right px-2 py-1.5 tabular-nums">{(gpPct * 100).toFixed(1)}%</td>
+                    <td className="text-right px-2 py-1.5 tabular-nums font-medium">{formatRand(forecastGp)}</td>
+                    {canEdit.allowed && (
+                      <td className="text-center px-2 py-1.5">
+                        <div className="flex justify-center gap-1">
+                          <button onClick={() => startEdit(p)} className="p-0.5 hover:text-blue-600" title="Edit"><Pencil className="h-3 w-3" /></button>
+                          <button onClick={() => { if (confirm("Archive this deal?")) deleteMutation.mutate(p.id); }} className="p-0.5 hover:text-red-600" title="Archive"><Trash2 className="h-3 w-3" /></button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Editable Lost Deals Section ───
+
+function LostDealsSection({ lostDeals, canEdit }: { lostDeals: LostDealRow[]; canEdit: { allowed: boolean; loading: boolean } }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const qc = useQueryClient();
+
+  const emptyForm = { dealName: "", dealValue: "", businessDeveloper: "", lostReason: "", lostDate: "", notes: "" };
+  const [form, setForm] = useState(emptyForm);
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: typeof form & { id?: number }) => {
+      if (data.id) {
+        await apiRequest("PUT", `/api/fye-revenue-tracking/lost-deals/${data.id}`, data);
+      } else {
+        await apiRequest("POST", "/api/fye-revenue-tracking/lost-deals", data);
+      }
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/lost-deals"] }); setShowForm(false); setEditId(null); setForm(emptyForm); },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/fye-revenue-tracking/lost-deals/${id}`); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/lost-deals"] }); },
+  });
+
+  const startEdit = (d: LostDealRow) => {
+    setForm({ dealName: d.dealName, dealValue: d.dealValue || "", businessDeveloper: d.businessDeveloper || "", lostReason: d.lostReason || "", lostDate: d.lostDate || "", notes: d.notes || "" });
+    setEditId(d.id);
+    setShowForm(true);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2 pt-3 px-4">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-red-500" />
+            Lost Deals
+          </CardTitle>
+          {canEdit.allowed && (
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setForm(emptyForm); setEditId(null); setShowForm(!showForm); }}>
+              {showForm ? <><X className="h-3 w-3 mr-1" />Cancel</> : <><Plus className="h-3 w-3 mr-1" />Add Deal</>}
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      {showForm && (
+        <CardContent className="pt-0 pb-3 px-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 p-3 bg-muted/30 rounded border text-xs">
+            <Input placeholder="Deal Name *" value={form.dealName} onChange={(e) => setForm({ ...form, dealName: e.target.value })} className="h-7 text-xs" />
+            <Input placeholder="Deal Value" value={form.dealValue} onChange={(e) => setForm({ ...form, dealValue: e.target.value })} className="h-7 text-xs" type="number" />
+            <Input placeholder="Business Developer" value={form.businessDeveloper} onChange={(e) => setForm({ ...form, businessDeveloper: e.target.value })} className="h-7 text-xs" />
+            <Input placeholder="Lost Reason" value={form.lostReason} onChange={(e) => setForm({ ...form, lostReason: e.target.value })} className="h-7 text-xs" />
+            <Input placeholder="Lost Date" value={form.lostDate} onChange={(e) => setForm({ ...form, lostDate: e.target.value })} className="h-7 text-xs" type="date" />
+            <div className="flex gap-1">
+              <Button size="sm" className="h-7 text-xs flex-1" disabled={!form.dealName || saveMutation.isPending} onClick={() => saveMutation.mutate(editId ? { ...form, id: editId } : form)}>
+                {saveMutation.isPending ? "Saving..." : editId ? "Update" : "Add"}
+              </Button>
+            </div>
+          </div>
+          {saveMutation.isError && <p className="text-xs text-red-500 mt-1">{(saveMutation.error as any)?.message || "Save failed"}</p>}
+        </CardContent>
+      )}
+      <CardContent className="p-0 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b bg-muted/40">
+              <th className="text-left px-3 py-2 font-medium">Deal Name</th>
+              <th className="text-right px-2 py-2 font-medium">Deal Value</th>
+              <th className="text-left px-2 py-2 font-medium">Business Developer</th>
+              <th className="text-left px-2 py-2 font-medium">Lost Reason</th>
+              <th className="text-left px-2 py-2 font-medium">Lost Date</th>
+              <th className="text-left px-2 py-2 font-medium">Notes</th>
+              {canEdit.allowed && <th className="text-center px-2 py-2 font-medium w-16">Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {lostDeals.length === 0 ? (
+              <tr><td colSpan={canEdit.allowed ? 7 : 6} className="text-center py-6 text-muted-foreground">No lost deals recorded</td></tr>
+            ) : (
+              lostDeals.map((d) => (
+                <tr key={d.id} className="border-b hover:bg-muted/30">
+                  <td className="px-3 py-1.5 font-medium">{d.dealName}</td>
+                  <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(parseFloat(d.dealValue || "0"))}</td>
+                  <td className="px-2 py-1.5">{d.businessDeveloper || "–"}</td>
+                  <td className="px-2 py-1.5">{d.lostReason || "–"}</td>
+                  <td className="px-2 py-1.5">{formatDate(d.lostDate)}</td>
+                  <td className="px-2 py-1.5 truncate max-w-[150px]" title={d.notes || ""}>{d.notes || "–"}</td>
+                  {canEdit.allowed && (
+                    <td className="text-center px-2 py-1.5">
+                      <div className="flex justify-center gap-1">
+                        <button onClick={() => startEdit(d)} className="p-0.5 hover:text-blue-600" title="Edit"><Pencil className="h-3 w-3" /></button>
+                        <button onClick={() => { if (confirm("Delete this lost deal?")) deleteMutation.mutate(d.id); }} className="p-0.5 hover:text-red-600" title="Delete"><Trash2 className="h-3 w-3" /></button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
+  );
+}
+
 function DetailTab({ fye }: { fye: number }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [fundingFilter, setFundingFilter] = useState("");
 
-  const { data, isLoading, error } = useQuery<DetailData>({
+  const { data, isLoading, error, refetch } = useQuery<DetailData>({
     queryKey: [`/api/fye-revenue-tracking/detail?fye=${fye}`],
     queryFn: getQueryFn({ on401: "throw" }),
   });
@@ -397,7 +643,14 @@ function DetailTab({ fye }: { fye: number }) {
   };
 
   if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-32 w-full" />)}</div>;
-  if (error || !data) return <div className="text-center py-12 text-muted-foreground"><AlertCircle className="h-8 w-8 mx-auto mb-2" />Failed to load detail data</div>;
+  if (error || !data) return (
+    <div className="text-center py-12">
+      <AlertCircle className="h-8 w-8 mx-auto mb-2 text-red-500" />
+      <p className="text-sm font-medium text-foreground mb-1">Failed to load detail data</p>
+      <p className="text-xs text-muted-foreground mb-3">{(error as any)?.message || "Unknown error"}</p>
+      <Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="h-3.5 w-3.5 mr-1" />Retry</Button>
+    </div>
+  );
 
   const pipelineFiltered = (pipeline || []).filter((p) => p.dealProbabilityPct >= 75);
 
@@ -473,7 +726,7 @@ function DetailTab({ fye }: { fye: number }) {
                       <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.actualExpense)}</td>
                       <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGp < 0 && "text-red-600")}>{formatRand(p.actualGp)}</td>
                       <td className="text-right px-2 py-1.5 tabular-nums">{formatPct(p.budgetGpPct)}</td>
-                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGpPct < 0 && "text-red-600")}>{formatPct(p.actualGpPct)}</td>
+                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGpPct != null && p.actualGpPct < 0 && "text-red-600")}>{formatPct(p.actualGpPct)}</td>
                     </tr>
                   ))}
                   {/* Totals Row */}
@@ -486,8 +739,8 @@ function DetailTab({ fye }: { fye: number }) {
                     <td className="text-right px-2 py-2 tabular-nums">{formatRand(filteredTotals.actualRevenue)}</td>
                     <td className="text-right px-2 py-2 tabular-nums">{formatRand(filteredTotals.actualExpense)}</td>
                     <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.actualGp < 0 && "text-red-600")}>{formatRand(filteredTotals.actualGp)}</td>
-                    <td className="text-right px-2 py-2 tabular-nums">{formatPct(filteredTotals.budgetRevenue ? filteredTotals.budgetGp / filteredTotals.budgetRevenue : 0)}</td>
-                    <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.actualGp < 0 && "text-red-600")}>{formatPct(filteredTotals.actualRevenue ? filteredTotals.actualGp / filteredTotals.actualRevenue : 0)}</td>
+                    <td className="text-right px-2 py-2 tabular-nums">{formatPct(filteredTotals.budgetRevenue ? filteredTotals.budgetGp / filteredTotals.budgetRevenue : null)}</td>
+                    <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.actualGp < 0 && "text-red-600")}>{formatPct(filteredTotals.actualRevenue ? filteredTotals.actualGp / filteredTotals.actualRevenue : null)}</td>
                   </tr>
                 </>
               )}
@@ -497,98 +750,10 @@ function DetailTab({ fye }: { fye: number }) {
       </Card>
 
       {/* Forecast Pipeline */}
-      <Card>
-        <CardHeader className="pb-2 pt-3 px-4">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <TrendingUp className="h-4 w-4" />
-            Forecasted Pipeline — 75% Probability and Higher
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0 overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b bg-muted/40">
-                <th className="text-left px-3 py-2 font-medium">Project Name</th>
-                <th className="text-left px-2 py-2 font-medium">Developer</th>
-                <th className="text-left px-2 py-2 font-medium">Location</th>
-                <th className="text-right px-2 py-2 font-medium">Size (kWp)</th>
-                <th className="text-right px-2 py-2 font-medium">Probability %</th>
-                <th className="text-left px-2 py-2 font-medium">Forecast Sign Date</th>
-                <th className="text-right px-2 py-2 font-medium">Solar Revenue</th>
-                <th className="text-right px-2 py-2 font-medium">BESS Revenue</th>
-                <th className="text-right px-2 py-2 font-medium">Forecast GP%</th>
-                <th className="text-right px-2 py-2 font-medium">Forecast GP</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pipelineFiltered.length === 0 ? (
-                <tr><td colSpan={10} className="text-center py-6 text-muted-foreground">No pipeline deals found</td></tr>
-              ) : (
-                pipelineFiltered.map((p) => {
-                  const solar = parseFloat(p.solarRevenue || "0");
-                  const bess = parseFloat(p.bessRevenue || "0");
-                  const gpPct = parseFloat(p.forecastGpPct || "0");
-                  const forecastGp = gpPct * (solar + bess);
-                  return (
-                    <tr key={p.id} className="border-b hover:bg-muted/30">
-                      <td className="px-3 py-1.5 font-medium">{p.projectName}</td>
-                      <td className="px-2 py-1.5">{p.projectDeveloper || "—"}</td>
-                      <td className="px-2 py-1.5">{p.location || "—"}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{p.sizeKwp || "—"}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{p.dealProbabilityPct}%</td>
-                      <td className="px-2 py-1.5">{formatDate(p.forecastSignatureDate)}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(solar)}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(bess)}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{(gpPct * 100).toFixed(1)}%</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums font-medium">{formatRand(forecastGp)}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+      <PipelineSection pipeline={pipeline || []} canEdit={canEdit} />
 
       {/* Lost Deals */}
-      <Card>
-        <CardHeader className="pb-2 pt-3 px-4">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 text-red-500" />
-            Lost Deals
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0 overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b bg-muted/40">
-                <th className="text-left px-3 py-2 font-medium">Deal Name</th>
-                <th className="text-right px-2 py-2 font-medium">Deal Value</th>
-                <th className="text-left px-2 py-2 font-medium">Business Developer</th>
-                <th className="text-left px-2 py-2 font-medium">Lost Reason</th>
-                <th className="text-left px-2 py-2 font-medium">Lost Date</th>
-                <th className="text-left px-2 py-2 font-medium">Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {!lostDeals || lostDeals.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-6 text-muted-foreground">No lost deals recorded</td></tr>
-              ) : (
-                lostDeals.map((d) => (
-                  <tr key={d.id} className="border-b hover:bg-muted/30">
-                    <td className="px-3 py-1.5 font-medium">{d.dealName}</td>
-                    <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(parseFloat(d.dealValue || "0"))}</td>
-                    <td className="px-2 py-1.5">{d.businessDeveloper || "—"}</td>
-                    <td className="px-2 py-1.5">{d.lostReason || "—"}</td>
-                    <td className="px-2 py-1.5">{formatDate(d.lostDate)}</td>
-                    <td className="px-2 py-1.5 truncate max-w-[150px]" title={d.notes || ""}>{d.notes || "—"}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+      <LostDealsSection lostDeals={lostDeals || []} canEdit={canEdit} />
 
       {/* KPI Counts */}
       {kpis && (
