@@ -3715,6 +3715,234 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== REALISATION KPIs (Weekly / Monthly / Yearly) ====================
+
+  app.get("/api/realisation-kpis", requireAuth, async (req, res) => {
+    try {
+      const [legacyExpenses, allOverrides] = await Promise.all([
+        storage.getAllProgramExpenses(),
+        storage.getAllExpenditureOverrides(),
+      ]);
+      const { expenses: allExpenses } = await getMergedExpensesAndInflows(
+        applyExpenditureOverridesWithConfirmed(legacyExpenses, allOverrides), []
+      );
+
+      const now = new Date();
+      const currentMK = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+      // FY runs Sep–Aug
+      const fyStartYear = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+      const fyStart = new Date(Date.UTC(fyStartYear, 8, 1)); // Sep 1
+      const fyEnd = new Date(Date.UTC(fyStartYear + 1, 7, 31)); // Aug 31
+
+      // Week boundaries (Monday-based)
+      function getMonday(d: Date): Date {
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        const m = new Date(d); m.setDate(diff); m.setHours(0,0,0,0); return m;
+      }
+      function getSunday(mon: Date): Date {
+        const s = new Date(mon); s.setDate(mon.getDate() + 6); return s;
+      }
+      function toStr(d: Date): string { return d.toISOString().split('T')[0]; }
+
+      const thisWeekMon = getMonday(new Date(now));
+      const thisWeekSun = getSunday(thisWeekMon);
+      const lastWeekMon = new Date(thisWeekMon); lastWeekMon.setDate(lastWeekMon.getDate() - 7);
+      const lastWeekSun = getSunday(lastWeekMon);
+
+      // Month boundaries
+      const thisMonthStart = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+      const thisMonthEnd = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0));
+      const lastMonthStart = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1));
+      const lastMonthEnd = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 0));
+
+      // Static COS budget for variance
+      const staticCosBudget: Record<string, number> = {
+        '2025-09': 8083466.99, '2025-10': 16346971.77, '2025-11': 20803804.86,
+        '2025-12': 12381055.48, '2026-01': 12395435.22, '2026-02': 20724666.08,
+        '2026-03': 30199956.69, '2026-04': 21137178.14, '2026-05': 31405517.81,
+        '2026-06': 41720854.07, '2026-07': 30116780.50, '2026-08': 73983803.91,
+      };
+
+      interface PeriodBucket {
+        total: number;
+        realised: number;
+        unrealised: number;
+        lineCount: number;
+        realisedCount: number;
+        byProject: Map<string, { total: number; realised: number }>;
+      }
+      function emptyBucket(): PeriodBucket {
+        return { total: 0, realised: 0, unrealised: 0, lineCount: 0, realisedCount: 0, byProject: new Map() };
+      }
+
+      // COS monthly series (for sparklines)
+      const cosMonthly = new Map<string, { total: number; realised: number }>();
+      // Cashflow monthly series
+      const cfMonthly = new Map<string, { total: number; realised: number }>();
+
+      // Period buckets
+      const cosThisWeek = emptyBucket(), cosLastWeek = emptyBucket();
+      const cosThisMonth = emptyBucket(), cosLastMonth = emptyBucket();
+      const cosYTD = emptyBucket();
+      const cfThisWeek = emptyBucket(), cfLastWeek = emptyBucket();
+      const cfThisMonth = emptyBucket(), cfLastMonth = emptyBucket();
+      const cfYTD = emptyBucket();
+
+      function inRange(dateStr: string | null, start: Date, end: Date): boolean {
+        if (!dateStr) return false;
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return false;
+        d.setHours(0,0,0,0);
+        return d >= start && d <= end;
+      }
+
+      function addToBucket(bucket: PeriodBucket, amount: number, isRealised: boolean, projectName: string) {
+        bucket.total += amount;
+        bucket.lineCount++;
+        if (isRealised) { bucket.realised += amount; bucket.realisedCount++; }
+        else { bucket.unrealised += amount; }
+        if (!bucket.byProject.has(projectName)) bucket.byProject.set(projectName, { total: 0, realised: 0 });
+        const p = bucket.byProject.get(projectName)!;
+        p.total += amount;
+        if (isRealised) p.realised += amount;
+      }
+
+      for (const exp of allExpenses) {
+        if (exp.rowType !== 'item') continue;
+        const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
+        if (isNaN(amount) || amount === 0) continue;
+        const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
+
+        // COS: uses invoice date for bucketing
+        const invDate = exp.expenseInvoicedDate as string | null;
+        if (invDate) {
+          const invDateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+          if (invDateMatch) {
+            const mk = `${invDateMatch[1]}-${invDateMatch[2]}`;
+            const isCosReal = isCosRealisedCheck(exp) && mk <= currentMK;
+
+            // Monthly series
+            if (!cosMonthly.has(mk)) cosMonthly.set(mk, { total: 0, realised: 0 });
+            const cm = cosMonthly.get(mk)!;
+            cm.total += amount;
+            if (isCosReal) cm.realised += amount;
+
+            // Weekly buckets
+            if (inRange(invDate, thisWeekMon, thisWeekSun)) addToBucket(cosThisWeek, amount, isCosReal, pName);
+            if (inRange(invDate, lastWeekMon, lastWeekSun)) addToBucket(cosLastWeek, amount, isCosReal, pName);
+
+            // Monthly buckets
+            if (inRange(invDate, thisMonthStart, thisMonthEnd)) addToBucket(cosThisMonth, amount, isCosReal, pName);
+            if (inRange(invDate, lastMonthStart, lastMonthEnd)) addToBucket(cosLastMonth, amount, isCosReal, pName);
+
+            // YTD (within FY)
+            if (inRange(invDate, fyStart, fyEnd)) addToBucket(cosYTD, amount, isCosReal, pName);
+          }
+        }
+
+        // Cashflow: uses payment date for bucketing
+        const payDate = exp.expensePaymentDate as string | null;
+        if (payDate) {
+          const payDateMatch = payDate.match(/^(\d{4})-(\d{2})/);
+          if (payDateMatch) {
+            const mk = `${payDateMatch[1]}-${payDateMatch[2]}`;
+            const isCfReal = isCashflowConfirmedCheck(exp) && mk <= currentMK;
+
+            // Monthly series
+            if (!cfMonthly.has(mk)) cfMonthly.set(mk, { total: 0, realised: 0 });
+            const cfm = cfMonthly.get(mk)!;
+            cfm.total += amount;
+            if (isCfReal) cfm.realised += amount;
+
+            // Weekly buckets
+            if (inRange(payDate, thisWeekMon, thisWeekSun)) addToBucket(cfThisWeek, amount, isCfReal, pName);
+            if (inRange(payDate, lastWeekMon, lastWeekSun)) addToBucket(cfLastWeek, amount, isCfReal, pName);
+
+            // Monthly buckets
+            if (inRange(payDate, thisMonthStart, thisMonthEnd)) addToBucket(cfThisMonth, amount, isCfReal, pName);
+            if (inRange(payDate, lastMonthStart, lastMonthEnd)) addToBucket(cfLastMonth, amount, isCfReal, pName);
+
+            // YTD
+            if (inRange(payDate, fyStart, fyEnd)) addToBucket(cfYTD, amount, isCfReal, pName);
+          }
+        }
+      }
+
+      function serializeBucket(bucket: PeriodBucket) {
+        const projects: { projectName: string; total: number; realised: number; unrealised: number }[] = [];
+        bucket.byProject.forEach((v, k) => {
+          projects.push({ projectName: k, total: v.total, realised: v.realised, unrealised: v.total - v.realised });
+        });
+        projects.sort((a, b) => b.total - a.total);
+        return {
+          total: bucket.total,
+          realised: bucket.realised,
+          unrealised: bucket.unrealised,
+          realisedPct: bucket.total > 0 ? Number(((bucket.realised / bucket.total) * 100).toFixed(1)) : 0,
+          lineCount: bucket.lineCount,
+          realisedCount: bucket.realisedCount,
+          projects,
+        };
+      }
+
+      // Build monthly sparkline series (FY months only)
+      function buildSeries(monthlyMap: Map<string, { total: number; realised: number }>) {
+        const series: { monthKey: string; label: string; total: number; realised: number; unrealised: number; realisedPct: number }[] = [];
+        for (let i = 0; i < 12; i++) {
+          const d = new Date(Date.UTC(fyStartYear, 8 + i, 1));
+          const mk = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+          const data = monthlyMap.get(mk);
+          const total = data?.total ?? 0;
+          const realised = data?.realised ?? 0;
+          series.push({
+            monthKey: mk,
+            label: d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }),
+            total, realised,
+            unrealised: total - realised,
+            realisedPct: total > 0 ? Number(((realised / total) * 100).toFixed(1)) : 0,
+          });
+        }
+        return series;
+      }
+
+      // Budget variance for COS YTD
+      let ytdBudget = 0;
+      for (let i = 0; i < 12; i++) {
+        const d = new Date(Date.UTC(fyStartYear, 8 + i, 1));
+        const mk = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+        if (mk <= currentMK) ytdBudget += staticCosBudget[mk] ?? 0;
+      }
+
+      res.json({
+        asOf: now.toISOString(),
+        fyLabel: `FY${fyStartYear + 1}`,
+        fyStart: toStr(fyStart),
+        fyEnd: toStr(fyEnd),
+        cos: {
+          thisWeek: serializeBucket(cosThisWeek),
+          lastWeek: serializeBucket(cosLastWeek),
+          thisMonth: serializeBucket(cosThisMonth),
+          lastMonth: serializeBucket(cosLastMonth),
+          ytd: { ...serializeBucket(cosYTD), budget: ytdBudget, variance: cosYTD.total - ytdBudget, variancePct: ytdBudget > 0 ? Number(((cosYTD.total - ytdBudget) / ytdBudget * 100).toFixed(1)) : 0 },
+          monthlySeries: buildSeries(cosMonthly),
+        },
+        cashflow: {
+          thisWeek: serializeBucket(cfThisWeek),
+          lastWeek: serializeBucket(cfLastWeek),
+          thisMonth: serializeBucket(cfThisMonth),
+          lastMonth: serializeBucket(cfLastMonth),
+          ytd: serializeBucket(cfYTD),
+          monthlySeries: buildSeries(cfMonthly),
+        },
+      });
+    } catch (error) {
+      console.error("Realisation KPIs error:", error);
+      res.status(500).json({ error: "Failed to fetch realisation KPIs" });
+    }
+  });
+
   // ==================== UPCOMING EVENTS (Next 5 working days) ====================
 
   app.get("/api/upcoming-events", requireAuth, async (req, res) => {
