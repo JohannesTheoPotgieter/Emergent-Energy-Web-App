@@ -249,8 +249,11 @@ router.get(
   async (req, res) => {
     try {
       const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
+      const monthKeys = getFyeMonthKeys(fye);
+      const fyeStart = `${fye - 1}-09`;
+      const fyeEnd = `${fye}-08`;
 
-      // Get projects with revenue summaries
+      // Get all projects (isActive may not exist in SQLite — treat null as true)
       const projects = await db
         .select({
           id: projectInfo.id,
@@ -264,27 +267,91 @@ router.get(
           isActive: projectInfo.isActive,
           contractValue: projectInfo.contractValue,
         })
-        .from(projectInfo)
-        .where(eq(projectInfo.isActive, true));
+        .from(projectInfo);
 
-      // Revenue summaries
-      const revSummaries = await db.select().from(projectRevenueSummary);
-      const revSummaryMap = new Map(revSummaries.map((r) => [r.projectName, r]));
+      // Filter: isActive may be undefined in SQLite (column missing) — treat as true
+      const activeProjects = projects.filter((p) => p.isActive !== false);
+
+      // Try project_revenue_summary first (Postgres), fall back to computing from raw data
+      let revSummaryMap = new Map<string, any>();
+      try {
+        const revSummaries = await db.select().from(projectRevenueSummary);
+        if (revSummaries.length > 0) {
+          revSummaryMap = new Map(revSummaries.map((r) => [r.projectName, r]));
+        }
+      } catch {
+        // Table may not exist in SQLite — proceed with computed values
+      }
+
+      // If project_revenue_summary is empty, compute from raw data
+      if (revSummaryMap.size === 0) {
+        // Budget Revenue per project = SUM(milestone_amount) from all inflows
+        const allInflows = await db.select().from(programInflows);
+        // Actual Revenue per project = SUM(milestone_amount) WHERE payment_received_date within FYE
+        const inflowsByProject = new Map<string, { budget: number; actual: number }>();
+        for (const inf of allInflows) {
+          const pn = inf.projectName;
+          if (!inflowsByProject.has(pn)) inflowsByProject.set(pn, { budget: 0, actual: 0 });
+          const entry = inflowsByProject.get(pn)!;
+          entry.budget += safeNum(inf.milestoneAmount);
+          if (inf.paymentReceivedDate) {
+            const mk = extractMonthKey(inf.paymentReceivedDate);
+            if (mk && mk >= fyeStart && mk <= fyeEnd) {
+              entry.actual += safeNum(inf.milestoneAmount);
+            }
+          }
+        }
+
+        // Budget COS per project = SUM(expense_actual_total) from all expenses
+        // Actual COS per project = SUM(expense_actual_total) WHERE invoiced within FYE
+        const allExpenses = await db.select().from(programExpense);
+        const expensesByProject = new Map<string, { budget: number; actual: number }>();
+        for (const exp of allExpenses) {
+          // Skip non-item rows if rowType exists
+          if (exp.rowType != null && exp.rowType !== "item") continue;
+          const pn = exp.projectName;
+          if (!expensesByProject.has(pn)) expensesByProject.set(pn, { budget: 0, actual: 0 });
+          const entry = expensesByProject.get(pn)!;
+          const amt = safeNum(exp.actualCosTotal || exp.expenseActualTotal);
+          entry.budget += amt;
+          if (exp.expenseInvoicedDate) {
+            const mk = extractMonthKey(exp.expenseInvoicedDate);
+            if (mk && mk >= fyeStart && mk <= fyeEnd) {
+              entry.actual += amt;
+            }
+          }
+        }
+
+        for (const p of activeProjects) {
+          const inf = inflowsByProject.get(p.projectName) || { budget: 0, actual: 0 };
+          const exp = expensesByProject.get(p.projectName) || { budget: 0, actual: 0 };
+          revSummaryMap.set(p.projectName, {
+            plannedRevenue: inf.budget,
+            plannedExpenditure: exp.budget,
+            actualRevenue: inf.actual,
+            actualExpenditure: exp.actual,
+          });
+        }
+      }
 
       // Editable fields (for project type, funding type)
       const editableFields = await db.select().from(projectEditableFields);
       const editableMap = new Map(editableFields.map((e) => [e.projectName, e]));
 
       // PD tickets for province (use latest per project)
-      const tickets = await db.select().from(pdTickets);
-      const provinceMap = new Map<string, string>();
-      for (const t of tickets) {
-        if (t.province && t.projectSiteName) {
-          provinceMap.set(t.projectSiteName, t.province);
+      let provinceMap = new Map<string, string>();
+      try {
+        const tickets = await db.select().from(pdTickets);
+        for (const t of tickets) {
+          if (t.province && t.projectSiteName) {
+            provinceMap.set(t.projectSiteName, t.province);
+          }
         }
+      } catch {
+        // pd_tickets may not exist in older SQLite schemas
       }
 
-      const projectRows = projects.map((p) => {
+      const projectRows = activeProjects.map((p) => {
         const summary = revSummaryMap.get(p.projectName) as any;
         const editable = editableMap.get(p.projectName) as any;
         const budgetRev = safeNum(summary?.plannedRevenue);
@@ -313,7 +380,7 @@ router.get(
           actualGp,
           budgetGpPct: safeDivide(budgetGp, budgetRev),
           actualGpPct: safeDivide(actualGp, actualRev),
-          signedStatus: p.signedStatus,
+          signedStatus: p.signedStatus || "NONE",
         };
       });
 
