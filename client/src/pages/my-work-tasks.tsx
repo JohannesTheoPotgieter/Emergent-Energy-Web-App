@@ -138,7 +138,7 @@ const SOURCE_CONFIG: Record<SourceFilter, { label: string; shortLabel: string; i
   microsoft: { label: "Microsoft", shortLabel: "MS", icon: Link2, color: "text-indigo-600", bgColor: "bg-indigo-50 border-indigo-200", dot: "bg-indigo-500" },
 };
 
-const SOURCE_FILTER_VALUES: SourceFilter[] = ["all", "personal", "operational", "plan", "engineering_task", "quality_task", "approvals", "tr_register", "deliverables", "notifications", "microsoft", "tracking"];
+const SOURCE_FILTER_VALUES: SourceFilter[] = ["all", "personal", "operational", "plan", "engineering_task", "quality_task", "approvals", "tr_register", "deliverables", "microsoft", "tracking"];
 
 function isSourceFilter(value: string | null): value is SourceFilter {
   return value != null && SOURCE_FILTER_VALUES.includes(value as SourceFilter);
@@ -304,15 +304,6 @@ export default function MyWorkTasksPage() {
     },
   });
 
-  const { data: unreadNotifs = { items: [], total: 0 } } = useQuery<{ items: any[]; total: number }>({
-    queryKey: ["/api/notifications", "unread-tasks"],
-    queryFn: async () => {
-      const res = await fetch("/api/notifications?unreadOnly=true&limit=50", { credentials: "include", headers: { ...getAuthHeaders() } });
-      if (!res.ok) return { items: [], total: 0 };
-      return res.json();
-    },
-  });
-
   const { data: msActionItems = [] } = useQuery<any[]>({
     queryKey: ["/api/ms-objects/mine", "action_required_tasks"],
     queryFn: async () => {
@@ -472,17 +463,6 @@ export default function MyWorkTasksPage() {
       }, t));
     }
 
-    for (const n of (unreadNotifs.items || [])) {
-      result.push(withSourceMeta({
-        _key: `notif-${n.id}`, _source: "notifications", _sourceLabel: "Notification",
-        _sourceColor: "bg-orange-50 border-orange-200 text-orange-700", _rawId: safeId(n.id), id: safeId(n.id),
-        title: n.title || "", status: "todo" as TaskStatus,
-        priority: "high" as const,
-        projectName: n.projectName || n.project_name || null, dueAt: null,
-        createdAt: n.createdAt || n.created_at || null, updatedAt: n.updatedAt || n.updated_at || null, notes: n.body || null,
-      }, n));
-    }
-
     for (const item of microsoftItems) {
       result.push(withSourceMeta({
         _key: `ms-${item.id}`, _source: "microsoft", _sourceLabel: "Microsoft",
@@ -494,7 +474,7 @@ export default function MyWorkTasksPage() {
     }
 
     return result;
-  }, [allTaskData, unreadNotifs, microsoftItems]);
+  }, [allTaskData, microsoftItems]);
 
   const unifiedDetailTaskFresh = useMemo(() => {
     if (!unifiedDetailOpen || !unifiedDetailTask) return unifiedDetailTask;
@@ -504,7 +484,6 @@ export default function MyWorkTasksPage() {
   const invalidateAll = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
     queryClient.invalidateQueries({ queryKey: ["/api/mytool/tasks"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/notifications", "unread-tasks"] });
     queryClient.invalidateQueries({ queryKey: ["/api/ms-objects/mine", "action_required_tasks"] });
     queryClient.invalidateQueries({ queryKey: ["/api/tr-register"] });
   }, []);
@@ -626,12 +605,9 @@ export default function MyWorkTasksPage() {
       if (task._key.startsWith("ms-")) {
         const res = await fetch(`/api/ms-objects/${task._rawId}/dismiss`, { method: "PATCH", headers: { ...getAuthHeaders() }, credentials: "include" });
         if (!res.ok) throw new Error("Failed to dismiss");
-      } else if (task._key.startsWith("notif-")) {
-        const res = await fetch("/api/notifications/mark-read", { method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ notificationIds: [task._rawId] }) });
-        if (!res.ok) throw new Error("Failed to dismiss");
       }
     },
-    onSuccess: () => { invalidateAll(); toast({ title: "Notification dismissed" }); },
+    onSuccess: () => { invalidateAll(); toast({ title: "Item dismissed" }); },
     onError: () => { toast({ title: "Failed to dismiss", variant: "destructive" }); },
   });
 
@@ -845,7 +821,7 @@ export default function MyWorkTasksPage() {
   }, [unifiedTasks, sourceFilter, debouncedSearch, statusFilter, priorityFilter, projectFilter, overdueOnly, dueThisWeekOnly, blockedOnly, assignedScope, groomMode, showCompleted, sortField, sortDirection, isTaskOverdue, isDueSoon, isTaskAssignedToCurrentUser]);
 
   const sourceCounts = useMemo(() => {
-    const counts: Record<SourceFilter, number> = { all: 0, personal: 0, operational: 0, plan: 0, engineering_task: 0, quality_task: 0, approvals: 0, tr_register: 0, tracking: 0, deliverables: 0, notifications: 0, microsoft: 0 };
+    const counts: Record<SourceFilter, number> = { all: 0, personal: 0, operational: 0, plan: 0, engineering_task: 0, quality_task: 0, approvals: 0, tr_register: 0, tracking: 0, deliverables: 0, microsoft: 0 };
     for (const t of unifiedTasks) {
       if (counts[t._source] !== undefined) counts[t._source]++;
       if (t._trackingRole === "creator" || t._trackingRole === "both" || t._trackingRole === "viewer") counts.tracking++;
@@ -1270,7 +1246,7 @@ export default function MyWorkTasksPage() {
           ) : (
             <div className="divide-y divide-border/40">
               {filteredTasks.map(task => (
-                <CompactTaskRow key={task._key} task={task} isExpanded={expandedTasks.has(task.id)} onToggleExpand={() => task._source === "operational" && task.subtaskCount! > 0 && toggleExpand(task.id)} onPrimaryAction={() => handleOpenSource(task)} onOpenDrawer={() => handleOpenDrawer(task)} onStatusChange={handleStatusChange} onDelete={task._source === "personal" ? () => deleteTaskMutation.mutate(task.id) : undefined} onDismiss={task._source === "notifications" || task._source === "microsoft" ? () => dismissNotifMutation.mutate(task) : undefined} onAddSubtask={task._source === "operational" ? () => setSubtaskDialog({ parentId: task.id, projectName: task.projectName || "" }) : undefined} allTaskData={allTaskData} onSubtaskAddForChild={(parentId: number, projectName: string) => setSubtaskDialog({ parentId, projectName })} isOverdue={isTaskOverdue(task)} onQuickStatus={(newStatus) => boardStatusMutation.mutate({ task, newStatus })} canReassign={canReassignTask(task)} taskTypeLabel={taskTypeLabel(task)} />
+                <CompactTaskRow key={task._key} task={task} isExpanded={expandedTasks.has(task.id)} onToggleExpand={() => task._source === "operational" && task.subtaskCount! > 0 && toggleExpand(task.id)} onPrimaryAction={() => handleOpenSource(task)} onOpenDrawer={() => handleOpenDrawer(task)} onStatusChange={handleStatusChange} onDelete={task._source === "personal" ? () => deleteTaskMutation.mutate(task.id) : undefined} onDismiss={task._source === "microsoft" ? () => dismissNotifMutation.mutate(task) : undefined} onAddSubtask={task._source === "operational" ? () => setSubtaskDialog({ parentId: task.id, projectName: task.projectName || "" }) : undefined} allTaskData={allTaskData} onSubtaskAddForChild={(parentId: number, projectName: string) => setSubtaskDialog({ parentId, projectName })} isOverdue={isTaskOverdue(task)} onQuickStatus={(newStatus) => boardStatusMutation.mutate({ task, newStatus })} canReassign={canReassignTask(task)} taskTypeLabel={taskTypeLabel(task)} />
               ))}
             </div>
           )}
@@ -1682,7 +1658,7 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onPrimaryAction, onO
           )}
           {task._source === "operational" && onAddSubtask && <button onClick={e => { e.stopPropagation(); onAddSubtask(); }} className="p-1 rounded text-muted-foreground/40 hover:text-emerald-500 hover:bg-emerald-50" title="Add subtask" data-testid={`btn-add-subtask-${task._key}`}><Plus className="h-3 w-3" /></button>}
           {task._source === "personal" && onDelete && <button onClick={e => { e.stopPropagation(); onDelete(); }} className="p-1 rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-50" data-testid={`btn-delete-${task._key}`}><Trash2 className="h-3 w-3" /></button>}
-          {(task._source === "notifications" || task._source === "microsoft") && onDismiss && <button onClick={e => { e.stopPropagation(); onDismiss(); }} className="p-1 rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-50" title="Dismiss" data-testid={`btn-dismiss-${task._key}`}><X className="h-3 w-3" /></button>}
+          {(task._source === "microsoft") && onDismiss && <button onClick={e => { e.stopPropagation(); onDismiss(); }} className="p-1 rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-50" title="Dismiss" data-testid={`btn-dismiss-${task._key}`}><X className="h-3 w-3" /></button>}
         </div>
       </div>
 
@@ -1903,12 +1879,9 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
       if (task._key.startsWith("ms-")) {
         const res = await fetch(`/api/ms-objects/${task._rawId}/dismiss`, { method: "PATCH", headers: { ...getAuthHeaders() }, credentials: "include" });
         if (!res.ok) throw new Error("Failed to dismiss");
-      } else if (task._key.startsWith("notif-")) {
-        const res = await fetch("/api/notifications/mark-read", { method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, credentials: "include", body: JSON.stringify({ notificationIds: [task._rawId] }) });
-        if (!res.ok) throw new Error("Failed to dismiss");
       }
     },
-    onSuccess: () => { onInvalidate(); onOpenChange(false); toast({ title: "Notification dismissed" }); },
+    onSuccess: () => { onInvalidate(); onOpenChange(false); toast({ title: "Item dismissed" }); },
     onError: () => { toast({ title: "Failed to dismiss", variant: "destructive" }); },
   });
 
@@ -2165,10 +2138,10 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
                 </div>
               )}
 
-              {(task._source === "notifications" || task._source === "microsoft") && (
+              {(task._source === "microsoft") && (
                 <div>
                   <Label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 block">Dismiss</Label>
-                  <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-red-600 hover:bg-red-50 w-full" onClick={() => { dismissMutation.mutate(); }} disabled={dismissMutation.isPending} data-testid="btn-dismiss-notif"><X className="h-3 w-3 mr-1.5" /> Dismiss Notification</Button>
+                  <Button size="sm" variant="outline" className="h-8 text-xs justify-start text-red-600 hover:bg-red-50 w-full" onClick={() => { dismissMutation.mutate(); }} disabled={dismissMutation.isPending} data-testid="btn-dismiss-notif"><X className="h-3 w-3 mr-1.5" /> Dismiss</Button>
                   {dismissMutation.isPending && <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Dismissing...</div>}
                 </div>
               )}

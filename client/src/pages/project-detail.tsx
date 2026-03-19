@@ -17,7 +17,7 @@ import {
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
-  MessageSquare, FolderOpen, Bell, FileCheck,
+  MessageSquare, FolderOpen, FileCheck,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -38,7 +38,6 @@ import { ProjectChatTab } from "@/components/tabs/ProjectChatTab";
 import { LocalFolderTab } from "@/components/tabs/LocalFolderTab";
 import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
 import { ProjectTimelineTab } from "@/components/tabs/ProjectTimelineTab";
-import { ProjectNotificationsTab } from "@/components/tabs/ProjectNotificationsTab";
 import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
 import { ProjectChangeControlTab } from "@/components/tabs/ProjectChangeControlTab";
 import { ProjectProcurementTab } from "@/components/tabs/ProjectProcurementTab";
@@ -714,7 +713,6 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "sharepoint": { section: "collaboration", subTab: "sharepoint" },
   "local-files": { section: "collaboration", subTab: "local-files" },
   "approvals": { section: "collaboration", subTab: "approvals" },
-  "notifications": { section: "collaboration", subTab: "notifications" },
   "collaboration": { section: "collaboration", subTab: "chat" },
 };
 
@@ -1353,7 +1351,6 @@ export default function ProjectDetailPage() {
             {[
               { key: "chat", label: "Comms", icon: MessageSquare, visible: true },
               { key: "approvals", label: "Approvals", icon: FileCheck, visible: true },
-              { key: "notifications", label: "Alerts", icon: Bell, visible: true },
               { key: "local-files", label: "Docs", icon: FolderOpen, visible: true },
               { key: "timeline", label: "Timeline", icon: History, visible: canViewTab.history },
               { key: "history", label: "Audit", icon: History, visible: canViewTab.history },
@@ -1365,7 +1362,6 @@ export default function ProjectDetailPage() {
           </div>
           {activeSubTab === "chat" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
-          {activeSubTab === "notifications" && <ProjectNotificationsTab projectName={projectName} />}
           {activeSubTab === "local-files" && <LocalFolderTab projectName={projectName} />}
           {activeSubTab === "timeline" && canViewTab.history && <ProjectTimelineTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "history" && canViewTab.history && (
