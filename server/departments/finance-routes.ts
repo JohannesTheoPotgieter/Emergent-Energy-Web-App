@@ -917,12 +917,21 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       }
 
       let projectOutflowsSum = 0;
+      let pastDueUnpaidSum = 0;
+      const todayStr = new Date().toISOString().split('T')[0];
       for (const expense of allExpenses) {
         if (projectFilters && !projectFilters.has(expense.projectName || "")) continue;
-        const d = expense.expensePaymentDate;
+        // Use effective payment date: actual payment date, then forecast, then linked task
+        const d = expense.expensePaymentDate || (expense as any).forecastPaymentDate || (expense as any).computedForecastPaymentDate || null;
         if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
         if (d >= weekStart && d < weekEnd && expense.expenseActualTotal) {
-          projectOutflowsSum += parseFloat(expense.expenseActualTotal) || 0;
+          const amt = parseFloat(expense.expenseActualTotal) || 0;
+          projectOutflowsSum += amt;
+          // Flag past-due unpaid: payment date in past, but not confirmed out of bank
+          const payDateConfirmed = expense.expensePaymentDate && isDateConfirmed((expense as any).paymentDateConfirmed, (expense as any).paymentDateFontColor);
+          if (d < todayStr && !payDateConfirmed && amt > 0) {
+            pastDueUnpaidSum += amt;
+          }
         }
       }
 
@@ -951,6 +960,7 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
         weekEnd,
         projectInflows: projectInflowsSum,
         projectOutflows: projectOutflowsSum,
+        pastDueUnpaid: pastDueUnpaidSum,
         openingBalance,
         computedOpening,
         hasManualOverride,
@@ -3295,7 +3305,7 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     const costedExpenditureFinal = plannedExpenditureVal;
 
     const actualRevenue = inBankTotal;
-    const actualProfit = actualRevenue - actualExpenditure;
+    const actualProfit = actualRevenue - allExpenditure;
     const actualMargin = actualRevenue > 0 ? actualProfit / actualRevenue : 0;
 
     const liveRevenue = totalContract;
@@ -3415,7 +3425,7 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
         },
         actual: {
           revenue: actualRevenue,
-          expenditure: actualExpenditure,
+          expenditure: allExpenditure,
           profit: actualProfit,
           margin: actualMargin,
         },
@@ -4126,8 +4136,9 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
       const hasInvoice = !!(exp.expenseInvoiceNumber && exp.expenseInvoiceNumber.trim());
       const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
 
+      const invDateConfirmed = hasInvDate && isDateConfirmed(exp.invoiceDateConfirmed, exp.invoiceDateFontColor);
       let cosStatus: string;
-      if (hasInvoice && hasInvDate) {
+      if (hasInvoice && hasInvDate && invDateConfirmed) {
         cosStatus = 'COS Realised';
       } else if (hasPO || hasInvoice) {
         cosStatus = 'Committed';

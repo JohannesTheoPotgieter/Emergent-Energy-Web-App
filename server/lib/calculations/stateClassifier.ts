@@ -46,8 +46,9 @@ export function classifyCosStatus(line: ExpenseLineInput): CosStatus {
   const hasInvoiceNumber = !!(line.expenseInvoiceNumber && String(line.expenseInvoiceNumber).trim() !== '');
   const hasInvoiceDate = !!(line.expenseInvoicedDate && String(line.expenseInvoicedDate).trim() !== '');
   const hasPO = !!(line.expensePoNumber && String(line.expensePoNumber).trim() !== '');
+  const invoiceDateConfirmed = hasInvoiceDate && isDateBlack(line.invoiceDateConfirmed, line.invoiceDateFontColor);
 
-  if (hasInvoiceNumber && hasInvoiceDate) {
+  if (hasInvoiceNumber && hasInvoiceDate && invoiceDateConfirmed) {
     return 'COS Realised';
   }
 

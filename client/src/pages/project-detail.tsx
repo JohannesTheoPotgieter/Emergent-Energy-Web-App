@@ -1308,13 +1308,13 @@ export default function ProjectDetailPage() {
           )}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="commercial-sub-tabs">
             {[
-              { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
               { key: "revenue-tracking", label: "Inflows", icon: DollarSign, visible: canViewSubTab.revenue },
               { key: "expenditure", label: "COS / Costs", icon: CreditCard, visible: canViewSubTab.expenditure },
               { key: "monthly-realisation", label: "COS Tracker", icon: TrendingUp, visible: canViewSubTab.cosTracker },
               { key: "revenue-tracker", label: "Revenue", icon: TrendingUp, visible: canViewSubTab.cosTracker },
               { key: "gp-tracker", label: "GP", icon: BarChart3, visible: canViewSubTab.cosTracker },
               { key: "cashflow", label: "Cashflow", icon: Activity, visible: canViewSubTab.cashflow },
+              { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
               { key: "change-control", label: "Changes", icon: FileCheck, visible: true },
               { key: "subcontractors", label: "Subs", icon: Users, visible: canViewSubTab.subcontractors },
             ].filter(st => st.visible).map(st => (
