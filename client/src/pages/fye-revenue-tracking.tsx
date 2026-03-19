@@ -123,7 +123,8 @@ function formatRand(val: number | null | undefined): string {
   if (val === 0) return "R 0";
   const sign = val < 0 ? "-" : "";
   const abs = Math.abs(val);
-  return `${sign}R ${Math.round(abs).toLocaleString("en-ZA")}`;
+  if (abs >= 1000) return `${sign}R ${Math.round(abs).toLocaleString("en-ZA")}`;
+  return `${sign}R ${abs.toFixed(2)}`;
 }
 
 function formatPct(val: number | null | undefined): string {
@@ -264,9 +265,9 @@ function DashboardChart({
             <Tooltip formatter={(v: number) => formatRand(v)} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="Budget" fill="#3b82f6" opacity={0.6} />
-            <Line type="monotone" dataKey="Actual + Forecast" stroke="#10b981" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="Actual" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2 }} />
-            <Line type="monotone" dataKey="Captured" stroke="#8b5cf6" strokeWidth={1.5} strokeDasharray="4 2" dot={false} />
+            <Line type="monotone" dataKey="Actual + Forecast" stroke="#10b981" strokeWidth={2} dot={false} connectNulls={false} />
+            <Line type="monotone" dataKey="Actual" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2 }} connectNulls={false} />
+            <Line type="monotone" dataKey="Captured" stroke="#8b5cf6" strokeWidth={1.5} strokeDasharray="4 2" dot={false} connectNulls={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </CardContent>
@@ -575,6 +576,14 @@ function DetailTab({ fye }: { fye: number }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [fundingFilter, setFundingFilter] = useState("");
+  const [sortKey, setSortKey] = useState<keyof ProjectRow>("projectName");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const toggleSort = (key: keyof ProjectRow) => {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
+  };
+  const sortIndicator = (key: keyof ProjectRow) => sortKey === key ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : "";
 
   const { data, isLoading, error, refetch } = useQuery<DetailData>({
     queryKey: [`/api/fye-revenue-tracking/detail?fye=${fye}`],
@@ -600,13 +609,21 @@ function DetailTab({ fye }: { fye: number }) {
 
   const filtered = useMemo(() => {
     if (!data) return [];
-    return data.projects.filter((p) => {
+    const rows = data.projects.filter((p) => {
       if (search && !p.projectName.toLowerCase().includes(search.toLowerCase())) return false;
       if (statusFilter && p.status !== statusFilter) return false;
       if (fundingFilter && p.fundingType !== fundingFilter) return false;
       return true;
     });
-  }, [data, search, statusFilter, fundingFilter]);
+    return rows.sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const cmp = typeof av === "number" ? (av as number) - (bv as number) : String(av).localeCompare(String(bv));
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [data, search, statusFilter, fundingFilter, sortKey, sortDir]);
 
   const uniqueStatuses = useMemo(() => [...new Set(data?.projects.map((p) => p.status).filter(Boolean) as string[])].sort(), [data]);
   const uniqueFunding = useMemo(() => [...new Set(data?.projects.map((p) => p.fundingType).filter(Boolean) as string[])].sort(), [data]);
@@ -689,28 +706,35 @@ function DetailTab({ fye }: { fye: number }) {
           <table className="w-full text-xs">
             <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
               <tr className="border-b">
-                <th className="text-left px-3 py-2 font-medium sticky left-0 bg-muted/80 z-20 min-w-[180px]">Project Name</th>
-                <th className="text-left px-2 py-2 font-medium">BD</th>
-                <th className="text-left px-2 py-2 font-medium">Province</th>
-                <th className="text-right px-2 py-2 font-medium">kWp</th>
-                <th className="text-left px-2 py-2 font-medium">Type</th>
-                <th className="text-left px-2 py-2 font-medium">Funding</th>
-                <th className="text-left px-2 py-2 font-medium">Start</th>
-                <th className="text-left px-2 py-2 font-medium">PC Date</th>
-                <th className="text-left px-2 py-2 font-medium">Status</th>
-                <th className="text-right px-2 py-2 font-medium">Budget Rev</th>
-                <th className="text-right px-2 py-2 font-medium">Budget COS</th>
-                <th className="text-right px-2 py-2 font-medium">Budget GP</th>
-                <th className="text-right px-2 py-2 font-medium">Actual Rev</th>
-                <th className="text-right px-2 py-2 font-medium">Actual Exp</th>
-                <th className="text-right px-2 py-2 font-medium">Actual GP</th>
-                <th className="text-right px-2 py-2 font-medium">Bud GP%</th>
-                <th className="text-right px-2 py-2 font-medium">Act GP%</th>
+                {([
+                  ["projectName", "Project Name", "left", true],
+                  ["businessDeveloper", "BD", "left", false],
+                  ["province", "Province", "left", false],
+                  ["sizeKwp", "kWp", "right", false],
+                  ["projectType", "Type", "left", false],
+                  ["fundingType", "Funding", "left", false],
+                  ["startDate", "Start", "left", false],
+                  ["pcDate", "PC Date", "left", false],
+                  ["status", "Status", "left", false],
+                  ["budgetRevenue", "Budget Rev", "right", false],
+                  ["budgetCos", "Budget COS", "right", false],
+                  ["budgetGp", "Budget GP", "right", false],
+                  ["actualRevenue", "Actual Rev", "right", false],
+                  ["actualExpense", "Actual Exp", "right", false],
+                  ["actualGp", "Actual GP", "right", false],
+                  ["budgetGpPct", "Bud GP%", "right", false],
+                  ["actualGpPct", "Act GP%", "right", false],
+                ] as const).map(([key, label, align, sticky]) => (
+                  <th key={key} onClick={() => toggleSort(key as keyof ProjectRow)} className={cn(
+                    `text-${align} px-${sticky ? 3 : 2} py-2 font-medium cursor-pointer select-none hover:text-foreground`,
+                    sticky && "sticky left-0 bg-muted/80 z-20 min-w-[180px]"
+                  )}>{label}{sortIndicator(key as keyof ProjectRow)}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={17} className="text-center py-8 text-muted-foreground">No projects found</td></tr>
+                <tr><td colSpan={17} className="text-center py-8 text-muted-foreground">No projects found for FYE {fye}{search ? ` matching "${search}"` : ""}</td></tr>
               ) : (
                 <>
                   {filtered.map((p) => (
