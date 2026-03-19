@@ -174,10 +174,31 @@ function extractCostedSummary(
   return { plannedRevenue, plannedExpenditure, plannedProfit, plannedMargin, actualRevenue, actualExpenditure, actualProfit, actualMargin };
 }
 
+// Excel formula error values — these corrupt data and should be replaced with null
+const EXCEL_ERROR_VALUES = new Set(["#REF!", "#DIV/0!", "#VALUE!", "#N/A", "#NAME?", "#NULL!", "#NUM!"]);
+
+/**
+ * Check if a cell value is an Excel error. Returns the error string if so, null otherwise.
+ * Also handles ExcelJS error object format: { error: "#REF!" }
+ */
+function getExcelError(value: any): string | null {
+  if (value == null) return null;
+  // ExcelJS error object format
+  if (typeof value === "object" && value.error && typeof value.error === "string") {
+    if (EXCEL_ERROR_VALUES.has(value.error)) return value.error;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (EXCEL_ERROR_VALUES.has(trimmed)) return trimmed;
+  }
+  return null;
+}
+
 function findNumericValueInRow(row: any[], startCol: number): number | null {
   for (let c = startCol; c < Math.min(row.length, startCol + 5); c++) {
     const v = row[c];
     if (v == null) continue;
+    if (getExcelError(v) !== null) continue;
     const n = typeof v === "number" ? v : parseFloat(String(v).replace(/[\s,R]/g, ""));
     if (!isNaN(n) && n !== 0) return n;
   }
@@ -193,7 +214,53 @@ function cellStr(row: any[], colIndex: number): string | null {
   if (colIndex < 0 || colIndex >= row.length) return null;
   const v = row[colIndex];
   if (v == null || String(v).trim() === "") return null;
+  if (getExcelError(v) !== null) return null;
   return String(v).trim();
+}
+
+/**
+ * Robust font color extraction with fallback chain.
+ * Handles: direct ARGB, direct RGB, theme colors, themed objects, and edge cases.
+ * Returns null/unconfirmed as safe default when color can't be resolved.
+ */
+function extractFontColorHex(fontColor: any): string | null {
+  if (!fontColor) return null;
+  // Direct ARGB: "FFFF0000" → strip alpha → "FF0000"
+  if (fontColor.argb && typeof fontColor.argb === "string") {
+    const argb = fontColor.argb;
+    return argb.length === 8 ? argb.substring(2).toLowerCase() : argb.toLowerCase();
+  }
+  // Direct RGB: "FF0000"
+  if (fontColor.rgb && typeof fontColor.rgb === "string") {
+    return fontColor.rgb.toLowerCase();
+  }
+  // Theme color resolution — standard Excel theme defaults:
+  // theme 0 = white (window background), theme 1 = black (window text)
+  // theme 2-3 = other system colors, theme 4+ = accent colors
+  if (fontColor.theme != null && typeof fontColor.theme === "number") {
+    // Apply tint if present (tint=0 or absent means pure theme color)
+    const tint = fontColor.tint || 0;
+    if (fontColor.theme === 1 && Math.abs(tint) < 0.2) return "000000"; // black
+    if (fontColor.theme === 0 && Math.abs(tint) < 0.2) return "ffffff"; // white
+    // Cannot reliably resolve other theme colors without the workbook theme XML
+    return null;
+  }
+  return null;
+}
+
+function classifyColorHex(hex: string | null): { color: string | null; isBlack: boolean } {
+  if (!hex) return { color: null, isBlack: false };
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return { color: null, isBlack: false };
+  const isBlack = (r < 40 && g < 40 && b < 40);
+  const isRedish = r > 150 && g < 80 && b < 80;
+  const isBlueish = b > 150 && r < 80 && g < 80;
+  if (isBlack) return { color: "black", isBlack: true };
+  if (isRedish) return { color: "red", isBlack: false };
+  if (isBlueish) return { color: "blue", isBlack: false };
+  return { color: hex, isBlack: false };
 }
 
 function getCellFontColor(ws: ExcelJS.Worksheet, rowIdx: number, colIdx: number): { color: string | null; isBlack: boolean } {
@@ -201,28 +268,16 @@ function getCellFontColor(ws: ExcelJS.Worksheet, rowIdx: number, colIdx: number)
     const cell = ws.getRow(rowIdx + 1).getCell(colIdx + 1);
     if (!cell || !cell.value) return { color: null, isBlack: false };
     const font = cell.font;
+    // No font or no color specified → Excel default = black
     if (!font || !font.color) {
       return { color: "black", isBlack: true };
     }
-    if (font.color.theme !== undefined && !font.color.argb) {
-      if (font.color.theme === 1 || font.color.theme === 0) {
-        return { color: "black", isBlack: true };
-      }
+    const hex = extractFontColorHex(font.color);
+    if (hex === null) {
+      // Unresolvable theme/color → treat as unconfirmed (safe default)
+      return { color: null, isBlack: false };
     }
-    const argb = (font.color.argb || "").toLowerCase();
-    if (!argb) return { color: "black", isBlack: true };
-    const colorHex = argb.length === 8 ? argb.substring(2) : argb;
-    const isBlack = colorHex === "000000" || argb === "ff000000";
-    const r = parseInt(colorHex.substring(0, 2), 16);
-    const g = parseInt(colorHex.substring(2, 4), 16);
-    const b = parseInt(colorHex.substring(4, 6), 16);
-    const isRedish = r > 150 && g < 80 && b < 80;
-    const isBlueish = b > 150 && r < 80 && g < 80;
-    const isDark = r < 40 && g < 40 && b < 40;
-    if (isBlack || isDark) return { color: "black", isBlack: true };
-    if (isRedish) return { color: "red", isBlack: false };
-    if (isBlueish) return { color: "blue", isBlack: false };
-    return { color: argb, isBlack: false };
+    return classifyColorHex(hex);
   } catch {
     return { color: null, isBlack: false };
   }
@@ -255,16 +310,21 @@ function deriveCostStatus(
 
 function normalizeTaskNo(raw: string): string {
   const trimmed = raw.trim();
+  // First: handle raw numeric values (from Excel) that may have floating-point drift.
+  // E.g. 1.2000000000000002 → "1.2", 2.3000000000000003 → "2.3"
+  // We do this BEFORE dot-splitting so "1.2000000000000002" doesn't get split wrong.
+  const numVal = parseFloat(trimmed);
+  if (!isNaN(numVal) && isFinite(numVal) && String(numVal) === trimmed) {
+    // This was a plain number (not a multi-level WBS like "1.2.3")
+    return parseFloat(numVal.toFixed(10)).toString();
+  }
+  // Multi-level dot-separated WBS codes like "1.2.3" or "10.1.2"
   if (/^\d+(\.\d+)*$/.test(trimmed)) {
     const parts = trimmed.split(".");
     return parts.map(p => {
       const n = parseInt(p, 10);
       return isNaN(n) ? p : String(n);
     }).join(".");
-  }
-  const numVal = parseFloat(trimmed);
-  if (!isNaN(numVal) && isFinite(numVal)) {
-    return parseFloat(numVal.toFixed(10)).toString();
   }
   return trimmed;
 }
@@ -502,6 +562,22 @@ function extractRevenueLines(
     const row = data[i];
     if (!row) continue;
 
+    // Scan for Excel formula errors in this row and generate warnings
+    for (let c = 0; c < row.length; c++) {
+      const errVal = getExcelError(row[c]);
+      if (errVal) {
+        issues.push({
+          severity: "WARNING",
+          section: "REVENUE",
+          message: `Excel formula error '${errVal}' found at ${sheetName} row ${i + 1}, col ${c + 1}. Value replaced with null.`,
+          suggestedAction: "Review the original spreadsheet for broken formulas",
+          issueType: "EXCEL_ERROR",
+          issueFingerprint: makeFingerprint("EXCEL_ERROR", "REVENUE", `R${i + 1}C${c + 1}`),
+          payloadJson: { row: i + 1, col: c + 1, error: errVal },
+        });
+      }
+    }
+
     const milestoneName = cellStr(row, milestoneNameCol);
     if (!milestoneName) continue;
 
@@ -704,6 +780,22 @@ function extractCostLines(
   for (let i = startRow; i < Math.min(endRow, data.length); i++) {
     const row = data[i];
     if (!row) continue;
+
+    // Scan for Excel formula errors in this row and generate warnings
+    for (let c = 0; c < row.length; c++) {
+      const errVal = getExcelError(row[c]);
+      if (errVal) {
+        issues.push({
+          severity: "WARNING",
+          section: "EXPENDITURE",
+          message: `Excel formula error '${errVal}' found at ${sheetName} row ${i + 1}, col ${c + 1}. Value replaced with null.`,
+          suggestedAction: "Review the original spreadsheet for broken formulas",
+          issueType: "EXCEL_ERROR",
+          issueFingerprint: makeFingerprint("EXCEL_ERROR", "EXPENDITURE", `R${i + 1}C${c + 1}`),
+          payloadJson: { row: i + 1, col: c + 1, error: errVal },
+        });
+      }
+    }
 
     const rawCategory = cellStr(row, categoryCol);
     const description = cellStr(row, descCol);
