@@ -339,11 +339,11 @@ export function registerMsSyncRoutes(app: Express) {
 
   app.get("/api/entity-assignments/:entityType/:entityId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const entityType = mapTaskSourceToEntityType(req.params.entityType);
+      const entityType = mapTaskSourceToEntityType(req.params.entityType as string);
       if (!entityType) {
         return res.status(400).json({ error: `Unknown entity type: ${req.params.entityType}` });
       }
-      const entityId = parseInt(req.params.entityId, 10);
+      const entityId = parseInt(req.params.entityId as string, 10);
       if (!Number.isFinite(entityId) || entityId <= 0) {
         return res.status(400).json({ error: `Invalid entity ID: ${req.params.entityId}` });
       }

@@ -216,7 +216,7 @@ async function pruneOldImportRuns(projectName: string, currentRunId: number): Pr
       .map((r) => r.id);
 
     if (idsToDelete.length > 0) {
-      await db.delete(importIssues).where(inArray(importIssues.runId, idsToDelete));
+      await db.delete(importIssues).where(inArray(importIssues.importRunId, idsToDelete));
       await db.delete(smartImportRuns).where(inArray(smartImportRuns.id, idsToDelete));
       console.log(`[SmartImport] Pruned ${idsToDelete.length} stale import runs for "${projectName}"`);
     }
@@ -765,7 +765,7 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
             .from(workItems)
             .where(and(eq(workItems.projectId, projectId), eq(workItems.source, "SMART_IMPORT")))
         : [];
-      const existingMap = new Map(existingTasks.map(t => [`${t.title}::${t.startDate || ""}`, t]));
+      const existingMap = new Map<string, typeof existingTasks[number]>(existingTasks.map(t => [`${t.title}::${t.startDate || ""}`, t]));
       let added = 0, modified = 0, unchanged = 0;
       const details: any[] = [];
       const matchedKeys = new Set<string>();
@@ -800,7 +800,7 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
             .from(normalizedRevenueLines)
             .where(eq(normalizedRevenueLines.projectId, projectId))
         : [];
-      const existingMap = new Map(existingRevenue.map(r => [`${r.milestoneName}::${r.amountExVat || ""}`, r]));
+      const existingMap = new Map<string, typeof existingRevenue[number]>(existingRevenue.map(r => [`${r.milestoneName}::${r.amountExVat || ""}`, r]));
       let added = 0, modified = 0, unchanged = 0;
       const details: any[] = [];
       const matchedKeys = new Set<string>();
