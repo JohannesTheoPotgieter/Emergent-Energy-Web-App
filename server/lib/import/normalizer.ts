@@ -784,6 +784,21 @@ export function normalizeData(
   let counterpartyNames: string[] = [];
   let costedSummary: NormalizationResult["costedSummary"] = null;
 
+  // Generate INFO issues for superseded sheets (e.g., Sheet1 skipped in favor of dedicated sheet)
+  for (const um of detection.unmatched) {
+    if (um.reason.startsWith("Superseded by dedicated")) {
+      issues.push({
+        severity: "INFO",
+        section: "GENERAL",
+        message: `Sheet '${um.sheetName}' contains legacy data but was skipped — ${um.reason}.`,
+        suggestedAction: null,
+        issueType: "SHEET_SUPERSEDED",
+        issueFingerprint: makeFingerprint("SHEET_SUPERSEDED", "GENERAL", um.sheetName),
+        payloadJson: { sheetName: um.sheetName, reason: um.reason },
+      });
+    }
+  }
+
   for (const section of detection.sections) {
     const mapping = mappings.find(m => m.section === section.section);
     if (!mapping) continue;

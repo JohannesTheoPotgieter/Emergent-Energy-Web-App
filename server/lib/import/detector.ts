@@ -521,6 +521,44 @@ function deriveKeyDatesFromPlan(
   return result;
 }
 
+/**
+ * Returns true if the sheet name is a generic name (Sheet1, Sheet2, etc.)
+ * that should be deprioritized when a dedicated sheet exists.
+ */
+export function isGenericSheetName(sheetName: string): boolean {
+  return /^sheet\s*\d+$/i.test(sheetName.trim());
+}
+
+/**
+ * Computes a sheet name confidence adjustment:
+ * - Dedicated section keyword matches get a bonus
+ * - Generic sheet names (Sheet1, Sheet2, Sheet3) get a penalty
+ */
+export function sheetNameConfidenceAdjustment(sheetName: string, sectionKey: string): number {
+  const norm = sheetName.toLowerCase().trim();
+
+  // Penalty for generic sheet names
+  if (isGenericSheetName(sheetName)) {
+    return -30;
+  }
+
+  // Bonus for dedicated section keyword matches
+  const dedicatedNames: Record<string, string[]> = {
+    PLAN: ["project plan", "programme", "schedule"],
+    REVENUE: ["revenue tracking", "revenue"],
+    EXPENDITURE: ["expenditure breakdown", "expenditure"],
+  };
+
+  const keywords = dedicatedNames[sectionKey] || [];
+  for (const kw of keywords) {
+    if (norm.includes(kw) || kw.includes(norm)) {
+      return 50;
+    }
+  }
+
+  return 0;
+}
+
 export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
   const sections: DetectedSection[] = [];
   const unmatched: { sheetName: string; reason: string }[] = [];
@@ -534,14 +572,16 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
   for (const sectionKey of Object.keys(SECTION_ANCHORS)) {
     const anchor = SECTION_ANCHORS[sectionKey];
 
-    let bestCandidate: {
+    // Collect ALL candidates for this section to enable priority comparison
+    const allCandidates: {
       ws: ExcelJS.Worksheet;
       headerResult: NonNullable<ReturnType<typeof findHeaderRow>>;
       confidence: number;
+      effectiveConfidence: number;
       dataStartRow: number;
       dataEndRow: number;
       nameMatched: boolean;
-    } | null = null;
+    }[] = [];
 
     for (const ws of workbook.worksheets) {
       if (claimedSheets.has(ws.name)) continue;
@@ -558,14 +598,12 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
         const dataStartRow = headerResult.rowIndex + 1;
         const dataEndRow = findDataEndRow(data, dataStartRow, data[0]?.length || 0);
         const confidence = computeConfidence(sectionKey, headerResult.headers, nameMatched);
+        const sheetAdj = sheetNameConfidenceAdjustment(ws.name, sectionKey);
+        const effectiveConfidence = (nameMatched ? confidence + 0.5 : confidence) + sheetAdj;
 
-        console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" nameMatch=${nameMatched}, headerRow=${headerResult.rowIndex}, headers=${headerResult.headers.length}, confidence=${confidence.toFixed(2)}`);
+        console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" nameMatch=${nameMatched}, headerRow=${headerResult.rowIndex}, headers=${headerResult.headers.length}, confidence=${confidence.toFixed(2)}, sheetAdj=${sheetAdj}, effective=${effectiveConfidence.toFixed(2)}`);
 
-        const effectiveConfidence = nameMatched ? confidence + 0.5 : confidence;
-
-        if (!bestCandidate || effectiveConfidence > (bestCandidate.nameMatched ? bestCandidate.confidence + 0.5 : bestCandidate.confidence)) {
-          bestCandidate = { ws, headerResult, confidence, dataStartRow, dataEndRow, nameMatched };
-        }
+        allCandidates.push({ ws, headerResult, confidence, effectiveConfidence, dataStartRow, dataEndRow, nameMatched });
       } else if (nameMatched) {
         console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" nameMatch=true but no header row found (data rows: ${data.length}), trying relaxed scan`);
         const relaxedResult = findHeaderRow(data, sectionKey, 200);
@@ -573,11 +611,32 @@ export function detectSections(workbook: ExcelJS.Workbook): DetectionResult {
           const dataStartRow = relaxedResult.rowIndex + 1;
           const dataEndRow = findDataEndRow(data, dataStartRow, data[0]?.length || 0);
           const confidence = computeConfidence(sectionKey, relaxedResult.headers, true);
-          console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" relaxed scan found headerRow=${relaxedResult.rowIndex}, confidence=${confidence.toFixed(2)}`);
-          const effectiveConfidence = confidence + 0.5;
-          if (!bestCandidate || effectiveConfidence > (bestCandidate.nameMatched ? bestCandidate.confidence + 0.5 : bestCandidate.confidence)) {
-            bestCandidate = { ws, headerResult: relaxedResult, confidence, dataStartRow, dataEndRow, nameMatched: true };
-          }
+          const sheetAdj = sheetNameConfidenceAdjustment(ws.name, sectionKey);
+          const effectiveConfidence = confidence + 0.5 + sheetAdj;
+          console.log(`[Detector] ${sectionKey}: sheet "${ws.name}" relaxed scan found headerRow=${relaxedResult.rowIndex}, confidence=${confidence.toFixed(2)}, sheetAdj=${sheetAdj}, effective=${effectiveConfidence.toFixed(2)}`);
+          allCandidates.push({ ws, headerResult: relaxedResult, confidence, effectiveConfidence, dataStartRow, dataEndRow, nameMatched: true });
+        }
+      }
+    }
+
+    // Sort candidates by effective confidence (highest first)
+    allCandidates.sort((a, b) => b.effectiveConfidence - a.effectiveConfidence);
+
+    const bestCandidate = allCandidates.length > 0 ? allCandidates[0] : null;
+
+    // Log skipped generic sheets that were superseded by a dedicated sheet
+    if (bestCandidate && allCandidates.length > 1) {
+      for (let i = 1; i < allCandidates.length; i++) {
+        const loser = allCandidates[i];
+        if (isGenericSheetName(loser.ws.name)) {
+          const dataRows = loser.dataEndRow - loser.dataStartRow;
+          const winnerDataRows = bestCandidate.dataEndRow - bestCandidate.dataStartRow;
+          unmatched.push({
+            sheetName: loser.ws.name,
+            reason: `Superseded by dedicated '${bestCandidate.ws.name}' sheet (${winnerDataRows} rows vs ${dataRows} rows)`,
+          });
+          console.log(`[Detector] ${sectionKey}: skipping "${loser.ws.name}" — superseded by "${bestCandidate.ws.name}" (${winnerDataRows} rows vs ${dataRows} rows)`);
+          claimedSheets.add(loser.ws.name);
         }
       }
     }
