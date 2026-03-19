@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../../../db";
-import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLines, procurementItems, projectEngDeliverables, projectEngStages, projectInfo, projectPhaseHistory, qcChecklist, qcItemInstance, smartImportRuns, workItems, users, counterparties } from "@shared/schema";
+import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLines, procurementItems, projectEngDeliverables, projectEngStages, projectInfo, projectPhaseHistory, projectRevenueSummary, qcChecklist, qcItemInstance, smartImportRuns, workItems, users, counterparties } from "@shared/schema";
 
 export async function listProjects(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null }) {
   const filters = [eq(projectInfo.isActive, true)];
@@ -137,11 +137,18 @@ export async function createInvoice(projectId: number, payload: any, userId: num
 }
 
 export async function getProjectFinanceSummary(projectId: number) {
-  const [cos, revenue] = await Promise.all([
+  const [cos, revenue, budgetAgg, costedSummary] = await Promise.all([
     db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedCostLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedCostLines.status} in ('APPROVED','PAID') then cast(${normalizedCostLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedCostLines).where(eq(normalizedCostLines.projectId, projectId)),
     db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedRevenueLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedRevenueLines.status} in ('INVOICED','PAID','IN_BANK','REALISED') then cast(${normalizedRevenueLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectId, projectId)),
+    db.select({ budgetTotal: sql<number>`coalesce(sum(cast(${normalizedCostLines.budgetTotal} as numeric)),0)` }).from(normalizedCostLines).where(eq(normalizedCostLines.projectId, projectId)),
+    db.select().from(projectRevenueSummary).where(eq(projectRevenueSummary.projectId, projectId)).limit(1),
   ]);
-  return { cost: cos[0] ?? { planned: 0, actual: 0 }, revenue: revenue[0] ?? { planned: 0, actual: 0 } };
+  return {
+    cost: cos[0] ?? { planned: 0, actual: 0 },
+    revenue: revenue[0] ?? { planned: 0, actual: 0 },
+    budget: { total: budgetAgg[0]?.budgetTotal ?? 0 },
+    costedSummary: costedSummary[0] ?? null,
+  };
 }
 
 export async function getFinanceCashflow(projectId: number) {
