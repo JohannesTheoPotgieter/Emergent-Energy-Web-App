@@ -3910,6 +3910,7 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   sourceRow: integer("source_row"),
   importRunId: integer("import_run_id").notNull().references(() => smartImportRuns.id),
   turnaroundDays: integer("turnaround_days"),
+  subProjectName: text("sub_project_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true } as any);
@@ -4021,6 +4022,7 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   budgetCos: text("budget_cos"),
   revenueRecognitionAmount: text("revenue_recognition_amount"),
   forecastPaymentDate: text("forecast_payment_date"),
+  subProjectName: text("sub_project_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true } as any);
@@ -5267,6 +5269,7 @@ export const workItems = pgTable("work_items", {
   recurrenceDaysOfWeek: text("recurrence_days_of_week"),
   recurrenceEndDate: text("recurrence_end_date"),
   recurrenceParentId: integer("recurrence_parent_id"),
+  subProjectName: text("sub_project_name"),
 });
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;

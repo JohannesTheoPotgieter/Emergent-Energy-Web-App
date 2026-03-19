@@ -1593,6 +1593,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               sourceSheet: t.sourceSheet,
               sourceRow: t.sourceRow,
               importRunId: runId,
+              subProjectName: merged.subProjectName || null,
             };
             const rowOverrides = manualOverrideMap.get(t.sourceRow);
             if (rowOverrides) {
@@ -1721,6 +1722,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               sourceRow: r.sourceRow,
               importRunId: runId,
               turnaroundDays: merged.turnaroundDays,
+              subProjectName: merged.subProjectName || null,
             };
           });
         if (revValues.length > 0) {
@@ -1876,6 +1878,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               budgetCos: merged.budgetCos || null,
               revenueRecognitionAmount: merged.revenueRecognitionAmount || null,
               forecastPaymentDate: merged.forecastPaymentDate || null,
+              subProjectName: merged.subProjectName || null,
               _actualCos: merged.actualCos || null,
             };
           });
