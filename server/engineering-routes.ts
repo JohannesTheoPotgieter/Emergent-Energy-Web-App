@@ -274,7 +274,9 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.delete("/api/project-team/:id", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
-      await db.delete(projectTeamMembers).where(eq(projectTeamMembers.id, parseInt(req.params.id)));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await db.delete(projectTeamMembers).where(eq(projectTeamMembers.id, id));
       logAuditFromReq(req, { entityType: "project_team", entityId: req.params.id, action: "delete", changesJson: { description: "Team member removed" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -1833,9 +1835,11 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.patch("/api/deliverables/files/:fileId/approve", requireAuth, requireAuthority("deliverables", "approve"), async (req, res) => {
     try {
+      const fileId = parseInt(req.params.fileId);
+      if (isNaN(fileId)) return res.status(400).json({ error: "Invalid file ID" });
       const [file] = await db.update(deliverableFiles)
         .set({ isApproved: true })
-        .where(eq(deliverableFiles.id, parseInt(req.params.fileId)))
+        .where(eq(deliverableFiles.id, fileId))
         .returning();
       logAuditFromReq(req, { entityType: "deliverable", entityId: req.params.fileId, action: "approve", changesJson: { description: "Deliverable file approved" } });
       res.json(file);
@@ -2020,7 +2024,9 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.delete("/api/eng/file-pointers/:id", requireAuth, requirePermission("engineering", "delete"), async (req, res) => {
     try {
-      await db.delete(spFilePointers).where(eq(spFilePointers.id, parseInt(req.params.id)));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await db.delete(spFilePointers).where(eq(spFilePointers.id, id));
       logAuditFromReq(req, { entityType: "file_pointer", entityId: req.params.id, action: "delete", changesJson: { description: "File pointer deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -2145,6 +2151,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.patch("/api/eng/warnings/:id", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       const updates = { ...req.body, updatedAt: new Date() };
       const [updated] = await db.update(qcWarning).set(updates).where(eq(qcWarning.id, id)).returning();
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(id), action: "update", changesJson: { description: "Warning updated", status: req.body.status } });

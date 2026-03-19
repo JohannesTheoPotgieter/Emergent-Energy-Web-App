@@ -106,6 +106,22 @@ export default function UserAssignmentPicker({
 
   const safeTaskId = Number.isFinite(taskId) && taskId > 0 ? taskId : null;
 
+  const { data: fetchedAssignments } = useQuery<CanonicalAssignment[]>({
+    queryKey: ["/api/entity-assignments", taskSource, taskId],
+    queryFn: async () => {
+      const res = await fetch(`/api/entity-assignments/${encodeURIComponent(taskSource)}/${taskId}`, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !assignments && !!safeTaskId,
+    staleTime: 30000,
+  });
+
+  const effectiveAssignments = assignments ?? fetchedAssignments ?? null;
+
   const reassignMutation = useMutation({
     mutationFn: async (payload: { assigneeType: AssigneeType | null; assigneeId: number | null }) => {
       if (!safeTaskId) {
@@ -152,6 +168,7 @@ export default function UserAssignmentPicker({
         queryClient.invalidateQueries({ queryKey: [key] });
       }
       queryClient.invalidateQueries({ queryKey: ["/api/assignables"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/entity-assignments", taskSource, taskId] });
       onSuccess?.();
       toast({ title: "Assignment updated" });
       setOpen(false);
