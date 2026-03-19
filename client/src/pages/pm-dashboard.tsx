@@ -21,8 +21,6 @@ import {
   endOfWeek,
   isSameMonth,
   parseISO,
-  isPast,
-  isThisWeek,
   differenceInDays,
 } from "date-fns";
 import {
@@ -42,9 +40,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Flag,
-  Target,
   Shield,
-  CircleDot,
   ExternalLink,
   AlertCircle,
   FileWarning,
@@ -217,11 +213,6 @@ const severityColors: Record<string, string> = {
   high: "bg-red-100 text-red-800 border-red-200",
   medium: "bg-amber-100 text-amber-800 border-amber-200",
   low: "bg-blue-100 text-blue-800 border-blue-200",
-};
-
-const eventTypeColors: Record<string, string> = {
-  milestone: "bg-purple-500",
-  task_due: "bg-blue-500",
 };
 
 function KpiCard({ icon: Icon, label, value, sub, color }: {

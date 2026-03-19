@@ -394,43 +394,23 @@ function UpcomingFinancialsSection({ data }: { data: FinancialsResponse | undefi
 export default function DashboardPage() {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
-
-  /* ── URL filter sync ── */
-  const searchString = useSearch();
-  const [, navigate] = useLocation();
-
-  const defaultFilters = {
-    search: "", portfolio: "all", pm: "all", pd: "all",
-    executionPhase: "all", rag: "all",
-    exceptionOnly: false, behindPlanOnly: false, inflowRiskOnly: false,
-    outflowRiskOnly: false, engineeringBlockersOnly: false,
-    qualityIssuesOnly: false, pendingApprovalsOnly: false, staleImportsOnly: false,
-  };
-
-  const filtersFromUrl = useMemo(() => {
-    const params = new URLSearchParams(searchString);
-    const f = { ...defaultFilters };
-    for (const [k, v] of params.entries()) {
-      if (k in f) {
-        if (typeof (f as any)[k] === "boolean") (f as any)[k] = v === "true";
-        else (f as any)[k] = v;
-      }
-    }
-    return f;
-  }, [searchString]);
-
-  const filters = filtersFromUrl;
-
-  const setFilters = useCallback((updater: ((prev: typeof defaultFilters) => typeof defaultFilters) | typeof defaultFilters) => {
-    const next = typeof updater === "function" ? updater(filters) : updater;
-    const params = new URLSearchParams();
-    Object.entries(next).forEach(([k, v]) => {
-      if (typeof v === "boolean") { if (v) params.set(k, "true"); }
-      else if (v && v !== "all") params.set(k, v);
-    });
-    const qs = params.toString();
-    navigate(qs ? `/dashboard?${qs}` : "/dashboard", { replace: true });
-  }, [filters, navigate]);
+  const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set());
+  const [filters, setFilters] = useState({
+    search: "",
+    portfolio: "all",
+    pm: "all",
+    pd: "all",
+    executionPhase: "all",
+    rag: "all",
+    exceptionOnly: false,
+    behindPlanOnly: false,
+    inflowRiskOnly: false,
+    outflowRiskOnly: false,
+    engineeringBlockersOnly: false,
+    qualityIssuesOnly: false,
+    pendingApprovalsOnly: false,
+    staleImportsOnly: false,
+  });
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -716,7 +696,8 @@ export default function DashboardPage() {
               const rows = data?.actionCenter?.[k] || [];
               const isCollapsed = collapsedQueues.has(k);
               const meta = queueMeta(k);
-              const showMax = 5;
+              const isQueueExpanded = expandedQueues.has(k);
+              const showMax = isQueueExpanded ? rows.length : 5;
               const visibleRows = isCollapsed ? [] : rows.slice(0, showMax);
 
               return (
@@ -757,10 +738,17 @@ export default function DashboardPage() {
                               </div>
                             );
                           })}
-                          {rows.length > showMax && (
-                            <div className="px-4 py-2 text-xs text-emerald-600 cursor-pointer hover:underline">
-                              Show {rows.length - showMax} more...
-                            </div>
+                          {rows.length > 5 && (
+                            <button
+                              onClick={() => setExpandedQueues(prev => {
+                                const next = new Set(prev);
+                                if (next.has(k)) next.delete(k); else next.add(k);
+                                return next;
+                              })}
+                              className="w-full px-4 py-2 text-xs text-emerald-600 cursor-pointer hover:underline hover:bg-muted/20 text-left transition-colors"
+                            >
+                              {isQueueExpanded ? "Show less" : `Show ${rows.length - 5} more...`}
+                            </button>
                           )}
                         </>
                       )}
@@ -911,7 +899,7 @@ export default function DashboardPage() {
                     <th className="text-right py-2 px-2 font-medium hidden md:table-cell">Variance</th>
                     <th className="text-right py-2 px-2 font-medium hidden lg:table-cell">Open Inflow</th>
                     <th className="text-right py-2 px-2 font-medium hidden lg:table-cell">Open Exp.</th>
-                    <th className="text-right py-2 px-2 font-medium hidden md:table-cell">GP %</th>
+                    <th className="text-right py-2 px-2 font-medium hidden md:table-cell" title="Planned gross margin based on planned revenue and expenditure">Plan GP %</th>
                     <th className="text-center py-2 px-2 font-medium">Issues</th>
                     <th className="w-8 py-2 px-1"></th>
                   </tr>
@@ -944,7 +932,7 @@ export default function DashboardPage() {
                           </td>
                           <td className="py-2.5 px-2 text-right tabular-nums text-sm text-amber-600 hidden lg:table-cell">{money(p.openInflowFy)}</td>
                           <td className="py-2.5 px-2 text-right tabular-nums text-sm text-amber-600 hidden lg:table-cell">{money(p.openExpenditureFy)}</td>
-                          <td className="py-2.5 px-2 text-right tabular-nums text-sm font-medium hidden md:table-cell">{pct((p.grossMarginPctFy || 0) * 100)}</td>
+                          <td className="py-2.5 px-2 text-right tabular-nums text-sm font-medium hidden md:table-cell">{p.plannedRevenueFy > 0 ? pct((p.grossMarginPctFy || 0) * 100) : <span className="text-muted-foreground">-</span>}</td>
                           <td className="py-2.5 px-2 text-center">
                             {p.criticalActionCount > 0 ? (
                               <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px]">{p.criticalActionCount}</Badge>
@@ -986,7 +974,7 @@ export default function DashboardPage() {
                                     <p><span className="text-muted-foreground">Expenditure:</span> {money(p.plannedExpenditureFy)}</p>
                                     <p><span className="text-muted-foreground">Paid:</span> <span className="text-emerald-600">{money(p.paidExpenditureFy)}</span></p>
                                     <p><span className="text-muted-foreground">Open Exp:</span> <span className="text-amber-600">{money(p.openExpenditureFy)}</span></p>
-                                    <p><span className="text-muted-foreground">GP Margin:</span> <span className="font-medium">{pct((p.grossMarginPctFy || 0) * 100)}</span></p>
+                                    <p><span className="text-muted-foreground">Plan GP Margin:</span> <span className="font-medium">{pct((p.grossMarginPctFy || 0) * 100)}</span></p>
                                   </div>
                                 </div>
                                 <div className="rounded-lg border border-border/50 p-3">

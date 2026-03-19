@@ -8,7 +8,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags } from "@shared/schema";
+import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments } from "@shared/schema";
 import { db } from "./db";
 import { safeLegacyQuery } from "./legacy-table-guard";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -4033,6 +4033,7 @@ export async function registerRoutes(
         if (!rowsByProject.has(proj.id)) rowsByProject.set(proj.id, {
           projectId: proj.id, projectName: proj.projectName, portfolio: proj.portfolio || null, pm: proj.pm || null, pd: proj.pd || null,
           executionPhase: proj.executionPhase || proj.phase || null, rag: proj.ragStatus || 'UNKNOWN',
+          ragUpdatedAt: proj.ragUpdatedAt || null,
           actualProgressPct: 0, expectedProgressPct: 0, scheduleVariancePct: 0,
           plannedRevenueFy: 0, receivedInflowFy: 0, openInflowFy: 0,
           plannedExpenditureFy: 0, paidExpenditureFy: 0, openExpenditureFy: 0, grossMarginPctFy: null,
@@ -11708,6 +11709,9 @@ export async function registerRoutes(
   app.get("/api/operational-tasks/task/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ error: `Invalid task ID: ${req.params.id}` });
+      }
 
       if (id < 0) {
         const planId = -id;
@@ -11920,6 +11924,9 @@ export async function registerRoutes(
   app.patch("/api/operational-tasks/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ error: `Invalid task ID: ${req.params.id}` });
+      }
       const updates = req.body;
       const validationErrors = validateTaskUpdate(updates);
       if (validationErrors.length > 0) {
@@ -12305,7 +12312,7 @@ export async function registerRoutes(
 
           const usedIds = new Set<number>();
           baselineTasks = filteredCanonical.map((ct: any, idx: number) => {
-            let taskId = ct.id || (idx + 1);
+            let taskId = Number.isFinite(ct.id) && ct.id > 0 ? ct.id : (idx + 1);
             while (usedIds.has(taskId)) taskId = taskId + 100000;
             usedIds.add(taskId);
 
@@ -12337,7 +12344,7 @@ export async function registerRoutes(
 
             return {
               id: -taskId,
-              workItemId: ct.workItemId || null,
+              workItemId: ct.workItemId || taskId,
               projectName,
               planProjectName: projectName,
               importedTaskId: ct.id,
@@ -12818,6 +12825,9 @@ export async function registerRoutes(
   app.patch("/api/planning-tasks/:taskId", requireAuth, async (req: Request, res: Response) => {
     try {
       const taskId = parseInt(req.params.taskId);
+      if (!Number.isFinite(taskId)) {
+        return res.status(400).json({ error: `Invalid task ID: ${req.params.taskId}` });
+      }
       const user = req.user as any;
       const { projectName, ...updates } = req.body;
       if (!projectName) return res.status(400).json({ error: "projectName is required" });
@@ -14324,6 +14334,27 @@ export async function registerRoutes(
       if (hasRequestId) {
         mytoolTaskIdempotencyStore.complete(userId, requestId, task.id);
       }
+
+      // Create entity_assignment for the personal task owner
+      try {
+        const [ownerUser] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId)).limit(1);
+        await db.insert(entityAssignments).values({
+          entityType: "personal_task",
+          entityId: task.id,
+          projectId: null,
+          assignmentRole: "OWNER",
+          assigneeType: "internal_user",
+          assigneeId: userId,
+          displayLabelSnapshot: ownerUser?.name || String(userId),
+          active: true,
+          assignedByUserId: userId,
+          metadata: null,
+          updatedAt: new Date(),
+        });
+      } catch (assignErr: any) {
+        console.warn("[mytool-task-create] Failed to create entity_assignment, task still created:", assignErr?.message);
+      }
+
       console.info("[mytool-task-create] request", { requestId: hasRequestId ? requestId : null, userId, result: "created", taskId: task.id });
       logAuditFromReq(req, { entityType: "mytool_task", action: "create", entityId: String(task.id), changesJson: { description: "MyTool task created", title: req.body.title, bucket } });
       res.json(task);
@@ -15456,7 +15487,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/send", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/outlook/send", requireAuth, async (req, res) => {
     try {
       const { to, cc, subject, body, bodyType } = req.body;
       if (!to || !Array.isArray(to) || to.length === 0 || !subject) {
@@ -15475,7 +15506,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/messages/:id/reply", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/outlook/messages/:id/reply", requireAuth, async (req, res) => {
     try {
       const { comment, replyAll } = req.body;
       if (!comment) {
@@ -15494,7 +15525,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/messages/:id/forward", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/outlook/messages/:id/forward", requireAuth, async (req, res) => {
     try {
       const { comment, to } = req.body;
       if (!to || !Array.isArray(to) || to.length === 0) {

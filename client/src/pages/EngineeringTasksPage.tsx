@@ -26,6 +26,9 @@ import {
   Plus,
   Filter,
   Loader2,
+  Zap,
+  GanttChart,
+  Link2,
   Search,
   X,
   Calendar,
@@ -70,6 +73,7 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { usePermission } from "@/hooks/use-permissions";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import {
@@ -100,19 +104,8 @@ import {
 } from "@/hooks/useEngineeringTaskFilters";
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
-
-async function engFetch(url: string, options?: RequestInit) {
-  const token = localStorage.getItem("auth_token");
-  const headers: Record<string, string> = { ...(options?.headers as Record<string, string> || {}) };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  if (options?.body) headers["Content-Type"] = "application/json";
-  const res = await fetch(url, { ...options, headers, credentials: "include" });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(err.error || "Request failed");
-  }
-  return res.json();
-}
+import { engFetch } from "@/lib/eng-fetch";
+import { PHASE_COLORS } from "@/lib/phase-colors";
 
 const PRIORITIES = ["Critical", "Urgent", "High", "Medium", "Low"];
 const DUE_DATE_FILTER_OPTIONS: { value: EngineeringDueDateFilter; label: string }[] = [
@@ -429,11 +422,13 @@ function EngineeringWorkloadStrip({
 }
 
 
-function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateChange, compact }: {
+function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateChange, compact, selected, onToggleSelect }: {
   task: Task; onClick: () => void; onStatusChange: (id: number, status: string) => void;
   onPriorityChange?: (id: number, priority: string) => void;
   onDueDateChange?: (id: number, date: string) => void;
   compact?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: number) => void;
 }) {
   const [quickEditOpen, setQuickEditOpen] = useState(false);
   const { user } = useAuth();
@@ -505,6 +500,15 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
       data-testid={`kanban-card-${task.id}`}
     >
       <div className="flex items-start gap-1.5 mb-1">
+        {onToggleSelect && (
+          <button
+            className={`w-4 h-4 mt-0.5 rounded border shrink-0 flex items-center justify-center transition-colors ${selected ? "bg-blue-600 border-blue-600 text-white" : "border-gray-300 opacity-0 group-hover:opacity-100 hover:border-blue-400"}`}
+            onClick={(e) => { e.stopPropagation(); onToggleSelect(task.id); }}
+            data-testid={`select-task-${task.id}`}
+          >
+            {selected && <Check className="h-2.5 w-2.5" />}
+          </button>
+        )}
         <h4 className="text-[13px] font-medium leading-snug line-clamp-2 flex-1 min-w-0" data-testid={`text-card-title-${task.id}`}>
           {task.title}
         </h4>
@@ -611,15 +615,37 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
           <span className="truncate">{task.holdReason}</span>
         </div>
       )}
+
+      {/* Inline quick actions - appear on hover */}
+      {onStatusChange && (
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity mt-1.5 pt-1.5 border-t border-dashed flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          {task.status !== "IN PROGRESS" && (
+            <button className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-medium" onClick={() => onStatusChange(task.id, "IN PROGRESS")}>
+              Start
+            </button>
+          )}
+          {task.status !== "COMPLETE" && task.status !== "NEEDS APPROVAL" && (
+            <button className="text-[9px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 font-medium" onClick={() => onStatusChange(task.id, "NEEDS APPROVAL")}>
+              Submit
+            </button>
+          )}
+          {task.status !== "COMPLETE" && (
+            <button className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium" onClick={() => onStatusChange(task.id, "COMPLETE")}>
+              Done
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 function KanbanColumn({
-  status, tasks, onDrop, onCardClick, onStatusChange, onPriorityChange, onDueDateChange, compact, collapsed, onToggleCollapse, totalTasks
+  status, tasks, onDrop, onCardClick, onStatusChange, onPriorityChange, onDueDateChange, compact, collapsed, onToggleCollapse, totalTasks, selectedTaskIds, onToggleSelect,
 }: {
   status: string; tasks: Task[]; onDrop: (taskId: number, newStatus: string) => void; onCardClick: (task: Task) => void; onStatusChange: (id: number, status: string) => void; onPriorityChange?: (id: number, priority: string) => void;
   onDueDateChange?: (id: number, date: string) => void; compact?: boolean; collapsed?: boolean; onToggleCollapse?: () => void; totalTasks?: number;
+  selectedTaskIds?: Set<number>; onToggleSelect?: (id: number) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
   const sorted = useMemo(() => sortTasksForColumn(tasks), [tasks]);
@@ -703,7 +729,7 @@ function KanbanColumn({
       <ScrollArea className="flex-1 px-1.5 pb-2" style={{ maxHeight: "calc(100vh - 280px)" }}>
         <div className="space-y-1.5">
           {sorted.map(task => (
-            <TaskCard key={task.id} task={task} onClick={() => onCardClick(task)} onStatusChange={onStatusChange} onPriorityChange={onPriorityChange} onDueDateChange={onDueDateChange} compact={compact} />
+            <TaskCard key={task.id} task={task} onClick={() => onCardClick(task)} onStatusChange={onStatusChange} onPriorityChange={onPriorityChange} onDueDateChange={onDueDateChange} compact={compact} selected={selectedTaskIds?.has(task.id)} onToggleSelect={onToggleSelect} />
           ))}
           {tasks.length === 0 && (
             <div className="text-center py-8 text-xs text-muted-foreground/40">
@@ -840,6 +866,113 @@ function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { taskId:
   );
 }
 
+function DependenciesTab({ task, allTasks }: { task: Task; allTasks?: Task[] }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [depType, setDepType] = useState<"blocked_by" | "blocks">("blocked_by");
+
+  // Store dependencies in task description metadata (pragmatic approach without new table)
+  const deps = useMemo(() => {
+    try {
+      const meta = task.description?.match(/<!--deps:(.*?)-->/);
+      if (meta) return JSON.parse(meta[1]) as { id: number; type: string; title: string }[];
+    } catch {}
+    return [] as { id: number; type: string; title: string }[];
+  }, [task.description]);
+
+  const addDep = async (depTask: Task) => {
+    const existing = deps.filter(d => d.id !== depTask.id);
+    const newDeps = [...existing, { id: depTask.id, type: depType, title: depTask.title }];
+    const depsTag = `<!--deps:${JSON.stringify(newDeps)}-->`;
+    const cleanDesc = (task.description || "").replace(/<!--deps:.*?-->/g, "").trim();
+    const newDesc = cleanDesc + "\n" + depsTag;
+    try {
+      await engFetch(`/api/eng/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ description: newDesc }) });
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      toast({ title: `Dependency added: ${depType === "blocked_by" ? "blocked by" : "blocks"} ${depTask.title.slice(0, 30)}` });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const removeDep = async (depId: number) => {
+    const newDeps = deps.filter(d => d.id !== depId);
+    const depsTag = newDeps.length > 0 ? `<!--deps:${JSON.stringify(newDeps)}-->` : "";
+    const cleanDesc = (task.description || "").replace(/<!--deps:.*?-->/g, "").trim();
+    const newDesc = (cleanDesc + "\n" + depsTag).trim();
+    try {
+      await engFetch(`/api/eng/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ description: newDesc }) });
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      toast({ title: "Dependency removed" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const { data: fetchedTasks = [] } = useQuery<Task[]>({
+    queryKey: ["eng-tasks"],
+    queryFn: () => engFetch("/api/eng/tasks"),
+    enabled: !allTasks,
+  });
+  const pool = allTasks || fetchedTasks;
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return [];
+    const term = search.toLowerCase();
+    return pool.filter(t => t.id !== task.id && t.title.toLowerCase().includes(term)).slice(0, 8);
+  }, [pool, search, task.id]);
+
+  const blockedBy = deps.filter(d => d.type === "blocked_by");
+  const blocks = deps.filter(d => d.type === "blocks");
+
+  return (
+    <div className="space-y-3" data-testid="dependencies-tab">
+      {blockedBy.length > 0 && (
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Blocked by</p>
+          {blockedBy.map(d => (
+            <div key={d.id} className="flex items-center gap-2 text-xs p-1.5 border rounded mb-1 bg-red-50/50">
+              <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
+              <span className="flex-1 truncate">{d.title}</span>
+              <button className="text-muted-foreground hover:text-red-500" onClick={() => removeDep(d.id)}><X className="h-3 w-3" /></button>
+            </div>
+          ))}
+        </div>
+      )}
+      {blocks.length > 0 && (
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Blocks</p>
+          {blocks.map(d => (
+            <div key={d.id} className="flex items-center gap-2 text-xs p-1.5 border rounded mb-1 bg-amber-50/50">
+              <ArrowRight className="h-3 w-3 text-amber-500 shrink-0" />
+              <span className="flex-1 truncate">{d.title}</span>
+              <button className="text-muted-foreground hover:text-red-500" onClick={() => removeDep(d.id)}><X className="h-3 w-3" /></button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="space-y-2">
+        <div className="flex gap-1">
+          <button className={`text-[10px] px-2 py-1 rounded font-medium ${depType === "blocked_by" ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground"}`} onClick={() => setDepType("blocked_by")}>Blocked by</button>
+          <button className={`text-[10px] px-2 py-1 rounded font-medium ${depType === "blocks" ? "bg-amber-100 text-amber-700" : "bg-muted text-muted-foreground"}`} onClick={() => setDepType("blocks")}>Blocks</button>
+        </div>
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tasks to link..." className="h-8 text-xs" data-testid="dep-search-input" />
+        {filtered.map(t => (
+          <button key={t.id} className="w-full text-left p-2 text-xs border rounded hover:bg-muted/50 transition-colors flex items-center gap-2" onClick={() => { addDep(t); setSearch(""); }}>
+            <Plus className="h-3 w-3 text-muted-foreground shrink-0" />
+            <span className="truncate flex-1">{t.title}</span>
+            <Badge className={`text-[8px] ${getTaskStatusBadgeClass(t.status)}`}>{getTaskStatusLabel(t.status)}</Badge>
+          </button>
+        ))}
+      </div>
+      {deps.length === 0 && !search && (
+        <p className="text-xs text-muted-foreground text-center py-4">No dependencies. Search for a task above to add one.</p>
+      )}
+    </div>
+  );
+}
+
 function TaskDetailDrawer({
   task, onClose, onUpdate
 }: {
@@ -849,7 +982,7 @@ function TaskDetailDrawer({
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [commentText, setCommentText] = useState("");
-  const [activeTab, setActiveTab] = useState<"updates" | "activity" | "subtasks">("updates");
+  const [activeTab, setActiveTab] = useState<"updates" | "activity" | "subtasks" | "dependencies">("updates");
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
   const [approvalComment, setApprovalComment] = useState("");
@@ -879,6 +1012,8 @@ function TaskDetailDrawer({
   const [drawerHoldReason, setDrawerHoldReason] = useState("");
   const [drawerBlockedType, setDrawerBlockedType] = useState("");
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  const [showMentions, setShowMentions] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [mappedPathDraft, setMappedPathDraft] = useState("");
   const [fallbackDraft, setFallbackDraft] = useState<"download" | "clipboard">("download");
@@ -1172,6 +1307,15 @@ function TaskDetailDrawer({
                   options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
                   data-testid="select-drawer-status"
                 />
+                {(() => {
+                  const validNext = TASK_STATUSES.filter(s => s !== task.status && canTransition(task.status, s));
+                  if (validNext.length === 0) return null;
+                  return (
+                    <p className="text-[9px] text-muted-foreground mt-0.5">
+                      Can move to: {validNext.map(s => getTaskStatusLabel(s)).join(" · ")}
+                    </p>
+                  );
+                })()}
               </div>
 
               <div className="space-y-1">
@@ -1186,6 +1330,20 @@ function TaskDetailDrawer({
                 />
               </div>
 
+              {(task.status === "HOLD" && (task.holdReason || task.blockedType)) && (
+                <div className="bg-red-50 border border-red-200 rounded-md p-2.5 space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
+                    <span className="text-[10px] font-semibold text-red-700 uppercase">
+                      On Hold{task.blockedType ? ` — ${task.blockedType}` : ""}
+                    </span>
+                  </div>
+                  {task.holdReason && (
+                    <p className="text-[11px] text-red-700">{task.holdReason}</p>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-1">
                 <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Due Date</Label>
                 <Input
@@ -1195,6 +1353,17 @@ function TaskDetailDrawer({
                   onChange={(e) => updateMutation.mutate({ dueDate: e.target.value || null })}
                   data-testid="input-drawer-due-date"
                 />
+                {task.dueDate && (() => {
+                  const label = daysLabel(task.dueDate);
+                  if (!label) return null;
+                  const isLate = label.includes("late");
+                  return (
+                    <span className={`text-[10px] font-medium ${isLate ? "text-red-600" : "text-muted-foreground"}`}>
+                      {isLate ? <AlertTriangle className="inline h-3 w-3 mr-0.5" /> : <Clock className="inline h-3 w-3 mr-0.5" />}
+                      {label}
+                    </span>
+                  );
+                })()}
               </div>
 
               <div className="space-y-1">
@@ -1209,6 +1378,21 @@ function TaskDetailDrawer({
               </div>
             </div>
 
+            {task.resolvedOwner && (
+              <div className="space-y-1">
+                <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Owner</Label>
+                <div className="flex items-center gap-2 text-xs">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${getAvatarColor(task.resolvedOwner.name)}`}>
+                    {getInitials(task.resolvedOwner.name)}
+                  </div>
+                  <div>
+                    <span className="font-medium">{task.resolvedOwner.name}</span>
+                    <span className="text-muted-foreground ml-1.5 text-[10px]">{task.resolvedOwner.role}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-1">
               <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">Assignee</Label>
               <UserAssignmentPicker
@@ -1218,7 +1402,7 @@ function TaskDetailDrawer({
                 textNames={task.assignees || null}
                 mode="multi"
                 size="sm"
-                invalidateKeys={[`/api/eng/tasks?projectName=${task.projectName}`, "/api/eng/tasks", "/api/my-work/all-tasks"]}
+                invalidateKeys={["eng-tasks", "/api/my-work/all-tasks"]}
               />
               {task.assignees && task.assignees.length > 1 && (
                 <div className="flex flex-wrap gap-1 mt-1">
@@ -1654,6 +1838,27 @@ function TaskDetailDrawer({
                 <div className="space-y-2 max-h-[200px] overflow-y-auto">
                   {taskDeliverables.map((del: any) => (
                     <div key={del.id} className="p-2 bg-card rounded border text-xs space-y-1" data-testid={`deliverable-item-${del.id}`}>
+                      {/* Inline preview for images */}
+                      {/\.(png|jpe?g|gif|webp|svg)$/i.test(del.originalName || "") && (
+                        <div className="rounded overflow-hidden border mb-1 bg-muted/20">
+                          <img
+                            src={`/api/eng/deliverables/${del.id}/download`}
+                            alt={del.originalName}
+                            className="max-h-[200px] w-full object-contain"
+                            loading="lazy"
+                          />
+                        </div>
+                      )}
+                      {/* PDF inline preview */}
+                      {/\.pdf$/i.test(del.originalName || "") && (
+                        <div className="rounded overflow-hidden border mb-1">
+                          <iframe
+                            src={`/api/eng/deliverables/${del.id}/download#toolbar=0`}
+                            className="w-full h-[200px]"
+                            title={del.originalName}
+                          />
+                        </div>
+                      )}
                       <div className="flex items-center justify-between gap-2">
                         <a
                           href={`/api/eng/deliverables/${del.id}/download`}
@@ -1664,6 +1869,7 @@ function TaskDetailDrawer({
                         >
                           <Paperclip className="h-3 w-3 text-blue-500 shrink-0" />
                           <span className="font-medium truncate">{del.originalName}</span>
+                          {del.fileSize && <span className="text-[9px] text-muted-foreground shrink-0">({(del.fileSize / 1024).toFixed(0)}KB)</span>}
                         </a>
                         {del.acknowledged ? (
                           <Badge className="bg-emerald-100 text-emerald-700 border-emerald-300 text-[9px] shrink-0">Acknowledged</Badge>
@@ -1913,7 +2119,7 @@ function TaskDetailDrawer({
             <Separator />
 
             <div className="flex border-b">
-              {(["updates", "activity", "subtasks"] as const).map(tab => (
+              {(["updates", "activity", "subtasks", "dependencies"] as const).map(tab => (
                 <button
                   key={tab}
                   className={`px-3 py-2 text-xs font-medium border-b-2 transition-colors ${activeTab === tab ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
@@ -1923,8 +2129,10 @@ function TaskDetailDrawer({
                   {tab === "updates" && <MessageSquare className="h-3.5 w-3.5 inline mr-1" />}
                   {tab === "activity" && <Activity className="h-3.5 w-3.5 inline mr-1" />}
                   {tab === "subtasks" && <ListTodo className="h-3.5 w-3.5 inline mr-1" />}
-                  {tab === "updates" ? "Updates" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  {tab === "dependencies" && <Link2 className="h-3.5 w-3.5 inline mr-1" />}
+                  {tab === "updates" ? "Comments" : tab === "dependencies" ? "Deps" : tab.charAt(0).toUpperCase() + tab.slice(1)}
                   {tab === "updates" && comments.length > 0 && <span className="ml-1 text-muted-foreground">({comments.length})</span>}
+                  {tab === "activity" && activity.length > 0 && <span className="ml-1 text-muted-foreground">({activity.length})</span>}
                   {tab === "subtasks" && subtasks.length > 0 && <span className="ml-1 text-muted-foreground">({subtasks.length})</span>}
                 </button>
               ))}
@@ -1933,18 +2141,61 @@ function TaskDetailDrawer({
             {activeTab === "updates" && (
               <div className="space-y-3">
                 <div className="flex gap-2">
-                  <Input
-                    value={commentText}
-                    onChange={(e) => setCommentText(e.target.value)}
-                    placeholder="Add a quick comment..."
-                    className="text-sm"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey && commentText.trim()) {
-                        addCommentMutation.mutate(commentText.trim());
-                      }
-                    }}
-                    data-testid="input-comment"
-                  />
+                  <div className="relative flex-1">
+                    <Input
+                      value={commentText}
+                      onChange={(e) => {
+                        setCommentText(e.target.value);
+                        const val = e.target.value;
+                        const atIdx = val.lastIndexOf("@");
+                        if (atIdx >= 0 && atIdx === val.length - 1) {
+                          setMentionQuery("");
+                          setShowMentions(true);
+                        } else if (atIdx >= 0 && !val.substring(atIdx).includes(" ")) {
+                          setMentionQuery(val.substring(atIdx + 1).toLowerCase());
+                          setShowMentions(true);
+                        } else {
+                          setShowMentions(false);
+                        }
+                      }}
+                      placeholder="Add a comment... use @ to mention"
+                      className="text-sm"
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape" && showMentions) { setShowMentions(false); e.stopPropagation(); return; }
+                        if (e.key === "Enter" && !e.shiftKey && commentText.trim() && !showMentions) {
+                          addCommentMutation.mutate(commentText.trim());
+                        }
+                      }}
+                      data-testid="input-comment"
+                    />
+                    {showMentions && (
+                      <div className="absolute bottom-full left-0 w-full mb-1 bg-white border rounded-md shadow-lg z-50 max-h-[150px] overflow-y-auto">
+                        {teamMembers
+                          .filter(m => !mentionQuery || m.fullName.toLowerCase().includes(mentionQuery))
+                          .slice(0, 6)
+                          .map(m => (
+                            <button
+                              key={m.id}
+                              className="w-full text-left px-3 py-1.5 text-xs hover:bg-blue-50 flex items-center gap-2"
+                              onClick={() => {
+                                const atIdx = commentText.lastIndexOf("@");
+                                setCommentText(commentText.substring(0, atIdx) + `@${m.fullName} `);
+                                setShowMentions(false);
+                              }}
+                            >
+                              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white ${getAvatarColor(m.fullName)}`}>
+                                {getInitials(m.fullName)}
+                              </div>
+                              <span className="font-medium">{m.fullName}</span>
+                              <span className="text-muted-foreground ml-auto">{m.role}</span>
+                            </button>
+                          ))}
+                        {teamMembers.filter(m => !mentionQuery || m.fullName.toLowerCase().includes(mentionQuery)).length === 0 && (
+                          <p className="text-xs text-muted-foreground p-2 text-center">No matches</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <Button
                     size="icon"
                     className="h-9 w-9 shrink-0"
@@ -2067,6 +2318,10 @@ function TaskDetailDrawer({
               </div>
             )}
 
+            {activeTab === "dependencies" && (
+              <DependenciesTab task={task} allTasks={allTasks} />
+            )}
+
             {(task.linkedPlanItemId || task.linkedDeliverableId || task.linkedQualityItemInstanceId) && (
               <>
                 <Separator />
@@ -2149,16 +2404,7 @@ function TaskDetailDrawer({
   );
 }
 
-const PHASE_COLORS: Record<string, { bg: string; text: string; accent: string }> = {
-  P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", accent: "bg-slate-500" },
-  P1_COST_PROPOSAL_DESIGN: { bg: "bg-violet-50", text: "text-violet-700", accent: "bg-violet-500" },
-  P2_PD_PM_HANDOVER: { bg: "bg-indigo-50", text: "text-indigo-700", accent: "bg-indigo-500" },
-  P3_DETAILED_DESIGN_PROC_RELEASE: { bg: "bg-blue-50", text: "text-blue-700", accent: "bg-blue-500" },
-  P4_CONSTRUCTION_INSTALLATION: { bg: "bg-amber-50", text: "text-amber-700", accent: "bg-amber-500" },
-  P5_COMMISSIONING_TESTING: { bg: "bg-orange-50", text: "text-orange-700", accent: "bg-orange-500" },
-  P6_HANDOVER_CLIENT_MATRIARCH: { bg: "bg-teal-50", text: "text-teal-700", accent: "bg-teal-500" },
-  P7_CLOSEOUT_POSTMORTEM: { bg: "bg-emerald-50", text: "text-emerald-700", accent: "bg-emerald-500" },
-};
+// PHASE_COLORS imported from @/lib/phase-colors
 
 interface ProjectGroup {
   projectName: string;
@@ -2485,6 +2731,108 @@ function PersonalKpiStrip({ tasks, myTasks }: { tasks: Task[]; myTasks: Task[] }
   );
 }
 
+function TimelineView({ tasks, onCardClick }: { tasks: Task[]; onCardClick: (task: Task) => void }) {
+  const today = new Date();
+  const timelineTasks = useMemo(() => {
+    return tasks
+      .filter(t => t.dueDate && !isTaskComplete(t.status))
+      .sort((a, b) => new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime());
+  }, [tasks]);
+
+  // Calculate 6-week window
+  const startDate = new Date(today);
+  startDate.setDate(startDate.getDate() - 7);
+  const endDate = new Date(today);
+  endDate.setDate(endDate.getDate() + 35);
+  const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
+  // Build week markers
+  const weeks: { date: Date; label: string }[] = [];
+  const weekStart = new Date(startDate);
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
+  while (weekStart <= endDate) {
+    weeks.push({ date: new Date(weekStart), label: weekStart.toLocaleDateString("en-ZA", { day: "2-digit", month: "short" }) });
+    weekStart.setDate(weekStart.getDate() + 7);
+  }
+
+  const todayOffset = Math.max(0, Math.ceil((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+
+  if (timelineTasks.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Calendar className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">No tasks with due dates. Add due dates to see the timeline.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-0 border rounded-lg overflow-hidden" data-testid="timeline-view">
+      {/* Header with week markers */}
+      <div className="flex border-b bg-muted/30">
+        <div className="w-[220px] shrink-0 p-2 text-[10px] font-semibold text-muted-foreground border-r">Task</div>
+        <div className="flex-1 relative" style={{ minWidth: `${totalDays * 16}px` }}>
+          <div className="flex h-full">
+            {weeks.map((w, i) => (
+              <div key={i} className="flex-1 text-[9px] text-muted-foreground px-1 py-2 border-r border-dashed" style={{ minWidth: `${7 * 16}px` }}>
+                {w.label}
+              </div>
+            ))}
+          </div>
+          {/* Today marker */}
+          <div
+            className="absolute top-0 bottom-0 w-0.5 bg-red-400 z-10"
+            style={{ left: `${(todayOffset / totalDays) * 100}%` }}
+            title="Today"
+          />
+        </div>
+      </div>
+
+      {/* Task rows */}
+      <div className="max-h-[500px] overflow-y-auto">
+        {timelineTasks.slice(0, 50).map(task => {
+          const due = new Date(task.dueDate!);
+          const start = task.startDate ? new Date(task.startDate) : new Date(due.getTime() - 7 * 24 * 60 * 60 * 1000);
+          const barStart = Math.max(0, Math.ceil((start.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+          const barEnd = Math.ceil((due.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+          const barLeft = (barStart / totalDays) * 100;
+          const barWidth = Math.max(1, ((barEnd - barStart) / totalDays) * 100);
+          const overdue = isOverdue(task.dueDate, task.status);
+
+          return (
+            <div key={task.id} className="flex border-b hover:bg-muted/20 transition-colors group" onClick={() => onCardClick(task)}>
+              <div className="w-[220px] shrink-0 p-2 border-r cursor-pointer">
+                <p className="text-[11px] font-medium truncate leading-tight">{task.title}</p>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <Badge className={`text-[8px] px-1 py-0 ${priorityColors[task.priority] || "bg-muted"}`}>{task.priority}</Badge>
+                  <span className={`text-[9px] ${overdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>{daysLabel(task.dueDate!)}</span>
+                </div>
+              </div>
+              <div className="flex-1 relative py-2" style={{ minWidth: `${totalDays * 16}px` }}>
+                <div
+                  className={`absolute h-5 rounded-full cursor-pointer transition-all ${overdue ? "bg-red-400" : task.status === "IN PROGRESS" ? "bg-blue-400" : task.status === "HOLD" ? "bg-amber-400" : "bg-emerald-400"}`}
+                  style={{ left: `${barLeft}%`, width: `${barWidth}%`, top: "50%", transform: "translateY(-50%)", minWidth: "8px" }}
+                  title={`${task.title} — ${formatDateShort(task.dueDate!)}`}
+                >
+                  {task.assignees?.[0] && (
+                    <span className="absolute -right-1 -top-1 w-4 h-4 rounded-full bg-white border flex items-center justify-center text-[7px] font-bold">
+                      {task.assignees[0][0]}
+                    </span>
+                  )}
+                </div>
+                {/* Week grid lines */}
+                {weeks.map((_, i) => (
+                  <div key={i} className="absolute top-0 bottom-0 border-r border-dashed border-muted" style={{ left: `${((i + 1) * 7 / totalDays) * 100}%` }} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }: {
   tasks: Task[];
   onCardClick: (task: Task) => void;
@@ -2802,6 +3150,42 @@ function MyTasksView({
         />
       </div>
 
+      {(() => {
+        const todayFocus = filteredMyTasks.filter(t => {
+          if (isTaskComplete(t.status)) return false;
+          if (isOverdue(t.dueDate, t.status)) return true;
+          if (t.dueDate && new Date(t.dueDate).toDateString() === new Date().toDateString()) return true;
+          if (t.status === "IN PROGRESS" && (t.priority === "Critical" || t.priority === "Urgent")) return true;
+          return false;
+        }).slice(0, 7);
+        if (todayFocus.length === 0) return null;
+        return (
+          <div className="border-2 border-blue-300 rounded-lg bg-blue-50/40 p-3 mb-2" data-testid="today-focus">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center">
+                <Zap className="h-4 w-4 text-blue-600" />
+              </div>
+              <span className="font-semibold text-sm text-blue-900">Today's Focus</span>
+              <span className="text-[10px] text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full font-bold">{todayFocus.length}</span>
+            </div>
+            <div className="space-y-1">
+              {todayFocus.map(t => (
+                <div
+                  key={t.id}
+                  className="flex items-center gap-2 text-xs p-2 bg-white rounded border hover:bg-blue-50 cursor-pointer transition-colors"
+                  onClick={() => onCardClick(t)}
+                >
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${isOverdue(t.dueDate, t.status) ? "bg-red-500" : t.priority === "Critical" ? "bg-red-500" : "bg-blue-500"}`} />
+                  <span className="flex-1 font-medium truncate">{t.title}</span>
+                  {t.projectName && <span className="text-muted-foreground truncate max-w-[120px]">{t.projectName.replace(/_Tracker.*$/, "").replace(/_/g, " ")}</span>}
+                  {t.dueDate && <span className={`text-[10px] font-semibold shrink-0 ${isOverdue(t.dueDate, t.status) ? "text-red-600" : "text-muted-foreground"}`}>{daysLabel(t.dueDate)}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {buckets.map(bucket => {
         if (bucket.tasks.length === 0) return null;
         const isCollapsed = collapsedBuckets.has(bucket.key);
@@ -3030,9 +3414,10 @@ export default function EngineeringTasksPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
   const savedDefaults = useMemo(() => getSavedEngDefaultView(user?.id), [user?.id]);
   const initialUrlParams = useMemo(() => new URLSearchParams(window.location.search), []);
-  const [viewMode, setViewMode] = useState<"board" | "list" | "projects" | "mytasks">(savedDefaults?.viewMode || "board");
+  const [viewMode, setViewMode] = useState<"board" | "list" | "projects" | "mytasks" | "timeline">(savedDefaults?.viewMode || "board");
   const [myTasksOnly, setMyTasksOnly] = useState(false);
   const [myName, setMyName] = useState(() => {
     const saved = getSavedMyName();
@@ -3041,12 +3426,12 @@ export default function EngineeringTasksPage() {
     return fullName.split(/\s+/)[0];
   });
   const [showNamePicker, setShowNamePicker] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>(savedDefaults?.statusFilter || "all");
-  const [priorityFilter, setPriorityFilter] = useState<string>(savedDefaults?.priorityFilter || "all");
-  const [assigneeFilter, setAssigneeFilter] = useState<string>(savedDefaults?.assigneeFilter || "all");
+  const [statusFilter, setStatusFilter] = useState<string>(initialUrlParams.get("status") || savedDefaults?.statusFilter || "all");
+  const [priorityFilter, setPriorityFilter] = useState<string>(initialUrlParams.get("priority") || savedDefaults?.priorityFilter || "all");
+  const [assigneeFilter, setAssigneeFilter] = useState<string>(initialUrlParams.get("assignee") || savedDefaults?.assigneeFilter || "all");
   const [projectFilter, setProjectFilter] = useState<string>(savedDefaults?.projectFilter || "all");
   const [dueDateFilter, setDueDateFilter] = useState<EngineeringDueDateFilter>(
-    (savedDefaults?.dueDateFilter as EngineeringDueDateFilter) || "all",
+    (initialUrlParams.get("dueDate") as EngineeringDueDateFilter) || (savedDefaults?.dueDateFilter as EngineeringDueDateFilter) || "all",
   );
   const [workloadStateFilter, setWorkloadStateFilter] = useState<EngineeringWorkloadStateFilter>(
     (savedDefaults?.workloadStateFilter as EngineeringWorkloadStateFilter) || "all",
@@ -3075,7 +3460,20 @@ export default function EngineeringTasksPage() {
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [holdDialog, setHoldDialog] = useState<{ taskId: number; reason: string; blockedType: string } | null>(null);
   const [boardCompact, setBoardCompact] = useState(savedDefaults?.boardCompact || false);
+  const [boardGroupBy, setBoardGroupBy] = useState<"status" | "priority" | "assignee" | "project">("status");
   const [collapsedColumns, setCollapsedColumns] = useState<Set<string>>(() => new Set());
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(new Set());
+  const bulkMode = selectedTaskIds.size > 0;
+
+  const toggleTaskSelection = useCallback((taskId: number) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId); else next.add(taskId);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedTaskIds(new Set()), []);
 
   const toggleColumnCollapse = useCallback((status: string) => {
     setCollapsedColumns(prev => {
@@ -3084,6 +3482,30 @@ export default function EngineeringTasksPage() {
       return next;
     });
   }, []);
+
+  // Keyboard shortcuts
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      // Don't trigger in input/textarea
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      if (e.key === "?" && !e.ctrlKey && !e.metaKey) { setShowShortcuts(s => !s); return; }
+      if (e.key === "n" && !e.ctrlKey && !e.metaKey) { setCreateOpen(true); return; }
+      if (e.key === "Escape") {
+        if (selectedTask) { setSelectedTask(null); return; }
+        if (showShortcuts) { setShowShortcuts(false); return; }
+      }
+      if (e.key === "1") { setViewMode("board"); return; }
+      if (e.key === "2") { setViewMode("mytasks"); return; }
+      if (e.key === "3") { setViewMode("projects"); return; }
+      if (e.key === "4") { setViewMode("list"); return; }
+      if (e.key === "5") { setViewMode("timeline"); return; }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedTask, showShortcuts]);
 
   const { data: tasks = [], isLoading, error } = useQuery<Task[]>({
     queryKey: ["eng-tasks"],
@@ -3196,6 +3618,30 @@ export default function EngineeringTasksPage() {
   const handlePriorityChange = useCallback((taskId: number, newPriority: string) => {
     updatePriorityMutation.mutate({ taskId, priority: newPriority });
   }, [updatePriorityMutation]);
+
+  const bulkStatusMutation = useMutation({
+    mutationFn: async ({ taskIds, status }: { taskIds: number[]; status: string }) => {
+      await Promise.all(taskIds.map(id => engFetch(`/api/eng/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ status }) })));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      toast({ title: `${selectedTaskIds.size} tasks updated` });
+      clearSelection();
+    },
+    onError: (e: Error) => toast({ title: "Bulk update failed", description: e.message, variant: "destructive" }),
+  });
+
+  const bulkPriorityMutation = useMutation({
+    mutationFn: async ({ taskIds, priority }: { taskIds: number[]; priority: string }) => {
+      await Promise.all(taskIds.map(id => engFetch(`/api/eng/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ priority }) })));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      toast({ title: `${selectedTaskIds.size} tasks updated` });
+      clearSelection();
+    },
+    onError: (e: Error) => toast({ title: "Bulk update failed", description: e.message, variant: "destructive" }),
+  });
 
   const updateDueDateMutation = useMutation({
     mutationFn: ({ taskId, dueDate }: { taskId: number; dueDate: string }) =>
@@ -3364,6 +3810,42 @@ export default function EngineeringTasksPage() {
     return acc;
   }, {} as Record<string, Task[]>);
 
+  // Column grouping (#13)
+  const boardGroupKeys = useMemo(() => {
+    if (boardGroupBy === "status") return boardStatuses;
+    if (boardGroupBy === "priority") return ["Critical", "Urgent", "High", "Medium", "Low"];
+    if (boardGroupBy === "assignee") {
+      const names = new Set<string>();
+      filtered.forEach(t => (t.assignees || []).forEach(a => { if (a) names.add(a); }));
+      return ["Unassigned", ...Array.from(names).sort()];
+    }
+    if (boardGroupBy === "project") {
+      const projs = new Set<string>();
+      filtered.forEach(t => { if (t.projectName) projs.add(t.projectName); });
+      return ["No Project", ...Array.from(projs).sort()];
+    }
+    return boardStatuses;
+  }, [filtered, boardGroupBy, boardStatuses]);
+
+  const tasksByGroup = useMemo(() => {
+    if (boardGroupBy === "status") return tasksByStatus;
+    const groups: Record<string, Task[]> = {};
+    boardGroupKeys.forEach(k => { groups[k] = []; });
+    filtered.forEach(t => {
+      if (boardGroupBy === "priority") {
+        const key = t.priority || "Medium";
+        (groups[key] || (groups[key] = [])).push(t);
+      } else if (boardGroupBy === "assignee") {
+        const assignees = (t.assignees || []).filter(Boolean);
+        if (assignees.length === 0) (groups["Unassigned"] || (groups["Unassigned"] = [])).push(t);
+        else assignees.forEach(a => (groups[a] || (groups[a] = [])).push(t));
+      } else if (boardGroupBy === "project") {
+        const key = t.projectName || "No Project";
+        (groups[key] || (groups[key] = [])).push(t);
+      }
+    });
+    return groups;
+  }, [filtered, boardGroupBy, boardGroupKeys, tasksByStatus]);
 
   const engNextAction = useMemo((): NextAction | null => {
     if (overdueTasks.length > 0) return { label: `${overdueTasks.length} overdue task${overdueTasks.length !== 1 ? "s" : ""} — review and update`, severity: "urgent" };
@@ -3504,6 +3986,16 @@ export default function EngineeringTasksPage() {
               title="List View"
             >
               <List className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === "timeline" ? "default" : "ghost"}
+              size="sm"
+              className="h-8 px-2"
+              onClick={() => setViewMode("timeline")}
+              data-testid="btn-view-timeline"
+              title="Timeline View"
+            >
+              <GanttChart className="h-4 w-4" />
             </Button>
           </div>
           <div className="flex items-center border rounded-md">
@@ -3879,6 +4371,19 @@ export default function EngineeringTasksPage() {
                   {boardCompact ? "Expand cards for full details" : "Compact cards to fit more work on screen"}
                 </TooltipContent>
               </Tooltip>
+              <SearchableSelect
+                value={boardGroupBy}
+                onValueChange={(v) => setBoardGroupBy(v as any)}
+                placeholder="Group by..."
+                triggerClassName="h-7 text-[10px] min-w-[90px]"
+                options={[
+                  { value: "status", label: "Status" },
+                  { value: "priority", label: "Priority" },
+                  { value: "assignee", label: "Assignee" },
+                  { value: "project", label: "Project" },
+                ]}
+                data-testid="board-group-by"
+              />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span>
@@ -3904,6 +4409,32 @@ export default function EngineeringTasksPage() {
           </div>
         </div>
 
+        {bulkMode && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg" data-testid="bulk-action-bar">
+            <span className="text-xs font-semibold text-blue-800">{selectedTaskIds.size} selected</span>
+            <div className="h-4 w-px bg-blue-200" />
+            <SearchableSelect
+              value=""
+              onValueChange={(status) => bulkStatusMutation.mutate({ taskIds: Array.from(selectedTaskIds), status })}
+              placeholder="Set status..."
+              triggerClassName="h-7 text-[10px] min-w-[100px]"
+              options={getVisibleStatusesForView("board").map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
+              data-testid="bulk-status-select"
+            />
+            <SearchableSelect
+              value=""
+              onValueChange={(p) => bulkPriorityMutation.mutate({ taskIds: Array.from(selectedTaskIds), priority: p })}
+              placeholder="Set priority..."
+              triggerClassName="h-7 text-[10px] min-w-[90px]"
+              options={PRIORITIES.map(p => ({ value: p, label: p }))}
+              data-testid="bulk-priority-select"
+            />
+            <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground" onClick={clearSelection}>
+              <X className="h-3 w-3 mr-1" /> Clear
+            </Button>
+          </div>
+        )}
+
         <div className="h-2 bg-muted/40 rounded-full overflow-hidden flex" data-testid="status-distribution-bar" title="Status distribution">
           {boardStatuses.map(status => {
             const count = (tasksByStatus[status] || []).length;
@@ -3922,21 +4453,24 @@ export default function EngineeringTasksPage() {
           })}
         </div>
 
+        {isMobile && <p className="text-[10px] text-muted-foreground text-center py-1">Swipe to see more columns →</p>}
         <div className="flex gap-1.5 overflow-x-auto pb-4" style={{ minHeight: "400px" }}>
-          {boardStatuses.map(status => (
+          {boardGroupKeys.map(group => (
             <KanbanColumn
-              key={status}
-              status={status}
-              tasks={tasksByStatus[status] || []}
+              key={group}
+              status={group}
+              tasks={tasksByGroup[group] || []}
               onDrop={handleDrop}
               onCardClick={setSelectedTask}
               onStatusChange={handleStatusChange}
               onPriorityChange={handlePriorityChange}
               onDueDateChange={handleDueDateChange}
               compact={boardCompact}
-              collapsed={collapsedColumns.has(status)}
-              onToggleCollapse={() => toggleColumnCollapse(status)}
+              collapsed={collapsedColumns.has(group)}
+              onToggleCollapse={() => toggleColumnCollapse(group)}
               totalTasks={filtered.length}
+              selectedTaskIds={selectedTaskIds}
+              onToggleSelect={toggleTaskSelection}
             />
           ))}
         </div>
@@ -3957,6 +4491,10 @@ export default function EngineeringTasksPage() {
           onStatusChange={handleStatusChange}
           searchTerm={searchTerm}
         />
+      ) : viewMode === "timeline" ? (
+        <div className="overflow-x-auto">
+          <TimelineView tasks={filtered} onCardClick={setSelectedTask} />
+        </div>
       ) : (
         <InlineListView
           tasks={filtered}
@@ -3999,7 +4537,7 @@ export default function EngineeringTasksPage() {
                   { value: "Internal", label: "Internal" },
                   { value: "External", label: "External" },
                 ]}
-                data-testid="select-hold-blocked-type"
+                data-testid="select-hold-blocked-type-page"
               />
             </div>
             <Textarea
@@ -4029,6 +4567,34 @@ export default function EngineeringTasksPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {showShortcuts && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowShortcuts(false)}>
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-sm">Keyboard Shortcuts</h3>
+              <button onClick={() => setShowShortcuts(false)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-2 text-xs">
+              {[
+                ["N", "New task"],
+                ["1", "Board view"],
+                ["2", "My Tasks view"],
+                ["3", "Projects view"],
+                ["4", "List view"],
+                ["5", "Timeline view"],
+                ["Esc", "Close drawer / dialog"],
+                ["?", "Toggle this help"],
+              ].map(([key, desc]) => (
+                <div key={key} className="flex items-center justify-between">
+                  <span className="text-muted-foreground">{desc}</span>
+                  <kbd className="px-2 py-0.5 bg-muted rounded border text-[10px] font-mono font-bold">{key}</kbd>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

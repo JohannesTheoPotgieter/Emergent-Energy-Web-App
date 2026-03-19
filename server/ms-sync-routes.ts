@@ -8,6 +8,7 @@ import {
   qcItemInstance, qcChecklist, qcTemplateItem,
   projectInfo, users, normalizedPlanTasks, engineeringTasks, approvals,
   msAccounts, msObjects, communicationFollowUps, projectCommunicationTimelineEvents, workItemAssignments,
+  workItems,
 } from "@shared/schema";
 import {
   tagToProject,
@@ -363,11 +364,16 @@ export function registerMsSyncRoutes(app: Express) {
         return res.status(400).json({ error: `Invalid task ID: ${taskId}` });
       }
       const assigneeType = parsed.data.assigneeType ?? (parsed.data.userId != null ? "internal_user" : null);
-      const assigneeId = parsed.data.assigneeId ?? parsed.data.userId ?? null;
+      const rawAssigneeId = parsed.data.assigneeId ?? parsed.data.userId ?? null;
+      const assigneeId = rawAssigneeId != null ? Number(rawAssigneeId) : null;
       if (assigneeId != null && (!Number.isFinite(assigneeId) || assigneeId <= 0)) {
-        return res.status(400).json({ error: `Invalid assignee ID: ${assigneeId}` });
+        return res.status(400).json({ error: `Invalid assignee ID: ${rawAssigneeId}` });
       }
-      console.log("[Reassign] Processing:", { taskId, taskSource, assigneeType, assigneeId, userId: getEffectiveUser(req)?.id });
+      const actorId = getEffectiveUser(req)?.id;
+      if (!actorId || !Number.isFinite(actorId)) {
+        return res.status(401).json({ error: "Valid user session required" });
+      }
+      console.log("[Reassign] Processing:", { taskId, taskSource, assigneeType, assigneeId, actorId, body: JSON.stringify(req.body) });
 
       if (taskSource === "plan_viewer" || taskSource === "remove_viewer") {
         const viewerUserId = assigneeType === "internal_user" ? assigneeId : parsed.data.userId ?? null;
@@ -442,6 +448,28 @@ export function registerMsSyncRoutes(app: Express) {
       });
       console.log("[Reassign] Assignment saved to DB:", { entityType, taskId, assignmentRole, mode, resultCount: assignments.length });
 
+      if (entityType === "work_item") {
+        try {
+          const internalAssigneeIds = assignments
+            .filter((a) => a.active && a.assigneeType === "internal_user" && Number.isFinite(a.assigneeId))
+            .map((a) => a.assigneeId);
+          const internalNames = assignments
+            .filter((a) => a.active && a.assigneeType === "internal_user")
+            .map((a) => a.displayLabel)
+            .filter(Boolean);
+          const primaryOwner = internalAssigneeIds[0] || null;
+          await db.update(workItems).set({
+            ownerUserId: primaryOwner,
+            assigneeUserIds: internalAssigneeIds.length > 0 ? internalAssigneeIds : null,
+            assignees: internalNames.length > 0 ? internalNames : null,
+            updatedAt: new Date(),
+          }).where(eq(workItems.id, taskId));
+          console.log("[Reassign] Synced back to work_items:", { taskId, primaryOwner, internalAssigneeIds, internalNames });
+        } catch (syncErr: any) {
+          console.error("[Reassign] Sync-back to work_items failed (non-fatal):", syncErr.message);
+        }
+      }
+
       const current = assignments.find((assignment) =>
         assigneeType != null &&
         assignment.assignmentRole === assignmentRole &&
@@ -462,14 +490,9 @@ export function registerMsSyncRoutes(app: Express) {
         assignments,
       });
     } catch (err: any) {
-      console.error("[Reassign] Assignment update failed", {
-        error: err?.message,
-        stack: err?.stack,
-        body: req.body,
-        userId: getEffectiveUser(req)?.id,
-      });
+      console.error("[Reassign] Assignment update failed", err?.message, err?.stack?.split("\n").slice(0, 8).join("\n"));
       const status = err?.message?.toLowerCase().includes("permission") ? 403 : err?.message?.toLowerCase().includes("not found") ? 404 : err?.message?.toLowerCase().includes("required") ? 400 : 500;
-      res.status(status).json({ error: err.message || "Assignment update failed" });
+      res.status(status).json({ error: err.message || "Assignment update failed", _debug: { body: req.body, stack: err?.stack?.split("\n").slice(0, 8) } });
     }
   });
 
@@ -1049,6 +1072,39 @@ export function registerMsSyncRoutes(app: Express) {
     } catch (err: any) {
       console.error("[MS Teams Unlink] Error:", err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Dashboard channels derived from user's synced Teams data
+  app.get("/api/chat-groups/mine", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "auth_required" });
+
+      const teamsItems = await db
+        .select()
+        .from(msObjects)
+        .where(and(eq(msObjects.userId, userId), eq(msObjects.type, "teams"), ne(msObjects.dismissed, true)))
+        .orderBy(desc(msObjects.receivedOrStartDatetime));
+
+      const groups = teamsItems.map((item) => {
+        const meta = (item.metadata as any) || {};
+        return {
+          id: item.id,
+          name: item.subjectOrTitle || "Chat",
+          type: meta.chatType === "oneOnOne" ? "project" : "department",
+          memberCount: meta.memberCount || 0,
+          unreadCount: item.isRead === false ? 1 : 0,
+          lastUpdated: item.receivedOrStartDatetime,
+          msId: item.msId,
+          webLink: item.webLink,
+        };
+      });
+
+      res.json(groups);
+    } catch (err: any) {
+      console.error("[Chat Groups] Error:", err);
+      res.status(500).json({ error: "Failed to fetch chat groups" });
     }
   });
 

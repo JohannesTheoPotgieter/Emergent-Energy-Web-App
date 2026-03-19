@@ -22,6 +22,16 @@ import {
 } from "@shared/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
+import {
+  STATIC_COS_BUDGET_FY26,
+  extractMonthKey,
+  allocateRevenue,
+  isCosRealised as isCosRealisedShared,
+  normalizeProjectName,
+  mapToSortedArray,
+  currentMonthKey as getCurrentMonthKey,
+  parseExpenseAmount,
+} from "../lib/calculations/financeUtils";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { sendExcelSyncNotification } from "../excel-sync-notifications";
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from "../work-items-adapter";
@@ -90,10 +100,9 @@ function isDateConfirmed(confirmed: boolean | null | undefined, fontColor: strin
   return false;
 }
 
+// Delegates to shared utility in financeUtils.ts (aligned with classifyCosStatus)
 function isCosRealised(exp: any): boolean {
-  const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
-  const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
-  return hasInvoice && hasInvDate;
+  return isCosRealisedShared(exp);
 }
 
 function isCashflowConfirmed(exp: any): boolean {
@@ -1166,6 +1175,12 @@ router.post("/api/tracker-monthly", requireAuth, requireTrackerPermission("edit"
     if (!trackerType || !monthKey) {
       return res.status(400).json({ error: "trackerType and monthKey required" });
     }
+    if (!/^\d{4}-\d{2}$/.test(monthKey)) {
+      return res.status(400).json({ error: "monthKey must be in YYYY-MM format" });
+    }
+    if (!["COS", "REV", "GP"].includes(trackerType)) {
+      return res.status(400).json({ error: "trackerType must be COS, REV, or GP" });
+    }
     const result = await storage.upsertTrackerMonthlyManual({
       trackerType,
       monthKey,
@@ -1339,31 +1354,13 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       }
     }
 
-    const staticCosBudget: Record<string, number> = {
-      '2025-09': 8083466.99,
-      '2025-10': 16346971.77,
-      '2025-11': 20803804.86,
-      '2025-12': 12381055.48,
-      '2026-01': 12395435.22,
-      '2026-02': 20724666.08,
-      '2026-03': 30199956.69,
-      '2026-04': 21137178.14,
-      '2026-05': 31405517.81,
-      '2026-06': 41720854.07,
-      '2026-07': 30116780.50,
-      '2026-08': 73983803.91,
-    };
+    // Uses shared static COS budget from financeUtils.ts (single source of truth)
+    const staticCosBudget = STATIC_COS_BUDGET_FY26;
 
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
 
     let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdRevRealised = 0;
-
-    function mapToArray(m: Map<string, number>): { projectName: string; value: number }[] {
-      const arr: { projectName: string; value: number }[] = [];
-      m.forEach((v, k) => arr.push({ projectName: k, value: v }));
-      return arr.sort((a, b) => b.value - a.value);
-    }
 
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(startMonth);
@@ -1411,8 +1408,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         ytdVariance,
         ytdVariancePct,
         ytdRevRealised,
-        cosProjects: mapToArray(bucket?.projects ?? new Map()),
-        realisedProjects: mapToArray(realisedBucket?.projects ?? new Map()),
+        cosProjects: mapToSortedArray(bucket?.projects ?? new Map()),
+        realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
         unrealisedProjects: (() => {
           const cosPs = bucket?.projects ?? new Map<string, number>();
           const realPs = realisedBucket?.projects ?? new Map<string, number>();
@@ -1421,7 +1418,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
             const diff = v - (realPs.get(k) || 0);
             if (diff !== 0) unrealMap.set(k, diff);
           });
-          return mapToArray(unrealMap);
+          return mapToSortedArray(unrealMap);
         })(),
       });
     }
@@ -1597,11 +1594,10 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       }
 
       const nowD = new Date();
-      const curMK = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
-      const isFutureMonth = itemMonthKey ? itemMonthKey > curMK : false;
+      const currentMonthKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
 
-      const isRealised = isCosRealised(exp) && !isFutureMonth;
-      const isConfirmedPayment = isCashflowConfirmed(exp) && !isFutureMonth;
+      const isRealised = isCosRealised(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
+      const isConfirmedPayment = isCashflowConfirmed(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
 
       let cosState = 'Planned';
       if (isConfirmedPayment) {
@@ -1684,18 +1680,22 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
       return res.status(400).json({ error: "Cannot mark as realised without an invoice number" });
     }
 
-    await storage.updateProgramExpenseFields(id, {
+    if (realised && !expense.expenseInvoicedDate) {
+      return res.status(400).json({ error: "Cannot mark as realised without an invoice date" });
+    }
+
+    const updated = await storage.updateProgramExpenseFields(id, {
       invoiceDateConfirmed: realised,
     });
 
-    const updatedExpenses = await storage.getAllProgramExpenses();
-    const updatedExpense = updatedExpenses.find(e => e.id === id);
-    if (updatedExpense) {
-      const newState = classifyExpenseState(updatedExpense as any);
-      await storage.updateProgramExpenseFields(id, {
-        computedState: newState,
-      });
+    if (!updated) {
+      return res.status(500).json({ error: "Failed to update expense fields" });
     }
+
+    const newState = classifyExpenseState(updated as any);
+    await storage.updateProgramExpenseFields(id, {
+      computedState: newState,
+    });
 
     res.json({ success: true, id, realised });
   } catch (error) {
@@ -1864,25 +1864,11 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
     const revManualBudgetMap = new Map(revManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
     const cosManualBudgetMap = new Map(cosManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
 
-    const staticCosBudgetGP: Record<string, number> = {
-      '2025-09': 8083466.99,
-      '2025-10': 16346971.77,
-      '2025-11': 20803804.86,
-      '2025-12': 12381055.48,
-      '2026-01': 12395435.22,
-      '2026-02': 20724666.08,
-      '2026-03': 30199956.69,
-      '2026-04': 21137178.14,
-      '2026-05': 31405517.81,
-      '2026-06': 41720854.07,
-      '2026-07': 30116780.50,
-      '2026-08': 73983803.91,
-    };
-
+    // Uses shared static COS budget from financeUtils.ts (single source of truth)
     function getCosBudget(monthKey: string): number {
       const manual = cosManualBudgetMap.get(monthKey);
       if (manual && manual !== 0) return manual;
-      return staticCosBudgetGP[monthKey] ?? 0;
+      return STATIC_COS_BUDGET_FY26[monthKey] ?? 0;
     }
 
     const revByProject = new Map<string, number>();
@@ -2158,6 +2144,99 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res)
   }
 });
 
+// GP Tracker — month detail drill-down (line-item level)
+router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
+  try {
+    const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
+    if (!monthKey) return res.status(400).json({ error: "monthKey required" });
+
+    const keyMatch = monthKey.match(/^(\d{4})-(\d{2})$/);
+    if (!keyMatch) return res.status(400).json({ error: "Invalid monthKey format" });
+
+    const [allExpenses, allInflowsRaw] = await Promise.all([
+      storage.getAllProgramExpenses(),
+      storage.getAllProgramInflows(),
+    ]);
+
+    const revByProject = new Map<string, number>();
+    for (const rev of allInflowsRaw) {
+      const pName = normalizeProjectName(rev.projectName);
+      const amt = parseFloat(rev.milestoneAmount as string) || 0;
+      revByProject.set(pName, (revByProject.get(pName) || 0) + amt);
+    }
+
+    const cosByProject = new Map<string, number>();
+    for (const exp of allExpenses) {
+      const amount = parseExpenseAmount(exp);
+      if (amount === 0) continue;
+      const pName = normalizeProjectName(exp.projectName);
+      cosByProject.set(pName, (cosByProject.get(pName) || 0) + amount);
+    }
+
+    const curMK = getCurrentMonthKey();
+    const items: any[] = [];
+
+    for (const exp of allExpenses) {
+      const amount = parseExpenseAmount(exp);
+      if (amount === 0) continue;
+
+      const itemMonthKey = extractMonthKey(exp.expenseInvoicedDate as string | null);
+      if (itemMonthKey !== monthKey) continue;
+
+      const pName = normalizeProjectName(exp.projectName);
+      if (project && pName !== project) continue;
+
+      const totalCOSProject = cosByProject.get(pName) || 1;
+      const totalRevProject = revByProject.get(pName) || 0;
+      const isNoRevLinked = !!(exp as any).noRevenueLinked;
+      const revenueAmount = allocateRevenue(amount, totalCOSProject, totalRevProject, isNoRevLinked);
+      const gpAmount = revenueAmount - amount;
+
+      const cosRealised = isCosRealised(exp) && itemMonthKey <= curMK;
+      const gpState = cosRealised ? 'Realised' : 'Unrealised';
+
+      if (stateFilter && stateFilter.toLowerCase() !== gpState.toLowerCase()) continue;
+
+      items.push({
+        id: exp.id,
+        projectName: pName,
+        category: exp.expenseCategory || null,
+        lineItem: exp.expenseLineItem || null,
+        costAmount: amount,
+        revenueAmount,
+        gpAmount,
+        gpPct: revenueAmount !== 0 ? (gpAmount / revenueAmount) * 100 : 0,
+        invoiceNumber: exp.expenseInvoiceNumber || null,
+        poNumber: exp.expensePoNumber || null,
+        invoiceDate: exp.expenseInvoicedDate || null,
+        supplier: exp.supplierName || null,
+        isRealised: cosRealised,
+        noRevenueLinked: isNoRevLinked,
+        gpState,
+      });
+    }
+
+    items.sort((a, b) => b.gpAmount - a.gpAmount);
+
+    const realisedGP = items.filter(i => i.isRealised).reduce((s, i) => s + i.gpAmount, 0);
+    const unrealisedGP = items.filter(i => !i.isRealised).reduce((s, i) => s + i.gpAmount, 0);
+
+    res.json({
+      monthKey,
+      lineCount: items.length,
+      totalRevenue: items.reduce((s, i) => s + i.revenueAmount, 0),
+      totalCOS: items.reduce((s, i) => s + i.costAmount, 0),
+      totalGP: items.reduce((s, i) => s + i.gpAmount, 0),
+      realisedGP,
+      unrealisedGP,
+      items,
+    });
+  } catch (error) {
+    console.error("GP tracker month-detail error:", error);
+    res.status(500).json({ error: "Failed to fetch GP tracker month detail" });
+  }
+});
+
 router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
   try {
     const [allExpenses, allInflowsRaw, manualEntries] = await Promise.all([
@@ -2225,12 +2304,6 @@ router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_track
       }
     }
 
-    function mapToArray(m: Map<string, number>): { projectName: string; value: number }[] {
-      const arr: { projectName: string; value: number }[] = [];
-      m.forEach((v, k) => arr.push({ projectName: k, value: v }));
-      return arr.sort((a, b) => b.value - a.value);
-    }
-
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
     let ytdRevenue = 0, ytdRealised = 0, ytdBudget = 0;
@@ -2276,8 +2349,8 @@ router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_track
         ytdBudget,
         ytdVariance,
         ytdVariancePct,
-        revProjects: mapToArray(bucket?.projects ?? new Map()),
-        realisedProjects: mapToArray(realisedBucket?.projects ?? new Map()),
+        revProjects: mapToSortedArray(bucket?.projects ?? new Map()),
+        realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
         unrealisedProjects: (() => {
           const revPs = bucket?.projects ?? new Map<string, number>();
           const realPs = realisedBucket?.projects ?? new Map<string, number>();
@@ -2286,7 +2359,7 @@ router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_track
             const diff = v - (realPs.get(k) || 0);
             if (diff !== 0) unrealMap.set(k, diff);
           });
-          return mapToArray(unrealMap);
+          return mapToSortedArray(unrealMap);
         })(),
       });
     }

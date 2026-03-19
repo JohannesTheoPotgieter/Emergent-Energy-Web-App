@@ -349,9 +349,12 @@ function StageDetail({ stageId, projectId, projectName, isCoo, userRole }: {
               <div><span className="font-medium">Informed:</span> <span className="text-muted-foreground">{stage.raciInformed}</span></div>
             </div>
             {stage.failureModes?.length > 0 && (
-              <div>
-                <span className="font-medium text-orange-700">Failure Modes:</span>
-                <ul className="list-disc list-inside mt-0.5 text-orange-600">
+              <div className="bg-orange-50 border-l-4 border-orange-400 p-3 rounded">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <AlertTriangle className="h-4 w-4 text-orange-600" />
+                  <span className="font-semibold text-orange-900 text-xs">Potential Risk Areas</span>
+                </div>
+                <ul className="list-disc list-inside text-orange-700 text-xs space-y-0.5">
                   {stage.failureModes.map((fm: string, i: number) => <li key={i}>{fm}</li>)}
                 </ul>
               </div>
@@ -599,12 +602,30 @@ function TaskRow({ task, projectId, stageId, allDeliverables, isCoo, userRole }:
               </div>
             )}
           </div>
-          <Badge className={`${cfg.color} text-[10px] px-1.5 py-0`}>{cfg.label}</Badge>
+          <div className="flex items-center gap-2">
+            {task.dueDate && (
+              <span className={`text-[10px] ${new Date(task.dueDate) < new Date() && task.status !== "complete" ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
+                {new Date(task.dueDate).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })}
+              </span>
+            )}
+            <Badge className={`${cfg.color} text-[10px] px-1.5 py-0`}>{cfg.label}</Badge>
+          </div>
         </div>
         {expanded && (
           <div className="mt-2 pl-6 space-y-3">
             {task.templateDescription && (
               <p className="text-xs text-muted-foreground">{task.templateDescription}</p>
+            )}
+            {task.ownerUserName && (
+              <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <Users className="h-3 w-3" /> Assigned to: <span className="font-medium text-foreground">{task.ownerUserName}</span>
+              </p>
+            )}
+            {task.status === "complete" && task.completedAt && (
+              <p className="text-[10px] text-green-600 flex items-center gap-1">
+                <CheckCircle2 className="h-3 w-3" /> Completed {new Date(task.completedAt).toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "numeric" })}
+                {task.completedByName && <span> by {task.completedByName}</span>}
+              </p>
             )}
 
             <div className="flex items-center gap-3">
@@ -1056,7 +1077,8 @@ function ApprovalRow({ approval, projectId, stageId, userRole, isCoo }: {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const roleLabel = approval.approverRole === "QA_REVIEW" ? "QA Review (Dean)" : "Technical Signoff (Tanaka)";
+  const roleName = approval.approverRole === "QA_REVIEW" ? "QA Review" : "Technical Signoff";
+  const roleLabel = approval.approverUserName ? `${roleName} (${approval.approverUserName})` : roleName;
   const canApprove = isCoo || (approval.approverRole === "QA_REVIEW" && userRole === "QUALITY_MANAGER") ||
     (approval.approverRole === "TECHNICAL_SIGNOFF" && (userRole === "ENGINEER" || userRole === "PROGRAM_MANAGER"));
 

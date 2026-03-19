@@ -36,13 +36,13 @@ const ROLE_SECTION_PRIORITIES: Record<string, RoleAwareSection[]> = {
 };
 
 const ROLE_LANDING_CANDIDATES: Record<string, string[]> = {
-  LEADERSHIP: ["dashboard", "projects", "myWork", "commandCenter"],
-  SITE_MANAGEMENT: ["pmDashboard", "projects", "pmOnTheGo", "myWorkTasks", "myWork"],
+  LEADERSHIP: ["executionBoard", "projects", "myWork", "commandCenter"],
+  SITE_MANAGEMENT: ["executionBoard", "projects", "pmOnTheGo", "myWorkTasks", "myWork"],
   ENGINEERING: ["engineering", "engineeringTasks", "myWorkTasks", "myWork"],
   QUALITY: ["quality", "myWorkApprovals", "myWorkTasks", "myWork"],
   FINANCE: ["cashflow", "cos", "revenueTracker", "gpTracker", "myWork"],
   PROJECT_DEVELOPMENT: ["pdDashboard", "pdTickets", "clients", "myWork"],
-  DEFAULT: ["myWork", "dashboard", "projects"],
+  DEFAULT: ["myWork", "executionBoard", "projects"],
 };
 
 const MICROSOFT_PRIORITY_BY_ROLE: Record<string, string[]> = {

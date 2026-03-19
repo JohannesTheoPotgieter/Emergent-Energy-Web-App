@@ -973,6 +973,20 @@ export function registerLifecycleRoutes(app: Express) {
           ],
           rows: actionRows,
         },
+        dataFreshness: {
+          generatedAt: new Date().toISOString(),
+          recordCounts: {
+            activeProjects: activeProjects.length,
+            dashboardProjects: projectRows.length,
+            planTasks: rawPlanTasks.length,
+            revenueLines: revenueLines.length,
+            costLines: costLines.length,
+            engineeringTasks: engTasks.length,
+            qualityWarnings: qualityRows.length,
+            approvals: approvalRows.length,
+            importRuns: importRuns.length,
+          },
+        },
       });
     } catch (err: any) {
       console.error("[lifecycle-board] GET execution-dashboard error:", err);
