@@ -447,13 +447,13 @@ export const WALKTHROUGHS: Walkthrough[] = [
         title: "Understand the Home Screen",
         description: "The home page is your personalized command center. It shows greeting with role-specific messages, stat cards, and actionable sections. It auto-refreshes every 60 seconds.",
         targetPage: "/",
-        tryIt: "Navigate to the Home page and observe the four stat cards at the top: Unread Notifications, Open Tasks, Pending Approvals, and Overdue Tasks.",
+        tryIt: "Navigate to the Home page and observe the stat cards at the top: Open Tasks, Pending Approvals, and Overdue Tasks.",
       },
       {
         stepNumber: 2,
         title: "Review Stat Cards",
-        description: "The stat cards show real-time counts:\n• 📬 Notifications — unread items requiring your attention\n• ✅ Open Tasks — engineering tasks assigned to you\n• ⏳ Pending Approvals — items waiting for your approval (engineering gates, quality reviews, deliverables)\n• ⚠️ Overdue Tasks — tasks past their due date",
-        tip: "Click any stat card to navigate directly to the relevant section (notifications, engineering tasks, approvals, etc.).",
+        description: "The stat cards show real-time counts:\n• ✅ Open Tasks — engineering tasks assigned to you\n• ⏳ Pending Approvals — items waiting for your approval (engineering gates, quality reviews, deliverables)\n• ⚠️ Overdue Tasks — tasks past their due date",
+        tip: "Click any stat card to navigate directly to the relevant section (engineering tasks, approvals, etc.).",
         tryIt: "Click each stat card to see where it takes you. Then use the browser back button to return home.",
       },
       {
