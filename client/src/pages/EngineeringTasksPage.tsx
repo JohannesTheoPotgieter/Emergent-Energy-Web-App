@@ -40,7 +40,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
-  GripVertical,
   Columns3,
   List,
   Send,
@@ -50,7 +49,6 @@ import {
   Timer,
   ArrowRight,
   PauseCircle,
-  MoreVertical,
   ChevronsUpDown,
   Check,
   ThumbsUp,
@@ -496,6 +494,7 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
         ${priorityBorderColors[task.priority] || "border-l-gray-300"}
         ${overdue ? "bg-red-50/60 border-r-red-200 border-t-red-200 border-b-red-200" : ""}
         ${isCritical && !overdue ? "bg-orange-50/30" : ""}
+        ${selected ? "ring-2 ring-blue-500 bg-blue-50/40" : ""}
       `}
       data-testid={`kanban-card-${task.id}`}
     >
@@ -1402,7 +1401,7 @@ function TaskDetailDrawer({
                 textNames={task.assignees || null}
                 mode="multi"
                 size="sm"
-                invalidateKeys={[`/api/eng/tasks?projectName=${task.projectName}`, "/api/eng/tasks", "/api/my-work/all-tasks"]}
+                invalidateKeys={["eng-tasks", "/api/my-work/all-tasks"]}
               />
               {task.assignees && task.assignees.length > 1 && (
                 <div className="flex flex-wrap gap-1 mt-1">
@@ -2319,7 +2318,7 @@ function TaskDetailDrawer({
             )}
 
             {activeTab === "dependencies" && (
-              <DependenciesTab task={task} allTasks={allTasks} />
+              <DependenciesTab task={task} />
             )}
 
             {(task.linkedPlanItemId || task.linkedDeliverableId || task.linkedQualityItemInstanceId) && (
@@ -4537,7 +4536,7 @@ export default function EngineeringTasksPage() {
                   { value: "Internal", label: "Internal" },
                   { value: "External", label: "External" },
                 ]}
-                data-testid="select-hold-blocked-type-page"
+                data-testid="select-hold-blocked-type"
               />
             </div>
             <Textarea

@@ -4,10 +4,10 @@ import { eq, and, desc, sql, inArray, count, isNull, ne } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import {
   trItems, trItemProjectLinks, trItemSuggestionDecisions,
-  insertTrItemSchema, projectInfo, operationalTasks,
+  insertTrItemSchema, projectInfo, operationalTasks, entityAssignments,
   type TrItemProjectLink, type TrSuggestionDecision, type ProjectInfo,
 } from "@shared/schema";
-import { requirePermission } from "./permission-middleware";
+import { resolveNameToUserId } from "./user-resolver";
 
 type AppUser = { id: number; email: string; name: string; role: string; };
 
@@ -274,12 +274,49 @@ export function registerTrRegisterRoutes(app: Express) {
 
   app.post("/api/tr-register", requireAuth, requirePermission("tr_register", "create"), async (req: Request, res: Response) => {
     try {
+      const userId = getUser(req).id;
+
+      // Resolve ownerUserIds: prefer explicit IDs from client, fall back to name resolution
+      let ownerUserIds: number[] = [];
+      if (Array.isArray(req.body.ownerUserIds) && req.body.ownerUserIds.length > 0) {
+        ownerUserIds = req.body.ownerUserIds.filter((id: unknown) => Number.isFinite(Number(id)) && Number(id) > 0).map(Number);
+      } else if (Array.isArray(req.body.owners) && req.body.owners.length > 0) {
+        for (const name of req.body.owners) {
+          if (typeof name === "string" && name.trim()) {
+            const resolved = await resolveNameToUserId(name);
+            if (resolved) ownerUserIds.push(resolved);
+          }
+        }
+      }
+
       const parsed = insertTrItemSchema.parse({
         ...req.body,
+        ownerUserIds: ownerUserIds.length > 0 ? ownerUserIds : undefined,
         createdBy: getUser(req).email,
         updatedBy: getUser(req).email,
       });
       const [item] = await db.insert(trItems).values(parsed).returning();
+
+      // Create entity_assignments for each owner
+      const ownerNames: string[] = Array.isArray(req.body.owners) ? req.body.owners : [];
+      for (let i = 0; i < ownerUserIds.length; i++) {
+        const ownerId = ownerUserIds[i];
+        const displayLabel = ownerNames[i] || String(ownerId);
+        await db.insert(entityAssignments).values({
+          entityType: "tr_item",
+          entityId: item.id,
+          projectId: null,
+          assignmentRole: "OWNER",
+          assigneeType: "internal_user",
+          assigneeId: ownerId,
+          displayLabelSnapshot: displayLabel,
+          active: true,
+          assignedByUserId: userId,
+          metadata: null,
+          updatedAt: new Date(),
+        });
+      }
+
       res.json(item);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
@@ -289,11 +326,64 @@ export function registerTrRegisterRoutes(app: Express) {
   app.patch("/api/tr-register/:id", requireAuth, requirePermission("tr_register", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
+      const userId = getUser(req).id;
       const [existing] = await db.select().from(trItems).where(eq(trItems.id, id));
       if (!existing) return res.status(404).json({ error: "TR item not found" });
 
+      // Resolve ownerUserIds if owners changed but ownerUserIds not provided
+      if (Array.isArray(req.body.owners) && !Array.isArray(req.body.ownerUserIds)) {
+        const resolvedIds: number[] = [];
+        for (const name of req.body.owners) {
+          if (typeof name === "string" && name.trim() && !name.startsWith("counterparty:") && !name.startsWith("contact:")) {
+            const resolved = await resolveNameToUserId(name);
+            if (resolved) resolvedIds.push(resolved);
+          }
+        }
+        if (resolvedIds.length > 0) {
+          req.body.ownerUserIds = resolvedIds;
+        }
+      }
+
       const updates = { ...req.body, updatedAt: new Date(), updatedBy: getUser(req).email };
       const [updated] = await db.update(trItems).set(updates).where(eq(trItems.id, id)).returning();
+
+      // Sync entity_assignments when owners/ownerUserIds change
+      if (req.body.owners !== undefined || req.body.ownerUserIds !== undefined) {
+        const newOwnerIds: number[] = Array.isArray(updated.ownerUserIds) ? updated.ownerUserIds.filter((id): id is number => id != null) : [];
+        const ownerNames: string[] = Array.isArray(updated.owners) ? (updated.owners as string[]) : [];
+
+        // Deactivate existing OWNER assignments
+        await db.update(entityAssignments).set({
+          active: false,
+          clearedAt: new Date(),
+          clearedByUserId: userId,
+          updatedAt: new Date(),
+        }).where(and(
+          eq(entityAssignments.entityType, "tr_item"),
+          eq(entityAssignments.entityId, id),
+          eq(entityAssignments.assignmentRole, "OWNER"),
+          eq(entityAssignments.active, true),
+        ));
+
+        // Create new OWNER assignments
+        for (let i = 0; i < newOwnerIds.length; i++) {
+          const ownerId = newOwnerIds[i];
+          const displayLabel = ownerNames[i] || String(ownerId);
+          await db.insert(entityAssignments).values({
+            entityType: "tr_item",
+            entityId: id,
+            projectId: null,
+            assignmentRole: "OWNER",
+            assigneeType: "internal_user",
+            assigneeId: ownerId,
+            displayLabelSnapshot: displayLabel,
+            active: true,
+            assignedByUserId: userId,
+            metadata: null,
+            updatedAt: new Date(),
+          });
+        }
+      }
 
       if (req.body.dueDate && String(req.body.dueDate) !== String(existing.dueDate)) {
         const links: TrItemProjectLink[] = await db.select().from(trItemProjectLinks).where(eq(trItemProjectLinks.trItemId, id));

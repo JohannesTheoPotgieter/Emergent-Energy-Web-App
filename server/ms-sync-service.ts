@@ -11,6 +11,9 @@ import {
 } from "./outlook";
 
 const SYNC_INTERVAL_MS = 15 * 60 * 1000;
+/** If more than this fraction of items fail in a single sync, abort early */
+const ERROR_THRESHOLD_RATIO = 0.5;
+const MIN_ITEMS_FOR_THRESHOLD = 5;
 const syncTimers: Map<number, NodeJS.Timeout> = new Map();
 let globalSyncTimer: NodeJS.Timeout | null = null;
 
@@ -18,6 +21,12 @@ interface SyncResult {
   type: string;
   synced: number;
   errors: string[];
+  abortedEarly?: boolean;
+}
+
+function shouldAbortSync(synced: number, errorCount: number, totalAttempted: number): boolean {
+  if (totalAttempted < MIN_ITEMS_FOR_THRESHOLD) return false;
+  return errorCount / totalAttempted > ERROR_THRESHOLD_RATIO;
 }
 
 async function getUserToken(userId: number): Promise<string | null> {
@@ -48,7 +57,9 @@ export async function syncUserCalendar(userId: number): Promise<SyncResult> {
     const formatDate = (d: Date) => d.toISOString().split("T")[0];
     const events = await getCalendarEvents(formatDate(startDate), formatDate(endDate), ssoToken);
 
-    for (const evt of events) {
+    let errorCount = 0;
+    for (let i = 0; i < events.length; i++) {
+      const evt = events[i];
       try {
         await db.execute(sql`
           INSERT INTO ms_objects (user_id, type, ms_id, subject_or_title, sender_or_organizer, web_link,
@@ -71,7 +82,13 @@ export async function syncUserCalendar(userId: number): Promise<SyncResult> {
         `);
         result.synced++;
       } catch (err: any) {
+        errorCount++;
         result.errors.push(`Event ${evt.id}: ${err.message}`);
+        if (shouldAbortSync(result.synced, errorCount, i + 1)) {
+          result.errors.push(`Aborting calendar sync early: ${errorCount}/${i + 1} items failed. Token may need refresh.`);
+          result.abortedEarly = true;
+          break;
+        }
       }
     }
   } catch (err: any) {
@@ -108,7 +125,9 @@ export async function syncUserEmail(userId: number): Promise<SyncResult> {
       }
     }
 
-    for (const msg of allMessages) {
+    let errorCount = 0;
+    for (let i = 0; i < allMessages.length; i++) {
+      const msg = allMessages[i];
       try {
         const isFlagged = flaggedIds.has(msg.id);
         const isImportant = isFlagged || !msg.isRead;
@@ -134,7 +153,13 @@ export async function syncUserEmail(userId: number): Promise<SyncResult> {
         `);
         result.synced++;
       } catch (err: any) {
+        errorCount++;
         result.errors.push(`Email ${msg.id}: ${err.message}`);
+        if (shouldAbortSync(result.synced, errorCount, i + 1)) {
+          result.errors.push(`Aborting email sync early: ${errorCount}/${i + 1} items failed. Token may need refresh.`);
+          result.abortedEarly = true;
+          break;
+        }
       }
     }
   } catch (err: any) {
@@ -156,7 +181,9 @@ export async function syncUserTeams(userId: number): Promise<SyncResult> {
 
     const chats = await getMyChats(30, ssoToken);
 
-    for (const chat of chats) {
+    let errorCount = 0;
+    for (let i = 0; i < chats.length; i++) {
+      const chat = chats[i];
       try {
         const memberNames = (chat.members || []).map((m: any) => m.displayName).filter(Boolean).join(", ");
         const title = chat.topic || memberNames || "Chat";
@@ -181,7 +208,13 @@ export async function syncUserTeams(userId: number): Promise<SyncResult> {
         `);
         result.synced++;
       } catch (err: any) {
+        errorCount++;
         result.errors.push(`Chat ${chat.id}: ${err.message}`);
+        if (shouldAbortSync(result.synced, errorCount, i + 1)) {
+          result.errors.push(`Aborting Teams sync early: ${errorCount}/${i + 1} items failed. Token may need refresh.`);
+          result.abortedEarly = true;
+          break;
+        }
       }
     }
   } catch (err: any) {
@@ -203,7 +236,11 @@ export async function syncAllForUser(userId: number): Promise<SyncResult[]> {
   const teamsResult = await syncUserTeams(userId);
   results.push(teamsResult);
 
-  console.log(`[MS Sync] User ${userId}: calendar=${calResult.synced}, email=${emailResult.synced}, teams=${teamsResult.synced}`);
+  const aborted = results.filter(r => r.abortedEarly).map(r => r.type);
+  if (aborted.length > 0) {
+    console.warn(`[MS Sync] User ${userId}: sync aborted early for: ${aborted.join(", ")} — token may need refresh`);
+  }
+  console.log(`[MS Sync] User ${userId}: calendar=${calResult.synced}, email=${emailResult.synced}, teams=${teamsResult.synced}${aborted.length > 0 ? ` (aborted: ${aborted.join(", ")})` : ""}`);
 
   return results;
 }
