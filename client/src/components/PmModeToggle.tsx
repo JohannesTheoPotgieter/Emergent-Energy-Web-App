@@ -68,7 +68,7 @@ export function PmModeToggle() {
     if (newMode === "on_the_go") {
       navigate("/pm/on-the-go");
     } else {
-      navigate("/pm-dashboard");
+      navigate("/execution-board");
     }
   };
 
