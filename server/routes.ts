@@ -98,6 +98,7 @@ import { getPlatformProjectSummaryMap } from "./services/project-platform-summar
 import { classifyProjectInfoPayload } from "./services/source-of-truth-policy";
 import { mytoolTaskIdempotencyStore } from "./lib/mytool-task-idempotency";
 import { computeNextRecurrenceDate, computeMilestoneProgress, isOverdue, shouldBlockTask, validateDependencyPair } from "./lib/mytool-work-engine";
+import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag, DEFAULT_RAG_THRESHOLDS } from "@shared/kpi-definitions";
 
 function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
   if (fontColor === 'red') return false;
@@ -932,6 +933,148 @@ export async function registerRoutes(
     }
   });
   
+  // GC-003 + GC-005: Server-side KPI health-summary endpoint with configurable RAG thresholds
+  app.get("/api/projects/:projectName/health-summary", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { projectName } = req.params;
+      const decodedName = decodeURIComponent(projectName);
+
+      // Fetch all data in parallel
+      const [expenses, inflows, planTasks, qualitySummaryRes, projectInfoRow, engStagesRes, engTasksRes] = await Promise.all([
+        storage.getProgramExpensesByProject(decodedName),
+        storage.getProgramInflowsByProject(decodedName),
+        (async () => {
+          const useCanonical = await isWorkItemsEnabled();
+          if (useCanonical) {
+            return getAllWorkItemsForPlanTab(decodedName);
+          }
+          return storage.getProjectPlansByProject(decodedName);
+        })(),
+        (async () => {
+          try {
+            const rows = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, decodedName));
+            if (rows.length === 0) return { hasChecklist: false, phases: [] };
+            const checklist = rows[0];
+            const items = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
+            const phaseMap = new Map<string, { applicableItems: number; approvedItems: number }>();
+            for (const item of items) {
+              const phase = item.phaseName || "Unknown";
+              if (!phaseMap.has(phase)) phaseMap.set(phase, { applicableItems: 0, approvedItems: 0 });
+              const p = phaseMap.get(phase)!;
+              p.applicableItems++;
+              if (item.status === "PASS" || item.status === "N/A") p.approvedItems++;
+            }
+            return { hasChecklist: true, phases: Array.from(phaseMap.values()) };
+          } catch { return { hasChecklist: false, phases: [] }; }
+        })(),
+        storage.getProjectInfoByName(decodedName),
+        (async () => {
+          try {
+            const pid = (await storage.getProjectInfoByName(decodedName))?.id;
+            if (!pid) return { stages: [] };
+            const stagesRes = await db.query.projectEngStages?.findMany({ where: (s: any, { eq: eq2 }: any) => eq2(s.projectId, pid) });
+            return { stages: stagesRes || [] };
+          } catch { return { stages: [] }; }
+        })(),
+        (async () => {
+          try {
+            const pid = (await storage.getProjectInfoByName(decodedName))?.id;
+            if (!pid) return { tasks: [] };
+            const tasks = await db.select().from(engineeringTasks).where(eq(engineeringTasks.projectId, pid));
+            return { tasks };
+          } catch { return { tasks: [] }; }
+        })(),
+      ]);
+
+      // Contract value and budget
+      const totalRevenueActual = inflows.reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
+      const contractValue = (projectInfoRow as any)?.contractValue || totalRevenueActual || 0;
+      const totalBudgetFromExpenses = expenses.reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
+      const budgetTotal = (projectInfoRow as any)?.budgetTotal || totalBudgetFromExpenses || 0;
+
+      // Schedule RAG
+      const today = new Date().toISOString().split("T")[0];
+      const overduePlanTasks = (planTasks as any[]).filter((t: any) => {
+        const endDate = t.actualEndDate || t.dueDate || t.actualEnd || t.endDate;
+        const pct = t.percentComplete != null ? Number(t.percentComplete) : (Number(t.actualPctComplete) || 0);
+        const pctNorm = pct > 1 ? pct : pct * 100;
+        return endDate && endDate.substring(0, 10) < today && pctNorm < 100;
+      });
+      const completedPlanTasks = (planTasks as any[]).filter((t: any) => {
+        const pct = t.percentComplete != null ? Number(t.percentComplete) : (Number(t.actualPctComplete) || 0);
+        const pctNorm = pct > 1 ? pct : pct * 100;
+        return pctNorm >= 100;
+      });
+      const planCompletionPct = planTasks.length > 0 ? (completedPlanTasks.length / planTasks.length) * 100 : 0;
+      const scheduleRag = computeScheduleRag(overduePlanTasks.length);
+
+      // Cost RAG
+      const totalExpenses = expenses.reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
+      const costRatio = budgetTotal > 0 ? totalExpenses / budgetTotal : 0;
+      const costRag = computeCostRag(costRatio);
+
+      // Quality RAG
+      const qualityPhases = qualitySummaryRes.phases || [];
+      const qualityGatesTotal = qualityPhases.length;
+      const qualityGatesPassed = qualityPhases.filter((p: any) => p.applicableItems > 0 && p.approvedItems >= p.applicableItems).length;
+      const qualityTotalItems = qualityPhases.reduce((s: number, p: any) => s + (p.applicableItems || 0), 0);
+      const qualityApprovedItems = qualityPhases.reduce((s: number, p: any) => s + (p.approvedItems || 0), 0);
+      const qualityProgressPct = qualityTotalItems > 0 ? (qualityApprovedItems / qualityTotalItems) * 100 : 0;
+      const qualityRag = computeQualityRag(qualitySummaryRes.hasChecklist, qualityGatesPassed, qualityGatesTotal, qualityApprovedItems);
+
+      // Revenue realised %
+      const totalPaidInflows = inflows
+        .filter((m: any) => m.inBank === 1 || m.inBank === true)
+        .reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+      const revenueRealisedPct = contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0;
+
+      // COS realised %
+      const isCosRealised = (e: any) => {
+        const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
+        const hasInvDate = !!(e.expenseInvoicedDate && String(e.expenseInvoicedDate).trim());
+        return hasInvoice && hasInvDate;
+      };
+      const totalRealisedCos = expenses.reduce((s: number, e: any) => isCosRealised(e) ? s + (Number(e.expenseActualTotal) || 0) : s, 0);
+      const cosDenominator = totalExpenses > 0 ? totalExpenses : budgetTotal;
+      const cosRealisedPct = cosDenominator > 0 ? (totalRealisedCos / cosDenominator) * 100 : 0;
+
+      // Overall RAG
+      const overallRag = computeOverallRag(scheduleRag, costRag, qualityRag);
+
+      // Engineering progress
+      const engStages = engStagesRes.stages || [];
+      const engStageTotalTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.length || 0), 0);
+      const engStageCompletedTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.filter((t: any) => String(t.status).toUpperCase() === "COMPLETE").length || 0), 0);
+      const engBoardTasks = engTasksRes.tasks || [];
+      const engBoardTotal = engBoardTasks.length;
+      const engBoardCompleted = engBoardTasks.filter((t: any) => String(t.status).toUpperCase() === "COMPLETE").length;
+      const engTotalTasks = engStageTotalTasks + engBoardTotal;
+      const engCompletedTasks = engStageCompletedTasks + engBoardCompleted;
+      const engProgressPct = engTotalTasks > 0 ? (engCompletedTasks / engTotalTasks) * 100 : 0;
+
+      // Alerts
+      const overdueEngineeringCount = engBoardTasks.filter((t: any) => t.dueDate && t.dueDate < today && String(t.status).toUpperCase() !== "COMPLETE").length;
+
+      res.json({
+        schedule: { rag: scheduleRag, overdueTasks: overduePlanTasks.length, completionPct: Math.round(planCompletionPct * 10) / 10 },
+        cost: { rag: costRag, ratio: Math.round(costRatio * 1000) / 1000, totalExpenses, budgetTotal },
+        quality: { rag: qualityRag, gatesTotal: qualityGatesTotal, gatesPassed: qualityGatesPassed, totalItems: qualityTotalItems, approvedItems: qualityApprovedItems, progressPct: Math.round(qualityProgressPct * 10) / 10 },
+        revenue: { contractValue, realisedPct: Math.round(revenueRealisedPct * 10) / 10, totalPaidInflows },
+        cos: { realisedPct: Math.round(cosRealisedPct * 10) / 10, totalRealised: totalRealisedCos },
+        engineering: { progressPct: Math.round(engProgressPct * 10) / 10, totalTasks: engTotalTasks, completedTasks: engCompletedTasks },
+        overall: { rag: overallRag },
+        alerts: {
+          overduePlanTasks: overduePlanTasks.length,
+          overdueEngineeringTasks: overdueEngineeringCount,
+          pendingQualityApprovals: Math.max(qualityTotalItems - qualityApprovedItems, 0),
+        },
+      });
+    } catch (error: any) {
+      logApiError("GET /api/projects/:projectName/health-summary", error);
+      res.status(500).json({ error: "Failed to compute project health summary" });
+    }
+  });
+
   await registerAuthRoutes(app);
 
   // ==================== OVERVIEW API ====================
@@ -9976,7 +10119,8 @@ export async function registerRoutes(
         if (existingOverride) {
           await storage.softDeleteTaskOverride(existingOverride.id);
         } else {
-          await db.delete(operationalTasks).where(eq(operationalTasks.id, absId));
+          // GC-002: Use soft-delete instead of hard-delete for data recovery
+          await db.update(operationalTasks).set({ deletedAt: new Date() }).where(eq(operationalTasks.id, absId));
         }
       }
 
@@ -11999,6 +12143,52 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GC-008: Task type/workstream conversion endpoint
+  app.post("/api/operational-tasks/:id/convert", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { targetWorkstream } = req.body;
+      const validWorkstreams = ["PM", "Engineering", "Quality", "Procurement", "Construction", "Commissioning", "Handover", "PD"];
+      if (!targetWorkstream || !validWorkstreams.includes(targetWorkstream)) {
+        return res.status(400).json({ error: `Invalid target workstream. Valid values: ${validWorkstreams.join(", ")}` });
+      }
+
+      const task = await storage.getOperationalTask(id);
+      if (!task) return sendError(res, notFound("Operational task"));
+
+      const oldWorkstream = (task as any).primaryWorkstream || "PM";
+      const updated = await storage.updateOperationalTask(id, { primaryWorkstream: targetWorkstream });
+
+      await storage.createTaskActivityLog({
+        taskId: id,
+        actorId: (req.user as any)?.id || null,
+        actionType: 'converted',
+        fieldName: 'primaryWorkstream',
+        oldValue: oldWorkstream,
+        newValue: targetWorkstream,
+      });
+
+      // Also update the linked work item's workstream if it exists
+      try {
+        const linkedWi = await db.select().from(workItems).where(eq(workItems.legacyTaskId, id)).limit(1);
+        if (linkedWi.length > 0) {
+          await db.update(workItems).set({ workstream: targetWorkstream }).where(eq(workItems.id, linkedWi[0].id));
+        }
+      } catch (e: any) {
+        console.warn(`[task-convert] Failed to sync work item workstream for task ${id}:`, e.message);
+      }
+
+      logAuditFromReq(req, {
+        entityType: "operational_task", action: "convert", entityId: String(id),
+        changesJson: { from: oldWorkstream, to: targetWorkstream, title: (task as any).title },
+      });
+
+      res.json({ ...updated, _converted: { from: oldWorkstream, to: targetWorkstream } });
+    } catch (err: any) {
+      sendError(res, err);
     }
   });
 

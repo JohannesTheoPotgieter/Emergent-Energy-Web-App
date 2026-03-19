@@ -2546,6 +2546,11 @@ router.post("/api/smart-import/:runId/rollback", requireAuth, requirePermission(
     }
 
     await db.transaction(async (tx: any) => {
+      // GC-001: Also rollback legacy tables that are written during commit
+      await tx.delete(programInflows).where(eq(programInflows.importRunId, runId));
+      await tx.delete(programExpense).where(eq(programExpense.importRunId, runId));
+      await tx.delete(invoicePatternMatches).where(eq(invoicePatternMatches.importRunId, runId));
+
       await tx.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.importRunId, runId));
       await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.importRunId, runId));
       await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.importRunId, runId));
