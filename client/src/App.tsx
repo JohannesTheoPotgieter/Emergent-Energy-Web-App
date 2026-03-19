@@ -171,7 +171,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
   const effectiveRole = normalizeRoleForPermissions(userRole || companyRole);
-  return ROLE_LANDING_PAGE[effectiveRole] || "/dashboard";
+  return ROLE_LANDING_PAGE[effectiveRole] || "/execution-board";
 }
 
 function HomeRedirect() {
@@ -245,7 +245,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
       p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/pm/on-the-go" && location.startsWith("/pm/on-the-go"))
     );
     if (!allowed) {
-      return <Redirect to="/pm-dashboard" />;
+      return <Redirect to="/execution-board" />;
     }
   }
 
