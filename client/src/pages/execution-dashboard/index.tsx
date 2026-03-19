@@ -9,7 +9,7 @@ import { usePermission } from "@/hooks/use-permissions";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import {
   Activity, AlertCircle, AlertTriangle, RefreshCw, Filter, RotateCcw,
-  LayoutDashboard, Layers, HardHat, DollarSign,
+  LayoutDashboard, Layers, HardHat, DollarSign, PieChart,
 } from "lucide-react";
 import {
   ExecutionDashboardContext,
@@ -20,19 +20,22 @@ import OverviewPage from "./OverviewPage";
 import ProgramPage from "./ProgramPage";
 import ConstructionPage from "./ConstructionPage";
 import FinancePage from "./FinancePage";
+import RealisationKPIsPage from "./RealisationKPIsPage";
 
-type DashboardView = "overview" | "program" | "construction" | "finance";
+type DashboardView = "overview" | "program" | "construction" | "finance" | "realisation";
 
 const VIEW_CONFIG: { key: DashboardView; label: string; icon: React.ReactNode; path: string }[] = [
   { key: "overview", label: "Overview", icon: <LayoutDashboard className="w-4 h-4" />, path: "/execution-board" },
   { key: "program", label: "Program View", icon: <Layers className="w-4 h-4" />, path: "/execution-board/program" },
   { key: "construction", label: "Construction View", icon: <HardHat className="w-4 h-4" />, path: "/execution-board/construction" },
   { key: "finance", label: "Program Finance", icon: <DollarSign className="w-4 h-4" />, path: "/execution-board/finance" },
+  { key: "realisation", label: "Realisation KPIs", icon: <PieChart className="w-4 h-4" />, path: "/execution-board/realisation" },
 ];
 
 function resolveView(pathname: string): DashboardView {
   if (pathname.startsWith("/execution-board/program")) return "program";
   if (pathname.startsWith("/execution-board/construction")) return "construction";
+  if (pathname.startsWith("/execution-board/realisation")) return "realisation";
   if (pathname.startsWith("/execution-board/finance")) return "finance";
   return "overview";
 }
@@ -42,6 +45,7 @@ const VIEW_COMPONENTS: Record<DashboardView, React.ComponentType> = {
   program: ProgramPage,
   construction: ConstructionPage,
   finance: FinancePage,
+  realisation: RealisationKPIsPage,
 };
 
 export default function ExecutionDashboard() {
