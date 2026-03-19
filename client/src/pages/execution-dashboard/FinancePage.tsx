@@ -15,6 +15,7 @@ import {
   AlertTriangle, ExternalLink, Info,
 } from "lucide-react";
 import { useExecutionData } from "./use-execution-data";
+import RealisationKPIsPage from "./RealisationKPIsPage";
 
 type SortKey = "projectName" | "pm" | "plannedRevenue" | "receivedInflow" | "revenueVariance" | "plannedExpenditure" | "paidExpenditure" | "expenditureVariance" | "grossProfit" | "grossMargin" | "openInflow" | "openExpenditure";
 type SortDir = "asc" | "desc";
@@ -112,7 +113,7 @@ export default function FinancePage() {
       <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-xs">
         <Info className="w-4 h-4 shrink-0 mt-0.5" />
         <span>
-          Budget vs Actual is shown at FY level only. Weekly and monthly breakdowns are not yet available in the data contract. AR/AP ageing, cashflow forecasts, and VO/change control data are also not yet available.
+          AR/AP ageing, cashflow forecasts, and VO/change control data are not yet available.
         </span>
       </div>
 
@@ -345,6 +346,9 @@ export default function FinancePage() {
           </CardContent>
         </Card>
       )}
+
+      {/* REALISATION KPIs DETAIL */}
+      <RealisationKPIsPage />
     </div>
   );
 }

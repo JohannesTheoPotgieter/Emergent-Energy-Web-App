@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,10 +9,14 @@ import {
   formatDate,
 } from "@/lib/execution-dashboard";
 import {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip,
+  CartesianGrid,
+} from "recharts";
+import {
   Activity, AlertCircle, AlertTriangle, ChevronDown, ChevronUp,
   ExternalLink, TrendingUp, TrendingDown, DollarSign,
   Shield, FileWarning, Clock, Users, FolderOpen,
-  ArrowRight, BarChart3,
+  ArrowRight, BarChart3, PieChart,
 } from "lucide-react";
 import { useExecutionData } from "./use-execution-data";
 
@@ -51,15 +55,22 @@ export default function OverviewPage() {
     });
   };
 
+  const EXCLUDED_QUEUES = new Set(["Inflow at Risk", "Expenditure / COS at Risk"]);
+
+  const filteredActionRows = useMemo(
+    () => actionRows.filter((r) => !EXCLUDED_QUEUES.has(r.queue || "")),
+    [actionRows],
+  );
+
   const groupedActions = useMemo(() => {
     const groups: Record<string, typeof actionRows> = {};
-    for (const row of actionRows) {
+    for (const row of filteredActionRows) {
       const key = row.queue || "Other";
       if (!groups[key]) groups[key] = [];
       groups[key].push(row);
     }
     return groups;
-  }, [actionRows]);
+  }, [filteredActionRows]);
 
   // Top problem projects: sorted by criticalActionCount, showing red/amber first
   const topProblemProjects = useMemo(() => {
@@ -211,6 +222,9 @@ export default function OverviewPage() {
         </Card>
       </div>
 
+      {/* D. REALISATION KPIs SUMMARY */}
+      <RealisationSummaryStrip />
+
       {/* Top Problem Projects panel */}
       {topProblemProjects.length > 0 && (
         <Card className="border-border/60">
@@ -269,11 +283,11 @@ export default function OverviewPage() {
             <div className="flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-red-500" />
               <h2 className="text-base font-semibold">Action Center</h2>
-              <Badge variant="outline" className="text-xs ml-1">{actionRows.length} items</Badge>
+              <Badge variant="outline" className="text-xs ml-1">{filteredActionRows.length} items</Badge>
             </div>
           </div>
 
-          {actionRows.length === 0 ? (
+          {filteredActionRows.length === 0 ? (
             <div className="text-center py-8">
               <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-3">
                 <Activity className="w-6 h-6 text-emerald-500" />
@@ -367,5 +381,118 @@ function KpiCard({ icon, iconBg, label, value, sub, valueClass }: {
         {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
       </CardContent>
     </Card>
+  );
+}
+
+/* ── Realisation KPI Summary (fetches its own data) ──────────── */
+
+interface RealisationPeriod {
+  total: number; realised: number; unrealised: number; realisedPct: number;
+  lineCount: number; realisedCount: number;
+}
+interface RealisationYTD extends RealisationPeriod { budget?: number; variance?: number; variancePct?: number; }
+interface RealisationSeriesPoint { label: string; total: number; realised: number; unrealised: number; }
+
+function fmtC(v: number): string {
+  if (Math.abs(v) >= 1_000_000) return `R${(v / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(v) >= 1_000) return `R${(v / 1_000).toFixed(0)}K`;
+  return `R${v.toFixed(0)}`;
+}
+
+function RealisationSummaryStrip() {
+  const [, setLocation] = useLocation();
+  const [data, setData] = useState<{
+    fyLabel: string;
+    cos: { thisMonth: RealisationPeriod; ytd: RealisationYTD; monthlySeries: RealisationSeriesPoint[] };
+    cashflow: { thisMonth: RealisationPeriod; ytd: RealisationYTD; monthlySeries: RealisationSeriesPoint[] };
+  } | null>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem("auth_token");
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    fetch("/api/realisation-kpis", { headers })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setData)
+      .catch(() => {});
+  }, []);
+
+  if (!data) return null;
+
+  const { cos, cashflow } = data;
+
+  return (
+    <div className="space-y-3">
+      {/* Section header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center">
+            <PieChart className="w-4 h-4 text-emerald-600" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold">Realisation Tracking</h3>
+            <p className="text-[10px] text-muted-foreground">COS &amp; Cashflow realisation — {data.fyLabel}</p>
+          </div>
+        </div>
+        <Button
+          size="sm" variant="outline" className="text-xs gap-1"
+          onClick={() => setLocation("/execution-board/finance")}
+        >
+          <BarChart3 className="w-3.5 h-3.5" /> View Detail
+        </Button>
+      </div>
+
+      {/* COS + Cashflow KPI cards side by side */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+        {/* COS */}
+        <KpiCard icon={<TrendingDown className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" label="COS This Month" value={fmtC(cos.thisMonth.total)} sub={`${cos.thisMonth.realisedPct}% realised`} />
+        <KpiCard icon={<TrendingDown className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" label="COS YTD Realised" value={fmtC(cos.ytd.realised)} sub={`${cos.ytd.realisedPct}% of ${fmtC(cos.ytd.total)}`} />
+        <KpiCard icon={<DollarSign className="w-4 h-4 text-amber-600" />} iconBg="bg-amber-100" label="COS YTD Unrealised" value={fmtC(cos.ytd.unrealised)} valueClass="text-amber-600" />
+        <KpiCard
+          icon={<BarChart3 className="w-4 h-4 text-blue-600" />} iconBg="bg-blue-100"
+          label="COS YTD Variance"
+          value={cos.ytd.variancePct !== undefined ? `${cos.ytd.variancePct > 0 ? "+" : ""}${cos.ytd.variancePct}%` : "—"}
+          sub={cos.ytd.variance !== undefined ? fmtC(cos.ytd.variance) : undefined}
+          valueClass={(cos.ytd.variance ?? 0) > 0 ? "text-red-600" : "text-emerald-600"}
+        />
+        {/* Cashflow */}
+        <KpiCard icon={<DollarSign className="w-4 h-4 text-blue-600" />} iconBg="bg-blue-100" label="CF This Month" value={fmtC(cashflow.thisMonth.total)} sub={`${cashflow.thisMonth.realisedPct}% out of bank`} />
+        <KpiCard icon={<DollarSign className="w-4 h-4 text-blue-600" />} iconBg="bg-blue-100" label="CF YTD Out of Bank" value={fmtC(cashflow.ytd.realised)} sub={`${cashflow.ytd.realisedPct}% of ${fmtC(cashflow.ytd.total)}`} />
+        <KpiCard icon={<DollarSign className="w-4 h-4 text-amber-600" />} iconBg="bg-amber-100" label="CF YTD Pending" value={fmtC(cashflow.ytd.unrealised)} valueClass="text-amber-600" />
+        <KpiCard icon={<BarChart3 className="w-4 h-4 text-violet-600" />} iconBg="bg-violet-100" label="CF YTD Total" value={fmtC(cashflow.ytd.total)} sub={`${cashflow.ytd.lineCount} line items`} />
+      </div>
+
+      {/* Mini sparkline charts */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <Card className="border-border/60">
+          <CardContent className="p-3">
+            <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">COS Realisation by Month</h4>
+            <ResponsiveContainer width="100%" height={100}>
+              <BarChart data={cos.monthlySeries} barGap={1}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                <XAxis dataKey="label" tick={{ fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => fmtC(v)} width={50} />
+                <Bar dataKey="realised" stackId="a" fill="#059669" />
+                <Bar dataKey="unrealised" stackId="a" fill="#fbbf24" radius={[2,2,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+        <Card className="border-border/60">
+          <CardContent className="p-3">
+            <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Cashflow Realisation by Month</h4>
+            <ResponsiveContainer width="100%" height={100}>
+              <BarChart data={cashflow.monthlySeries} barGap={1}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                <XAxis dataKey="label" tick={{ fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 9 }} tickFormatter={(v) => fmtC(v)} width={50} />
+                <Bar dataKey="realised" stackId="a" fill="#2563eb" />
+                <Bar dataKey="unrealised" stackId="a" fill="#93c5fd" radius={[2,2,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }
