@@ -3727,6 +3727,7 @@ function SmartImportGovernancePanel({
 
         {/* Expanded details */}
         {expanded && (
+          <>
           <div className="mt-3 pt-3 border-t border-border grid gap-4 xl:grid-cols-[minmax(0,1.1fr),minmax(0,0.9fr)]">
             <div>
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Pending Queue</h4>
