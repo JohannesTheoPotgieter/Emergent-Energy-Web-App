@@ -13,8 +13,7 @@ import { Label } from "@/components/ui/label";
 import {
   AlertCircle, CheckCircle, ChevronDown, ChevronRight, FileText, Shield,
   AlertTriangle, Clock, User, Lock, Link2, X, Plus, Trash2, Send, Loader2,
-  CheckCircle2, Upload, Paperclip, ExternalLink, UserPlus, SquareCheck,
-  Download, Eye
+  CheckCircle2, Upload, Paperclip, ExternalLink, UserPlus, SquareCheck
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
