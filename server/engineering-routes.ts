@@ -647,6 +647,20 @@ export function registerEngineeringRoutes(app: Express) {
         }
       }
 
+      // Resolve projectName → projectId when frontend sends a project link
+      let resolvedProjectId: number | null | undefined = updates.projectId;
+      if (updates.projectName !== undefined) {
+        if (updates.projectName === null || updates.projectName === "") {
+          resolvedProjectId = null;
+        } else {
+          const [proj] = await db.select({ id: projectInfo.id }).from(projectInfo)
+            .where(eq(projectInfo.projectName, updates.projectName));
+          if (proj) {
+            resolvedProjectId = proj.id;
+          }
+        }
+      }
+
       const updated = await updateEngineeringWorkItem(id, {
         title: updates.title,
         description: updates.description,
@@ -657,9 +671,16 @@ export function registerEngineeringRoutes(app: Express) {
         dueDate: updates.dueDate,
         percentComplete: updates.percentComplete !== undefined ? updates.percentComplete / 100 : undefined,
         ownerUserId: updates.ownerUserId,
+        projectId: resolvedProjectId,
         holdReason: updates.holdReason,
         blockedType: updates.blockedType,
         completedAt: updates.status === "COMPLETE" ? new Date() : undefined,
+        linkedPlanItemId: updates.linkedPlanItemId,
+        linkedDeliverableId: updates.linkedDeliverableId,
+        linkedQualityItemInstanceId: updates.linkedQualityItemInstanceId,
+        trackingRag: updates.trackingRag,
+        taskTypeTag: updates.taskTypeTag,
+        blockerReason: updates.blockerReason,
       });
       if (!updated) return res.status(404).json({ error: "Task not found" });
 
@@ -2550,15 +2571,16 @@ export function registerEngineeringRoutes(app: Express) {
               WHEN tal.action_type = 'field_changed'
                 THEN coalesce(tal.old_value, '—') || ' → ' || coalesce(tal.new_value, '—')
               WHEN tal.action_type = 'created'
-                THEN coalesce(tal.new_value, ot.title)
-              ELSE ot.title
+                THEN coalesce(tal.new_value, wi.title)
+              ELSE wi.title
             END AS detail,
             u.name AS actor_name,
-            replace(ot.project_name, '_', ' ') AS project_name,
+            coalesce(pi.project_name, '') AS project_name,
             tal.created_at AS timestamp
           FROM task_activity_log tal
           LEFT JOIN users u ON tal.actor_id = u.id
-          LEFT JOIN operational_tasks ot ON tal.task_id = ot.id
+          LEFT JOIN work_items wi ON tal.task_id = wi.id
+          LEFT JOIN project_info pi ON wi.project_id = pi.id
         `);
       }
 
