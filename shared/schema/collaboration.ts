@@ -786,3 +786,42 @@ export const standupEntries = pgTable("standup_entries", {
 export const insertStandupEntrySchema = createInsertSchema(standupEntries).omit({ id: true, submittedAt: true, updatedAt: true } as any);
 export type InsertStandupEntry = z.infer<typeof insertStandupEntrySchema>;
 export type StandupEntry = typeof standupEntries.$inferSelect;
+
+// ===================== DOMAIN EVENTS ARCHITECTURE (Prompt 13) =====================
+
+export const domainEventStatusEnum = pgEnum('domain_event_status', ['pending', 'processed', 'failed']);
+export const eventProcessingStatusEnum = pgEnum('event_processing_status', ['success', 'failed', 'skipped']);
+
+export const domainEvents = pgTable("domain_events", {
+  id: serial("id").primaryKey(),
+  eventType: text("event_type").notNull(),
+  aggregateType: text("aggregate_type").notNull(),
+  aggregateId: integer("aggregate_id").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  triggeredBy: integer("triggered_by").references(() => users.id),
+  payload: jsonb("payload").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  processedAt: timestamp("processed_at"),
+});
+export type DomainEvent = typeof domainEvents.$inferSelect;
+export type InsertDomainEvent = typeof domainEvents.$inferInsert;
+
+export const eventSubscriptions = pgTable("event_subscriptions", {
+  id: serial("id").primaryKey(),
+  eventType: text("event_type").notNull(),
+  handlerName: text("handler_name").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export type EventSubscription = typeof eventSubscriptions.$inferSelect;
+
+export const eventProcessingLog = pgTable("event_processing_log", {
+  id: serial("id").primaryKey(),
+  eventId: integer("event_id").notNull().references(() => domainEvents.id),
+  handlerName: text("handler_name").notNull(),
+  status: eventProcessingStatusEnum("status").notNull(),
+  errorMessage: text("error_message"),
+  processedAt: timestamp("processed_at").notNull().defaultNow(),
+  durationMs: integer("duration_ms"),
+});
+export type EventProcessingLog = typeof eventProcessingLog.$inferSelect;
