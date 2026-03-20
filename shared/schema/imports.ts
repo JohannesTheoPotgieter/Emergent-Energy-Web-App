@@ -196,6 +196,7 @@ export type ImportIssue = typeof importIssues.$inferSelect;
 export const issueResolutionRules = pgTable("issue_resolution_rules", {
   id: serial("id").primaryKey(),
   projectName: text("project_name"),
+  projectId: integer("project_id").references(() => projectInfo.id),
   issueType: text("issue_type").notNull(),
   fingerprint: text("fingerprint").notNull(),
   section: importSectionEnum("section").notNull(),
@@ -539,6 +540,7 @@ export const importLogs = pgTable("import_logs", {
   importedByUserId: integer("imported_by_user_id").references(() => users.id),
   importedByName: text("imported_by_name"),
   projectName: text("project_name"),
+  projectId: integer("project_id").references(() => projectInfo.id),
   status: text("status").notNull(), // SUCCESS, PARTIAL, FAILED, REJECTED
   rowsAttempted: integer("rows_attempted").default(0),
   rowsWritten: integer("rows_written").default(0),

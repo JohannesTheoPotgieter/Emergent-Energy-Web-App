@@ -143,6 +143,7 @@ export type QcRiskAnswer = typeof qcRiskAnswer.$inferSelect;
 export const qcPlanLink = pgTable("qc_plan_link", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   planItemId: integer("plan_item_id").notNull(),
   itemInstanceId: integer("item_instance_id"),
   phaseId: integer("phase_id"),
@@ -156,6 +157,7 @@ export type QcPlanLink = typeof qcPlanLink.$inferSelect;
 export const qcWarning = pgTable("qc_warning", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   severity: text("severity").notNull().default("Medium"),
   warningType: text("warning_type").notNull(),
   title: text("title").notNull(),
@@ -187,6 +189,7 @@ export type QcWarningEvent = typeof qcWarningEvent.$inferSelect;
 export const qcPostmortem = pgTable("qc_postmortem", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   completedAt: timestamp("completed_at"),
   completedByUserId: integer("completed_by_user_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

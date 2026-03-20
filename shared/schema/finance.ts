@@ -101,6 +101,7 @@ export type ProgramInflows = typeof programInflows.$inferSelect;
 export const revenueMilestoneManual = pgTable("revenue_milestone_manual", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   importedMilestoneId: integer("imported_milestone_id").notNull(),
   invoiceNumber: text("invoice_number"),
   invoiceRaisedDate: text("invoice_raised_date"),
@@ -119,6 +120,7 @@ export type RevenueMilestoneManual = typeof revenueMilestoneManual.$inferSelect;
 export const projectPlan = pgTable("project_plan", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   rowNumber: integer("row_number"),
   taskNo: text("task_no"),
   highLevelProgramme: text("high_level_programme"),
@@ -151,6 +153,7 @@ export type CashflowPoint = typeof cashflowPoints.$inferSelect;
 export const financeRevenueMonthly = pgTable("finance_revenue_monthly", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   category: text("category").notNull(),
   monthEndDate: text("month_end_date").notNull(),
   value: decimal("value", { precision: 15, scale: 2 }),
@@ -163,6 +166,7 @@ export type FinanceRevenueMonthly = typeof financeRevenueMonthly.$inferSelect;
 export const financeCosMonthly = pgTable("finance_cos_monthly", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   category: text("category").notNull(),
   monthEndDate: text("month_end_date").notNull(),
   value: decimal("value", { precision: 15, scale: 2 }),
@@ -177,6 +181,7 @@ export type FinanceCosMonthly = typeof financeCosMonthly.$inferSelect;
 export const cashflowPlanningOverrides = pgTable("cashflow_planning_overrides", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   weekStartDate: text("week_start_date").notNull(),
   seriesName: text("series_name").notNull(),
   overrideValue: decimal("override_value", { precision: 15, scale: 2 }).notNull(),
@@ -191,6 +196,7 @@ export type CashflowPlanningOverride = typeof cashflowPlanningOverrides.$inferSe
 export const projectPlanOverrides = pgTable("project_plan_overrides", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   rowNumber: integer("row_number").notNull(),
   fieldName: text("field_name").notNull(),
   overrideValue: text("override_value"),
@@ -205,6 +211,7 @@ export type ProjectPlanOverride = typeof projectPlanOverrides.$inferSelect;
 export const revenueTrackingOverrides = pgTable("revenue_tracking_overrides", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   rowNumber: integer("row_number").notNull(),
   fieldName: text("field_name").notNull(),
   overrideValue: text("override_value"),
@@ -219,6 +226,7 @@ export type RevenueTrackingOverride = typeof revenueTrackingOverrides.$inferSele
 export const expenditureOverrides = pgTable("expenditure_overrides", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   rowNumber: integer("row_number").notNull(),
   fieldName: text("field_name").notNull(),
   overrideValue: text("override_value"),
@@ -234,6 +242,7 @@ export const cosStatusOverrides = pgTable("cos_status_overrides", {
   id: serial("id").primaryKey(),
   expenseId: integer("expense_id").notNull(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   rowNumber: integer("row_number").notNull(),
   originalStatus: text("original_status").notNull(),
   overrideStatus: text("override_status").notNull(),
@@ -249,6 +258,7 @@ export type CosStatusOverride = typeof cosStatusOverrides.$inferSelect;
 export const financeRevenueOverrides = pgTable("finance_revenue_overrides", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   category: text("category").notNull(),
   monthEndDate: text("month_end_date").notNull(),
   overrideValue: decimal("override_value", { precision: 15, scale: 2 }),
@@ -263,6 +273,7 @@ export type FinanceRevenueOverride = typeof financeRevenueOverrides.$inferSelect
 export const financeCosOverrides = pgTable("finance_cos_overrides", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   category: text("category").notNull(),
   monthEndDate: text("month_end_date").notNull(),
   overrideValue: decimal("override_value", { precision: 15, scale: 2 }),
@@ -279,6 +290,7 @@ export type FinanceCosOverride = typeof financeCosOverrides.$inferSelect;
 export const workingPlanScenario = pgTable("working_plan_scenario", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   name: text("name").notNull().default("Working Plan"),
   isActive: integer("is_active").notNull().default(1),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -310,6 +322,7 @@ export type WorkingPlanTaskOverride = typeof workingPlanTaskOverride.$inferSelec
 export const projectPlanDependency = pgTable("project_plan_dependency", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   predecessorTaskId: integer("predecessor_task_id").notNull(),
   successorTaskId: integer("successor_task_id").notNull(),
   dependencyType: text("dependency_type").notNull().default("FS"),
@@ -339,6 +352,7 @@ export type WorkingPlanDependencyOverride = typeof workingPlanDependencyOverride
 export const scheduleChangeNotice = pgTable("schedule_change_notice", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   summary: text("summary").notNull(),
   oldFinishDate: text("old_finish_date"),
   newFinishDate: text("new_finish_date"),
@@ -665,6 +679,7 @@ export type OverrideCategory = typeof OVERRIDE_CATEGORIES[number];
 export const weeklyReviews = pgTable("weekly_reviews", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   weekStarting: date("week_starting").notNull(),
   reviewedBy: integer("reviewed_by").references(() => users.id),
   status: text("status").notNull().default("draft"),
@@ -755,6 +770,7 @@ export type TrSuggestionDecision = typeof trItemSuggestionDecisions.$inferSelect
 export const milestoneTaskLinks = pgTable("milestone_task_links", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   milestoneRowNumber: integer("milestone_row_number").notNull(),
   taskId: integer("task_id").notNull(),
   dateOverride: text("date_override"),
@@ -768,6 +784,7 @@ export type MilestoneTaskLink = typeof milestoneTaskLinks.$inferSelect;
 export const expenseTaskLinks = pgTable("expense_task_links", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   expenseId: integer("expense_id").notNull(),
   taskId: integer("task_id").notNull(),
   dateOverride: text("date_override"),
@@ -784,6 +801,7 @@ export const writebackMappings = pgTable("writeback_mappings", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   projectName: text("project_name"),
+  projectId: integer("project_id").references(() => projectInfo.id),
   workbookPath: text("workbook_path").notNull(),
   sheetName: text("sheet_name").notNull(),
   cellAddress: text("cell_address").notNull(),
@@ -824,6 +842,7 @@ export type WritebackAuditLog = typeof writebackAuditLog.$inferSelect;
 export const financialEditRequests = pgTable("financial_edit_requests", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   requestedByUserId: integer("requested_by_user_id").notNull().references(() => users.id),
   editType: text("edit_type").notNull(),
   editTarget: text("edit_target").notNull(),
@@ -847,6 +866,7 @@ export type FinancialEditRequest = typeof financialEditRequests.$inferSelect;
 export const financialIntegrationRules = pgTable("financial_integration_rules", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   ruleType: text("rule_type").notNull(),
   ruleConfig: text("rule_config").notNull(),
   isActive: boolean("is_active").notNull().default(true),
@@ -937,6 +957,7 @@ export const forecastPipeline = pgTable("forecast_pipeline", {
   id: serial("id").primaryKey(),
   fyeYear: integer("fye_year").notNull().default(2026),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   projectDeveloper: text("project_developer"),
   location: text("location"),
   sizeKwp: decimal("size_kwp", { precision: 12, scale: 2 }),
