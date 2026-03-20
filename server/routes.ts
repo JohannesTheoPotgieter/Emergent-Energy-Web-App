@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { toCanonicalEngineeringStageStatus } from "@shared/status-logic";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
+import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
@@ -5517,8 +5518,9 @@ export async function registerRoutes(
                 )
               );
             }
-            await db.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, resolvedProjectName));
-            await db.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, resolvedProjectName));
+            // Temporal: soft-close existing rows instead of hard delete (Prompt 10)
+            await softCloseByProjectName(db, "normalized_revenue_lines", resolvedProjectName);
+            await softCloseByProjectName(db, "normalized_cost_lines", resolvedProjectName);
             await db.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, resolvedProjectName));
 
             const dummyRun = await db.insert(smartImportRuns).values({
@@ -5557,8 +5559,9 @@ export async function registerRoutes(
                 externalRef: `${resolvedProjectName}::PLAN::${t.taskNo || idx}::${importRunId}`,
               })));
             }
+            const uploadTimestamp = new Date();
             if (norm.revenueLines.length > 0) {
-              await db.insert(normalizedRevenueLines).values(norm.revenueLines.map((r: any) => ({
+              const revVals = norm.revenueLines.map((r: any) => ({
                 projectId: pId, projectName: resolvedProjectName,
                 description: r.description, milestoneName: r.milestoneName,
                 amountExVat: r.amountExVat, vat: r.vat,
@@ -5571,10 +5574,11 @@ export async function registerRoutes(
                 inBankDate: r.inBankDate, status: r.status,
                 sourceSheet: r.sourceSheet, sourceRow: r.sourceRow, importRunId,
                 turnaroundDays: r.turnaroundDays,
-              })));
+              }));
+              await db.insert(normalizedRevenueLines).values(addTemporalColumns(revVals, importRunId, uploadTimestamp) as any);
             }
             if (norm.costLines.length > 0) {
-              await db.insert(normalizedCostLines).values(norm.costLines.map((c: any) => ({
+              const costVals = norm.costLines.map((c: any) => ({
                 projectId: pId, projectName: resolvedProjectName,
                 costCategory: c.costCategory, counterpartyName: c.counterpartyName,
                 description: c.description, amountExVat: c.amountExVat,
@@ -5588,7 +5592,8 @@ export async function registerRoutes(
                 cashflowConfirmed: c.cashflowConfirmed || false,
                 status: c.status, sourceSheet: c.sourceSheet, sourceRow: c.sourceRow,
                 importRunId, turnaroundDays: c.turnaroundDays,
-              })));
+              }));
+              await db.insert(normalizedCostLines).values(addTemporalColumns(costVals, importRunId, uploadTimestamp) as any);
             }
             if (norm.costedSummary) {
               try {
