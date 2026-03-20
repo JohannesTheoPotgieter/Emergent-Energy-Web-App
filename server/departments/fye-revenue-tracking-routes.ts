@@ -69,9 +69,9 @@ import {
   fyeReportSnapshots,
   cosStatusOverrides,
 } from "@shared/schema";
-import { eq, and, sql, gte, lte, desc, inArray } from "drizzle-orm";
+import { eq, and, sql, desc } from "drizzle-orm";
 import ExcelJS from "exceljs";
-import { extractMonthKey, normalizeProjectName, isCosRealised } from "../lib/calculations/financeUtils";
+import { extractMonthKey, normalizeProjectName } from "../lib/calculations/financeUtils";
 
 const router = Router();
 
