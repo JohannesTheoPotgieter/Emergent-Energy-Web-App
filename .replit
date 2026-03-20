@@ -18,6 +18,8 @@ externalPort = 3001
 
 [env]
 PORT = "5000"
+SESSION_SECRET = "replit-dev-session-secret-change-in-production"
+ENABLE_STARTUP_SCHEMA_REPAIR = "true"
 
 [deployment]
 deploymentTarget = "autoscale"
