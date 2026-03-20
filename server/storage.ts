@@ -1070,6 +1070,7 @@ export class DatabaseStorage implements IStorage {
           if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
           if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
           if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
+          if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
         }
       }
     }
@@ -1100,6 +1101,7 @@ export class DatabaseStorage implements IStorage {
         if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
         if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
         if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
+        if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
       }
     }
     return adapted;

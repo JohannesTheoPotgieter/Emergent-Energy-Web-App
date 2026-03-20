@@ -6626,7 +6626,7 @@ export async function registerRoutes(
           }
 
           for (const exp of projExpenses) {
-            const d = exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate;
+            const d = exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate || exp.expenseInvoicedDate || null;
             if (!d || !/^\d{4}-\d{2}-\d{2}/.test(d)) continue;
             const amt = parseFloat(exp.expenseActualTotal || exp.budgetTotal || '0');
             if (amt === 0) continue;
