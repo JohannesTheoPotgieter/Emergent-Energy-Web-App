@@ -7,7 +7,7 @@ import { WorkManagementRepository } from "./repositories/work-management-reposit
 import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
-  users, projects, expenses, revenues, budgets, uploadMetadata, refreshLogs,
+  users, uploadMetadata, refreshLogs,
   projectInfo, projectExecutionState, normalizedCostLines, normalizedRevenueLines, workItems, programExpense, programInflows, projectPlan,
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
   workingPlanScenario, projectPlanDependency,
@@ -744,27 +744,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Budgets
-  async getAllBudgets(): Promise<Budget[]> {
-    return this.dbInstance.select().from(budgets).orderBy(desc(budgets.createdAt));
-  }
-
-  async getBudgetsByProject(projectId: number): Promise<Budget[]> {
-    return this.dbInstance.select().from(budgets).where(eq(budgets.projectId, projectId)).orderBy(desc(budgets.createdAt));
-  }
-
-  async createBudget(budget: InsertBudget): Promise<Budget> {
-    // Explicitly provide timestamp for SQLite compatibility
-    const [created] = await this.dbInstance.insert(budgets).values({
-      ...budget,
-      createdAt: new Date(),
-    }).returning();
-    return created;
-  }
-
-  async deleteBudget(id: number): Promise<boolean> {
-    const result = await this.dbInstance.delete(budgets).where(eq(budgets.id, id)).returning();
-    return result.length > 0;
-  }
+  // budgets table dropped — return empty (no client consumers)
+  async getAllBudgets(): Promise<Budget[]> { return []; }
+  async getBudgetsByProject(_projectId: number): Promise<Budget[]> { return []; }
+  async createBudget(_budget: InsertBudget): Promise<Budget> { return {} as Budget; }
+  async deleteBudget(_id: number): Promise<boolean> { return false; }
 
   // Upload Metadata
   async getAllUploads(): Promise<UploadMetadata[]> {
@@ -1520,11 +1504,8 @@ export class DatabaseStorage implements IStorage {
     await safeDelete(projectInfo, "projectInfo");
     await safeDelete(refreshLogs, "refreshLogs");
     await safeDelete(uploadMetadata, "uploadMetadata");
-    await safeDelete(budgets, "budgets");
-    // tasks table dropped — data lives in work_items
-    await safeDelete(revenues, "revenues");
-    await safeDelete(expenses, "expenses");
-    await safeDelete(projects, "projects");
+    // Legacy tables (projects, expenses, revenues, budgets, tasks) dropped
+    // Data lives in project_info, normalized_cost_lines, normalized_revenue_lines, work_items
 
     // Delete uploaded files
     const fs = await import("fs");

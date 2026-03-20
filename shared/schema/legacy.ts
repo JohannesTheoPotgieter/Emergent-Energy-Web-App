@@ -14,9 +14,12 @@ export const revenueStatusEnum = pgEnum('revenue_status', ['Realised', 'Forecast
 export const taskStatusEnum = pgEnum('task_status', ['Not Started', 'In Progress', 'Complete', 'Delayed']);
 export const budgetCategoryEnum = pgEnum('budget_category', ['REV', 'COS', 'OPS']);
 
-// ===================== LEGACY TABLES =====================
+// ===================== LEGACY TABLES — DROPPED =====================
+// These tables have been dropped from the database.
+// Schema definitions are kept ONLY for TypeScript type inference.
+// Data lives in: project_info, normalized_cost_lines, normalized_revenue_lines, work_items.
 
-// Legacy Projects Table (kept for backward compatibility)
+/** @deprecated Table dropped. Type-only reference. */
 export const projects = pgTable("projects", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -36,7 +39,7 @@ export const insertProjectSchema = createInsertSchema(projects).omit({ id: true,
 export type InsertProject = z.infer<typeof insertProjectSchema>;
 export type Project = typeof projects.$inferSelect;
 
-// Legacy Expenses Table (kept for backward compatibility)
+/** @deprecated Table dropped. Type-only reference. */
 export const expenses = pgTable("expenses", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -56,7 +59,7 @@ export const insertExpenseSchema = createInsertSchema(expenses).omit({ id: true,
 export type InsertExpense = z.infer<typeof insertExpenseSchema>;
 export type Expense = typeof expenses.$inferSelect;
 
-// Legacy Revenues Table (kept for backward compatibility)
+/** @deprecated Table dropped. Type-only reference. */
 export const revenues = pgTable("revenues", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -73,7 +76,7 @@ export const insertRevenueSchema = createInsertSchema(revenues).omit({ id: true,
 export type InsertRevenue = z.infer<typeof insertRevenueSchema>;
 export type Revenue = typeof revenues.$inferSelect;
 
-// Legacy Tasks Table (kept for backward compatibility)
+/** @deprecated Table dropped. Type-only reference. */
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -92,7 +95,7 @@ export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, creat
 export type InsertTask = z.infer<typeof insertTaskSchema>;
 export type Task = typeof tasks.$inferSelect;
 
-// Budgets Table (Admin manual entry)
+/** @deprecated Table dropped. Type-only reference. */
 export const budgets = pgTable("budgets", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
