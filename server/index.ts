@@ -118,16 +118,39 @@ async function bootstrap() {
 
   registerGlobalErrorHandler(app);
 
-  if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
-  } else {
-    const { setupVite } = await import("./vite");
-    await setupVite(httpServer, app);
+  try {
+    if (process.env.NODE_ENV === "production") {
+      serveStatic(app);
+    } else {
+      const { setupVite } = await import("./vite");
+      await setupVite(httpServer, app);
+    }
+  } catch (err) {
+    console.error("[Bootstrap] Failed to set up frontend serving:", err);
+    // Serve a basic fallback so the API still works
+    app.use("/{*path}", (_req, res) => {
+      res.status(503).json({ error: "Frontend failed to initialize", detail: String(err) });
+    });
   }
 
   logStartupSummary(report, log);
 
   const port = parseInt(process.env.PORT || "5000", 10);
+
+  let listenRetries = 0;
+  httpServer.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE" && listenRetries < 3) {
+      listenRetries++;
+      console.error(`[Bootstrap] Port ${port} is already in use. Retry ${listenRetries}/3 in 2s...`);
+      setTimeout(() => {
+        httpServer.close();
+        httpServer.listen(port, "0.0.0.0");
+      }, 2000);
+    } else {
+      console.error("[Bootstrap] Server error:", err);
+    }
+  });
+
   httpServer.listen(port, "0.0.0.0", () => {
     log(`serving on port ${port}`, "Startup");
   });
@@ -140,9 +163,13 @@ bootstrap().catch((err) => {
 
 process.on("uncaughtException", (err) => {
   console.error("[Process] Uncaught exception:", err);
+  console.error("[Process] Stack:", err?.stack);
 });
-process.on("unhandledRejection", (err) => {
-  console.error("[Process] Unhandled rejection:", err);
+process.on("unhandledRejection", (reason) => {
+  console.error("[Process] Unhandled rejection:", reason);
+  if (reason instanceof Error) {
+    console.error("[Process] Stack:", reason.stack);
+  }
 });
 process.on("beforeExit", (code) => {
   console.error("[Process] beforeExit with code:", code);
