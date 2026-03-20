@@ -274,6 +274,88 @@ export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: tru
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;
 export type WorkItem = typeof workItems.$inferSelect;
 
+// ── Work Item Extension Tables (Prompt 5 — lean core + domain extensions) ──
+
+/**
+ * PM Extension — project management, tracking, approval, and linking fields.
+ * 1:1 with work_items via work_item_id UNIQUE FK.
+ */
+export const workItemPm = pgTable("work_item_pm", {
+  id: serial("id").primaryKey(),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }).unique(),
+  duration: integer("duration"),
+  percentComplete: real("percent_complete").default(0),
+  expectedPctComplete: real("expected_pct_complete"),
+  phase: text("phase"),
+  isMilestone: boolean("is_milestone").default(false),
+  indentLevel: integer("indent_level").default(0),
+  ownerName: text("owner_name"),
+  isShared: boolean("is_shared").notNull().default(false),
+  holdReason: text("hold_reason"),
+  blockedType: text("blocked_type"),
+  blockerReason: text("blocker_reason"),
+  approvalRequired: boolean("approval_required").notNull().default(false),
+  trackingRag: text("tracking_rag"),
+  taskTypeTag: text("task_type_tag"),
+  subProjectName: text("sub_project_name"),
+  completedAt: timestamp("completed_at"),
+  linkedPlanItemId: integer("linked_plan_item_id"),
+  linkedDeliverableId: integer("linked_deliverable_id"),
+  linkedQualityItemInstanceId: integer("linked_quality_item_instance_id"),
+});
+export const insertWorkItemPmSchema = createInsertSchema(workItemPm).omit({ id: true } as any);
+export type InsertWorkItemPm = z.infer<typeof insertWorkItemPmSchema>;
+export type WorkItemPm = typeof workItemPm.$inferSelect;
+
+/**
+ * Engineering Extension — import provenance and work-breakdown-structure fields.
+ * 1:1 with work_items via work_item_id UNIQUE FK.
+ */
+export const workItemEngineering = pgTable("work_item_engineering", {
+  id: serial("id").primaryKey(),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }).unique(),
+  wbsCode: text("wbs_code"),
+  outlineNumber: text("outline_number"),
+  legacyTable: text("legacy_table"),
+  legacyId: integer("legacy_id"),
+  sourceRow: integer("source_row"),
+  sourceSheet: text("source_sheet"),
+  importRunId: integer("import_run_id"),
+});
+export const insertWorkItemEngineeringSchema = createInsertSchema(workItemEngineering).omit({ id: true } as any);
+export type InsertWorkItemEngineering = z.infer<typeof insertWorkItemEngineeringSchema>;
+export type WorkItemEngineering = typeof workItemEngineering.$inferSelect;
+
+/**
+ * Scheduling Extension — calendar, recurrence, baseline/actual tracking, time estimation.
+ * 1:1 with work_items via work_item_id UNIQUE FK.
+ */
+export const workItemScheduling = pgTable("work_item_scheduling", {
+  id: serial("id").primaryKey(),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }).unique(),
+  scheduledDate: text("scheduled_date"),
+  scheduledStartTime: text("scheduled_start_time"),
+  scheduledEndTime: text("scheduled_end_time"),
+  estimateMinutes: integer("estimate_minutes"),
+  taskCategory: text("task_category"),
+  baselineStart: text("baseline_start"),
+  baselineEnd: text("baseline_end"),
+  baselineDuration: integer("baseline_duration"),
+  taskMode: text("task_mode").default("auto"),
+  actualStart: text("actual_start"),
+  actualEnd: text("actual_end"),
+  actualDuration: integer("actual_duration"),
+  isRecurring: boolean("is_recurring").default(false),
+  recurrenceFrequency: text("recurrence_frequency"),
+  recurrenceInterval: integer("recurrence_interval").default(1),
+  recurrenceDaysOfWeek: text("recurrence_days_of_week"),
+  recurrenceEndDate: text("recurrence_end_date"),
+  recurrenceParentId: integer("recurrence_parent_id"),
+});
+export const insertWorkItemSchedulingSchema = createInsertSchema(workItemScheduling).omit({ id: true } as any);
+export type InsertWorkItemScheduling = z.infer<typeof insertWorkItemSchedulingSchema>;
+export type WorkItemScheduling = typeof workItemScheduling.$inferSelect;
+
 export const workItemAssignments = pgTable("work_item_assignments", {
   id: serial("id").primaryKey(),
   workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
