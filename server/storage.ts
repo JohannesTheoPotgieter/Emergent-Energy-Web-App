@@ -984,6 +984,13 @@ export class DatabaseStorage implements IStorage {
       archivedStatus: "ACTIVE",
       pmUserId: null,
       pdUserId: null,
+      cpSigned: false,
+      cpSignedDate: null,
+      cpSignedByUserId: null,
+      cpEvidenceType: null,
+      cpEvidenceRef: null,
+      pmTaskPackCreated: false,
+      engPostCpTaskPackCreated: false,
     })) as ProjectInfo[];
   }
 
