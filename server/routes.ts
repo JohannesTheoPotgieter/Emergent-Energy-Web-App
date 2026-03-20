@@ -5161,38 +5161,6 @@ export async function registerRoutes(
     }
   });
 
-  // ==================== EXPENSES ROUTES ====================
-
-  app.get("/api/expenses", requireAuth, async (req, res) => {
-    try {
-      const { projectId } = req.query;
-      if (projectId && typeof projectId === 'string') {
-        const expenses = await storage.getExpensesByProject(parseInt(projectId));
-        return res.json(expenses);
-      }
-      const expenses = await storage.getAllExpenses();
-      res.json(expenses);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch expenses", message: "Failed to fetch expenses" });
-    }
-  });
-
-  // ==================== REVENUES ROUTES ====================
-
-  app.get("/api/revenues", requireAuth, async (req, res) => {
-    try {
-      const { projectId } = req.query;
-      if (projectId && typeof projectId === 'string') {
-        const revenues = await storage.getRevenuesByProject(parseInt(projectId));
-        return res.json(revenues);
-      }
-      const revenues = await storage.getAllRevenues();
-      res.json(revenues);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch revenues", message: "Failed to fetch revenues" });
-    }
-  });
-
   // ==================== TASKS ROUTES ====================
 
   app.get("/api/tasks", requireAuth, async (req, res) => {
