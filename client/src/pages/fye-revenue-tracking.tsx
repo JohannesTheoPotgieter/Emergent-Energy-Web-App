@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useCallback } from "react";
-import { Link } from "wouter";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { Link, useSearch, useLocation } from "wouter";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import {
 import {
   DollarSign, TrendingUp, Activity, Search, Download,
   AlertCircle, BarChart3, FileText, Camera,
-  Plus, Trash2, Pencil, RefreshCw, X, Check, Eye, Clock,
+  Plus, Trash2, Pencil, RefreshCw, X, Check, Eye, Clock, FilterX, ChevronDown,
 } from "lucide-react";
 
 // ─── Types ───
@@ -715,12 +715,142 @@ function LostDealsSection({ lostDeals, canEdit, fye }: { lostDeals: LostDealRow[
   );
 }
 
+// ─── Debounce hook ───
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
+
+// ─── Multi-select filter dropdown ───
+
+function MultiSelectFilter({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const toggle = (val: string) => {
+    const next = new Set(selected);
+    if (next.has(val)) next.delete(val);
+    else next.add(val);
+    onChange(next);
+  };
+
+  const count = selected.size;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "h-8 text-xs border rounded px-2 bg-background flex items-center gap-1 min-w-[120px] justify-between",
+          count > 0 && "border-blue-400 bg-blue-50"
+        )}
+      >
+        <span className="truncate">{count > 0 ? `${label} (${count})` : label}</span>
+        <ChevronDown className="h-3 w-3 shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute top-9 left-0 z-50 bg-background border rounded shadow-lg max-h-56 overflow-y-auto min-w-[180px]">
+          {options.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">No options</div>
+          ) : (
+            <>
+              <button
+                onClick={() => onChange(new Set())}
+                className="w-full text-left px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 border-b"
+              >
+                Clear all
+              </button>
+              {options.map((opt) => (
+                <label key={opt} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted/50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(opt)}
+                    onChange={() => toggle(opt)}
+                    className="rounded border-gray-300 h-3 w-3"
+                  />
+                  <span className="truncate">{opt}</span>
+                </label>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── URL param helpers for filter state ───
+
+function parseSetParam(params: URLSearchParams, key: string): Set<string> {
+  const val = params.get(key);
+  if (!val) return new Set();
+  return new Set(val.split(",").filter(Boolean));
+}
+
+function setToParam(s: Set<string>): string {
+  return [...s].join(",");
+}
+
 function DetailTab({ fye }: { fye: number }) {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [fundingFilter, setFundingFilter] = useState("");
+  const searchString = useSearch();
+  const [, setLocation] = useLocation();
+  const params = useMemo(() => new URLSearchParams(searchString), [searchString]);
+
+  // Initialize filter state from URL params
+  const [searchInput, setSearchInput] = useState(params.get("q") || "");
+  const debouncedSearch = useDebounce(searchInput, 300);
+  const [bdFilter, setBdFilter] = useState<Set<string>>(() => parseSetParam(params, "bd"));
+  const [provinceFilter, setProvinceFilter] = useState<Set<string>>(() => parseSetParam(params, "prov"));
+  const [typeFilter, setTypeFilter] = useState<Set<string>>(() => parseSetParam(params, "type"));
+  const [fundingFilter, setFundingFilter] = useState<Set<string>>(() => parseSetParam(params, "fund"));
   const [sortKey, setSortKey] = useState<keyof ProjectRow>("projectName");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  // Sync filters to URL params
+  useEffect(() => {
+    const p = new URLSearchParams();
+    if (debouncedSearch) p.set("q", debouncedSearch);
+    if (bdFilter.size > 0) p.set("bd", setToParam(bdFilter));
+    if (provinceFilter.size > 0) p.set("prov", setToParam(provinceFilter));
+    if (typeFilter.size > 0) p.set("type", setToParam(typeFilter));
+    if (fundingFilter.size > 0) p.set("fund", setToParam(fundingFilter));
+    const qs = p.toString();
+    const currentPath = window.location.pathname;
+    setLocation(qs ? `${currentPath}?${qs}` : currentPath, { replace: true });
+  }, [debouncedSearch, bdFilter, provinceFilter, typeFilter, fundingFilter, setLocation]);
+
+  const hasAnyFilter = debouncedSearch || bdFilter.size > 0 || provinceFilter.size > 0 || typeFilter.size > 0 || fundingFilter.size > 0;
+
+  const clearAll = () => {
+    setSearchInput("");
+    setBdFilter(new Set());
+    setProvinceFilter(new Set());
+    setTypeFilter(new Set());
+    setFundingFilter(new Set());
+  };
 
   const toggleSort = (key: keyof ProjectRow) => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -750,12 +880,21 @@ function DetailTab({ fye }: { fye: number }) {
 
   const canEdit = usePermission("fye_revenue_tracking", "edit");
 
+  // Extract unique filter options from data
+  const uniqueBds = useMemo(() => [...new Set(data?.projects.map((p) => p.businessDeveloper).filter(Boolean) as string[])].sort(), [data]);
+  const uniqueProvinces = useMemo(() => [...new Set(data?.projects.map((p) => p.province).filter(Boolean) as string[])].sort(), [data]);
+  const uniqueTypes = useMemo(() => [...new Set(data?.projects.map((p) => p.projectType).filter(Boolean) as string[])].sort(), [data]);
+  const uniqueFunding = useMemo(() => [...new Set(data?.projects.map((p) => p.fundingType).filter(Boolean) as string[])].sort(), [data]);
+
   const filtered = useMemo(() => {
     if (!data) return [];
+    const search = debouncedSearch.toLowerCase();
     const rows = data.projects.filter((p) => {
-      if (search && !p.projectName.toLowerCase().includes(search.toLowerCase())) return false;
-      if (statusFilter && p.status !== statusFilter) return false;
-      if (fundingFilter && p.fundingType !== fundingFilter) return false;
+      if (search && !p.projectName.toLowerCase().includes(search)) return false;
+      if (bdFilter.size > 0 && (!p.businessDeveloper || !bdFilter.has(p.businessDeveloper))) return false;
+      if (provinceFilter.size > 0 && (!p.province || !provinceFilter.has(p.province))) return false;
+      if (typeFilter.size > 0 && (!p.projectType || !typeFilter.has(p.projectType))) return false;
+      if (fundingFilter.size > 0 && (!p.fundingType || !fundingFilter.has(p.fundingType))) return false;
       return true;
     });
     return rows.sort((a, b) => {
@@ -766,10 +905,7 @@ function DetailTab({ fye }: { fye: number }) {
       const cmp = typeof av === "number" ? (av as number) - (bv as number) : String(av).localeCompare(String(bv));
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [data, search, statusFilter, fundingFilter, sortKey, sortDir]);
-
-  const uniqueStatuses = useMemo(() => [...new Set(data?.projects.map((p) => p.status).filter(Boolean) as string[])].sort(), [data]);
-  const uniqueFunding = useMemo(() => [...new Set(data?.projects.map((p) => p.fundingType).filter(Boolean) as string[])].sort(), [data]);
+  }, [data, debouncedSearch, bdFilter, provinceFilter, typeFilter, fundingFilter, sortKey, sortDir]);
 
   const filteredTotals = useMemo(() => {
     return filtered.reduce(
@@ -807,6 +943,14 @@ function DetailTab({ fye }: { fye: number }) {
     } catch {}
   };
 
+  // Collect active filter pills
+  const pills: { label: string; onRemove: () => void }[] = [];
+  if (debouncedSearch) pills.push({ label: `Search: "${debouncedSearch}"`, onRemove: () => setSearchInput("") });
+  bdFilter.forEach((v) => pills.push({ label: `BD: ${v}`, onRemove: () => { const n = new Set(bdFilter); n.delete(v); setBdFilter(n); } }));
+  provinceFilter.forEach((v) => pills.push({ label: `Province: ${v}`, onRemove: () => { const n = new Set(provinceFilter); n.delete(v); setProvinceFilter(n); } }));
+  typeFilter.forEach((v) => pills.push({ label: `Type: ${v}`, onRemove: () => { const n = new Set(typeFilter); n.delete(v); setTypeFilter(n); } }));
+  fundingFilter.forEach((v) => pills.push({ label: `Funding: ${v}`, onRemove: () => { const n = new Set(fundingFilter); n.delete(v); setFundingFilter(n); } }));
+
   if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-32 w-full" />)}</div>;
   if (error || !data) return (
     <div className="text-center py-12">
@@ -828,20 +972,33 @@ function DetailTab({ fye }: { fye: number }) {
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-          <Input placeholder="Search projects..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 h-8 text-xs" />
+          <Input placeholder="Search projects..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} className="pl-8 h-8 text-xs" />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-8 text-xs border rounded px-2 bg-background">
-          <option value="">All Statuses</option>
-          {uniqueStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={fundingFilter} onChange={(e) => setFundingFilter(e.target.value)} className="h-8 text-xs border rounded px-2 bg-background">
-          <option value="">All Funding</option>
-          {uniqueFunding.map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
-        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={handleExport}>
+        <MultiSelectFilter label="Business Developer" options={uniqueBds} selected={bdFilter} onChange={setBdFilter} />
+        <MultiSelectFilter label="Province" options={uniqueProvinces} selected={provinceFilter} onChange={setProvinceFilter} />
+        <MultiSelectFilter label="Project Type" options={uniqueTypes} selected={typeFilter} onChange={setTypeFilter} />
+        <MultiSelectFilter label="Funding Type" options={uniqueFunding} selected={fundingFilter} onChange={setFundingFilter} />
+        {hasAnyFilter && (
+          <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={clearAll}>
+            <FilterX className="h-3.5 w-3.5 mr-1" />Clear All
+          </Button>
+        )}
+        <Button variant="outline" size="sm" className="h-8 text-xs ml-auto" onClick={handleExport}>
           <Download className="h-3.5 w-3.5 mr-1" />Export CSV
         </Button>
       </div>
+
+      {/* Active filter pills */}
+      {pills.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {pills.map((pill, i) => (
+            <span key={i} className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2.5 py-0.5 text-[11px]">
+              {pill.label}
+              <button onClick={pill.onRemove} className="hover:text-blue-900"><X className="h-3 w-3" /></button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Project Table */}
       <Card>
