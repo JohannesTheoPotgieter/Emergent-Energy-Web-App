@@ -62,6 +62,7 @@ interface ProjectRow {
   budgetGpPct: number | null;
   actualGpPct: number | null;
   signedStatus: string;
+  hasTracker: boolean;
 }
 
 interface DetailData {
@@ -861,6 +862,7 @@ function DetailTab({ fye }: { fye: number }) {
   const [provinceFilter, setProvinceFilter] = useState<Set<string>>(() => parseSetParam(params, "prov"));
   const [typeFilter, setTypeFilter] = useState<Set<string>>(() => parseSetParam(params, "type"));
   const [fundingFilter, setFundingFilter] = useState<Set<string>>(() => parseSetParam(params, "fund"));
+  const [trackersOnly, setTrackersOnly] = useState(() => params.get("trackers") !== "0");
   const [sortKey, setSortKey] = useState<keyof ProjectRow>("projectName");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -868,18 +870,19 @@ function DetailTab({ fye }: { fye: number }) {
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     // Clear filter-specific params, then re-set active ones
-    for (const key of ["q", "bd", "prov", "type", "fund"]) p.delete(key);
+    for (const key of ["q", "bd", "prov", "type", "fund", "trackers"]) p.delete(key);
     if (debouncedSearch) p.set("q", debouncedSearch);
     if (bdFilter.size > 0) p.set("bd", setToParam(bdFilter));
     if (provinceFilter.size > 0) p.set("prov", setToParam(provinceFilter));
     if (typeFilter.size > 0) p.set("type", setToParam(typeFilter));
     if (fundingFilter.size > 0) p.set("fund", setToParam(fundingFilter));
+    if (!trackersOnly) p.set("trackers", "0");
     const qs = p.toString();
     const currentPath = window.location.pathname;
     setLocation(qs ? `${currentPath}?${qs}` : currentPath, { replace: true });
-  }, [debouncedSearch, bdFilter, provinceFilter, typeFilter, fundingFilter, setLocation]);
+  }, [debouncedSearch, bdFilter, provinceFilter, typeFilter, fundingFilter, trackersOnly, setLocation]);
 
-  const hasAnyFilter = debouncedSearch || bdFilter.size > 0 || provinceFilter.size > 0 || typeFilter.size > 0 || fundingFilter.size > 0;
+  const hasAnyFilter = debouncedSearch || bdFilter.size > 0 || provinceFilter.size > 0 || typeFilter.size > 0 || fundingFilter.size > 0 || !trackersOnly;
 
   const clearAll = () => {
     setSearchInput("");
@@ -887,6 +890,7 @@ function DetailTab({ fye }: { fye: number }) {
     setProvinceFilter(new Set());
     setTypeFilter(new Set());
     setFundingFilter(new Set());
+    setTrackersOnly(true);
   };
 
   const toggleSort = (key: keyof ProjectRow) => {
@@ -927,6 +931,7 @@ function DetailTab({ fye }: { fye: number }) {
     if (!data) return [];
     const search = debouncedSearch.toLowerCase();
     const rows = data.projects.filter((p) => {
+      if (trackersOnly && !p.hasTracker) return false;
       if (search && !p.projectName.toLowerCase().includes(search)) return false;
       if (bdFilter.size > 0 && (!p.businessDeveloper || !bdFilter.has(p.businessDeveloper))) return false;
       if (provinceFilter.size > 0 && (!p.province || !provinceFilter.has(p.province))) return false;
@@ -942,7 +947,7 @@ function DetailTab({ fye }: { fye: number }) {
       const cmp = typeof av === "number" ? (av as number) - (bv as number) : String(av).localeCompare(String(bv));
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [data, debouncedSearch, bdFilter, provinceFilter, typeFilter, fundingFilter, sortKey, sortDir]);
+  }, [data, debouncedSearch, bdFilter, provinceFilter, typeFilter, fundingFilter, trackersOnly, sortKey, sortDir]);
 
   const filteredTotals = useMemo(() => {
     return filtered.reduce(
@@ -994,6 +999,7 @@ function DetailTab({ fye }: { fye: number }) {
   provinceFilter.forEach((v) => pills.push({ label: `Province: ${v}`, onRemove: () => { const n = new Set(provinceFilter); n.delete(v); setProvinceFilter(n); } }));
   typeFilter.forEach((v) => pills.push({ label: `Type: ${v}`, onRemove: () => { const n = new Set(typeFilter); n.delete(v); setTypeFilter(n); } }));
   fundingFilter.forEach((v) => pills.push({ label: `Funding: ${v}`, onRemove: () => { const n = new Set(fundingFilter); n.delete(v); setFundingFilter(n); } }));
+  if (!trackersOnly) pills.push({ label: "Showing All (incl. untracked)", onRemove: () => setTrackersOnly(true) });
 
   if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-32 w-full" />)}</div>;
   if (error || !data) return (
@@ -1022,6 +1028,15 @@ function DetailTab({ fye }: { fye: number }) {
         <MultiSelectFilter label="Province" options={uniqueProvinces} selected={provinceFilter} onChange={setProvinceFilter} />
         <MultiSelectFilter label="Project Type" options={uniqueTypes} selected={typeFilter} onChange={setTypeFilter} />
         <MultiSelectFilter label="Funding Type" options={uniqueFunding} selected={fundingFilter} onChange={setFundingFilter} />
+        <Button
+          variant={trackersOnly ? "default" : "outline"}
+          size="sm"
+          className={`h-8 text-xs ${trackersOnly ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}`}
+          onClick={() => setTrackersOnly(!trackersOnly)}
+        >
+          <Check className={`h-3.5 w-3.5 mr-1 ${trackersOnly ? "" : "opacity-0"}`} />
+          Tracked Only
+        </Button>
         {hasAnyFilter && (
           <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={clearAll}>
             <FilterX className="h-3.5 w-3.5 mr-1" />Clear All
