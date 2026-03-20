@@ -802,7 +802,8 @@ export async function registerRoutes(
           try {
             const pid = (await storage.getProjectInfoByName(decodedName))?.id;
             if (!pid) return { tasks: [] };
-            const tasks = await db.select().from(engineeringTasks).where(eq(engineeringTasks.projectId, pid));
+            // Prompt 8: Read from work_items (ENG workstream) instead of engineering_tasks
+            const tasks = await db.select().from(workItems).where(and(eq(workItems.projectId, pid), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
             return { tasks };
           } catch { return { tasks: [] }; }
         })(),
@@ -4130,7 +4131,8 @@ export async function registerRoutes(
         db.select().from(normalizedRevenueLines),
         db.select().from(normalizedCostLines),
         db.select().from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
-        db.select().from(engineeringTasks),
+        // Prompt 8: Read ENG work_items instead of engineering_tasks
+        db.select().from(workItems).where(and(eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt))),
         db.execute(sql`SELECT id, project_id, status, title, due_date, assigned_approver FROM approvals`),
         getAllPMWorkItemsAsProjectPlan(),
         db.execute(sql`SELECT id, project_name, severity, status, title, owner_user_id, due_date FROM qc_warning`),
@@ -11712,13 +11714,22 @@ export async function registerRoutes(
         return;
       }
 
-      const task = await storage.getOperationalTask(id);
+      // Prompt 8: Try canonical work_items first, fall back to operational_tasks
+      let task: any = null;
+      const { getEngineeringWorkItemById } = await import("./work-items-adapter");
+      const canonicalTask = await getEngineeringWorkItemById(id);
+      if (canonicalTask) {
+        task = canonicalTask;
+      } else {
+        task = await storage.getOperationalTask(id);
+      }
       if (!task) return res.status(404).json({ error: "Task not found" });
+      const taskIdForSub = task.workItemId || id;
       const [comments, checklists, attachments, activity] = await Promise.all([
-        storage.getTaskComments(id),
-        storage.getTaskChecklists(id),
-        storage.getTaskAttachments(id),
-        storage.getTaskActivityLog(id),
+        storage.getTaskComments(taskIdForSub),
+        storage.getTaskChecklists(taskIdForSub),
+        storage.getTaskAttachments(taskIdForSub),
+        storage.getTaskActivityLog(taskIdForSub),
       ]);
       const checklistsWithItems = await Promise.all(checklists.map(async cl => ({
         ...cl,
@@ -11741,14 +11752,13 @@ export async function registerRoutes(
     try {
       const projectName = req.params.projectName;
 
-      const useCanonical = await isWorkItemsEnabled();
-      if (useCanonical) {
-        const canonicalTasks = await getWorkItemsAsOperationalTasks(projectName);
-        if (canonicalTasks.length > 0) {
-          return res.json(canonicalTasks);
-        }
+      // Prompt 8: Always read from canonical work_items
+      const canonicalTasks = await getWorkItemsAsOperationalTasks(projectName);
+      if (canonicalTasks.length > 0) {
+        return res.json(canonicalTasks);
       }
 
+      // Fallback: legacy path for projects with no work_items data yet
       const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
       const [operationalTasks, planTasksDirect, planTasksTracker] = await Promise.all([
         storage.getOperationalTasksByProject(projectName),
@@ -13821,12 +13831,14 @@ export async function registerRoutes(
             AND (wi.owner_user_id = ${userId}
               OR EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}))
         `),
-        safeLegacyQuery(() => db.select().from(engineeringTasks).where(
+        // Prompt 8: Read ENG work_items instead of engineering_tasks
+        db.select().from(workItems).where(
           and(
-            eq(engineeringTasks.assigneeUserId, userId),
-            isNull(engineeringTasks.softDeletedAt)
+            eq(workItems.workstream, "ENG"),
+            eq(workItems.ownerUserId, userId),
+            isNull(workItems.deletedAt)
           )
-        ), []),
+        ),
         safeLegacyQuery(() => db.execute(sql`
           SELECT qi.*, qc.project_name, qc.project_id, qti.item_name
           FROM qc_item_instance qi
@@ -14005,21 +14017,22 @@ export async function registerRoutes(
           })
           .where(eq(workItems.id, taskId));
       } else if (taskType === "engineering") {
-        const [task] = await db.select().from(engineeringTasks).where(eq(engineeringTasks.id, taskId));
+        // Prompt 8: Schedule ENG tasks via work_items instead of engineering_tasks
+        const [task] = await db.select().from(workItems).where(and(eq(workItems.id, taskId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
         if (!task) return res.status(404).json({ error: "Engineering task not found" });
 
-        if (task.assigneeUserId !== userId) {
+        if (task.ownerUserId !== userId) {
           return res.status(403).json({ error: "You can only schedule tasks assigned to you" });
         }
 
-        await db.update(engineeringTasks)
+        await db.update(workItems)
           .set({
             scheduledDate: scheduledDate || null,
             scheduledStartTime: scheduledStartTime || null,
             scheduledEndTime: scheduledEndTime || null,
             updatedAt: new Date(),
           })
-          .where(eq(engineeringTasks.id, taskId));
+          .where(eq(workItems.id, taskId));
       } else if (taskType === "quality") {
         const [task] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, taskId));
         if (!task) return res.status(404).json({ error: "Quality task not found" });

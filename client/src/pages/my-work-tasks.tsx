@@ -67,6 +67,9 @@ function normalizePriority(priority: string): TaskPriority {
 
 interface ResolvedUser { id: number; name: string; username: string; role: string; }
 
+// NOTE: This presentation-layer UnifiedTask extends the shared/types/unified-task.ts
+// data-layer type with display metadata (_key, _source, _sourceLabel, etc.).
+// They will converge in a future prompt.
 interface UnifiedTask {
   _key: string;
   _source: SourceFilter;

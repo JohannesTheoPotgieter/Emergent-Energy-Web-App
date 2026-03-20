@@ -2,8 +2,29 @@ import { db } from "./db";
 import { eq, and, isNull, sql, asc, desc, inArray } from "drizzle-orm";
 import { workItems, workItemAssignments, projectInfo, type WorkItem, type WorkItemAssignment } from "@shared/schema";
 import { getFeatureFlag } from "./lib/feature-flags";
+import { queryWorkItems, getAssignmentsByWorkItemIds } from "./lib/work-item-queries";
+import type { UnifiedTask } from "@shared/types/unified-task";
+import { fromWorkItem, toOperationalTaskShape } from "@shared/types/unified-task";
 
 export const WORK_ITEMS_FLAG = "canonical_work_items_v1";
+
+// Re-export for convenience
+export type { UnifiedTask } from "@shared/types/unified-task";
+export { fromWorkItem, toOperationalTaskShape, toEngineeringTaskShape } from "@shared/types/unified-task";
+
+/**
+ * Fetch all work_items for a project as UnifiedTask[].
+ * This is the canonical query path — reads from work_items + extension JOINs.
+ */
+export async function getUnifiedTasksForProject(projectId: number): Promise<UnifiedTask[]> {
+  const tasks = await queryWorkItems({ projectId });
+  const ids = tasks.map(t => t.id);
+  const assignments = await getAssignmentsByWorkItemIds(ids);
+  for (const t of tasks) {
+    t.assigneeUserIds = assignments.get(t.id) || null;
+  }
+  return tasks;
+}
 
 export async function isWorkItemsEnabled(): Promise<boolean> {
   return getFeatureFlag(WORK_ITEMS_FLAG);
