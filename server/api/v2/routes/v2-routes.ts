@@ -14,6 +14,10 @@ export function registerApiV2Routes(app: Express) {
   app.get("/api/v2/me/permissions", requireAuth, c.mePermissions);
   app.get("/api/v2/dashboard/:role", ...authScoped, c.dashboardByRole);
 
+  // Prompt 12: Materialized dashboard metrics
+  app.get("/api/v2/dashboard-metrics", requireAuth, c.dashboardMetrics);
+  app.post("/api/v2/dashboard-metrics/refresh", requireAuth, c.dashboardRefresh);
+
   app.get("/api/v2/projects", ...authScoped, c.listProjects);
   app.get("/api/v2/projects/:projectId", ...authProject, c.projectDetail);
   app.get("/api/v2/projects/:projectId/overview", ...authProject, c.projectOverview);

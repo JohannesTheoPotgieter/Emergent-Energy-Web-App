@@ -45,6 +45,7 @@ import {
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { softCloseByProjectId, softCloseByProjectName, softCloseByImportRunId, addTemporalColumns } from "./lib/temporal-helpers";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
+import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
 
 function normalizeForComparison(name: string): string {
@@ -2535,6 +2536,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       preservedOverrides: skippedOverrideFields.length > 0 ? skippedOverrideFields : undefined,
       preservedManualEdits: preservedManualEditsCount > 0 ? preservedManualEditsCount : undefined,
     });
+
+    // Prompt 12: Refresh materialized dashboard metrics after import commit
+    if (projectId) refreshProjectMetricsAsync(projectId);
   } catch (err: any) {
     console.error("[smart-import] POST commit error:", err);
 

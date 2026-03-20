@@ -318,3 +318,7 @@ export const lookupsByType = asyncHandler(async (req, res) => {
 });
 
 export const auditActivity = asyncHandler(async (_req, res) => ok(res, await service.auditActivityService()));
+
+// Prompt 12: Materialized dashboard metrics endpoint
+export const dashboardMetrics = asyncHandler(async (_req, res) => ok(res, await service.dashboardMetricsService()));
+export const dashboardRefresh = asyncHandler(async (_req, res) => ok(res, await service.dashboardRefreshService()));
