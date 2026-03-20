@@ -45,24 +45,6 @@ export const insertErrorLogSchema = createInsertSchema(errorLogs).omit({ id: tru
 export type InsertErrorLog = z.infer<typeof insertErrorLogSchema>;
 export type ErrorLog = typeof errorLogs.$inferSelect;
 
-// Outlook Accounts
-export const outlookAccounts = pgTable("outlook_accounts", {
-  userId: integer("user_id").primaryKey().references(() => users.id),
-  tenantId: text("tenant_id"),
-  outlookUserId: text("outlook_user_id"),
-  accessTokenEncrypted: text("access_token_encrypted"),
-  refreshTokenEncrypted: text("refresh_token_encrypted"),
-  tokenExpiryUtc: timestamp("token_expiry_utc"),
-  connectedAt: timestamp("connected_at").notNull().defaultNow(),
-  lastSyncAt: timestamp("last_sync_at"),
-  deltaCursor: text("delta_cursor"),
-  calendarId: text("calendar_id"),
-});
-
-export const insertOutlookAccountSchema = createInsertSchema(outlookAccounts).omit({ connectedAt: true } as any);
-export type InsertOutlookAccount = z.infer<typeof insertOutlookAccountSchema>;
-export type OutlookAccount = typeof outlookAccounts.$inferSelect;
-
 // ===================== COMPANY ROLES (Part A) =====================
 
 export const COMPANY_ROLES = [

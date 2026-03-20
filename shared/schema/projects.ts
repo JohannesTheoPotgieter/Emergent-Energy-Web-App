@@ -4,7 +4,6 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { users } from "./users";
 import { smartImportRuns } from "./imports";
-import { counterparties } from "./finance";
 
 // ===================== ENUMS =====================
 
@@ -139,22 +138,6 @@ export const projectRevenueSummary = pgTable("project_revenue_summary", {
 export const insertProjectRevenueSummarySchema = createInsertSchema(projectRevenueSummary).omit({ id: true, capturedAt: true } as any);
 export type InsertProjectRevenueSummary = z.infer<typeof insertProjectRevenueSummarySchema>;
 export type ProjectRevenueSummary = typeof projectRevenueSummary.$inferSelect;
-
-// ===================== PROJECT NOTES =====================
-
-// Project Notes Table (financial review, timeline review notes)
-export const projectNotes = pgTable("project_notes", {
-  id: serial("id").primaryKey(),
-  projectName: text("project_name").notNull().unique(),
-  projectId: integer("project_id").references(() => projectInfo.id),
-  revenueFinancialReview: text("revenue_financial_review"),
-  revenueTimelineReview: text("revenue_timeline_review"),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-export const insertProjectNotesSchema = createInsertSchema(projectNotes).omit({ id: true, updatedAt: true } as any);
-export type InsertProjectNotes = z.infer<typeof insertProjectNotesSchema>;
-export type ProjectNotes = typeof projectNotes.$inferSelect;
 
 // ===================== HOME NOTES =====================
 
@@ -557,21 +540,6 @@ export const companyLifecyclePhaseEnum = pgEnum('company_lifecycle_phase', [
   'AFTER_SALES',
 ]);
 
-export const companyProjects = pgTable("company_projects", {
-  id: serial("id").primaryKey(),
-  projectName: text("project_name").notNull().unique(),
-  projectId: integer("project_id").references(() => projectInfo.id),
-  projectKey: text("project_key"),
-  lifecyclePhase: companyLifecyclePhaseEnum("lifecycle_phase").notNull().default('FIRST_ASSESSMENT'),
-  phaseStartDate: text("phase_start_date"),
-  phaseDueDate: text("phase_due_date"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-export const insertCompanyProjectSchema = createInsertSchema(companyProjects).omit({ id: true, createdAt: true, updatedAt: true } as any);
-export type InsertCompanyProject = z.infer<typeof insertCompanyProjectSchema>;
-export type CompanyProject = typeof companyProjects.$inferSelect;
-
 // ===================== GOVERNANCE =====================
 
 export const mergeAuditLog = pgTable("merge_audit_log", {
@@ -740,24 +708,6 @@ export const userProjectFolders = pgTable("user_project_folders", {
 });
 export type UserProjectFolder = typeof userProjectFolders.$inferSelect;
 
-// ===================== PROJECT LINKAGE REVIEW QUEUE =====================
-
-export const projectLinkageReviewQueue = pgTable("project_linkage_review_queue", {
-  id: serial("id").primaryKey(),
-  tableName: text("table_name").notNull(),
-  recordId: integer("record_id").notNull(),
-  reason: text("reason").notNull(),
-  contextJson: jsonb("context_json"),
-  resolvedAt: timestamp("resolved_at"),
-  resolvedByUserId: integer("resolved_by_user_id").references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  uniqueRecord: unique("project_linkage_review_queue_table_record_unique").on(table.tableName, table.recordId),
-}));
-export const insertProjectLinkageReviewQueueSchema = createInsertSchema(projectLinkageReviewQueue).omit({ id: true, createdAt: true } as any);
-export type InsertProjectLinkageReviewQueue = z.infer<typeof insertProjectLinkageReviewQueueSchema>;
-export type ProjectLinkageReviewQueue = typeof projectLinkageReviewQueue.$inferSelect;
-
 // ===================== CHANGE REQUESTS =====================
 
 export const changeRequestTypeEnum = pgEnum('change_request_type', ['scope', 'cost', 'schedule', 'technical', 'commercial']);
@@ -881,24 +831,6 @@ export const derivedRagSummary = pgTable("derived_rag_summary", {
 });
 export type DerivedRagSummary = typeof derivedRagSummary.$inferSelect;
 
-// ===================== RESOURCE CAPACITY =====================
-
-export const resourceCapacity = pgTable("resource_capacity", {
-  id: serial("id").primaryKey(),
-  resourceType: text("resource_type").notNull(),
-  resourceName: text("resource_name").notNull(),
-  weekStart: text("week_start").notNull(),
-  capacityValue: decimal("capacity_value", { precision: 12, scale: 2 }),
-  capacityUnit: text("capacity_unit"),
-  createdBy: text("created_by"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-})
-
-export const insertResourceCapacitySchema = createInsertSchema(resourceCapacity).omit({ id: true, createdAt: true, updatedAt: true } as any);
-export type InsertResourceCapacity = z.infer<typeof insertResourceCapacitySchema>;
-export type ResourceCapacity = typeof resourceCapacity.$inferSelect;
-
 // ===================== SCENARIOS =====================
 
 export const scenarios = pgTable("scenarios", {
@@ -971,24 +903,3 @@ export const insertNormalizedExecutionPhaseSchema = createInsertSchema(normalize
 export type InsertNormalizedExecutionPhase = z.infer<typeof insertNormalizedExecutionPhaseSchema>;
 export type NormalizedExecutionPhase = typeof normalizedExecutionPhases.$inferSelect;
 
-// ===================== SUBCONTRACTOR ASSIGNMENTS =====================
-
-export const subcontractorAssignmentStatusEnum = pgEnum('subcontractor_assignment_status', ['active', 'completed', 'suspended', 'terminated']);
-
-export const projectSubcontractorAssignments = pgTable("project_subcontractor_assignments", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
-  counterpartyId: integer("counterparty_id").notNull().references(() => counterparties.id),
-  workPackage: text("work_package"),
-  scopeDescription: text("scope_description"),
-  ownerUserId: integer("owner_user_id").references(() => users.id),
-  status: subcontractorAssignmentStatusEnum("status").notNull().default('active'),
-  keyDates: jsonb("key_dates"),
-  performanceNotes: text("performance_notes"),
-  linkedApprovalId: integer("linked_approval_id"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-export const insertSubcontractorAssignmentSchema = createInsertSchema(projectSubcontractorAssignments).omit({ id: true, createdAt: true, updatedAt: true } as any);
-export type InsertSubcontractorAssignment = z.infer<typeof insertSubcontractorAssignmentSchema>;
-export type SubcontractorAssignment = typeof projectSubcontractorAssignments.$inferSelect;

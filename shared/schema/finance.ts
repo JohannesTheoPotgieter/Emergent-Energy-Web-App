@@ -96,25 +96,6 @@ export const insertProgramInflowsSchema = createInsertSchema(programInflows).omi
 export type InsertProgramInflows = z.infer<typeof insertProgramInflowsSchema>;
 export type ProgramInflows = typeof programInflows.$inferSelect;
 
-// ===================== REVENUE MILESTONE MANUAL =====================
-
-export const revenueMilestoneManual = pgTable("revenue_milestone_manual", {
-  id: serial("id").primaryKey(),
-  projectName: text("project_name").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
-  importedMilestoneId: integer("imported_milestone_id").notNull(),
-  invoiceNumber: text("invoice_number"),
-  invoiceRaisedDate: text("invoice_raised_date"),
-  paymentReceivedDate: text("payment_received_date"),
-  inBank: integer("in_bank").default(0),
-  requirementsComments: text("requirements_comments"),
-  documentsReceived: integer("documents_received").default(0),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-export const insertRevenueMilestoneManualSchema = createInsertSchema(revenueMilestoneManual).omit({ id: true, updatedAt: true } as any);
-export type InsertRevenueMilestoneManual = z.infer<typeof insertRevenueMilestoneManualSchema>;
-export type RevenueMilestoneManual = typeof revenueMilestoneManual.$inferSelect;
-
 // ===================== PROJECT PLAN =====================
 
 export const projectPlan = pgTable("project_plan", {
@@ -453,21 +434,6 @@ export const insertTrackerMonthlyManualSchema = createInsertSchema(trackerMonthl
 export type InsertTrackerMonthlyManual = z.infer<typeof insertTrackerMonthlyManualSchema>;
 export type TrackerMonthlyManual = typeof trackerMonthlyManual.$inferSelect;
 
-export const planningOverrides = pgTable("planning_overrides", {
-  id: serial("id").primaryKey(),
-  entityType: text("entity_type").notNull(),
-  entityId: text("entity_id").notNull(),
-  fieldName: text("field_name").notNull(),
-  value: text("value"),
-  effectiveFrom: text("effective_from"),
-  effectiveTo: text("effective_to"),
-  createdBy: text("created_by").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-export const insertPlanningOverrideSchema = createInsertSchema(planningOverrides).omit({ id: true, createdAt: true } as any);
-export type InsertPlanningOverride = z.infer<typeof insertPlanningOverrideSchema>;
-export type PlanningOverride = typeof planningOverrides.$inferSelect;
-
 export const paymentTerms = pgTable("payment_terms", {
   id: serial("id").primaryKey(),
   entityType: text("entity_type").notNull(),
@@ -481,21 +447,6 @@ export const paymentTerms = pgTable("payment_terms", {
 export const insertPaymentTermsSchema = createInsertSchema(paymentTerms).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertPaymentTerms = z.infer<typeof insertPaymentTermsSchema>;
 export type PaymentTerms = typeof paymentTerms.$inferSelect;
-
-export const lineItemOverrides = pgTable("line_item_overrides", {
-  id: serial("id").primaryKey(),
-  lineType: text("line_type").notNull(),
-  lineId: integer("line_id").notNull(),
-  overrideForecastDate: text("override_forecast_date"),
-  overrideTermsDays: integer("override_terms_days"),
-  overrideAmount: decimal("override_amount", { precision: 15, scale: 2 }),
-  overrideReason: text("override_reason").notNull(),
-  createdBy: text("created_by").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-export const insertLineItemOverrideSchema = createInsertSchema(lineItemOverrides).omit({ id: true, createdAt: true } as any);
-export type InsertLineItemOverride = z.infer<typeof insertLineItemOverrideSchema>;
-export type LineItemOverride = typeof lineItemOverrides.$inferSelect;
 
 // ===================== COUNTERPARTIES =====================
 
