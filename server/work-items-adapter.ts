@@ -712,6 +712,7 @@ export async function updateEngineeringWorkItem(workItemId: number, updates: {
   dueDate?: string | null;
   percentComplete?: number | null;
   ownerUserId?: number | null;
+  projectId?: number | null;
   holdReason?: string | null;
   blockedType?: string | null;
   completedAt?: Date | null;
@@ -733,6 +734,7 @@ export async function updateEngineeringWorkItem(workItemId: number, updates: {
   if (updates.dueDate !== undefined) setData.endDate = updates.dueDate;
   if (updates.percentComplete !== undefined) setData.percentComplete = updates.percentComplete;
   if (updates.ownerUserId !== undefined) setData.ownerUserId = updates.ownerUserId;
+  if (updates.projectId !== undefined) setData.projectId = updates.projectId;
   if (updates.holdReason !== undefined) setData.holdReason = updates.holdReason;
   if (updates.blockedType !== undefined) setData.blockedType = updates.blockedType;
   if (updates.completedAt !== undefined) setData.completedAt = updates.completedAt;
