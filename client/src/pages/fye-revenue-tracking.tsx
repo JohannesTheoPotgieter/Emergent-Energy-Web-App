@@ -829,9 +829,11 @@ function DetailTab({ fye }: { fye: number }) {
   const [sortKey, setSortKey] = useState<keyof ProjectRow>("projectName");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
-  // Sync filters to URL params
+  // Sync filters to URL params (preserving existing params like fye)
   useEffect(() => {
-    const p = new URLSearchParams();
+    const p = new URLSearchParams(window.location.search);
+    // Clear filter-specific params, then re-set active ones
+    for (const key of ["q", "bd", "prov", "type", "fund"]) p.delete(key);
     if (debouncedSearch) p.set("q", debouncedSearch);
     if (bdFilter.size > 0) p.set("bd", setToParam(bdFilter));
     if (provinceFilter.size > 0) p.set("prov", setToParam(provinceFilter));
@@ -1317,13 +1319,49 @@ function SnapshotsTab({ fye }: { fye: number }) {
 // ─── Main Page ───
 
 export default function FyeRevenueTrackingPage() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "detail" | "snapshots">("dashboard");
-  const [fye, setFye] = useState(getCurrentFye());
+  const searchString = useSearch();
+  const [, setLocation] = useLocation();
+  const params = useMemo(() => new URLSearchParams(searchString), [searchString]);
+
+  const [activeTab, setActiveTab] = useState<"dashboard" | "detail" | "snapshots">(
+    (params.get("tab") as any) || "dashboard"
+  );
+
+  // FYE year from URL param, falling back to current active year
+  const urlFye = params.get("fye");
+  const [fye, setFyeState] = useState(() => {
+    if (urlFye) { const n = parseInt(urlFye, 10); if (!isNaN(n)) return n; }
+    return getCurrentFye();
+  });
+
+  // Fetch available years from API
+  const { data: yearsData } = useQuery<{ years: number[]; currentFye: number }>({
+    queryKey: ["/api/fye-revenue-tracking/years"],
+    queryFn: getQueryFn({ on401: "throw" }),
+  });
 
   const fyeOptions = useMemo(() => {
+    if (yearsData?.years?.length) return yearsData.years;
     const current = getCurrentFye();
-    return [current - 1, current, current + 1];
-  }, []);
+    return [current + 1, current, current - 1];
+  }, [yearsData]);
+
+  // Sync FYE and tab to URL
+  const setFye = useCallback((y: number) => {
+    setFyeState(y);
+    const p = new URLSearchParams(window.location.search);
+    p.set("fye", String(y));
+    setLocation(`${window.location.pathname}?${p.toString()}`, { replace: true });
+  }, [setLocation]);
+
+  // Initialize URL param on mount if missing
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (!p.has("fye")) {
+      p.set("fye", String(fye));
+      setLocation(`${window.location.pathname}?${p.toString()}`, { replace: true });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-4">
