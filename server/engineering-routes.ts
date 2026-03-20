@@ -647,6 +647,20 @@ export function registerEngineeringRoutes(app: Express) {
         }
       }
 
+      // Resolve projectName → projectId when frontend sends a project link
+      let resolvedProjectId: number | null | undefined = updates.projectId;
+      if (updates.projectName !== undefined) {
+        if (updates.projectName === null || updates.projectName === "") {
+          resolvedProjectId = null;
+        } else {
+          const [proj] = await db.select({ id: projectInfo.id }).from(projectInfo)
+            .where(eq(projectInfo.projectName, updates.projectName));
+          if (proj) {
+            resolvedProjectId = proj.id;
+          }
+        }
+      }
+
       const updated = await updateEngineeringWorkItem(id, {
         title: updates.title,
         description: updates.description,
@@ -657,6 +671,7 @@ export function registerEngineeringRoutes(app: Express) {
         dueDate: updates.dueDate,
         percentComplete: updates.percentComplete !== undefined ? updates.percentComplete / 100 : undefined,
         ownerUserId: updates.ownerUserId,
+        projectId: resolvedProjectId,
         holdReason: updates.holdReason,
         blockedType: updates.blockedType,
         completedAt: updates.status === "COMPLETE" ? new Date() : undefined,
