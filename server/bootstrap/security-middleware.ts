@@ -72,13 +72,24 @@ function authRateLimit(req: Request, res: Response, next: NextFunction): void {
 }
 
 export function applySecurityAndParsingMiddleware(app: Express): void {
+  const isReplit = !!(process.env.REPLIT_DOMAINS || process.env.REPLIT_DEV_DOMAIN || process.env.REPL_ID);
+  const isProduction = process.env.NODE_ENV === "production";
+
   app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-    res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
-    res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+
+    if (isReplit || !isProduction) {
+      // Allow Replit's iframe preview and cross-origin dev tools
+      res.setHeader("X-Frame-Options", "SAMEORIGIN");
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    } else {
+      res.setHeader("X-Frame-Options", "DENY");
+      res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+      res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+    }
+
     next();
   });
 
