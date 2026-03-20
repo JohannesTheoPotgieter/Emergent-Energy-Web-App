@@ -146,6 +146,7 @@ export type ProjectRevenueSummary = typeof projectRevenueSummary.$inferSelect;
 export const projectNotes = pgTable("project_notes", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull().unique(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   revenueFinancialReview: text("revenue_financial_review"),
   revenueTimelineReview: text("revenue_timeline_review"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -177,6 +178,7 @@ export type HomeNotes = typeof homeNotes.$inferSelect;
 export const projectEditableFields = pgTable("project_editable_fields", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull().unique(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   costProposalSigned: text("cost_proposal_signed"),
   fundingSigned: text("funding_signed"),
   epcContractSigned: text("epc_contract_signed"),
@@ -437,6 +439,7 @@ export const calendarHoliday = pgTable("calendar_holiday", {
 export const projectTeamMembers = pgTable("project_team_members", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   userId: integer("user_id").notNull().references(() => users.id),
   roleOnProject: text("role_on_project").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -557,6 +560,7 @@ export const companyLifecyclePhaseEnum = pgEnum('company_lifecycle_phase', [
 export const companyProjects = pgTable("company_projects", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull().unique(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   projectKey: text("project_key"),
   lifecyclePhase: companyLifecyclePhaseEnum("lifecycle_phase").notNull().default('FIRST_ASSESSMENT'),
   phaseStartDate: text("phase_start_date"),
@@ -729,6 +733,7 @@ export const userProjectFolders = pgTable("user_project_folders", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   folderName: text("folder_name").notNull(),
   folderPath: text("folder_path"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -811,6 +816,7 @@ export const derivedProjectKpis = pgTable("derived_project_kpis", {
   id: serial("id").primaryKey(),
   projectKey: text("project_key").notNull().unique(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   phase: text("phase"),
   sizeKwp: decimal("size_kwp", { precision: 12, scale: 2 }),
   contractValue: decimal("contract_value", { precision: 15, scale: 2 }),
@@ -932,6 +938,7 @@ export type DateOverride = typeof dateOverrides.$inferSelect;
 export const keyDateMappings = pgTable("key_date_mappings", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
   keyDateName: text("key_date_name").notNull(),
   sourceTaskId: integer("source_task_id"),
   sourceTaskCode: text("source_task_code"),

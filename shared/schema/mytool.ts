@@ -4,6 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 import { users } from "./users";
+import { projectInfo } from "./projects";
 import { operationalTasks } from "./tasks";
 
 export const mytoolTaskStatusEnum = pgEnum('mytool_task_status', ['inbox', 'planned', 'in_progress', 'blocked', 'waiting', 'done', 'cancelled']);
@@ -30,6 +31,7 @@ export const mytoolTasks = pgTable("mytool_tasks", {
   notes: text("notes"),
   bucket: mytoolTaskBucketEnum("bucket").default('personal'),
   projectName: text("project_name"),
+  projectId: integer("project_id").references(() => projectInfo.id),
   department: text("department"),
   tag: text("tag"),
   sourceEmailId: text("source_email_id"),
@@ -81,6 +83,7 @@ export const mytoolRecurrenceTemplates = pgTable("mytool_recurrence_templates", 
   title: text("title").notNull(),
   description: text("description"),
   projectName: text("project_name"),
+  projectId: integer("project_id").references(() => projectInfo.id),
   defaultAssigneeRole: text("default_assignee_role"),
   checklistItems: jsonb("checklist_items"),
   frequency: mytoolRecurrenceFrequencyEnum("frequency").notNull(),
@@ -154,6 +157,7 @@ export const mytoolCompanyPriorities = pgTable("mytool_company_priorities", {
   horizon: mytoolPriorityHorizonEnum("horizon").notNull().default('week'),
   ownerRole: text("owner_role"),
   linkedProjectName: text("linked_project_name"),
+  linkedProjectId: integer("linked_project_id").references(() => projectInfo.id),
   severity: mytoolPrioritySeverityEnum("severity").notNull().default('normal'),
   status: mytoolPriorityStatusEnum("status").notNull().default('active'),
   priorityRank: integer("priority_rank"),
@@ -177,6 +181,7 @@ export const priorityLinks = pgTable("priority_links", {
   priorityId: integer("priority_id").notNull().references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
   linkType: text("link_type").notNull(),
   projectName: text("project_name"),
+  projectId: integer("project_id").references(() => projectInfo.id),
   taskId: integer("task_id"),
   taskType: text("task_type"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
