@@ -30,58 +30,149 @@ export type Client = typeof clients.$inferSelect;
 
 // Project Info Table (parsed from Project Plan sheet fixed cells)
 export const projectInfo = pgTable("project_info", {
+  // === IDENTITY (stays here) ===
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull().unique(),
   sizeKwp: decimal("size_kwp", { precision: 12, scale: 2 }),
   pd: text("pd"),
   pm: text("pm"),
   contractValue: decimal("contract_value", { precision: 15, scale: 2 }),
-  phase: text("phase"),
-  phaseUpdatedAt: timestamp("phase_updated_at"),
-  phaseUpdatedByUserId: integer("phase_updated_by_user_id").references(() => users.id),
-  phaseNotes: text("phase_notes"),
-  pdHandoverDate: text("pd_handover_date"),
-  constructionStartDate: text("construction_start_date"),
-  commissioningDate: text("commissioning_date"),
-  omHandoverDate: text("om_handover_date"),
-  clientHandoverDate: text("client_handover_date"),
-  escalationLevel: text("escalation_level"),
-  constructionStartActual: text("construction_start_actual"),
-  pdHandoverActual: text("pd_handover_actual"),
-  commissioningActual: text("commissioning_actual"),
-  clientHandoverActual: text("client_handover_actual"),
-  ragStatus: text("rag_status"),
-  ragComment: text("rag_comment"),
-  ragUpdatedAt: timestamp("rag_updated_at"),
-  ragUpdatedByUserId: integer("rag_updated_by_user_id"),
-  isActive: boolean("is_active").notNull().default(true),
-  executionEnabled: boolean("execution_enabled").notNull().default(false),
-  executionGateStatus: text("execution_gate_status").notNull().default("NOT_ELIGIBLE"),
-  executionGateReason: text("execution_gate_reason"),
-  signedStatus: text("signed_status").notNull().default("NONE"),
-  signedDate: text("signed_date"),
-  signedDocumentLink: text("signed_document_link"),
-  executionPhase: text("execution_phase"),
-  excelTrackerLink: text("excel_tracker_link"),
   canonicalProjectId: integer("canonical_project_id"),
   clientId: integer("client_id").references(() => clients.id),
-  archivedStatus: text("archived_status").notNull().default("ACTIVE"),
   pmUserId: integer("pm_user_id"),
   pdUserId: integer("pd_user_id"),
-  // CP Signed gate
-  cpSigned: boolean("cp_signed").notNull().default(false),
-  cpSignedDate: text("cp_signed_date"),
-  cpSignedByUserId: integer("cp_signed_by_user_id").references(() => users.id),
-  cpEvidenceType: text("cp_evidence_type"),
-  cpEvidenceRef: text("cp_evidence_ref"),
-  pmTaskPackCreated: boolean("pm_task_pack_created").notNull().default(false),
-  engPostCpTaskPackCreated: boolean("eng_post_cp_task_pack_created").notNull().default(false),
+  excelTrackerLink: text("excel_tracker_link"), // -- MOVED to project_settings
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+
+  // === MOVED to project_execution_state (kept here until query rewrites) ===
+  phase: text("phase"), // -- MOVED to project_execution_state
+  phaseUpdatedAt: timestamp("phase_updated_at"), // -- MOVED to project_execution_state
+  phaseUpdatedByUserId: integer("phase_updated_by_user_id").references(() => users.id), // -- MOVED to project_execution_state
+  phaseNotes: text("phase_notes"), // -- MOVED to project_execution_state
+  pdHandoverDate: text("pd_handover_date"), // -- MOVED to project_execution_state
+  constructionStartDate: text("construction_start_date"), // -- MOVED to project_execution_state
+  commissioningDate: text("commissioning_date"), // -- MOVED to project_execution_state
+  omHandoverDate: text("om_handover_date"), // -- MOVED to project_execution_state
+  clientHandoverDate: text("client_handover_date"), // -- MOVED to project_execution_state
+  escalationLevel: text("escalation_level"), // -- MOVED to project_execution_state
+  constructionStartActual: text("construction_start_actual"), // -- MOVED to project_execution_state
+  pdHandoverActual: text("pd_handover_actual"), // -- MOVED to project_execution_state
+  commissioningActual: text("commissioning_actual"), // -- MOVED to project_execution_state
+  clientHandoverActual: text("client_handover_actual"), // -- MOVED to project_execution_state
+  ragStatus: text("rag_status"), // -- MOVED to project_execution_state
+  ragComment: text("rag_comment"), // -- MOVED to project_execution_state
+  ragUpdatedAt: timestamp("rag_updated_at"), // -- MOVED to project_execution_state
+  ragUpdatedByUserId: integer("rag_updated_by_user_id"), // -- MOVED to project_execution_state
+  isActive: boolean("is_active").notNull().default(true), // -- MOVED to project_execution_state
+  executionEnabled: boolean("execution_enabled").notNull().default(false), // -- MOVED to project_execution_state
+  executionGateStatus: text("execution_gate_status").notNull().default("NOT_ELIGIBLE"), // -- MOVED to project_execution_state
+  executionGateReason: text("execution_gate_reason"), // -- MOVED to project_execution_state
+  signedStatus: text("signed_status").notNull().default("NONE"), // -- MOVED to project_execution_state
+  signedDate: text("signed_date"), // -- MOVED to project_execution_state
+  signedDocumentLink: text("signed_document_link"), // -- MOVED to project_execution_state
+  executionPhase: text("execution_phase"), // -- MOVED to project_execution_state
+  archivedStatus: text("archived_status").notNull().default("ACTIVE"), // -- MOVED to project_execution_state
+  cpSigned: boolean("cp_signed").notNull().default(false), // -- MOVED to project_execution_state
+  cpSignedDate: text("cp_signed_date"), // -- MOVED to project_execution_state
+  cpSignedByUserId: integer("cp_signed_by_user_id").references(() => users.id), // -- MOVED to project_execution_state
+  cpEvidenceType: text("cp_evidence_type"), // -- MOVED to project_execution_state
+  cpEvidenceRef: text("cp_evidence_ref"), // -- MOVED to project_execution_state
+  pmTaskPackCreated: boolean("pm_task_pack_created").notNull().default(false), // -- MOVED to project_execution_state
+  engPostCpTaskPackCreated: boolean("eng_post_cp_task_pack_created").notNull().default(false), // -- MOVED to project_execution_state
 });
 
 export const insertProjectInfoSchema = createInsertSchema(projectInfo).omit({ id: true, updatedAt: true } as any);
 export type InsertProjectInfo = z.infer<typeof insertProjectInfoSchema>;
 export type ProjectInfo = typeof projectInfo.$inferSelect;
+
+// ===================== PROJECT EXECUTION STATE =====================
+// Split from project_info — contains all execution/lifecycle/status columns
+
+export const projectExecutionState = pgTable("project_execution_state", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").unique().notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+
+  // Phase lifecycle
+  phase: text("phase"),
+  phaseUpdatedAt: timestamp("phase_updated_at"),
+  phaseUpdatedByUserId: integer("phase_updated_by_user_id").references(() => users.id),
+  phaseNotes: text("phase_notes"),
+
+  // Key dates (planned)
+  pdHandoverDate: text("pd_handover_date"),
+  constructionStartDate: text("construction_start_date"),
+  commissioningDate: text("commissioning_date"),
+  omHandoverDate: text("om_handover_date"),
+  clientHandoverDate: text("client_handover_date"),
+
+  // Key dates (actual)
+  constructionStartActual: text("construction_start_actual"),
+  pdHandoverActual: text("pd_handover_actual"),
+  commissioningActual: text("commissioning_actual"),
+  clientHandoverActual: text("client_handover_actual"),
+
+  // Escalation
+  escalationLevel: text("escalation_level"),
+
+  // RAG status
+  ragStatus: text("rag_status"),
+  ragComment: text("rag_comment"),
+  ragUpdatedAt: timestamp("rag_updated_at"),
+  ragUpdatedByUserId: integer("rag_updated_by_user_id"),
+
+  // Active / archived
+  isActive: boolean("is_active").notNull().default(true),
+  archivedStatus: text("archived_status").notNull().default("ACTIVE"),
+
+  // Execution gate
+  executionEnabled: boolean("execution_enabled").notNull().default(false),
+  executionGateStatus: text("execution_gate_status").notNull().default("NOT_ELIGIBLE"),
+  executionGateReason: text("execution_gate_reason"),
+  executionPhase: text("execution_phase"),
+
+  // Signing
+  signedStatus: text("signed_status").notNull().default("NONE"),
+  signedDate: text("signed_date"),
+  signedDocumentLink: text("signed_document_link"),
+
+  // CP signed gate
+  cpSigned: boolean("cp_signed").notNull().default(false),
+  cpSignedDate: text("cp_signed_date"),
+  cpSignedByUserId: integer("cp_signed_by_user_id").references(() => users.id),
+  cpEvidenceType: text("cp_evidence_type"),
+  cpEvidenceRef: text("cp_evidence_ref"),
+
+  // Task pack flags
+  pmTaskPackCreated: boolean("pm_task_pack_created").notNull().default(false),
+  engPostCpTaskPackCreated: boolean("eng_post_cp_task_pack_created").notNull().default(false),
+
+  // Timestamps
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProjectExecutionStateSchema = createInsertSchema(projectExecutionState).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertProjectExecutionState = z.infer<typeof insertProjectExecutionStateSchema>;
+export type ProjectExecutionState = typeof projectExecutionState.$inferSelect;
+
+// ===================== PROJECT SETTINGS =====================
+// Split from project_info — contains config/link/preference columns
+
+export const projectSettings = pgTable("project_settings", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").unique().notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+
+  // Excel / SharePoint links
+  excelTrackerLink: text("excel_tracker_link"),
+
+  // Timestamps
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertProjectSettingsSchema = createInsertSchema(projectSettings).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertProjectSettings = z.infer<typeof insertProjectSettingsSchema>;
+export type ProjectSettings = typeof projectSettings.$inferSelect;
 
 // ===================== PROJECT PHASE HISTORY =====================
 
