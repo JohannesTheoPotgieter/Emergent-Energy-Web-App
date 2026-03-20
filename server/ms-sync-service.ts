@@ -14,6 +14,7 @@ const SYNC_INTERVAL_MS = 15 * 60 * 1000;
 /** If more than this fraction of items fail in a single sync, abort early */
 const ERROR_THRESHOLD_RATIO = 0.5;
 const MIN_ITEMS_FOR_THRESHOLD = 5;
+const TRANSIENT_ERROR_RE = /timeout|ECONNRESET|ECONNREFUSED|ETIMEDOUT|connection terminated/i;
 const syncTimers: Map<number, NodeJS.Timeout> = new Map();
 let globalSyncTimer: NodeJS.Timeout | null = null;
 
@@ -279,19 +280,32 @@ export function startPeriodicSync() {
   }
 
   globalSyncTimer = setInterval(async () => {
-    try {
-      const accounts = await db.select().from(msAccounts).where(
-        and(eq(msAccounts.status, "active"), isNotNull(msAccounts.ssoAccessToken))
-      );
-      for (const account of accounts) {
-        try {
-          await syncAllForUser(account.userId);
-        } catch (err: any) {
-          console.error(`[MS Sync] Periodic sync failed for user ${account.userId}:`, err.message);
+    let accounts: any[] | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        accounts = await db.select().from(msAccounts).where(
+          and(eq(msAccounts.status, "active"), isNotNull(msAccounts.ssoAccessToken))
+        );
+        break;
+      } catch (err: any) {
+        const isTransient = TRANSIENT_ERROR_RE.test(err.message);
+        if (!isTransient || attempt === 3) {
+          console.error("[MS Sync] Periodic sync loop error:", err.message);
+          return;
         }
+        const delay = 2000 * Math.pow(2, attempt - 1);
+        console.warn(`[MS Sync] DB connection failed (attempt ${attempt}/3), retrying in ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
       }
-    } catch (err: any) {
-      console.error("[MS Sync] Periodic sync loop error:", err.message);
+    }
+    if (!accounts) return;
+
+    for (const account of accounts) {
+      try {
+        await syncAllForUser(account.userId);
+      } catch (err: any) {
+        console.error(`[MS Sync] Periodic sync failed for user ${account.userId}:`, err.message);
+      }
     }
   }, SYNC_INTERVAL_MS);
 
