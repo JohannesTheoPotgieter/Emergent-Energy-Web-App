@@ -119,6 +119,26 @@ export async function backfillWorkItems(): Promise<void> {
       const otTable = await resolveTable("operational_tasks");
       if (!otTable) return;
 
+      // Auto-create missing projects in project_info for operational_tasks
+      // This ensures all engineering tasks can be linked to a valid project
+      const createdProjects = await db.execute(sql.raw(`
+        INSERT INTO project_info (project_name, phase, is_active)
+        SELECT DISTINCT ot.project_name, 'P0_FIRST_ASSESSMENT', true
+        FROM "${otTable}" ot
+        WHERE ot.project_name IS NOT NULL
+          AND ot.deleted_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM project_info pi
+            WHERE LOWER(TRIM(pi.project_name)) = LOWER(TRIM(ot.project_name))
+          )
+        ON CONFLICT (project_name) DO NOTHING
+        RETURNING project_name
+      `));
+      const createdCount = (createdProjects as any).rows?.length ?? 0;
+      if (createdCount > 0) {
+        console.log(`[Backfill] Auto-created ${createdCount} missing projects in project_info for operational_tasks`);
+      }
+
       // Fix previously-migrated operational_tasks that were incorrectly set to 'PM'
       // operational_tasks are engineering/ops tasks and should use workstream 'ENG'
       const fixedRows = await db.execute(sql.raw(`
@@ -507,6 +527,16 @@ export async function backfillWorkItems(): Promise<void> {
 
     const totalWi = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM work_items`));
     console.log(`[Backfill] Total work_items: ${(totalWi as any).rows?.[0]?.cnt ?? 0}`);
+
+    // Post-migration integrity check: warn about any remaining orphaned work_items
+    const orphanCheck = await db.execute(sql.raw(`
+      SELECT COUNT(*) as cnt FROM work_items
+      WHERE project_id IS NULL AND workstream = 'ENG' AND deleted_at IS NULL
+    `));
+    const orphanCount = Number((orphanCheck as any).rows?.[0]?.cnt ?? 0);
+    if (orphanCount > 0) {
+      console.warn(`[Backfill] WARNING: ${orphanCount} ENG work_items still have NULL project_id after migration. These will show as "Unassigned Project" on the dashboard.`);
+    }
 
     await setFeatureFlag("canonical_work_items_v1", true, "system-backfill");
     console.log("[Backfill] canonical_work_items_v1 feature flag enabled");
