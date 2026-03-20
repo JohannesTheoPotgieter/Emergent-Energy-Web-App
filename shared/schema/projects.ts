@@ -915,25 +915,6 @@ export const insertScenarioSchema = createInsertSchema(scenarios).omit({ id: tru
 export type InsertScenario = z.infer<typeof insertScenarioSchema>;
 export type Scenario = typeof scenarios.$inferSelect;
 
-// ===================== DATE OVERRIDES =====================
-
-export const dateOverrides = pgTable("date_overrides", {
-  id: serial("id").primaryKey(),
-  scenarioId: integer("scenario_id").notNull().references(() => scenarios.id, { onDelete: 'cascade' }),
-  entityType: text("entity_type").notNull(),
-  entityId: text("entity_id").notNull(),
-  fieldName: text("field_name").notNull(),
-  originalDate: text("original_date"),
-  overrideDate: text("override_date").notNull(),
-  reason: text("reason").notNull(),
-  createdBy: integer("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-export const insertDateOverrideSchema = createInsertSchema(dateOverrides).omit({ id: true, createdAt: true } as any);
-export type InsertDateOverride = z.infer<typeof insertDateOverrideSchema>;
-export type DateOverride = typeof dateOverrides.$inferSelect;
-
 // ===================== KEY DATE MAPPINGS =====================
 
 export const keyDateMappings = pgTable("key_date_mappings", {

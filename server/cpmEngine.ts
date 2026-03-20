@@ -292,96 +292,11 @@ export function calculateCPM(
   };
 }
 
-export function applyOverridesToTasks(
-  baseTasks: Array<{
-    id: number;
-    taskNo: string | null;
-    name: string | null;
-    startDate: string | null;
-    endDate: string | null;
-    type: string | null;
-    percentComplete?: number | null;
-    isBaseline?: boolean;
-  }>,
-  overrides: Array<{
-    importedTaskId: number | null;
-    overrideStartDate: string | null;
-    overrideEndDate: string | null;
-    overrideDurationDays: number | null;
-    overrideName: string | null;
-    overrideTaskNo: string | null;
-    deletedFlag: number;
-    isNewTask: number;
-    id: number;
-  }>
-): typeof baseTasks {
-  const overrideMap = new Map(
-    overrides
-      .filter(o => o.importedTaskId && o.deletedFlag !== 1)
-      .map(o => [o.importedTaskId!, o])
-  );
-  
-  const result = baseTasks
-    .filter(t => {
-      const override = overrideMap.get(t.id);
-      return !override || override.deletedFlag !== 1;
-    })
-    .map(t => {
-      const override = overrideMap.get(t.id);
-      if (!override) return t;
-      
-      return {
-        ...t,
-        taskNo: override.overrideTaskNo || t.taskNo,
-        name: override.overrideName || t.name,
-        startDate: override.overrideStartDate || t.startDate,
-        endDate: override.overrideEndDate || t.endDate,
-      };
-    });
-  
-  const newTasks = overrides
-    .filter(o => o.isNewTask === 1 && o.deletedFlag !== 1)
-    .map(o => ({
-      id: -o.id,
-      taskNo: o.overrideTaskNo,
-      name: o.overrideName,
-      startDate: o.overrideStartDate,
-      endDate: o.overrideEndDate,
-      type: 'Task',
-      percentComplete: null as number | null,
-      isBaseline: false,
-    }));
-  
-  return [...result, ...newTasks];
+// Override tables dropped (Cleanup Prompt 4) — stubs return input unchanged
+export function applyOverridesToTasks(baseTasks: any[], _overrides: any[]): any[] {
+  return baseTasks;
 }
 
-export function applyOverridesToDependencies(
-  baseDeps: CPMDependency[],
-  overrides: Array<{
-    id: number;
-    importedDependencyId: number | null;
-    predecessorTaskId: number;
-    successorTaskId: number;
-    dependencyType: string;
-    lagDays: number;
-    deletedFlag: number;
-  }>
-): CPMDependency[] {
-  const deleteSet = new Set(
-    overrides.filter(o => o.importedDependencyId && o.deletedFlag === 1).map(o => o.importedDependencyId!)
-  );
-  
-  const result = baseDeps.filter(d => !deleteSet.has(d.id));
-  
-  const newDeps = overrides
-    .filter(o => !o.importedDependencyId && o.deletedFlag !== 1)
-    .map(o => ({
-      id: -o.id,
-      predecessorTaskId: o.predecessorTaskId,
-      successorTaskId: o.successorTaskId,
-      dependencyType: o.dependencyType,
-      lagDays: o.lagDays,
-    }));
-  
-  return [...result, ...newDeps];
+export function applyOverridesToDependencies(baseDeps: CPMDependency[], _overrides: any[]): CPMDependency[] {
+  return baseDeps;
 }

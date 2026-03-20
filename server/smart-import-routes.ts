@@ -24,19 +24,16 @@ import {
   projectInfo,
   changeSets,
   workingPlanScenario,
-  workingPlanTaskOverride,
   workingPlanDependencyOverride,
   auditEvents,
   workItems,
   workItemAssignments,
   workItemDependencies,
-  projectPlanOverrides,
   // planEditNotifications, // Notifications feature removed
   projectRevenueSummary,
   programExpense,
   programInflows,
   expenseTaskLinks,
-  cosStatusOverrides,
   users,
   importLogs,
   manualEditFlags,
@@ -1713,24 +1710,12 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         .where(eq(workingPlanScenario.projectName, projectName));
       if (scenarioIds.length > 0) {
         const sIds = scenarioIds.map((s: any) => s.id);
-        await tx.update(workingPlanTaskOverride)
-          .set({ importedTaskId: null })
-          .where(inArray(workingPlanTaskOverride.scenarioId, sIds));
         await tx.update(workingPlanDependencyOverride)
           .set({ importedDependencyId: null })
           .where(inArray(workingPlanDependencyOverride.scenarioId, sIds));
       }
 
-      // DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
-      // During transition, we still read from projectPlanOverrides to preserve manual edits.
-      // Future: replace with source='imported_edited' + import_snapshot check on project_plan rows.
-      const manualOverridesForProject = await tx.select().from(projectPlanOverrides)
-        .where(eq(projectPlanOverrides.projectName, projectName));
       const manualOverrideMap = new Map<number, Map<string, string>>();
-      for (const ov of manualOverridesForProject) {
-        if (!manualOverrideMap.has(ov.rowNumber)) manualOverrideMap.set(ov.rowNumber, new Map());
-        manualOverrideMap.get(ov.rowNumber)!.set(ov.fieldName, ov.overrideValue || '');
-      }
 
       const existingWorkItemsForImport = await tx
         .select({ id: workItems.id })
@@ -2263,23 +2248,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           }
         }
 
-        // DEPRECATED: COS overrides are now baked into base rows (Prompt 4 — override collapse).
-        // During transition, we still remap cosStatusOverrides for backward compatibility.
-        const existingCosOverrides = await tx.select().from(cosStatusOverrides)
-          .where(eq(cosStatusOverrides.projectName, projectName));
-        for (const co of existingCosOverrides) {
-          const oldRow = oldPeRows.find(r => r.id === co.expenseId);
-          if (oldRow && oldRow.rowNumber != null) {
-            const newId = newIdByRow.get(oldRow.rowNumber);
-            if (newId && newId !== co.expenseId) {
-              await tx.update(cosStatusOverrides).set({ expenseId: newId }).where(eq(cosStatusOverrides.id, co.id));
-            } else if (!newId) {
-              await tx.delete(cosStatusOverrides).where(eq(cosStatusOverrides.id, co.id));
-            }
-          } else if (!newIdSet.has(co.expenseId)) {
-            await tx.delete(cosStatusOverrides).where(eq(cosStatusOverrides.id, co.id));
-          }
-        }
       }
 
       if (norm.executionPhases && norm.executionPhases.length > 0) {

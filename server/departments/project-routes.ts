@@ -23,10 +23,6 @@ function coercePlanOverride(fieldName: string, value: any): any {
   return value;
 }
 
-// DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
-function applyProjectPlanOverrides(baselineRows: any[], _overrides: any[]): any[] {
-  return baselineRows;
-}
 
 function resolveInflowEffectiveDates(
   inflows: any[],
@@ -645,7 +641,7 @@ router.post("/api/home/notes", requireAuth, requireAdmin, async (req, res) => {
 
 router.get("/api/projects-summary", requireAuth, async (req, res) => {
   try {
-    const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, allPlanOverrides, workItemsResult, handoverRows] = await Promise.all([
+    const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, workItemsResult, handoverRows] = await Promise.all([
       storage.getAllProjectInfo(),
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
@@ -654,7 +650,6 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),
       db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`),
-      storage.getAllProjectPlanOverrides(),
       db.execute(sql`SELECT wi.project_id, pi.project_name, wi.percent_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.title, wi.type FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL`),
       db.execute(sql`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`),
     ]);
@@ -675,21 +670,6 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
     const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
     const milestoneKeys = new Set<string>();
-    for (const o of allPlanOverrides) {
-      if (o.fieldName === "parentRowNumber" && o.overrideValue && o.overrideValue !== "" && o.overrideValue !== "0") {
-        milestoneKeys.add(`${o.projectName}::${o.overrideValue}`);
-      }
-    }
-    for (const o of allPlanOverrides) {
-      if (o.fieldName === "indentLevel" && o.overrideValue === "0" && milestoneKeys.has(`${o.projectName}::${o.rowNumber}`)) {
-        milestoneKeys.add(`${o.projectName}::${o.rowNumber}`);
-      }
-    }
-    for (const o of allPlanOverrides) {
-      if (o.rowNumber < 0) {
-        milestoneKeys.add(`${o.projectName}::${o.rowNumber}`);
-      }
-    }
 
     const importedProjectNames = new Set<string>();
     for (const row of uploadMetaRows.rows) {
@@ -739,7 +719,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       counts[status] = (counts[status] || 0) + 1;
     }
 
-    const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
+    const projectInfoMap = new Map<string, any>(allProjectInfo.map((info: any) => [info.projectName, info]));
 
     const projectsSummary = Array.from(allProjectNames).map(projectName => {
       const info = projectInfoMap.get(projectName);
@@ -1205,7 +1185,7 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
       expensesByProject.get(expense.projectName)!.push(expense);
     }
 
-    const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
+    const projectInfoMap = new Map<string, any>(allProjectInfo.map((info: any) => [info.projectName, info]));
 
     const activeProjectInfo = allProjectInfo.filter(info =>
       info.isActive !== false &&
@@ -1525,7 +1505,7 @@ router.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
     const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
     const today = new Date().toISOString().split("T")[0];
-    const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
+    const projectInfoMap = new Map<string, any>(allProjectInfo.map((info: any) => [info.projectName, info]));
 
     const overdueExpenses: Array<{
       id: number;
@@ -1768,10 +1748,6 @@ router.get("/api/project-plans", requireAuth, async (req, res) => {
     if (projectName && typeof projectName === 'string') {
       plans = await storage.getProjectPlansByProject(projectName);
       
-      if (applyOverrides === 'true') {
-        const overrides = await storage.getProjectPlanOverridesByProject(projectName);
-        plans = applyProjectPlanOverrides(plans, overrides);
-      }
       return res.json(plans);
     }
     plans = await storage.getAllProjectPlans();
@@ -1788,10 +1764,7 @@ router.get("/api/project-plan/:projectName", requireAuth, async (req, res) => {
 
     let plans = await storage.getProjectPlansByProject(projectName);
 
-    if (applyOverrides === 'true') {
-      const overrides = await storage.getProjectPlanOverridesByProject(projectName);
-      plans = applyProjectPlanOverrides(plans, overrides);
-    }
+    // Override data is now baked into base rows (override collapse)
     
     res.json(plans);
   } catch (error) {
@@ -1898,75 +1871,11 @@ router.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res
   }
 });
 
-// ==================== PROJECT PLAN OVERRIDES ====================
+// Override tables dropped (Cleanup Prompt 4) — return empty for backward compat
+router.get("/api/project-plan/overrides", requireAuth, (_req, res) => res.json([]));
+router.post("/api/project-plan/overrides", requireAuth, (_req, res) => res.json({ message: "Override tables have been removed", count: 0, overrides: [] }));
 
-router.get("/api/project-plan/overrides", requireAuth, async (req, res) => {
-  try {
-    const { projectName } = req.query;
-    if (!projectName || typeof projectName !== 'string') {
-      return res.status(400).json({ error: "Project name required", message: "Project name is required" });
-    }
-    const overrides = await storage.getProjectPlanOverridesByProject(projectName);
-    res.json(overrides);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch project plan overrides", message: "Failed to fetch project plan overrides" });
-  }
-});
-
-router.post("/api/project-plan/overrides", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { overrides, overrideCategory, overrideComment } = req.body;
-    if (!Array.isArray(overrides)) {
-      return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
-    }
-    if (!overrideCategory || !OVERRIDE_CATEGORIES.includes(overrideCategory)) {
-      return res.status(400).json({ error: "Override category is required. Must be one of: " + OVERRIDE_CATEGORIES.join(", ") });
-    }
-    if (!overrideComment || typeof overrideComment !== "string" || overrideComment.trim().length < 3) {
-      return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
-    }
-    const userId = req.user?.id;
-    const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-    const saved = await storage.upsertManyProjectPlanOverrides(overridesWithUser);
-
-    try {
-      for (const o of overrides) {
-        await recordOverride({
-          actorUserId: userId,
-          actorRole: (req as any).user?.role,
-          entityType: "project_plan_override",
-          entityId: `${o.projectName}|row${o.rowNumber}|${o.fieldName}`,
-          projectName: o.projectName,
-          action: "PROJECT_PLAN_OVERRIDE",
-          overrideCategory,
-          overrideComment: overrideComment.trim(),
-          oldRecord: {},
-          newRecord: { [o.fieldName]: o.overrideValue },
-        });
-      }
-    } catch (auditErr: any) {
-      console.warn("[audit] Project plan override audit failed:", auditErr.message);
-    }
-
-    const pName = overrides[0]?.projectName || "Unknown";
-    res.json({ message: "Project plan overrides saved", count: saved.length, overrides: saved });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to save project plan overrides", message: error instanceof Error ? error.message : "Failed to save project plan overrides" });
-  }
-});
-
-router.delete("/api/project-plan/overrides/:projectName", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const projectName = req.params.projectName;
-    if (!projectName || typeof projectName !== 'string') {
-      return res.status(400).json({ error: "Project name required", message: "Project name is required" });
-    }
-    await storage.deleteProjectPlanOverridesByProject(projectName);
-    res.json({ message: `Project plan overrides deleted for project: ${projectName}` });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to delete project plan overrides", message: "Failed to delete project plan overrides" });
-  }
-});
+router.delete("/api/project-plan/overrides/:projectName", requireAuth, (_req, res) => res.json({ message: "Override tables have been removed" }));
 
 // ==================== KEY DATE MAPPINGS ====================
 
