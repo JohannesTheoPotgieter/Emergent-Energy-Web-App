@@ -12,6 +12,7 @@ import {
   TEMPLATE_ITEM_TYPES, TEMPLATE_WORKSTREAMS, TEMPLATE_LINK_TARGET_TYPES,
   clients,
   qcWarning,
+  projectExecutionState,
 } from "@shared/schema";
 import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { requirePermission } from "./permission-middleware";
@@ -701,7 +702,8 @@ export function registerTemplateRoutes(app: Express) {
 
       const allProjects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
         .from(projectInfo)
-        .where(eq(projectInfo.isActive, true));
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectExecutionState.isActive, true));
 
       const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
       const needle = normalise(name);
@@ -822,8 +824,20 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/exec/portfolio", jwtAuth, requireAuth, requireAdmin, async (_req, res) => {
     try {
-      const projects = await db.select().from(projectInfo)
-        .where(eq(projectInfo.isActive, true))
+      const projects = await db.select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        contractValue: projectInfo.contractValue,
+        sizeKwp: projectInfo.sizeKwp,
+        pd: projectInfo.pd,
+        pm: projectInfo.pm,
+        phase: projectExecutionState.phase,
+        phaseUpdatedAt: projectExecutionState.phaseUpdatedAt,
+        ragStatus: projectExecutionState.ragStatus,
+        isActive: projectExecutionState.isActive,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectExecutionState.isActive, true))
         .orderBy(asc(projectInfo.projectName));
 
       const result = [];

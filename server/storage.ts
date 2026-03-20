@@ -8,7 +8,7 @@ import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpe
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
-  projectInfo, normalizedCostLines, normalizedRevenueLines, workItems, programExpense, programInflows, projectPlan,
+  projectInfo, projectExecutionState, normalizedCostLines, normalizedRevenueLines, workItems, programExpense, programInflows, projectPlan,
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
   cashflowPlanningOverrides, projectPlanOverrides, revenueTrackingOverrides,
   expenditureOverrides, financeRevenueOverrides, financeCosOverrides,
@@ -146,7 +146,7 @@ export interface IStorage {
   // Project Info (new)
   getProjectInfo(projectName: string): Promise<ProjectInfo | undefined>;
   getProjectInfoById(id: number): Promise<ProjectInfo | undefined>;
-  getAllProjectInfo(): Promise<ProjectInfo[]>;
+  getAllProjectInfo(): Promise<any[]>;
   upsertProjectInfo(info: InsertProjectInfo): Promise<ProjectInfo>;
   updateProjectInfoById(id: number, fields: Partial<InsertProjectInfo>): Promise<ProjectInfo | undefined>;
   deleteProjectInfo(projectName: string): Promise<void>;
@@ -899,9 +899,20 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async getAllProjectInfo(): Promise<ProjectInfo[]> {
+  async getAllProjectInfo(): Promise<any[]> {
     try {
-      return await this.dbInstance.select().from(projectInfo).orderBy(desc(projectInfo.updatedAt));
+      const rows = await this.dbInstance
+        .select()
+        .from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .orderBy(desc(projectInfo.updatedAt));
+      return rows.map(r => ({
+        ...r.project_info,
+        ...r.project_execution_state,
+        // Preserve identity id (not execution state id)
+        id: r.project_info.id,
+        updatedAt: r.project_info.updatedAt,
+      }));
     } catch (error) {
       if (this.shouldUseLegacyProjectInfoReadFallback(error)) {
         return this.listLegacyCompatibleProjectInfo();
@@ -957,9 +968,10 @@ export class DatabaseStorage implements IStorage {
       pd: projectInfo.pd,
       pm: projectInfo.pm,
       contractValue: projectInfo.contractValue,
-      phase: projectInfo.phase,
+      phase: projectExecutionState.phase,
       updatedAt: projectInfo.updatedAt,
-    }).from(projectInfo);
+    }).from(projectInfo)
+      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
 
     const rows = filters?.projectName
       ? await baseQuery.where(eq(projectInfo.projectName, filters.projectName))
@@ -1058,7 +1070,8 @@ export class DatabaseStorage implements IStorage {
     const [activeResult] = await this.dbInstance
       .select({ count: count() })
       .from(projectInfo)
-      .where(eq(projectInfo.isActive, true));
+      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+      .where(eq(projectExecutionState.isActive, true));
     const [totalResult] = await this.dbInstance
       .select({ count: count() })
       .from(projectInfo);

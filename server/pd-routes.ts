@@ -1,7 +1,7 @@
 // @ts-nocheck
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
-import { clients, pdTickets, operationalTasks, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES } from "@shared/schema";
+import { clients, pdTickets, operationalTasks, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState } from "@shared/schema";
 import { eq, ilike, sql, and, desc, asc, or, count } from "drizzle-orm";
 import { getFeatureFlag } from "./lib/feature-flags";
 import { requirePermission } from "./permission-middleware";
@@ -228,11 +228,12 @@ export function registerPdRoutes(app: Express) {
           clientName: clients.name,
           clientClientId: clients.clientId,
           projectName: projectInfo.projectName,
-          projectPhase: projectInfo.phase,
+          projectPhase: projectExecutionState.phase,
         })
         .from(pdTickets)
         .leftJoin(clients, eq(pdTickets.clientId, clients.id))
         .leftJoin(projectInfo, eq(pdTickets.projectId, projectInfo.id))
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
         .where(eq(pdTickets.id, id));
 
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
@@ -434,14 +435,16 @@ export function registerPdRoutes(app: Express) {
       const search = (req.query.search as string) || "";
       let query;
       if (search) {
-        query = db.select({ id: projectInfo.id, projectName: projectInfo.projectName, phase: projectInfo.phase, pd: projectInfo.pd })
+        query = db.select({ id: projectInfo.id, projectName: projectInfo.projectName, phase: projectExecutionState.phase, pd: projectInfo.pd })
           .from(projectInfo)
+          .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
           .where(ilike(projectInfo.projectName, `%${search}%`))
           .orderBy(asc(projectInfo.projectName))
           .limit(20);
       } else {
-        query = db.select({ id: projectInfo.id, projectName: projectInfo.projectName, phase: projectInfo.phase, pd: projectInfo.pd })
+        query = db.select({ id: projectInfo.id, projectName: projectInfo.projectName, phase: projectExecutionState.phase, pd: projectInfo.pd })
           .from(projectInfo)
+          .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
           .orderBy(asc(projectInfo.projectName))
           .limit(50);
       }

@@ -3,7 +3,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, desc, sql } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, projectPhaseHistory, users } from "@shared/schema";
+import { projectInfo, projectPhaseHistory, users, projectExecutionState } from "@shared/schema";
 import { syncProjectSplitTables } from "./lib/project-info-sync";
 import { logAuditFromReq } from "./audit-logger";
 import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
@@ -152,10 +152,12 @@ export function registerHandoverRoutes(app: Express) {
       const [project] = await db.select({
         id: projectInfo.id,
         projectName: projectInfo.projectName,
-        phase: projectInfo.phase,
+        phase: projectExecutionState.phase,
         pd: projectInfo.pd,
         pm: projectInfo.pm,
-      }).from(projectInfo).where(eq(projectInfo.id, projectId));
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectInfo.id, projectId));
 
       if (!project) return res.status(404).json({ error: "Project not found" });
 

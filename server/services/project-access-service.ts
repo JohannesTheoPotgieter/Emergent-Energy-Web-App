@@ -11,7 +11,7 @@
 
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { db } from "../db";
-import { projectInfo, projectTeamMembers, entityAssignments } from "@shared/schema";
+import { projectInfo, projectTeamMembers, entityAssignments, projectExecutionState } from "@shared/schema";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -69,9 +69,10 @@ export async function resolveProjectScope(
     db
       .select({ id: projectInfo.id, projectName: projectInfo.projectName })
       .from(projectInfo)
+      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
       .where(
         and(
-          eq(projectInfo.isActive, true),
+          eq(projectExecutionState.isActive, true),
           sql`(${projectInfo.pmUserId} = ${userId} OR ${projectInfo.pdUserId} = ${userId})`,
         ),
       ),
@@ -87,10 +88,11 @@ export async function resolveProjectScope(
         projectInfo,
         eq(projectInfo.projectName, projectTeamMembers.projectName),
       )
+      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
       .where(
         and(
           eq(projectTeamMembers.userId, userId),
-          eq(projectInfo.isActive, true),
+          eq(projectExecutionState.isActive, true),
         ),
       ),
 

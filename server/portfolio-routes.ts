@@ -7,6 +7,7 @@ import {
   portfolios, portfolioRolloutPlans, portfolioRolloutPhases,
   projectPortfolioAssignments, projectInfo, users,
   qcChecklist, qcItemInstance, normalizedCostLines, normalizedRevenueLines,
+  projectExecutionState,
 } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
@@ -107,11 +108,12 @@ export function registerPortfolioRoutes(app: Express) {
           : db.select({
               id: projectInfo.id,
               projectName: projectInfo.projectName,
-              phase: projectInfo.phase,
+              phase: projectExecutionState.phase,
               sizeKwp: projectInfo.sizeKwp,
               pm: projectInfo.pm,
-              isActive: projectInfo.isActive,
-            }).from(projectInfo),
+              isActive: projectExecutionState.isActive,
+            }).from(projectInfo)
+              .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
       ]);
 
       const ownerIds = allPortfolios.map(p => p.ownerUserId).filter(Boolean) as number[];
@@ -498,11 +500,12 @@ export function registerPortfolioRoutes(app: Express) {
       const allProjects = await db.select({
         id: projectInfo.id,
         projectName: projectInfo.projectName,
-        phase: projectInfo.phase,
+        phase: projectExecutionState.phase,
         sizeKwp: projectInfo.sizeKwp,
         pm: projectInfo.pm,
-        isActive: projectInfo.isActive,
-      }).from(projectInfo);
+        isActive: projectExecutionState.isActive,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
 
       const allAssignments = await db.select().from(projectPortfolioAssignments);
       const assignmentMap = new Map(allAssignments.map(a => [a.projectId, a.portfolioId]));

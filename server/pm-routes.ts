@@ -2,7 +2,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo } from "@shared/schema";
+import { projectInfo, projectExecutionState } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { getCanonicalFinanceByProjectIds, getCanonicalTaskSummaryByProjectIds } from "./services/canonical-dashboard-kpi-service";
 
@@ -52,24 +52,25 @@ async function getPmProjectNames(userId: number): Promise<{ projects: any[]; pgA
     .select({
       id: projectInfo.id,
       projectName: projectInfo.projectName,
-      phase: projectInfo.phase,
-      ragStatus: projectInfo.ragStatus,
+      phase: projectExecutionState.phase,
+      ragStatus: projectExecutionState.ragStatus,
       contractValue: projectInfo.contractValue,
       sizeKwp: projectInfo.sizeKwp,
       pm: projectInfo.pm,
-      pdHandoverDate: projectInfo.pdHandoverDate,
-      constructionStartDate: projectInfo.constructionStartDate,
-      commissioningDate: projectInfo.commissioningDate,
-      omHandoverDate: projectInfo.omHandoverDate,
-      clientHandoverDate: projectInfo.clientHandoverDate,
-      pdHandoverActual: projectInfo.pdHandoverActual,
-      constructionStartActual: projectInfo.constructionStartActual,
-      commissioningActual: projectInfo.commissioningActual,
-      clientHandoverActual: projectInfo.clientHandoverActual,
-      escalationLevel: projectInfo.escalationLevel,
-      isActive: projectInfo.isActive,
+      pdHandoverDate: projectExecutionState.pdHandoverDate,
+      constructionStartDate: projectExecutionState.constructionStartDate,
+      commissioningDate: projectExecutionState.commissioningDate,
+      omHandoverDate: projectExecutionState.omHandoverDate,
+      clientHandoverDate: projectExecutionState.clientHandoverDate,
+      pdHandoverActual: projectExecutionState.pdHandoverActual,
+      constructionStartActual: projectExecutionState.constructionStartActual,
+      commissioningActual: projectExecutionState.commissioningActual,
+      clientHandoverActual: projectExecutionState.clientHandoverActual,
+      escalationLevel: projectExecutionState.escalationLevel,
+      isActive: projectExecutionState.isActive,
     })
     .from(projectInfo)
+    .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
     .where(eq(projectInfo.pmUserId, userId))
     .orderBy(projectInfo.projectName);
 

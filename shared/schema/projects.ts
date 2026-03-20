@@ -43,44 +43,7 @@ export const projectInfo = pgTable("project_info", {
   clientId: integer("client_id").references(() => clients.id),
   pmUserId: integer("pm_user_id"),
   pdUserId: integer("pd_user_id"),
-  excelTrackerLink: text("excel_tracker_link"), // -- MOVED to project_settings
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-
-  // === MOVED to project_execution_state (kept here until query rewrites) ===
-  phase: text("phase"), // -- MOVED to project_execution_state
-  phaseUpdatedAt: timestamp("phase_updated_at"), // -- MOVED to project_execution_state
-  phaseUpdatedByUserId: integer("phase_updated_by_user_id").references(() => users.id), // -- MOVED to project_execution_state
-  phaseNotes: text("phase_notes"), // -- MOVED to project_execution_state
-  pdHandoverDate: text("pd_handover_date"), // -- MOVED to project_execution_state
-  constructionStartDate: text("construction_start_date"), // -- MOVED to project_execution_state
-  commissioningDate: text("commissioning_date"), // -- MOVED to project_execution_state
-  omHandoverDate: text("om_handover_date"), // -- MOVED to project_execution_state
-  clientHandoverDate: text("client_handover_date"), // -- MOVED to project_execution_state
-  escalationLevel: text("escalation_level"), // -- MOVED to project_execution_state
-  constructionStartActual: text("construction_start_actual"), // -- MOVED to project_execution_state
-  pdHandoverActual: text("pd_handover_actual"), // -- MOVED to project_execution_state
-  commissioningActual: text("commissioning_actual"), // -- MOVED to project_execution_state
-  clientHandoverActual: text("client_handover_actual"), // -- MOVED to project_execution_state
-  ragStatus: text("rag_status"), // -- MOVED to project_execution_state
-  ragComment: text("rag_comment"), // -- MOVED to project_execution_state
-  ragUpdatedAt: timestamp("rag_updated_at"), // -- MOVED to project_execution_state
-  ragUpdatedByUserId: integer("rag_updated_by_user_id"), // -- MOVED to project_execution_state
-  isActive: boolean("is_active").notNull().default(true), // -- MOVED to project_execution_state
-  executionEnabled: boolean("execution_enabled").notNull().default(false), // -- MOVED to project_execution_state
-  executionGateStatus: text("execution_gate_status").notNull().default("NOT_ELIGIBLE"), // -- MOVED to project_execution_state
-  executionGateReason: text("execution_gate_reason"), // -- MOVED to project_execution_state
-  signedStatus: text("signed_status").notNull().default("NONE"), // -- MOVED to project_execution_state
-  signedDate: text("signed_date"), // -- MOVED to project_execution_state
-  signedDocumentLink: text("signed_document_link"), // -- MOVED to project_execution_state
-  executionPhase: text("execution_phase"), // -- MOVED to project_execution_state
-  archivedStatus: text("archived_status").notNull().default("ACTIVE"), // -- MOVED to project_execution_state
-  cpSigned: boolean("cp_signed").notNull().default(false), // -- MOVED to project_execution_state
-  cpSignedDate: text("cp_signed_date"), // -- MOVED to project_execution_state
-  cpSignedByUserId: integer("cp_signed_by_user_id").references(() => users.id), // -- MOVED to project_execution_state
-  cpEvidenceType: text("cp_evidence_type"), // -- MOVED to project_execution_state
-  cpEvidenceRef: text("cp_evidence_ref"), // -- MOVED to project_execution_state
-  pmTaskPackCreated: boolean("pm_task_pack_created").notNull().default(false), // -- MOVED to project_execution_state
-  engPostCpTaskPackCreated: boolean("eng_post_cp_task_pack_created").notNull().default(false), // -- MOVED to project_execution_state
   // Multi-tenancy (Prompt 11)
   organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
 });
@@ -158,6 +121,9 @@ export const projectExecutionState = pgTable("project_execution_state", {
 export const insertProjectExecutionStateSchema = createInsertSchema(projectExecutionState).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertProjectExecutionState = z.infer<typeof insertProjectExecutionStateSchema>;
 export type ProjectExecutionState = typeof projectExecutionState.$inferSelect;
+
+/** Combined ProjectInfo + ProjectExecutionState for backward-compat reads */
+export type ProjectInfoWithExecState = ProjectInfo & Partial<Omit<ProjectExecutionState, 'id' | 'projectId' | 'createdAt' | 'updatedAt'>>;
 
 // ===================== PROJECT SETTINGS =====================
 // Split from project_info — contains config/link/preference columns
