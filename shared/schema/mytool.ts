@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { users } from "./users";
 import { projectInfo } from "./projects";
-import { operationalTasks } from "./tasks";
+import { workItems } from "./tasks";
 
 export const mytoolTaskStatusEnum = pgEnum('mytool_task_status', ['inbox', 'planned', 'in_progress', 'blocked', 'waiting', 'done', 'cancelled']);
 export const mytoolTaskPriorityEnum = pgEnum('mytool_task_priority', ['low', 'normal', 'high', 'critical']);
@@ -214,7 +214,7 @@ export const mytoolEmailLinks = pgTable("mytool_email_links", {
   outlookMessageId: text("outlook_message_id"),
   webLink: text("web_link"),
   linkedTaskId: integer("linked_task_id").references(() => mytoolTasks.id, { onDelete: "cascade" }),
-  linkedOperationalTaskId: integer("linked_operational_task_id").references(() => operationalTasks.id, { onDelete: "cascade" }),
+  linkedOperationalTaskId: integer("linked_operational_task_id").references(() => workItems.id, { onDelete: "cascade" }),
   linkedPriorityId: integer("linked_priority_id").references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),

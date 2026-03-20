@@ -1463,7 +1463,7 @@ export default function ProjectDetailPage() {
         pageName="Project Detail"
         dataSources={[
           { endpoint: "/api/projects-summary", tables: ["project_info", "normalized_cost_lines", "normalized_revenue_lines", "normalized_plan_tasks"], description: "Project summary data" },
-          { endpoint: `/api/projects/${projectInfoId}/eng-tasks`, tables: ["engineering_tasks"], description: "Engineering tasks for this project" },
+          { endpoint: `/api/projects/${projectInfoId}/eng-tasks`, tables: ["work_items"], description: "Engineering tasks for this project" },
           { endpoint: `/api/projects/${projectInfoId}/phase-history`, tables: ["phase_history"], description: "Phase transition history" },
           { endpoint: "/api/normalized-plan-tasks", tables: ["normalized_plan_tasks"], description: "Gantt / project plan tasks" },
           { endpoint: "/api/normalized-cost-lines", tables: ["normalized_cost_lines"], description: "Expenditure line items" },

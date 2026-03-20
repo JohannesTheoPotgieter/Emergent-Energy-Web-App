@@ -32,72 +32,9 @@ export const TASK_BUCKET_LABELS: Record<TaskBucket, string> = {
   personal: "Personal",
 };
 
-// ===================== OPERATIONAL TASKS =====================
-
-export const operationalTasks = pgTable("operational_tasks", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projectInfo.id),
-  projectName: text("project_name").notNull(),
-  importedTaskId: integer("imported_task_id"),
-  taskNumber: text("task_number"),
-  parentTaskId: integer("parent_task_id"),
-  title: text("title").notNull(),
-  description: text("description"),
-  status: text("status").notNull().default("TO DO"),
-  priority: text("priority").notNull().default("Med"),
-  phase: text("phase"),
-  primaryWorkstream: text("primary_workstream"),
-  ownerUserId: integer("owner_user_id").references(() => users.id),
-  requesterUserId: integer("requester_user_id").references(() => users.id),
-  approverUserId: integer("approver_user_id").references(() => users.id),
-  holdReason: text("hold_reason"),
-  blockedType: text("blocked_type"),
-  approvalRequired: boolean("approval_required").notNull().default(false),
-  startDate: text("start_date"),
-  dueDate: text("due_date"),
-  durationDays: integer("duration_days"),
-  actualStartDate: text("actual_start_date"),
-  actualEndDate: text("actual_end_date"),
-  actualDurationDays: integer("actual_duration_days"),
-  completedAt: timestamp("completed_at"),
-  percentComplete: integer("percent_complete").notNull().default(0),
-  expectedPercentComplete: integer("expected_percent_complete"),
-  comment: text("comment"),
-  assignees: text("assignees").array(),
-  assigneeUserIds: integer("assignee_user_ids").array(),
-  watchers: text("watchers").array(),
-  tags: text("tags").array(),
-  blockerReason: text("blocker_reason"),
-  plannedHours: real("planned_hours"),
-  actualHours: real("actual_hours"),
-  escalationLevel: text("escalation_level"),
-  sortOrder: integer("sort_order").notNull().default(0),
-  isBaseline: boolean("is_baseline").notNull().default(false),
-  linkedPlanItemId: integer("linked_plan_item_id"),
-  linkedDeliverableId: integer("linked_deliverable_id"),
-  linkedQualityItemInstanceId: integer("linked_quality_item_instance_id"),
-  externalSource: text("external_source"),
-  externalTaskId: text("external_task_id"),
-  externalSubtaskIds: text("external_subtask_ids"),
-  externalSubtaskUrls: text("external_subtask_urls"),
-  trackingRag: text("tracking_rag"),
-  summaryText: text("summary_text"),
-  importedCommentCount: integer("imported_comment_count"),
-  taskTypeTag: text("task_type_tag"),
-  domain: text("domain").notNull().default("BOTH"),
-  pdTicketId: integer("pd_ticket_id").references(() => pdTickets.id),
-  createdBy: integer("created_by").references(() => users.id),
-  scheduledDate: text("scheduled_date"),
-  scheduledStartTime: text("scheduled_start_time"),
-  scheduledEndTime: text("scheduled_end_time"),
-  deletedAt: timestamp("deleted_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-export const insertOperationalTaskSchema = createInsertSchema(operationalTasks).omit({ id: true, deletedAt: true, createdAt: true, updatedAt: true } as any);
-export type InsertOperationalTask = z.infer<typeof insertOperationalTaskSchema>;
-export type OperationalTask = typeof operationalTasks.$inferSelect;
+// ===================== OPERATIONAL TASKS — DROPPED =====================
+// Table operational_tasks dropped; data lives in work_items.
+// Schema definition removed — see work_items below.
 
 export const taskComments = pgTable("task_comments", {
   id: serial("id").primaryKey(),

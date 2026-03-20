@@ -5,7 +5,7 @@ import {
   projectLinks,
   projectInfo,
   mytoolTasks,
-  operationalTasks,
+  workItems,
   users,
   communicationFollowUps,
   projectCommunicationTimelineEvents,
@@ -19,7 +19,7 @@ import {
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
 const MANAGER_ROLES = [...ADMIN_ROLES, "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
-type OperationalTaskRow = typeof operationalTasks.$inferSelect;
+type OperationalTaskRow = typeof workItems.$inferSelect;
 type QualityItemRow = typeof qcItemInstance.$inferSelect;
 type QualityChecklistRow = typeof qcChecklist.$inferSelect;
 type QualityTemplateItemRow = typeof qcTemplateItem.$inferSelect;
@@ -154,17 +154,17 @@ export async function createFollowUpTaskFromCommunication(input: {
   ].filter(Boolean).join("\n");
 
   if (obj.linkedProjectId) {
-    const [project] = await db.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, obj.linkedProjectId));
-    const [task] = await db.insert(operationalTasks).values({
+    const [task] = await db.insert(workItems).values({
       projectId: obj.linkedProjectId,
-      projectName: project?.projectName || "Unknown",
       title: taskTitle,
       description: taskNotes || null,
       status: "TO DO",
       priority: "Med",
       ownerUserId: input.userId,
       createdBy: input.userId,
-      dueDate: input.dueAt || null,
+      endDate: input.dueAt || null,
+      workstream: 'ENG' as any,
+      source: 'UI' as any,
     }).returning();
 
     const dueAt = input.dueAt ? new Date(input.dueAt) : null;
@@ -262,7 +262,7 @@ export async function getProjectLinkedItems(
   const linkedOperationalTaskIds = uniqueNumberList(items.map((item: any) => item.linkedTaskId));
 
   const taskRows: OperationalTaskRow[] = linkedOperationalTaskIds.length > 0
-    ? await db.select().from(operationalTasks).where(inArray(operationalTasks.id, linkedOperationalTaskIds))
+    ? await db.select().from(workItems).where(inArray(workItems.id, linkedOperationalTaskIds))
     : [];
 
   const taskMap = new Map(taskRows.map((task) => [task.id, task]));
@@ -328,13 +328,13 @@ export async function getProjectLinkedItems(
           id: task.id,
           title: task.title,
           projectId: task.projectId,
-          projectName: task.projectName,
+          projectName: null,
           linkedQualityItemInstanceId: task.linkedQualityItemInstanceId,
         } : null,
         qualityContext: qualityItem ? {
           itemInstanceId: qualityItem.id,
           checklistId: qualityItem.checklistId,
-          projectName: checklist?.projectName || task?.projectName || null,
+          projectName: checklist?.projectName || null,
           itemName: templateItem?.itemName || "Unknown quality item",
           qmStatus: qualityItem.qmStatus,
           approved: qualityItem.approved,
@@ -419,21 +419,17 @@ export async function convertToTask(
         .where(eq(msObjects.id, msObjectId));
     }
 
-    const [project] = await db
-      .select({ projectName: projectInfo.projectName })
-      .from(projectInfo)
-      .where(eq(projectInfo.id, effectiveProjectId));
-
     const [task] = await db
-      .insert(operationalTasks)
+      .insert(workItems)
       .values({
         projectId: effectiveProjectId,
-        projectName: project?.projectName || "Unknown",
         title,
         description,
         status: "TO DO",
         priority: "Med",
         ownerUserId: userId,
+        workstream: 'ENG' as any,
+        source: 'UI' as any,
         createdBy: userId,
       })
       .returning();

@@ -325,14 +325,16 @@ async function runAdditiveSchemaAlignments() {
     ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS work_item_id INTEGER REFERENCES work_items(id);
   `);
 
-  // ── Drop FK constraints on task supporting tables ──
+  // ── Drop FK constraints on task supporting tables (legacy operational_tasks cleanup) ──
   await safeExec("task FK cleanup", `
     DO $$ DECLARE r RECORD; BEGIN
       FOR r IN (
         SELECT conname, conrelid::regclass AS tbl
         FROM pg_constraint
         WHERE contype = 'f'
-          AND confrelid = 'operational_tasks'::regclass
+          AND confrelid IN (
+            SELECT oid FROM pg_class WHERE relname = 'operational_tasks'
+          )
           AND conrelid::regclass::text IN (
             'task_comments', 'task_checklists', 'task_attachments',
             'task_deliverables', 'task_activity_log', 'task_watchers'

@@ -2,7 +2,7 @@
  * Centralized work_items query helpers with LEFT JOIN on extension tables.
  *
  * Prompt 8: All task data flows through work_items + extensions.
- * These functions replace direct queries to operational_tasks / engineering_tasks.
+ * These functions replace direct queries to legacy task tables (now consolidated into work_items).
  */
 
 import { db } from "../db";

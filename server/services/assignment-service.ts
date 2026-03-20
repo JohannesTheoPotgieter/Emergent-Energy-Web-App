@@ -8,10 +8,8 @@ import {
   counterparties,
   counterpartyContacts,
   deliverables,
-  engineeringTasks,
   entityAssignments,
   mytoolTasks,
-  operationalTasks,
   procurementItems,
   projectEngApprovals,
   projectInfo,
@@ -103,7 +101,7 @@ const TASK_SOURCE_TO_ENTITY_TYPE: Record<string, AssignmentEntityType> = {
 
 const ENTITY_PERMISSION_BY_TYPE: Record<AssignmentEntityType, string> = {
   personal_task: "my_work",
-  operational_task: "operational_tasks",
+  operational_task: "work_items",
   tr_item: "tr_register",
   work_item: "work_items",
   engineering_task: "eng_tasks",
@@ -359,7 +357,7 @@ async function getEntityProjectId(executor: Queryable, entityType: AssignmentEnt
     case "personal_task":
       return null;
     case "operational_task": {
-      const [row] = await executor.select({ projectId: operationalTasks.projectId }).from(operationalTasks).where(eq(operationalTasks.id, entityId)).limit(1);
+      const [row] = await executor.select({ projectId: workItems.projectId }).from(workItems).where(eq(workItems.id, entityId)).limit(1);
       return toInt(row?.projectId);
     }
     case "tr_item":
@@ -369,7 +367,7 @@ async function getEntityProjectId(executor: Queryable, entityType: AssignmentEnt
       return toInt(row?.projectId);
     }
     case "engineering_task": {
-      const [row] = await executor.select({ projectId: engineeringTasks.projectId }).from(engineeringTasks).where(eq(engineeringTasks.id, entityId)).limit(1);
+      const [row] = await executor.select({ projectId: workItems.projectId }).from(workItems).where(eq(workItems.id, entityId)).limit(1);
       return toInt(row?.projectId);
     }
     case "quality_item": {
@@ -481,9 +479,10 @@ async function getLegacyAssignments(executor: Queryable, entityType: AssignmentE
       }] : [];
     }
     case "operational_task": {
-      const [task] = await executor.select().from(operationalTasks).where(eq(operationalTasks.id, entityId)).limit(1);
+      const [task] = await executor.select().from(workItems).where(eq(workItems.id, entityId)).limit(1);
       if (!task) return [];
-      const internalIds = Array.isArray(task.assigneeUserIds) ? task.assigneeUserIds : [];
+      // Assignments now via work_item_assignments; fall through to work_item logic
+      const internalIds: number[] = [];
       const assignments: ResolvedAssignment[] = [];
       for (const userId of internalIds) {
         const resolved = await resolveAssignableTarget("internal_user", userId);
@@ -614,18 +613,18 @@ async function getLegacyAssignments(executor: Queryable, entityType: AssignmentE
       }));
     }
     case "engineering_task": {
-      const [task] = await executor.select().from(engineeringTasks).where(eq(engineeringTasks.id, entityId)).limit(1);
-      if (!task?.assigneeUserId) return [];
-      const resolved = await resolveAssignableTarget("internal_user", task.assigneeUserId);
+      const [task] = await executor.select().from(workItems).where(eq(workItems.id, entityId)).limit(1);
+      if (!task?.ownerUserId) return [];
+      const resolved = await resolveAssignableTarget("internal_user", task.ownerUserId);
       return resolved ? [{
         id: null,
         entityType,
         entityId,
         assignmentRole: "ASSIGNEE",
         assigneeType: "internal_user",
-        assigneeId: task.assigneeUserId,
+        assigneeId: task.ownerUserId,
         displayLabel: resolved.displayLabel,
-        displayLabelSnapshot: task.assigneeName || resolved.displayLabel,
+        displayLabelSnapshot: task.ownerName || resolved.displayLabel,
         secondaryLabel: resolved.secondaryLabel,
         active: true,
       }] : [];
@@ -752,11 +751,13 @@ async function canSelfManageAssignment(entityType: AssignmentEntityType, entityI
     }
     case "operational_task": {
       const [task] = await db
-        .select({ ownerUserId: operationalTasks.ownerUserId, assigneeUserIds: operationalTasks.assigneeUserIds })
-        .from(operationalTasks)
-        .where(eq(operationalTasks.id, entityId))
+        .select({ ownerUserId: workItems.ownerUserId })
+        .from(workItems)
+        .where(eq(workItems.id, entityId))
         .limit(1);
-      return task?.ownerUserId === userId || Boolean(task?.assigneeUserIds?.includes(userId));
+      if (task?.ownerUserId === userId) return true;
+      const assignmentCheck = await db.select().from(workItemAssignments).where(and(eq(workItemAssignments.workItemId, entityId), eq(workItemAssignments.userId, userId))).limit(1);
+      return assignmentCheck.length > 0;
     }
     case "tr_item": {
       const [item] = await db.select({ ownerUserIds: trItems.ownerUserIds }).from(trItems).where(eq(trItems.id, entityId)).limit(1);
@@ -833,14 +834,11 @@ async function syncLegacyAssignments(executor: Queryable, entityType: Assignment
       }).where(eq(mytoolTasks.id, entityId));
       return;
     case "operational_task":
-      await executor.update(operationalTasks).set({
+      await executor.update(workItems).set({
         ownerUserId: activeInternal[0]?.assigneeId || null,
-        assigneeUserIds: activeInternal.map((assignment) => assignment.assigneeId),
-        assignees: [
-          ...activeInternal.map((assignment) => assignment.displayLabel),
-          ...activeExternal.map((assignment) => serializeLegacyExternalToken(assignment)),
-        ],
-      }).where(eq(operationalTasks.id, entityId));
+        ownerName: activeInternal[0]?.displayLabel || null,
+        updatedAt: new Date(),
+      }).where(eq(workItems.id, entityId));
       return;
     case "tr_item":
       await executor.update(trItems).set({
@@ -880,11 +878,11 @@ async function syncLegacyAssignments(executor: Queryable, entityType: Assignment
       return;
     }
     case "engineering_task":
-      await executor.update(engineeringTasks).set({
-        assigneeUserId: activePrimary?.assigneeType === "internal_user" ? activePrimary.assigneeId : null,
-        assigneeName: activePrimary?.displayLabel || null,
+      await executor.update(workItems).set({
+        ownerUserId: activePrimary?.assigneeType === "internal_user" ? activePrimary.assigneeId : null,
+        ownerName: activePrimary?.displayLabel || null,
         updatedAt: new Date(),
-      }).where(eq(engineeringTasks.id, entityId));
+      }).where(eq(workItems.id, entityId));
       return;
     case "quality_item":
       await executor.update(qcItemInstance).set({
