@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../../../db";
 import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLines, procurementItems, projectEngDeliverables, projectEngStages, projectInfo, projectPhaseHistory, projectRevenueSummary, qcChecklist, qcItemInstance, smartImportRuns, workItems, users, counterparties } from "@shared/schema";
+import { syncProjectSplitTables } from "../../../lib/project-info-sync";
 
 export async function listProjects(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null }) {
   const filters = [eq(projectInfo.isActive, true)];
@@ -38,11 +39,13 @@ export async function transitionProjectToConstruction(projectId: number, userId:
     const fromPhase = current.phase ?? "Development";
 
     await tx.insert(projectPhaseHistory).values({ projectId, fromPhase, toPhase: "Construction", changedByUserId: userId, reason });
+    const constructionFields = { phase: "Construction", phaseUpdatedAt: new Date(), phaseUpdatedByUserId: userId, pdHandoverActual: new Date().toISOString().slice(0, 10), updatedAt: new Date() };
     const [updated] = await tx
       .update(projectInfo)
-      .set({ phase: "Construction", phaseUpdatedAt: new Date(), phaseUpdatedByUserId: userId, pdHandoverActual: new Date().toISOString().slice(0, 10), updatedAt: new Date() })
+      .set(constructionFields)
       .where(eq(projectInfo.id, projectId))
       .returning();
+    await syncProjectSplitTables(projectId, constructionFields, tx);
     return updated;
   });
 }

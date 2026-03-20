@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { db, getDbMode } from "./db";
 import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
+import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { UsersRepository } from "./repositories/users-repository";
 import { WorkManagementRepository } from "./repositories/work-management-repository";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
@@ -611,7 +612,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createProject(project: InsertProject): Promise<Project> {
-    const [created] = await this.dbInstance.insert(projectInfo).values({
+    const insertFields = {
       projectName: project.name,
       pd: project.manager,
       phase: project.status,
@@ -620,7 +621,9 @@ export class DatabaseStorage implements IStorage {
       clientHandoverDate: project.completionDate,
       contractValue: String(project.budget),
       updatedAt: new Date(),
-    } as any).returning();
+    };
+    const [created] = await this.dbInstance.insert(projectInfo).values(insertFields as any).returning();
+    await syncProjectSplitTablesAfterInsert(created.id, insertFields, this.dbInstance);
     return this.mapProjectInfoToLegacyProject(created);
   }
 
@@ -639,15 +642,22 @@ export class DatabaseStorage implements IStorage {
       .set(payload as any)
       .where(eq(projectInfo.id, id))
       .returning();
+    if (updated) {
+      await syncProjectSplitTables(id, payload, this.dbInstance);
+    }
     return updated ? this.mapProjectInfoToLegacyProject(updated) : undefined;
   }
 
   async deleteProject(id: number): Promise<boolean> {
+    const fields = { isActive: false, archivedStatus: "ARCHIVED", updatedAt: new Date() };
     const result = await this.dbInstance
       .update(projectInfo)
-      .set({ isActive: false, archivedStatus: "ARCHIVED", updatedAt: new Date() })
+      .set(fields)
       .where(eq(projectInfo.id, id))
       .returning();
+    if (result.length > 0) {
+      await syncProjectSplitTables(id, fields, this.dbInstance);
+    }
     return result.length > 0;
   }
 
@@ -880,6 +890,9 @@ export class DatabaseStorage implements IStorage {
       .set({ ...fields, updatedAt: new Date() })
       .where(eq(projectInfo.id, id))
       .returning();
+    if (updated) {
+      await syncProjectSplitTables(id, fields, this.dbInstance);
+    }
     return updated;
   }
 
@@ -1003,13 +1016,12 @@ export class DatabaseStorage implements IStorage {
         .set({ ...updateFields, updatedAt: new Date() })
         .where(eq(projectInfo.projectName, info.projectName))
         .returning();
+      await syncProjectSplitTables(updated.id, updateFields, this.dbInstance);
       return updated;
     }
-    const [created] = await this.dbInstance.insert(projectInfo).values({
-      ...info,
-      executionEnabled: false,
-      updatedAt: new Date(),
-    }).returning();
+    const insertFields = { ...info, executionEnabled: false, updatedAt: new Date() };
+    const [created] = await this.dbInstance.insert(projectInfo).values(insertFields).returning();
+    await syncProjectSplitTablesAfterInsert(created.id, insertFields as any, this.dbInstance);
     return created;
   }
 
@@ -1027,6 +1039,16 @@ export class DatabaseStorage implements IStorage {
       .update(projectInfo)
       .set({ isActive: false })
       .where(not(inArray(projectInfo.projectName, activeNames)));
+
+    // Dual-write: sync isActive to project_execution_state via raw SQL for bulk operation
+    await this.dbInstance.execute(sql`
+      UPDATE project_execution_state SET is_active = true, updated_at = NOW()
+      WHERE project_id IN (SELECT id FROM project_info WHERE project_name = ANY(${activeNames}))
+    `);
+    await this.dbInstance.execute(sql`
+      UPDATE project_execution_state SET is_active = false, updated_at = NOW()
+      WHERE project_id IN (SELECT id FROM project_info WHERE project_name != ALL(${activeNames}))
+    `);
   }
 
   async getProjectCounts(): Promise<{ active: number; historical: number; total: number }> {
