@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import { Link, useSearch, useLocation } from "wouter";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -288,26 +289,28 @@ function DashboardChart({
   );
 }
 
-// ─── Budget Editor ───
+// ─── Budget Editor Modal ───
 
 interface BudgetRow { id?: number; projectName: string; fye: string; monthKey: string; budgetType: string; amount: string }
 
-function BudgetEditor({ fye, months }: { fye: number; months: DashboardMonth[] }) {
+function BudgetEditorModal({ fye, months, open, onClose }: { fye: number; months: DashboardMonth[]; open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
+  const [activeType, setActiveType] = useState<"revenue" | "cos">("revenue");
+  const [saved, setSaved] = useState(false);
+
   const { data: budgets } = useQuery<BudgetRow[]>({
     queryKey: [`/api/fye-revenue-tracking/budgets?fye=${fye}`],
     queryFn: getQueryFn({ on401: "throw" }),
+    enabled: open,
   });
 
-  // Build editable state from current budget data
   const monthKeys = months.map((m) => m.monthKey);
   const [revValues, setRevValues] = useState<Record<string, string>>({});
   const [cosValues, setCosValues] = useState<Record<string, string>>({});
-  const [initialized, setInitialized] = useState(false);
 
-  // Initialize from fetched budgets or current dashboard data
-  useMemo(() => {
-    if (initialized) return;
+  // Initialize values when budgets load or modal opens
+  useEffect(() => {
+    if (!open) return;
     const rv: Record<string, string> = {};
     const cv: Record<string, string> = {};
     if (budgets && budgets.length > 0) {
@@ -323,8 +326,8 @@ function BudgetEditor({ fye, months }: { fye: number; months: DashboardMonth[] }
     }
     setRevValues(rv);
     setCosValues(cv);
-    setInitialized(true);
-  }, [budgets, months, initialized]);
+    setSaved(false);
+  }, [budgets, months, open]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -346,68 +349,96 @@ function BudgetEditor({ fye, months }: { fye: number; months: DashboardMonth[] }
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/dashboard?fye=${fye}`] });
       qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/budgets?fye=${fye}`] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
     },
   });
 
+  const values = activeType === "revenue" ? revValues : cosValues;
+  const setValues = activeType === "revenue" ? setRevValues : setCosValues;
+
+  // Compute total for the active tab
+  const total = monthKeys.reduce((sum, mk) => sum + (parseFloat(values[mk] || "0") || 0), 0);
+
   return (
-    <Card className="mb-4 border-blue-200 bg-blue-50/30">
-      <CardHeader className="pb-2 pt-3 px-4">
-        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          <Pencil className="h-4 w-4" /> Edit Monthly Budgets — FYE {fye}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="px-0 pb-3 overflow-x-auto">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="border-b">
-              <th className="text-left px-3 py-1.5 font-medium w-28">Type</th>
-              {months.map((m) => (
-                <th key={m.monthKey} className="text-center px-1 py-1.5 font-medium min-w-[85px]">{m.label}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="border-b">
-              <td className="px-3 py-1.5 font-medium text-blue-700">Revenue</td>
-              {monthKeys.map((mk) => (
-                <td key={mk} className="px-1 py-1">
-                  <Input
-                    type="number" step="0.01"
-                    value={revValues[mk] || ""}
-                    onChange={(e) => setRevValues((p) => ({ ...p, [mk]: e.target.value }))}
-                    className="h-7 text-xs text-right w-full tabular-nums"
-                  />
-                </td>
-              ))}
-            </tr>
-            <tr className="border-b">
-              <td className="px-3 py-1.5 font-medium text-amber-700">COS</td>
-              {monthKeys.map((mk) => (
-                <td key={mk} className="px-1 py-1">
-                  <Input
-                    type="number" step="0.01"
-                    value={cosValues[mk] || ""}
-                    onChange={(e) => setCosValues((p) => ({ ...p, [mk]: e.target.value }))}
-                    className="h-7 text-xs text-right w-full tabular-nums"
-                  />
-                </td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
-        <div className="flex justify-end px-4 pt-2 gap-2">
-          {saveMutation.isError && <p className="text-xs text-red-500 self-center">{(saveMutation.error as any)?.message || "Save failed"}</p>}
-          <Button size="sm" className="h-7 text-xs" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-sm font-semibold">Edit Monthly Budgets — FYE {fye}</DialogTitle>
+        </DialogHeader>
+
+        {/* Tabs */}
+        <div className="flex border-b mb-3">
+          <button
+            onClick={() => setActiveType("revenue")}
+            className={cn(
+              "px-4 py-2 text-xs font-medium border-b-2 -mb-px transition-colors",
+              activeType === "revenue" ? "border-blue-600 text-blue-600" : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >Revenue Budgets</button>
+          <button
+            onClick={() => setActiveType("cos")}
+            className={cn(
+              "px-4 py-2 text-xs font-medium border-b-2 -mb-px transition-colors",
+              activeType === "cos" ? "border-amber-600 text-amber-600" : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >COS Budgets</button>
+        </div>
+
+        {/* Month rows */}
+        <div className="max-h-[400px] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-background">
+              <tr className="border-b">
+                <th className="text-left px-3 py-1.5 font-medium w-28">Month</th>
+                <th className="text-left px-3 py-1.5 font-medium">Current Value</th>
+                <th className="text-left px-3 py-1.5 font-medium">New Amount (R)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {months.map((m) => {
+                const currentVal = activeType === "revenue" ? m.revenue.budget : m.cos.budget;
+                return (
+                  <tr key={m.monthKey} className="border-b hover:bg-muted/30">
+                    <td className="px-3 py-2 font-medium">{m.label}</td>
+                    <td className="px-3 py-2 tabular-nums text-muted-foreground">{formatRand(currentVal)}</td>
+                    <td className="px-3 py-1.5">
+                      <Input
+                        type="number" step="0.01"
+                        value={values[m.monthKey] || ""}
+                        onChange={(e) => setValues((p) => ({ ...p, [m.monthKey]: e.target.value }))}
+                        className="h-7 text-xs text-right w-full max-w-[200px] tabular-nums"
+                        placeholder="0.00"
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* Total row */}
+              <tr className="border-t-2 bg-muted/50 font-bold">
+                <td className="px-3 py-2">Total</td>
+                <td className="px-3 py-2"></td>
+                <td className="px-3 py-2 tabular-nums">{formatRand(total)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <DialogFooter className="flex items-center gap-2 pt-2">
+          {saveMutation.isError && <p className="text-xs text-red-500 mr-auto">{(saveMutation.error as any)?.message || "Save failed"}</p>}
+          {saved && <p className="text-xs text-emerald-600 mr-auto flex items-center gap-1"><Check className="h-3 w-3" />Saved successfully</p>}
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onClose}>Cancel</Button>
+          <Button size="sm" className="h-8 text-xs" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
             {saveMutation.isPending ? "Saving..." : "Save Budgets"}
           </Button>
-        </div>
-      </CardContent>
-    </Card>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 function DashboardTab({ fye }: { fye: number }) {
-  const [showBudgetEditor, setShowBudgetEditor] = useState(false);
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
   const canEdit = usePermission("fye_revenue_tracking", "edit");
   const { data, isLoading, error, refetch } = useQuery<DashboardData>({
     queryKey: [`/api/fye-revenue-tracking/dashboard?fye=${fye}`],
@@ -428,15 +459,15 @@ function DashboardTab({ fye }: { fye: number }) {
 
   return (
     <div className="space-y-2">
-      {/* Budget Edit Toggle */}
+      {/* Budget Edit Button (admin only) */}
       {canEdit.allowed && (
         <div className="flex justify-end">
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowBudgetEditor(!showBudgetEditor)}>
-            {showBudgetEditor ? <><X className="h-3 w-3 mr-1" />Close Editor</> : <><Pencil className="h-3 w-3 mr-1" />Edit Budgets</>}
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowBudgetModal(true)}>
+            <Pencil className="h-3 w-3 mr-1" />Edit Budgets
           </Button>
         </div>
       )}
-      {showBudgetEditor && <BudgetEditor fye={fye} months={months} />}
+      {canEdit.allowed && <BudgetEditorModal fye={fye} months={months} open={showBudgetModal} onClose={() => setShowBudgetModal(false)} />}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
         <DashboardChart title="Revenue Tracking" months={months} metricKey="revenue" />
