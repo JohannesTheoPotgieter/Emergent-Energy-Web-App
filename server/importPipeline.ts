@@ -419,7 +419,19 @@ export function startScheduler(): void {
     if (isRunning) return;
 
     try {
-      const settings = await storage.getSpSettings();
+      let settings: Awaited<ReturnType<typeof storage.getSpSettings>> = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          settings = await storage.getSpSettings();
+          break;
+        } catch (settingsErr: any) {
+          const isTransient = /timeout|ECONNRESET|ECONNREFUSED|ETIMEDOUT|connection terminated/i.test(settingsErr.message);
+          if (!isTransient || attempt === 3) throw settingsErr;
+          const delay = 2000 * Math.pow(2, attempt - 1);
+          console.warn(`[SharePoint] getSpSettings failed (attempt ${attempt}/3), retrying in ${delay}ms...`);
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
       if (!settings || !settings.enabled) return;
 
       const interval = settings.intervalMinutes * 60 * 1000;
