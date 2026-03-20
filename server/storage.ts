@@ -7,14 +7,14 @@ import { WorkManagementRepository } from "./repositories/work-management-reposit
 import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
-  users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
+  users, projects, expenses, revenues, budgets, uploadMetadata, refreshLogs,
   projectInfo, projectExecutionState, normalizedCostLines, normalizedRevenueLines, workItems, programExpense, programInflows, projectPlan,
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
   workingPlanScenario, projectPlanDependency,
   workingPlanDependencyOverride, scheduleChangeNotice,
   projectRevenueSummary, homeNotes,
   projectEditableFields, cashflowWeeklyManual, cashflowBalanceHistory, opexBudgetMonthly, trackerMonthlyManual,
-  operationalTasks, taskComments, taskChecklists, taskChecklistItems, taskAttachments, taskActivityLog, writebackMappings, writebackAuditLog,
+  taskComments, taskChecklists, taskChecklistItems, taskAttachments, taskActivityLog, writebackMappings, writebackAuditLog,
   type User, type InsertUser,
   type Project, type InsertProject,
   type Expense, type InsertExpense,
@@ -46,7 +46,6 @@ import {
   type AvailablePaymentOverride, type InsertAvailablePaymentOverride,
   type AvailablePaymentHistory, type InsertAvailablePaymentHistory,
   type TrackerMonthlyManual, type InsertTrackerMonthlyManual,
-  type OperationalTask, type InsertOperationalTask,
   type TaskComment, type InsertTaskComment,
   type TaskChecklist, type InsertTaskChecklist,
   type TaskChecklistItem, type InsertTaskChecklistItem,
@@ -267,12 +266,12 @@ export interface IStorage {
   getTrackerMonthlyManual(trackerType: string): Promise<TrackerMonthlyManual[]>;
   upsertTrackerMonthlyManual(data: InsertTrackerMonthlyManual): Promise<TrackerMonthlyManual>;
 
-  // Operational Tasks
-  getAllOperationalTasks(): Promise<OperationalTask[]>;
-  getOperationalTasksByProject(projectName: string): Promise<OperationalTask[]>;
-  getOperationalTask(id: number): Promise<OperationalTask | undefined>;
-  createOperationalTask(data: InsertOperationalTask): Promise<OperationalTask>;
-  updateOperationalTask(id: number, data: Partial<InsertOperationalTask>): Promise<OperationalTask>;
+  // Operational Tasks (now backed by work_items)
+  getAllOperationalTasks(): Promise<any[]>;
+  getOperationalTasksByProject(projectName: string): Promise<any[]>;
+  getOperationalTask(id: number): Promise<any | undefined>;
+  createOperationalTask(data: any): Promise<any>;
+  updateOperationalTask(id: number, data: any): Promise<any>;
   deleteOperationalTask(id: number): Promise<void>;
 
   // Task Comments
@@ -1522,7 +1521,7 @@ export class DatabaseStorage implements IStorage {
     await safeDelete(refreshLogs, "refreshLogs");
     await safeDelete(uploadMetadata, "uploadMetadata");
     await safeDelete(budgets, "budgets");
-    await safeDelete(tasks, "tasks");
+    // tasks table dropped — data lives in work_items
     await safeDelete(revenues, "revenues");
     await safeDelete(expenses, "expenses");
     await safeDelete(projects, "projects");
@@ -1842,11 +1841,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Operational and work-management domains (repository extracted)
-  async getAllOperationalTasks(): Promise<OperationalTask[]> { return this.workManagementRepository.getAllOperationalTasks(); }
-  async getOperationalTasksByProject(projectName: string): Promise<OperationalTask[]> { return this.workManagementRepository.getOperationalTasksByProject(projectName); }
-  async getOperationalTask(id: number): Promise<OperationalTask | undefined> { return this.workManagementRepository.getOperationalTask(id); }
-  async createOperationalTask(data: InsertOperationalTask): Promise<OperationalTask> { return this.workManagementRepository.createOperationalTask(data); }
-  async updateOperationalTask(id: number, data: Partial<InsertOperationalTask>): Promise<OperationalTask> { return this.workManagementRepository.updateOperationalTask(id, data); }
+  async getAllOperationalTasks(): Promise<any[]> { return this.workManagementRepository.getAllOperationalTasks(); }
+  async getOperationalTasksByProject(projectName: string): Promise<any[]> { return this.workManagementRepository.getOperationalTasksByProject(projectName); }
+  async getOperationalTask(id: number): Promise<any | undefined> { return this.workManagementRepository.getOperationalTask(id); }
+  async createOperationalTask(data: any): Promise<any> { return this.workManagementRepository.createOperationalTask(data); }
+  async updateOperationalTask(id: number, data: any): Promise<any> { return this.workManagementRepository.updateOperationalTask(id, data); }
   async deleteOperationalTask(id: number): Promise<void> { return this.workManagementRepository.deleteOperationalTask(id); }
 
   async getTaskComments(taskId: number): Promise<TaskComment[]> { return this.workManagementRepository.getTaskComments(taskId); }

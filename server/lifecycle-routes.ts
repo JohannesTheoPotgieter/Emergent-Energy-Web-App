@@ -3,7 +3,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState } from "@shared/schema";
+import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState } from "@shared/schema";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
@@ -324,13 +324,11 @@ export function registerLifecycleRoutes(app: Express) {
       }).from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
 
-      const allEngTasks = await db.select({
-        projectName: operationalTasks.projectName,
-        status: operationalTasks.status,
-        dueDate: operationalTasks.dueDate,
-        priority: operationalTasks.priority,
-        assignees: operationalTasks.assignees,
-      }).from(operationalTasks);
+      const allEngTasks = await db.execute(sql`
+        SELECT pi.project_name AS "projectName", wi.status, wi.end_date AS "dueDate", wi.priority, NULL AS assignees
+        FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id
+        WHERE wi.deleted_at IS NULL
+      `).then((r: any) => r.rows || r);
 
       const rawPlanTasks = (await getAllPMWorkItemsAsProjectPlan()).map((wi: any) => ({
         projectName: wi.projectName,
@@ -807,7 +805,12 @@ export function registerLifecycleRoutes(app: Express) {
         }
       }
 
-      const engTasks = await db.select({ projectId: operationalTasks.projectId, projectName: operationalTasks.projectName, status: operationalTasks.status, dueDate: operationalTasks.dueDate, blockerReason: operationalTasks.blockerReason, priority: operationalTasks.priority, ownerUserId: operationalTasks.ownerUserId, title: operationalTasks.title }).from(operationalTasks).where(isNull(operationalTasks.deletedAt));
+      const engTasks: any[] = await db.execute(sql`
+        SELECT wi.project_id AS "projectId", pi.project_name AS "projectName", wi.status, wi.end_date AS "dueDate",
+               wi.blocker_reason AS "blockerReason", wi.priority, wi.owner_user_id AS "ownerUserId", wi.title
+        FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id
+        WHERE wi.deleted_at IS NULL
+      `).then((r: any) => r.rows || r);
       const qualityRows = await db.select({ projectName: qcWarning.projectName, status: qcWarning.status, severity: qcWarning.severity, title: qcWarning.title, dueDate: qcWarning.dueDate, ownerUserId: qcWarning.ownerUserId }).from(qcWarning);
       const approvalRows = await db.select({ projectId: approvals.projectId, status: approvals.status, title: approvals.title, dueDate: approvals.dueDate, assignedApprover: approvals.assignedApprover }).from(approvals);
       const importRuns = await db.select({ projectId: smartImportRuns.projectId, projectName: smartImportRuns.projectName, uploadedAt: smartImportRuns.uploadedAt }).from(smartImportRuns);
@@ -1013,9 +1016,13 @@ export function registerLifecycleRoutes(app: Express) {
       const [target] = await db.select().from(projectInfo).where(eq(projectInfo.id, targetProjectId));
       if (!target) return res.status(404).json({ error: "Target project not found" });
 
-      const updated = await db.update(operationalTasks)
-        .set({ projectName: target.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ") })
-        .where(eq(operationalTasks.projectName, engineeringProjectName))
+      // Link engineering work_items to the target project
+      const updated = await db.update(workItems)
+        .set({ projectId: target.id, updatedAt: new Date() })
+        .where(and(
+          sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND REPLACE(REPLACE(pi.project_name, '_Tracker', ''), '_', ' ') = ${engineeringProjectName})`,
+          isNull(workItems.deletedAt)
+        ))
         .returning();
 
       logAuditFromReq(req, { entityType: "lifecycle", entityId: String(targetProjectId), action: "update", projectName: target.projectName, changesJson: { description: "Engineering tasks linked", engineeringProjectName, linkedCount: updated.length } });
@@ -1048,9 +1055,10 @@ export function registerLifecycleRoutes(app: Express) {
         const sourceClean = source.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
         const targetClean = target.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
 
-        const movedTasks = await tx.update(operationalTasks)
-          .set({ projectName: targetClean })
-          .where(eq(operationalTasks.projectName, sourceClean))
+        // Move work_items from source to target project
+        const movedTasks = await tx.update(workItems)
+          .set({ projectId: targetProjectId, updatedAt: new Date() })
+          .where(and(eq(workItems.projectId, sourceProjectId), isNull(workItems.deletedAt)))
           .returning();
 
         const movedPlanResult = await tx.update(workItems)
@@ -1587,10 +1595,11 @@ export function registerLifecycleRoutes(app: Express) {
       const primaryClean = primary.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
       const secondaryClean = secondary.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
 
-      const allTasks = await db.select({ projectName: operationalTasks.projectName }).from(operationalTasks);
-      const allPlansRaw = await db.select({ projectId: workItems.projectId }).from(workItems).where(and(eq(workItems.workstream, 'PM'), eq(workItems.source, 'SMART_IMPORT'), isNull(workItems.deletedAt)));
       const piRows = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
       const piNameMap = new Map<number, string>(piRows.map((p: any) => [p.id, p.projectName]));
+      const allTasksRaw = await db.select({ projectId: workItems.projectId }).from(workItems).where(isNull(workItems.deletedAt));
+      const allTasks = allTasksRaw.map((wi: any) => ({ projectName: wi.projectId ? piNameMap.get(wi.projectId) || null : null }));
+      const allPlansRaw = await db.select({ projectId: workItems.projectId }).from(workItems).where(and(eq(workItems.workstream, 'PM'), eq(workItems.source, 'SMART_IMPORT'), isNull(workItems.deletedAt)));
       const allPlans = allPlansRaw.map((wi: any) => ({ projectName: wi.projectId ? piNameMap.get(wi.projectId) || null : null }));
 
       const primaryNorm = normalizeName(primary.projectName);
@@ -1733,17 +1742,17 @@ export function registerLifecycleRoutes(app: Express) {
         await safeDel(sql`DELETE FROM project_eng_deliverables WHERE project_eng_stage_id IN (SELECT id FROM project_eng_stages WHERE project_id = ${pId})`);
         await safeDel(sql`DELETE FROM project_eng_approvals WHERE project_eng_stage_id IN (SELECT id FROM project_eng_stages WHERE project_id = ${pId})`);
         await safeDel(sql`DELETE FROM project_eng_tasks WHERE project_eng_stage_id IN (SELECT id FROM project_eng_stages WHERE project_id = ${pId})`);
-        await safeDel(sql`DELETE FROM engineering_task_attachments WHERE engineering_task_id IN (SELECT id FROM engineering_tasks WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM engineering_task_attachments WHERE engineering_task_id IN (SELECT legacy_id FROM work_items WHERE legacy_table = 'engineering_tasks' AND project_id = ${pId})`);
         await safeDel(sql`DELETE FROM deliverable_events WHERE deliverable_id IN (SELECT id FROM deliverables WHERE project_id = ${pId})`);
         await safeDel(sql`DELETE FROM deliverable_files WHERE deliverable_id IN (SELECT id FROM deliverables WHERE project_id = ${pId})`);
         await safeDel(sql`DELETE FROM deliverable_versions WHERE deliverable_id IN (SELECT id FROM deliverables WHERE project_id = ${pId})`);
-        await safeDel(sql`DELETE FROM task_activity_log WHERE task_id IN (SELECT id FROM operational_tasks WHERE project_id = ${pId})`);
-        await safeDel(sql`DELETE FROM task_deliverables WHERE task_id IN (SELECT id FROM operational_tasks WHERE project_id = ${pId})`);
-        await safeDel(sql`DELETE FROM task_attachments WHERE task_id IN (SELECT id FROM operational_tasks WHERE project_id = ${pId})`);
-        await safeDel(sql`DELETE FROM task_checklist_items WHERE checklist_id IN (SELECT tc.id FROM task_checklists tc JOIN operational_tasks ot ON tc.task_id = ot.id WHERE ot.project_id = ${pId})`);
-        await safeDel(sql`DELETE FROM task_checklists WHERE task_id IN (SELECT id FROM operational_tasks WHERE project_id = ${pId})`);
-        await safeDel(sql`DELETE FROM task_comments WHERE task_id IN (SELECT id FROM operational_tasks WHERE project_id = ${pId})`);
-        await safeDel(sql`DELETE FROM task_watchers WHERE task_id IN (SELECT id FROM operational_tasks WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM task_activity_log WHERE work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM task_deliverables WHERE work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM task_attachments WHERE work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM task_checklist_items WHERE checklist_id IN (SELECT tc.id FROM task_checklists tc WHERE tc.work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId}))`);
+        await safeDel(sql`DELETE FROM task_checklists WHERE work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM task_comments WHERE work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM task_watchers WHERE work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
         await safeDel(sql`DELETE FROM qc_item_evidence WHERE item_instance_id IN (SELECT qi.id FROM qc_item_instance qi JOIN qc_checklist qc ON qi.checklist_id = qc.id WHERE qc.project_id = ${pId})`);
         await safeDel(sql`DELETE FROM qc_risk_answer WHERE checklist_id IN (SELECT id FROM qc_checklist WHERE project_id = ${pId})`);
         await safeDel(sql`DELETE FROM qc_item_instance WHERE checklist_id IN (SELECT id FROM qc_checklist WHERE project_id = ${pId})`);
@@ -1764,9 +1773,7 @@ export function registerLifecycleRoutes(app: Express) {
         await safeDel(sql`DELETE FROM project_links WHERE project_id = ${pId}`);
 
         await safeDel(sql`DELETE FROM project_eng_stages WHERE project_id = ${pId}`);
-        await safeDel(sql`DELETE FROM engineering_tasks WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM deliverables WHERE project_id = ${pId}`);
-        await safeDel(sql`DELETE FROM operational_tasks WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM qc_checklist WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM project_phase_history WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM pd_tickets WHERE project_id = ${pId}`);

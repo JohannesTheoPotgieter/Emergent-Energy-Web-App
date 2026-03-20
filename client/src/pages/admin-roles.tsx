@@ -136,7 +136,7 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   financial_integration: "Financial Integration — rule-based matching",
   financial_linking: "Financial Linking — expense/revenue pairing",
   governance: "Governance — phase gate & compliance controls",
-  operational_tasks: "Operational Tasks — ad-hoc task tracking",
+  operational_tasks: "Operational Tasks — ad-hoc task tracking (via work_items)",
   gamification: "Gamification — points, streaks & leaderboard",
   project_creation: "Create Project — new project wizard",
   project_tagging: "Project Tagging — labels & categories",

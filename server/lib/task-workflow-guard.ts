@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { hasDeliverableRequirementFlag } from "@shared/task-deliverable-requirement";
 import { db } from "../db";
-import { operationalTasks, taskDeliverables } from "@shared/schema";
+import { workItems, taskDeliverables } from "@shared/schema";
 
 export type TaskWorkflowMutationSource = "status_update" | "bulk_status_update" | "send_for_approval" | "send_deliverable" | "approval_action";
 
@@ -32,13 +32,12 @@ export class TaskWorkflowGuardError extends Error {
 
 export async function buildTaskWorkflowContext(taskId: number, fallbackCurrentStatus?: string): Promise<TaskWorkflowContext> {
   const [task] = await db.select({
-    id: operationalTasks.id,
-    status: operationalTasks.status,
-    approvalRequired: operationalTasks.approvalRequired,
-    linkedDeliverableId: operationalTasks.linkedDeliverableId,
-    taskTypeTag: operationalTasks.taskTypeTag,
-    tags: operationalTasks.tags,
-  }).from(operationalTasks).where(eq(operationalTasks.id, taskId));
+    id: workItems.id,
+    status: workItems.status,
+    approvalRequired: workItems.approvalRequired,
+    linkedDeliverableId: workItems.linkedDeliverableId,
+    taskTypeTag: workItems.taskTypeTag,
+  }).from(workItems).where(eq(workItems.id, taskId));
 
   const [deliverable] = await db.select({ id: taskDeliverables.id })
     .from(taskDeliverables)

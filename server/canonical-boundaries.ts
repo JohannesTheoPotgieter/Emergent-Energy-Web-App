@@ -56,9 +56,9 @@ export async function softDeleteCanonicalWorkItemByLegacyTaskId(legacyTaskId: nu
     );
 }
 
-// ── Deprecated stubs (no-ops for call-site compat during transition) ──
+// ── Deprecated stubs (no-ops kept for call-site compat) ──
 
-/** @deprecated No longer mirrors to operational_tasks. Returns null. */
+/** @deprecated Legacy operational_tasks table removed. Returns null. */
 export async function mirrorWorkItemToOperationalTask(_args: {
   workItemId: number;
   projectName: string;
@@ -73,7 +73,7 @@ export async function mirrorWorkItemToOperationalTask(_args: {
   return null;
 }
 
-/** @deprecated No longer syncs to operational_tasks. No-op. */
+/** @deprecated Legacy operational_tasks table removed. No-op. */
 export async function syncOperationalTaskFromWorkItemUpdate(_args: {
   workItemId: number;
   updates: Record<string, unknown>;
@@ -81,7 +81,7 @@ export async function syncOperationalTaskFromWorkItemUpdate(_args: {
   // no-op
 }
 
-/** @deprecated No longer deletes operational_task mirrors. No-op. */
+/** @deprecated Legacy operational_tasks table removed. No-op. */
 export async function softDeleteLegacyOperationalTaskByWorkItemId(_workItemId: number): Promise<void> {
   // no-op
 }

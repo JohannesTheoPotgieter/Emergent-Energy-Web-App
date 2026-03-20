@@ -1,8 +1,8 @@
 import { db } from "../db";
-import { safeLegacyQuery, safeLegacyWrite } from "../legacy-table-guard";
+// safeLegacyQuery/safeLegacyWrite no longer needed — operational_tasks dropped
 import { and, desc, eq, inArray, isNull, not, or, sql } from "drizzle-orm";
 import {
-  operationalTasks,
+  workItems,
   taskComments,
   taskChecklists,
   taskChecklistItems,
@@ -17,7 +17,6 @@ import {
   type InsertKeyDateMapping,
   type InsertMytoolTask,
   type InsertMytoolTimeblock,
-  type InsertOperationalTask,
   type InsertTaskActivityLog,
   type InsertTaskAttachment,
   type InsertTaskChecklist,
@@ -27,7 +26,6 @@ import {
   type KeyDateMapping,
   type MytoolTask,
   type MytoolTimeblock,
-  type OperationalTask,
   type TaskActivityLog,
   type TaskAttachment,
   type TaskChecklist,
@@ -50,27 +48,55 @@ export class WorkManagementRepository {
     return this._dbInstance || db;
   }
 
-  async getAllOperationalTasks(): Promise<OperationalTask[]> {
-    return safeLegacyQuery(() => this.dbInstance.select().from(operationalTasks).where(isNull(operationalTasks.deletedAt)), []);
+  async getAllOperationalTasks(): Promise<any[]> {
+    const items = await this.dbInstance.select().from(workItems).where(isNull(workItems.deletedAt));
+    return items as any[];
   }
-  async getOperationalTasksByProject(projectName: string): Promise<OperationalTask[]> {
-    return safeLegacyQuery(() => this.dbInstance.select().from(operationalTasks).where(and(eq(operationalTasks.projectName, projectName), isNull(operationalTasks.deletedAt))).orderBy(operationalTasks.sortOrder), []);
+  async getOperationalTasksByProject(projectName: string): Promise<any[]> {
+    return this.dbInstance.select().from(workItems).where(and(
+      isNull(workItems.deletedAt),
+      sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${projectName})`
+    )).orderBy(workItems.sortOrder) as any;
   }
-  async getOperationalTask(id: number): Promise<OperationalTask | undefined> {
-    const results = await safeLegacyQuery(() => this.dbInstance.select().from(operationalTasks).where(eq(operationalTasks.id, id)), []);
+  async getOperationalTask(id: number): Promise<any | undefined> {
+    const results = await this.dbInstance.select().from(workItems).where(eq(workItems.id, id));
     return results[0];
   }
-  async createOperationalTask(data: InsertOperationalTask): Promise<OperationalTask> {
+  async createOperationalTask(data: any): Promise<any> {
     const now = new Date();
-    const [created] = await this.dbInstance.insert(operationalTasks).values({ ...data, createdAt: now, updatedAt: now }).returning();
+    const [created] = await this.dbInstance.insert(workItems).values({
+      projectId: data.projectId,
+      title: data.title || data.taskName || 'Untitled',
+      description: data.description,
+      status: data.status || 'Not Started',
+      priority: data.priority,
+      startDate: data.startDate,
+      endDate: data.dueDate,
+      ownerUserId: data.ownerUserId,
+      workstream: 'ENG' as any,
+      source: 'UI' as any,
+      sortOrder: data.sortOrder,
+      holdReason: data.holdReason,
+      blockedType: data.blockedType,
+      approvalRequired: data.approvalRequired,
+      linkedPlanItemId: data.linkedPlanItemId,
+      linkedDeliverableId: data.linkedDeliverableId,
+      taskTypeTag: data.taskTypeTag,
+      blockerReason: data.blockerReason,
+      createdAt: now,
+      updatedAt: now,
+    }).returning();
     return created;
   }
-  async updateOperationalTask(id: number, data: Partial<InsertOperationalTask>): Promise<OperationalTask> {
-    const [updated] = await this.dbInstance.update(operationalTasks).set({ ...data, updatedAt: new Date() }).where(eq(operationalTasks.id, id)).returning();
+  async updateOperationalTask(id: number, data: any): Promise<any> {
+    const mapped: any = { ...data, updatedAt: new Date() };
+    if (data.dueDate !== undefined) { mapped.endDate = data.dueDate; delete mapped.dueDate; }
+    if (data.taskName !== undefined) { mapped.title = data.taskName; delete mapped.taskName; }
+    const [updated] = await this.dbInstance.update(workItems).set(mapped).where(eq(workItems.id, id)).returning();
     return updated;
   }
   async deleteOperationalTask(id: number): Promise<void> {
-    await safeLegacyWrite(() => this.dbInstance.update(operationalTasks).set({ deletedAt: new Date() }).where(eq(operationalTasks.id, id)));
+    await this.dbInstance.update(workItems).set({ deletedAt: new Date() }).where(eq(workItems.id, id));
   }
 
   async getTaskComments(taskId: number): Promise<TaskComment[]> { return this.dbInstance.select().from(taskComments).where(eq(taskComments.taskId, taskId)).orderBy(desc(taskComments.createdAt)); }

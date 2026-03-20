@@ -103,36 +103,11 @@ export type WarningSeverity = typeof WARNING_SEVERITIES[number];
 export const WARNING_STATUSES = ["open", "in_progress", "resolved", "accepted_risk"] as const;
 export type WarningStatus = typeof WARNING_STATUSES[number];
 
-// ===================== ENGINEERING TASKS (Part E) =====================
+// ===================== ENGINEERING TASKS — DROPPED =====================
+// Table engineering_tasks dropped; data lives in work_items (workstream='ENG').
+// Schema definition removed — see work_items in tasks.ts.
 
 export const engTaskStatusEnum = pgEnum('eng_task_status', ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETE', 'ON_HOLD']);
-
-export const engineeringTasks = pgTable("engineering_tasks", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projectInfo.id),
-  projectName: text("project_name"),
-  title: text("title").notNull(),
-  description: text("description"),
-  lifecyclePhaseTag: companyLifecyclePhaseEnum("lifecycle_phase_tag").notNull().default('EXECUTION'),
-  status: engTaskStatusEnum("status").notNull().default('NOT_STARTED'),
-  requiresQcApproval: boolean("requires_qc_approval").notNull().default(false),
-  requiresOpsApproval: boolean("requires_ops_approval").notNull().default(false),
-  qcApprovedAt: timestamp("qc_approved_at"),
-  qcApprovedByRole: text("qc_approved_by_role"),
-  opsApprovedAt: timestamp("ops_approved_at"),
-  opsApprovedByRole: text("ops_approved_by_role"),
-  assigneeUserId: integer("assignee_user_id").references(() => users.id),
-  assigneeName: text("assignee_name"),
-  softDeletedAt: timestamp("soft_deleted_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  scheduledDate: text("scheduled_date"),
-  scheduledStartTime: text("scheduled_start_time"),
-  scheduledEndTime: text("scheduled_end_time"),
-});
-export const insertEngineeringTaskSchema = createInsertSchema(engineeringTasks).omit({ id: true, createdAt: true, updatedAt: true } as any);
-export type InsertEngineeringTask = z.infer<typeof insertEngineeringTaskSchema>;
-export type EngineeringTask = typeof engineeringTasks.$inferSelect;
 
 // ===================== ENGINEERING STAGE TEMPLATES (Part E2) =====================
 

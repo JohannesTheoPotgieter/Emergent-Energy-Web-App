@@ -8,7 +8,7 @@ import {
   meetingActionItems,
   mytoolTasks,
   mytoolCompanyPriorities,
-  operationalTasks,
+  workItems,
   projectInfo,
   users,
 } from "@shared/schema";
@@ -293,17 +293,22 @@ export function registerMeetingRoutes(app: Express) {
       let convertedToType = "mytool_task";
 
       if (projectName) {
+        const [matchedProject] = await db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, projectName)).limit(1);
+        if (!matchedProject) {
+          return res.status(400).json({ error: `Project not found: ${projectName}` });
+        }
         const [opTask] = await db
-          .insert(operationalTasks)
+          .insert(workItems)
           .values({
-            projectName,
+            projectId: matchedProject.id,
             title: overrides.title || actionItem.text,
             status: "TO DO",
             priority: overrides.priority === "critical" ? "Critical" : overrides.priority === "high" ? "High" : overrides.priority === "low" ? "Low" : "Med",
             ownerUserId,
-            startDate: null,
-            dueDate: actionItem.dueDate || null,
+            endDate: actionItem.dueDate || null,
             description: `From meeting: ${meeting?.title || "Unknown"}\nOwner: ${actionItem.owner || "Unassigned"}${overrides.notes ? "\n" + overrides.notes : ""}`,
+            workstream: 'ENG' as any,
+            source: 'UI' as any,
             createdBy: userId,
           })
           .returning();

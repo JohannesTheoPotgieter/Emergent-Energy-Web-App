@@ -9,7 +9,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense } from "@shared/schema";
+import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense } from "@shared/schema";
 import { inlineEdit } from "./lib/inline-edit-helper";
 import { db } from "./db";
 import { safeLegacyQuery } from "./legacy-table-guard";
@@ -89,10 +89,7 @@ import {
   getCutoverPostValidationReport,
 } from "./services/promoted-read-compat";
 import {
-  mirrorWorkItemToOperationalTask,
   softDeleteCanonicalWorkItemByLegacyTaskId,
-  softDeleteLegacyOperationalTaskByWorkItemId,
-  syncOperationalTaskFromWorkItemUpdate,
 } from "./canonical-boundaries";
 import { listImportSyncState } from "./services/imports-governance-service";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
@@ -759,7 +756,7 @@ export async function registerRoutes(
           try {
             const pid = (await storage.getProjectInfoByName(decodedName))?.id;
             if (!pid) return { tasks: [] };
-            // Prompt 8: Read from work_items (ENG workstream) instead of engineering_tasks
+            // Read from work_items (ENG workstream)
             const tasks = await db.select().from(workItems).where(and(eq(workItems.projectId, pid), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
             return { tasks };
           } catch { return { tasks: [] }; }
@@ -4082,7 +4079,7 @@ export async function registerRoutes(
         db.select().from(normalizedRevenueLines),
         db.select().from(normalizedCostLines),
         db.select().from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
-        // Prompt 8: Read ENG work_items instead of engineering_tasks
+        // Read ENG work_items
         db.select().from(workItems).where(and(eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt))),
         db.execute(sql`SELECT id, project_id, status, title, due_date, assigned_approver FROM approvals`),
         getAllPMWorkItemsAsProjectPlan(),
@@ -9865,7 +9862,7 @@ export async function registerRoutes(
           await storage.softDeleteTaskOverride(existingOverride.id);
         } else {
           // GC-002: Use soft-delete instead of hard-delete for data recovery
-          await db.update(operationalTasks).set({ deletedAt: new Date() }).where(eq(operationalTasks.id, absId));
+          await db.update(workItems).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(workItems.id, absId));
         }
       }
 
@@ -11610,7 +11607,7 @@ export async function registerRoutes(
         return;
       }
 
-      // Prompt 8: Try canonical work_items first, fall back to operational_tasks
+      // Try canonical work_items
       let task: any = null;
       const { getEngineeringWorkItemById } = await import("./work-items-adapter");
       const canonicalTask = await getEngineeringWorkItemById(id);
@@ -11648,82 +11645,14 @@ export async function registerRoutes(
     try {
       const projectName = req.params.projectName;
 
-      // Prompt 8: Always read from canonical work_items
+      // Always read from canonical work_items
       const canonicalTasks = await getWorkItemsAsOperationalTasks(projectName);
       if (canonicalTasks.length > 0) {
         return res.json(canonicalTasks);
       }
 
-      // Fallback: legacy path for projects with no work_items data yet
-      const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
-      const [operationalTasks, planTasksDirect, planTasksTracker] = await Promise.all([
-        storage.getOperationalTasksByProject(projectName),
-        storage.getProjectPlansByProject(projectName),
-        projectName !== trackerName ? storage.getProjectPlansByProject(trackerName) : Promise.resolve([]),
-      ]);
-      const planTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
-
-      const linkedImportedIds = new Set(
-        operationalTasks
-          .filter((t: any) => t.importedTaskId != null)
-          .map((t: any) => t.importedTaskId)
-      );
-
-      const SECTION_HEADER_TITLES = ["high level programme", "programme", "high level program"];
-      const baselineTasks = planTasks
-        .filter((pt: any) => !linkedImportedIds.has(pt.id))
-        .filter((pt: any) => {
-          const title = (pt.highLevelProgramme || "").trim().toLowerCase();
-          return title && !SECTION_HEADER_TITLES.includes(title);
-        })
-        .map((pt: any) => {
-          const pctComplete = pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : 0;
-          let status = "Not Started";
-          if (pctComplete >= 100) status = "Done";
-          else if (pctComplete > 0) status = "In Progress";
-
-          return {
-            id: -pt.id,
-            projectName: pt.projectName,
-            importedTaskId: pt.id,
-            taskNumber: pt.taskNo || String(pt.rowNumber || ""),
-            parentTaskId: null,
-            title: pt.highLevelProgramme || `Task ${pt.taskNo || pt.rowNumber}`,
-            description: null,
-            status,
-            priority: "Normal",
-            startDate: pt.actualStart || null,
-            dueDate: pt.actualEnd || null,
-            durationDays: pt.durationDays || null,
-            percentComplete: pctComplete,
-            expectedPercentComplete: pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : null,
-            assignees: null,
-            tags: null,
-            blockerReason: null,
-            plannedHours: null,
-            actualHours: null,
-            sortOrder: pt.rowNumber || 0,
-            isBaseline: true,
-            createdBy: null,
-            createdAt: pt.createdAt,
-            updatedAt: pt.createdAt,
-          };
-        });
-
-      const { buildUserMap, mergeResolvedWithTextNames } = await import("./user-resolver");
-      const userMap = await buildUserMap();
-      const enriched = operationalTasks.map((t: any) => {
-        const idResolved = (t.assigneeUserIds || []).map((uid: number) => userMap.get(uid)).filter(Boolean);
-        return {
-          ...t,
-          resolvedAssignees: mergeResolvedWithTextNames(idResolved, t.assignees, userMap),
-          resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
-        };
-      });
-
-      const merged = [...baselineTasks, ...enriched];
-      merged.sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
-      res.json(merged);
+      // Legacy fallback removed — all data should be in work_items by now.
+      return res.json([]);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -12997,19 +12926,7 @@ export async function registerRoutes(
         if (Object.keys(wiUpdateFields).length > 0 && isWorkItemTask) {
           await db.update(workItems).set(wiUpdateFields).where(eq(workItems.id, wi.id));
 
-          // Legacy mirror only: keep operational_tasks readable for transitional consumers.
-          await syncOperationalTaskFromWorkItemUpdate({
-            workItemId: wi.id,
-            updates: {
-              title: updates.title,
-              status: updates.status,
-              priority: updates.priority,
-              startDate: updates.startDate,
-              dueDate: updates.dueDate,
-              percentComplete: updates.percentComplete,
-              comment: updates.comment,
-            },
-          });
+          // Legacy mirror removed — work_items is now the canonical source.
         }
 
         res.json({ success: true, taskId, workItemId: wi?.id ?? null });
@@ -13085,20 +13002,8 @@ export async function registerRoutes(
         }).returning();
       });
 
-      // Legacy mirror write (non-canonical): safe best-effort only.
-      const mirroredTaskId = await mirrorWorkItemToOperationalTask({
-        workItemId: workItem.id,
-        projectName,
-        title,
-        status: normalizedStatus,
-        priority: normalizedPriority,
-        startDate,
-        dueDate,
-        isMilestone: isMilestone || false,
-        createdBy: user.id,
-      });
-
-      task = { id: mirroredTaskId ?? workItem.id };
+      // Legacy mirror removed — work_items is the canonical source.
+      task = { id: workItem.id };
 
       // Notifications feature removed - planEditNotifications insert for task_created is now a no-op
 
@@ -13268,9 +13173,8 @@ export async function registerRoutes(
           });
         }
       } else {
-        // Canonical boundary: delete work_items first; mirror delete to legacy operational_tasks.
+        // Canonical boundary: soft-delete work_items only (operational_tasks no longer used).
         await softDeleteCanonicalWorkItemByLegacyTaskId(taskId);
-        await softDeleteLegacyOperationalTaskByWorkItemId(taskId);
       }
 
       // Notifications feature removed - planEditNotifications insert for task_deleted is now a no-op
@@ -13705,11 +13609,13 @@ export async function registerRoutes(
 
       const [myToolTasksResult, opTasksForUser, planTasksForUser, engTasksForUser, qcItemsForUser] = await Promise.all([
         safeLegacyQuery(() => db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)), []),
-        safeLegacyQuery(() => db.select().from(operationalTasks).where(
-          or(
-            eq(operationalTasks.ownerUserId, userId),
-            sql`${operationalTasks.assignees}::text[] @> ARRAY[${userName}]::text[]`,
-            sql`${operationalTasks.assignees}::text[] @> ARRAY[${displayName}]::text[]`
+        safeLegacyQuery(() => db.select().from(workItems).where(
+          and(
+            isNull(workItems.deletedAt),
+            or(
+              eq(workItems.ownerUserId, userId),
+              sql`EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = ${workItems.id} AND wia.user_id = ${userId})`
+            )
           )
         ), []),
         db.execute(sql`
@@ -13724,7 +13630,7 @@ export async function registerRoutes(
             AND (wi.owner_user_id = ${userId}
               OR EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}))
         `),
-        // Prompt 8: Read ENG work_items instead of engineering_tasks
+        // Read ENG work_items
         db.select().from(workItems).where(
           and(
             eq(workItems.workstream, "ENG"),
@@ -13766,15 +13672,15 @@ export async function registerRoutes(
           scheduledStartTime: t.scheduledStartTime,
           scheduledEndTime: t.scheduledEndTime,
         })),
-        ...allOpTasks.map((t) => ({
+        ...allOpTasks.map((t: any) => ({
           id: t.id,
           taskType: "operational" as const,
           title: t.title,
           status: t.status,
           priority: t.priority,
-          projectName: t.projectName,
+          projectName: t.projectName || null,
           plannedForDate: null,
-          dueDate: t.dueDate,
+          dueDate: t.endDate || t.dueDate || null,
           startDate: t.startDate,
           scheduledDate: t.scheduledDate,
           scheduledStartTime: t.scheduledStartTime,
@@ -13869,23 +13775,27 @@ export async function registerRoutes(
           })
           .where(eq(mytoolTasks.id, taskId));
       } else if (taskType === "operational") {
-        const [task] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, taskId));
+        const [task] = await db.select().from(workItems).where(and(eq(workItems.id, taskId), isNull(workItems.deletedAt)));
         if (!task) return res.status(404).json({ error: "Task not found" });
 
         const isOwner = task.ownerUserId === userId;
-        const isAssigned = task.assignees?.includes(userName);
+        // Check work_item_assignments for assignee relationship
+        const assignmentCheck = await db.select().from(workItemAssignments).where(
+          and(eq(workItemAssignments.workItemId, taskId), eq(workItemAssignments.userId, userId))
+        );
+        const isAssigned = assignmentCheck.length > 0;
         if (!isOwner && !isAssigned) {
           return res.status(403).json({ error: "You can only schedule tasks assigned to you" });
         }
 
-        await db.update(operationalTasks)
+        await db.update(workItems)
           .set({
             scheduledDate: scheduledDate || null,
             scheduledStartTime: scheduledStartTime || null,
             scheduledEndTime: scheduledEndTime || null,
             updatedAt: new Date(),
           })
-          .where(eq(operationalTasks.id, taskId));
+          .where(eq(workItems.id, taskId));
       } else if (taskType === "plan") {
         const taskResult = await db.select().from(workItems).where(eq(workItems.id, taskId));
         const [task] = taskResult;
@@ -13910,7 +13820,7 @@ export async function registerRoutes(
           })
           .where(eq(workItems.id, taskId));
       } else if (taskType === "engineering") {
-        // Prompt 8: Schedule ENG tasks via work_items instead of engineering_tasks
+        // Schedule ENG tasks via work_items
         const [task] = await db.select().from(workItems).where(and(eq(workItems.id, taskId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
         if (!task) return res.status(404).json({ error: "Engineering task not found" });
 

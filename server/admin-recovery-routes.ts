@@ -6,7 +6,7 @@ import { z } from "zod";
 import { verifyToken } from "./jwt";
 import { logAuditFromReq } from "./audit-logger";
 import {
-  operationalTasks, mytoolTasks, engineeringTasks, workItems,
+  mytoolTasks, workItems,
   smartImportRuns, importIssues, projectInfo, users, pdTickets, qcItemInstance,
 } from "@shared/schema";
 import { normalizeStatus } from "./lib/canonical-task-engine";
@@ -93,16 +93,14 @@ export function registerAdminRecoveryRoutes(app: Express) {
       const results: any[] = [];
 
       if (!params.taskType || params.taskType === "operational") {
-        let query = db.select().from(operationalTasks);
-        const conditions: any[] = [];
-        if (searchTerm) conditions.push(ilike(operationalTasks.title, searchTerm));
-        if (params.status) conditions.push(eq(operationalTasks.status, params.status));
-        if (params.projectName) conditions.push(eq(operationalTasks.projectName, params.projectName));
-        if (params.assigneeUserId) conditions.push(eq(operationalTasks.ownerUserId, parseInt(params.assigneeUserId)));
+        let query = db.select().from(workItems);
+        const conditions: any[] = [isNull(workItems.deletedAt)];
+        if (searchTerm) conditions.push(ilike(workItems.title, searchTerm));
+        if (params.status) conditions.push(eq(workItems.status, params.status));
+        if (params.projectName) conditions.push(sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${params.projectName})`);
+        if (params.assigneeUserId) conditions.push(eq(workItems.ownerUserId, parseInt(params.assigneeUserId)));
 
-        const rows = conditions.length > 0
-          ? await query.where(and(...conditions)).orderBy(desc(operationalTasks.updatedAt)).limit(limit).offset(offset)
-          : await query.orderBy(desc(operationalTasks.updatedAt)).limit(limit).offset(offset);
+        const rows = await query.where(and(...conditions)).orderBy(desc(workItems.updatedAt)).limit(limit).offset(offset);
 
         for (const r of rows) {
           results.push({ ...r, taskType: "operational", taskSource: "operational" });
@@ -127,15 +125,16 @@ export function registerAdminRecoveryRoutes(app: Express) {
       }
 
       if (!params.taskType || params.taskType === "engineering") {
-        let query = db.select().from(engineeringTasks);
+        let query = db.select().from(workItems);
         const conditions: any[] = [];
-        if (searchTerm) conditions.push(ilike(engineeringTasks.title, searchTerm));
-        if (params.status) conditions.push(eq(engineeringTasks.status, params.status));
-        if (params.projectName) conditions.push(eq(engineeringTasks.projectName, params.projectName));
-        if (params.assigneeUserId) conditions.push(eq(engineeringTasks.assigneeUserId, parseInt(params.assigneeUserId)));
-        conditions.push(isNull(engineeringTasks.softDeletedAt));
+        conditions.push(eq(workItems.workstream, 'ENG' as any));
+        if (searchTerm) conditions.push(ilike(workItems.title, searchTerm));
+        if (params.status) conditions.push(eq(workItems.status, params.status));
+        if (params.projectName) conditions.push(sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${params.projectName})`);
+        if (params.assigneeUserId) conditions.push(eq(workItems.ownerUserId, parseInt(params.assigneeUserId)));
+        conditions.push(isNull(workItems.deletedAt));
 
-        const rows = await query.where(and(...conditions)).orderBy(desc(engineeringTasks.updatedAt)).limit(limit).offset(offset);
+        const rows = await query.where(and(...conditions)).orderBy(desc(workItems.updatedAt)).limit(limit).offset(offset);
 
         for (const r of rows) {
           results.push({ ...r, taskType: "engineering", taskSource: "engineering_task" });
@@ -246,7 +245,8 @@ export function registerAdminRecoveryRoutes(app: Express) {
           if (fields.priority !== undefined) setObj.priority = fields.priority;
           if (fields.description !== undefined) setObj.description = fields.description;
           setObj.updatedAt = new Date();
-          await db.update(operationalTasks).set(setObj).where(eq(operationalTasks.id, taskId));
+          if (setObj.dueDate !== undefined) { setObj.endDate = setObj.dueDate; delete setObj.dueDate; }
+          await db.update(workItems).set(setObj).where(eq(workItems.id, taskId));
           break;
         }
         case "personal": {
@@ -264,11 +264,11 @@ export function registerAdminRecoveryRoutes(app: Express) {
           const setObj: any = {};
           if (fields.status !== undefined) setObj.status = fields.status;
           if (fields.title !== undefined) setObj.title = fields.title;
-          if (fields.projectName !== undefined) setObj.projectName = fields.projectName;
-          if (fields.assigneeUserId !== undefined) setObj.assigneeUserId = fields.assigneeUserId;
+          if (fields.projectId !== undefined) setObj.projectId = fields.projectId;
+          if (fields.ownerUserId !== undefined) setObj.ownerUserId = fields.ownerUserId;
           if (fields.description !== undefined) setObj.description = fields.description;
           setObj.updatedAt = new Date();
-          await db.update(engineeringTasks).set(setObj).where(eq(engineeringTasks.id, taskId));
+          await db.update(workItems).set(setObj).where(eq(workItems.id, taskId));
           break;
         }
         case "plan": {
@@ -363,28 +363,19 @@ export function registerAdminRecoveryRoutes(app: Express) {
         .limit(100);
 
       const deletedEngTasks = await db.select({
-        id: engineeringTasks.id,
-        title: engineeringTasks.title,
-        status: engineeringTasks.status,
-        projectName: engineeringTasks.projectName,
-        softDeletedAt: engineeringTasks.softDeletedAt,
-        assigneeUserId: engineeringTasks.assigneeUserId,
-      }).from(engineeringTasks)
-        .where(isNotNull(engineeringTasks.softDeletedAt))
-        .orderBy(desc(engineeringTasks.softDeletedAt))
+        id: workItems.id,
+        title: workItems.title,
+        status: workItems.status,
+        projectId: workItems.projectId,
+        softDeletedAt: workItems.deletedAt,
+        ownerUserId: workItems.ownerUserId,
+      }).from(workItems)
+        .where(and(eq(workItems.workstream, 'ENG' as any), isNotNull(workItems.deletedAt)))
+        .orderBy(desc(workItems.deletedAt))
         .limit(100);
 
-      const deletedOpTasks = await db.select({
-        id: operationalTasks.id,
-        title: operationalTasks.title,
-        status: operationalTasks.status,
-        projectName: operationalTasks.projectName,
-        deletedAt: operationalTasks.deletedAt,
-        ownerUserId: operationalTasks.ownerUserId,
-      }).from(operationalTasks)
-        .where(isNotNull(operationalTasks.deletedAt))
-        .orderBy(desc(operationalTasks.deletedAt))
-        .limit(100);
+      // Operational tasks now in work_items — duplicates the deleted eng tasks query above
+      const deletedOpTasks: any[] = [];
 
       const deletedMytoolTasks = await db.select({
         id: mytoolTasks.id,
@@ -442,10 +433,10 @@ export function registerAdminRecoveryRoutes(app: Express) {
           await db.update(workItems).set({ deletedAt: null }).where(eq(workItems.id, item.id));
           restored++;
         } else if (item.type === "engineering_task") {
-          await db.update(engineeringTasks).set({ softDeletedAt: null }).where(eq(engineeringTasks.id, item.id));
+          await db.update(workItems).set({ deletedAt: null }).where(eq(workItems.id, item.id));
           restored++;
         } else if (item.type === "operational_task") {
-          await db.update(operationalTasks).set({ deletedAt: null }).where(eq(operationalTasks.id, item.id));
+          await db.update(workItems).set({ deletedAt: null }).where(eq(workItems.id, item.id));
           restored++;
         } else if (item.type === "mytool_task") {
           await db.update(mytoolTasks).set({ deletedAt: null }).where(eq(mytoolTasks.id, item.id));
