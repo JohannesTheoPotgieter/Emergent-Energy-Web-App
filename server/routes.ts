@@ -6341,8 +6341,7 @@ export async function registerRoutes(
         points = await storage.getAllCashflowPoints();
       }
 
-      const overrides = await storage.getAllPlanningOverrides();
-      points = applyPlanningOverrides(points, overrides);
+      // Override data now baked into base rows
 
       const expenses = projectName
         ? await storage.getProgramExpensesByProject(projectName)
@@ -6506,11 +6505,8 @@ export async function registerRoutes(
       const { projectName } = req.query;
       let overrides;
       
-      if (projectName && typeof projectName === 'string') {
-        overrides = await storage.getPlanningOverridesByProject(projectName);
-      } else {
-        overrides = await storage.getAllPlanningOverrides();
-      }
+      // Override data now baked into base rows
+      overrides = [];
 
       res.json(overrides);
     } catch (error) {
