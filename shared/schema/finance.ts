@@ -23,6 +23,7 @@ export const trRagStatusEnum = pgEnum("tr_rag_status", ["Red", "Amber", "Green"]
 export const trStatusEnum = pgEnum("tr_status", ["Active", "Completed"]);
 export const trLinkStatusEnum = pgEnum("tr_link_status", ["Linked", "TaskCreated", "Done"]);
 export const trSuggestionDecisionEnum = pgEnum("tr_suggestion_decision", ["Suggested", "Accepted", "Rejected", "Suppressed"]);
+export const rowSourceEnum = pgEnum("row_source", ["imported", "manual", "imported_edited"]);
 
 // ===================== PROGRAM EXPENSE =====================
 
@@ -61,6 +62,10 @@ export const programExpense = pgTable("program_expense", {
   dataSource: text("data_source").default("SMART_IMPORT"),
   projectId: integer("project_id").references(() => projectInfo.id),
   importRunId: integer("import_run_id"),
+  source: rowSourceEnum("source").notNull().default("imported"),
+  importSnapshot: jsonb("import_snapshot"),
+  lastEditedBy: integer("last_edited_by").references(() => users.id),
+  lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertProgramExpenseSchema = createInsertSchema(programExpense).omit({ id: true, createdAt: true } as any);
@@ -90,6 +95,10 @@ export const programInflows = pgTable("program_inflows", {
   dataSource: text("data_source").default("SMART_IMPORT"),
   projectId: integer("project_id").references(() => projectInfo.id),
   importRunId: integer("import_run_id"),
+  source: rowSourceEnum("source").notNull().default("imported"),
+  importSnapshot: jsonb("import_snapshot"),
+  lastEditedBy: integer("last_edited_by").references(() => users.id),
+  lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertProgramInflowsSchema = createInsertSchema(programInflows).omit({ id: true, createdAt: true } as any);
@@ -110,6 +119,10 @@ export const projectPlan = pgTable("project_plan", {
   actualEnd: text("actual_end"),
   actualPctComplete: real("actual_pct_complete"),
   expectedPctComplete: real("expected_pct_complete"),
+  source: rowSourceEnum("source").notNull().default("imported"),
+  importSnapshot: jsonb("import_snapshot"),
+  lastEditedBy: integer("last_edited_by").references(() => users.id),
+  lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertProjectPlanSchema = createInsertSchema(projectPlan).omit({ id: true, createdAt: true } as any);
@@ -125,6 +138,10 @@ export const cashflowPoints = pgTable("cashflow_points", {
   pointDate: text("point_date").notNull(),
   value: decimal("value", { precision: 15, scale: 2 }),
   projectId: integer("project_id").references(() => projectInfo.id),
+  source: rowSourceEnum("source").notNull().default("imported"),
+  importSnapshot: jsonb("import_snapshot"),
+  lastEditedBy: integer("last_edited_by").references(() => users.id),
+  lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertCashflowPointSchema = createInsertSchema(cashflowPoints).omit({ id: true, createdAt: true } as any);
@@ -138,6 +155,10 @@ export const financeRevenueMonthly = pgTable("finance_revenue_monthly", {
   category: text("category").notNull(),
   monthEndDate: text("month_end_date").notNull(),
   value: decimal("value", { precision: 15, scale: 2 }),
+  source: rowSourceEnum("source").notNull().default("imported"),
+  importSnapshot: jsonb("import_snapshot"),
+  lastEditedBy: integer("last_edited_by").references(() => users.id),
+  lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertFinanceRevenueMonthlySchema = createInsertSchema(financeRevenueMonthly).omit({ id: true, createdAt: true } as any);
@@ -151,13 +172,41 @@ export const financeCosMonthly = pgTable("finance_cos_monthly", {
   category: text("category").notNull(),
   monthEndDate: text("month_end_date").notNull(),
   value: decimal("value", { precision: 15, scale: 2 }),
+  source: rowSourceEnum("source").notNull().default("imported"),
+  importSnapshot: jsonb("import_snapshot"),
+  lastEditedBy: integer("last_edited_by").references(() => users.id),
+  lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertFinanceCosMonthlySchema = createInsertSchema(financeCosMonthly).omit({ id: true, createdAt: true } as any);
 export type InsertFinanceCosMonthly = z.infer<typeof insertFinanceCosMonthlySchema>;
 export type FinanceCosMonthly = typeof financeCosMonthly.$inferSelect;
 
-// ===================== OVERRIDE TABLES =====================
+// ===================== OVERRIDE MIGRATION TRACKING =====================
+
+export const overrideMigrationOrphans = pgTable("override_migration_orphans", {
+  id: serial("id").primaryKey(),
+  overrideTable: text("override_table").notNull(),
+  overrideId: integer("override_id").notNull(),
+  overrideData: jsonb("override_data").notNull(),
+  reason: text("reason").notNull().default("no_matching_base_row"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const overrideMigrationAmbiguous = pgTable("override_migration_ambiguous", {
+  id: serial("id").primaryKey(),
+  overrideTable: text("override_table").notNull(),
+  overrideId: integer("override_id").notNull(),
+  overrideData: jsonb("override_data").notNull(),
+  matchingBaseIds: jsonb("matching_base_ids").notNull(),
+  reason: text("reason").notNull().default("multiple_matching_base_rows"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ===================== OVERRIDE TABLES (DEPRECATED) =====================
+// These tables are deprecated. Override data has been collapsed into the
+// base tables using the source/import_snapshot columns. Do not add new
+// code that reads from or writes to these tables.
 
 export const cashflowPlanningOverrides = pgTable("cashflow_planning_overrides", {
   id: serial("id").primaryKey(),
