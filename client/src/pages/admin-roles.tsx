@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { AdminPageShell, AdminQueryState } from "@/components/admin/admin-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -371,22 +372,27 @@ function RolesControlCenter() {
     setDraft((d) => ({ ...d, entityPermissions: next }));
   };
 
-  const save = async () => {
-    if (!selected || !canManageRoles) return;
-    const res = await fetch(`/api/roles/${selected.role}`, { method: "PUT", headers: authHeaders(), credentials: "include", body: JSON.stringify(draft) });
-    if (!res.ok) return toast({ title: "Save failed", variant: "destructive" });
-    setDraft({});
-    await load();
-    toast({ title: "Role saved successfully" });
-  };
+  const saveRoleMutation = useMutation({
+    mutationFn: async () => {
+      if (!selected || !canManageRoles) throw new Error("Not allowed");
+      const res = await fetch(`/api/roles/${selected.role}`, { method: "PUT", headers: authHeaders(), credentials: "include", body: JSON.stringify(draft) });
+      if (!res.ok) throw new Error("Save failed");
+    },
+    onSuccess: () => { setDraft({}); load(); toast({ title: "Role saved successfully" }); },
+    onError: () => toast({ title: "Save failed", variant: "destructive" }),
+  });
+  const save = () => saveRoleMutation.mutate();
 
-  const createRole = async () => {
-    if (!canManageRoles) return;
-    const res = await fetch("/api/roles", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role: createKey.trim(), label: createLabel.trim(), sections: ["MY_WORK"], canEditData: true }) });
-    if (!res.ok) return toast({ title: "Create role failed", variant: "destructive" });
-    setShowCreate(false); setCreateKey(""); setCreateLabel(""); await load();
-    toast({ title: "Role created" });
-  };
+  const createRoleMutation = useMutation({
+    mutationFn: async () => {
+      if (!canManageRoles) throw new Error("Not allowed");
+      const res = await fetch("/api/roles", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role: createKey.trim(), label: createLabel.trim(), sections: ["MY_WORK"], canEditData: true }) });
+      if (!res.ok) throw new Error("Create role failed");
+    },
+    onSuccess: () => { setShowCreate(false); setCreateKey(""); setCreateLabel(""); load(); toast({ title: "Role created" }); },
+    onError: () => toast({ title: "Create role failed", variant: "destructive" }),
+  });
+  const createRole = () => createRoleMutation.mutate();
 
   const resources = Object.keys(currentEp).filter((k) => !k.startsWith("_")).sort();
   const allEntities = Object.values(ENTITY_CATEGORIES).flatMap((c) => c.entities).sort();
@@ -730,64 +736,77 @@ function GlobalUsersView() {
 
   useEffect(() => { void loadUsers(); }, []);
 
-  const updateRole = async (id: number, role: string) => {
-    if (!role) return;
-    setSaving(true);
-    try {
+  const updateRoleMutation = useMutation({
+    mutationFn: async ({ id, role }: { id: number; role: string }) => {
       const res = await fetch(`/api/admin/users/${id}/role`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role }) });
-      if (res.ok) {
-        setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
-        toast({ title: "Role updated", description: `Role changed to ${roles.find(r => r.role === role)?.label || role}` });
-      }
-    } finally { setSaving(false); }
-  };
+      if (!res.ok) throw new Error("Failed to update role");
+      return { id, role };
+    },
+    onSuccess: ({ id, role }) => {
+      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
+      toast({ title: "Role updated", description: `Role changed to ${roles.find(r => r.role === role)?.label || role}` });
+    },
+    onError: () => toast({ title: "Failed to update role", variant: "destructive" }),
+  });
+  const updateRole = (id: number, role: string) => { if (role) updateRoleMutation.mutate({ id, role }); };
 
-  const updateDepartment = async (id: number, department: string) => {
-    setSaving(true);
-    try {
+  const updateDepartmentMutation = useMutation({
+    mutationFn: async ({ id, department }: { id: number; department: string }) => {
       const res = await fetch(`/api/admin/users/${id}/department`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ department }) });
-      if (res.ok) {
-        const data = await parseJsonSafe<UserRow>(res);
-        setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, department: ((data as any)?.department ?? department) || null } : u)));
-        toast({ title: "Department updated" });
-      }
-    } finally { setSaving(false); }
-  };
+      if (!res.ok) throw new Error("Failed to update department");
+      return { id, department, data: await parseJsonSafe<UserRow>(res) };
+    },
+    onSuccess: ({ id, department, data }) => {
+      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, department: ((data as any)?.department ?? department) || null } : u)));
+      toast({ title: "Department updated" });
+    },
+    onError: () => toast({ title: "Failed to update department", variant: "destructive" }),
+  });
+  const updateDepartment = (id: number, department: string) => updateDepartmentMutation.mutate({ id, department });
 
-  const handleCreate = async () => {
+  const createUserMutation = useMutation({
+    mutationFn: async (form: typeof createForm) => {
+      const res = await fetch("/api/admin/users", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify(form) });
+      const data = await parseJsonSafe<any>(res);
+      if (!res.ok || !data || data.error) throw new Error(data?.error || "Unknown error");
+      return data;
+    },
+    onSuccess: (data) => {
+      setUsers((prev) => [...prev, data]);
+      setShowCreateDialog(false);
+      setCreateForm({ username: "", name: "", email: "", password: "", role: "", department: "" });
+      toast({ title: "User created", description: `${data.name} has been added` });
+    },
+    onError: (err: Error) => toast({ title: "Failed to create user", description: err.message, variant: "destructive" }),
+  });
+  const handleCreate = () => {
     if (!createForm.username || !createForm.name || !createForm.email || !createForm.password) {
       toast({ title: "Missing fields", description: "Please fill in all required fields", variant: "destructive" });
       return;
     }
-    setSaving(true);
-    try {
-      const res = await fetch("/api/admin/users", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify(createForm) });
-      const data = await parseJsonSafe<any>(res);
-      if (res.ok && data && !data.error) {
-        setUsers((prev) => [...prev, data]);
-        setShowCreateDialog(false);
-        setCreateForm({ username: "", name: "", email: "", password: "", role: "", department: "" });
-        toast({ title: "User created", description: `${data.name} has been added` });
-      } else {
-        toast({ title: "Failed to create user", description: data?.error || "Unknown error", variant: "destructive" });
-      }
-    } finally { setSaving(false); }
+    createUserMutation.mutate(createForm);
   };
 
-  const handleDelete = async () => {
-    if (!showDeleteDialog) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/admin/users/${showDeleteDialog.id}`, { method: "DELETE", headers: authHeaders(), credentials: "include" });
-      if (res.ok) {
-        setUsers((prev) => prev.filter((u) => u.id !== showDeleteDialog.id));
-        if (expandedId === showDeleteDialog.id) setExpandedId(null);
-        toast({ title: "User deleted", description: `${showDeleteDialog.name} has been removed` });
-      } else {
+  const deleteUserMutation = useMutation({
+    mutationFn: async (user: { id: number; name: string }) => {
+      const res = await fetch(`/api/admin/users/${user.id}`, { method: "DELETE", headers: authHeaders(), credentials: "include" });
+      if (!res.ok) {
         const data = await parseJsonSafe<any>(res);
-        toast({ title: "Failed to delete", description: data?.error || "Unknown error", variant: "destructive" });
+        throw new Error(data?.error || "Unknown error");
       }
-    } finally { setSaving(false); setShowDeleteDialog(null); }
+      return user;
+    },
+    onSuccess: (user) => {
+      setUsers((prev) => prev.filter((u) => u.id !== user.id));
+      if (expandedId === user.id) setExpandedId(null);
+      toast({ title: "User deleted", description: `${user.name} has been removed` });
+      setShowDeleteDialog(null);
+    },
+    onError: (err: Error) => { toast({ title: "Failed to delete", description: err.message, variant: "destructive" }); setShowDeleteDialog(null); },
+  });
+  const handleDelete = () => {
+    if (!showDeleteDialog) return;
+    deleteUserMutation.mutate(showDeleteDialog);
   };
 
   const handleResetPassword = async () => {
