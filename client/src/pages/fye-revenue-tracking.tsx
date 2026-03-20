@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback } from "react";
+import { Link } from "wouter";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -140,7 +141,7 @@ function formatRandShort(val: number | null | undefined): string {
 }
 
 function formatPct(val: number | null | undefined): string {
-  if (val == null || isNaN(val) || !isFinite(val)) return "N/A";
+  if (val == null || isNaN(val) || !isFinite(val)) return "–";
   return `${(val * 100).toFixed(1)}%`;
 }
 
@@ -850,25 +851,25 @@ function DetailTab({ fye }: { fye: number }) {
               <tr className="border-b">
                 {([
                   ["projectName", "Project Name", "left", true],
-                  ["businessDeveloper", "BD", "left", false],
+                  ["businessDeveloper", "Business Developer", "left", false],
                   ["province", "Province", "left", false],
-                  ["sizeKwp", "kWp", "right", false],
-                  ["projectType", "Type", "left", false],
-                  ["fundingType", "Funding", "left", false],
-                  ["startDate", "Start", "left", false],
+                  ["sizeKwp", "Size kWp", "right", false],
+                  ["projectType", "Project Type", "left", false],
+                  ["fundingType", "Funding Type", "left", false],
+                  ["startDate", "Start Date", "left", false],
                   ["pcDate", "PC Date", "left", false],
                   ["status", "Status", "left", false],
-                  ["budgetRevenue", "Budget Rev", "right", false],
+                  ["budgetRevenue", "Budget Revenue", "right", false],
                   ["budgetCos", "Budget COS", "right", false],
                   ["budgetGp", "Budget GP", "right", false],
-                  ["actualRevenue", "Actual Rev", "right", false],
-                  ["actualExpense", "Actual Exp", "right", false],
+                  ["actualRevenue", "Actual Revenue", "right", false],
+                  ["actualExpense", "Actual Expense", "right", false],
                   ["actualGp", "Actual GP", "right", false],
-                  ["budgetGpPct", "Bud GP%", "right", false],
-                  ["actualGpPct", "Act GP%", "right", false],
+                  ["budgetGpPct", "Budget GP%", "right", false],
+                  ["actualGpPct", "Actual GP%", "right", false],
                 ] as const).map(([key, label, align, sticky]) => (
                   <th key={key} onClick={() => toggleSort(key as keyof ProjectRow)} className={cn(
-                    `text-${align} px-${sticky ? 3 : 2} py-2 font-medium cursor-pointer select-none hover:text-foreground`,
+                    `text-${align} px-${sticky ? 3 : 2} py-2 font-medium cursor-pointer select-none hover:text-foreground whitespace-nowrap`,
                     sticky && "sticky left-0 bg-muted/80 z-20 min-w-[180px]"
                   )}>{label}{sortIndicator(key as keyof ProjectRow)}</th>
                 ))}
@@ -879,29 +880,8 @@ function DetailTab({ fye }: { fye: number }) {
                 <tr><td colSpan={17} className="text-center py-8 text-muted-foreground">No projects found for FYE {fye}{search ? ` matching "${search}"` : ""}</td></tr>
               ) : (
                 <>
-                  {filtered.map((p) => (
-                    <tr key={p.projectId} className="border-b hover:bg-muted/30">
-                      <td className="px-3 py-1.5 font-medium sticky left-0 bg-white z-10 truncate max-w-[200px]" title={p.projectName}>{p.projectName}</td>
-                      <td className="px-2 py-1.5 truncate max-w-[100px]" title={p.businessDeveloper || ""}>{p.businessDeveloper || "—"}</td>
-                      <td className="px-2 py-1.5">{p.province || "—"}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{p.sizeKwp ? p.sizeKwp.toLocaleString() : "—"}</td>
-                      <td className="px-2 py-1.5">{p.projectType || "—"}</td>
-                      <td className="px-2 py-1.5">{p.fundingType || "—"}</td>
-                      <td className="px-2 py-1.5">{formatDate(p.startDate)}</td>
-                      <td className="px-2 py-1.5">{formatDate(p.pcDate)}</td>
-                      <td className="px-2 py-1.5">{p.status ? <Badge variant="outline" className="text-[10px]">{p.status}</Badge> : "—"}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.budgetRevenue)}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.budgetCos)}</td>
-                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.budgetGp < 0 && "text-red-600")}>{formatRand(p.budgetGp)}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.actualRevenue)}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.actualExpense)}</td>
-                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGp < 0 && "text-red-600")}>{formatRand(p.actualGp)}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{formatPct(p.budgetGpPct)}</td>
-                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGpPct != null && p.actualGpPct < 0 && "text-red-600")}>{formatPct(p.actualGpPct)}</td>
-                    </tr>
-                  ))}
-                  {/* Totals Row */}
-                  <tr className="border-t-2 bg-muted/50 font-bold">
+                  {/* Totals Row — pinned at top */}
+                  <tr className="border-b-2 bg-muted/50 font-bold">
                     <td className="px-3 py-2 sticky left-0 bg-muted/50 z-10">Totals ({filtered.length})</td>
                     <td colSpan={8}></td>
                     <td className="text-right px-2 py-2 tabular-nums">{formatRand(filteredTotals.budgetRevenue)}</td>
@@ -910,9 +890,32 @@ function DetailTab({ fye }: { fye: number }) {
                     <td className="text-right px-2 py-2 tabular-nums">{formatRand(filteredTotals.actualRevenue)}</td>
                     <td className="text-right px-2 py-2 tabular-nums">{formatRand(filteredTotals.actualExpense)}</td>
                     <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.actualGp < 0 && "text-red-600")}>{formatRand(filteredTotals.actualGp)}</td>
-                    <td className="text-right px-2 py-2 tabular-nums">{formatPct(filteredTotals.budgetRevenue ? filteredTotals.budgetGp / filteredTotals.budgetRevenue : null)}</td>
+                    <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.budgetGp < 0 && "text-red-600")}>{formatPct(filteredTotals.budgetRevenue ? filteredTotals.budgetGp / filteredTotals.budgetRevenue : null)}</td>
                     <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.actualGp < 0 && "text-red-600")}>{formatPct(filteredTotals.actualRevenue ? filteredTotals.actualGp / filteredTotals.actualRevenue : null)}</td>
                   </tr>
+                  {filtered.map((p) => (
+                    <tr key={p.projectId} className="border-b hover:bg-muted/30">
+                      <td className="px-3 py-1.5 font-medium sticky left-0 bg-white z-10 truncate max-w-[200px]" title={p.projectName}>
+                        <Link href={`/project/${encodeURIComponent(p.projectName)}`} className="text-blue-600 hover:underline">{p.projectName}</Link>
+                      </td>
+                      <td className="px-2 py-1.5 truncate max-w-[120px]" title={p.businessDeveloper || ""}>{p.businessDeveloper || "—"}</td>
+                      <td className="px-2 py-1.5">{p.province || "—"}</td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{p.sizeKwp ? p.sizeKwp.toLocaleString() : "—"}</td>
+                      <td className="px-2 py-1.5">{p.projectType || "—"}</td>
+                      <td className="px-2 py-1.5">{p.fundingType || "—"}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{formatDate(p.startDate)}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{formatDate(p.pcDate)}</td>
+                      <td className="px-2 py-1.5">{p.status ? <Badge variant="outline" className="text-[10px]">{p.status}</Badge> : "—"}</td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.budgetRevenue)}</td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.budgetCos)}</td>
+                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.budgetGp < 0 && "text-red-600")}>{formatRand(p.budgetGp)}</td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.actualRevenue)}</td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.actualExpense)}</td>
+                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGp < 0 && "text-red-600")}>{formatRand(p.actualGp)}</td>
+                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.budgetGpPct != null && p.budgetGpPct < 0 && "text-red-600")}>{formatPct(p.budgetGpPct)}</td>
+                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGpPct != null && p.actualGpPct < 0 && "text-red-600")}>{formatPct(p.actualGpPct)}</td>
+                    </tr>
+                  ))}
                 </>
               )}
             </tbody>
