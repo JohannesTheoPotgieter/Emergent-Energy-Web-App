@@ -663,10 +663,12 @@ export function registerMsSyncRoutes(app: Express) {
             `
         ).then((r: any) => Array.isArray(r) ? r : (r.rows || [])),
 
-        db.select().from(engineeringTasks).where(
+        // Prompt 8: Read ENG tasks from work_items instead of engineering_tasks
+        db.select().from(workItems).where(
           and(
-            eq(engineeringTasks.assigneeUserId, userId),
-            isNull(engineeringTasks.softDeletedAt)
+            eq(workItems.workstream, "ENG"),
+            eq(workItems.ownerUserId, userId),
+            isNull(workItems.deletedAt)
           )
         ),
 
