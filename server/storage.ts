@@ -586,8 +586,16 @@ export class DatabaseStorage implements IStorage {
 
   // Projects (legacy)
   async getAllProjects(): Promise<Project[]> {
-    const rows = await this.dbInstance.select().from(projectInfo).orderBy(desc(projectInfo.updatedAt));
-    return rows.map((p) => this.mapProjectInfoToLegacyProject(p));
+    try {
+      const rows = await this.dbInstance.select().from(projectInfo).orderBy(desc(projectInfo.updatedAt));
+      return rows.map((p) => this.mapProjectInfoToLegacyProject(p));
+    } catch (error) {
+      if (this.shouldUseLegacyProjectInfoReadFallback(error)) {
+        const rows = await this.listLegacyCompatibleProjectInfo();
+        return rows.map((p) => this.mapProjectInfoToLegacyProject(p));
+      }
+      throw error;
+    }
   }
 
   async getProject(id: number): Promise<Project | undefined> {
@@ -887,22 +895,39 @@ export class DatabaseStorage implements IStorage {
   }
 
   private shouldUseLegacyProjectInfoReadFallback(error: unknown): boolean {
-    if (getDbMode() !== "sqlite") {
-      return false;
+    const mode = getDbMode();
+    const message = error instanceof Error ? error.message : String(error ?? "");
+
+    const missingColumnNames = [
+      "phase_updated_at",
+      "phase_updated_by_user_id",
+      "phase_notes",
+      "execution_phase",
+      "client_id",
+      "archived_status",
+      "pm_user_id",
+      "pd_user_id",
+      "cp_signed",
+      "cp_signed_date",
+      "cp_signed_by_user_id",
+      "cp_evidence_type",
+      "cp_evidence_ref",
+      "pm_task_pack_created",
+      "eng_post_cp_task_pack_created",
+    ];
+
+    if (mode === "sqlite") {
+      return message.includes("no such column")
+        && missingColumnNames.some((col) => message.includes(col));
     }
 
-    const message = error instanceof Error ? error.message : String(error ?? "");
-    return message.includes("no such column")
-      && [
-        "phase_updated_at",
-        "phase_updated_by_user_id",
-        "phase_notes",
-        "execution_phase",
-        "client_id",
-        "archived_status",
-        "pm_user_id",
-        "pd_user_id",
-      ].some((column) => message.includes(column));
+    // PostgreSQL: error code 42703 = undefined_column
+    const code = (error as any)?.code;
+    if (code === "42703") {
+      return missingColumnNames.some((col) => message.includes(col));
+    }
+
+    return false;
   }
 
   private async listLegacyCompatibleProjectInfo(filters?: {
