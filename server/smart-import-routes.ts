@@ -43,6 +43,7 @@ import {
   conflictResolutionLog,
 } from "@shared/schema";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
+import { softCloseByProjectId, softCloseByProjectName, softCloseByImportRunId, addTemporalColumns } from "./lib/temporal-helpers";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
 
@@ -1694,15 +1695,17 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         }
       }
 
+      // Temporal: soft-close existing rows instead of hard delete (Prompt 10)
       if (projectId) {
-        await tx.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectId, projectId));
-        await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.projectId, projectId));
+        await softCloseByProjectId(tx, "normalized_revenue_lines", projectId);
+        await softCloseByProjectId(tx, "normalized_cost_lines", projectId);
         await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectId, projectId));
       } else {
-        await tx.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, projectName));
-        await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
+        await softCloseByProjectName(tx, "normalized_revenue_lines", projectName);
+        await softCloseByProjectName(tx, "normalized_cost_lines", projectName);
         await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, projectName));
       }
+      const commitTimestamp = new Date();
       const scenarioIds = await tx
         .select({ id: workingPlanScenario.id })
         .from(workingPlanScenario)
@@ -1920,7 +1923,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             };
           });
         if (revValues.length > 0) {
-          await tx.insert(normalizedRevenueLines).values(revValues);
+          await tx.insert(normalizedRevenueLines).values(addTemporalColumns(revValues, runId, commitTimestamp) as any);
         }
         counts.revenueLines = revValues.length;
       }
@@ -1953,7 +1956,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           }
         }
 
-        await tx.delete(programInflows).where(eq(programInflows.projectName, projectName));
+        // Temporal: soft-close existing program_inflows instead of hard delete (Prompt 10)
+        await softCloseByProjectName(tx, "program_inflows", projectName);
         if (norm.revenueLines.length > 0) {
           const revIgnored = ignoredRows.get("REVENUE") || new Set();
           const revOverrides = overrideRows.get("REVENUE") || new Map();
@@ -2001,7 +2005,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               };
             });
           if (piValues.length > 0) {
-            await tx.insert(programInflows).values(piValues);
+            await tx.insert(programInflows).values(addTemporalColumns(piValues, runId, commitTimestamp) as any);
             console.log(`[SmartImport] Wrote ${piValues.length} program_inflows rows for "${projectName}"`);
           }
         }
@@ -2122,7 +2126,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             const { _actualCos, ...normalized } = c;
             return normalized;
           });
-          await tx.insert(normalizedCostLines).values(normalizedInserts);
+          await tx.insert(normalizedCostLines).values(addTemporalColumns(normalizedInserts, runId, commitTimestamp) as any);
 
           if (manualEditsToPreserve.size > 0) {
             const insertedRows = projectId
@@ -2190,7 +2194,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           console.warn(`[SmartImport] Re-import will overwrite ${editedExpenseCount} user-edited program_expense rows for "${projectName}"`);
         }
 
-        await tx.delete(programExpense).where(eq(programExpense.projectName, projectName));
+        // Temporal: soft-close existing program_expense instead of hard delete (Prompt 10)
+        await softCloseByProjectName(tx, "program_expense", projectName);
 
         const toStr = (v: any): string | null => v != null ? String(v) : null;
         if (norm.costLines.length > 0) {
@@ -2230,7 +2235,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               };
             });
           if (peValues.length > 0) {
-            await tx.insert(programExpense).values(peValues);
+            await tx.insert(programExpense).values(addTemporalColumns(peValues, runId, commitTimestamp) as any);
             console.log(`[SmartImport] Wrote ${peValues.length} program_expense rows for "${projectName}"`);
           }
         }
@@ -2307,9 +2312,11 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           if (cs.actualProfit != null) vals.actualProfit = String(cs.actualProfit);
           if (cs.actualMargin != null) vals.actualMargin = String(cs.actualMargin);
           if (existing) {
-            await tx.update(projectRevenueSummary).set(vals).where(eq(projectRevenueSummary.id, existing.id));
+            // Temporal: soft-close old row, insert new version (Prompt 10)
+            await softCloseByProjectName(tx, "project_revenue_summary", projectName);
+            await tx.insert(projectRevenueSummary).values(addTemporalColumns({ projectName, ...vals }, runId, commitTimestamp) as any);
           } else {
-            await tx.insert(projectRevenueSummary).values({ projectName, ...vals } as any);
+            await tx.insert(projectRevenueSummary).values(addTemporalColumns({ projectName, ...vals }, runId, commitTimestamp) as any);
           }
           console.log(`[SmartImport] Saved costedSummary for "${projectName}":`, JSON.stringify(vals));
         }
@@ -2568,13 +2575,13 @@ router.post("/api/smart-import/:runId/rollback", requireAuth, requirePermission(
     }
 
     await db.transaction(async (tx: any) => {
-      // GC-001: Also rollback legacy tables that are written during commit
-      await tx.delete(programInflows).where(eq(programInflows.importRunId, runId));
-      await tx.delete(programExpense).where(eq(programExpense.importRunId, runId));
+      // Temporal: soft-close rows from this import run instead of hard delete (Prompt 10)
+      await softCloseByImportRunId(tx, "program_inflows", runId);
+      await softCloseByImportRunId(tx, "program_expense", runId);
       await tx.delete(invoicePatternMatches).where(eq(invoicePatternMatches.importRunId, runId));
 
-      await tx.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.importRunId, runId));
-      await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.importRunId, runId));
+      await softCloseByImportRunId(tx, "normalized_revenue_lines", runId);
+      await softCloseByImportRunId(tx, "normalized_cost_lines", runId);
       await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.importRunId, runId));
 
       const rollbackWis = await tx

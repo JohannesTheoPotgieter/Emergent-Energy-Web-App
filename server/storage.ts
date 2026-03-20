@@ -4,6 +4,7 @@ import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { UsersRepository } from "./repositories/users-repository";
 import { WorkManagementRepository } from "./repositories/work-management-repository";
+import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
@@ -707,7 +708,8 @@ export class DatabaseStorage implements IStorage {
   async deleteExpensesByProject(projectId: number): Promise<void> {
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
     if (!project?.projectName) return;
-    await this.dbInstance.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, project.projectName));
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "normalized_cost_lines", project.projectName);
   }
 
   // Revenues (legacy)
@@ -754,7 +756,8 @@ export class DatabaseStorage implements IStorage {
   async deleteRevenuesByProject(projectId: number): Promise<void> {
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
     if (!project?.projectName) return;
-    await this.dbInstance.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, project.projectName));
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "normalized_revenue_lines", project.projectName);
   }
 
   // Tasks (legacy)
@@ -1126,7 +1129,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProgramExpensesByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "normalized_cost_lines", projectName);
   }
 
   async updateProgramExpenseFields(id: number, fields: Record<string, any>): Promise<ProgramExpense | undefined> {
@@ -1204,7 +1208,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProgramInflowsByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, projectName));
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "normalized_revenue_lines", projectName);
   }
 
   // Project Plan — reads from work_items (PM workstream, SMART_IMPORT source)
@@ -1338,7 +1343,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteCashflowPointsByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(cashflowPoints).where(eq(cashflowPoints.projectName, projectName));
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "cashflow_points", projectName);
   }
 
   // Finance Revenue Monthly (new)
@@ -1368,7 +1374,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteFinanceRevenueMonthlyByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(financeRevenueMonthly).where(eq(financeRevenueMonthly.projectName, projectName));
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "finance_revenue_monthly", projectName);
   }
 
   // Finance COS Monthly (new)
@@ -1398,7 +1405,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteFinanceCosMonthlyByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(financeCosMonthly).where(eq(financeCosMonthly.projectName, projectName));
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "finance_cos_monthly", projectName);
   }
 
   // ===================== INLINE EDIT METHODS (replaces override tables) =====================
@@ -2057,13 +2065,16 @@ export class DatabaseStorage implements IStorage {
   async upsertProjectRevenueSummary(data: InsertProjectRevenueSummary): Promise<ProjectRevenueSummary> {
     const existing = await this.getProjectRevenueSummary(data.projectName);
     if (existing) {
-      const updated = await this.dbInstance.update(projectRevenueSummary)
-        .set({ ...data, capturedAt: new Date() })
-        .where(eq(projectRevenueSummary.projectName, data.projectName))
+      // Temporal: soft-close old row, insert new version (Prompt 10)
+      await softCloseByProjectName(this.dbInstance, "project_revenue_summary", data.projectName);
+      const inserted = await this.dbInstance.insert(projectRevenueSummary)
+        .values(addTemporalColumns({ ...data, capturedAt: new Date() }) as any)
         .returning();
-      return updated[0];
+      return inserted[0];
     } else {
-      const inserted = await this.dbInstance.insert(projectRevenueSummary).values(data).returning();
+      const inserted = await this.dbInstance.insert(projectRevenueSummary)
+        .values(addTemporalColumns(data) as any)
+        .returning();
       return inserted[0];
     }
   }
