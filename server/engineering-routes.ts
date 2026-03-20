@@ -2252,6 +2252,18 @@ export function registerEngineeringRoutes(app: Express) {
         taskTypeTag: t.taskTypeTag,
       });
 
+      // Collect IDs of tasks already shown in a named section
+      const shownIds = new Set<number>();
+      for (const t of overdueItems) shownIds.add(t.id);
+      for (const t of holdItems) shownIds.add(t.id);
+      for (const t of upcomingThisWeek) shownIds.add(t.id);
+      for (const t of needsApproval) shownIds.add(t.id);
+      for (const t of inProgress) shownIds.add(t.id);
+      for (const t of recentlyCompleted) shownIds.add(t.id);
+
+      // Catch-all: active tasks not covered by any section above
+      const otherActive = allTasks.filter(t => openStatuses.has(t.status) && !shownIds.has(t.id));
+
       res.json({
         date: todayStr,
         summary: {
@@ -2265,14 +2277,15 @@ export function registerEngineeringRoutes(app: Express) {
           upcomingThisWeekCount: upcomingThisWeek.length,
           needsApprovalCount: needsApproval.length,
         },
-        recentlyCompleted: recentlyCompleted.slice(0, 20).map(mapTask),
+        recentlyCompleted: recentlyCompleted.map(mapTask),
         blockers: {
-          hold: holdItems.slice(0, 20).map(mapTask),
-          overdue: overdueItems.slice(0, 20).map(mapTask),
+          hold: holdItems.map(mapTask),
+          overdue: overdueItems.map(mapTask),
         },
-        upcomingThisWeek: upcomingThisWeek.slice(0, 30).map(mapTask),
-        needsApproval: needsApproval.slice(0, 15).map(mapTask),
-        inProgressHighlights: inProgress.slice(0, 15).map(mapTask),
+        upcomingThisWeek: upcomingThisWeek.map(mapTask),
+        needsApproval: needsApproval.map(mapTask),
+        inProgressHighlights: inProgress.map(mapTask),
+        otherActive: otherActive.map(mapTask),
         workload,
         projectHealth,
         statusPipeline,

@@ -605,10 +605,29 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
   const projectRows = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
   const projectMap = new Map(projectRows.map((row) => [row.id, row.projectName]));
 
+  // For items without projectId, try to resolve project name from legacy operational_tasks table
+  const orphanedItems = items.filter((wi) => !wi.projectId && wi.legacyTable === "operational_tasks" && wi.legacyId != null);
+  const legacyProjectNameMap = new Map<number, string>();
+  if (orphanedItems.length > 0) {
+    try {
+      const legacyIds = orphanedItems.map((wi) => wi.legacyId!);
+      const legacyRows = await db.execute(
+        sql`SELECT id, project_name FROM operational_tasks WHERE id IN (${sql.join(legacyIds.map((id) => sql`${id}`), sql`, `)})`
+      );
+      for (const row of (legacyRows as any).rows || []) {
+        if (row.project_name) legacyProjectNameMap.set(row.id, row.project_name);
+      }
+    } catch {
+      // operational_tasks table may not exist; ignore
+    }
+  }
+
   return items.map((wi) => ({
     id: wi.id,
     projectId: wi.projectId,
-    projectName: wi.projectId ? projectMap.get(wi.projectId) || null : null,
+    projectName: wi.projectId
+      ? projectMap.get(wi.projectId) || null
+      : (wi.legacyTable === "operational_tasks" && wi.legacyId != null ? legacyProjectNameMap.get(wi.legacyId) || null : null),
     importedTaskId: null,
     taskNumber: wi.wbsCode,
     parentTaskId: wi.parentId,
