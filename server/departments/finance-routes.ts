@@ -904,16 +904,19 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       let pastDueUnpaidSum = 0;
       const todayStr = new Date().toISOString().split('T')[0];
       for (const expense of allExpenses) {
+        // Bottom-up: only aggregate leaf-node (item) rows, matching project-detail level logic
+        if (expense.rowType !== 'item') continue;
         if (projectFilters && !projectFilters.has(expense.projectName || "")) continue;
-        // Use effective payment date: actual payment date, then forecast, then linked task
-        const d = expense.expensePaymentDate || (expense as any).forecastPaymentDate || (expense as any).computedForecastPaymentDate || null;
+        // Use effective payment date: actual payment date, then computed forecast, then forecast, then invoice date
+        const d = expense.expensePaymentDate || (expense as any).computedForecastPaymentDate || (expense as any).forecastPaymentDate || (expense as any).expenseInvoicedDate || null;
         if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
-        if (d >= weekStart && d < weekEnd && expense.expenseActualTotal) {
-          const amt = parseFloat(expense.expenseActualTotal) || 0;
+        // Use actual total with budget fallback, matching project-detail level logic
+        const amt = parseFloat(expense.expenseActualTotal || (expense as any).budgetTotal || '0') || 0;
+        if (d >= weekStart && d < weekEnd && amt > 0) {
           projectOutflowsSum += amt;
           // Flag past-due unpaid: payment date in past, but not confirmed out of bank
           const payDateConfirmed = expense.expensePaymentDate && isDateConfirmed((expense as any).paymentDateConfirmed, (expense as any).paymentDateFontColor);
-          if (d < todayStr && !payDateConfirmed && amt > 0) {
+          if (d < todayStr && !payDateConfirmed) {
             pastDueUnpaidSum += amt;
           }
         }
@@ -995,19 +998,24 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
 
     const outflows = allExpenses
       .filter(e => {
+        // Bottom-up: only leaf-node (item) rows, matching project-detail level logic
+        if (e.rowType !== 'item') return false;
         if (projectFilters && !projectFilters.has(e.projectName || "")) return false;
-        const pd = e.expensePaymentDate;
+        const pd = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
         if (!pd || !/^\d{4}-\d{2}-\d{2}$/.test(pd)) return false;
         return pd >= weekStart && pd < weekEnd;
       })
-      .map(e => ({
-        projectName: e.projectName,
-        expenseCategory: e.expenseCategory,
-        expenseLineItem: e.expenseLineItem,
-        expenseInvoiceNumber: e.expenseInvoiceNumber,
-        expensePaymentDate: e.expensePaymentDate,
-        expenseActualTotal: e.expenseActualTotal ? parseFloat(e.expenseActualTotal) : 0,
-      }));
+      .map(e => {
+        const effectiveDate = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
+        return {
+          projectName: e.projectName,
+          expenseCategory: e.expenseCategory,
+          expenseLineItem: e.expenseLineItem,
+          expenseInvoiceNumber: e.expenseInvoiceNumber,
+          expensePaymentDate: effectiveDate,
+          expenseActualTotal: parseFloat(e.expenseActualTotal || (e as any).budgetTotal || '0') || 0,
+        };
+      });
 
     const inflows = resolvedInflows
       .filter((inf: any) => {
@@ -2687,7 +2695,7 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
         }
 
         for (const exp of projExpenses) {
-          const d = exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate;
+          const d = exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate || exp.expenseInvoicedDate || null;
           if (!d || !/^\d{4}-\d{2}-\d{2}/.test(d)) continue;
           const amt = parseFloat(exp.expenseActualTotal || exp.budgetTotal || '0');
           if (amt === 0) continue;

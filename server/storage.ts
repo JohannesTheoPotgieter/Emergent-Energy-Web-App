@@ -1044,12 +1044,38 @@ export class DatabaseStorage implements IStorage {
 
   async getAllProgramExpenses(): Promise<any[]> {
     const { adaptCostToExpense, createNameResolver } = await import("./lib/data-merge");
-    const [costLines, piRows] = await Promise.all([
+    const [costLines, piRows, peRows] = await Promise.all([
       this.dbInstance.select().from(normalizedCostLines),
       this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
+      this.dbInstance.select().from(programExpense),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-    return costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
+    const adapted = costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
+
+    // Enrich with programExpense data (budget totals, forecast dates) — matching
+    // getProgramExpensesByProject() so portfolio reads from project-detail level up
+    if (peRows.length > 0) {
+      const budgetByKey = new Map<string, any>();
+      for (const pe of peRows) {
+        if (pe.rowNumber != null) {
+          budgetByKey.set(`${pe.projectName}::${pe.rowNumber}`, pe);
+        }
+      }
+
+      for (const item of adapted) {
+        const pe = budgetByKey.get(`${item.projectName}::${item.rowNumber}`);
+        if (pe) {
+          if (pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
+          if (pe.budgetQty != null) item.budgetQty = String(pe.budgetQty);
+          if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
+          if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
+          if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
+          if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
+        }
+      }
+    }
+
+    return adapted;
   }
 
   async getProgramExpensesByProject(projectName: string): Promise<any[]> {
@@ -1075,6 +1101,7 @@ export class DatabaseStorage implements IStorage {
         if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
         if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
         if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
+        if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
       }
     }
     return adapted;
