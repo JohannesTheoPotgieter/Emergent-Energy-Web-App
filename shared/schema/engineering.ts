@@ -3,7 +3,7 @@ import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, re
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-import { users } from "./users";
+import { users, organizations } from "./users";
 import { projectInfo, companyLifecyclePhaseEnum } from "./projects";
 import { workItems } from "./tasks";
 
@@ -156,8 +156,10 @@ export const engStageTemplates = pgTable("eng_stage_templates", {
   isActive: boolean("is_active").notNull().default(true),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Multi-tenancy (Prompt 11)
+  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
 });
-export const insertEngStageTemplateSchema = createInsertSchema(engStageTemplates).omit({ id: true, createdAt: true } as any);
+export const insertEngStageTemplateSchema = createInsertSchema(engStageTemplates).omit({ id: true, createdAt: true, organizationId: true } as any);
 export type InsertEngStageTemplate = z.infer<typeof insertEngStageTemplateSchema>;
 export type EngStageTemplate = typeof engStageTemplates.$inferSelect;
 
