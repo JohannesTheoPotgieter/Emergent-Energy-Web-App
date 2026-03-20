@@ -3,7 +3,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, revenueTrackingOverrides, cosStatusOverrides, projectExecutionState } from "@shared/schema";
+import { projectInfo, operationalTasks, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState } from "@shared/schema";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
@@ -343,10 +343,6 @@ export function registerLifecycleRoutes(app: Express) {
         actualEnd: wi.actualEnd,
       }));
 
-      // DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
-      // We still read allPlanOverrides for milestone detection below, but skip the merge.
-      const allPlanOverrides = await db.select().from(projectPlanOverrides);
-
       const allPlanTasks = rawPlanTasks;
 
       const trackerProjectNames = new Set<string>();
@@ -468,21 +464,6 @@ export function registerLifecycleRoutes(app: Express) {
       const todayDate = new Date().toISOString().split("T")[0];
 
       const milestoneKeys = new Set<string>();
-      for (const o of allPlanOverrides) {
-        if (o.fieldName === "parentRowNumber" && o.overrideValue && o.overrideValue !== "" && o.overrideValue !== "0") {
-          milestoneKeys.add(`${o.projectName}::${o.overrideValue}`);
-        }
-      }
-      for (const o of allPlanOverrides) {
-        if (o.fieldName === "indentLevel" && o.overrideValue === "0" && milestoneKeys.has(`${o.projectName}::${o.rowNumber}`)) {
-          milestoneKeys.add(`${o.projectName}::${o.rowNumber}`);
-        }
-      }
-      for (const o of allPlanOverrides) {
-        if (o.rowNumber < 0) {
-          milestoneKeys.add(`${o.projectName}::${o.rowNumber}`);
-        }
-      }
 
       const planByNorm = new Map<string, { total: number; weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number }>();
       for (const p of allPlanTasks) {
@@ -1776,7 +1757,6 @@ export function registerLifecycleRoutes(app: Express) {
         await safeDel(sql`DELETE FROM import_issues WHERE import_run_id IN (SELECT id FROM smart_import_runs WHERE project_id = ${pId})`);
         await safeDel(sql`DELETE FROM teams_chat_messages WHERE group_id IN (SELECT id FROM teams_chat_groups WHERE project_id = ${pId})`);
         await safeDel(sql`DELETE FROM teams_chat_members WHERE group_id IN (SELECT id FROM teams_chat_groups WHERE project_id = ${pId})`);
-        await safeDel(sql`DELETE FROM working_plan_task_override WHERE scenario_id IN (SELECT id FROM working_plan_scenario WHERE project_name = ${pN})`);
         await safeDel(sql`DELETE FROM working_plan_dependency_override WHERE scenario_id IN (SELECT id FROM working_plan_scenario WHERE project_name = ${pN})`);
         await safeDel(sql`DELETE FROM project_plan_dependency WHERE project_name = ${pN}`);
         await safeDel(sql`DELETE FROM field_changes WHERE change_set_id IN (SELECT id FROM change_sets WHERE project_name = ${pN})`);
@@ -1815,13 +1795,6 @@ export function registerLifecycleRoutes(app: Express) {
         await safeDel(sql`DELETE FROM project_plan WHERE project_name = ${pN}`);
         await safeDel(sql`DELETE FROM project_notes WHERE project_name = ${pN}`);
         await safeDel(sql`DELETE FROM cashflow_points WHERE project_name = ${pN}`);
-        await safeDel(sql`DELETE FROM project_plan_overrides WHERE project_name = ${pN}`);
-        await safeDel(sql`DELETE FROM revenue_tracking_overrides WHERE project_name = ${pN}`);
-        await safeDel(sql`DELETE FROM expenditure_overrides WHERE project_name = ${pN}`);
-        await safeDel(sql`DELETE FROM cashflow_planning_overrides WHERE project_name = ${pN}`);
-        await safeDel(sql`DELETE FROM cos_status_overrides WHERE project_name = ${pN}`);
-        await safeDel(sql`DELETE FROM finance_revenue_overrides WHERE project_name = ${pN}`);
-        await safeDel(sql`DELETE FROM finance_cos_overrides WHERE project_name = ${pN}`);
         await safeDel(sql`DELETE FROM milestone_task_links WHERE project_name = ${pN}`);
         await safeDel(sql`DELETE FROM expense_task_links WHERE project_name = ${pN}`);
         await safeDel(sql`DELETE FROM key_date_mappings WHERE project_name = ${pN}`);
@@ -1840,8 +1813,6 @@ export function registerLifecycleRoutes(app: Express) {
         await safeDel(sql`DELETE FROM available_payment_overrides WHERE project_name = ${pN}`);
         await safeDel(sql`DELETE FROM available_payment_history WHERE project_name = ${pN}`);
         await safeDel(sql`DELETE FROM tracker_monthly_manual WHERE project_name = ${pN}`);
-        await safeDel(sql`DELETE FROM planning_overrides WHERE project_name = ${pN}`);
-        await safeDel(sql`DELETE FROM line_item_overrides WHERE project_name = ${pN}`);
         await safeDel(sql`DELETE FROM change_sets WHERE project_name = ${pN}`);
         await safeDel(sql`DELETE FROM weekly_reviews WHERE project_name = ${pN}`);
         await safeDel(sql`DELETE FROM derived_project_kpis WHERE project_name = ${pN}`);

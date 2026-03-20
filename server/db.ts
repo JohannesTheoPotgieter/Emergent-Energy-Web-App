@@ -474,19 +474,6 @@ async function ensureSqliteSchema() {
       )
     `);
     
-    // Cashflow Planning Overrides table (user edits)
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS cashflow_planning_overrides (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_name TEXT NOT NULL,
-        week_start_date TEXT NOT NULL,
-        series_name TEXT NOT NULL,
-        override_value REAL NOT NULL,
-        created_by INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
 
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS counterparties (

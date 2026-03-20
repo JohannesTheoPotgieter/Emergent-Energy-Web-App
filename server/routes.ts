@@ -9,7 +9,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense } from "@shared/schema";
+import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense } from "@shared/schema";
 import { inlineEdit } from "./lib/inline-edit-helper";
 import { db } from "./db";
 import { safeLegacyQuery } from "./legacy-table-guard";
@@ -24,7 +24,7 @@ import { scoreExpenseConfidence, scoreInflowConfidence, getAssumptionDriver } fr
 import { aggregateCOS, aggregateCOSByProject } from "./lib/calculations/cosAggregator";
 import { computeWeeklyCashflow, getLinesForWeek, type CashflowLineItem } from "./lib/calculations/cashflow";
 import { runDataQualityChecks } from "./lib/calculations/dataQuality";
-import { buildOverrideMap, applyOverridesToCashflowLines, applyOverridesToCOSLines, computeMonthlyBuckets, getEffectiveDate } from "./lib/calculations/scenarioResolver";
+import { computeMonthlyBuckets, getEffectiveDate } from "./lib/calculations/scenarioResolver";
 import { recordOverride, recordManualEdit } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
 
@@ -317,23 +317,6 @@ function coercePlanOverride(fieldName: string, value: any): any {
   return value;
 }
 
-// DEPRECATED: Override data is now baked into base table rows (source='imported_edited').
-// These functions are pass-throughs kept for API compatibility during transition.
-function applyProjectPlanOverrides(
-  baselineRows: any[],
-  _overrides: any[]
-): any[] {
-  // Overrides are now inline in the base rows — return as-is
-  return baselineRows;
-}
-
-function applyRevenueTrackingOverrides(
-  baselineRows: any[],
-  _overrides: any[]
-): any[] {
-  return baselineRows;
-}
-
 /**
  * Resolve effective dates for all inflows by applying the Revenue tab date hierarchy:
  *   1. dateOverride from milestone_task_links (manual override)
@@ -407,33 +390,6 @@ function resolveInflowEffectiveDates(
   });
 }
 
-function applyExpenditureOverrides(
-  baselineRows: any[],
-  _overrides: any[]
-): any[] {
-  return baselineRows;
-}
-
-function applyExpenditureOverridesWithConfirmed(
-  baselineRows: any[],
-  _overrides: any[]
-): any[] {
-  return baselineRows;
-}
-
-function applyFinanceRevenueOverrides(
-  baselineData: any[],
-  _overrides: any[]
-): any[] {
-  return baselineData;
-}
-
-function applyFinanceCosOverrides(
-  baselineData: any[],
-  _overrides: any[]
-): any[] {
-  return baselineData;
-}
 
 const requireAuth = sharedRequireAuth;
 
@@ -1170,11 +1126,11 @@ export async function registerRoutes(
         storage.getAllProjectRevenueSummaries(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
-        storage.getAllProjectPlanOverrides(),
+        Promise.resolve([]),
         getAllPMWorkItemsAsProjectPlan(),
       ]);
       const allExpenses = legacyExpenses;
-      const allPlans = applyProjectPlanOverrides(legacyPlans, allPlanOverrides);
+      const allPlans = legacyPlans;
       const allInflows = resolveInflowEffectiveDates(legacyRawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
@@ -1897,7 +1853,7 @@ export async function registerRoutes(
                 scheduledEndTime: null,
               }));
             })(),
-        storage.getAllProjectPlanOverrides(),
+        Promise.resolve([]),
         db
           .select({
             projectName: smartImportRuns.projectName,
@@ -1909,7 +1865,7 @@ export async function registerRoutes(
         usePromotedProjectDetail ? listClientsFromPromotedCoreCompat() : db.select().from(clients),
         db.execute(sql.raw(`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`)),
       ]);
-      const allPlans = applyProjectPlanOverrides(rawPlans, allPlanOverrides);
+      const allPlans = rawPlans;
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const clientMap = new Map(allClientsData.map(c => [c.id, c.name]));
@@ -3323,17 +3279,16 @@ export async function registerRoutes(
 
   app.get("/api/cos-tracker", requireAuth, async (req, res) => {
     try {
-      const [legacyExpenses, manualEntries, legacyRawInflows, allTaskLinks, allOpTasks, allPlans, allOverrides] = await Promise.all([
+      const [legacyExpenses, manualEntries, legacyRawInflows, allTaskLinks, allOpTasks, allPlans] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getTrackerMonthlyManual('COS'),
         storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
-        storage.getAllExpenditureOverrides(),
       ]);
       const mergedData = await getMergedExpensesAndInflows(
-        applyExpenditureOverridesWithConfirmed(legacyExpenses, allOverrides),
+        legacyExpenses,
         legacyRawInflows
       );
       const allProgramExpenses = mergedData.expenses;
@@ -3496,12 +3451,9 @@ export async function registerRoutes(
       const match = monthKey.match(/^(\d{4})-(\d{2})$/);
       if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
-      const [legacyExp, allOverrides] = await Promise.all([
-        storage.getAllProgramExpenses(),
-        storage.getAllExpenditureOverrides(),
-      ]);
+      const legacyExp = await storage.getAllProgramExpenses();
       const { expenses: allExpenses } = await getMergedExpensesAndInflows(
-        applyExpenditureOverridesWithConfirmed(legacyExp, allOverrides), []
+        legacyExp, []
       );
 
       interface LineItem {
@@ -3680,12 +3632,9 @@ export async function registerRoutes(
 
   app.get("/api/realisation-kpis", requireAuth, async (req, res) => {
     try {
-      const [legacyExpenses, allOverrides] = await Promise.all([
-        storage.getAllProgramExpenses(),
-        storage.getAllExpenditureOverrides(),
-      ]);
+      const legacyExpenses = await storage.getAllProgramExpenses();
       const { expenses: allExpenses } = await getMergedExpensesAndInflows(
-        applyExpenditureOverridesWithConfirmed(legacyExpenses, allOverrides), []
+        legacyExpenses, []
       );
 
       const now = new Date();
@@ -4142,8 +4091,8 @@ export async function registerRoutes(
         db.select().from(cashflowPoints),
         db.select().from(financeRevenueMonthly),
         db.select().from(financeCosMonthly),
-        db.select().from(revenueTrackingOverrides).where(eq(revenueTrackingOverrides.fieldName, "inBank")),
-        db.select().from(cosStatusOverrides),
+        Promise.resolve([]),
+        Promise.resolve([]),
       ]);
 
       const userNameById = new Map<number, string>((usersResult.rows as any[]).map((u: any) => [Number(u.id), u.name || `User ${u.id}`]));
@@ -4901,13 +4850,13 @@ export async function registerRoutes(
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
-        storage.getAllProjectPlanOverrides(),
+        Promise.resolve([]),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
-        db.select().from(revenueTrackingOverrides).where(eq(revenueTrackingOverrides.fieldName, "inBank")),
+        Promise.resolve([]),
       ]);
       const allExpenses = legacyExpenses;
-      const allPlans = applyProjectPlanOverrides(legacyRawPlans, allPlanOverrides);
+      const allPlans = legacyRawPlans;
 
       const inBankOverrideSet = new Set(
         inBankOverrides
@@ -5806,8 +5755,7 @@ export async function registerRoutes(
 
         // Apply overrides if requested
         if (applyOverrides === 'true') {
-          const overrides = await storage.getExpenditureOverridesByProject(projectName);
-          expenses = applyExpenditureOverrides(expenses, overrides);
+          // Override data now baked into base rows
         }
       } else {
         expenses = await storage.getAllProgramExpenses();
@@ -5851,8 +5799,7 @@ export async function registerRoutes(
 
       // Apply overrides if requested
       if (applyOverrides === 'true') {
-        const overrides = await storage.getExpenditureOverridesByProject(projectName);
-        expenses = applyExpenditureOverrides(expenses, overrides);
+        // Override data now baked into base rows
       }
 
       // Sub-project filter (for multi-project/Ad Hoc trackers)
@@ -5884,8 +5831,7 @@ export async function registerRoutes(
 
         // Apply overrides if requested
         if (applyOverrides === 'true') {
-          const overrides = await storage.getRevenueTrackingOverridesByProject(projectName);
-          inflows = applyRevenueTrackingOverrides(inflows, overrides);
+          // Override data now baked into base rows
         }
       } else {
         inflows = await storage.getAllProgramInflows();
@@ -5933,8 +5879,7 @@ export async function registerRoutes(
         
         // Apply overrides if requested
         if (applyOverrides === 'true') {
-          const overrides = await storage.getProjectPlanOverridesByProject(projectName);
-          plans = applyProjectPlanOverrides(plans, overrides);
+          // Override data now baked into base rows
         }
         return res.json(plans);
       }
@@ -5951,8 +5896,7 @@ export async function registerRoutes(
       if (!projectName || typeof projectName !== 'string') {
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
-      const overrides = await storage.getProjectPlanOverridesByProject(projectName);
-      res.json(overrides);
+      res.json([]);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch project plan overrides", message: "Failed to fetch project plan overrides" });
     }
@@ -5965,10 +5909,7 @@ export async function registerRoutes(
       
       let plans = await storage.getProjectPlansByProject(projectName);
       
-      if (applyOverrides !== 'false') {
-        const overrides = await storage.getProjectPlanOverridesByProject(projectName);
-        plans = applyProjectPlanOverrides(plans, overrides);
-      }
+      // Override data now baked into base rows
       
       res.json(plans);
     } catch (error) {
@@ -6811,12 +6752,7 @@ export async function registerRoutes(
           return res.json({ message: "Milestone created", workItemId: newMilestone.id, wbsCode: newWbsCode });
         }
 
-        const existingOverrides = await storage.getProjectPlanOverridesByProject(projectName);
-        let minRow = 0;
-        for (const o of existingOverrides) {
-          if (o.rowNumber < minRow) minRow = o.rowNumber;
-        }
-        const newRowNumber = minRow - 1;
+        const newRowNumber = -1;
 
         const milestoneOverrides = [
           { projectName, rowNumber: newRowNumber, fieldName: "highLevelProgramme", overrideValue: title, createdBy: userId },
@@ -6924,7 +6860,7 @@ export async function registerRoutes(
         if (milestoneRowNumber === undefined || milestoneRowNumber >= 0) {
           return res.status(400).json({ error: "milestoneRowNumber (negative) required" });
         }
-        const allOverrides = await storage.getProjectPlanOverridesByProject(projectName);
+        const allOverrides: any[] = [];
         const childOverrides = allOverrides.filter(
           (o: any) => o.fieldName === "parentRowNumber" && o.overrideValue === String(milestoneRowNumber)
         );
@@ -6966,7 +6902,7 @@ export async function registerRoutes(
         if (!Array.isArray(items) || items.length === 0) {
           return res.status(400).json({ error: "items[] with {rowNumber, sortOrder, parentRowNumber?} required" });
         }
-        const existingOverrides = await storage.getProjectPlanOverridesByProject(projectName);
+        const existingOverrides: any[] = [];
         const indentMap = new Map<number, number>();
         for (const o of existingOverrides) {
           if (o.fieldName === "indentLevel") {
@@ -7001,8 +6937,7 @@ export async function registerRoutes(
         const plansDirect2 = await storage.getProjectPlansByProject(rawProjectName);
         const pName2 = plansDirect2.length > 0 ? rawProjectName : trackerName;
         const rawPlanTasks = plansDirect2.length > 0 ? plansDirect2 : await storage.getProjectPlansByProject(trackerName);
-        const planOverrides = await storage.getProjectPlanOverridesByProject(pName2);
-        const planTasks = applyProjectPlanOverrides(rawPlanTasks, planOverrides);
+        const planTasks = rawPlanTasks;
 
         const SECTION_HEADER_TITLES = ["high level programme", "programme", "high level program"];
         const tasks2 = planTasks
@@ -7509,8 +7444,7 @@ export async function registerRoutes(
       if (!projectName || typeof projectName !== 'string') {
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
-      const overrides = await storage.getRevenueTrackingOverridesByProject(projectName);
-      res.json(overrides);
+      res.json([]);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch revenue tracking overrides", message: "Failed to fetch revenue tracking overrides" });
     }
@@ -7584,7 +7518,7 @@ export async function registerRoutes(
 
       const [rawInflows, overrides, projectInfoList, savedSummary, operationalTasks, planTasks, taskLinks] = await Promise.all([
         storage.getProgramInflowsByProject(projectName),
-        storage.getRevenueTrackingOverridesByProject(projectName),
+        Promise.resolve([]),
         storage.getAllProjectInfo(),
         storage.getProjectRevenueSummary(projectName),
         storage.getOperationalTasksByProject(projectName),
@@ -7592,7 +7526,7 @@ export async function registerRoutes(
         storage.getMilestoneTaskLinks(projectName),
       ]);
 
-      const inflows = applyRevenueTrackingOverrides(rawInflows, overrides);
+      const inflows = rawInflows;
 
       const isRealMilestone = (r: any) => {
         const no = r.milestoneNo;
@@ -7954,8 +7888,7 @@ export async function registerRoutes(
       if (!projectName || typeof projectName !== 'string') {
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
-      const overrides = await storage.getExpenditureOverridesByProject(projectName);
-      res.json(overrides);
+      res.json([]);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch expenditure overrides", message: "Failed to fetch expenditure overrides" });
     }
@@ -8347,20 +8280,20 @@ export async function registerRoutes(
   app.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
     try {
       const projectName = req.params.projectName;
-      const [rawExpenses, taskLinks, opTasks, planTasks, cosOverrides, expenditureOverrides, revSummary] = await Promise.all([
+      const [rawExpenses, taskLinks, opTasks, planTasks, revSummary] = await Promise.all([
         storage.getProgramExpensesByProject(projectName),
         storage.getExpenseTaskLinks(projectName),
         storage.getOperationalTasksByProject(projectName),
         storage.getProjectPlansByProject(projectName),
-        db.select().from(cosStatusOverrides).where(eq(cosStatusOverrides.projectName, projectName)),
-        storage.getExpenditureOverridesByProject(projectName),
         storage.getProjectRevenueSummary(projectName),
       ]);
+      const cosOverrides: any[] = [];
+      const expenditureOverrides: any[] = [];
 
-      const expenses = applyExpenditureOverridesWithConfirmed(rawExpenses, expenditureOverrides);
+      const expenses = rawExpenses;
 
-      const cosOverrideByExpenseId = new Map(cosOverrides.map(o => [o.expenseId, o]));
-      const cosOverrideByRow = new Map(cosOverrides.map(o => [`${o.projectName}:${o.rowNumber}`, o]));
+      const cosOverrideByExpenseId = new Map();
+      const cosOverrideByRow = new Map();
 
       const linkMap = new Map(taskLinks.map(l => [l.expenseId, l]));
 
@@ -8483,30 +8416,7 @@ export async function registerRoutes(
 
       const userName = (req.user as any)?.username || (req.user as any)?.fullName || 'Unknown';
 
-      const existing = await db.select().from(cosStatusOverrides)
-        .where(eq(cosStatusOverrides.expenseId, expenseId));
-
-      if (existing.length > 0) {
-        await db.update(cosStatusOverrides)
-          .set({
-            overrideStatus,
-            reason,
-            originalStatus: originalStatus || existing[0].originalStatus,
-            overriddenBy: userName,
-            updatedAt: new Date(),
-          })
-          .where(eq(cosStatusOverrides.expenseId, expenseId));
-      } else {
-        await db.insert(cosStatusOverrides).values({
-          expenseId,
-          projectName,
-          rowNumber: rowNumber || 0,
-          originalStatus: originalStatus || 'Flagged',
-          overrideStatus,
-          reason,
-          overriddenBy: userName,
-        });
-      }
+      // DEPRECATED: cosStatusOverrides table removed — override data baked into base rows
 
       // Dual-write: apply COS status override to base program_expense row
       try {
@@ -8536,7 +8446,7 @@ export async function registerRoutes(
         console.warn("[COS override delete] Dual-write revert failed (non-fatal):", dualWriteErr);
       }
 
-      await db.delete(cosStatusOverrides).where(eq(cosStatusOverrides.expenseId, expenseId));
+      // DEPRECATED: cosStatusOverrides table removed — override data baked into base rows
 
       logAuditFromReq(req, { entityType: "cos_override", action: "delete", entityId: String(expenseId), changesJson: { description: "COS status override removed" } });
       res.json({ success: true });
@@ -8687,11 +8597,7 @@ export async function registerRoutes(
       if (projectName && typeof projectName === 'string') {
         data = await storage.getFinanceRevenueMonthlyByProject(projectName);
         
-        // Apply overrides if requested
-        if (applyOverrides === 'true') {
-          const overrides = await storage.getFinanceRevenueOverridesByProject(projectName);
-          data = applyFinanceRevenueOverrides(data, overrides);
-        }
+        // Override data now baked into base rows
       } else {
         data = await storage.getAllFinanceRevenueMonthly();
       }
@@ -8717,11 +8623,7 @@ export async function registerRoutes(
       if (projectName && typeof projectName === 'string') {
         data = await storage.getFinanceCosMonthlyByProject(projectName);
         
-        // Apply overrides if requested
-        if (applyOverrides === 'true') {
-          const overrides = await storage.getFinanceCosOverridesByProject(projectName);
-          data = applyFinanceCosOverrides(data, overrides);
-        }
+        // Override data now baked into base rows
       } else {
         data = await storage.getAllFinanceCosMonthly();
       }
@@ -10788,8 +10690,7 @@ export async function registerRoutes(
   app.get("/api/scenarios/:id/overrides", requireAuth, requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const overrides = await storage.getDateOverridesByScenario(id);
-      res.json({ overrides });
+      res.json({ overrides: [] });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -10855,9 +10756,8 @@ export async function registerRoutes(
       let baselineMonthly = computeMonthlyBuckets(cosLines);
 
       if (scenarioId) {
-        const overrides = await storage.getDateOverridesByScenario(scenarioId);
-        const overrideMap = buildOverrideMap(overrides);
-        scenarioLines = applyOverridesToCOSLines(cosLines, overrideMap);
+        const overrideMap = new Map();
+        scenarioLines = cosLines;
       }
 
       const scenarioMonthly = computeMonthlyBuckets(scenarioLines);
@@ -11084,8 +10984,7 @@ export async function registerRoutes(
 
       let overrideMap: any = {};
       if (scenarioId) {
-        const overrides = await storage.getDateOverridesByScenario(scenarioId);
-        overrideMap = buildOverrideMap(overrides);
+        overrideMap = new Map();
       }
 
       const invoiceMap = new Map<string, any>();
@@ -11175,8 +11074,7 @@ export async function registerRoutes(
 
       let overrideMap: any = {};
       if (scenarioId) {
-        const overrides = await storage.getDateOverridesByScenario(scenarioId);
-        overrideMap = buildOverrideMap(overrides);
+        overrideMap = new Map();
       }
 
       let lines = items.map((e: any) => {
@@ -11247,8 +11145,8 @@ export async function registerRoutes(
       const legacyExpSI2 = await storage.getAllProgramExpenses();
       const allExpenses = (await getMergedExpensesAndInflows(legacyExpSI2, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
-      const overrides = await storage.getDateOverridesByScenario(scenarioId);
-      const overrideMap = buildOverrideMap(overrides);
+      const overrides: any[] = [];
+      const overrideMap = new Map();
 
       const shifts: any[] = [];
       for (const ov of overrides) {
@@ -11368,8 +11266,7 @@ export async function registerRoutes(
 
       let scenarioWeeks = baselineWeeks;
       if (scenarioId) {
-        const overrides = await storage.getDateOverridesByScenario(scenarioId);
-        const overrideMap = buildOverrideMap(overrides);
+        const overrideMap = new Map();
         const scenarioData = buildCashflowLines(expenseItems, allInflows, overrideMap);
         scenarioWeeks = computeWeeklyCashflow(scenarioData.inflowLines, scenarioData.outflowLines, '2025-09-01', 52, openingBalance);
       }
@@ -11415,8 +11312,7 @@ export async function registerRoutes(
 
       let overrideMap: any = {};
       if (scenarioId) {
-        const overrides = await storage.getDateOverridesByScenario(scenarioId);
-        overrideMap = buildOverrideMap(overrides);
+        overrideMap = new Map();
       }
 
       const lines: any[] = [];
@@ -11522,8 +11418,7 @@ export async function registerRoutes(
 
       let overrideMap: any = {};
       if (scenarioId) {
-        const overrides = await storage.getDateOverridesByScenario(scenarioId);
-        overrideMap = buildOverrideMap(overrides);
+        overrideMap = new Map();
       }
 
       const projectData = projects.map((p: any) => {
@@ -11566,8 +11461,7 @@ export async function registerRoutes(
 
       let overrideMap: any = {};
       if (scenarioId) {
-        const overrides = await storage.getDateOverridesByScenario(scenarioId);
-        overrideMap = buildOverrideMap(overrides);
+        overrideMap = new Map();
       }
 
       const weeklyDemand = new Map<string, { total: number; projects: string[] }>();
@@ -12393,12 +12287,10 @@ export async function registerRoutes(
       if (baselineTasks.length === 0) {
         const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
 
-        const [allOperationalTasks, planTasksDirect, planTasksTracker, planOverridesDirect, planOverridesTracker] = await Promise.all([
+        const [allOperationalTasks, planTasksDirect, planTasksTracker] = await Promise.all([
           storage.getOperationalTasksByProject(projectName),
           storage.getProjectPlansByProject(projectName),
           projectName !== trackerName ? storage.getProjectPlansByProject(trackerName) : Promise.resolve([]),
-          storage.getProjectPlanOverridesByProject(projectName),
-          projectName !== trackerName ? storage.getProjectPlanOverridesByProject(trackerName) : Promise.resolve([]),
         ]);
 
         const nonClickupOps = allOperationalTasks.filter((t: any) => t.externalSource !== "clickup");
@@ -12406,9 +12298,8 @@ export async function registerRoutes(
         unlinkedOperationalCount = nonClickupOps.length - operationalTasks.length;
 
         const rawPlanTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
-        const planOverrides = planTasksDirect.length > 0 ? planOverridesDirect : planOverridesTracker;
 
-        const planTasks = applyProjectPlanOverrides(rawPlanTasks, planOverrides);
+        const planTasks = rawPlanTasks;
 
         const linkedImportedIds = new Set(
           operationalTasks

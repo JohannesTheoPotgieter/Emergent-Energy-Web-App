@@ -27,7 +27,6 @@ const LEGACY_TABLES = [
   "tasks",
   "intake_tasks",
   "project_eng_tasks",
-  "working_plan_task_override",
 ];
 
 const ARCHIVE_SUFFIX = "_legacy_archive";

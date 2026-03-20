@@ -9,7 +9,6 @@ import { z } from "zod";
 import {
   approvals,
   changeSets,
-  cosStatusOverrides,
   fieldChanges,
   financialEditRequests,
   insertBudgetSchema,
@@ -90,17 +89,6 @@ function isCosRealised(exp: any): boolean {
   return isCosRealisedShared(exp);
 }
 
-// DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
-// COS status overrides are applied directly to program_expense.line_status.
-// These functions are kept as no-ops for backward compatibility during transition.
-async function loadCosOverrides(): Promise<Map<string, string>> {
-  return new Map<string, string>();
-}
-
-function enrichWithOverrides(_expenses: any[], _cosOverrideMap: Map<string, string>): void {
-  // No-op: COS overrides are baked into base rows
-}
-
 function isCashflowConfirmed(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
   const hasPayDate = !!(exp.expensePaymentDate && String(exp.expensePaymentDate).trim());
@@ -158,16 +146,6 @@ function calculateRevenueRecognition(
   });
 
   return { weekly, cumulative };
-}
-
-// DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
-function applyPlanningOverrides(baselinePoints: any[], _overrides: any[]): any[] {
-  return baselinePoints;
-}
-
-// DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
-function applyRevenueTrackingOverrides(baselineRows: any[], _overrides: any[]): any[] {
-  return baselineRows;
 }
 
 function resolveInflowEffectiveDates(
@@ -231,21 +209,6 @@ function resolveInflowEffectiveDates(
       effectiveDate: inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
     };
   });
-}
-
-// DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
-function applyExpenditureOverrides(baselineRows: any[], _overrides: any[]): any[] {
-  return baselineRows;
-}
-
-// DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
-function applyFinanceRevenueOverrides(baselineData: any[], _overrides: any[]): any[] {
-  return baselineData;
-}
-
-// DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
-function applyFinanceCosOverrides(baselineData: any[], _overrides: any[]): any[] {
-  return baselineData;
 }
 
 function normalizeOverrideValue(value: any): any {
@@ -586,9 +549,9 @@ router.get("/api/program/cos", requireAuth, async (req, res) => {
     const [allExpenses, latestRefresh, cosOverrideMapCos] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getLatestRefresh(),
-      loadCosOverrides(),
+      Promise.resolve(new Map()),
     ]);
-    enrichWithOverrides(allExpenses, cosOverrideMapCos);
+
 
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
@@ -1189,9 +1152,9 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),
       storage.getAllProjectPlans(),
-      loadCosOverrides(),
+      Promise.resolve(new Map()),
     ]);
-    enrichWithOverrides(allProgramExpenses, cosOverrideMap);
+
     const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
     const revByMonth = new Map<string, number>();
@@ -1451,9 +1414,9 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
 
     const [allExpenses, cosOverrideMapMD] = await Promise.all([
       storage.getAllProgramExpenses(),
-      loadCosOverrides(),
+      Promise.resolve(new Map()),
     ]);
-    enrichWithOverrides(allExpenses, cosOverrideMapMD);
+
 
     interface LineItem {
       id: number;
@@ -1759,9 +1722,9 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
       storage.getAllProgramInflows(),
       storage.getTrackerMonthlyManual('REV'),
       storage.getTrackerMonthlyManual('COS'),
-      loadCosOverrides(),
+      Promise.resolve(new Map()),
     ]);
-    enrichWithOverrides(allExpenses, cosOverrideMap);
+
 
     const revManualBudgetMap = new Map(revManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
     const cosManualBudgetMap = new Map(cosManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
@@ -1914,9 +1877,9 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res)
     const [projectExpenses, revLines, cosOverrideMapProj] = await Promise.all([
       storage.getProgramExpensesByProject(projectName),
       storage.getProgramInflowsByProject(projectName),
-      loadCosOverrides(),
+      Promise.resolve(new Map()),
     ]);
-    enrichWithOverrides(projectExpenses, cosOverrideMapProj);
+
 
     const totalMilestoneRevenue = revLines.reduce((s: number, r: any) => {
       const amt = parseFloat(r.milestoneAmount as string) || 0;
@@ -2060,9 +2023,9 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
     const [allExpenses, allInflowsRaw, cosOverrideMapGPD] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
-      loadCosOverrides(),
+      Promise.resolve(new Map()),
     ]);
-    enrichWithOverrides(allExpenses, cosOverrideMapGPD);
+
 
     const revByProject = new Map<string, number>();
     for (const rev of allInflowsRaw) {
@@ -2149,9 +2112,9 @@ router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_track
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
       storage.getTrackerMonthlyManual('REV'),
-      loadCosOverrides(),
+      Promise.resolve(new Map()),
     ]);
-    enrichWithOverrides(allExpenses, cosOverrideMap);
+
 
     const manualBudgetMap = new Map(manualEntries.map(e => [e.monthKey, e]));
 
@@ -2293,9 +2256,9 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
 
     const [allExpenses, cosOverrideMapRMD] = await Promise.all([
       project ? storage.getProgramExpensesByProject(project) : storage.getAllProgramExpenses(),
-      loadCosOverrides(),
+      Promise.resolve(new Map()),
     ]);
-    enrichWithOverrides(allExpenses, cosOverrideMapRMD);
+
 
     const allInflowsRaw = project
       ? await storage.getProgramInflowsByProject(project)
@@ -2419,10 +2382,7 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
     if (projectName && typeof projectName === 'string') {
       expenses = await storage.getProgramExpensesByProject(projectName);
 
-      if (applyOverrides === 'true') {
-        const overrides = await storage.getExpenditureOverridesByProject(projectName);
-        expenses = applyExpenditureOverrides(expenses, overrides);
-      }
+      // Override data now baked into base rows
     } else {
       expenses = await storage.getAllProgramExpenses();
     }
@@ -2443,14 +2403,8 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
 router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) => {
   try {
     const { projectName } = req.params;
-    const { applyOverrides } = req.query;
 
     let expenses = await storage.getProgramExpensesByProject(projectName);
-
-    if (applyOverrides === 'true') {
-      const overrides = await storage.getExpenditureOverridesByProject(projectName);
-      expenses = applyExpenditureOverrides(expenses, overrides);
-    }
 
     res.json(expenses);
   } catch (error) {
@@ -2466,10 +2420,7 @@ router.get("/api/program-inflows", requireAuth, async (req, res) => {
     if (projectName && typeof projectName === 'string') {
       inflows = await storage.getProgramInflowsByProject(projectName);
 
-      if (applyOverrides === 'true') {
-        const overrides = await storage.getRevenueTrackingOverridesByProject(projectName);
-        inflows = applyRevenueTrackingOverrides(inflows, overrides);
-      }
+      // Override data now baked into base rows
     } else {
       inflows = await storage.getAllProgramInflows();
     }
@@ -2516,8 +2467,7 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
       points = await storage.getAllCashflowPoints();
     }
 
-    const overrides = await storage.getAllPlanningOverrides();
-    points = applyPlanningOverrides(points, overrides);
+    // Override data now baked into base rows
 
     const expenses = projectName
       ? await storage.getProgramExpensesByProject(projectName)
@@ -2672,11 +2622,8 @@ router.get("/api/cashflow/planning-overrides", requireAuth, async (req, res) => 
     const { projectName } = req.query;
     let overrides;
 
-    if (projectName && typeof projectName === 'string') {
-      overrides = await storage.getPlanningOverridesByProject(projectName);
-    } else {
-      overrides = await storage.getAllPlanningOverrides();
-    }
+    // Override data now baked into base rows
+    overrides = [];
 
     res.json(overrides);
   } catch (error) {
@@ -2763,8 +2710,7 @@ router.get("/api/revenue-tracking/overrides", requireAuth, async (req, res) => {
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    const overrides = await storage.getRevenueTrackingOverridesByProject(projectName);
-    res.json(overrides);
+    res.json([]);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch revenue tracking overrides", message: "Failed to fetch revenue tracking overrides" });
   }
@@ -2810,9 +2756,9 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
     for (const projectName of projectNames) {
       const [rawInflows, existingOverrides] = await Promise.all([
         storage.getProgramInflowsByProject(projectName),
-        storage.getRevenueTrackingOverridesByProject(projectName),
+        Promise.resolve([]),
       ]);
-      const currentRows = applyRevenueTrackingOverrides(rawInflows, existingOverrides);
+      const currentRows = rawInflows;
       baselineRowsByProject.set(
         projectName,
         new Map(currentRows.map((row: any) => [row.rowNumber, row])),
@@ -2825,9 +2771,9 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
       for (const projectName of projectNames) {
         const [rawInflows, latestOverrides] = await Promise.all([
           storage.getProgramInflowsByProject(projectName),
-          storage.getRevenueTrackingOverridesByProject(projectName),
+          Promise.resolve([]),
         ]);
-        const appliedRows = applyRevenueTrackingOverrides(rawInflows, latestOverrides);
+        const appliedRows = rawInflows;
         for (const r of appliedRows) {
           const milestoneNo = r.milestoneNo;
           if (!milestoneNo || !/^\d+$/.test(String(milestoneNo).trim())) continue;
@@ -2918,7 +2864,7 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     const useCanonical = await isWorkItemsEnabled();
     const [rawInflows, overrides, projectInfoList, savedSummary, canonicalTasks, legacyOperationalTasks, planTasks, taskLinks] = await Promise.all([
       storage.getProgramInflowsByProject(projectName),
-      storage.getRevenueTrackingOverridesByProject(projectName),
+      Promise.resolve([]),
       storage.getAllProjectInfo(),
       storage.getProjectRevenueSummary(projectName),
       useCanonical ? getWorkItemsAsOperationalTasks(projectName) : Promise.resolve([]),
@@ -2928,7 +2874,7 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     ]);
     const operationalTasks = (useCanonical && canonicalTasks.length > 0) ? canonicalTasks : legacyOperationalTasks;
 
-    const inflows = applyRevenueTrackingOverrides(rawInflows, overrides);
+    const inflows = rawInflows;
     const sourceInflowByRow = new Map(rawInflows.map((row: any) => [row.rowNumber, row]));
     const overrideByFieldKey = new Map(overrides.map((row: any) => [`${row.rowNumber}|${row.fieldName}`, row]));
     const taskLinkByRow = new Map(taskLinks.map((row: any) => [row.milestoneRowNumber, row]));
@@ -3623,8 +3569,7 @@ router.get("/api/expenditure/overrides", requireAuth, async (req, res) => {
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    const overrides = await storage.getExpenditureOverridesByProject(projectName);
-    res.json(overrides);
+    res.json([]);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch expenditure overrides", message: "Failed to fetch expenditure overrides" });
   }
@@ -3945,13 +3890,11 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
 router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = req.params.projectName;
-    const [expenses, taskLinks, opTasks, planTasks, cosOverrides, expenditureOverrides, projectRows, revSummary] = await Promise.all([
+    const [expenses, taskLinks, opTasks, planTasks, projectRows, revSummary] = await Promise.all([
       storage.getProgramExpensesByProject(projectName),
       storage.getExpenseTaskLinks(projectName),
       storage.getOperationalTasksByProject(projectName),
       storage.getProjectPlansByProject(projectName),
-      db.select().from(cosStatusOverrides).where(eq(cosStatusOverrides.projectName, projectName)),
-      storage.getExpenditureOverridesByProject(projectName),
       db
         .select({
           id: projectInfo.id,
@@ -3963,15 +3906,13 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
       storage.getProjectRevenueSummary(projectName),
     ]);
 
-    const cosOverrideByExpenseId = new Map(cosOverrides.map(o => [o.expenseId, o]));
-    const cosOverrideByRow = new Map(cosOverrides.map(o => [`${o.projectName}:${o.rowNumber}`, o]));
-    const overrideByFieldKey = new Map(expenditureOverrides.map((row: any) => [`${row.rowNumber}|${row.fieldName}`, row]));
+    const cosOverrideByExpenseId = new Map();
+    const cosOverrideByRow = new Map();
+    const overrideByFieldKey = new Map();
     const governance = await loadProjectFinanceGovernanceContext(
       projectName,
       projectRows[0]?.id ?? null,
-      expenditureOverrides
-        .map((row: any) => row.createdBy)
-        .filter((id: any): id is number => typeof id === "number" && Number.isFinite(id))
+      []
     );
 
     const linkMap = new Map(taskLinks.map(l => [l.expenseId, l]));
@@ -4170,8 +4111,8 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
     const committedUnpaidTotal = enriched
       .filter((item: any) => item.cosStatus === "Committed" && item.paymentStatus !== "Out of Bank")
       .reduce((sum: number, item: any) => sum + safeNum(item.expenseActualTotal), 0);
-    const overriddenRowCount = new Set(expenditureOverrides.map((row: any) => row.rowNumber)).size;
-    const overriddenFieldCount = new Set(expenditureOverrides.map((row: any) => `${row.rowNumber}:${row.fieldName}`)).size;
+    const overriddenRowCount = 0;
+    const overriddenFieldCount = 0;
     const noRevenueLinkedCount = enriched.filter((item: any) => item.noRevenueLinked).length;
     const overBudgetItems = enriched.filter((item: any) => safeNum(item.expenseActualTotal) > safeNum(item.budgetTotal));
     const riskSignals = [
@@ -4407,10 +4348,7 @@ router.get("/api/finance/revenue", requireAuth, async (req, res) => {
     if (projectName && typeof projectName === 'string') {
       data = await storage.getFinanceRevenueMonthlyByProject(projectName);
 
-      if (applyOverrides === 'true') {
-        const overrides = await storage.getFinanceRevenueOverridesByProject(projectName);
-        data = applyFinanceRevenueOverrides(data, overrides);
-      }
+      // Override data now baked into base rows
     } else {
       data = await storage.getAllFinanceRevenueMonthly();
     }
@@ -4436,10 +4374,7 @@ router.get("/api/finance/cos", requireAuth, async (req, res) => {
     if (projectName && typeof projectName === 'string') {
       data = await storage.getFinanceCosMonthlyByProject(projectName);
 
-      if (applyOverrides === 'true') {
-        const overrides = await storage.getFinanceCosOverridesByProject(projectName);
-        data = applyFinanceCosOverrides(data, overrides);
-      }
+      // Override data now baked into base rows
     } else {
       data = await storage.getAllFinanceCosMonthly();
     }
