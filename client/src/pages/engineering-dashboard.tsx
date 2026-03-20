@@ -117,6 +117,7 @@ interface StandupData {
   upcomingThisWeek: StandupTask[];
   needsApproval: StandupTask[];
   inProgressHighlights: StandupTask[];
+  otherActive: StandupTask[];
   workload: WorkloadEntry[];
   projectHealth: ProjectHealth[];
   statusPipeline: Record<string, number>;
@@ -1389,6 +1390,7 @@ export default function EngineeringDashboard() {
   const upcomingThisWeek = data?.upcomingThisWeek ?? [];
   const needsApproval = data?.needsApproval ?? [];
   const inProgressHighlights = data?.inProgressHighlights ?? [];
+  const otherActive = data?.otherActive ?? [];
   const workload = data?.workload ?? [];
   const projectHealth = data?.projectHealth ?? [];
   const statusPipeline = data?.statusPipeline ?? {};
@@ -1680,6 +1682,19 @@ export default function EngineeringDashboard() {
           <p className="text-xs text-muted-foreground p-4">No tasks currently in progress. Check the task board for items to pick up.</p>
         )}
       </CollapsibleSection>
+
+      {otherActive.length > 0 && (
+        <CollapsibleSection
+          title="Other Active Tasks"
+          icon={<ListTodo className="h-4 w-4" />}
+          count={otherActive.length}
+          color="text-slate-600"
+          defaultOpen={true}
+          testId="section-other-active"
+        >
+          {otherActive.map(t => <TaskRow key={t.id} task={t} />)}
+        </CollapsibleSection>
+      )}
 
       {recentlyCompleted.length > 0 && (
         <CollapsibleSection
