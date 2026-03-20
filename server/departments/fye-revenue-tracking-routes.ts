@@ -283,6 +283,46 @@ function buildForecastCos(
   return forecastCosByMonth;
 }
 
+// ─── GET /api/fye-revenue-tracking/years ───
+// Returns available FYE years derived from data in fye_budgets, forecast_pipeline,
+// fye_kpi_counters, and fye_report_snapshots, merged with a default range around
+// the current active FYE so the selector always has reasonable options.
+router.get(
+  "/api/fye-revenue-tracking/years",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (_req, res) => {
+    try {
+      const current = getCurrentFye();
+      const yearSet = new Set<number>([current - 1, current, current + 1]);
+
+      // Gather distinct years from FYE tables
+      try {
+        const budgetYears = await db.selectDistinct({ fye: fyeBudgets.fye }).from(fyeBudgets);
+        for (const r of budgetYears) { const y = parseInt(String(r.fye), 10); if (!isNaN(y)) yearSet.add(y); }
+      } catch {}
+      try {
+        const pipelineYears = await db.selectDistinct({ fye: forecastPipeline.fyeYear }).from(forecastPipeline);
+        for (const r of pipelineYears) { if (r.fye) yearSet.add(r.fye); }
+      } catch {}
+      try {
+        const kpiYears = await db.selectDistinct({ fye: fyeKpiCounters.fyeYear }).from(fyeKpiCounters);
+        for (const r of kpiYears) { if (r.fye) yearSet.add(r.fye); }
+      } catch {}
+      try {
+        const snapYears = await db.selectDistinct({ fye: fyeReportSnapshots.fyeYear }).from(fyeReportSnapshots);
+        for (const r of snapYears) { if (r.fye) yearSet.add(r.fye); }
+      } catch {}
+
+      const years = [...yearSet].sort((a, b) => b - a); // Descending
+      res.json({ years, currentFye: current });
+    } catch (error: any) {
+      console.error("FYE years error:", error);
+      res.status(500).json({ error: "Failed to fetch FYE years", message: error?.message });
+    }
+  }
+);
+
 // ─── GET /api/fye-revenue-tracking/dashboard ───
 router.get(
   "/api/fye-revenue-tracking/dashboard",
