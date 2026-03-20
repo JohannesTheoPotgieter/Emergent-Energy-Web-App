@@ -7,7 +7,7 @@ import { WorkManagementRepository } from "./repositories/work-management-reposit
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
   users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
-  projectInfo, normalizedCostLines, normalizedRevenueLines, workItems, programExpense,
+  projectInfo, normalizedCostLines, normalizedRevenueLines, workItems, programExpense, programInflows, projectPlan,
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
   cashflowPlanningOverrides, projectPlanOverrides, revenueTrackingOverrides,
   expenditureOverrides, financeRevenueOverrides, financeCosOverrides,
@@ -1401,7 +1401,34 @@ export class DatabaseStorage implements IStorage {
     await this.dbInstance.delete(financeCosMonthly).where(eq(financeCosMonthly.projectName, projectName));
   }
 
-  // Cashflow Planning Overrides (user edits)
+  // ===================== INLINE EDIT METHODS (replaces override tables) =====================
+  // These methods edit base table rows directly with snapshot/source tracking.
+
+  async editBaseRowInline(
+    tableName: string, rowId: number, fields: Record<string, any>, userId: number | null,
+  ): Promise<void> {
+    const { inlineEdit } = await import("./lib/inline-edit-helper");
+    await inlineEdit(tableName, rowId, fields, userId, this.dbInstance);
+  }
+
+  async revertBaseRowToImported(tableName: string, rowId: number): Promise<boolean> {
+    const { revertToImported } = await import("./lib/inline-edit-helper");
+    return revertToImported(tableName, rowId, this.dbInstance);
+  }
+
+  async applyFieldOverridesInline(
+    tableName: string, rowId: number,
+    overrides: Array<{ fieldName: string; overrideValue: string | null }>,
+    userId: number | null,
+  ): Promise<void> {
+    const { applyFieldOverrides } = await import("./lib/inline-edit-helper");
+    await applyFieldOverrides(tableName, rowId, overrides, userId, this.dbInstance);
+  }
+
+  // ===================== OVERRIDE TABLES (DEPRECATED) =====================
+  // Kept for backward compatibility. New code should use editBaseRowInline().
+
+  // Cashflow Planning Overrides (DEPRECATED)
   async getAllPlanningOverrides(): Promise<CashflowPlanningOverride[]> {
     return this.dbInstance.select().from(cashflowPlanningOverrides).orderBy(desc(cashflowPlanningOverrides.updatedAt));
   }
@@ -1416,7 +1443,7 @@ export class DatabaseStorage implements IStorage {
   async upsertPlanningOverride(override: InsertCashflowPlanningOverride): Promise<CashflowPlanningOverride> {
     const now = new Date();
     const withTimestamps = { ...override, createdAt: now, updatedAt: now };
-    
+
     // Check if override already exists
     const existing = await this.dbInstance.select()
       .from(cashflowPlanningOverrides)
@@ -1427,8 +1454,20 @@ export class DatabaseStorage implements IStorage {
       ))
       .limit(1);
 
+    // Dual-write: also update the base cashflow_points row inline
+    const baseRows = await this.dbInstance.select()
+      .from(cashflowPoints)
+      .where(and(
+        eq(cashflowPoints.projectName, override.projectName),
+        eq(cashflowPoints.pointDate, override.weekStartDate),
+        eq(cashflowPoints.seriesName, override.seriesName)
+      ))
+      .limit(1);
+    if (baseRows.length > 0) {
+      await this.editBaseRowInline('cashflow_points', baseRows[0].id, { value: override.overrideValue }, (override as any).createdBy || null);
+    }
+
     if (existing.length > 0) {
-      // Update existing
       const updated = await this.dbInstance
         .update(cashflowPlanningOverrides)
         .set({ overrideValue: override.overrideValue, updatedAt: now })
@@ -1436,7 +1475,6 @@ export class DatabaseStorage implements IStorage {
         .returning();
       return updated[0];
     } else {
-      // Insert new
       const inserted = await this.dbInstance
         .insert(cashflowPlanningOverrides)
         .values(withTimestamps)
@@ -1486,7 +1524,7 @@ export class DatabaseStorage implements IStorage {
   async upsertProjectPlanOverride(override: InsertProjectPlanOverride): Promise<ProjectPlanOverride> {
     const now = new Date();
     const withTimestamps = { ...override, createdAt: now, updatedAt: now };
-    
+
     const existing = await this.dbInstance.select()
       .from(projectPlanOverrides)
       .where(and(
@@ -1495,6 +1533,22 @@ export class DatabaseStorage implements IStorage {
         eq(projectPlanOverrides.fieldName, override.fieldName)
       ))
       .limit(1);
+
+    // Dual-write: also update the base project_plan row inline
+    if (override.rowNumber >= 0) {
+      const baseRows = await this.dbInstance.select()
+        .from(projectPlan)
+        .where(and(
+          eq(projectPlan.projectName, override.projectName),
+          eq(projectPlan.rowNumber, override.rowNumber)
+        ))
+        .limit(1);
+      if (baseRows.length > 0) {
+        await this.applyFieldOverridesInline('project_plan', baseRows[0].id,
+          [{ fieldName: override.fieldName, overrideValue: override.overrideValue }],
+          (override as any).createdBy || null);
+      }
+    }
 
     if (existing.length > 0) {
       const updated = await this.dbInstance
@@ -1537,7 +1591,7 @@ export class DatabaseStorage implements IStorage {
   async upsertRevenueTrackingOverride(override: InsertRevenueTrackingOverride): Promise<RevenueTrackingOverride> {
     const now = new Date();
     const withTimestamps = { ...override, createdAt: now, updatedAt: now };
-    
+
     const existing = await this.dbInstance.select()
       .from(revenueTrackingOverrides)
       .where(and(
@@ -1546,6 +1600,20 @@ export class DatabaseStorage implements IStorage {
         eq(revenueTrackingOverrides.fieldName, override.fieldName)
       ))
       .limit(1);
+
+    // Dual-write: also update the base program_inflows row inline
+    const baseRows = await this.dbInstance.select()
+      .from(programInflows)
+      .where(and(
+        eq(programInflows.projectName, override.projectName),
+        eq(programInflows.rowNumber, override.rowNumber)
+      ))
+      .limit(1);
+    if (baseRows.length > 0) {
+      await this.applyFieldOverridesInline('program_inflows', baseRows[0].id,
+        [{ fieldName: override.fieldName, overrideValue: override.overrideValue }],
+        (override as any).createdBy || null);
+    }
 
     if (existing.length > 0) {
       const updated = await this.dbInstance
@@ -1594,7 +1662,7 @@ export class DatabaseStorage implements IStorage {
   async upsertExpenditureOverride(override: InsertExpenditureOverride): Promise<ExpenditureOverride> {
     const now = new Date();
     const withTimestamps = { ...override, createdAt: now, updatedAt: now };
-    
+
     const existing = await this.dbInstance.select()
       .from(expenditureOverrides)
       .where(and(
@@ -1603,6 +1671,20 @@ export class DatabaseStorage implements IStorage {
         eq(expenditureOverrides.fieldName, override.fieldName)
       ))
       .limit(1);
+
+    // Dual-write: also update the base program_expense row inline
+    const baseRows = await this.dbInstance.select()
+      .from(programExpense)
+      .where(and(
+        eq(programExpense.projectName, override.projectName),
+        eq(programExpense.rowNumber, override.rowNumber)
+      ))
+      .limit(1);
+    if (baseRows.length > 0) {
+      await this.applyFieldOverridesInline('program_expense', baseRows[0].id,
+        [{ fieldName: override.fieldName, overrideValue: override.overrideValue }],
+        (override as any).createdBy || null);
+    }
 
     if (existing.length > 0) {
       const updated = await this.dbInstance
@@ -1645,7 +1727,7 @@ export class DatabaseStorage implements IStorage {
   async upsertFinanceRevenueOverride(override: InsertFinanceRevenueOverride): Promise<FinanceRevenueOverride> {
     const now = new Date();
     const withTimestamps = { ...override, createdAt: now, updatedAt: now };
-    
+
     const existing = await this.dbInstance.select()
       .from(financeRevenueOverrides)
       .where(and(
@@ -1654,6 +1736,20 @@ export class DatabaseStorage implements IStorage {
         eq(financeRevenueOverrides.monthEndDate, override.monthEndDate)
       ))
       .limit(1);
+
+    // Dual-write: also update the base finance_revenue_monthly row inline
+    const baseRows = await this.dbInstance.select()
+      .from(financeRevenueMonthly)
+      .where(and(
+        eq(financeRevenueMonthly.projectName, override.projectName),
+        eq(financeRevenueMonthly.category, override.category),
+        eq(financeRevenueMonthly.monthEndDate, override.monthEndDate)
+      ))
+      .limit(1);
+    if (baseRows.length > 0) {
+      await this.editBaseRowInline('finance_revenue_monthly', baseRows[0].id,
+        { value: override.overrideValue }, (override as any).createdBy || null);
+    }
 
     if (existing.length > 0) {
       const updated = await this.dbInstance
@@ -1696,7 +1792,7 @@ export class DatabaseStorage implements IStorage {
   async upsertFinanceCosOverride(override: InsertFinanceCosOverride): Promise<FinanceCosOverride> {
     const now = new Date();
     const withTimestamps = { ...override, createdAt: now, updatedAt: now };
-    
+
     const existing = await this.dbInstance.select()
       .from(financeCosOverrides)
       .where(and(
@@ -1705,6 +1801,20 @@ export class DatabaseStorage implements IStorage {
         eq(financeCosOverrides.monthEndDate, override.monthEndDate)
       ))
       .limit(1);
+
+    // Dual-write: also update the base finance_cos_monthly row inline
+    const baseRows = await this.dbInstance.select()
+      .from(financeCosMonthly)
+      .where(and(
+        eq(financeCosMonthly.projectName, override.projectName),
+        eq(financeCosMonthly.category, override.category),
+        eq(financeCosMonthly.monthEndDate, override.monthEndDate)
+      ))
+      .limit(1);
+    if (baseRows.length > 0) {
+      await this.editBaseRowInline('finance_cos_monthly', baseRows[0].id,
+        { value: override.overrideValue }, (override as any).createdBy || null);
+    }
 
     if (existing.length > 0) {
       const updated = await this.dbInstance

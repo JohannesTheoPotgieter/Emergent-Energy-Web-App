@@ -1717,6 +1717,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           .where(inArray(workingPlanDependencyOverride.scenarioId, sIds));
       }
 
+      // DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
+      // During transition, we still read from projectPlanOverrides to preserve manual edits.
+      // Future: replace with source='imported_edited' + import_snapshot check on project_plan rows.
       const manualOverridesForProject = await tx.select().from(projectPlanOverrides)
         .where(eq(projectPlanOverrides.projectName, projectName));
       const manualOverrideMap = new Map<number, Map<string, string>>();
@@ -1928,9 +1931,16 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           inBank: programInflows.inBank,
           milestoneName: programInflows.milestoneName,
           milestoneAmount: programInflows.milestoneAmount,
+          source: programInflows.source,
         })
           .from(programInflows)
           .where(eq(programInflows.projectName, projectName));
+
+        // Conflict detection: warn about user-edited rows being overwritten (Prompt 4 — override collapse)
+        const editedInflowCount = oldInflows.filter(r => r.source === 'imported_edited').length;
+        if (editedInflowCount > 0) {
+          console.warn(`[SmartImport] Re-import will overwrite ${editedInflowCount} user-edited program_inflows rows for "${projectName}"`);
+        }
 
         // Build composite key map: "milestoneName::amount" → { inBank, rowNumber }
         const oldCompositeMap = new Map<string, { inBank: number | null; rowNumber: number | null }>();
@@ -2170,9 +2180,15 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
 
       if (Array.isArray(norm.costLines) && projectName) {
-        const oldPeRows = await tx.select({ id: programExpense.id, rowNumber: programExpense.rowNumber })
+        const oldPeRows = await tx.select({ id: programExpense.id, rowNumber: programExpense.rowNumber, source: programExpense.source })
           .from(programExpense)
           .where(eq(programExpense.projectName, projectName));
+
+        // Conflict detection: warn about user-edited rows being overwritten (Prompt 4 — override collapse)
+        const editedExpenseCount = oldPeRows.filter(r => r.source === 'imported_edited').length;
+        if (editedExpenseCount > 0) {
+          console.warn(`[SmartImport] Re-import will overwrite ${editedExpenseCount} user-edited program_expense rows for "${projectName}"`);
+        }
 
         await tx.delete(programExpense).where(eq(programExpense.projectName, projectName));
 
@@ -2241,6 +2257,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           }
         }
 
+        // DEPRECATED: COS overrides are now baked into base rows (Prompt 4 — override collapse).
+        // During transition, we still remap cosStatusOverrides for backward compatibility.
         const existingCosOverrides = await tx.select().from(cosStatusOverrides)
           .where(eq(cosStatusOverrides.projectName, projectName));
         for (const co of existingCosOverrides) {

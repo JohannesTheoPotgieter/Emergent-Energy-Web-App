@@ -341,46 +341,11 @@ export function registerLifecycleRoutes(app: Express) {
         actualEnd: wi.actualEnd,
       }));
 
+      // DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
+      // We still read allPlanOverrides for milestone detection below, but skip the merge.
       const allPlanOverrides = await db.select().from(projectPlanOverrides);
-      const deletedKeys = new Set<string>();
-      const overrideMap = new Map<string, Map<number, Map<string, any>>>();
-      for (const o of allPlanOverrides) {
-        if (o.fieldName === "isDeleted" && o.overrideValue === "true") {
-          deletedKeys.add(`${o.projectName}::${o.rowNumber}`);
-          continue;
-        }
-        if (!overrideMap.has(o.projectName)) overrideMap.set(o.projectName, new Map());
-        const projMap = overrideMap.get(o.projectName)!;
-        if (!projMap.has(o.rowNumber)) projMap.set(o.rowNumber, new Map());
-        const val = o.overrideValue;
-        const fieldName = o.fieldName;
-        let coerced: any = val;
-        if (val !== null && val !== undefined && val !== "") {
-          if (fieldName === "actualPctComplete" || fieldName === "expectedPctComplete" || fieldName === "durationDays") {
-            const num = Number(val);
-            coerced = isNaN(num) ? null : num;
-          }
-        } else {
-          coerced = null;
-        }
-        projMap.get(o.rowNumber)!.set(fieldName, coerced);
-      }
 
-      const allPlanTasks = rawPlanTasks
-        .filter(row => {
-          if (!row.rowNumber) return true;
-          return !deletedKeys.has(`${row.projectName}::${row.rowNumber}`);
-        })
-        .map(row => {
-          const projOverrides = overrideMap.get(row.projectName);
-          if (!projOverrides || !row.rowNumber || !projOverrides.has(row.rowNumber)) return row;
-          const fieldOverrides = projOverrides.get(row.rowNumber)!;
-          const updated = { ...row };
-          fieldOverrides.forEach((value, fieldName) => {
-            (updated as any)[fieldName] = value;
-          });
-          return updated;
-        });
+      const allPlanTasks = rawPlanTasks;
 
       const trackerProjectNames = new Set<string>();
       const expenseNames = await db.selectDistinct({ projectName: normalizedCostLines.projectName }).from(normalizedCostLines);
@@ -794,19 +759,11 @@ export function registerLifecycleRoutes(app: Express) {
         sourceRow: normalizedCostLines.sourceRow,
       }).from(normalizedCostLines);
 
-      // Load revenue & COS overrides (matching program-dashboard)
-      const [revOverrides, cosOverrides] = await Promise.all([
-        db.select().from(revenueTrackingOverrides).where(eq(revenueTrackingOverrides.fieldName, "inBank")),
-        db.select().from(cosStatusOverrides),
-      ]);
+      // DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
+      // inBank and COS status overrides are applied directly to base rows.
+      // Keep empty structures for backward-compatible code paths below.
       const inBankOverrideSet = new Set<string>();
-      for (const o of revOverrides) {
-        if (String(o.overrideValue) === "1") inBankOverrideSet.add(`${o.projectName}::${o.rowNumber}`);
-      }
       const cosOverrideByKey = new Map<string, string>();
-      for (const o of cosOverrides) {
-        cosOverrideByKey.set(`${o.projectName}::${o.rowNumber}`, o.overrideStatus);
-      }
 
       const finByProjectId = new Map<number, { plannedRevenue: number; receivedInflow: number; plannedExpenditure: number; paidExpenditure: number; fyRevenueItems: number; fyCostItems: number; inflowRisk: number; outflowRisk: number }>();
       const finByNorm = new Map<string, { plannedRevenue: number; receivedInflow: number; plannedExpenditure: number; paidExpenditure: number; fyRevenueItems: number; fyCostItems: number; inflowRisk: number; outflowRisk: number }>();
