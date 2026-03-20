@@ -461,6 +461,27 @@ export async function backfillWorkItems(): Promise<void> {
       }
     });
 
+    // Recover ENG work items that lost their projectId due to the PATCH bug
+    // (projectName was accepted but never resolved to projectId before commit a00a843)
+    const recoveredProjectIds = await db.execute(sql.raw(`
+      UPDATE work_items wi SET project_id = pi.id
+      FROM project_info pi
+      WHERE wi.workstream = 'ENG'
+        AND wi.project_id IS NULL
+        AND wi.deleted_at IS NULL
+        AND wi.legacy_table = 'operational_tasks'
+        AND wi.legacy_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM operational_tasks ot
+          WHERE ot.id = wi.legacy_id AND ot.project_id = pi.id
+        )
+      RETURNING wi.id
+    `));
+    const recoveredCount = (recoveredProjectIds as any).rows?.length ?? 0;
+    if (recoveredCount > 0) {
+      console.log(`[Backfill] Recovered projectId for ${recoveredCount} orphaned ENG work_items`);
+    }
+
     const totalWi = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM work_items`));
     console.log(`[Backfill] Total work_items: ${(totalWi as any).rows?.[0]?.cnt ?? 0}`);
 
