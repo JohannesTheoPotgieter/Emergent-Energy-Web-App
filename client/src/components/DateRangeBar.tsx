@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Input } from "@/components/ui/input";
 import { Calendar } from "lucide-react";
-import { useProgramData } from "@/hooks/use-program-data";
+import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import type { ProjectSummary } from "@/lib/api";
 
 interface DateRangeBarProps {
@@ -12,7 +12,7 @@ interface DateRangeBarProps {
 }
 
 export function DateRangeBar({ onDateChange, onProjectChange }: DateRangeBarProps) {
-  const { projectsSummary } = useProgramData();
+  const { projectsSummary } = useProjectsSummary();
   const [selectedProject, setSelectedProject] = useState<string>("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
