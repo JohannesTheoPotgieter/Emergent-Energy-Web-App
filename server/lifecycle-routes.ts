@@ -4,6 +4,7 @@ import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, revenueTrackingOverrides, cosStatusOverrides } from "@shared/schema";
+import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
@@ -221,12 +222,14 @@ export function registerLifecycleRoutes(app: Express) {
       const fromRag = project.ragStatus || null;
 
       await db.transaction(async (tx) => {
-        await tx.update(projectInfo).set({
+        const ragFields = {
           ragStatus: rag,
           ragComment: comment.trim(),
           ragUpdatedAt: new Date(),
           ragUpdatedByUserId: userId,
-        }).where(eq(projectInfo.id, projectId));
+        };
+        await tx.update(projectInfo).set(ragFields).where(eq(projectInfo.id, projectId));
+        await syncProjectSplitTables(projectId, ragFields, tx);
 
         await tx.insert(projectRagAudit).values({
           projectId,
@@ -1129,14 +1132,17 @@ export function registerLifecycleRoutes(app: Express) {
         if (Object.keys(fillFields).length > 0) {
           fillFields.updatedAt = new Date();
           await tx.update(projectInfo).set(fillFields).where(eq(projectInfo.id, targetProjectId));
+          await syncProjectSplitTables(targetProjectId, fillFields, tx);
         }
 
-        await tx.update(projectInfo).set({
+        const archiveFields = {
           archivedStatus: 'ARCHIVED_MERGED',
           canonicalProjectId: targetProjectId,
           isActive: false,
           updatedAt: new Date(),
-        }).where(eq(projectInfo.id, sourceProjectId));
+        };
+        await tx.update(projectInfo).set(archiveFields).where(eq(projectInfo.id, sourceProjectId));
+        await syncProjectSplitTables(sourceProjectId, archiveFields, tx);
 
         await tx.insert(mergeAuditLog).values({
           primaryProjectId: targetProjectId,
@@ -1188,12 +1194,14 @@ export function registerLifecycleRoutes(app: Express) {
       const existing = allProjects.find((p: any) => normalizeName(p.projectName) === normTarget);
       if (existing) {
         const targetPhase = phase || "First Assessment";
-        await db.update(projectInfo).set({
+        const promoteFields = {
           phase: targetPhase,
           isActive: true,
           phaseUpdatedAt: new Date(),
           phaseUpdatedByUserId: userId,
-        }).where(eq(projectInfo.id, existing.id));
+        };
+        await db.update(projectInfo).set(promoteFields).where(eq(projectInfo.id, existing.id));
+        await syncProjectSplitTables(existing.id, promoteFields);
 
         const promoteStageNames = PHASE_TO_ENG_STAGES[targetPhase];
         if (promoteStageNames && promoteStageNames.length > 0 && userId) {
@@ -1224,13 +1232,15 @@ export function registerLifecycleRoutes(app: Express) {
         return res.json(updated);
       }
 
-      const [created] = await db.insert(projectInfo).values({
+      const promoteInsertFields = {
         projectName: cleanName,
         phase: phase || "First Assessment",
         isActive: true,
         phaseUpdatedAt: new Date(),
         phaseUpdatedByUserId: userId,
-      }).returning();
+      };
+      const [created] = await db.insert(projectInfo).values(promoteInsertFields).returning();
+      await syncProjectSplitTablesAfterInsert(created.id, promoteInsertFields);
 
       const targetPhase = phase || "First Assessment";
       const stageNames = PHASE_TO_ENG_STAGES[targetPhase];
@@ -1295,6 +1305,7 @@ export function registerLifecycleRoutes(app: Express) {
       }
 
       const [updated] = await db.update(projectInfo).set(updates).where(eq(projectInfo.id, id)).returning();
+      await syncProjectSplitTables(id, updates);
       logAuditFromReq(req, { entityType: "lifecycle", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Project details updated", phase, escalationLevel, ragStatus } });
       res.json(updated);
     } catch (err: any) {
@@ -1431,12 +1442,14 @@ export function registerLifecycleRoutes(app: Express) {
         });
       }
 
-      const [updated] = await db.update(projectInfo).set({
+      const stageTransitionFields = {
         phase: phase.trim(),
         phaseUpdatedAt: new Date(),
         phaseUpdatedByUserId: userId,
         updatedAt: new Date(),
-      }).where(eq(projectInfo.id, id)).returning();
+      };
+      const [updated] = await db.update(projectInfo).set(stageTransitionFields).where(eq(projectInfo.id, id)).returning();
+      await syncProjectSplitTables(id, stageTransitionFields);
 
       let engStagesResult: any = null;
       const stageNames = PHASE_TO_ENG_STAGES[phase.trim()];
@@ -1561,6 +1574,7 @@ export function registerLifecycleRoutes(app: Express) {
       const previousStatus = project.executionGateStatus;
 
       const [updated] = await db.update(projectInfo).set(updates).where(eq(projectInfo.id, id)).returning();
+      await syncProjectSplitTables(id, updates);
 
       const user = (req as any).user as any;
       await db.insert(executionGateLog).values({
@@ -1718,10 +1732,12 @@ export function registerLifecycleRoutes(app: Express) {
       const user = (req as any).user as any;
       const restoredBy = user?.email || user?.name || "unknown";
 
+      const restoreFields = { archivedStatus: "ACTIVE", updatedAt: new Date() };
       const [updated] = await db.update(projectInfo)
-        .set({ archivedStatus: "ACTIVE", updatedAt: new Date() })
+        .set(restoreFields)
         .where(eq(projectInfo.id, projectId))
         .returning();
+      await syncProjectSplitTables(projectId, restoreFields);
 
       logAuditFromReq(req, {
         entityType: "lifecycle",

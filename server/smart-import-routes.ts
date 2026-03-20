@@ -42,6 +42,7 @@ import {
   manualEditFlags,
   conflictResolutionLog,
 } from "@shared/schema";
+import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
 
@@ -1592,13 +1593,15 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         }
 
         const detectedInfo = summary.detection?.projectInfo;
-        const [newProject] = await db.insert(projectInfo).values({
+        const newProjectFields = {
           projectName,
           phase: detectedInfo?.phase || "PLANNING",
           sizeKwp: detectedInfo?.sizeKwp || null,
           pd: detectedInfo?.pd || null,
           contractValue: detectedInfo?.contractValue || null,
-        } as any).returning();
+        };
+        const [newProject] = await db.insert(projectInfo).values(newProjectFields as any).returning();
+        await syncProjectSplitTablesAfterInsert(newProject.id, newProjectFields);
         projectId = newProject.id;
         await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
       }
@@ -2353,6 +2356,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
             updates.updatedAt = new Date();
             console.log(`[SmartImport] Updating projectInfo id=${resolvedProjectId} with:`, JSON.stringify(updates));
             await tx.update(projectInfo).set(updates).where(eq(projectInfo.id, resolvedProjectId));
+            await syncProjectSplitTables(resolvedProjectId, updates, tx);
           }
         } else {
           console.log(`[SmartImport] Could not resolve projectInfo for "${projectName}" — project metadata will not be updated`);

@@ -22,6 +22,7 @@ import {
   type ProjectPhase,
 } from "@shared/schema";
 import { applyTemplate } from "./template-routes";
+import { syncProjectSplitTables } from "./lib/project-info-sync";
 import { requireAuthority, requirePermission, evaluateAuthorityForRequest } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject, mapToOpsStatus } from "./work-items-adapter";
@@ -2911,14 +2912,16 @@ export function registerEngineeringRoutes(app: Express) {
         : JSON.stringify({ emailSubject, emailDate: emailDate || new Date().toISOString().split("T")[0] });
 
       // Mark CP signed
-      await db.update(projectInfo).set({
+      const cpSignedFields = {
         cpSigned: true,
         cpSignedDate: new Date().toISOString().split("T")[0],
         cpSignedByUserId: user.id,
         cpEvidenceType: evidenceType,
         cpEvidenceRef: evidenceRef,
         updatedAt: new Date(),
-      }).where(eq(projectInfo.id, projectId));
+      };
+      await db.update(projectInfo).set(cpSignedFields).where(eq(projectInfo.id, projectId));
+      await syncProjectSplitTables(projectId, cpSignedFields);
 
       let pmTasksCreated = 0;
       let engTasksCreated = 0;
@@ -2938,6 +2941,7 @@ export function registerEngineeringRoutes(app: Express) {
           pmTasksCreated++;
         }
         await db.update(projectInfo).set({ pmTaskPackCreated: true }).where(eq(projectInfo.id, projectId));
+        await syncProjectSplitTables(projectId, { pmTaskPackCreated: true });
       }
 
       // Create Engineering post-CP task pack (idempotent)
@@ -2955,6 +2959,7 @@ export function registerEngineeringRoutes(app: Express) {
           engTasksCreated++;
         }
         await db.update(projectInfo).set({ engPostCpTaskPackCreated: true }).where(eq(projectInfo.id, projectId));
+        await syncProjectSplitTables(projectId, { engPostCpTaskPackCreated: true });
       }
 
       logAuditFromReq(req, {
@@ -3053,15 +3058,17 @@ export function registerEngineeringRoutes(app: Express) {
       let templateResult: any = null;
 
       await db.transaction(async (tx) => {
+        const phaseFields = {
+          phase: toPhase,
+          phaseUpdatedAt: new Date(),
+          phaseUpdatedByUserId: user.id,
+          phaseNotes: reason.trim(),
+          updatedAt: new Date(),
+        };
         await tx.update(projectInfo)
-          .set({
-            phase: toPhase,
-            phaseUpdatedAt: new Date(),
-            phaseUpdatedByUserId: user.id,
-            phaseNotes: reason.trim(),
-            updatedAt: new Date(),
-          })
+          .set(phaseFields)
           .where(eq(projectInfo.id, projectId));
+        await syncProjectSplitTables(projectId, phaseFields, tx);
 
         await tx.insert(projectPhaseHistory).values({
           projectId,

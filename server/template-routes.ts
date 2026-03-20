@@ -13,6 +13,7 @@ import {
   clients,
   qcWarning,
 } from "@shared/schema";
+import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { requirePermission } from "./permission-middleware";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { createHash } from "crypto";
@@ -753,7 +754,7 @@ export function registerTemplateRoutes(app: Express) {
         requestedClientName: typeof clientName === "string" ? clientName : null,
       });
 
-      const [created] = await db.insert(projectInfo).values({
+      const createProjectFields = {
         projectName: projectName.trim(),
         clientId: resolvedClient.client?.id ?? null,
         phase,
@@ -761,7 +762,9 @@ export function registerTemplateRoutes(app: Express) {
         phaseUpdatedByUserId: user.id,
         phaseNotes: `Project created at ${PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase}`,
         pd: null,
-      }).returning();
+      };
+      const [created] = await db.insert(projectInfo).values(createProjectFields).returning();
+      await syncProjectSplitTablesAfterInsert(created.id, createProjectFields);
 
       await db.insert(projectPhaseHistory).values({
         projectId: created.id,
