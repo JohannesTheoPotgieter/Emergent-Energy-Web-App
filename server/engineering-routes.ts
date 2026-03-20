@@ -10,7 +10,7 @@ import {
   deliverables, deliverableVersions, deliverableFiles, deliverableEvents,
   spFilePointers,
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
-  qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory,
+  qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory, projectExecutionState,
   projectEngApprovals, projectEngStages, projectEngTasks, engStageTemplates,
   dashboardWidgetConfig, DEFAULT_WIDGET_ORDER,
   workItems, workItemAssignments,
@@ -2106,8 +2106,9 @@ export function registerEngineeringRoutes(app: Express) {
 
       const [rawCanonicalTasks, allProjectInfoRows] = await Promise.all([
         listEngineeringWorkItems({}),
-        db.select({ projectName: projectInfo.projectName, phase: projectInfo.phase })
-          .from(projectInfo),
+        db.select({ projectName: projectInfo.projectName, phase: projectExecutionState.phase })
+          .from(projectInfo)
+          .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
       ]);
 
       // Resolve assignee names from assigneeUserIds for standup filtering/workload
@@ -2290,8 +2291,9 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const [allTasks, allProjectInfoRows] = await Promise.all([
         listEngineeringWorkItems({}),
-        db.select({ projectName: projectInfo.projectName, phase: projectInfo.phase })
-          .from(projectInfo),
+        db.select({ projectName: projectInfo.projectName, phase: projectExecutionState.phase })
+          .from(projectInfo)
+          .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
       ]);
 
       const normalizeKey = (n: string) => n.replace(/_Tracker.*$/i, "").replace(/_/g, " ").toLowerCase().trim();
@@ -2886,7 +2888,16 @@ export function registerEngineeringRoutes(app: Express) {
       const user = getUser(req);
       const { evidenceType, emailSubject, emailDate, fileId } = req.body;
 
-      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      const [project] = await db.select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        cpSigned: projectExecutionState.cpSigned,
+        cpSignedDate: projectExecutionState.cpSignedDate,
+        pmTaskPackCreated: projectExecutionState.pmTaskPackCreated,
+        engPostCpTaskPackCreated: projectExecutionState.engPostCpTaskPackCreated,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectInfo.id, projectId));
       if (!project) return res.status(404).json({ error: "Project not found" });
 
       // Idempotency: already signed
@@ -2988,14 +2999,16 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const projectId = parseInt(req.params.projectId);
       const [project] = await db.select({
-        cpSigned: projectInfo.cpSigned,
-        cpSignedDate: projectInfo.cpSignedDate,
-        cpSignedByUserId: projectInfo.cpSignedByUserId,
-        cpEvidenceType: projectInfo.cpEvidenceType,
-        cpEvidenceRef: projectInfo.cpEvidenceRef,
-        pmTaskPackCreated: projectInfo.pmTaskPackCreated,
-        engPostCpTaskPackCreated: projectInfo.engPostCpTaskPackCreated,
-      }).from(projectInfo).where(eq(projectInfo.id, projectId));
+        cpSigned: projectExecutionState.cpSigned,
+        cpSignedDate: projectExecutionState.cpSignedDate,
+        cpSignedByUserId: projectExecutionState.cpSignedByUserId,
+        cpEvidenceType: projectExecutionState.cpEvidenceType,
+        cpEvidenceRef: projectExecutionState.cpEvidenceRef,
+        pmTaskPackCreated: projectExecutionState.pmTaskPackCreated,
+        engPostCpTaskPackCreated: projectExecutionState.engPostCpTaskPackCreated,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectInfo.id, projectId));
 
       if (!project) return res.status(404).json({ error: "Project not found" });
 

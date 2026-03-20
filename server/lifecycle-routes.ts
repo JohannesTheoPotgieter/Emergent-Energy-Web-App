@@ -3,7 +3,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, revenueTrackingOverrides, cosStatusOverrides } from "@shared/schema";
+import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, revenueTrackingOverrides, cosStatusOverrides, projectExecutionState } from "@shared/schema";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
@@ -216,7 +216,7 @@ export function registerLifecycleRoutes(app: Express) {
         return res.status(400).json({ error: "Comment must be at least 5 characters" });
       }
 
-      const [project] = await db.select({ id: projectInfo.id, ragStatus: projectInfo.ragStatus }).from(projectInfo).where(eq(projectInfo.id, projectId));
+      const [project] = await db.select({ id: projectInfo.id, ragStatus: projectExecutionState.ragStatus }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)).where(eq(projectInfo.id, projectId));
       if (!project) return res.status(404).json({ error: "Project not found" });
 
       const userId = ((req as any).user as any)?.id;
@@ -302,26 +302,27 @@ export function registerLifecycleRoutes(app: Express) {
         pd: projectInfo.pd,
         pm: projectInfo.pm,
         contractValue: projectInfo.contractValue,
-        phase: projectInfo.phase,
-        isActive: projectInfo.isActive,
-        escalationLevel: projectInfo.escalationLevel,
-        ragStatus: projectInfo.ragStatus,
-        ragComment: projectInfo.ragComment,
-        ragUpdatedAt: projectInfo.ragUpdatedAt,
-        ragUpdatedByUserId: projectInfo.ragUpdatedByUserId,
-        executionEnabled: projectInfo.executionEnabled,
-        executionGateStatus: projectInfo.executionGateStatus,
-        signedStatus: projectInfo.signedStatus,
-        signedDate: projectInfo.signedDate,
-        signedDocumentLink: projectInfo.signedDocumentLink,
-        executionPhase: projectInfo.executionPhase,
-        archivedStatus: projectInfo.archivedStatus,
-        phaseUpdatedAt: projectInfo.phaseUpdatedAt,
+        phase: projectExecutionState.phase,
+        isActive: projectExecutionState.isActive,
+        escalationLevel: projectExecutionState.escalationLevel,
+        ragStatus: projectExecutionState.ragStatus,
+        ragComment: projectExecutionState.ragComment,
+        ragUpdatedAt: projectExecutionState.ragUpdatedAt,
+        ragUpdatedByUserId: projectExecutionState.ragUpdatedByUserId,
+        executionEnabled: projectExecutionState.executionEnabled,
+        executionGateStatus: projectExecutionState.executionGateStatus,
+        signedStatus: projectExecutionState.signedStatus,
+        signedDate: projectExecutionState.signedDate,
+        signedDocumentLink: projectExecutionState.signedDocumentLink,
+        executionPhase: projectExecutionState.executionPhase,
+        archivedStatus: projectExecutionState.archivedStatus,
+        phaseUpdatedAt: projectExecutionState.phaseUpdatedAt,
         updatedAt: projectInfo.updatedAt,
-        constructionStartDate: projectInfo.constructionStartDate,
-        commissioningDate: projectInfo.commissioningDate,
-        clientHandoverDate: projectInfo.clientHandoverDate,
-      }).from(projectInfo);
+        constructionStartDate: projectExecutionState.constructionStartDate,
+        commissioningDate: projectExecutionState.commissioningDate,
+        clientHandoverDate: projectExecutionState.clientHandoverDate,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
 
       const allEngTasks = await db.select({
         projectName: operationalTasks.projectName,
@@ -677,11 +678,13 @@ export function registerLifecycleRoutes(app: Express) {
         projectName: projectInfo.projectName,
         pm: projectInfo.pm,
         pd: projectInfo.pd,
-        executionPhase: projectInfo.executionPhase,
-        ragStatus: projectInfo.ragStatus,
-        archivedStatus: projectInfo.archivedStatus,
-        phase: projectInfo.phase,
-      }).from(projectInfo).where(eq(projectInfo.archivedStatus, "ACTIVE"));
+        executionPhase: projectExecutionState.executionPhase,
+        ragStatus: projectExecutionState.ragStatus,
+        archivedStatus: projectExecutionState.archivedStatus,
+        phase: projectExecutionState.phase,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectExecutionState.archivedStatus, "ACTIVE"));
 
       // Helpers matching program-dashboard logic
       const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;

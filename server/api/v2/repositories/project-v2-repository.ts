@@ -4,7 +4,7 @@ import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLin
 import { syncProjectSplitTables } from "../../../lib/project-info-sync";
 
 export async function listProjects(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null }) {
-  const filters = [eq(projectInfo.isActive, true)];
+  const filters = [eq(projectExecutionState.isActive, true)];
   if (params.q) filters.push(ilike(projectInfo.projectName, `%${params.q}%`));
 
   // RLS: scope to user's assigned projects when provided
@@ -18,9 +18,10 @@ export async function listProjects(params: { q?: string; page: number; pageSize:
 
   const where = and(...filters);
 
-  const totalRow = await db.select({ total: count() }).from(projectInfo).where(where);
+  const totalRow = await db.select({ total: count() }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)).where(where);
   const order = params.sortDir === "desc" ? desc(projectInfo.updatedAt) : asc(projectInfo.updatedAt);
-  const rows = await db.select().from(projectInfo).where(where).orderBy(order).limit(params.pageSize).offset((params.page - 1) * params.pageSize);
+  const joinedRows = await db.select({ pi: projectInfo, pes: projectExecutionState }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)).where(where).orderBy(order).limit(params.pageSize).offset((params.page - 1) * params.pageSize);
+  const rows = joinedRows.map(r => ({ ...r.pi, ...r.pes, id: r.pi.id }));
   return { rows, total: Number(totalRow[0]?.total ?? 0) };
 }
 
@@ -280,8 +281,8 @@ export async function dashboardCoreTotals(scopeProjectIds?: Set<number> | null) 
   }
 
   const projectFilter = hasScope
-    ? and(eq(projectInfo.isActive, true), inArray(projectInfo.id, ids))
-    : eq(projectInfo.isActive, true);
+    ? and(eq(projectExecutionState.isActive, true), inArray(projectInfo.id, ids))
+    : eq(projectExecutionState.isActive, true);
 
   const workFilter = hasScope
     ? and(isNull(workItems.deletedAt), sql`${workItems.status} != 'Complete'`, inArray(workItems.projectId, ids))
@@ -296,7 +297,7 @@ export async function dashboardCoreTotals(scopeProjectIds?: Set<number> | null) 
     : sql`${invoiceCaptures.status} in ('captured','submitted','verified')`;
 
   const [projects, openWork, openProcurement, invoices] = await Promise.all([
-    db.select({ total: sql<number>`count(*)` }).from(projectInfo).where(projectFilter),
+    db.select({ total: sql<number>`count(*)` }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)).where(projectFilter),
     db.select({ total: sql<number>`count(*)` }).from(workItems).where(workFilter),
     db.select({ total: sql<number>`count(*)` }).from(procurementItems).where(procFilter),
     db.select({ total: sql<number>`count(*)` }).from(invoiceCaptures).where(invFilter),

@@ -67,6 +67,7 @@ import {
   pdTickets,
   fyeKpiCounters,
   fyeReportSnapshots,
+  projectExecutionState,
 } from "@shared/schema";
 import { eq, and, sql, gte, lte, desc, inArray } from "drizzle-orm";
 import ExcelJS from "exceljs";
@@ -285,14 +286,15 @@ router.get(
           projectName: projectInfo.projectName,
           sizeKwp: projectInfo.sizeKwp,
           pd: projectInfo.pd,
-          constructionStartDate: projectInfo.constructionStartDate,
-          commissioningDate: projectInfo.commissioningDate,
-          phase: projectInfo.phase,
-          signedStatus: projectInfo.signedStatus,
-          isActive: projectInfo.isActive,
+          constructionStartDate: projectExecutionState.constructionStartDate,
+          commissioningDate: projectExecutionState.commissioningDate,
+          phase: projectExecutionState.phase,
+          signedStatus: projectExecutionState.signedStatus,
+          isActive: projectExecutionState.isActive,
           contractValue: projectInfo.contractValue,
         })
-        .from(projectInfo);
+        .from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
 
       // Filter: isActive may be undefined in SQLite (column missing) — treat as true
       const activeProjects = projects.filter((p) => p.isActive !== false);
@@ -788,11 +790,12 @@ router.get(
       const projects = await db
         .select({
           id: projectInfo.id,
-          phase: projectInfo.phase,
-          signedStatus: projectInfo.signedStatus,
-          isActive: projectInfo.isActive,
+          phase: projectExecutionState.phase,
+          signedStatus: projectExecutionState.signedStatus,
+          isActive: projectExecutionState.isActive,
         })
-        .from(projectInfo);
+        .from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
 
       const activeProjects = projects.filter((p) => p.isActive !== false);
       const signed = activeProjects.filter((p) => p.signedStatus === "SIGNED").length;
@@ -882,7 +885,7 @@ async function collectSnapshotData(fye: number) {
   });
 
   // Detail projects
-  const projects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName, sizeKwp: projectInfo.sizeKwp, pd: projectInfo.pd, constructionStartDate: projectInfo.constructionStartDate, commissioningDate: projectInfo.commissioningDate, phase: projectInfo.phase, signedStatus: projectInfo.signedStatus, isActive: projectInfo.isActive, contractValue: projectInfo.contractValue }).from(projectInfo);
+  const projects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName, sizeKwp: projectInfo.sizeKwp, pd: projectInfo.pd, constructionStartDate: projectExecutionState.constructionStartDate, commissioningDate: projectExecutionState.commissioningDate, phase: projectExecutionState.phase, signedStatus: projectExecutionState.signedStatus, isActive: projectExecutionState.isActive, contractValue: projectInfo.contractValue }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
   const activeProjects = projects.filter((p) => p.isActive !== false);
 
   // Compute per-project financials

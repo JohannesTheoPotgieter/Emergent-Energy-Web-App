@@ -2517,16 +2517,17 @@ export async function registerRoutes(
         return d >= fyStart && d <= fyEnd;
       };
 
-      const { normalizedCostLines, normalizedRevenueLines, projectInfo } = await import("@shared/schema");
+      const { normalizedCostLines, normalizedRevenueLines, projectInfo, projectExecutionState } = await import("@shared/schema");
 
       const HARD_EXCLUDED = ["Closed", "Gone"];
       const activeProjectsResult = await db.select({
         projectName: projectInfo.projectName,
-        phase: projectInfo.executionPhase,
-        phaseUpdatedAt: projectInfo.phaseUpdatedAt,
+        phase: projectExecutionState.executionPhase,
+        phaseUpdatedAt: projectExecutionState.phaseUpdatedAt,
       })
         .from(projectInfo)
-        .where(sql`${projectInfo.isActive} IS NOT FALSE`);
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(sql`${projectExecutionState.isActive} IS NOT FALSE`);
       const activeNames = new Set(
         activeProjectsResult
           .filter(p => {
