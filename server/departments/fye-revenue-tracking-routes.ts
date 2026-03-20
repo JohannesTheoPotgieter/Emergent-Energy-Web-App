@@ -1269,6 +1269,38 @@ async function seedFyeData() {
         VALUES (2026, 26, 10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
       console.log("[FYE Seed] Inserted KPI counters for FYE 2026");
     }
+
+    // Seed FYE 2026 aggregate monthly budgets (Revenue + COS)
+    const existingBudgets = await db
+      .select({ id: fyeBudgets.id })
+      .from(fyeBudgets)
+      .where(and(eq(fyeBudgets.fye, "2026"), eq(fyeBudgets.projectName, "__FYE_TOTAL__")))
+      .limit(1);
+
+    if (existingBudgets.length === 0) {
+      const budgetData: [string, string, string][] = [
+        // [monthKey, revenueAmount, cosAmount]
+        ["2025-09", "9348308.37",  "8083466.99"],
+        ["2025-10", "18892558.25", "16346971.77"],
+        ["2025-11", "23185462.07", "20063809.84"],
+        ["2025-12", "14313016.10", "12381959.44"],
+        ["2026-01", "14328580.47", "12395435.22"],
+        ["2026-02", "23948744.22", "20724666.98"],
+        ["2026-03", "23811191.68", "20599956.60"],
+        ["2026-04", "26808799.27", "23137378.14"],
+        ["2026-05", "36331899.47", "31403537.82"],
+        ["2026-06", "48187541.07", "41710854.07"],
+        ["2026-07", "45191393.46", "39116760.20"],
+        ["2026-08", "85332843.65", "73983831.01"],
+      ];
+      for (const [monthKey, rev, cos] of budgetData) {
+        await db.execute(sql`INSERT INTO fye_budgets (project_id, project_name, fye, month_key, budget_type, amount, created_at, updated_at)
+          VALUES (NULL, '__FYE_TOTAL__', '2026', ${monthKey}, 'revenue', ${rev}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
+        await db.execute(sql`INSERT INTO fye_budgets (project_id, project_name, fye, month_key, budget_type, amount, created_at, updated_at)
+          VALUES (NULL, '__FYE_TOTAL__', '2026', ${monthKey}, 'cos', ${cos}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
+      }
+      console.log("[FYE Seed] Inserted 24 budget rows (12 revenue + 12 COS) for FYE 2026");
+    }
   } catch (err: any) {
     console.error("[FYE Seed] Error:", err.message);
   }
