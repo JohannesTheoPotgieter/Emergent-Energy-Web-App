@@ -347,6 +347,15 @@ async function runAdditiveSchemaAlignments() {
       ALTER TABLE lost_deals ADD COLUMN IF NOT EXISTS fye_year INTEGER NOT NULL DEFAULT 2026;
       ALTER TABLE lost_deals ADD COLUMN IF NOT EXISTS created_by INTEGER;
 
+      -- CP Signed gate columns on project_info
+      ALTER TABLE project_info ADD COLUMN IF NOT EXISTS cp_signed BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE project_info ADD COLUMN IF NOT EXISTS cp_signed_date TEXT;
+      ALTER TABLE project_info ADD COLUMN IF NOT EXISTS cp_signed_by_user_id INTEGER REFERENCES users(id);
+      ALTER TABLE project_info ADD COLUMN IF NOT EXISTS cp_evidence_type TEXT;
+      ALTER TABLE project_info ADD COLUMN IF NOT EXISTS cp_evidence_ref TEXT;
+      ALTER TABLE project_info ADD COLUMN IF NOT EXISTS pm_task_pack_created BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE project_info ADD COLUMN IF NOT EXISTS eng_post_cp_task_pack_created BOOLEAN NOT NULL DEFAULT false;
+
       -- Microsoft Sync tables (ms_accounts, ms_objects, project_links)
       DO $$ BEGIN CREATE TYPE ms_account_status AS ENUM ('active', 'disconnected', 'expired'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
       DO $$ BEGIN CREATE TYPE ms_object_type AS ENUM ('email', 'event', 'teams', 'sharepoint_file'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;

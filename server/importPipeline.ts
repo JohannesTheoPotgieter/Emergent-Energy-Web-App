@@ -428,10 +428,30 @@ export function startScheduler(): void {
 
       isRunning = true;
       console.log("[SharePoint] Scheduled import starting...");
-      const result = await runFullImport("schedule", "system");
-      console.log("[SharePoint] Scheduled import complete:", JSON.stringify(result.summary));
-    } catch (err: any) {
-      console.error("[SharePoint] Scheduled import error:", err.message);
+
+      const MAX_RETRIES = 3;
+      const BACKOFF_BASE_MS = 2000;
+      let lastError: any = null;
+
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const result = await runFullImport("schedule", "system");
+          console.log("[SharePoint] Scheduled import complete:", JSON.stringify(result.summary));
+          lastError = null;
+          break;
+        } catch (retryErr: any) {
+          lastError = retryErr;
+          const isTransient = /timeout|ECONNRESET|ECONNREFUSED|ETIMEDOUT|connection terminated/i.test(retryErr.message);
+          if (!isTransient || attempt === MAX_RETRIES) break;
+          const delay = BACKOFF_BASE_MS * Math.pow(2, attempt - 1);
+          console.warn(`[SharePoint] Scheduled import attempt ${attempt}/${MAX_RETRIES} failed (${retryErr.message}), retrying in ${delay}ms...`);
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
+
+      if (lastError) {
+        console.error("[SharePoint] Scheduled import error:", lastError.message);
+      }
     } finally {
       isRunning = false;
     }
