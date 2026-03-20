@@ -137,17 +137,6 @@ export const insertSpFilePointerSchema = createInsertSchema(spFilePointers).omit
 export type InsertSpFilePointer = z.infer<typeof insertSpFilePointerSchema>;
 export type SpFilePointer = typeof spFilePointers.$inferSelect;
 
-export const importDiffEvents = pgTable("import_diff_events", {
-  id: serial("id").primaryKey(),
-  importRunId: integer("import_run_id").notNull().references(() => importRuns.id),
-  entityKey: text("entity_key").notNull(),
-  fieldName: text("field_name").notNull(),
-  oldValue: text("old_value"),
-  newValue: text("new_value"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-export type ImportDiffEvent = typeof importDiffEvents.$inferSelect;
-
 export const smartImportRuns = pgTable("smart_import_runs", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projectInfo.id),
@@ -487,26 +476,6 @@ export const insertFieldChangeSchema = createInsertSchema(fieldChanges).omit({ i
 export type InsertFieldChange = z.infer<typeof insertFieldChangeSchema>;
 export type FieldChange = typeof fieldChanges.$inferSelect;
 
-// ===================== IMPORT FIELD MAPPINGS =====================
-
-export const importFieldMappings = pgTable("import_field_mappings", {
-  id: serial("id").primaryKey(),
-  importProfile: text("import_profile").notNull(),
-  sheetName: text("sheet_name"),
-  excelColumnHeader: text("excel_column_header").notNull(),
-  targetTable: text("target_table").notNull(),
-  targetField: text("target_field").notNull(),
-  transform: text("transform"),
-  required: boolean("required").notNull().default(false),
-  defaultValue: text("default_value"),
-  active: boolean("active").notNull().default(true),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-export const insertImportFieldMappingSchema = createInsertSchema(importFieldMappings).omit({ id: true, createdAt: true, updatedAt: true } as any);
-export type InsertImportFieldMapping = z.infer<typeof insertImportFieldMappingSchema>;
-export type ImportFieldMapping = typeof importFieldMappings.$inferSelect;
-
 // ===================== PLAN EDIT NOTIFICATIONS =====================
 
 export const planEditNotifications = pgTable("plan_edit_notifications", {
@@ -585,29 +554,3 @@ export const conflictResolutionLog = pgTable("conflict_resolution_log", {
 })
 export type ConflictResolutionLogEntry = typeof conflictResolutionLog.$inferSelect;
 
-export const migrationBackups = pgTable("migration_backups", {
-  id: serial("id").primaryKey(),
-  backupId: text("backup_id").notNull(),
-  backupType: text("backup_type").notNull().default("manual"),
-  description: text("description"),
-  createdByUserId: integer("created_by_user_id").references(() => users.id),
-  createdByName: text("created_by_name"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-export type MigrationBackup = typeof migrationBackups.$inferSelect;
-
-export const migrationCleanupLog = pgTable("migration_cleanup_log", {
-  id: serial("id").primaryKey(),
-  action: text("action").notNull(),
-  tableName: text("table_name").notNull(),
-  originalName: text("original_name").notNull(),
-  archivedName: text("archived_name"),
-  rowCount: integer("row_count"),
-  performedByUserId: integer("performed_by_user_id").references(() => users.id),
-  performedByName: text("performed_by_name"),
-  backupId: text("backup_id"),
-  reversible: boolean("reversible").notNull().default(true),
-  performedAt: timestamp("performed_at").notNull().defaultNow(),
-  metadata: text("metadata"),
-})
-export type MigrationCleanupLog = typeof migrationCleanupLog.$inferSelect;

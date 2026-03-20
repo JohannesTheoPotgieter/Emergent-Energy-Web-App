@@ -297,29 +297,6 @@ export const insertWorkItemDependencySchema = createInsertSchema(workItemDepende
 export type InsertWorkItemDependency = z.infer<typeof insertWorkItemDependencySchema>;
 export type WorkItemDependency = typeof workItemDependencies.$inferSelect;
 
-export const workItemComments = pgTable("work_item_comments", {
-  id: serial("id").primaryKey(),
-  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
-  userId: integer("user_id").notNull().references(() => users.id),
-  content: text("content").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-export const insertWorkItemCommentSchema = createInsertSchema(workItemComments).omit({ id: true, createdAt: true } as any);
-export type InsertWorkItemComment = z.infer<typeof insertWorkItemCommentSchema>;
-export type WorkItemComment = typeof workItemComments.$inferSelect;
-
-export const workItemAttachments = pgTable("work_item_attachments", {
-  id: serial("id").primaryKey(),
-  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
-  fileName: text("file_name").notNull(),
-  fileUrl: text("file_url").notNull(),
-  uploadedBy: integer("uploaded_by").references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-export const insertWorkItemAttachmentSchema = createInsertSchema(workItemAttachments).omit({ id: true, createdAt: true } as any);
-export type InsertWorkItemAttachment = z.infer<typeof insertWorkItemAttachmentSchema>;
-export type WorkItemAttachment = typeof workItemAttachments.$inferSelect;
-
 export const workItemStatusHistory = pgTable("work_item_status_history", {
   id: serial("id").primaryKey(),
   workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),

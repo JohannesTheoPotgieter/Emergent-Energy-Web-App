@@ -638,21 +638,6 @@ export const insertPmOnTheGoActionSchema = createInsertSchema(pmOnTheGoActions).
 export type InsertPmOnTheGoAction = z.infer<typeof insertPmOnTheGoActionSchema>;
 export type PmOnTheGoAction = typeof pmOnTheGoActions.$inferSelect;
 
-export const pmComplianceTracking = pgTable("pm_compliance_tracking", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull(),
-  userId: integer("user_id").notNull(),
-  weekStartDate: date("week_start_date").notNull(),
-  dailyDiaryDone: jsonb("daily_diary_done").default([]),
-  weeklyProgressDone: boolean("weekly_progress_done").default(false),
-  weeklyRiskDone: boolean("weekly_risk_done").default(false),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-export const insertPmComplianceTrackingSchema = createInsertSchema(pmComplianceTracking).omit({ id: true, createdAt: true, updatedAt: true } as any);
-export type InsertPmComplianceTracking = z.infer<typeof insertPmComplianceTrackingSchema>;
-export type PmComplianceTracking = typeof pmComplianceTracking.$inferSelect;
-
 export const pmModePreferences = pgTable("pm_mode_preferences", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().unique(),
@@ -717,33 +702,6 @@ export const projectLinks = pgTable("project_links", {
 export const insertProjectLinkSchema = createInsertSchema(projectLinks).omit({ id: true, linkedAt: true } as any);
 export type InsertProjectLink = z.infer<typeof insertProjectLinkSchema>;
 export type ProjectLink = typeof projectLinks.$inferSelect;
-
-export const msCreateItemLinks = pgTable("ms_create_item_links", {
-  id: serial("id").primaryKey(),
-  sourceType: text("source_type").notNull(),
-  sourceRef: text("source_ref").notNull(),
-  sourceDeepLink: text("source_deep_link"),
-  sourceTitle: text("source_title"),
-  sourceSenderOrAuthor: text("source_sender_or_author"),
-  createdItemType: text("created_item_type").notNull(),
-  createdItemId: integer("created_item_id").notNull(),
-  category: text("category"),
-  projectBehavior: text("project_behavior"),
-  suggestedValues: jsonb("suggested_values"),
-  chosenValues: jsonb("chosen_values"),
-  overrideReasons: jsonb("override_reasons"),
-  createdBy: integer("created_by").notNull().references(() => users.id),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  sourceItemCreateTypeUnique: unique("ms_create_item_links_source_ref_type_unique").on(
-    table.sourceType,
-    table.sourceRef,
-    table.createdItemType,
-  ),
-}));
-export const insertMsCreateItemLinkSchema = createInsertSchema(msCreateItemLinks).omit({ id: true, createdAt: true } as any);
-export type InsertMsCreateItemLink = z.infer<typeof insertMsCreateItemLinkSchema>;
-export type MsCreateItemLink = typeof msCreateItemLinks.$inferSelect;
 
 // ===================== COMMUNICATION TIMELINE =====================
 

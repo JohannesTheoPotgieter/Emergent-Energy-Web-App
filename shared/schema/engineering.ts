@@ -134,47 +134,6 @@ export const insertEngineeringTaskSchema = createInsertSchema(engineeringTasks).
 export type InsertEngineeringTask = z.infer<typeof insertEngineeringTaskSchema>;
 export type EngineeringTask = typeof engineeringTasks.$inferSelect;
 
-// ===================== ENGINEERING TASK ATTACHMENTS (Part F) =====================
-
-export const engineeringTaskAttachments = pgTable("engineering_task_attachments", {
-  id: serial("id").primaryKey(),
-  engineeringTaskId: integer("engineering_task_id").notNull().references(() => engineeringTasks.id, { onDelete: 'cascade' }),
-  displayName: text("display_name").notNull(),
-  browserPathString: text("browser_path_string"),
-  localFileName: text("local_file_name").notNull(),
-  localFileSize: integer("local_file_size"),
-  localLastModified: timestamp("local_last_modified"),
-  computedFullPathReference: text("computed_full_path_reference"),
-  notes: text("notes"),
-  uploadedByRole: text("uploaded_by_role").notNull(),
-  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
-  softDeletedAt: timestamp("soft_deleted_at"),
-});
-export const insertEngTaskAttachmentSchema = createInsertSchema(engineeringTaskAttachments).omit({ id: true, uploadedAt: true } as any);
-export type InsertEngTaskAttachment = z.infer<typeof insertEngTaskAttachmentSchema>;
-export type EngTaskAttachment = typeof engineeringTaskAttachments.$inferSelect;
-
-// ===================== ENGINEERING TEMPLATES (Part E placeholder) =====================
-
-export const engineeringTemplates = pgTable("engineering_templates", {
-  id: serial("id").primaryKey(),
-  lifecyclePhase: companyLifecyclePhaseEnum("lifecycle_phase").notNull(),
-  title: text("title").notNull(),
-  description: text("description"),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-export const engineeringTemplateItems = pgTable("engineering_template_items", {
-  id: serial("id").primaryKey(),
-  templateId: integer("template_id").notNull().references(() => engineeringTemplates.id, { onDelete: 'cascade' }),
-  title: text("title").notNull(),
-  description: text("description"),
-  requiresQcApproval: boolean("requires_qc_approval").notNull().default(false),
-  requiresOpsApproval: boolean("requires_ops_approval").notNull().default(false),
-  sortOrder: integer("sort_order").notNull().default(0),
-});
-
 // ===================== ENGINEERING STAGE TEMPLATES (Part E2) =====================
 
 export const engStageStatusEnum = pgEnum('eng_stage_status', ['not_started', 'in_progress', 'blocked', 'ready_for_review', 'complete']);
