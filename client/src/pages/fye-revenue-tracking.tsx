@@ -178,7 +178,7 @@ function DashboardSection({
     { key: "budget", label: "Budget", color: "text-blue-700 bg-blue-50" },
     { key: "actualForecast", label: "Actual + Forecast", color: "text-emerald-700 bg-emerald-50" },
     { key: "actual", label: "Actual", color: "text-amber-700 bg-amber-50" },
-    { key: "captured", label: "Captured Data", color: "text-purple-700 bg-purple-50" },
+    { key: "captured", label: "Captured Data", color: "text-gray-700 bg-gray-50" },
   ] as const;
 
   const data = useMemo(() => {
@@ -298,7 +298,7 @@ function BudgetEditorModal({ fye, months, open, onClose }: { fye: number; months
   const [activeType, setActiveType] = useState<"revenue" | "cos">("revenue");
   const [saved, setSaved] = useState(false);
 
-  const { data: budgets } = useQuery<BudgetRow[]>({
+  const { data: budgets, isLoading: budgetsLoading } = useQuery<BudgetRow[]>({
     queryKey: [`/api/fye-revenue-tracking/budgets?fye=${fye}`],
     queryFn: getQueryFn({ on401: "throw" }),
     enabled: open,
@@ -387,6 +387,9 @@ function BudgetEditorModal({ fye, months, open, onClose }: { fye: number; months
 
         {/* Month rows */}
         <div className="max-h-[400px] overflow-y-auto">
+          {budgetsLoading ? (
+            <div className="space-y-2 py-4 px-3">{[1,2,3,4,5,6].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
+          ) : (
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-background">
               <tr className="border-b">
@@ -422,6 +425,7 @@ function BudgetEditorModal({ fye, months, open, onClose }: { fye: number; months
               </tr>
             </tbody>
           </table>
+          )}
         </div>
 
         <DialogFooter className="flex items-center gap-2 pt-2">
@@ -956,21 +960,28 @@ function DetailTab({ fye }: { fye: number }) {
 
   const handleExport = async () => {
     try {
-      const csvRows = [
-        ["Project Name", "Business Developer", "Province", "Size (kWp)", "Project Type", "Funding Type", "Start Date", "PC Date", "Status", "Budget Revenue", "Budget COS", "Budget GP", "Actual Revenue", "Actual Expense", "Actual GP", "Budget GP%", "Actual GP%"],
-        ...filtered.map((p) => [
-          p.projectName, p.businessDeveloper || "", p.province || "", p.sizeKwp, p.projectType || "", p.fundingType || "",
-          p.startDate || "", p.pcDate || "", p.status || "",
-          p.budgetRevenue, p.budgetCos, p.budgetGp, p.actualRevenue, p.actualExpense, p.actualGp,
-          formatPct(p.budgetGpPct), formatPct(p.actualGpPct),
-        ]),
+      const headers = ["Project Name", "Business Developer", "Province", "Size (kWp)", "Project Type", "Funding Type", "Start Date", "PC Date", "Status", "Budget Revenue", "Budget COS", "Budget GP", "Actual Revenue", "Actual Expense", "Actual GP", "Budget GP%", "Actual GP%"];
+      const dataRows = filtered.map((p) => [
+        p.projectName, p.businessDeveloper || "", p.province || "", p.sizeKwp, p.projectType || "", p.fundingType || "",
+        p.startDate || "", p.pcDate || "", p.status || "",
+        p.budgetRevenue, p.budgetCos, p.budgetGp, p.actualRevenue, p.actualExpense, p.actualGp,
+        formatPct(p.budgetGpPct), formatPct(p.actualGpPct),
+      ]);
+      const totalsRow = [
+        `Totals (${filtered.length})`, "", "", "", "", "", "", "", "",
+        filteredTotals.budgetRevenue, filteredTotals.budgetCos, filteredTotals.budgetGp,
+        filteredTotals.actualRevenue, filteredTotals.actualExpense, filteredTotals.actualGp,
+        formatPct(filteredTotals.budgetRevenue ? filteredTotals.budgetGp / filteredTotals.budgetRevenue : null),
+        formatPct(filteredTotals.actualRevenue ? filteredTotals.actualGp / filteredTotals.actualRevenue : null),
       ];
+      const csvRows = [headers, ...dataRows, totalsRow];
       const csv = csvRows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
       const blob = new Blob([csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `fye-${fye}-detail.csv`;
+      const today = new Date().toISOString().slice(0, 10);
+      a.download = `FYE_${fye}_Revenue_Detail_${today}.csv`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {}
@@ -1121,7 +1132,7 @@ function DetailTab({ fye }: { fye: number }) {
 
       {/* KPI Counts */}
       {kpis && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Card className="p-3 text-center">
             <div className="text-xs text-muted-foreground mb-1">Brought In</div>
             <div className="text-2xl font-bold">{kpis.broughtIn}</div>
@@ -1201,7 +1212,20 @@ function SnapshotsTab({ fye }: { fye: number }) {
     return `${monthNames[now.getMonth()]} ${now.getFullYear()} Month-End`;
   }, []);
 
-  // Historical view
+  // Historical view — loading
+  if (viewId !== null && viewLoading) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setViewId(null)}><X className="h-3 w-3 mr-1" />Back</Button>
+          <span className="text-xs text-muted-foreground">Loading snapshot...</span>
+        </div>
+        <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-32 w-full" />)}</div>
+      </div>
+    );
+  }
+
+  // Historical view — data
   if (viewId !== null && viewData) {
     const sd = viewData.snapshotData;
     return (
