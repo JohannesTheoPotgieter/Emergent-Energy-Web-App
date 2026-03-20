@@ -655,6 +655,7 @@ router.get(
           budgetGpPct: safeDivide(budgetGp, budgetRev),
           actualGpPct: safeDivide(actualGp, actualRev),
           signedStatus: p.signedStatus || "NONE",
+          hasTracker: revSummaryMap.has(p.projectName),
         };
       });
 
