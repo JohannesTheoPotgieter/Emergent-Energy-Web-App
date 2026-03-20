@@ -5195,45 +5195,6 @@ export async function registerRoutes(
     }
   });
 
-  // ==================== BUDGETS ROUTES (Admin Only) ====================
-
-  app.get("/api/budgets", requireAuth, async (req, res) => {
-    try {
-      const budgets = await storage.getAllBudgets();
-      res.json(budgets);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch budgets", message: "Failed to fetch budgets" });
-    }
-  });
-
-  app.post("/api/budgets", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const parsed = insertBudgetSchema.parse(req.body);
-      const budget = await storage.createBudget(parsed);
-      logAuditFromReq(req, { entityType: "budget", action: "create", entityId: String(budget.id), changesJson: { description: "Budget created", ...parsed } });
-      res.status(201).json(budget);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid budget data", message: "Invalid budget data", errors: error.errors });
-      }
-      res.status(500).json({ error: "Failed to create budget", message: "Failed to create budget" });
-    }
-  });
-
-  app.delete("/api/budgets/:id", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const id = parseInt(String(req.params.id));
-      const deleted = await storage.deleteBudget(id);
-      if (!deleted) {
-        return res.status(404).json({ error: "Budget not found", message: "Budget not found" });
-      }
-      logAuditFromReq(req, { entityType: "budget", action: "delete", entityId: String(id), changesJson: { description: "Budget deleted" } });
-      res.json({ message: "Budget deleted" });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete budget", message: "Failed to delete budget" });
-    }
-  });
-
   // ==================== FILE UPLOAD ROUTE ====================
 
   // Accept multiple field names: files, file, tracker, trackers
