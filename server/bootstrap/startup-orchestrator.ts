@@ -8,6 +8,33 @@ import { startRuntimeServices } from "./start-runtime-services";
 import type { StartupReport } from "./startup-report";
 import { db, getDbMode } from "../db";
 import { sql } from "drizzle-orm";
+import { execSync } from "child_process";
+
+/**
+ * In development mode with PostgreSQL, run drizzle-kit push to auto-create
+ * all tables from the Drizzle schema. This ensures 100% schema coverage
+ * without manually maintaining DDL for every table.
+ */
+async function runDrizzleSchemaSync(log: (message: string, source?: string) => void) {
+  const mode = getDbMode();
+  if (mode !== "postgres") return;
+  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
+  if (!process.env.DATABASE_URL) return;
+
+  try {
+    log("Running drizzle-kit push to sync schema with database...", "Startup:Schema");
+    execSync("npx drizzle-kit push --force", {
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 60000,
+      env: { ...process.env },
+    });
+    log("drizzle-kit push completed — all schema tables synced", "Startup:Schema");
+  } catch (err: any) {
+    // Non-fatal: the additive alignments below will handle critical tables
+    const stderr = err.stderr?.toString?.() || "";
+    log(`drizzle-kit push warning (non-fatal): ${stderr || err.message}`, "Startup:Schema");
+  }
+}
 
 async function runAdditiveSchemaAlignments() {
   const mode = getDbMode();
@@ -410,6 +437,7 @@ export async function runStartupOrchestrator(options: {
     log,
   } = options;
 
+  await runDrizzleSchemaSync(log);
   await runAdditiveSchemaAlignments();
 
   await runStartupMaintenanceOrchestrator({ runtimeMaintenanceEnabled, startupSchemaRepairEnabled, log });
