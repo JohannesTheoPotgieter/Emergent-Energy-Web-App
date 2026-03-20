@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   LineChart,
   Line,
@@ -923,19 +924,11 @@ export default function CashflowPage() {
             <span className="text-sm font-medium">Loading cashflow data...</span>
           </div>
         ) : cashflowData.length === 0 ? (
-          <Card className="border-dashed border-2 border-border">
-            <CardContent className="py-16">
-              <div className="text-center">
-                <div className="rounded-full bg-muted w-14 h-14 flex items-center justify-center mx-auto mb-4">
-                  <DollarSign className="h-7 w-7 text-slate-500" />
-                </div>
-                <p className="text-lg font-semibold text-foreground" data-testid="text-empty-state">No cashflow data available</p>
-                <p className="text-sm text-muted-foreground mt-1.5 max-w-sm mx-auto">
-                  Upload tracker files to populate the cashflow timeline
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <EmptyState
+            icon={<DollarSign className="w-6 h-6 text-muted-foreground" />}
+            title="No cashflow data available"
+            description="Upload tracker files to populate the cashflow timeline"
+          />
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3" data-testid="kpi-summary-row">

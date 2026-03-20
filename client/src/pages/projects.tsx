@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -456,7 +457,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
               </tbody>
             </table>
           ) : (
-            <div className="p-6 text-center text-sm text-slate-500">No tasks found</div>
+            <EmptyState title="No tasks found" className="my-4" />
           )}
         </div>
         {hasEdits && (
@@ -1650,17 +1651,11 @@ export default function ProjectsSummary() {
           title="Project List"
           description="Execution project management list"
         />
-        <Card className="border-2 border-dashed border-border">
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-              <AlertCircle className="w-8 h-8 text-slate-500" />
-            </div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">No projects available</h3>
-            <p className="text-sm text-muted-foreground max-w-md">
-              Upload tracker files to populate the execution project list with trusted tracker-linked dates, latest updates, and operational signals.
-            </p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={<AlertCircle className="w-6 h-6 text-muted-foreground" />}
+          title="No projects available"
+          description="Upload tracker files to populate the execution project list with trusted tracker-linked dates, latest updates, and operational signals."
+        />
       </PageShell>
     );
   }
