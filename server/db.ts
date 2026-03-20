@@ -87,9 +87,11 @@ async function initializeDatabase(): Promise<void> {
           connectionString: config.connectionString,
           connectionTimeoutMillis: 10000,
           query_timeout: 30000,
-          idleTimeoutMillis: 20000,
+          idleTimeoutMillis: 10000,
           max: 10,
           allowExitOnIdle: false,
+          keepAlive: true,
+          keepAliveInitialDelayMillis: 10000,
         });
         // Robust pool error handling for Replit - prevent unhandled errors from crashing
         pool.on('error', (err) => {
