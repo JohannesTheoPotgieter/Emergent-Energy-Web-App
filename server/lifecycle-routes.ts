@@ -12,6 +12,7 @@ import { requirePermission } from "./permission-middleware";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 import { createStageGateOverride, evaluateStageGate } from "./services/lifecycle-stage-gate-service";
 import { buildProjectLifecycleWorkspace } from "./services/project-lifecycle-workspace-service";
+import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -1434,6 +1435,9 @@ export function registerLifecycleRoutes(app: Express) {
         idempotencyKey: `phase:${id}:${existing.phase || ""}:${phase.trim()}`,
       });
       res.json({ ...updated, engStagesResult });
+
+      // Prompt 12: Refresh materialized dashboard metrics after phase change
+      refreshProjectMetricsAsync(id);
     } catch (err: any) {
       console.error("[lifecycle-board] PATCH phase error:", err);
       res.status(500).json({ error: err.message });

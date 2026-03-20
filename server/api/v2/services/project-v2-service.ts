@@ -1,5 +1,8 @@
 import * as repo from "../repositories/project-v2-repository";
 import { ApiV2Error, paginationMeta } from "../utils/http";
+import { db } from "../../../db";
+import { dashboardProjectMetrics, dashboardProgramMetrics } from "@shared/schema";
+import { refreshAllMetrics } from "../../../services/dashboard-metrics";
 
 export async function listProjectsService(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null }) {
   const { rows, total } = await repo.listProjects(params);
@@ -169,4 +172,24 @@ export async function dashboardByRoleService(role: string, scopeProjectIds?: Set
     return { role, handoverReadiness: totals.openWorkItems, outstandingDevelopmentActions: totals.openProcurement };
   }
   return { role, crossFunctionalRisk: totals.openWorkItems + totals.openProcurement, blockedProjects: totals.projects, overdueActions: totals.openWorkItems, marginRisk: totals.pendingInvoices, totals };
+}
+
+// ─── Prompt 12: Materialized dashboard metrics ─────────────────────
+
+export async function dashboardMetricsService() {
+  const [projects, program] = await Promise.all([
+    db.select().from(dashboardProjectMetrics),
+    db.select().from(dashboardProgramMetrics).limit(1),
+  ]);
+
+  return {
+    program: program[0] ?? null,
+    projects,
+    lastRefreshedAt: program[0]?.lastRefreshedAt?.toISOString() ?? null,
+  };
+}
+
+export async function dashboardRefreshService() {
+  const result = await refreshAllMetrics();
+  return { refreshed: result.refreshed, timestamp: new Date().toISOString() };
 }

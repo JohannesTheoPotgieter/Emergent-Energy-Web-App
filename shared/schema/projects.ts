@@ -1006,3 +1006,56 @@ export const insertNormalizedExecutionPhaseSchema = createInsertSchema(normalize
 export type InsertNormalizedExecutionPhase = z.infer<typeof insertNormalizedExecutionPhaseSchema>;
 export type NormalizedExecutionPhase = typeof normalizedExecutionPhases.$inferSelect;
 
+// ===================== DASHBOARD MATERIALIZED METRICS (Prompt 12) =====================
+
+export const dashboardProjectMetrics = pgTable("dashboard_project_metrics", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").unique().notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+  // Financial aggregates
+  totalRevenue: decimal("total_revenue", { precision: 15, scale: 2 }).notNull().default("0"),
+  receivedRevenue: decimal("received_revenue", { precision: 15, scale: 2 }).notNull().default("0"),
+  outstandingRevenue: decimal("outstanding_revenue", { precision: 15, scale: 2 }).notNull().default("0"),
+  totalCost: decimal("total_cost", { precision: 15, scale: 2 }).notNull().default("0"),
+  paidCost: decimal("paid_cost", { precision: 15, scale: 2 }).notNull().default("0"),
+  outstandingCost: decimal("outstanding_cost", { precision: 15, scale: 2 }).notNull().default("0"),
+  marginPct: decimal("margin_pct", { precision: 8, scale: 4 }),
+  // Task aggregates
+  taskCount: integer("task_count").notNull().default(0),
+  tasksCompleted: integer("tasks_completed").notNull().default(0),
+  tasksInProgress: integer("tasks_in_progress").notNull().default(0),
+  tasksOverdue: integer("tasks_overdue").notNull().default(0),
+  tasksActive: integer("tasks_active").notNull().default(0),
+  // QC aggregates
+  openWarnings: integer("open_warnings").notNull().default(0),
+  qcProgressPct: decimal("qc_progress_pct", { precision: 8, scale: 4 }),
+  // Snapshot of current state
+  healthScore: decimal("health_score", { precision: 5, scale: 2 }),
+  phase: text("phase"),
+  ragStatus: text("rag_status"),
+  contractValue: decimal("contract_value", { precision: 15, scale: 2 }),
+  projectName: text("project_name"),
+  pm: text("pm"),
+  pd: text("pd"),
+  // Metadata
+  lastRefreshedAt: timestamp("last_refreshed_at").notNull().defaultNow(),
+});
+export type DashboardProjectMetrics = typeof dashboardProjectMetrics.$inferSelect;
+
+export const dashboardProgramMetrics = pgTable("dashboard_program_metrics", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
+  totalProjects: integer("total_projects").notNull().default(0),
+  activeProjects: integer("active_projects").notNull().default(0),
+  totalProgramRevenue: decimal("total_program_revenue", { precision: 15, scale: 2 }).notNull().default("0"),
+  totalProgramCost: decimal("total_program_cost", { precision: 15, scale: 2 }).notNull().default("0"),
+  receivedRevenue: decimal("received_revenue", { precision: 15, scale: 2 }).notNull().default("0"),
+  paidCost: decimal("paid_cost", { precision: 15, scale: 2 }).notNull().default("0"),
+  avgMargin: decimal("avg_margin", { precision: 8, scale: 4 }),
+  projectsAtRisk: integer("projects_at_risk").notNull().default(0),
+  totalTasksOverdue: integer("total_tasks_overdue").notNull().default(0),
+  totalOpenWarnings: integer("total_open_warnings").notNull().default(0),
+  lastRefreshedAt: timestamp("last_refreshed_at").notNull().defaultNow(),
+});
+export type DashboardProgramMetrics = typeof dashboardProgramMetrics.$inferSelect;
+

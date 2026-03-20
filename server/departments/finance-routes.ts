@@ -33,6 +33,7 @@ import {
 } from "../lib/calculations/financeUtils";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from "../work-items-adapter";
+import { refreshProjectMetricsAsync } from "../services/dashboard-metrics";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 
@@ -2880,6 +2881,16 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
     }
 
     res.json({ message: "Revenue tracking overrides saved", count: saved.length, overrides: saved });
+
+    // Prompt 12: Refresh materialized dashboard metrics for affected projects
+    try {
+      const allProjectInfoRows = await storage.getAllProjectInfo();
+      const nameToId = new Map(allProjectInfoRows.map((p: any) => [p.projectName, p.id]));
+      for (const pn of projectNames) {
+        const pid = nameToId.get(pn);
+        if (pid) refreshProjectMetricsAsync(pid);
+      }
+    } catch (_) { /* non-blocking */ }
   } catch (error) {
     res.status(500).json({ error: "Failed to save revenue tracking overrides", message: error instanceof Error ? error.message : "Failed to save revenue tracking overrides" });
   }
