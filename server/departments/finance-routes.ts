@@ -89,22 +89,15 @@ function isCosRealised(exp: any): boolean {
   return isCosRealisedShared(exp);
 }
 
-// Loads COS status overrides and enriches expense records so isCosRealised() respects them.
+// DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
+// COS status overrides are applied directly to program_expense.line_status.
+// These functions are kept as no-ops for backward compatibility during transition.
 async function loadCosOverrides(): Promise<Map<string, string>> {
-  const overrides = await db.select().from(cosStatusOverrides);
-  const map = new Map<string, string>();
-  for (const o of overrides) {
-    map.set(`${o.projectName}::${o.rowNumber}`, o.overrideStatus);
-  }
-  return map;
+  return new Map<string, string>();
 }
 
-function enrichWithOverrides(expenses: any[], cosOverrideMap: Map<string, string>): void {
-  for (const exp of expenses) {
-    const key = `${exp.projectName}::${exp._sourceRow || exp.rowNumber}`;
-    const override = cosOverrideMap.get(key);
-    if (override) exp._cosOverrideStatus = override;
-  }
+function enrichWithOverrides(_expenses: any[], _cosOverrideMap: Map<string, string>): void {
+  // No-op: COS overrides are baked into base rows
 }
 
 function isCashflowConfirmed(exp: any): boolean {
@@ -166,62 +159,14 @@ function calculateRevenueRecognition(
   return { weekly, cumulative };
 }
 
-function applyPlanningOverrides(
-  baselinePoints: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselinePoints;
-
-  const overrideMap = new Map<string, number>();
-  overrides.forEach((o: any) => {
-    const key = `${o.projectName}|${o.weekStartDate}|${o.seriesName}`;
-    const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
-    if (!isNaN(numValue)) {
-      overrideMap.set(key, numValue);
-    }
-  });
-
-  return baselinePoints.map((point: any) => {
-    const key = `${point.projectName}|${point.pointDate}|${point.seriesName}`;
-    if (overrideMap.has(key)) {
-      return {
-        ...point,
-        value: overrideMap.get(key)!,
-      };
-    }
-    return point;
-  });
+// DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
+function applyPlanningOverrides(baselinePoints: any[], _overrides: any[]): any[] {
+  return baselinePoints;
 }
 
-function applyRevenueTrackingOverrides(
-  baselineRows: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineRows;
-
-  const overrideMap = new Map<number, Map<string, any>>();
-  overrides.forEach((o: any) => {
-    if (!overrideMap.has(o.rowNumber)) {
-      overrideMap.set(o.rowNumber, new Map());
-    }
-    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
-  });
-
-  return baselineRows.map((row: any) => {
-    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
-      return row;
-    }
-    const fieldOverrides = overrideMap.get(row.rowNumber)!;
-    const updatedRow = { ...row };
-    fieldOverrides.forEach((value, fieldName) => {
-      if (fieldName === 'inBank') {
-        updatedRow[fieldName] = value === '1' || value === 1 || value === true ? 1 : 0;
-      } else {
-        updatedRow[fieldName] = value;
-      }
-    });
-    return updatedRow;
-  });
+// DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
+function applyRevenueTrackingOverrides(baselineRows: any[], _overrides: any[]): any[] {
+  return baselineRows;
 }
 
 function resolveInflowEffectiveDates(
@@ -287,85 +232,19 @@ function resolveInflowEffectiveDates(
   });
 }
 
-function applyExpenditureOverrides(
-  baselineRows: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineRows;
-
-  const overrideMap = new Map<number, Map<string, any>>();
-  overrides.forEach((o: any) => {
-    if (!overrideMap.has(o.rowNumber)) {
-      overrideMap.set(o.rowNumber, new Map());
-    }
-    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
-  });
-
-  return baselineRows.map((row: any) => {
-    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
-      return row;
-    }
-    const fieldOverrides = overrideMap.get(row.rowNumber)!;
-    const updatedRow = { ...row };
-    fieldOverrides.forEach((value, fieldName) => {
-      updatedRow[fieldName] = value;
-    });
-    return updatedRow;
-  });
+// DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
+function applyExpenditureOverrides(baselineRows: any[], _overrides: any[]): any[] {
+  return baselineRows;
 }
 
-function applyFinanceRevenueOverrides(
-  baselineData: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineData;
-
-  const overrideMap = new Map<string, number>();
-  overrides.forEach((o: any) => {
-    const key = `${o.category}|${o.monthEndDate}`;
-    const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
-    if (!isNaN(numValue)) {
-      overrideMap.set(key, numValue);
-    }
-  });
-
-  return baselineData.map((row: any) => {
-    const key = `${row.category}|${row.monthEndDate}`;
-    if (overrideMap.has(key)) {
-      return {
-        ...row,
-        value: overrideMap.get(key)!,
-      };
-    }
-    return row;
-  });
+// DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
+function applyFinanceRevenueOverrides(baselineData: any[], _overrides: any[]): any[] {
+  return baselineData;
 }
 
-function applyFinanceCosOverrides(
-  baselineData: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineData;
-
-  const overrideMap = new Map<string, number>();
-  overrides.forEach((o: any) => {
-    const key = `${o.category}|${o.monthEndDate}`;
-    const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
-    if (!isNaN(numValue)) {
-      overrideMap.set(key, numValue);
-    }
-  });
-
-  return baselineData.map((row: any) => {
-    const key = `${row.category}|${row.monthEndDate}`;
-    if (overrideMap.has(key)) {
-      return {
-        ...row,
-        value: overrideMap.get(key)!,
-      };
-    }
-    return row;
-  });
+// DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
+function applyFinanceCosOverrides(baselineData: any[], _overrides: any[]): any[] {
+  return baselineData;
 }
 
 function normalizeOverrideValue(value: any): any {

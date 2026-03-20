@@ -8,7 +8,8 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments } from "@shared/schema";
+import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense } from "@shared/schema";
+import { inlineEdit } from "./lib/inline-edit-helper";
 import { db } from "./db";
 import { safeLegacyQuery } from "./legacy-table-guard";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -315,111 +316,21 @@ function coercePlanOverride(fieldName: string, value: any): any {
   return value;
 }
 
+// DEPRECATED: Override data is now baked into base table rows (source='imported_edited').
+// These functions are pass-throughs kept for API compatibility during transition.
 function applyProjectPlanOverrides(
   baselineRows: any[],
-  overrides: any[]
+  _overrides: any[]
 ): any[] {
-  if (overrides.length === 0) return baselineRows;
-
-  const deletedRows = new Set<string>();
-  const overrideMap = new Map<string, Map<string, any>>();
-  const virtualMilestones = new Map<string, Map<string, any>>();
-
-  overrides.forEach((o: any) => {
-    const key = `${o.projectName}::${o.rowNumber}`;
-    if (o.fieldName === "isDeleted" && o.overrideValue === "true") {
-      deletedRows.add(key);
-      return;
-    }
-    if (o.rowNumber < 0) {
-      if (!virtualMilestones.has(key)) virtualMilestones.set(key, new Map());
-      virtualMilestones.get(key)!.set(o.fieldName, coercePlanOverride(o.fieldName, o.overrideValue));
-      return;
-    }
-    if (!overrideMap.has(key)) {
-      overrideMap.set(key, new Map());
-    }
-    overrideMap.get(key)!.set(o.fieldName, coercePlanOverride(o.fieldName, o.overrideValue));
-  });
-
-  for (const key of deletedRows) {
-    virtualMilestones.delete(key);
-  }
-
-  const result = baselineRows
-    .filter((row: any) => {
-      if (!row.rowNumber || !row.projectName) return true;
-      return !deletedRows.has(`${row.projectName}::${row.rowNumber}`);
-    })
-    .map((row: any) => {
-      if (!row.rowNumber || !row.projectName) return row;
-      const key = `${row.projectName}::${row.rowNumber}`;
-      if (!overrideMap.has(key)) return row;
-      const fieldOverrides = overrideMap.get(key)!;
-      const updatedRow = { ...row };
-      fieldOverrides.forEach((value, fieldName) => {
-        updatedRow[fieldName] = value;
-      });
-      return updatedRow;
-    });
-
-  for (const [key, fields] of virtualMilestones) {
-    const [projName, rowNumStr] = key.split("::");
-    const rowNumber = parseInt(rowNumStr);
-    const milestone: any = {
-      id: rowNumber,
-      projectName: projName,
-      rowNumber,
-      taskNo: fields.get("taskNo") || "",
-      highLevelProgramme: fields.get("highLevelProgramme") || "Milestone",
-      actualStart: fields.get("actualStart") || null,
-      actualEnd: fields.get("actualEnd") || null,
-      durationDays: fields.get("durationDays") || null,
-      actualPctComplete: fields.get("actualPctComplete") || null,
-      expectedPctComplete: fields.get("expectedPctComplete") || null,
-      parentRowNumber: fields.get("parentRowNumber") || null,
-      indentLevel: fields.get("indentLevel") ?? 0,
-      sortOrder: fields.get("sortOrder") ?? 0,
-      isMilestone: true,
-      isVirtual: true,
-    };
-    result.push(milestone);
-  }
-
-  return result;
+  // Overrides are now inline in the base rows — return as-is
+  return baselineRows;
 }
 
-// Apply revenue tracking overrides with type coercion
 function applyRevenueTrackingOverrides(
   baselineRows: any[],
-  overrides: any[]
+  _overrides: any[]
 ): any[] {
-  if (overrides.length === 0) return baselineRows;
-
-  const overrideMap = new Map<number, Map<string, any>>();
-  overrides.forEach((o: any) => {
-    if (!overrideMap.has(o.rowNumber)) {
-      overrideMap.set(o.rowNumber, new Map());
-    }
-    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
-  });
-
-  return baselineRows.map((row: any) => {
-    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
-      return row;
-    }
-    const fieldOverrides = overrideMap.get(row.rowNumber)!;
-    const updatedRow = { ...row };
-    fieldOverrides.forEach((value, fieldName) => {
-      // Coerce inBank to number for consistent handling
-      if (fieldName === 'inBank') {
-        updatedRow[fieldName] = value === '1' || value === 1 || value === true ? 1 : 0;
-      } else {
-        updatedRow[fieldName] = value;
-      }
-    });
-    return updatedRow;
-  });
+  return baselineRows;
 }
 
 /**
@@ -495,121 +406,32 @@ function resolveInflowEffectiveDates(
   });
 }
 
-// Apply expenditure overrides
 function applyExpenditureOverrides(
   baselineRows: any[],
-  overrides: any[]
+  _overrides: any[]
 ): any[] {
-  if (overrides.length === 0) return baselineRows;
-
-  const overrideMap = new Map<number, Map<string, any>>();
-  overrides.forEach((o: any) => {
-    if (!overrideMap.has(o.rowNumber)) {
-      overrideMap.set(o.rowNumber, new Map());
-    }
-    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
-  });
-
-  return baselineRows.map((row: any) => {
-    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
-      return row;
-    }
-    const fieldOverrides = overrideMap.get(row.rowNumber)!;
-    const updatedRow = { ...row };
-    fieldOverrides.forEach((value, fieldName) => {
-      updatedRow[fieldName] = value;
-    });
-    return updatedRow;
-  });
+  return baselineRows;
 }
 
 function applyExpenditureOverridesWithConfirmed(
   baselineRows: any[],
-  overrides: any[]
+  _overrides: any[]
 ): any[] {
-  if (overrides.length === 0) return baselineRows;
-
-  const overrideMap = new Map<number, Map<string, any>>();
-  overrides.forEach((o: any) => {
-    if (!overrideMap.has(o.rowNumber)) {
-      overrideMap.set(o.rowNumber, new Map());
-    }
-    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
-  });
-
-  return baselineRows.map((row: any) => {
-    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
-      return row;
-    }
-    const fieldOverrides = overrideMap.get(row.rowNumber)!;
-    const updatedRow = { ...row };
-    fieldOverrides.forEach((value, fieldName) => {
-      updatedRow[fieldName] = value === '__null__' ? null : value;
-    });
-    if (fieldOverrides.has('invoiceDateFontColor')) {
-      updatedRow.invoiceDateConfirmed = fieldOverrides.get('invoiceDateFontColor') === 'black';
-    }
-    if (fieldOverrides.has('paymentDateFontColor')) {
-      updatedRow.paymentDateConfirmed = fieldOverrides.get('paymentDateFontColor') === 'black';
-    }
-    return updatedRow;
-  });
+  return baselineRows;
 }
 
-// Apply finance revenue overrides
 function applyFinanceRevenueOverrides(
   baselineData: any[],
-  overrides: any[]
+  _overrides: any[]
 ): any[] {
-  if (overrides.length === 0) return baselineData;
-
-  const overrideMap = new Map<string, number>();
-  overrides.forEach((o: any) => {
-    const key = `${o.category}|${o.monthEndDate}`;
-    const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
-    if (!isNaN(numValue)) {
-      overrideMap.set(key, numValue);
-    }
-  });
-
-  return baselineData.map((row: any) => {
-    const key = `${row.category}|${row.monthEndDate}`;
-    if (overrideMap.has(key)) {
-      return {
-        ...row,
-        value: overrideMap.get(key)!,
-      };
-    }
-    return row;
-  });
+  return baselineData;
 }
 
-// Apply finance COS overrides
 function applyFinanceCosOverrides(
   baselineData: any[],
-  overrides: any[]
+  _overrides: any[]
 ): any[] {
-  if (overrides.length === 0) return baselineData;
-
-  const overrideMap = new Map<string, number>();
-  overrides.forEach((o: any) => {
-    const key = `${o.category}|${o.monthEndDate}`;
-    const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
-    if (!isNaN(numValue)) {
-      overrideMap.set(key, numValue);
-    }
-  });
-
-  return baselineData.map((row: any) => {
-    const key = `${row.category}|${row.monthEndDate}`;
-    if (overrideMap.has(key)) {
-      return {
-        ...row,
-        value: overrideMap.get(key)!,
-      };
-    }
-    return row;
-  });
+  return baselineData;
 }
 
 const requireAuth = sharedRequireAuth;
@@ -8678,6 +8500,14 @@ export async function registerRoutes(
         });
       }
 
+      // Dual-write: apply COS status override to base program_expense row
+      try {
+        const userId = (req.user as any)?.id || null;
+        await inlineEdit('program_expense', expenseId, { line_status: overrideStatus }, userId);
+      } catch (dualWriteErr) {
+        console.warn("[COS override] Dual-write to program_expense failed (non-fatal):", dualWriteErr);
+      }
+
       logAuditFromReq(req, { entityType: "cos_override", action: "update", entityId: String(expenseId), projectName, changesJson: { description: "COS status overridden", overrideStatus, originalStatus, reason } });
       res.json({ success: true });
     } catch (error) {
@@ -8689,6 +8519,15 @@ export async function registerRoutes(
   app.delete("/api/cos-status-override/:expenseId", requireAuth, async (req, res) => {
     try {
       const expenseId = parseInt(req.params.expenseId);
+
+      // Dual-write: revert COS status on base program_expense row
+      try {
+        const { revertToImported } = await import("./lib/inline-edit-helper");
+        await revertToImported('program_expense', expenseId);
+      } catch (dualWriteErr) {
+        console.warn("[COS override delete] Dual-write revert failed (non-fatal):", dualWriteErr);
+      }
+
       await db.delete(cosStatusOverrides).where(eq(cosStatusOverrides.expenseId, expenseId));
 
       logAuditFromReq(req, { entityType: "cos_override", action: "delete", entityId: String(expenseId), changesJson: { description: "COS status override removed" } });
