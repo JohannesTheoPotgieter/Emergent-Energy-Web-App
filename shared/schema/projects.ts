@@ -224,9 +224,13 @@ export const projectRevenueSummary = pgTable("project_revenue_summary", {
   currentVoTotal: decimal("current_vo_total", { precision: 15, scale: 2 }),
   projectId: integer("project_id").references(() => projectInfo.id),
   capturedAt: timestamp("captured_at").notNull().defaultNow(),
+  // Temporal columns (Prompt 9)
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  snapshotRunId: integer("snapshot_run_id"),
 });
 
-export const insertProjectRevenueSummarySchema = createInsertSchema(projectRevenueSummary).omit({ id: true, capturedAt: true } as any);
+export const insertProjectRevenueSummarySchema = createInsertSchema(projectRevenueSummary).omit({ id: true, capturedAt: true, effectiveFrom: true, effectiveTo: true } as any);
 export type InsertProjectRevenueSummary = z.infer<typeof insertProjectRevenueSummarySchema>;
 export type ProjectRevenueSummary = typeof projectRevenueSummary.$inferSelect;
 

@@ -67,8 +67,12 @@ export const programExpense = pgTable("program_expense", {
   lastEditedBy: integer("last_edited_by").references(() => users.id),
   lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Temporal columns (Prompt 9)
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  snapshotRunId: integer("snapshot_run_id"),
 });
-export const insertProgramExpenseSchema = createInsertSchema(programExpense).omit({ id: true, createdAt: true } as any);
+export const insertProgramExpenseSchema = createInsertSchema(programExpense).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
 export type InsertProgramExpense = z.infer<typeof insertProgramExpenseSchema>;
 export type ProgramExpense = typeof programExpense.$inferSelect;
 
@@ -100,8 +104,12 @@ export const programInflows = pgTable("program_inflows", {
   lastEditedBy: integer("last_edited_by").references(() => users.id),
   lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Temporal columns (Prompt 9)
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  snapshotRunId: integer("snapshot_run_id"),
 });
-export const insertProgramInflowsSchema = createInsertSchema(programInflows).omit({ id: true, createdAt: true } as any);
+export const insertProgramInflowsSchema = createInsertSchema(programInflows).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
 export type InsertProgramInflows = z.infer<typeof insertProgramInflowsSchema>;
 export type ProgramInflows = typeof programInflows.$inferSelect;
 
@@ -143,8 +151,12 @@ export const cashflowPoints = pgTable("cashflow_points", {
   lastEditedBy: integer("last_edited_by").references(() => users.id),
   lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Temporal columns (Prompt 9)
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  snapshotRunId: integer("snapshot_run_id"),
 });
-export const insertCashflowPointSchema = createInsertSchema(cashflowPoints).omit({ id: true, createdAt: true } as any);
+export const insertCashflowPointSchema = createInsertSchema(cashflowPoints).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
 export type InsertCashflowPoint = z.infer<typeof insertCashflowPointSchema>;
 export type CashflowPoint = typeof cashflowPoints.$inferSelect;
 
@@ -160,8 +172,12 @@ export const financeRevenueMonthly = pgTable("finance_revenue_monthly", {
   lastEditedBy: integer("last_edited_by").references(() => users.id),
   lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Temporal columns (Prompt 9)
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  snapshotRunId: integer("snapshot_run_id"),
 });
-export const insertFinanceRevenueMonthlySchema = createInsertSchema(financeRevenueMonthly).omit({ id: true, createdAt: true } as any);
+export const insertFinanceRevenueMonthlySchema = createInsertSchema(financeRevenueMonthly).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
 export type InsertFinanceRevenueMonthly = z.infer<typeof insertFinanceRevenueMonthlySchema>;
 export type FinanceRevenueMonthly = typeof financeRevenueMonthly.$inferSelect;
 
@@ -177,8 +193,12 @@ export const financeCosMonthly = pgTable("finance_cos_monthly", {
   lastEditedBy: integer("last_edited_by").references(() => users.id),
   lastEditedAt: timestamp("last_edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Temporal columns (Prompt 9)
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  snapshotRunId: integer("snapshot_run_id"),
 });
-export const insertFinanceCosMonthlySchema = createInsertSchema(financeCosMonthly).omit({ id: true, createdAt: true } as any);
+export const insertFinanceCosMonthlySchema = createInsertSchema(financeCosMonthly).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
 export type InsertFinanceCosMonthly = z.infer<typeof insertFinanceCosMonthlySchema>;
 export type FinanceCosMonthly = typeof financeCosMonthly.$inferSelect;
 
@@ -571,8 +591,12 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   turnaroundDays: integer("turnaround_days"),
   subProjectName: text("sub_project_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Temporal columns (Prompt 9)
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  snapshotRunId: integer("snapshot_run_id"),
 });
-export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true } as any);
+export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
 export type InsertNormalizedRevenueLine = z.infer<typeof insertNormalizedRevenueLineSchema>;
 export type NormalizedRevenueLine = typeof normalizedRevenueLines.$inferSelect;
 
@@ -614,8 +638,12 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   forecastPaymentDate: text("forecast_payment_date"),
   subProjectName: text("sub_project_name"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Temporal columns (Prompt 9)
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveTo: timestamp("effective_to"),
+  snapshotRunId: integer("snapshot_run_id"),
 });
-export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true } as any);
+export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
 export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;
 export type NormalizedCostLine = typeof normalizedCostLines.$inferSelect;
 
