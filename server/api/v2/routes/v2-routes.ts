@@ -19,20 +19,24 @@ export function registerApiV2Routes(app: Express) {
   app.post("/api/v2/dashboard-metrics/refresh", requireAuth, c.dashboardRefresh);
 
   app.get("/api/v2/projects", ...authScoped, c.listProjects);
-  app.get("/api/v2/projects/:projectId", ...authProject, c.projectDetail);
+  app.get("/api/v2/projects/:projectId", ...authProject, c.projectDetailConsolidated);
   app.get("/api/v2/projects/:projectId/overview", ...authProject, c.projectOverview);
   app.get("/api/v2/projects/:projectId/lifecycle", ...authProject, c.projectLifecycle);
   app.get("/api/v2/projects/:projectId/health", ...authProject, c.projectHealth);
 
+  // Prompt 14: Consolidated sub-endpoints with embedded permissions
+  app.get("/api/v2/projects/:projectId/finance", ...authProject, c.projectFinanceDetail);
+  app.get("/api/v2/projects/:projectId/plan", ...authProject, c.projectPlanDetail);
+  app.get("/api/v2/projects/:projectId/quality", ...authProject, c.projectQualityDetail);
+  app.get("/api/v2/projects/:projectId/engineering", ...authProject, c.projectEngineeringDetail);
+
   app.get("/api/v2/projects/:projectId/development", ...authProject, c.projectDevelopment);
   app.post("/api/v2/projects/:projectId/development/handover", ...authProject, c.developmentHandover);
 
-  app.get("/api/v2/projects/:projectId/engineering", ...authProject, c.projectEngineering);
   app.get("/api/v2/projects/:projectId/engineering/designs", ...authProject, c.engineeringDesigns);
   app.post("/api/v2/projects/:projectId/engineering/designs", ...authProject, c.engineeringDesigns);
   app.patch("/api/v2/projects/:projectId/engineering/designs", ...authProject, c.engineeringDesigns);
 
-  app.get("/api/v2/projects/:projectId/quality", ...authProject, c.projectQuality);
   app.get("/api/v2/projects/:projectId/quality/checks", ...authProject, c.qualityChecks);
   app.post("/api/v2/projects/:projectId/quality/checks", ...authProject, c.qualityChecks);
   app.patch("/api/v2/projects/:projectId/quality/checks", ...authProject, c.qualityChecks);
@@ -57,7 +61,7 @@ export function registerApiV2Routes(app: Express) {
   app.get("/api/v2/projects/:projectId/procurement/invoices", ...authProject, c.procurementInvoices);
   app.post("/api/v2/projects/:projectId/procurement/invoices", ...authProject, c.procurementInvoices);
 
-  app.get("/api/v2/projects/:projectId/finance", ...authProject, c.projectFinance);
+  // Legacy finance routes (sub-resources; consolidated /finance above)
   app.get("/api/v2/projects/:projectId/finance/summary", ...authProject, c.financeSummary);
   app.get("/api/v2/projects/:projectId/finance/cashflow", ...authProject, c.financeCashflow);
   app.get("/api/v2/projects/:projectId/finance/cos", ...authProject, c.financeCos);
