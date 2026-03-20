@@ -2335,43 +2335,6 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
   }
 });
 
-// ==================== BUDGETS CRUD ====================
-
-router.get("/api/budgets", requireAuth, async (req, res) => {
-  try {
-    const budgets = await storage.getAllBudgets();
-    res.json(budgets);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch budgets", message: "Failed to fetch budgets" });
-  }
-});
-
-router.post("/api/budgets", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const parsed = insertBudgetSchema.parse(req.body);
-    const budget = await storage.createBudget(parsed);
-    res.status(201).json(budget);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Invalid budget data", message: "Invalid budget data", errors: error.errors });
-    }
-    res.status(500).json({ error: "Failed to create budget", message: "Failed to create budget" });
-  }
-});
-
-router.delete("/api/budgets/:id", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const id = parseInt(String(req.params.id));
-    const deleted = await storage.deleteBudget(id);
-    if (!deleted) {
-      return res.status(404).json({ error: "Budget not found", message: "Budget not found" });
-    }
-    res.json({ message: "Budget deleted" });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to delete budget", message: "Failed to delete budget" });
-  }
-});
-
 // ==================== PROGRAM EXPENSES & INFLOWS ====================
 
 router.get("/api/program-expenses", requireAuth, async (req, res) => {
