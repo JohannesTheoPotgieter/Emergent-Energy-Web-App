@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
 import { usePermission } from "@/hooks/use-permissions";
 import {
-  Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ComposedChart,
 } from "recharts";
 import {
@@ -125,6 +125,18 @@ function formatRand(val: number | null | undefined): string {
   const abs = Math.abs(val);
   if (abs >= 1000) return `${sign}R ${Math.round(abs).toLocaleString("en-ZA")}`;
   return `${sign}R ${abs.toFixed(2)}`;
+}
+
+/** Abbreviated Rand format for chart Y-axis ticks (e.g. "R 9.3M", "R 450K"). */
+function formatRandShort(val: number | null | undefined): string {
+  if (val == null || isNaN(val)) return "–";
+  if (val === 0) return "R 0";
+  const sign = val < 0 ? "-" : "";
+  const abs = Math.abs(val);
+  if (abs >= 1_000_000_000) return `${sign}R ${(abs / 1_000_000_000).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(0)}K`;
+  return `${sign}R ${abs.toFixed(0)}`;
 }
 
 function formatPct(val: number | null | undefined): string {
@@ -261,13 +273,13 @@ function DashboardChart({
           <ComposedChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
             <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => formatRand(v)} />
+            <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => formatRandShort(v)} />
             <Tooltip formatter={(v: number) => formatRand(v)} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="Budget" fill="#3b82f6" opacity={0.6} />
+            <Area type="monotone" dataKey="Budget" fill="#3b82f6" stroke="#3b82f6" fillOpacity={0.15} strokeWidth={1} />
             <Line type="monotone" dataKey="Actual + Forecast" stroke="#10b981" strokeWidth={2} dot={false} connectNulls={false} />
             <Line type="monotone" dataKey="Actual" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2 }} connectNulls={false} />
-            <Line type="monotone" dataKey="Captured" stroke="#8b5cf6" strokeWidth={1.5} strokeDasharray="4 2" dot={false} connectNulls={false} />
+            <Line type="monotone" dataKey="Captured" stroke="#86efac" strokeWidth={1.5} strokeDasharray="4 2" dot={false} connectNulls={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </CardContent>
