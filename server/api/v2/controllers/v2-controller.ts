@@ -2,10 +2,17 @@ import type { Request, Response } from "express";
 import { assertPermission, permissionsForRole } from "../policies/access-policy";
 import { recordAudit } from "../services/audit-service";
 import * as service from "../services/project-v2-service";
-import { ApiV2Error, asyncHandler, created, ok, paginationQuerySchema, validate } from "../utils/http";
+import { ApiV2Error, asyncHandler, created, ok, paginationQuerySchema, validate, validateResponse } from "../utils/http";
 import { getProjectScope } from "../../../middleware/project-scope-middleware";
 import { scopeProjectIds } from "../../../services/project-access-service";
 import { computeProjectPermissions } from "../middleware/permission-helper";
+import {
+  projectDetailResponseSchema,
+  projectFinanceResponseSchema,
+  projectPlanResponseSchema,
+  projectQualityResponseSchema,
+  projectEngineeringResponseSchema,
+} from "@shared/api-types/project-v2";
 import {
   engineeringDesignCreateSchema,
   engineeringDesignPatchSchema,
@@ -100,16 +107,22 @@ export const engineeringDesigns = asyncHandler(async (req, res) => {
     assertBodyProjectContext(projectId, payload);
     const row = await service.createEngineeringDesignService(projectId, payload, (req.user as any).id);
     await recordAudit({ ...actor(req), entityType: "engineering_design", entityId: String(row.id), action: "CREATE" });
-    return created(res, row);
+    const permissions = await computeProjectPermissions(req);
+    return created(res, { ...row, permissions });
   }
   if (req.method === "PATCH") {
     assertPermission((req.user as any).role, "engineering.write");
     const payload = validate(engineeringDesignPatchSchema, req.body, "Invalid engineering design patch payload");
     const row = await service.patchEngineeringDesignService(projectId, payload.id, payload, (req.user as any).id);
     await recordAudit({ ...actor(req), entityType: "engineering_design", entityId: String(row.id), action: "PATCH" });
-    return ok(res, row);
+    const permissions = await computeProjectPermissions(req);
+    return ok(res, { ...row, permissions });
   }
-  ok(res, await service.listEngineeringDesignsService(projectId));
+  const [data, permissions] = await Promise.all([
+    service.listEngineeringDesignsService(projectId),
+    computeProjectPermissions(req),
+  ]);
+  ok(res, { items: data, permissions });
 });
 
 export const qualityChecks = asyncHandler(async (req, res) => {
@@ -120,21 +133,31 @@ export const qualityChecks = asyncHandler(async (req, res) => {
     assertBodyProjectContext(projectId, payload);
     const row = await service.createQualityCheckService(projectId, payload);
     await recordAudit({ ...actor(req), entityType: "quality_check", entityId: String(row.id), action: "CREATE" });
-    return created(res, row);
+    const permissions = await computeProjectPermissions(req);
+    return created(res, { ...row, permissions });
   }
   if (req.method === "PATCH") {
     assertPermission((req.user as any).role, "quality.write");
     const payload = validate(qualityCheckPatchSchema, req.body, "Invalid quality check patch payload");
     const row = await service.patchQualityCheckService(projectId, payload.id, payload);
     await recordAudit({ ...actor(req), entityType: "quality_check", entityId: String(row.id), action: "PATCH" });
-    return ok(res, row);
+    const permissions = await computeProjectPermissions(req);
+    return ok(res, { ...row, permissions });
   }
-  ok(res, await service.listQualityChecksService(projectId));
+  const [data, permissions] = await Promise.all([
+    service.listQualityChecksService(projectId),
+    computeProjectPermissions(req),
+  ]);
+  ok(res, { ...data, permissions });
 });
 
 export const projectWorkItems = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  ok(res, await service.listWorkItemsService(projectId));
+  const [data, permissions] = await Promise.all([
+    service.listWorkItemsService(projectId),
+    computeProjectPermissions(req),
+  ]);
+  ok(res, { items: data, permissions });
 });
 
 export const createWorkItem = asyncHandler(async (req, res) => {
@@ -144,7 +167,8 @@ export const createWorkItem = asyncHandler(async (req, res) => {
   assertBodyProjectContext(projectId, payload);
   const createdRow = await service.createWorkItemService(projectId, payload, (req.user as any).id);
   await recordAudit({ ...actor(req), entityType: "work_item", entityId: String(createdRow.id), action: "CREATE" });
-  created(res, createdRow);
+  const permissions = await computeProjectPermissions(req);
+  created(res, { ...createdRow, permissions });
 });
 
 export const patchWorkItem = asyncHandler(async (req, res) => {
@@ -154,12 +178,17 @@ export const patchWorkItem = asyncHandler(async (req, res) => {
   const payload = validate(workItemPatchSchema, req.body, "Invalid work item patch payload");
   const row = await service.patchWorkItemService(projectId, id, payload);
   await recordAudit({ ...actor(req), entityType: "work_item", entityId: String(row.id), action: "PATCH" });
-  ok(res, row);
+  const permissions = await computeProjectPermissions(req);
+  ok(res, { ...row, permissions });
 });
 
 export const projectMilestones = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  ok(res, await service.listMilestonesService(projectId));
+  const [data, permissions] = await Promise.all([
+    service.listMilestonesService(projectId),
+    computeProjectPermissions(req),
+  ]);
+  ok(res, { items: data, permissions });
 });
 
 export const createMilestone = asyncHandler(async (req, res) => {
@@ -169,7 +198,8 @@ export const createMilestone = asyncHandler(async (req, res) => {
   assertBodyProjectContext(projectId, payload);
   const row = await service.createMilestoneService(projectId, payload, (req.user as any).id);
   await recordAudit({ ...actor(req), entityType: "milestone", entityId: String(row.id), action: "CREATE" });
-  created(res, row);
+  const permissions = await computeProjectPermissions(req);
+  created(res, { ...row, permissions });
 });
 
 export const patchMilestone = asyncHandler(async (req, res) => {
@@ -179,17 +209,26 @@ export const patchMilestone = asyncHandler(async (req, res) => {
   const payload = validate(milestonePatchSchema, req.body, "Invalid milestone patch payload");
   const row = await service.patchMilestoneService(projectId, id, payload);
   await recordAudit({ ...actor(req), entityType: "milestone", entityId: String(row.id), action: "PATCH" });
-  ok(res, row);
+  const permissions = await computeProjectPermissions(req);
+  ok(res, { ...row, permissions });
 });
 
 export const projectProcurement = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  ok(res, await service.projectProcurementService(projectId));
+  const [data, permissions] = await Promise.all([
+    service.projectProcurementService(projectId),
+    computeProjectPermissions(req),
+  ]);
+  ok(res, { ...data, permissions });
 });
 
 export const procurementItemsList = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  ok(res, await service.listProcurementItemsService(projectId));
+  const [data, permissions] = await Promise.all([
+    service.listProcurementItemsService(projectId),
+    computeProjectPermissions(req),
+  ]);
+  ok(res, { items: data, permissions });
 });
 
 export const createProcurementItem = asyncHandler(async (req, res) => {
@@ -199,7 +238,8 @@ export const createProcurementItem = asyncHandler(async (req, res) => {
   assertBodyProjectContext(projectId, payload);
   const row = await service.createProcurementItemService(projectId, payload);
   await recordAudit({ ...actor(req), entityType: "procurement_item", entityId: String(row.id), action: "CREATE" });
-  created(res, row);
+  const permissions = await computeProjectPermissions(req);
+  created(res, { ...row, permissions });
 });
 
 export const patchProcurementItem = asyncHandler(async (req, res) => {
@@ -209,7 +249,8 @@ export const patchProcurementItem = asyncHandler(async (req, res) => {
   const payload = validate(procurementItemPatchSchema, req.body, "Invalid procurement patch payload");
   const row = await service.patchProcurementItemService(projectId, id, payload);
   await recordAudit({ ...actor(req), entityType: "procurement_item", entityId: String(row.id), action: "PATCH" });
-  ok(res, row);
+  const permissions = await computeProjectPermissions(req);
+  ok(res, { ...row, permissions });
 });
 
 export const procurementPos = asyncHandler(async (req, res) => {
@@ -220,7 +261,8 @@ export const procurementPos = asyncHandler(async (req, res) => {
     assertBodyProjectContext(projectId, payload);
     const row = await service.createPurchaseOrderService(projectId, payload);
     await recordAudit({ ...actor(req), entityType: "purchase_order", entityId: String(row.id), action: "CREATE" });
-    return created(res, row);
+    const permissions = await computeProjectPermissions(req);
+    return created(res, { ...row, permissions });
   }
   if (req.method === "PATCH") {
     assertPermission((req.user as any).role, "procurement.write");
@@ -228,9 +270,14 @@ export const procurementPos = asyncHandler(async (req, res) => {
     const payload = validate(procurementPoPatchSchema, req.body, "Invalid purchase order patch payload");
     const row = await service.patchPurchaseOrderService(projectId, id, payload);
     await recordAudit({ ...actor(req), entityType: "purchase_order", entityId: String(row.id), action: "PATCH" });
-    return ok(res, row);
+    const permissions = await computeProjectPermissions(req);
+    return ok(res, { ...row, permissions });
   }
-  ok(res, await service.listPurchaseOrdersService(projectId));
+  const [data, permissions] = await Promise.all([
+    service.listPurchaseOrdersService(projectId),
+    computeProjectPermissions(req),
+  ]);
+  ok(res, { items: data, permissions });
 });
 
 export const procurementInvoices = asyncHandler(async (req, res) => {
@@ -241,9 +288,14 @@ export const procurementInvoices = asyncHandler(async (req, res) => {
     assertBodyProjectContext(projectId, payload);
     const row = await service.createInvoiceService(projectId, payload, (req.user as any).id);
     await recordAudit({ ...actor(req), entityType: "invoice", entityId: String(row.id), action: "CREATE" });
-    return created(res, row);
+    const permissions = await computeProjectPermissions(req);
+    return created(res, { ...row, permissions });
   }
-  ok(res, await service.listInvoicesService(projectId));
+  const [data, permissions] = await Promise.all([
+    service.listInvoicesService(projectId),
+    computeProjectPermissions(req),
+  ]);
+  ok(res, { items: data, permissions });
 });
 
 export const financeSummary = asyncHandler(async (req, res) => {
@@ -279,16 +331,22 @@ export const financeVariations = asyncHandler(async (req, res) => {
     assertBodyProjectContext(projectId, payload);
     const row = await service.createFinanceVariationService(projectId, payload, (req.user as any).id);
     await recordAudit({ ...actor(req), entityType: "finance_variation", entityId: String(row.id), action: "CREATE" });
-    return created(res, row);
+    const permissions = await computeProjectPermissions(req);
+    return created(res, { ...row, permissions });
   }
   if (req.method === "PATCH") {
     assertPermission((req.user as any).role, "finance.write");
     const payload = validate(financeVariationPatchSchema, req.body, "Invalid finance variation patch payload");
     const row = await service.patchFinanceVariationService(projectId, payload.id, payload);
     await recordAudit({ ...actor(req), entityType: "finance_variation", entityId: String(row.id), action: "PATCH" });
-    return ok(res, row);
+    const permissions = await computeProjectPermissions(req);
+    return ok(res, { ...row, permissions });
   }
-  ok(res, await service.listFinanceVariationsService(projectId));
+  const [data, permissions] = await Promise.all([
+    service.listFinanceVariationsService(projectId),
+    computeProjectPermissions(req),
+  ]);
+  ok(res, { items: data, permissions });
 });
 
 export const importsByDomain = asyncHandler(async (req, res) => {
@@ -307,7 +365,7 @@ export const auditActivity = asyncHandler(async (_req, res) => ok(res, await ser
 export const dashboardMetrics = asyncHandler(async (_req, res) => ok(res, await service.dashboardMetricsService()));
 export const dashboardRefresh = asyncHandler(async (_req, res) => ok(res, await service.dashboardRefreshService()));
 
-// ─── Prompt 14: Consolidated project endpoints with permissions ────
+// ─── Consolidated project endpoints with permissions + runtime validation ────
 
 export const projectDetailConsolidated = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
@@ -315,7 +373,9 @@ export const projectDetailConsolidated = asyncHandler(async (req, res) => {
     service.getConsolidatedProjectService(projectId),
     computeProjectPermissions(req),
   ]);
-  ok(res, { ...data, permissions });
+  const response = { ...data, permissions };
+  validateResponse(projectDetailResponseSchema, response, "GET /api/v2/projects/:projectId");
+  ok(res, response);
 });
 
 export const projectFinanceDetail = asyncHandler(async (req, res) => {
@@ -324,7 +384,9 @@ export const projectFinanceDetail = asyncHandler(async (req, res) => {
     service.getProjectFinanceDetailService(projectId),
     computeProjectPermissions(req),
   ]);
-  ok(res, { ...data, permissions });
+  const response = { ...data, permissions };
+  validateResponse(projectFinanceResponseSchema, response, "GET /api/v2/projects/:projectId/finance");
+  ok(res, response);
 });
 
 export const projectPlanDetail = asyncHandler(async (req, res) => {
@@ -334,7 +396,9 @@ export const projectPlanDetail = asyncHandler(async (req, res) => {
     service.getProjectPlanDetailService(projectId, workstream),
     computeProjectPermissions(req),
   ]);
-  ok(res, { ...data, permissions });
+  const response = { ...data, permissions };
+  validateResponse(projectPlanResponseSchema, response, "GET /api/v2/projects/:projectId/plan");
+  ok(res, response);
 });
 
 export const projectQualityDetail = asyncHandler(async (req, res) => {
@@ -343,7 +407,9 @@ export const projectQualityDetail = asyncHandler(async (req, res) => {
     service.getProjectQualityDetailService(projectId),
     computeProjectPermissions(req),
   ]);
-  ok(res, { ...data, permissions });
+  const response = { ...data, permissions };
+  validateResponse(projectQualityResponseSchema, response, "GET /api/v2/projects/:projectId/quality");
+  ok(res, response);
 });
 
 export const projectEngineeringDetail = asyncHandler(async (req, res) => {
@@ -352,5 +418,7 @@ export const projectEngineeringDetail = asyncHandler(async (req, res) => {
     service.getProjectEngineeringDetailService(projectId),
     computeProjectPermissions(req),
   ]);
-  ok(res, { ...data, permissions });
+  const response = { ...data, permissions };
+  validateResponse(projectEngineeringResponseSchema, response, "GET /api/v2/projects/:projectId/engineering");
+  ok(res, response);
 });
