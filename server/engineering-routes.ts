@@ -30,7 +30,7 @@ import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineering
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
-import { getAssignmentsForEntity, listAssignableDirectory } from "./services/assignment-service";
+import { getAssignmentsForEntity, getAssignmentsForEntities, listAssignableDirectory } from "./services/assignment-service";
 import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
 
 const approvalUploadsDir = path.join(process.cwd(), "uploads", "approvals");
@@ -1653,10 +1653,7 @@ export function registerEngineeringRoutes(app: Express) {
       const result = conditions.length > 0
         ? await db.select().from(deliverables).where(and(...conditions)).orderBy(desc(deliverables.updatedAt))
         : await db.select().from(deliverables).orderBy(desc(deliverables.updatedAt));
-      const assignmentEntries = await Promise.all(
-        result.map(async (deliverable) => [deliverable.id, await getAssignmentsForEntity("deliverable", deliverable.id)] as const),
-      );
-      const assignmentMap = new Map(assignmentEntries);
+      const assignmentMap = await getAssignmentsForEntities("deliverable", result.map((d) => d.id));
       res.json(result.map((deliverable) => ({
         ...deliverable,
         assignments: assignmentMap.get(deliverable.id) || [],

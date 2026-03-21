@@ -15,9 +15,10 @@ import {
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
-import { getAssignmentsForEntity, setEntityAssignment } from "./services/assignment-service";
+import { getAssignmentsForEntity, getAssignmentsForEntities, setEntityAssignment } from "./services/assignment-service";
 import {
   computeQualityRiskSummary,
   evaluateQualityGovernanceItem,
@@ -563,10 +564,7 @@ export function registerQualityRoutes(app: Express) {
 
       const itemIds = itemInstances.map(i => i.id);
       const evidence = itemIds.length ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemIds)) : [];
-      const assignmentEntries = await Promise.all(
-        itemIds.map(async (itemId) => [itemId, await getAssignmentsForEntity("quality_item", itemId, "ASSIGNEE")] as const),
-      );
-      const assignmentMap = new Map(assignmentEntries);
+      const assignmentMap = await getAssignmentsForEntities("quality_item", itemIds, "ASSIGNEE");
 
       const templateId = checklist.templateId;
       const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, templateId));
@@ -694,6 +692,10 @@ export function registerQualityRoutes(app: Express) {
       const pName = decodeURIComponent(String(req.params.projectName));
       recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
 
+      // Refresh dashboard metrics for this project
+      db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, pName)).limit(1)
+        .then(([row]) => { if (row) refreshProjectMetricsAsync(row.id); })
+        .catch((err) => console.warn("[Quality] Dashboard metrics refresh failed:", err?.message || err));
 
       logAuditFromReq(req, {
         entityType: "quality_checklist",
@@ -751,6 +753,12 @@ export function registerQualityRoutes(app: Express) {
       const [updated] = await db.update(qcItemInstance).set(updates).where(eq(qcItemInstance.id, itemId)).returning();
       const pName = decodeURIComponent(String(req.params.projectName));
       recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
+
+      // Refresh dashboard metrics for this project
+      db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, pName)).limit(1)
+        .then(([row]) => { if (row) refreshProjectMetricsAsync(row.id); })
+        .catch((err) => console.warn("[Quality] Dashboard metrics refresh failed:", err?.message || err));
+
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: approved ? "approve" : "update", projectName: pName, changesJson: { description: approved ? "Quality item approved" : "Quality item approval revoked" } });
       res.json(updated);
     } catch (err: any) {
@@ -1814,7 +1822,7 @@ export function registerQualityRoutes(app: Express) {
           } else if (metric.inputType === "count" && rule.formula && input.inputValueNumber != null) {
             const val = input.inputValueNumber;
             const formula = rule.formula.replace(/count|days/g, String(val));
-            try { score = Math.max(0, Math.min(1, eval(formula))); } catch { score = null; }
+            try { score = Math.max(0, Math.min(1, Function('"use strict"; return (' + formula + ')')())); } catch { score = null; }
           }
         }
 

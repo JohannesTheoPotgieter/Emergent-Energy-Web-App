@@ -3,7 +3,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState } from "@shared/schema";
+import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState, projectPhaseHistory } from "@shared/schema";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
@@ -1400,6 +1400,15 @@ export function registerLifecycleRoutes(app: Express) {
       };
       const [updated] = await db.update(projectInfo).set(stageTransitionFields).where(eq(projectInfo.id, id)).returning();
       await syncProjectSplitTables(id, stageTransitionFields);
+
+      // Record phase transition in dedicated history table
+      await db.insert(projectPhaseHistory).values({
+        projectId: id,
+        fromPhase: existing.phase || null,
+        toPhase: phase.trim(),
+        changedByUserId: userId,
+        reason: `Phase changed from ${existing.phase || "unknown"} to ${phase.trim()}`,
+      });
 
       let engStagesResult: any = null;
       const stageNames = PHASE_TO_ENG_STAGES[phase.trim()];
