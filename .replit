@@ -7,25 +7,19 @@ channel = "stable-24_05"
 
 [[ports]]
 localPort = 5000
-
-[[ports]]
-localPort = 5555
-externalPort = 3000
-
-[[ports]]
-localPort = 5904
-externalPort = 3001
+externalPort = 80
 
 [env]
 PORT = "5000"
+PATH = "/home/runner/$REPL_SLUG/node_modules/.bin:${PATH}"
 SESSION_SECRET = "replit-dev-session-secret-change-in-production"
 ENABLE_STARTUP_SCHEMA_REPAIR = "true"
 
 [deployment]
 deploymentTarget = "autoscale"
-build = ["npm", "run", "build"]
+build = ["sh", "-c", "npm run build"]
 publicDir = "dist/public"
-run = ["npm", "run", "start"]
+run = ["sh", "-c", "npm run start"]
 
 [workflows]
 runButton = "Project"
