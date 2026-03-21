@@ -3,10 +3,10 @@ import { z } from "zod";
 import { db } from "./db";
 import { eq, and, or, desc, asc, sql, inArray, isNull, ne } from "drizzle-orm";
 import {
-  mytoolTasks, operationalTasks, trItems, deliverables,
+  mytoolTasks, trItems, deliverables,
   projectEngApprovals, projectEngStages, engStageTemplates,
   qcItemInstance, qcChecklist, qcTemplateItem,
-  projectInfo, users, normalizedPlanTasks, engineeringTasks, approvals,
+  projectInfo, users, normalizedPlanTasks, approvals,
   msAccounts, msObjects, communicationFollowUps, projectCommunicationTimelineEvents, workItemAssignments,
   workItems,
 } from "@shared/schema";
@@ -532,9 +532,12 @@ export function registerMsSyncRoutes(app: Express) {
       const [personalTasks, opTasks, trRegisterItems, approvalData, deliverableItems, planTasks, engTasks, qualityTasks, microsoftItems] = await Promise.all([
         db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)).orderBy(desc(mytoolTasks.createdAt)),
 
-        db.select().from(operationalTasks).where(
-          sql`(${operationalTasks.ownerUserId} = ${userId} OR ${userName} = ANY(${operationalTasks.assignees}) OR ${userId} = ANY(${operationalTasks.assigneeUserIds}))`
-        ).orderBy(asc(operationalTasks.sortOrder)),
+        db.select().from(workItems).where(
+          and(
+            isNull(workItems.deletedAt),
+            sql`(${workItems.ownerUserId} = ${userId} OR EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = ${workItems.id} AND wia.user_id = ${userId}))`
+          )
+        ).orderBy(asc(workItems.sortOrder)),
 
         db.select().from(trItems).where(
             sql`(${userName} = ANY(${trItems.owners}) OR ${userId} = ANY(${trItems.ownerUserIds}))`
@@ -663,10 +666,12 @@ export function registerMsSyncRoutes(app: Express) {
             `
         ).then((r: any) => Array.isArray(r) ? r : (r.rows || [])),
 
-        db.select().from(engineeringTasks).where(
+        // Read ENG tasks from work_items
+        db.select().from(workItems).where(
           and(
-            eq(engineeringTasks.assigneeUserId, userId),
-            isNull(engineeringTasks.softDeletedAt)
+            eq(workItems.workstream, "ENG"),
+            eq(workItems.ownerUserId, userId),
+            isNull(workItems.deletedAt)
           )
         ),
 
@@ -690,12 +695,12 @@ export function registerMsSyncRoutes(app: Express) {
           actionRequired: msObjects.actionRequired,
           linkedProjectId: msObjects.linkedProjectId,
           linkedTaskId: msObjects.linkedTaskId,
-          linkedQualityItemInstanceId: operationalTasks.linkedQualityItemInstanceId,
+          linkedQualityItemInstanceId: workItems.linkedQualityItemInstanceId,
           linkedProjectName: projectInfo.projectName,
         })
           .from(msObjects)
           .leftJoin(projectInfo, eq(msObjects.linkedProjectId, projectInfo.id))
-          .leftJoin(operationalTasks, eq(msObjects.linkedTaskId, operationalTasks.id))
+          .leftJoin(workItems, eq(msObjects.linkedTaskId, workItems.id))
           .where(and(
             eq(msObjects.userId, userId),
             eq(msObjects.actionRequired, true),
@@ -704,15 +709,15 @@ export function registerMsSyncRoutes(app: Express) {
           .orderBy(desc(msObjects.receivedOrStartDatetime)),
       ]);
 
-      const subtaskParentIds = opTasks.filter(t => t.parentTaskId === null || t.parentTaskId === undefined).map(t => t.id);
+      const subtaskParentIds = opTasks.filter(t => t.parentId === null || t.parentId === undefined).map(t => t.id);
       let subtaskCounts: Record<number, number> = {};
       if (subtaskParentIds.length > 0) {
         const counts = await db.select({
-          parentTaskId: operationalTasks.parentTaskId,
+          parentId: workItems.parentId,
           count: sql<number>`count(*)`,
-        }).from(operationalTasks).where(inArray(operationalTasks.parentTaskId, subtaskParentIds)).groupBy(operationalTasks.parentTaskId);
+        }).from(workItems).where(and(inArray(workItems.parentId, subtaskParentIds), isNull(workItems.deletedAt))).groupBy(workItems.parentId);
         for (const c of counts) {
-          if (c.parentTaskId) subtaskCounts[c.parentTaskId] = Number(c.count);
+          if (c.parentId) subtaskCounts[c.parentId] = Number(c.count);
         }
       }
 
@@ -777,20 +782,20 @@ export function registerMsSyncRoutes(app: Express) {
           projectName: t.projectName,
         })),
         operational: opTasks.map(t => {
-          const isOwnerOrAssignee = t.ownerUserId === userId || (t.assignees || []).includes(userName);
+          const isOwnerOrAssignee = t.ownerUserId === userId;
           const isCreator = t.createdBy === userId;
           const trackingRole = isOwnerOrAssignee && isCreator ? "both" : isOwnerOrAssignee ? "assignee" : "creator";
           return withSourceLinks("operational", {
             ...t,
             status: normalizeTaskStatus(t.status),
             subtaskCount: subtaskCounts[t.id] || 0,
-            resolvedAssignees: mergeResolvedWithTextNames(resolveUserIds(t.assigneeUserIds), t.assignees, userMap),
+            resolvedAssignees: [] as ResolvedUser[],
             resolvedOwner: resolveUserId(t.ownerUserId),
             trackingRole,
           }, {
             itemKey: `op-${t.id}`,
             rawId: t.id,
-            projectName: t.projectName,
+            projectName: null,
           });
         }),
         trRegister: trRegisterItems.map(t => {

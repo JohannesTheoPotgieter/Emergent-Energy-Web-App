@@ -398,95 +398,9 @@ async function ensureSqliteSchema() {
       )
     `);
     
-    // Legacy tables for backward compatibility
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS projects (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        code TEXT NOT NULL UNIQUE,
-        manager TEXT NOT NULL,
-        site TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'Planning',
-        stage TEXT NOT NULL DEFAULT 'Development',
-        start_date TEXT NOT NULL,
-        completion_date TEXT NOT NULL,
-        budget REAL NOT NULL,
-        source_file TEXT NOT NULL,
-        last_updated TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+    // Legacy tables (projects, expenses, revenues, tasks, budgets) dropped.
+    // Data lives in: project_info, normalized_cost_lines, normalized_revenue_lines, work_items.
     
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS expenses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER NOT NULL,
-        category TEXT NOT NULL,
-        description TEXT NOT NULL,
-        amount REAL NOT NULL,
-        date TEXT NOT NULL,
-        vendor TEXT NOT NULL,
-        invoice_number TEXT,
-        status TEXT NOT NULL DEFAULT 'Forecast',
-        source_sheet TEXT NOT NULL DEFAULT 'Expenditure Breakdown',
-        row_locator INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS revenues (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        amount REAL NOT NULL,
-        date TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'Forecast',
-        source_sheet TEXT NOT NULL DEFAULT 'Revenue Tracking',
-        row_locator INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER NOT NULL,
-        task_name TEXT NOT NULL,
-        start_date TEXT NOT NULL,
-        end_date TEXT NOT NULL,
-        progress INTEGER NOT NULL DEFAULT 0,
-        status TEXT NOT NULL DEFAULT 'Not Started',
-        assignee TEXT NOT NULL,
-        source_sheet TEXT NOT NULL DEFAULT 'Project Plan',
-        row_locator INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS budgets (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER NOT NULL,
-        month TEXT NOT NULL,
-        category TEXT NOT NULL,
-        amount REAL NOT NULL,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    // Cashflow Planning Overrides table (user edits)
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS cashflow_planning_overrides (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_name TEXT NOT NULL,
-        week_start_date TEXT NOT NULL,
-        series_name TEXT NOT NULL,
-        override_value REAL NOT NULL,
-        created_by INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
 
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS counterparties (

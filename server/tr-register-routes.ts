@@ -4,7 +4,7 @@ import { eq, and, desc, sql, inArray, count, isNull, ne } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import {
   trItems, trItemProjectLinks, trItemSuggestionDecisions,
-  insertTrItemSchema, projectInfo, operationalTasks, entityAssignments,
+  insertTrItemSchema, projectInfo, workItems, entityAssignments,
   type TrItemProjectLink, type TrSuggestionDecision, type ProjectInfo,
 } from "@shared/schema";
 import { resolveNameToUserId } from "./user-resolver";
@@ -395,9 +395,9 @@ export function registerTrRegisterRoutes(app: Express) {
           const newDueStr = typeof req.body.dueDate === "string"
             ? req.body.dueDate
             : new Date(req.body.dueDate).toISOString().split("T")[0];
-          await db.update(operationalTasks)
-            .set({ dueDate: newDueStr, updatedAt: new Date() })
-            .where(inArray(operationalTasks.id, taskIds));
+          await db.update(workItems)
+            .set({ endDate: newDueStr, updatedAt: new Date() })
+            .where(inArray(workItems.id, taskIds));
         }
       }
 
@@ -445,14 +445,15 @@ export function registerTrRegisterRoutes(app: Express) {
         ? new Date(trItem.dueDate).toISOString().split("T")[0]
         : null;
 
-      const [task] = await db.insert(operationalTasks).values({
+      const [task] = await db.insert(workItems).values({
+        projectId: project.id,
         title: `[${trItem.trId}] ${trItem.actionDescription}`,
-        projectName: project.projectName,
         priority: "HIGH",
-        dueDate: dueDateStr,
+        endDate: dueDateStr,
         status: "TO DO",
         description: `TR Register item: ${trItem.trId}\n${trItem.actionDescription}\n\nDepartment: ${trItem.department}\nDeep link: /tr-register/${trItem.id}`,
-        tags: ["Program Register"],
+        workstream: 'ENG' as any,
+        source: 'UI' as any,
         createdBy: getUser(req).id,
       }).returning();
 
@@ -475,7 +476,7 @@ export function registerTrRegisterRoutes(app: Express) {
 
       if (link.autoCreatedPmTaskId) {
         // GC-002: Use soft-delete instead of hard-delete for data recovery
-        await db.update(operationalTasks).set({ deletedAt: new Date() }).where(eq(operationalTasks.id, link.autoCreatedPmTaskId));
+        await db.update(workItems).set({ deletedAt: new Date() }).where(eq(workItems.id, link.autoCreatedPmTaskId));
       }
 
       await db.delete(trItemProjectLinks).where(eq(trItemProjectLinks.id, linkId));
@@ -499,11 +500,11 @@ export function registerTrRegisterRoutes(app: Express) {
       const taskIds = links.filter((l: TrItemProjectLink) => l.autoCreatedPmTaskId != null).map((l: TrItemProjectLink) => l.autoCreatedPmTaskId!);
 
       if (taskIds.length > 0) {
-        const incompleteTasks = await db.select({ id: operationalTasks.id })
-          .from(operationalTasks)
+        const incompleteTasks = await db.select({ id: workItems.id })
+          .from(workItems)
           .where(and(
-            inArray(operationalTasks.id, taskIds),
-            ne(operationalTasks.status, "COMPLETE"),
+            inArray(workItems.id, taskIds),
+            ne(workItems.status, "COMPLETE"),
           ));
         if (incompleteTasks.length > 0) {
           return res.status(400).json({
@@ -664,14 +665,15 @@ export function registerTrRegisterRoutes(app: Express) {
             ? new Date(trItem.dueDate).toISOString().split("T")[0]
             : null;
 
-          const [task] = await db.insert(operationalTasks).values({
+          const [task] = await db.insert(workItems).values({
+            projectId: project.id,
             title: `[${trItem.trId}] ${trItem.actionDescription}`,
-            projectName: project.projectName,
             priority: "HIGH",
-            dueDate: dueDateStr,
+            endDate: dueDateStr,
             status: "TO DO",
             description: `TR Register item: ${trItem.trId}\n${trItem.actionDescription}\n\nDepartment: ${trItem.department}\nDeep link: /tr-register/${trItem.id}`,
-            tags: ["Program Register"],
+            workstream: 'ENG' as any,
+            source: 'UI' as any,
             createdBy: getUser(req).id,
           }).returning();
 

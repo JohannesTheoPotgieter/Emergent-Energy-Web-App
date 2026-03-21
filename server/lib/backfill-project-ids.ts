@@ -2,10 +2,8 @@ import { db } from "../db";
 import { eq, isNull, sql } from "drizzle-orm";
 import {
   projectInfo,
-  operationalTasks,
   qcChecklist,
   deliverables,
-  engineeringTasks,
 } from "@shared/schema";
 
 export async function backfillProjectIds(): Promise<void> {
@@ -18,9 +16,7 @@ export async function backfillProjectIds(): Promise<void> {
   }
 
   for (const [name, id] of Array.from(nameToId.entries())) {
-    await db.update(operationalTasks)
-      .set({ projectId: id })
-      .where(sql`${operationalTasks.projectName} = ${name} AND ${operationalTasks.projectId} IS NULL`);
+    // work_items already has projectId as NOT NULL, no backfill needed
 
     await db.update(qcChecklist)
       .set({ projectId: id })
@@ -29,11 +25,7 @@ export async function backfillProjectIds(): Promise<void> {
     await db.update(deliverables)
       .set({ projectId: id })
       .where(sql`${deliverables.projectName} = ${name} AND ${deliverables.projectId} IS NULL`);
-
-    await db.update(engineeringTasks)
-      .set({ projectId: id })
-      .where(sql`${engineeringTasks.projectName} = ${name} AND ${engineeringTasks.projectId} IS NULL`);
   }
 
-  console.log(`[Backfill] Linked projectId for ${nameToId.size} projects across operational_tasks, qc_checklist, deliverables, engineering_tasks`);
+  console.log(`[Backfill] Linked projectId for ${nameToId.size} projects across qc_checklist, deliverables`);
 }

@@ -10,7 +10,7 @@ import {
   deliverables, deliverableVersions, deliverableFiles, deliverableEvents,
   spFilePointers,
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
-  qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory,
+  qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory, projectExecutionState,
   projectEngApprovals, projectEngStages, projectEngTasks, engStageTemplates,
   dashboardWidgetConfig, DEFAULT_WIDGET_ORDER,
   workItems, workItemAssignments,
@@ -22,6 +22,7 @@ import {
   type ProjectPhase,
 } from "@shared/schema";
 import { applyTemplate } from "./template-routes";
+import { syncProjectSplitTables } from "./lib/project-info-sync";
 import { requireAuthority, requirePermission, evaluateAuthorityForRequest } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject, mapToOpsStatus } from "./work-items-adapter";
@@ -2105,8 +2106,9 @@ export function registerEngineeringRoutes(app: Express) {
 
       const [rawCanonicalTasks, allProjectInfoRows] = await Promise.all([
         listEngineeringWorkItems({}),
-        db.select({ projectName: projectInfo.projectName, phase: projectInfo.phase })
-          .from(projectInfo),
+        db.select({ projectName: projectInfo.projectName, phase: projectExecutionState.phase })
+          .from(projectInfo)
+          .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
       ]);
 
       // Resolve assignee names from assigneeUserIds for standup filtering/workload
@@ -2302,8 +2304,9 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const [allTasks, allProjectInfoRows] = await Promise.all([
         listEngineeringWorkItems({}),
-        db.select({ projectName: projectInfo.projectName, phase: projectInfo.phase })
-          .from(projectInfo),
+        db.select({ projectName: projectInfo.projectName, phase: projectExecutionState.phase })
+          .from(projectInfo)
+          .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
       ]);
 
       const normalizeKey = (n: string) => n.replace(/_Tracker.*$/i, "").replace(/_/g, " ").toLowerCase().trim();
@@ -2898,7 +2901,16 @@ export function registerEngineeringRoutes(app: Express) {
       const user = getUser(req);
       const { evidenceType, emailSubject, emailDate, fileId } = req.body;
 
-      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
+      const [project] = await db.select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        cpSigned: projectExecutionState.cpSigned,
+        cpSignedDate: projectExecutionState.cpSignedDate,
+        pmTaskPackCreated: projectExecutionState.pmTaskPackCreated,
+        engPostCpTaskPackCreated: projectExecutionState.engPostCpTaskPackCreated,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectInfo.id, projectId));
       if (!project) return res.status(404).json({ error: "Project not found" });
 
       // Idempotency: already signed
@@ -2924,14 +2936,16 @@ export function registerEngineeringRoutes(app: Express) {
         : JSON.stringify({ emailSubject, emailDate: emailDate || new Date().toISOString().split("T")[0] });
 
       // Mark CP signed
-      await db.update(projectInfo).set({
+      const cpSignedFields = {
         cpSigned: true,
         cpSignedDate: new Date().toISOString().split("T")[0],
         cpSignedByUserId: user.id,
         cpEvidenceType: evidenceType,
         cpEvidenceRef: evidenceRef,
         updatedAt: new Date(),
-      }).where(eq(projectInfo.id, projectId));
+      };
+      await db.update(projectInfo).set(cpSignedFields).where(eq(projectInfo.id, projectId));
+      await syncProjectSplitTables(projectId, cpSignedFields);
 
       let pmTasksCreated = 0;
       let engTasksCreated = 0;
@@ -2951,6 +2965,7 @@ export function registerEngineeringRoutes(app: Express) {
           pmTasksCreated++;
         }
         await db.update(projectInfo).set({ pmTaskPackCreated: true }).where(eq(projectInfo.id, projectId));
+        await syncProjectSplitTables(projectId, { pmTaskPackCreated: true });
       }
 
       // Create Engineering post-CP task pack (idempotent)
@@ -2968,6 +2983,7 @@ export function registerEngineeringRoutes(app: Express) {
           engTasksCreated++;
         }
         await db.update(projectInfo).set({ engPostCpTaskPackCreated: true }).where(eq(projectInfo.id, projectId));
+        await syncProjectSplitTables(projectId, { engPostCpTaskPackCreated: true });
       }
 
       logAuditFromReq(req, {
@@ -2996,14 +3012,16 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const projectId = parseInt(req.params.projectId);
       const [project] = await db.select({
-        cpSigned: projectInfo.cpSigned,
-        cpSignedDate: projectInfo.cpSignedDate,
-        cpSignedByUserId: projectInfo.cpSignedByUserId,
-        cpEvidenceType: projectInfo.cpEvidenceType,
-        cpEvidenceRef: projectInfo.cpEvidenceRef,
-        pmTaskPackCreated: projectInfo.pmTaskPackCreated,
-        engPostCpTaskPackCreated: projectInfo.engPostCpTaskPackCreated,
-      }).from(projectInfo).where(eq(projectInfo.id, projectId));
+        cpSigned: projectExecutionState.cpSigned,
+        cpSignedDate: projectExecutionState.cpSignedDate,
+        cpSignedByUserId: projectExecutionState.cpSignedByUserId,
+        cpEvidenceType: projectExecutionState.cpEvidenceType,
+        cpEvidenceRef: projectExecutionState.cpEvidenceRef,
+        pmTaskPackCreated: projectExecutionState.pmTaskPackCreated,
+        engPostCpTaskPackCreated: projectExecutionState.engPostCpTaskPackCreated,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectInfo.id, projectId));
 
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -3066,15 +3084,17 @@ export function registerEngineeringRoutes(app: Express) {
       let templateResult: any = null;
 
       await db.transaction(async (tx) => {
+        const phaseFields = {
+          phase: toPhase,
+          phaseUpdatedAt: new Date(),
+          phaseUpdatedByUserId: user.id,
+          phaseNotes: reason.trim(),
+          updatedAt: new Date(),
+        };
         await tx.update(projectInfo)
-          .set({
-            phase: toPhase,
-            phaseUpdatedAt: new Date(),
-            phaseUpdatedByUserId: user.id,
-            phaseNotes: reason.trim(),
-            updatedAt: new Date(),
-          })
+          .set(phaseFields)
           .where(eq(projectInfo.id, projectId));
+        await syncProjectSplitTables(projectId, phaseFields, tx);
 
         await tx.insert(projectPhaseHistory).values({
           projectId,

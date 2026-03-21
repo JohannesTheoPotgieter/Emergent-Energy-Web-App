@@ -7,8 +7,8 @@ export async function seedEngineeringData() {
   try {
     const existing = await db
       .select({ count: sql<number>`count(*)` })
-      .from(operationalTasks)
-      .where(eq(operationalTasks.externalSource, "clickup"));
+      .from(workItems)
+      .where(and(eq(workItems.workstream, "ENG"), eq(workItems.source, "INTEGRATION")));
 
     const clickupCount = Number(existing[0]?.count || 0);
 
@@ -49,11 +49,13 @@ export async function seedEngineeringData() {
     let skipped = 0;
 
     for (const task of engineeringData as any[]) {
-      if (task.external_task_id) {
+      const externalRef = task.external_task_id ? `clickup:${task.external_task_id}` : null;
+
+      if (externalRef) {
         const dup = await db
-          .select({ id: operationalTasks.id })
-          .from(operationalTasks)
-          .where(eq(operationalTasks.externalTaskId, task.external_task_id))
+          .select({ id: workItems.id })
+          .from(workItems)
+          .where(eq(workItems.externalRef, externalRef))
           .limit(1);
 
         if (dup.length > 0) {
@@ -75,38 +77,24 @@ export async function seedEngineeringData() {
         status: task.status || "planned",
         priority: task.priority || "Medium",
         startDate: task.start_date || null,
-        dueDate: task.due_date || null,
-        durationDays: task.duration_days || null,
+        endDate: task.due_date || null,
+        duration: task.duration_days || null,
         percentComplete: task.percent_complete || 0,
-        expectedPercentComplete: task.expected_percent_complete || null,
-        assignees: task.assignees || null,
-        tags: task.tags || null,
+        expectedPctComplete: task.expected_percent_complete || null,
         blockerReason: task.blocker_reason || null,
-        plannedHours: task.planned_hours || null,
-        actualHours: task.actual_hours || null,
         sortOrder: task.sort_order || 0,
-        isBaseline: task.is_baseline || false,
         createdAt: task.created_at ? new Date(task.created_at) : new Date(),
         updatedAt: task.updated_at ? new Date(task.updated_at) : new Date(),
-        actualStartDate: task.actual_start_date || null,
-        actualEndDate: task.actual_end_date || null,
-        actualDurationDays: task.actual_duration_days || null,
-        comment: task.comment || null,
-        escalationLevel: task.escalation_level || null,
+        actualStart: task.actual_start_date || null,
+        actualEnd: task.actual_end_date || null,
+        actualDuration: task.actual_duration_days || null,
         phase: task.phase || null,
-        primaryWorkstream: task.primary_workstream || null,
         holdReason: task.hold_reason || null,
         approvalRequired: task.approval_required || false,
-        watchers: task.watchers || null,
-        workstream: task.workstream || null,
-        externalSource: task.external_source || "clickup",
-        externalTaskId: task.external_task_id || null,
-        externalSubtaskIds: task.external_subtask_ids || null,
-        externalSubtaskUrls: task.external_subtask_urls || null,
+        externalRef,
         trackingRag: task.tracking_rag || null,
-        summaryText: task.summary_text || null,
-        importedCommentCount: task.imported_comment_count || null,
         taskTypeTag: task.task_type_tag || null,
+        legacyTable: "operational_tasks",
       });
       inserted++;
     }

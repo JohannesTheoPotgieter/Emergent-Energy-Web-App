@@ -3,7 +3,6 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/hooks/use-auth";
-import { ProgramProvider } from "@/hooks/use-program-data";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NetworkStatus } from "@/components/NetworkStatus";
@@ -19,13 +18,7 @@ import CostTracker from "@/pages/cos";
 import GpTrackerPage from "@/pages/gp-tracker";
 import NotFound from "@/pages/not-found";
 import ProjectDetailPage from "@/pages/project-detail";
-import AdminPage from "@/pages/admin";
-import MyToolTodayPage from "@/pages/my-tool-today";
-import MyToolWeekPage from "@/pages/my-tool-week";
-import MyToolBacklogPage from "@/pages/my-tool-backlog";
-import MyToolSettingsPage from "@/pages/my-tool-settings";
 import MyToolAdminSettingsPage from "@/pages/my-tool-admin-settings";
-import MyToolHelpPage from "@/pages/my-tool-help";
 import MyToolPrioritiesPage from "@/pages/my-tool-priorities";
 import MyToolMeetingsPage from "@/pages/my-tool-meetings";
 import QmDashboardPage from "@/pages/qm-dashboard";
@@ -112,13 +105,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   CostTracker,
   RevenueTrackerPage,
   GpTrackerPage,
-  MyToolTodayPage,
-  MyToolWeekPage,
-  MyToolBacklogPage,
-  MyToolSettingsPage,
   MyToolPrioritiesPage,
-  MyToolHelpPage,
-  AdminPage,
   MyToolAdminSettingsPage,
   QmDashboardPage,
   EngineeringDashboardPage,
@@ -353,11 +340,9 @@ function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <ProgramProvider>
-            <NetworkStatus />
-            <Router />
-            <Toaster />
-          </ProgramProvider>
+          <NetworkStatus />
+          <Router />
+          <Toaster />
         </AuthProvider>
       </QueryClientProvider>
     </ErrorBoundary>

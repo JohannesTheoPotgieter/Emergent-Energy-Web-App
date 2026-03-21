@@ -1,9 +1,10 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../../../db";
-import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLines, procurementItems, projectEngDeliverables, projectEngStages, projectInfo, projectPhaseHistory, projectRevenueSummary, qcChecklist, qcItemInstance, smartImportRuns, workItems, users, counterparties } from "@shared/schema";
+import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLines, procurementItems, projectEngDeliverables, projectEngStages, projectInfo, projectPhaseHistory, projectRevenueSummary, qcChecklist, qcItemInstance, smartImportRuns, workItems, users, counterparties, projectExecutionState, projectSettings, projectTeamMembers, dashboardProjectMetrics, qcWarning, qcItemEvidence } from "@shared/schema";
+import { syncProjectSplitTables } from "../../../lib/project-info-sync";
 
 export async function listProjects(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null }) {
-  const filters = [eq(projectInfo.isActive, true)];
+  const filters = [eq(projectExecutionState.isActive, true)];
   if (params.q) filters.push(ilike(projectInfo.projectName, `%${params.q}%`));
 
   // RLS: scope to user's assigned projects when provided
@@ -17,9 +18,10 @@ export async function listProjects(params: { q?: string; page: number; pageSize:
 
   const where = and(...filters);
 
-  const totalRow = await db.select({ total: count() }).from(projectInfo).where(where);
+  const totalRow = await db.select({ total: count() }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)).where(where);
   const order = params.sortDir === "desc" ? desc(projectInfo.updatedAt) : asc(projectInfo.updatedAt);
-  const rows = await db.select().from(projectInfo).where(where).orderBy(order).limit(params.pageSize).offset((params.page - 1) * params.pageSize);
+  const joinedRows = await db.select({ pi: projectInfo, pes: projectExecutionState }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)).where(where).orderBy(order).limit(params.pageSize).offset((params.page - 1) * params.pageSize);
+  const rows = joinedRows.map(r => ({ ...r.pi, ...r.pes, id: r.pi.id }));
   return { rows, total: Number(totalRow[0]?.total ?? 0) };
 }
 
@@ -38,11 +40,13 @@ export async function transitionProjectToConstruction(projectId: number, userId:
     const fromPhase = current.phase ?? "Development";
 
     await tx.insert(projectPhaseHistory).values({ projectId, fromPhase, toPhase: "Construction", changedByUserId: userId, reason });
+    const constructionFields = { phase: "Construction", phaseUpdatedAt: new Date(), phaseUpdatedByUserId: userId, pdHandoverActual: new Date().toISOString().slice(0, 10), updatedAt: new Date() };
     const [updated] = await tx
       .update(projectInfo)
-      .set({ phase: "Construction", phaseUpdatedAt: new Date(), phaseUpdatedByUserId: userId, pdHandoverActual: new Date().toISOString().slice(0, 10), updatedAt: new Date() })
+      .set(constructionFields)
       .where(eq(projectInfo.id, projectId))
       .returning();
+    await syncProjectSplitTables(projectId, constructionFields, tx);
     return updated;
   });
 }
@@ -277,8 +281,8 @@ export async function dashboardCoreTotals(scopeProjectIds?: Set<number> | null) 
   }
 
   const projectFilter = hasScope
-    ? and(eq(projectInfo.isActive, true), inArray(projectInfo.id, ids))
-    : eq(projectInfo.isActive, true);
+    ? and(eq(projectExecutionState.isActive, true), inArray(projectInfo.id, ids))
+    : eq(projectExecutionState.isActive, true);
 
   const workFilter = hasScope
     ? and(isNull(workItems.deletedAt), sql`${workItems.status} != 'Complete'`, inArray(workItems.projectId, ids))
@@ -293,7 +297,7 @@ export async function dashboardCoreTotals(scopeProjectIds?: Set<number> | null) 
     : sql`${invoiceCaptures.status} in ('captured','submitted','verified')`;
 
   const [projects, openWork, openProcurement, invoices] = await Promise.all([
-    db.select({ total: sql<number>`count(*)` }).from(projectInfo).where(projectFilter),
+    db.select({ total: sql<number>`count(*)` }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)).where(projectFilter),
     db.select({ total: sql<number>`count(*)` }).from(workItems).where(workFilter),
     db.select({ total: sql<number>`count(*)` }).from(procurementItems).where(procFilter),
     db.select({ total: sql<number>`count(*)` }).from(invoiceCaptures).where(invFilter),
@@ -304,4 +308,97 @@ export async function dashboardCoreTotals(scopeProjectIds?: Set<number> | null) 
     openProcurement: Number(openProcurement[0]?.total ?? 0),
     pendingInvoices: Number(invoices[0]?.total ?? 0),
   };
+}
+
+// ─── Prompt 14: Consolidated project queries ───────────────────────
+
+export async function getProjectExecutionState(projectId: number) {
+  const [row] = await db.select().from(projectExecutionState).where(eq(projectExecutionState.projectId, projectId)).limit(1);
+  return row ?? null;
+}
+
+export async function getProjectSettings(projectId: number) {
+  const [row] = await db.select().from(projectSettings).where(eq(projectSettings.projectId, projectId)).limit(1);
+  return row ?? null;
+}
+
+export async function getProjectTeam(projectId: number) {
+  const rows = await db
+    .select({
+      id: projectTeamMembers.id,
+      userId: projectTeamMembers.userId,
+      userName: users.name,
+      roleOnProject: projectTeamMembers.roleOnProject,
+    })
+    .from(projectTeamMembers)
+    .leftJoin(users, eq(projectTeamMembers.userId, users.id))
+    .where(eq(projectTeamMembers.projectId, projectId));
+  return rows;
+}
+
+export async function getProjectMetricsFromMaterialized(projectId: number) {
+  const [row] = await db.select().from(dashboardProjectMetrics).where(eq(dashboardProjectMetrics.projectId, projectId)).limit(1);
+  return row ?? null;
+}
+
+export async function getProjectPlanSummary(projectId: number) {
+  const items = await db.select().from(workItems).where(and(eq(workItems.projectId, projectId), isNull(workItems.deletedAt)));
+  const today = new Date().toISOString().slice(0, 10);
+  let total = 0, completed = 0, inProgress = 0, overdue = 0, active = 0;
+  for (const t of items) {
+    total++;
+    const status = String(t.status ?? "").trim().toUpperCase();
+    if (["COMPLETE", "COMPLETED", "DONE"].includes(status)) completed++;
+    if (status === "IN PROGRESS") inProgress++;
+    if (!["COMPLETE", "COMPLETED", "DONE", "CANCELLED", "CANCELED"].includes(status)) active++;
+    if (t.endDate && t.endDate < today && !["COMPLETE", "COMPLETED", "DONE", "QC APPROVED"].includes(status)) overdue++;
+  }
+  return { taskCount: total, tasksCompleted: completed, tasksInProgress: inProgress, tasksOverdue: overdue, tasksActive: active, completionPct: total > 0 ? completed / total : null };
+}
+
+export async function getProjectQualitySummary(projectId: number) {
+  const [warnings, checklists] = await Promise.all([
+    db.select().from(qcWarning).where(and(eq(qcWarning.projectId, projectId), eq(qcWarning.status, "open"))),
+    db.select().from(qcChecklist).where(eq(qcChecklist.projectId, projectId)),
+  ]);
+  let checklistProgress: number | null = null;
+  if (checklists.length > 0) {
+    const checklistIds = checklists.map((c) => c.id);
+    const instances = await db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklistIds));
+    const applicable = instances.filter((i) => i.isApplicable);
+    const approved = applicable.filter((i) => i.approved);
+    checklistProgress = applicable.length > 0 ? approved.length / applicable.length : null;
+  }
+  return { checklistProgress, openWarnings: warnings.length };
+}
+
+export async function getProjectPlanWorkItems(projectId: number, workstreamFilter?: string) {
+  const filters = [eq(workItems.projectId, projectId), isNull(workItems.deletedAt)];
+  if (workstreamFilter) filters.push(eq(workItems.workstream, workstreamFilter as any));
+  return db.select().from(workItems).where(and(...filters));
+}
+
+export async function getProjectQualityDetail(projectId: number) {
+  const checklists = await db.select().from(qcChecklist).where(eq(qcChecklist.projectId, projectId));
+  let items: any[] = [];
+  let evidence: any[] = [];
+  if (checklists.length > 0) {
+    const checklistIds = checklists.map((c) => c.id);
+    [items, evidence] = await Promise.all([
+      db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklistIds)),
+      db.select().from(qcItemEvidence).where(eq(qcItemEvidence.projectId, projectId)),
+    ]);
+  }
+  return { checklists, items, evidence };
+}
+
+export async function getProjectEngineeringDetail(projectId: number) {
+  const stages = await db.select().from(projectEngStages).where(eq(projectEngStages.projectId, projectId));
+  const engWorkItems = await db.select().from(workItems).where(and(eq(workItems.projectId, projectId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
+  let deliverables: any[] = [];
+  if (stages.length > 0) {
+    const stageIds = stages.map((s) => s.id);
+    deliverables = await db.select().from(projectEngDeliverables).where(inArray(projectEngDeliverables.projectEngStageId, stageIds));
+  }
+  return { stages, workItems: engWorkItems, deliverables };
 }

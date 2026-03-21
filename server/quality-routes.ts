@@ -11,7 +11,7 @@ import {
   qcPlanLink, qcWarning, qcWarningEvent,
   qcPostmortem, qcPostmortemMetricValue, qcPostmortemSummary,
   qcAccessChallenge, calendarHoliday,
-  users, projectInfo,
+  users, projectInfo, projectExecutionState,
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
@@ -39,7 +39,7 @@ const qmApprovalUpload = multer({
 });
 
 type AppUser = { id: number; email: string; name: string; role: string; };
-type ProjectInfoRow = typeof projectInfo.$inferSelect;
+type ProjectInfoRow = any;
 type QcChecklistRow = typeof qcChecklist.$inferSelect;
 type QcItemInstanceRow = typeof qcItemInstance.$inferSelect;
 type QcTemplateItemRow = typeof qcTemplateItem.$inferSelect;
@@ -145,7 +145,10 @@ function normalizeHandoverRow(row: any) {
 }
 
 async function loadProjectQualityGovernanceContext(projectName: string, userId: number) {
-  const projectRows: ProjectInfoRow[] = await db.select().from(projectInfo).where(eq(projectInfo.projectName, projectName));
+  const rawRows = await db.select().from(projectInfo)
+    .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+    .where(eq(projectInfo.projectName, projectName));
+  const projectRows = rawRows.map(r => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id, updatedAt: r.project_info.updatedAt })) as any[];
   const [project] = projectRows;
   const checklistRows: QcChecklistRow[] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
   const [checklist] = checklistRows;
@@ -1170,7 +1173,10 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/project/:projectName/summary", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const projectName = decodeURIComponent(String(req.params.projectName));
-      const [project] = await db.select().from(projectInfo).where(eq(projectInfo.projectName, projectName));
+      const [projectRow] = await db.select().from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectInfo.projectName, projectName));
+      const project = projectRow ? { ...projectRow.project_info, ...projectRow.project_execution_state, id: projectRow.project_info.id } : undefined;
       const [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
       if (!checklist) {
         return res.json({
@@ -1475,10 +1481,13 @@ export function registerQualityRoutes(app: Express) {
     try {
       const allChecklists = await db.select().from(qcChecklist);
       const projectIds = uniqueNumberList(allChecklists.map((checklist) => checklist.projectId));
-      const allProjects: ProjectInfoRow[] = projectIds.length > 0
-        ? await db.select().from(projectInfo).where(inArray(projectInfo.id, projectIds))
+      const allProjectRows = projectIds.length > 0
+        ? await db.select().from(projectInfo)
+            .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+            .where(inArray(projectInfo.id, projectIds))
         : [];
-      const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project) => [project.id, project]));
+      const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id }));
+      const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project: any) => [project.id, project]));
 
       const handoverRows: any[] = projectIds.length > 0
         ? await db.execute(sql.raw(
@@ -1631,10 +1640,13 @@ export function registerQualityRoutes(app: Express) {
       const allWarnings = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
       const allItems = await db.select().from(qcItemInstance);
       const projectIds = uniqueNumberList(allChecklists.map((checklist) => checklist.projectId));
-      const allProjects: ProjectInfoRow[] = projectIds.length > 0
-        ? await db.select().from(projectInfo).where(inArray(projectInfo.id, projectIds))
+      const allProjectRows = projectIds.length > 0
+        ? await db.select().from(projectInfo)
+            .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+            .where(inArray(projectInfo.id, projectIds))
         : [];
-      const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project) => [project.id, project]));
+      const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id }));
+      const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project: any) => [project.id, project]));
 
       const handoverRows: any[] = projectIds.length > 0
         ? await db.execute(sql.raw(

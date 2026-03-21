@@ -10,13 +10,13 @@ import {
   withDeliverableRequirementTag,
 } from "@shared/task-deliverable-requirement";
 import type {
-  OperationalTask,
   TaskComment,
   TaskChecklist,
   TaskChecklistItem,
   TaskAttachment,
   TaskActivityLog,
 } from "@shared/schema";
+import type { UnifiedTask } from "@shared/types/unified-task";
 
 import {
   Sheet,
@@ -70,7 +70,7 @@ interface TaskDetailDrawerProps {
 }
 
 interface TaskDetailResponse {
-  task: OperationalTask;
+  task: UnifiedTask & Record<string, any>;
   comments: TaskComment[];
   checklists: Array<TaskChecklist & { items: TaskChecklistItem[] }>;
   attachments: TaskAttachment[];

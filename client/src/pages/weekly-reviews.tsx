@@ -8,7 +8,7 @@ import {
   Calendar, Clock, CheckCircle, AlertCircle, FileText,
   ArrowRight, Loader2,
 } from "lucide-react";
-import { useProgramData } from "@/hooks/use-program-data";
+import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { format, startOfWeek, addDays, differenceInDays } from "date-fns";
 
 interface ReviewRecord {
@@ -23,7 +23,7 @@ interface ReviewRecord {
 
 export default function WeeklyReviewsPage() {
   const [, setLocation] = useLocation();
-  const { projectsSummary } = useProgramData();
+  const { projectsSummary } = useProjectsSummary();
 
   const { data: allReviews = [], isLoading } = useQuery<ReviewRecord[]>({
     queryKey: ["/api/weekly-reviews-all"],

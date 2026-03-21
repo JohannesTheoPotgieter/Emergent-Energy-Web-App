@@ -1,5 +1,8 @@
 import * as repo from "../repositories/project-v2-repository";
 import { ApiV2Error, paginationMeta } from "../utils/http";
+import { db } from "../../../db";
+import { dashboardProjectMetrics, dashboardProgramMetrics } from "@shared/schema";
+import { refreshAllMetrics } from "../../../services/dashboard-metrics";
 
 export async function listProjectsService(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null }) {
   const { rows, total } = await repo.listProjects(params);
@@ -169,4 +172,134 @@ export async function dashboardByRoleService(role: string, scopeProjectIds?: Set
     return { role, handoverReadiness: totals.openWorkItems, outstandingDevelopmentActions: totals.openProcurement };
   }
   return { role, crossFunctionalRisk: totals.openWorkItems + totals.openProcurement, blockedProjects: totals.projects, overdueActions: totals.openWorkItems, marginRisk: totals.pendingInvoices, totals };
+}
+
+// ─── Prompt 12: Materialized dashboard metrics ─────────────────────
+
+export async function dashboardMetricsService() {
+  const [projects, program] = await Promise.all([
+    db.select().from(dashboardProjectMetrics),
+    db.select().from(dashboardProgramMetrics).limit(1),
+  ]);
+
+  return {
+    program: program[0] ?? null,
+    projects,
+    lastRefreshedAt: program[0]?.lastRefreshedAt?.toISOString() ?? null,
+  };
+}
+
+export async function dashboardRefreshService() {
+  const result = await refreshAllMetrics();
+  return { refreshed: result.refreshed, timestamp: new Date().toISOString() };
+}
+
+// ─── Prompt 14: Consolidated project endpoint services ─────────────
+
+function toNum(v: unknown): number {
+  if (v === null || v === undefined || v === "") return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export async function getConsolidatedProjectService(projectId: number) {
+  const project = await repo.getProjectById(projectId);
+  if (!project) throw new ApiV2Error("NOT_FOUND", 404, "Project not found");
+
+  const [execState, settings, team, metrics, planSummary, qualitySummary] = await Promise.all([
+    repo.getProjectExecutionState(projectId),
+    repo.getProjectSettings(projectId),
+    repo.getProjectTeam(projectId),
+    repo.getProjectMetricsFromMaterialized(projectId),
+    repo.getProjectPlanSummary(projectId),
+    repo.getProjectQualitySummary(projectId),
+  ]);
+
+  const financeSummary = {
+    totalRevenue: toNum(metrics?.totalRevenue),
+    receivedRevenue: toNum(metrics?.receivedRevenue),
+    outstandingRevenue: toNum(metrics?.outstandingRevenue),
+    totalCost: toNum(metrics?.totalCost),
+    paidCost: toNum(metrics?.paidCost),
+    outstandingCost: toNum(metrics?.outstandingCost),
+    marginPct: metrics?.marginPct ? toNum(metrics.marginPct) : null,
+    contractValue: project.contractValue ? toNum(project.contractValue) : null,
+  };
+
+  return {
+    project: {
+      id: project.id,
+      projectName: project.projectName,
+      sizeKwp: project.sizeKwp,
+      pd: project.pd,
+      pm: project.pm,
+      contractValue: project.contractValue,
+      clientId: project.clientId,
+      pmUserId: project.pmUserId,
+      pdUserId: project.pdUserId,
+    },
+    executionState: execState ? {
+      phase: execState.phase,
+      ragStatus: execState.ragStatus,
+      ragComment: execState.ragComment,
+      escalationLevel: execState.escalationLevel,
+      isActive: execState.isActive,
+      archivedStatus: execState.archivedStatus,
+      executionEnabled: execState.executionEnabled,
+      executionGateStatus: execState.executionGateStatus,
+      signedStatus: execState.signedStatus,
+      signedDate: execState.signedDate,
+      cpSigned: execState.cpSigned,
+    } : null,
+    settings: settings ? { excelTrackerLink: settings.excelTrackerLink } : null,
+    financeSummary,
+    planSummary,
+    qualitySummary,
+    team,
+    // permissions added by controller
+  };
+}
+
+export async function getProjectFinanceDetailService(projectId: number) {
+  const project = await repo.getProjectById(projectId);
+  if (!project) throw new ApiV2Error("NOT_FOUND", 404, "Project not found");
+
+  const [costLines, revenueLines, cashflow] = await Promise.all([
+    repo.getFinanceCostLines(projectId),
+    repo.getFinanceRevenueLines(projectId),
+    repo.getFinanceCashflow(projectId),
+  ]);
+
+  return { costLines, revenueLines, cashflow };
+}
+
+export async function getProjectPlanDetailService(projectId: number, workstreamFilter?: string) {
+  const project = await repo.getProjectById(projectId);
+  if (!project) throw new ApiV2Error("NOT_FOUND", 404, "Project not found");
+
+  const [items, summary] = await Promise.all([
+    repo.getProjectPlanWorkItems(projectId, workstreamFilter),
+    repo.getProjectPlanSummary(projectId),
+  ]);
+
+  return { workItems: items, summary };
+}
+
+export async function getProjectQualityDetailService(projectId: number) {
+  const project = await repo.getProjectById(projectId);
+  if (!project) throw new ApiV2Error("NOT_FOUND", 404, "Project not found");
+
+  const [detail, summary] = await Promise.all([
+    repo.getProjectQualityDetail(projectId),
+    repo.getProjectQualitySummary(projectId),
+  ]);
+
+  return { ...detail, summary };
+}
+
+export async function getProjectEngineeringDetailService(projectId: number) {
+  const project = await repo.getProjectById(projectId);
+  if (!project) throw new ApiV2Error("NOT_FOUND", 404, "Project not found");
+
+  return repo.getProjectEngineeringDetail(projectId);
 }

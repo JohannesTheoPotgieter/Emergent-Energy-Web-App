@@ -81,25 +81,6 @@ export const authApi = {
   },
 };
 
-export const dashboardApi = {
-  getData: async () => {
-    return fetchJSON<DashboardData>(`${API_BASE}/dashboard`);
-  },
-  refresh: async () => {
-    return fetchJSON<{ message: string; refreshedAt: string }>(`${API_BASE}/refresh`, {
-      method: "POST",
-    });
-  },
-  reprocessAll: async () => {
-    return fetchJSON<{ message: string; results: { fileName: string; status: string; message?: string }[] }>(`${API_BASE}/reprocess-all`, {
-      method: "POST",
-    });
-  },
-  getLatestRefresh: async () => {
-    return fetchJSON<{ lastRefresh: string | null }>(`${API_BASE}/refresh/latest`);
-  },
-};
-
 export const projectsApi = {
   getAll: async () => {
     return fetchJSON<Project[]>(`${API_BASE}/projects`);
@@ -108,70 +89,6 @@ export const projectsApi = {
     return fetchJSON<Project>(`${API_BASE}/projects/${id}`);
   },
 };
-
-export const expensesApi = {
-  getAll: async (projectId?: number) => {
-    const url = projectId
-      ? `${API_BASE}/expenses?projectId=${projectId}`
-      : `${API_BASE}/expenses`;
-    return fetchJSON<Expense[]>(url);
-  },
-};
-
-export const revenuesApi = {
-  getAll: async (projectId?: number) => {
-    const url = projectId
-      ? `${API_BASE}/revenues?projectId=${projectId}`
-      : `${API_BASE}/revenues`;
-    return fetchJSON<Revenue[]>(url);
-  },
-};
-
-export const tasksApi = {
-  getAll: async (projectId?: number) => {
-    const url = projectId
-      ? `${API_BASE}/tasks?projectId=${projectId}`
-      : `${API_BASE}/tasks`;
-    return fetchJSON<Task[]>(url);
-  },
-};
-
-export interface Budget {
-  id: number;
-  projectId: number;
-  month: string;
-  category: string;
-  amount: string;
-}
-
-export interface CreateBudget {
-  projectId: number;
-  month: string;
-  category: "REV" | "COS" | "OPS";
-  amount: string;
-}
-
-export const budgetsApi = {
-  getAll: async () => {
-    return fetchJSON<Budget[]>(`${API_BASE}/budgets`);
-  },
-  create: async (budget: CreateBudget) => {
-    return fetchJSON<Budget>(`${API_BASE}/budgets`, {
-      method: "POST",
-      body: JSON.stringify(budget),
-    });
-  },
-  delete: async (id: number) => {
-    return fetchJSON<{ message: string }>(`${API_BASE}/budgets/${id}`, {
-      method: "DELETE",
-    });
-  },
-};
-
-export const budgetsQueryOptions = queryOptions({
-  queryKey: ["budgets"],
-  queryFn: budgetsApi.getAll,
-});
 
 export const uploadApi = {
   uploadFiles: async (files: File[]) => {
@@ -287,52 +204,6 @@ export interface Project {
   budget: string;
   sourceFile: string;
   lastUpdated: string;
-}
-
-export interface Expense {
-  id: number;
-  projectId: number;
-  category: string;
-  description: string;
-  amount: string;
-  date: string;
-  vendor: string;
-  invoiceNumber?: string;
-  status: string;
-  sourceSheet: string;
-  rowLocator?: number;
-}
-
-export interface Revenue {
-  id: number;
-  projectId: number;
-  type: string;
-  amount: string;
-  date: string;
-  status: string;
-  sourceSheet: string;
-  rowLocator?: number;
-}
-
-export interface Task {
-  id: number;
-  projectId: number;
-  taskName: string;
-  startDate: string;
-  endDate: string;
-  progress: number;
-  status: string;
-  assignee: string;
-  sourceSheet: string;
-  rowLocator?: number;
-}
-
-export interface DashboardData {
-  projects: Project[];
-  expenses: Expense[];
-  revenues: Revenue[];
-  tasks: Task[];
-  lastRefresh: string | null;
 }
 
 export interface UploadResult {
@@ -574,17 +445,6 @@ export const financeApi = {
     return fetchJSON<FinanceCosMonthly[]>(url);
   },
 };
-
-export const dashboardQueryOptions = queryOptions({
-  queryKey: ["dashboard"],
-  queryFn: dashboardApi.getData,
-  staleTime: 30000,
-});
-
-export const projectsQueryOptions = queryOptions({
-  queryKey: ["projects"],
-  queryFn: projectsApi.getAll,
-});
 
 export const overviewQueryOptions = queryOptions({
   queryKey: ["overview"],

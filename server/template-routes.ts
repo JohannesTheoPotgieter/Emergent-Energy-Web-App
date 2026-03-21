@@ -4,7 +4,7 @@ import { db } from "./db";
 import { eq, and, desc, asc, sql, ilike } from "drizzle-orm";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import {
-  users, projectInfo, projectPhaseHistory, operationalTasks,
+  users, projectInfo, projectPhaseHistory, workItems,
   deliverables, taskActivityLog,
   phaseTemplate, phaseTemplateItem, phaseTemplateItemHistory, phaseTemplateApplication,
   PROJECT_PHASES, PROJECT_PHASE_LABELS, LIFECYCLE_PHASES, PHASE_TO_ENG_STAGES,
@@ -12,7 +12,9 @@ import {
   TEMPLATE_ITEM_TYPES, TEMPLATE_WORKSTREAMS, TEMPLATE_LINK_TARGET_TYPES,
   clients,
   qcWarning,
+  projectExecutionState,
 } from "@shared/schema";
+import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { requirePermission } from "./permission-middleware";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { createHash } from "crypto";
@@ -102,9 +104,9 @@ async function buildPreview(
   if (!project) throw new Error("Project not found");
 
   const cleanName = project.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
-  const existingTasks = await db.select({ id: operationalTasks.id, title: operationalTasks.title, phase: operationalTasks.phase })
-    .from(operationalTasks)
-    .where(eq(operationalTasks.projectName, cleanName));
+  const existingTasks = await db.select({ id: workItems.id, title: workItems.title, phase: sql<string>`null`.as("phase") })
+    .from(workItems)
+    .where(eq(workItems.projectId, projectId));
 
   const existingDeliverables = await db.select({ id: deliverables.id, deliverableType: deliverables.deliverableType })
     .from(deliverables)
@@ -186,12 +188,11 @@ async function applyTemplate(
   for (const item of items) {
     try {
       if (item.itemType === "TASK") {
-        const existingByKey = await db.select({ id: operationalTasks.id })
-          .from(operationalTasks)
+        const existingByKey = await db.select({ id: workItems.id })
+          .from(workItems)
           .where(and(
-            eq(operationalTasks.projectName, cleanName),
-            eq(operationalTasks.title, item.title),
-            sql`${operationalTasks.phase} = ${targetPhase} OR ${operationalTasks.phase} IS NULL`,
+            eq(workItems.projectId, projectId),
+            eq(workItems.title, item.title),
           ))
           .limit(1);
 
@@ -203,18 +204,17 @@ async function applyTemplate(
             ? new Date(Date.now() + item.offsetDaysFromPhaseStart * 86400000).toISOString().split("T")[0]
             : undefined;
 
-          const [task] = await db.insert(operationalTasks).values({
-            projectName: cleanName,
+          const [task] = await db.insert(workItems).values({
+            projectId,
             title: item.title,
             description: item.description || undefined,
             status: item.defaultStatus || "TO DO",
             priority: item.defaultPriority || "Med",
-            phase: targetPhase,
-            primaryWorkstream: item.primaryWorkstream || undefined,
+            workstream: (item.primaryWorkstream || 'ENG') as any,
             approvalRequired: item.requiresApproval,
-            approverUserId: undefined,
-            dueDate,
+            endDate: dueDate,
             sortOrder: item.sortOrder,
+            source: 'UI' as any,
             createdBy: actorUserId,
           }).returning();
 
@@ -700,7 +700,8 @@ export function registerTemplateRoutes(app: Express) {
 
       const allProjects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
         .from(projectInfo)
-        .where(eq(projectInfo.isActive, true));
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectExecutionState.isActive, true));
 
       const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
       const needle = normalise(name);
@@ -753,7 +754,7 @@ export function registerTemplateRoutes(app: Express) {
         requestedClientName: typeof clientName === "string" ? clientName : null,
       });
 
-      const [created] = await db.insert(projectInfo).values({
+      const createProjectFields = {
         projectName: projectName.trim(),
         clientId: resolvedClient.client?.id ?? null,
         phase,
@@ -761,7 +762,9 @@ export function registerTemplateRoutes(app: Express) {
         phaseUpdatedByUserId: user.id,
         phaseNotes: `Project created at ${PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase}`,
         pd: null,
-      }).returning();
+      };
+      const [created] = await db.insert(projectInfo).values(createProjectFields).returning();
+      await syncProjectSplitTablesAfterInsert(created.id, createProjectFields);
 
       await db.insert(projectPhaseHistory).values({
         projectId: created.id,
@@ -819,8 +822,20 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/exec/portfolio", jwtAuth, requireAuth, requireAdmin, async (_req, res) => {
     try {
-      const projects = await db.select().from(projectInfo)
-        .where(eq(projectInfo.isActive, true))
+      const projects = await db.select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        contractValue: projectInfo.contractValue,
+        sizeKwp: projectInfo.sizeKwp,
+        pd: projectInfo.pd,
+        pm: projectInfo.pm,
+        phase: projectExecutionState.phase,
+        phaseUpdatedAt: projectExecutionState.phaseUpdatedAt,
+        ragStatus: projectExecutionState.ragStatus,
+        isActive: projectExecutionState.isActive,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectExecutionState.isActive, true))
         .orderBy(asc(projectInfo.projectName));
 
       const result = [];
@@ -835,11 +850,11 @@ export function registerTemplateRoutes(app: Express) {
         const medWarnings = openWarnings.filter(w => w.severity === "Medium" || w.severity === "MED").length;
 
         const tasks = await db.select({
-          id: operationalTasks.id,
-          status: operationalTasks.status,
+          id: workItems.id,
+          status: workItems.status,
         })
-          .from(operationalTasks)
-          .where(eq(operationalTasks.projectName, cleanName));
+          .from(workItems)
+          .where(eq(workItems.projectId, p.id));
 
         const totalTasks = tasks.length;
         const completeTasks = tasks.filter(t => t.status === "COMPLETE").length;
@@ -918,13 +933,13 @@ export function registerTemplateRoutes(app: Express) {
         .orderBy(desc(qcWarning.createdAt));
 
       const tasks = await db.select({
-        id: operationalTasks.id,
-        status: operationalTasks.status,
-        title: operationalTasks.title,
-        phase: operationalTasks.phase,
+        id: workItems.id,
+        status: workItems.status,
+        title: workItems.title,
+        phase: sql<string>`null`.as("phase"),
       })
-        .from(operationalTasks)
-        .where(eq(operationalTasks.projectName, cleanName));
+        .from(workItems)
+        .where(eq(workItems.projectId, projectId));
 
       const pendingApprovals = tasks.filter(t =>
         t.status === "NEEDS APPROVAL" || t.status === "PROVIDE FEEDBACK"

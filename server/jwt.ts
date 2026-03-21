@@ -22,6 +22,9 @@ export interface JWTPayload {
   name: string;
   role: string;
   tokenVersion?: number;
+  // TODO (Prompt 11): Future: include organizationId in JWT payload
+  // and scope queries by req.user.organizationId in middleware.
+  // See docs/spine-v2/08-org-scoping-plan.md for implementation plan.
 }
 
 export function generateToken(user: JWTPayload): string {

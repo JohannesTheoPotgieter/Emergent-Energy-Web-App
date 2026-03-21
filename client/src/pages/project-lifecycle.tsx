@@ -792,24 +792,37 @@ function CompanyPrioritiesManager() {
     setEditId(p.id); setTitle(p.title); setDescription(p.description || ""); setDepartment(p.department || ""); setSeverity(p.severity || "normal"); setFormStatus(p.status || "active"); setDueDate(p.dueDate || ""); setShowForm(true);
   };
 
-  const savePriority = async () => {
-    if (!title.trim()) return toast({ title: "Title is required", variant: "destructive" });
-    const body = { title: title.trim(), description: description.trim() || null, department: department.trim() || null, severity, status, dueDate: dueDate || null };
-    const url = editId ? `/api/mytool/company-priorities/${editId}` : "/api/mytool/company-priorities";
-    const method = editId ? "PATCH" : "POST";
-    const res = await fetch(url, { method, headers: headers(), body: JSON.stringify(body) });
-    if (!res.ok) return toast({ title: "Save failed", variant: "destructive" });
-    queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
-    resetForm();
-    toast({ title: editId ? "Priority updated" : "Priority created" });
-  };
+  const savePriorityMutation = useMutation({
+    mutationFn: async () => {
+      if (!title.trim()) throw new Error("Title is required");
+      const body = { title: title.trim(), description: description.trim() || null, department: department.trim() || null, severity, status, dueDate: dueDate || null };
+      const url = editId ? `/api/mytool/company-priorities/${editId}` : "/api/mytool/company-priorities";
+      const method = editId ? "PATCH" : "POST";
+      const res = await fetch(url, { method, headers: headers(), body: JSON.stringify(body) });
+      if (!res.ok) throw new Error("Save failed");
+      return { isEdit: !!editId };
+    },
+    onSuccess: ({ isEdit }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      resetForm();
+      toast({ title: isEdit ? "Priority updated" : "Priority created" });
+    },
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
+  });
+  const savePriority = () => savePriorityMutation.mutate();
 
-  const deletePriority = async (id: number) => {
-    const res = await fetch(`/api/mytool/company-priorities/${id}`, { method: "DELETE", headers: headers() });
-    if (!res.ok) return toast({ title: "Delete failed", variant: "destructive" });
-    queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
-    toast({ title: "Priority deleted" });
-  };
+  const deletePriorityMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/mytool/company-priorities/${id}`, { method: "DELETE", headers: headers() });
+      if (!res.ok) throw new Error("Delete failed");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      toast({ title: "Priority deleted" });
+    },
+    onError: () => toast({ title: "Delete failed", variant: "destructive" }),
+  });
+  const deletePriority = (id: number) => deletePriorityMutation.mutate(id);
 
   return (
     <Card className="border-border shadow-sm">

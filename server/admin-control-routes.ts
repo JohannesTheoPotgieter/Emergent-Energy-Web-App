@@ -336,7 +336,7 @@ router.get("/api/admin/control-center/enums", requireAuth, requireAdmin, async (
 
     let workstreamValues: string[] = [];
     try {
-      const wsRows: any[] = await db.execute(sql`SELECT DISTINCT workstream FROM operational_tasks WHERE workstream IS NOT NULL ORDER BY workstream`).then((r: any) => r.rows || r);
+      const wsRows: any[] = await db.execute(sql`SELECT DISTINCT workstream FROM work_items WHERE deleted_at IS NULL AND workstream IS NOT NULL ORDER BY workstream`).then((r: any) => r.rows || r);
       workstreamValues = wsRows.map((r: any) => r.workstream);
     } catch {}
 

@@ -904,9 +904,9 @@ export default function PMDashboard() {
       <DataSourceDebug
         pageName="Project Manager Dashboard"
         dataSources={[
-          { endpoint: "/api/pm/dashboard", tables: ["project_info", "normalized_cost_lines", "normalized_plan_tasks", "engineering_tasks"], description: "PM projects, financials, task counts" },
-          { endpoint: "/api/pm/priority-items", tables: ["engineering_tasks", "normalized_cost_lines", "project_info"], description: "Priority items: overdue, holds, approvals" },
-          { endpoint: "/api/pm/calendar-events", tables: ["project_info", "engineering_tasks", "normalized_plan_tasks"], description: "Milestone and task calendar events" },
+          { endpoint: "/api/pm/dashboard", tables: ["project_info", "normalized_cost_lines", "normalized_plan_tasks", "work_items"], description: "PM projects, financials, task counts" },
+          { endpoint: "/api/pm/priority-items", tables: ["work_items", "normalized_cost_lines", "project_info"], description: "Priority items: overdue, holds, approvals" },
+          { endpoint: "/api/pm/calendar-events", tables: ["project_info", "work_items", "normalized_plan_tasks"], description: "Milestone and task calendar events" },
         ]}
       />
     </PageShell>
