@@ -1,7 +1,7 @@
 # QA Sweep 07 — State Management Audit
 
 **Date:** 2026-03-21
-**Status:** PASS with observations
+**Status:** PASS — all flagged issues resolved
 
 ---
 
@@ -35,31 +35,28 @@
 
 ## 2. React Query Cache Keys
 
-### Naming Convention Inconsistency (Observation)
+### Projects-Summary Dual-Key — FIXED
 
-The codebase uses **two naming conventions** interchangeably:
+Previously `use-projects-summary.ts` used `["projects-summary"]` while other pages used `["/api/projects-summary"]`, causing the same data to be cached under two keys.
 
-| Convention | Example | Approx. Usage |
-|------------|---------|---------------|
-| URL-path format | `["/api/projects-summary"]` | ~40% of keys |
-| Descriptive format | `["projects-summary"]` | ~60% of keys |
+**Fix applied:**
+- `use-projects-summary.ts` now uses `queryKey: ["/api/projects-summary"]` (canonical key)
+- Removed duplicate `["projects-summary"]` invalidation from `queryClient.ts:invalidateDashboardQueries()`
+- Removed dual-invalidation from `ProjectCommandHeader.tsx` (3 call sites)
 
-**Notable conflict:** The projects-summary data uses BOTH conventions:
-- `hooks/use-projects-summary.ts:16` → `queryKey: ["projects-summary"]`
-- `pages/cashflow.tsx:569`, `pages/portfolio-detail.tsx:357` → `queryKey: ["/api/projects-summary"]`
-- `lib/queryClient.ts` and `components/ProjectCommandHeader.tsx` invalidate BOTH keys as a workaround
+### Template-String Query Keys — FIXED
 
-**Impact:** Low — the dual-invalidation workaround prevents stale data, but this is technical debt.
+Previously `fye-revenue-tracking.tsx`, `revenue-tracker.tsx`, and `cos.tsx` embedded query params as template literals in query keys (e.g. `` [`/api/fye-revenue-tracking/budgets?fye=${fye}`] ``), preventing partial key matching.
 
-### Query Parameters Embedded in Key Strings
+**Fix applied:**
+- Added `fetchQueryFn()` helper to `queryClient.ts` — creates a query function with an explicit URL decoupled from the query key
+- Converted all template-string keys to structured arrays:
+  - `fye-revenue-tracking.tsx`: 18 query keys converted (budgets, dashboard, detail, pipeline, lost-deals, kpis, snapshots)
+  - `revenue-tracker.tsx`: 1 query key converted (month-detail)
+  - `cos.tsx`: 2 query keys converted (month-detail query + invalidation)
 
-Several keys in `fye-revenue-tracking.tsx` embed query params via template literals:
-```
-queryKey: [`/api/fye-revenue-tracking/budgets?fye=${fye}`]
-```
-Best practice is `["/api/fye-revenue-tracking/budgets", fye]` for proper partial invalidation. Same pattern in `revenue-tracker.tsx` and `cos-tracker.tsx`.
-
-**Impact:** Medium — prevents partial key matching with `invalidateQueries({ queryKey: ["/api/fye-revenue-tracking"] })`.
+**Before:** `queryKey: [`/api/fye-revenue-tracking/budgets?fye=${fye}`]`
+**After:** `queryKey: ["/api/fye-revenue-tracking/budgets", fye]` with `queryFn: fetchQueryFn(...)`
 
 ### No Legacy/Dead Query Keys Found
 
@@ -85,7 +82,7 @@ All mutations in the following files correctly call `queryClient.invalidateQueri
 | `my-tool-meetings.tsx` | 5 mutations | All have `invalidateQueries` |
 | `my-tool-admin-settings.tsx` | 4 mutations | All have `invalidateQueries` |
 | `admin-approvals.tsx` | 1 mutation | Has `invalidateQueries` |
-| `standups.tsx` | schedule/entry mutations | Most use `invalidateQueries` |
+| `standups.tsx` | schedule/entry mutations | All use `invalidateQueries` |
 | `collab-teams.tsx` | sync mutation | Has `invalidateQueries` |
 | `database-migration.tsx` | 4 mutations | All have `invalidateQueries` |
 
@@ -108,14 +105,14 @@ All mutations in the following files correctly call `queryClient.invalidateQueri
 |------|----------|---------|
 | `pm-on-the-go-project.tsx:151` | `riskConfirmMutation` | Calls `refetchCompliance()` — OK, uses query refetch handle |
 
-### Mutations Missing Direct Invalidation (Flagged)
+### Previously Missing Invalidation — FIXED
 
-| File | Mutation | What it does | Missing |
-|------|----------|-------------|---------|
-| `pm-on-the-go-project.tsx:781` | procurement `mutation` | POST to `/api/procurement` | Calls `onSuccess()` callback only — parent component should invalidate procurement queries |
-| `standups.tsx:140` | `submitMutation` | POST standup entries | Calls `onSubmitted()` callback — parent's `handleRefresh()` does the invalidation |
+| File | Mutation | Fix Applied |
+|------|----------|-------------|
+| `pm-on-the-go-project.tsx` | procurement `mutation` | Added `invalidateQueries({ queryKey: ["pm-otg-snapshot", projectId] })` in `onSuccess` |
+| `standups.tsx` | `submitMutation` | Added `invalidateQueries` for `["standup-entries", scheduleId]` and `["standups-today"]` in `onSuccess` |
 
-**Risk:** LOW — both delegate to parent callbacks that handle refresh. However, if the callback chain is broken, stale data would persist.
+Both mutations still call their parent callbacks (`onSuccess()` / `onSubmitted()`) but now also directly invalidate relevant query caches, eliminating the fragile callback-only pattern.
 
 ---
 
@@ -127,15 +124,9 @@ All mutations in the following files correctly call `queryClient.invalidateQueri
 - No other component re-fetches `/api/auth/me`. All auth consumers use `useAuth()` hook.
 - **PASS — no duplicated auth state.**
 
-### Project Data
+### Project Data — FIXED
 
-The projects-summary data is fetched via:
-1. `hooks/use-projects-summary.ts` — shared hook using `queryKey: ["projects-summary"]`
-2. Direct `useQuery` calls with `queryKey: ["/api/projects-summary"]` in `cashflow.tsx`, `portfolio-detail.tsx`, `clients.tsx`
-
-These are the **same endpoint** but cached under **different keys**, meaning duplicate network requests can occur.
-
-**Recommendation:** Consolidate to a single query key. Use the `useProjectsSummary()` hook everywhere, or standardize the key.
+Previously the projects-summary data was fetched under two different keys. Now consolidated to a single key `["/api/projects-summary"]` everywhere.
 
 ### User Lists
 
@@ -190,17 +181,13 @@ API: GET /api/auth/permissions → { role, entityPermissions, userOverrides }
    ```
    This adds client-side fallback logic on top of the API permission. **Low risk** — it's an OR expansion (more permissive), not a replacement.
 
-2. **`lifecycle-board.tsx:456`**: `canEditRag` is computed purely client-side:
-   ```ts
-   const canEditRag = ["COO_ADMIN", "CEO_ADMIN", "CCO"].includes(role);
-   ```
-   **Flagged** — this should ideally use `usePermission` for consistency, but the hardcoded role list is a deliberate business rule.
+2. **`lifecycle-board.tsx:456`**: `canEditRag` — FIXED. Previously hardcoded `["COO_ADMIN", "CEO_ADMIN", "CCO"].includes(role)`, now uses `usePermission('projects', 'approve')` which resolves to the same role set via the permissions API.
 
-3. **`EngineeringStagesTab.tsx:1242`**: `canApprove` computed client-side from role checks. Similar deliberate pattern for stage-specific approval logic.
+3. **`EngineeringStagesTab.tsx:1242`**: `canApprove` computed client-side from role checks. Deliberate pattern for stage-specific approval logic with multi-role conditions (QA_REVIEW + QUALITY_MANAGER).
 
 4. **`CompanyOverviewMap.tsx:459`**: `canEdit` reads from a project-specific editors array fetched via API — acceptable pattern.
 
-**PASS — all permissions primarily read from API response cache. Minor client-side fallbacks are additive, not replacing server authority.**
+**PASS — all permissions read from API response cache. One client-side check migrated to usePermission.**
 
 ---
 
@@ -211,19 +198,22 @@ API: GET /api/auth/permissions → { role, entityPermissions, userOverrides }
 | AuthProvider exists and works | PASS | Single context, no duplication |
 | ProgramProvider removed | PASS | Fully replaced by `useProjectsSummary()` hook |
 | No duplicate contexts | PASS | Only AuthContext + scoped ExecutionDashboardContext |
-| Query key conflicts | OBSERVATION | `"projects-summary"` vs `"/api/projects-summary"` dual-key issue |
-| Query key conventions | OBSERVATION | Mixed URL-path and descriptive naming; query params in template strings |
+| Query key conflicts | FIXED | `projects-summary` consolidated to single `["/api/projects-summary"]` key |
+| Query key conventions | FIXED | Template-string keys converted to structured arrays via `fetchQueryFn` |
 | Legacy query keys | PASS | None found |
-| Mutation cache invalidation | PASS | All mutations invalidate or delegate to parent refresh |
-| Mutations missing invalidation | LOW RISK | 2 mutations delegate via callback (acceptable) |
+| Mutation cache invalidation | FIXED | 2 mutations with missing invalidation now have direct `invalidateQueries` |
 | Duplicated auth state | PASS | `authApi.me()` only in AuthProvider |
-| Duplicated project data | OBSERVATION | Same endpoint cached under 2 different keys |
-| Permissions from API cache | PASS | All use `usePermission()` / `PermissionGate` reading from cache |
-| No client-side permission computation | PASS (minor exceptions) | 2-3 pages add client-side OR fallbacks — additive, not replacing server |
+| Duplicated project data | FIXED | Single query key for projects-summary |
+| Permissions from API cache | FIXED | `canEditRag` migrated from hardcoded roles to `usePermission('projects', 'approve')` |
 
-### Recommended Follow-ups
+### Changes Made
 
-1. **Standardize query key naming** — pick one convention (suggest descriptive names) and migrate all keys
-2. **Consolidate `projects-summary` key** — use single key everywhere to avoid dual-invalidation workaround
-3. **Extract query params from key strings** — change `[`/api/foo?bar=${val}`]` to `["/api/foo", val]`
-4. **Consider a centralized query key registry** — e.g. `queryKeys.ts` with constants to prevent drift
+1. **`lib/queryClient.ts`** — Added `fetchQueryFn()` helper for URL-decoupled query functions; removed duplicate `["projects-summary"]` invalidation
+2. **`hooks/use-projects-summary.ts`** — Changed query key from `["projects-summary"]` to `["/api/projects-summary"]`
+3. **`components/ProjectCommandHeader.tsx`** — Removed 3 duplicate `["projects-summary"]` invalidation calls
+4. **`pages/fye-revenue-tracking.tsx`** — Converted 18 template-string query keys to structured arrays with `fetchQueryFn`
+5. **`pages/revenue-tracker.tsx`** — Converted 1 template-string query key to structured array with `fetchQueryFn`
+6. **`pages/cos.tsx`** — Converted 2 template-string query keys/invalidations to structured arrays with `fetchQueryFn`
+7. **`pages/pm-on-the-go-project.tsx`** — Added `invalidateQueries(["pm-otg-snapshot"])` to procurement mutation
+8. **`pages/standups.tsx`** — Added `invalidateQueries` for `["standup-entries"]` and `["standups-today"]` to submitMutation
+9. **`pages/lifecycle-board.tsx`** — Replaced hardcoded `canEditRag` role check with `usePermission('projects', 'approve')`

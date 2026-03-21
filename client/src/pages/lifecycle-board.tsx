@@ -453,7 +453,7 @@ export default function LifecycleBoardPage() {
     queryClient.invalidateQueries({ queryKey: ["/api/lifecycle-board/projects"] });
   };
 
-  const canEditRag = ["COO_ADMIN", "CEO_ADMIN", "CCO"].includes(role);
+  const { allowed: canEditRag } = usePermission('projects', 'approve');
 
   const openRagModal = async (p: ProjectInfo, e: React.MouseEvent) => {
     e.stopPropagation();
