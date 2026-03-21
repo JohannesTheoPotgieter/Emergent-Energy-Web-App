@@ -2858,7 +2858,7 @@ router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("sma
         if (req.headers.authorization) commitHeaders["Authorization"] = req.headers.authorization as string;
         if (req.headers.cookie) commitHeaders["Cookie"] = req.headers.cookie;
 
-        const commitRes = await fetch(`http://localhost:${process.env.PORT || 5000}/api/smart-import/${run.id}/commit`, {
+        const commitRes = await fetch(`http://0.0.0.0:${process.env.PORT || 5000}/api/smart-import/${run.id}/commit`, {
           method: "POST",
           headers: commitHeaders,
           body: JSON.stringify({ acknowledgeManualEdits: true, forceCommit: true, acknowledgeEqualDate: true, forceRecreate: true }),
