@@ -137,6 +137,7 @@ function StandupForm({ scheduleId, existing, onSubmitted }: {
     staleTime: 60000,
   });
 
+  const queryClient = useQueryClient();
   const submitMutation = useMutation({
     mutationFn: () =>
       apiFetch("/api/standups/entries", {
@@ -145,6 +146,8 @@ function StandupForm({ scheduleId, existing, onSubmitted }: {
       }),
     onSuccess: () => {
       toast({ title: existing ? "Standup updated" : "Standup submitted" });
+      queryClient.invalidateQueries({ queryKey: ["standup-entries", scheduleId] });
+      queryClient.invalidateQueries({ queryKey: ["standups-today"] });
       onSubmitted();
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
