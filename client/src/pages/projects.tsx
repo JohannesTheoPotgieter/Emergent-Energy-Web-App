@@ -1243,7 +1243,7 @@ export default function ProjectsSummary() {
       return res.json();
     },
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const activeProjects = useMemo(() => projects.filter(p => p.is_active && p.has_tracker_import), [projects]);

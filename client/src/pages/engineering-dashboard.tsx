@@ -1023,7 +1023,7 @@ function StandupModeView() {
     queryKey: ["eng-standup-all-tasks"],
     queryFn: () => engFetch("/api/eng/tasks"),
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const [openBuckets, setOpenBuckets] = useState<Record<string, boolean>>({});
@@ -1370,7 +1370,7 @@ export default function EngineeringDashboard() {
     queryKey: ["eng-standup", assigneeParam],
     queryFn: () => engFetch(`/api/eng/dashboard/standup${assigneeParam}`),
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const engAttentionItems = useMemo((): AttentionItem[] => {
