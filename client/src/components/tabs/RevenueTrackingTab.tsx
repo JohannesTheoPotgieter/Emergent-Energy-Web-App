@@ -638,7 +638,7 @@ export function RevenueTrackingTab({ projectName, highlightId }: RevenueTracking
 
   const summary = useMemo(() => {
     const totalContract = milestones.reduce((s, m) => s + parseAmt(m), 0);
-    const invoiced = milestones.filter(m => m.status === "invoiced").reduce((s, m) => s + parseAmt(m), 0);
+    const invoiced = milestones.filter(m => m.status === "invoiced" || m.status === "inBank" || m.status === "received").reduce((s, m) => s + parseAmt(m), 0);
     const inBank = milestones.filter(m => m.status === "inBank").reduce((s, m) => s + parseAmt(m), 0);
     const pending = milestones.filter(m => m.status === "planned" || m.status === "overdue").reduce((s, m) => s + parseAmt(m), 0);
     const overdue = milestones.filter(m => m.status === "overdue").reduce((s, m) => s + parseAmt(m), 0);

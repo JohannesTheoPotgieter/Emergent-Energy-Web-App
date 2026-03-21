@@ -2807,11 +2807,16 @@ export async function registerRoutes(
 
         let projectOutflowsSum = 0;
         for (const expense of allExpenses) {
+          // Bottom-up: only aggregate leaf-node (item) rows, matching project-detail level logic
+          if (expense.rowType !== 'item') continue;
           if (projectFilter && expense.projectName !== projectFilter) continue;
-          const d = expense.expensePaymentDate;
+          // Use effective payment date: actual, then computed forecast, then forecast, then invoice date
+          const d = expense.expensePaymentDate || (expense as any).computedForecastPaymentDate || (expense as any).forecastPaymentDate || (expense as any).expenseInvoicedDate || null;
           if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
-          if (d >= weekStart && d < weekEnd && expense.expenseActualTotal) {
-            projectOutflowsSum += parseFloat(expense.expenseActualTotal) || 0;
+          // Use actual total with budget fallback, matching project-detail level logic
+          const amt = parseFloat(expense.expenseActualTotal || (expense as any).budgetTotal || '0') || 0;
+          if (d >= weekStart && d < weekEnd && amt > 0) {
+            projectOutflowsSum += amt;
           }
         }
 
@@ -6316,7 +6321,7 @@ export async function registerRoutes(
           }
 
           for (const exp of projExpenses) {
-            const d = exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate;
+            const d = exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate || exp.expenseInvoicedDate || null;
             if (!d || !/^\d{4}-\d{2}-\d{2}/.test(d)) continue;
             const amt = parseFloat(exp.expenseActualTotal || exp.budgetTotal || '0');
             if (amt === 0) continue;
@@ -7553,7 +7558,7 @@ export async function registerRoutes(
       });
 
       const totalContract = milestones.reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
-      const invoiced = milestones.filter((m: any) => m.status === 'invoiced').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+      const invoiced = milestones.filter((m: any) => m.status === 'invoiced' || m.status === 'inBank' || m.status === 'received').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
       const inBankTotal = milestones.filter((m: any) => m.status === 'inBank').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
       const pending = milestones.filter((m: any) => m.status === 'planned' || m.status === 'overdue').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
       const overdueTotal = milestones.filter((m: any) => m.status === 'overdue').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
