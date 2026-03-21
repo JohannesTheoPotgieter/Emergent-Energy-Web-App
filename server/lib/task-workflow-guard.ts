@@ -41,7 +41,7 @@ export async function buildTaskWorkflowContext(taskId: number, fallbackCurrentSt
 
   const [deliverable] = await db.select({ id: taskDeliverables.id })
     .from(taskDeliverables)
-    .where(eq(taskDeliverables.taskId, taskId))
+    .where(eq(taskDeliverables.workItemId, taskId))
     .limit(1);
 
   const deliverableRequired = hasDeliverableRequirementFlag(task || {});

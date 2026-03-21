@@ -797,7 +797,7 @@ export function registerEngineeringRoutes(app: Express) {
       if (!updated) return res.status(404).json({ error: "Task not found" });
 
       await db.insert(taskActivityLog).values({
-        taskId: id,
+        workItemId: id,
         actorId: user.id,
         actionType: "field_changed",
         fieldName: "status",
@@ -808,13 +808,13 @@ export function registerEngineeringRoutes(app: Express) {
       if (note.trim()) {
         const fileInfo = file ? ` [Attachment: ${file.originalname}]` : "";
         await db.insert(taskComments).values({
-          taskId: id,
+          workItemId: id,
           authorId: user.id,
           body: `[Sent for Approval] ${note.trim()}${fileInfo}`,
         });
       } else if (file) {
         await db.insert(taskComments).values({
-          taskId: id,
+          workItemId: id,
           authorId: user.id,
           body: `[Sent for Approval] Attachment: ${file.originalname}`,
         });
@@ -1043,7 +1043,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
 
       const [deliverable] = await db.insert(taskDeliverables).values({
-        taskId: id,
+        workItemId: id,
         filename: file.filename,
         originalName: file.originalname,
         fileSize: file.size,
@@ -1054,13 +1054,13 @@ export function registerEngineeringRoutes(app: Express) {
 
       const fileInfo = note.trim() ? ` — ${note.trim()}` : "";
       await db.insert(taskComments).values({
-        taskId: id,
+        workItemId: id,
         authorId: user.id,
         body: `[Deliverable Sent] ${file.originalname} → ${(await db.select({ name: users.name }).from(users).where(eq(users.id, recipientUserId)))[0]?.name || "recipient"}${fileInfo}`,
       });
 
       await db.insert(taskActivityLog).values({
-        taskId: id,
+        workItemId: id,
         actorId: user.id,
         actionType: "deliverable_sent",
         fieldName: "deliverable",
@@ -1208,7 +1208,7 @@ export function registerEngineeringRoutes(app: Express) {
       const id = parseInt(req.params.id);
       const deliverables = await db.select({
         id: taskDeliverables.id,
-        taskId: taskDeliverables.taskId,
+        taskId: taskDeliverables.workItemId,
         filename: taskDeliverables.filename,
         originalName: taskDeliverables.originalName,
         fileSize: taskDeliverables.fileSize,
@@ -1222,7 +1222,7 @@ export function registerEngineeringRoutes(app: Express) {
       })
         .from(taskDeliverables)
         .leftJoin(users, eq(users.id, taskDeliverables.sentByUserId))
-        .where(eq(taskDeliverables.taskId, id))
+        .where(eq(taskDeliverables.workItemId, id))
         .orderBy(desc(taskDeliverables.createdAt));
 
       const recipientIds = [...new Set(deliverables.map(d => d.recipientUserId))];
@@ -1260,13 +1260,13 @@ export function registerEngineeringRoutes(app: Express) {
       }).where(eq(taskDeliverables.id, id)).returning();
 
       await db.insert(taskComments).values({
-        taskId: deliverable.taskId,
+        workItemId: deliverable.taskId,
         authorId: user.id,
         body: `[Acknowledged] Deliverable "${deliverable.originalName}" received and acknowledged`,
       });
 
       await db.insert(taskActivityLog).values({
-        taskId: deliverable.taskId,
+        workItemId: deliverable.taskId,
         actorId: user.id,
         actionType: "deliverable_acknowledged",
         fieldName: "deliverable",
@@ -1364,7 +1364,7 @@ export function registerEngineeringRoutes(app: Express) {
           const mapped = await getEngineeringWorkItemById(taskId);
           if (mapped) updatedTasks.push(mapped);
           await db.insert(taskActivityLog).values({
-            taskId, actorId: getUser(req).id,
+            workItemId: taskId, actorId: getUser(req).id,
             actionType: "bulk_updated",
             newValue: JSON.stringify(updates),
           });
@@ -1391,7 +1391,7 @@ export function registerEngineeringRoutes(app: Express) {
       if (!updated) return res.status(404).json({ error: "Task not found" });
 
       await db.insert(taskActivityLog).values({
-        taskId: id, actorId: getUser(req).id,
+        workItemId: id, actorId: getUser(req).id,
         actionType: "linked", newValue: JSON.stringify(req.body),
       });
 
@@ -1411,7 +1411,7 @@ export function registerEngineeringRoutes(app: Express) {
       })
       .from(taskWatchers)
       .leftJoin(users, eq(taskWatchers.userId, users.id))
-      .where(eq(taskWatchers.taskId, parseInt(req.params.id)));
+      .where(eq(taskWatchers.workItemId, parseInt(req.params.id)));
       res.json(watchers);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
@@ -1434,17 +1434,17 @@ export function registerEngineeringRoutes(app: Express) {
 
       // Prevent duplicate watchers
       const [existing] = await db.select({ id: taskWatchers.id }).from(taskWatchers)
-        .where(and(eq(taskWatchers.taskId, taskId), eq(taskWatchers.userId, userId)));
+        .where(and(eq(taskWatchers.workItemId, taskId), eq(taskWatchers.userId, userId)));
       if (existing) return res.json(existing);
 
       const [watcher] = await db.insert(taskWatchers).values({
-        taskId,
+        workItemId: taskId,
         userId,
       }).returning();
 
       // Log watcher addition to activity
       await db.insert(taskActivityLog).values({
-        taskId,
+        workItemId: taskId,
         actorId: getUser(req).id,
         actionType: "watcher_added",
         fieldName: "watchers",
@@ -1467,13 +1467,13 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       await db.delete(taskWatchers).where(
-        and(eq(taskWatchers.taskId, taskId),
+        and(eq(taskWatchers.workItemId, taskId),
             eq(taskWatchers.userId, userId))
       );
 
       // Log watcher removal to activity
       await db.insert(taskActivityLog).values({
-        taskId,
+        workItemId: taskId,
         actorId: getUser(req).id,
         actionType: "watcher_removed",
         fieldName: "watchers",
@@ -1505,7 +1505,7 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const comments = await db.select({
         id: taskComments.id,
-        taskId: taskComments.taskId,
+        taskId: taskComments.workItemId,
         authorId: taskComments.authorId,
         body: taskComments.body,
         createdAt: taskComments.createdAt,
@@ -1513,7 +1513,7 @@ export function registerEngineeringRoutes(app: Express) {
       })
       .from(taskComments)
       .leftJoin(users, eq(taskComments.authorId, users.id))
-      .where(eq(taskComments.taskId, parseInt(req.params.id)))
+      .where(eq(taskComments.workItemId, parseInt(req.params.id)))
       .orderBy(asc(taskComments.createdAt));
       res.json(comments);
     } catch (err: any) {
@@ -1530,13 +1530,13 @@ export function registerEngineeringRoutes(app: Express) {
         return res.status(400).json({ error: "Comment body is required" });
       }
       const [comment] = await db.insert(taskComments).values({
-        taskId,
+        workItemId: taskId,
         authorId: getUser(req).id,
         body: body.trim(),
       }).returning();
 
       await db.insert(taskActivityLog).values({
-        taskId,
+        workItemId: taskId,
         actorId: getUser(req).id,
         actionType: "comment_added",
         newValue: body.trim(),
@@ -1553,7 +1553,7 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const activity = await db.select({
         id: taskActivityLog.id,
-        taskId: taskActivityLog.taskId,
+        taskId: taskActivityLog.workItemId,
         actorId: taskActivityLog.actorId,
         actionType: taskActivityLog.actionType,
         fieldName: taskActivityLog.fieldName,
@@ -1564,7 +1564,7 @@ export function registerEngineeringRoutes(app: Express) {
       })
       .from(taskActivityLog)
       .leftJoin(users, eq(taskActivityLog.actorId, users.id))
-      .where(eq(taskActivityLog.taskId, parseInt(req.params.id)))
+      .where(eq(taskActivityLog.workItemId, parseInt(req.params.id)))
       .orderBy(desc(taskActivityLog.createdAt));
       res.json(activity);
     } catch (err: any) {
@@ -1613,7 +1613,7 @@ export function registerEngineeringRoutes(app: Express) {
         .where(eq(workItems.id, subtaskWorkItem.id));
 
       await db.insert(taskActivityLog).values({
-        taskId: parentId,
+        workItemId: parentId,
         actorId: getUser(req).id,
         actionType: "subtask_created",
         newValue: data.title,
@@ -2756,7 +2756,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       const baseQuery = db.select({
         id: taskActivityLog.id,
-        taskId: taskActivityLog.taskId,
+        taskId: taskActivityLog.workItemId,
         actionType: taskActivityLog.actionType,
         fieldName: taskActivityLog.fieldName,
         oldValue: taskActivityLog.oldValue,
@@ -2769,12 +2769,12 @@ export function registerEngineeringRoutes(app: Express) {
       })
       .from(taskActivityLog)
       .leftJoin(users, eq(taskActivityLog.actorId, users.id))
-      .leftJoin(workItems, eq(taskActivityLog.taskId, workItems.id))
+      .leftJoin(workItems, eq(taskActivityLog.workItemId, workItems.id))
       .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id));
 
       const countResult = await db.select({ count: sql<number>`count(*)` })
         .from(taskActivityLog)
-        .leftJoin(workItems, eq(taskActivityLog.taskId, workItems.id))
+        .leftJoin(workItems, eq(taskActivityLog.workItemId, workItems.id))
         .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
         .where(conditions.length > 0 ? and(...conditions) : undefined);
 
@@ -2788,7 +2788,7 @@ export function registerEngineeringRoutes(app: Express) {
         .from(taskActivityLog);
       const allProjects = await db.selectDistinct({ projectName: projectInfo.projectName })
         .from(taskActivityLog)
-        .leftJoin(workItems, eq(taskActivityLog.taskId, workItems.id))
+        .leftJoin(workItems, eq(taskActivityLog.workItemId, workItems.id))
         .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
         .where(sql`${projectInfo.projectName} IS NOT NULL`);
       const allActors = await db.select({ id: users.id, name: users.name })
@@ -3128,7 +3128,7 @@ export function registerEngineeringRoutes(app: Express) {
 
           if (tasksCreated > 0) {
             await db.insert(taskActivityLog).values({
-              taskId: 0,
+              workItemId: 0,
               actorId: user.id,
               actionType: "auto_generated",
               newValue: `${tasksCreated} engineering work items auto-created for project ${projectId} on phase transition to ${PROJECT_PHASE_LABELS[toPhase as ProjectPhase]}`,
@@ -3399,7 +3399,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       const pendingTaskDeliverables = await db.select({
         id: taskDeliverables.id,
-        taskId: taskDeliverables.taskId,
+        taskId: taskDeliverables.workItemId,
         originalName: taskDeliverables.originalName,
         note: taskDeliverables.note,
         sentByUserId: taskDeliverables.sentByUserId,
@@ -3410,7 +3410,7 @@ export function registerEngineeringRoutes(app: Express) {
         senderName: sql<string>`(SELECT name FROM users WHERE id = ${taskDeliverables.sentByUserId})`,
       })
         .from(taskDeliverables)
-        .innerJoin(workItems, eq(taskDeliverables.taskId, workItems.id))
+        .innerJoin(workItems, eq(taskDeliverables.workItemId, workItems.id))
         .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
         .where(and(
           eq(taskDeliverables.acknowledged, false),

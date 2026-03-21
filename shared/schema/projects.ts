@@ -190,7 +190,7 @@ export const projectRevenueSummary = pgTable("project_revenue_summary", {
   actualMargin: decimal("actual_margin", { precision: 6, scale: 4 }),
   voPmLimit: decimal("vo_pm_limit", { precision: 15, scale: 2 }),
   currentVoTotal: decimal("current_vo_total", { precision: 15, scale: 2 }),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
   capturedAt: timestamp("captured_at").notNull().defaultNow(),
   // Temporal columns (Prompt 9)
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
@@ -983,4 +983,101 @@ export const dashboardProgramMetrics = pgTable("dashboard_program_metrics", {
   lastRefreshedAt: timestamp("last_refreshed_at").notNull().defaultNow(),
 });
 export type DashboardProgramMetrics = typeof dashboardProgramMetrics.$inferSelect;
+
+// ===================== PROJECT HANDOVER GATES =====================
+
+export const projectHandoverGates = pgTable("project_handover_gates", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  gateId: text("gate_id").notNull(),
+  status: text("status").notNull().default("PENDING"),
+  checkedItems: jsonb("checked_items").default([]),
+  completedAt: timestamp("completed_at"),
+  completedByUserId: integer("completed_by_user_id").references(() => users.id),
+  completedByName: text("completed_by_name"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueProjectGate: unique("project_handover_gates_project_gate_unique").on(table.projectId, table.gateId),
+}));
+export type ProjectHandoverGate = typeof projectHandoverGates.$inferSelect;
+
+export const projectHandoverHistory = pgTable("project_handover_history", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  gateId: text("gate_id").notNull(),
+  action: text("action").notNull(),
+  performedByUserId: integer("performed_by_user_id").references(() => users.id),
+  performedByName: text("performed_by_name"),
+  performedByRole: text("performed_by_role"),
+  details: jsonb("details"),
+  performedAt: timestamp("performed_at").notNull().defaultNow(),
+});
+export type ProjectHandoverHistory = typeof projectHandoverHistory.$inferSelect;
+
+// ===================== PD → PM HANDOVER =====================
+
+export const projectPdPmHandover = pgTable("project_pd_pm_handover", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().unique().references(() => projectInfo.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("DRAFT"),
+  handoverStatusText: text("handover_status_text"),
+  pdOwner: text("pd_owner"),
+  pmOwner: text("pm_owner"),
+  summary: text("summary"),
+  risks: text("risks"),
+  assumptions: text("assumptions"),
+  engineeringStatus: text("engineering_status"),
+  qualityStatus: text("quality_status"),
+  notesToPm: text("notes_to_pm"),
+  handoverSummary: text("handover_summary"),
+  deliverables: jsonb("deliverables").notNull().default({}),
+  submittedBy: text("submitted_by"),
+  submittedAt: timestamp("submitted_at"),
+  acceptedBy: text("accepted_by"),
+  acceptedAt: timestamp("accepted_at"),
+  rejectedBy: text("rejected_by"),
+  rejectedAt: timestamp("rejected_at"),
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type ProjectPdPmHandover = typeof projectPdPmHandover.$inferSelect;
+
+// ===================== SUBCONTRACTOR ASSIGNMENTS =====================
+
+export const subcontractorAssignmentStatusEnum = pgEnum('subcontractor_assignment_status', ['active', 'completed', 'suspended', 'terminated']);
+
+export const projectSubcontractorAssignments = pgTable("project_subcontractor_assignments", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  counterpartyId: integer("counterparty_id").notNull(), // FK to counterparties(id) — defined in finance.ts (circular dep)
+  workPackage: text("work_package"),
+  scopeDescription: text("scope_description"),
+  ownerUserId: integer("owner_user_id").references(() => users.id),
+  status: subcontractorAssignmentStatusEnum("status").notNull().default("active"),
+  keyDates: jsonb("key_dates"),
+  performanceNotes: text("performance_notes"),
+  linkedApprovalId: integer("linked_approval_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type ProjectSubcontractorAssignment = typeof projectSubcontractorAssignments.$inferSelect;
+
+// ===================== PROJECT LINKAGE REVIEW QUEUE =====================
+
+export const projectLinkageReviewQueue = pgTable("project_linkage_review_queue", {
+  id: serial("id").primaryKey(),
+  tableName: text("table_name").notNull(),
+  recordId: integer("record_id").notNull(),
+  reason: text("reason").notNull(),
+  contextJson: jsonb("context_json"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedByUserId: integer("resolved_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueTableRecord: unique("project_linkage_review_queue_table_record_unique").on(table.tableName, table.recordId),
+}));
+export type ProjectLinkageReviewQueue = typeof projectLinkageReviewQueue.$inferSelect;
 

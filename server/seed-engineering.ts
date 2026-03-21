@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { operationalTasks, projectInfo } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
+import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import engineeringData from "./seed-engineering-data.json";
 
 export async function seedEngineeringData() {
@@ -32,11 +33,13 @@ export async function seedEngineeringData() {
     let projectsCreated = 0;
     for (const name of uniqueProjectNames) {
       if (!projectNameToId.has(name.toLowerCase().trim())) {
-        const [created] = await db.insert(projectInfo).values({
+        const insertValues = {
           projectName: name,
           phase: "P0_FIRST_ASSESSMENT",
           isActive: true,
-        }).returning({ id: projectInfo.id });
+        };
+        const [created] = await db.insert(projectInfo).values(insertValues).returning({ id: projectInfo.id });
+        await syncProjectSplitTablesAfterInsert(created.id, insertValues);
         projectNameToId.set(name.toLowerCase().trim(), created.id);
         projectsCreated++;
       }
