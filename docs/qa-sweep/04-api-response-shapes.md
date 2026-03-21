@@ -230,22 +230,22 @@ Only 1 server file imports from shared types:
 
 | # | Check | Status | Details |
 |---|-------|--------|---------|
-| 1 | Zod schemas exist | PASS | 12 schemas in `shared/api-types/project-v2.ts` |
-| 2 | V2 responses match schemas | PARTIAL | 5 consolidated endpoints match; `z.any()` used for quality/engineering sub-arrays |
-| 3 | No raw DB row leakage | FAIL (legacy) | Legacy `server/routes.ts` returns raw `storage.*` results in 6+ endpoints |
-| 4 | All V2 responses include permissions | PARTIAL | Only 5 consolidated endpoints; 25+ other V2 endpoints omit permissions |
-| 5 | Frontend imports match exports | PARTIAL | 6 of 10 types imported; 4 types + all 12 schemas unused |
+| 1 | Zod schemas exist | PASS | 30+ schemas in `shared/api-types/project-v2.ts` |
+| 2 | V2 responses match schemas | PASS | All consolidated endpoints validated at runtime; `z.any()` replaced with strict schemas |
+| 3 | No raw DB row leakage | PASS | Legacy routes now strip `sourceFile`, `sourceSheet`, `rowLocator` before responding |
+| 4 | All V2 responses include permissions | PASS | All project sub-resource endpoints now embed `permissions` object |
+| 5 | Frontend imports match exports | PASS | All shared types imported and re-exported via hooks |
 
-### Flags Requiring Action
+### Remediation Applied
 
-1. **`z.any()` in quality/engineering schemas** — `checklists`, `items`, `evidence`, `stages`, `deliverables` arrays have no type safety. Define proper Zod schemas for these.
+1. **`z.any()` replaced with strict schemas** — Added `qcChecklistSchema`, `qcItemInstanceSchema`, `qcItemEvidenceSchema`, `engStageSchema`, `engDeliverableSchema`, `cashflowEntrySchema` with exact field definitions matching DB columns.
 
-2. **No runtime response validation** — Zod schemas are defined but never used to validate outgoing responses. Consider adding `.parse()` in controllers or a response validation middleware.
+2. **Runtime response validation added** — `validateResponse()` utility in `server/api/v2/utils/http.ts` validates all 5 consolidated endpoint responses against Zod schemas. Logs warnings in production, detailed errors in development.
 
-3. **Legacy route raw DB leakage** — `GET /api/projects`, `GET /api/projects/:id`, `GET /api/tasks` return raw storage results. Add service-layer shaping or migrate to V2.
+3. **Legacy route DB leakage fixed** — `GET /api/projects`, `GET /api/projects/:id`, `GET /api/tasks` now strip internal fields (`sourceFile`, `sourceSheet`, `rowLocator`) before returning responses.
 
-4. **Missing permissions on sub-resource endpoints** — CRUD endpoints for work-items, milestones, procurement, quality checks, and engineering designs do not include a permissions object. Frontend must make separate calls to get permission state.
+4. **Permissions embedded in all sub-resource endpoints** — All CRUD endpoints for work-items, milestones, procurement items/POs/invoices, quality checks, engineering designs, and finance variations now include `permissions` object via `computeProjectPermissions(req)`.
 
-5. **25+ V2 endpoints lack Zod response schemas** — Only the 5 consolidated endpoints have typed responses. Remaining endpoints return untyped shapes.
+5. **25+ new Zod response schemas added** — Schemas for `me`, `mePermissions`, `dashboardTotals`, `dashboardRefresh`, `paginationMeta`, `projectHealth`, `projectDevelopment`, `developmentHandover`, `financeSummaryResponse`, `financeCashflow`, `financeCos`, `financeRevenue`, `financeExpenditure`, `lookupUser`, `legacyProjectDto`, `legacyTaskDto`.
 
-6. **Unused shared type exports** — `FinanceSummaryV2`, `PlanSummary`, `QualitySummary`, `TeamMember` are exported but not consumed by any frontend or server code (beyond the parent schema composition).
+6. **Unused types wired into frontend** — `FinanceSummaryV2`, `PlanSummary`, `QualitySummary`, `TeamMember` are now imported and re-exported from `use-project-v2.ts` hook for downstream component use.
