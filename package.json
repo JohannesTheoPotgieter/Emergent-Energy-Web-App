@@ -10,6 +10,7 @@
     "start": "node script/with-node-env.cjs production node dist/index.cjs",
     "check": "tsc -p tsconfig.check.json",
     "db:push": "drizzle-kit push",
+    "db:setup": "drizzle-kit push --force && ENABLE_STARTUP_SCHEMA_REPAIR=true ENABLE_STARTUP_DATA_SEED=true ENABLE_STARTUP_BACKFILL=true ENABLE_STARTUP_USER_SEED=true node script/with-node-env.cjs development tsx server/index.ts",
     "migrate:clickup-engineering": "tsx scripts/migrate-clickup-engineering.ts",
     "test": "vitest run -c qa/vitest.config.ts",
     "test:api": "tsx script/run-with-app.ts \"vitest run -c qa/vitest.config.ts qa/tests/api\"",
