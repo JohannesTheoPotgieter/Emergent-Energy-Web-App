@@ -248,21 +248,21 @@ export default function QmDashboardPage() {
     queryKey: ["quality-checklists"],
     queryFn: () => qFetch("/api/quality/checklists"),
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const { data: warnings = [], isLoading: warningsLoading, isError: warningsError, refetch: refetchWarnings } = useQuery<Warning[]>({
     queryKey: ["quality-warnings-all"],
     queryFn: () => qFetch("/api/quality/warnings?status=open"),
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const { data: governanceSummary } = useQuery<QualityDashboardSummary>({
     queryKey: ["quality-dashboard"],
     queryFn: () => qFetch("/api/quality/dashboard"),
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const { data: allItems = [], isLoading: itemsLoading, isError: itemsError, refetch: refetchItems } = useQuery<QualityItem[]>({
