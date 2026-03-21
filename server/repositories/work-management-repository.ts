@@ -1,5 +1,4 @@
 import { db } from "../db";
-// safeLegacyQuery/safeLegacyWrite no longer needed — operational_tasks dropped
 import { and, desc, eq, inArray, isNull, not, or, sql } from "drizzle-orm";
 import {
   workItems,
