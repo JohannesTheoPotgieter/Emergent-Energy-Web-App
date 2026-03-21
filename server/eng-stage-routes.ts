@@ -19,6 +19,7 @@ import {
   workItems,
 } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
+import { sendError } from "./lib/api-error";
 import { createEngineeringWorkItem, updateEngineeringWorkItem } from "./work-items-adapter";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "eng-deliverables");
@@ -179,7 +180,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ templates: result });
     } catch (err: any) {
       console.error("[EngStages] Templates list error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -195,7 +196,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ template, tasks, deliverables });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -211,7 +212,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -235,7 +236,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json(task);
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -257,7 +258,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -272,7 +273,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -295,7 +296,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json(deliverable);
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -317,7 +318,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -332,7 +333,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -386,7 +387,7 @@ export function registerEngStageRoutes(app: Express) {
     } catch (err: any) {
       console.error("[EngStages] Generate error:", err.message);
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -466,7 +467,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ stages: result });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -555,7 +556,7 @@ export function registerEngStageRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -656,7 +657,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -690,7 +691,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ deliverable });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -725,7 +726,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true, status });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -758,7 +759,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ deliverable });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -776,7 +777,7 @@ export function registerEngStageRoutes(app: Express) {
       fs.createReadStream(filePath).pipe(res);
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -794,7 +795,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -845,7 +846,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -942,7 +943,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true, missing: [] });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -980,7 +981,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -1009,7 +1010,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 }
