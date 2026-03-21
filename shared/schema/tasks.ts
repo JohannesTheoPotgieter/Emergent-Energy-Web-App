@@ -299,17 +299,6 @@ export const insertWorkItemSchedulingSchema = createInsertSchema(workItemSchedul
 export type InsertWorkItemScheduling = z.infer<typeof insertWorkItemSchedulingSchema>;
 export type WorkItemScheduling = typeof workItemScheduling.$inferSelect;
 
-// ── Task Migration Map (Prompt 6 — tracks source → work_items mapping) ──
-
-export const taskMigrationMap = pgTable("task_migration_map", {
-  id: serial("id").primaryKey(),
-  oldTable: text("old_table").notNull(),
-  oldId: integer("old_id").notNull(),
-  newWorkItemId: integer("new_work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
-  migratedAt: timestamp("migrated_at").notNull().defaultNow(),
-});
-export type TaskMigrationMap = typeof taskMigrationMap.$inferSelect;
-
 export const workItemAssignments = pgTable("work_item_assignments", {
   id: serial("id").primaryKey(),
   workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
