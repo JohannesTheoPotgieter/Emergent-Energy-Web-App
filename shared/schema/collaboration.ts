@@ -630,6 +630,21 @@ export const insertPmOnTheGoActionSchema = createInsertSchema(pmOnTheGoActions).
 export type InsertPmOnTheGoAction = z.infer<typeof insertPmOnTheGoActionSchema>;
 export type PmOnTheGoAction = typeof pmOnTheGoActions.$inferSelect;
 
+export const pmComplianceTracking = pgTable("pm_compliance_tracking", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull(),
+  userId: integer("user_id").notNull(),
+  weekStartDate: date("week_start_date").notNull(),
+  dailyDiaryDone: jsonb("daily_diary_done").default([]),
+  weeklyProgressDone: boolean("weekly_progress_done").default(false),
+  weeklyRiskDone: boolean("weekly_risk_done").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  uniqueProjectUserWeek: unique("pm_compliance_tracking_unique").on(table.projectId, table.userId, table.weekStartDate),
+}));
+export type PmComplianceTracking = typeof pmComplianceTracking.$inferSelect;
+
 export const pmModePreferences = pgTable("pm_mode_preferences", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().unique(),
