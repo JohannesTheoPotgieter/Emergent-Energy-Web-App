@@ -1825,7 +1825,7 @@ export function registerQualityRoutes(app: Express) {
           } else if (metric.inputType === "count" && rule.formula && input.inputValueNumber != null) {
             const val = input.inputValueNumber;
             const formula = rule.formula.replace(/count|days/g, String(val));
-            try { score = Math.max(0, Math.min(1, eval(formula))); } catch { score = null; }
+            try { score = Math.max(0, Math.min(1, Function('"use strict"; return (' + formula + ')')())); } catch { score = null; }
           }
         }
 
