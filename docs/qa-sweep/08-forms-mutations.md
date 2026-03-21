@@ -252,7 +252,7 @@ Common reused names like `createMutation`, `updateMutation`, `deleteMutation`, `
 
 ---
 
-## 6 — Findings & Recommendations
+## 6 — Findings & Resolutions
 
 ### HIGH — None
 
@@ -260,18 +260,16 @@ No critical data-integrity issues detected.
 
 ### MEDIUM
 
-| # | Finding | Impact | Location |
-|---|---------|--------|----------|
-| M1 | Legacy v1 financial override endpoints (`/api/revenue-tracking/overrides`, `/api/expenditure/overrides`) duplicate v2 endpoints (`/api/finance/revenue/overrides`, `/api/finance/cos/overrides`) | Potential confusion; both are actively called by different tabs | `routes.ts:7374–7433` vs `finance-routes.ts:4189–4236` |
-
-**Recommendation**: Deprecate legacy v1 endpoints and migrate remaining callers (`RevenueTrackingTab`, `RevenueTrackingEditableTab`, `ExpenditureEditableTab`) to v2.
+| # | Finding | Impact | Resolution |
+|---|---------|--------|------------|
+| M1 | Legacy v1 financial override endpoints (`/api/revenue-tracking/overrides`, `/api/expenditure/overrides`) duplicate v2 endpoints (`/api/finance/revenue/overrides`, `/api/finance/cos/overrides`) | Potential confusion; both are actively called by different tabs | **NOT MIGRATED** — v1 and v2 write to different database tables (`revenue_tracking_override` vs `finance_revenue_override`) with different validation rules. Migration requires a data migration strategy. Safe to leave as-is for now. |
 
 ### LOW
 
-| # | Finding | Impact | Location |
-|---|---------|--------|----------|
-| L1 | Generic mutation variable names (`saveMutation`, `deleteMutation`) repeated across 20+ files | Code maintainability only | Various |
-| L2 | `project-plan/overrides` endpoint returns stub message but `projects.tsx` still calls it | No-op write; no data loss | `project-routes.ts:1875` |
+| # | Finding | Impact | Resolution |
+|---|---------|--------|------------|
+| L1 | Generic mutation variable names (`saveMutation`, `deleteMutation`) repeated across 20+ files | Code maintainability only | No action needed — names are scoped to their React components |
+| L2 | `project-plan/overrides` endpoint returns stub message but `projects.tsx` still calls it | No-op write; misleading UX | **FIXED** — Removed dead `saveMutation` and editing UI from `TaskCompletionPopover` in `projects.tsx`. Converted popover to read-only task breakdown view. Removed stub routes from `project-routes.ts`. |
 
 ---
 
