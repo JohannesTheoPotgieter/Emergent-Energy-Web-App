@@ -3587,7 +3587,7 @@ export default function EngineeringTasksPage() {
     queryKey: ["eng-tasks"],
     queryFn: () => engFetch("/api/eng/tasks"),
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const { data: pageTeamMembers = [] } = useQuery<TeamMember[]>({
