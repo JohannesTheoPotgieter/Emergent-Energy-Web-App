@@ -638,6 +638,16 @@ export default function DashboardPage() {
 
       <p className="text-[13px] text-muted-foreground -mt-2">Portfolio health at a glance — powered by live project data.</p>
 
+      {/* ── Stale metrics banner ── */}
+      {data?.kpis && Number(data.kpis.staleImports || 0) > 0 && (
+        <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>
+            <strong>{data.kpis.staleImports}</strong> project(s) have stale imports (older than 7 days). Financial data may be outdated.
+          </span>
+        </div>
+      )}
+
       {/* ── KPI strip (expanded) ── */}
       <TooltipProvider delayDuration={200}>
         {isLoading && !data ? (

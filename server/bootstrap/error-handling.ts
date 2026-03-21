@@ -11,6 +11,10 @@ export function registerGlobalErrorHandler(app: Express): void {
       return next(err);
     }
 
-    return res.status(status).json({ error: message, _globalHandler: true, _stack: err.stack?.split("\n").slice(0, 8) });
+    const body: Record<string, any> = { error: message, _globalHandler: true };
+    if (process.env.NODE_ENV !== "production") {
+      body._stack = err.stack?.split("\n").slice(0, 8);
+    }
+    return res.status(status).json(body);
   });
 }

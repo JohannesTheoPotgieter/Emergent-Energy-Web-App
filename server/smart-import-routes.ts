@@ -1626,6 +1626,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
     const counts = { planTasks: 0, revenueLines: 0, costLines: 0, executionPhases: 0, counterparties: 0 };
     const skippedOverrideFields: Array<{ row: number; field: string; importValue: string; manualValue: string }> = [];
+    const overwriteWarnings: string[] = [];
 
     let preservedManualEditsCount = 0;
 
@@ -1928,7 +1929,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         // Conflict detection: warn about user-edited rows being overwritten (Prompt 4 — override collapse)
         const editedInflowCount = oldInflows.filter(r => r.source === 'imported_edited').length;
         if (editedInflowCount > 0) {
-          console.warn(`[SmartImport] Re-import will overwrite ${editedInflowCount} user-edited program_inflows rows for "${projectName}"`);
+          const msg = `Re-import overwrote ${editedInflowCount} user-edited program_inflows row(s)`;
+          console.warn(`[SmartImport] ${msg} for "${projectName}"`);
+          overwriteWarnings.push(msg);
         }
 
         // Build composite key map: "milestoneName::amount" → { inBank, rowNumber }
@@ -2177,7 +2180,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         // Conflict detection: warn about user-edited rows being overwritten (Prompt 4 — override collapse)
         const editedExpenseCount = oldPeRows.filter(r => r.source === 'imported_edited').length;
         if (editedExpenseCount > 0) {
-          console.warn(`[SmartImport] Re-import will overwrite ${editedExpenseCount} user-edited program_expense rows for "${projectName}"`);
+          const msg = `Re-import overwrote ${editedExpenseCount} user-edited program_expense row(s)`;
+          console.warn(`[SmartImport] ${msg} for "${projectName}"`);
+          overwriteWarnings.push(msg);
         }
 
         // Temporal: soft-close existing program_expense instead of hard delete (Prompt 10)
@@ -2503,6 +2508,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       counts,
       preservedOverrides: skippedOverrideFields.length > 0 ? skippedOverrideFields : undefined,
       preservedManualEdits: preservedManualEditsCount > 0 ? preservedManualEditsCount : undefined,
+      overwriteWarnings: overwriteWarnings.length > 0 ? overwriteWarnings : undefined,
     });
 
     // Prompt 12: Refresh materialized dashboard metrics after import commit

@@ -1539,7 +1539,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
     const id = parseInt(String(req.params.id || ""), 10);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
 
-    const { realised } = req.body as { realised: boolean };
+    const { realised, expectedUpdatedAt } = req.body as { realised: boolean; expectedUpdatedAt?: string };
     if (typeof realised !== 'boolean') return res.status(400).json({ error: "realised (boolean) required" });
 
     const allExpenses = await storage.getAllProgramExpenses();
@@ -1556,7 +1556,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
 
     const updated = await storage.updateProgramExpenseFields(id, {
       invoiceDateConfirmed: realised,
-    });
+    }, expectedUpdatedAt);
 
     if (!updated) {
       return res.status(500).json({ error: "Failed to update expense fields" });
@@ -1583,11 +1583,12 @@ router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin,
   try {
     const id = parseInt(String(req.params.id || ""), 10);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid cost line id" });
-    const { noRevenueLinked } = req.body as { noRevenueLinked: boolean };
+    const { noRevenueLinked, expectedUpdatedAt } = req.body as { noRevenueLinked: boolean; expectedUpdatedAt?: string };
     if (typeof noRevenueLinked !== 'boolean') return res.status(400).json({ error: "noRevenueLinked (boolean) required" });
-    await storage.updateProgramExpenseFields(id, { noRevenueLinked });
+    await storage.updateProgramExpenseFields(id, { noRevenueLinked }, expectedUpdatedAt);
     res.json({ success: true, id, noRevenueLinked });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.status === 409) return res.status(409).json({ error: error.message });
     console.error("Toggle no-revenue-linked error:", error);
     res.status(500).json({ error: "Failed to toggle no-revenue-linked" });
   }

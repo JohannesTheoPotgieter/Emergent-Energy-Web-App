@@ -185,16 +185,28 @@ export async function dashboardMetricsService() {
     db.select().from(dashboardProgramMetrics).limit(1),
   ]);
 
+  const lastRefreshedAt = program[0]?.lastRefreshedAt?.toISOString() ?? null;
+  const STALE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+  const isStale = lastRefreshedAt
+    ? Date.now() - new Date(lastRefreshedAt).getTime() > STALE_THRESHOLD_MS
+    : true;
+
   return {
     program: program[0] ?? null,
     projects,
-    lastRefreshedAt: program[0]?.lastRefreshedAt?.toISOString() ?? null,
+    lastRefreshedAt,
+    isStale,
   };
 }
 
 export async function dashboardRefreshService() {
   const result = await refreshAllMetrics();
-  return { refreshed: result.refreshed, timestamp: new Date().toISOString() };
+  return {
+    refreshed: result.refreshed,
+    failed: result.failed,
+    failedProjectIds: result.failedProjectIds.length > 0 ? result.failedProjectIds : undefined,
+    timestamp: new Date().toISOString(),
+  };
 }
 
 // ─── Prompt 14: Consolidated project endpoint services ─────────────
