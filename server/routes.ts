@@ -12,7 +12,6 @@ import { parseTrackerFile, applyFontColors } from "./excelParser";
 import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense } from "@shared/schema";
 import { inlineEdit } from "./lib/inline-edit-helper";
 import { db } from "./db";
-import { safeLegacyQuery } from "./legacy-table-guard";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
 import { runSmartImportPreview } from "./lib/import/index";
 import { z } from "zod";
@@ -13366,8 +13365,8 @@ export async function registerRoutes(
       const displayName = (req.user as any).name || userName;
 
       const [myToolTasksResult, opTasksForUser, planTasksForUser, engTasksForUser, qcItemsForUser] = await Promise.all([
-        safeLegacyQuery(() => db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)), []),
-        safeLegacyQuery(() => db.select().from(workItems).where(
+        db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)),
+        db.select().from(workItems).where(
           and(
             isNull(workItems.deletedAt),
             or(
@@ -13375,7 +13374,7 @@ export async function registerRoutes(
               sql`EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = ${workItems.id} AND wia.user_id = ${userId})`
             )
           )
-        ), []),
+        ),
         db.execute(sql`
           SELECT wi.id, wi.title as task_name, wi.wbs_code as task_no, wi.start_date, wi.end_date,
                  wi.percent_complete as pct_complete, wi.duration as duration_days,
@@ -13396,14 +13395,14 @@ export async function registerRoutes(
             isNull(workItems.deletedAt)
           )
         ),
-        safeLegacyQuery(() => db.execute(sql`
+        db.execute(sql`
           SELECT qi.*, qc.project_name, qc.project_id, qti.item_name
           FROM qc_item_instance qi
           JOIN qc_checklist qc ON qi.checklist_id = qc.id
           JOIN qc_template_item qti ON qi.template_item_id = qti.id
           WHERE qi.assignee_user_id = ${userId}
             AND qi.is_applicable = true
-        `), { rows: [] } as any),
+        `),
       ]);
 
       const seenOpIds = new Set<number>();

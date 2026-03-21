@@ -1,6 +1,5 @@
 // @ts-nocheck
 import { db, getDbMode } from "./db";
-import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { UsersRepository } from "./repositories/users-repository";
 import { WorkManagementRepository } from "./repositories/work-management-repository";
