@@ -260,7 +260,7 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
 
 // ─── Refresh all projects ──────────────────────────────────────────
 
-export async function refreshAllMetrics(): Promise<{ refreshed: number }> {
+export async function refreshAllMetrics(): Promise<{ refreshed: number; failed: number; failedProjectIds: number[] }> {
   const projects = await db.select({ id: projectInfo.id }).from(projectInfo);
 
   // Skip projects that were refreshed recently
@@ -292,7 +292,7 @@ export async function refreshAllMetrics(): Promise<{ refreshed: number }> {
   }
 
   await refreshProgramMetrics();
-  return { refreshed };
+  return { refreshed, failed, failedProjectIds };
 }
 
 // ─── Program-level refresh ─────────────────────────────────────────
