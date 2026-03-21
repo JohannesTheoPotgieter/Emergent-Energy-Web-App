@@ -137,6 +137,21 @@ export async function backfillWorkItems(): Promise<void> {
       const createdCount = (createdProjects as any).rows?.length ?? 0;
       if (createdCount > 0) {
         console.log(`[Backfill] Auto-created ${createdCount} missing projects in project_info for operational_tasks`);
+        // Ensure 1:1 child rows exist for newly created projects
+        await db.execute(sql.raw(`
+          INSERT INTO project_execution_state (project_id)
+          SELECT pi.id FROM project_info pi
+          LEFT JOIN project_execution_state pes ON pi.id = pes.project_id
+          WHERE pes.id IS NULL
+          ON CONFLICT (project_id) DO NOTHING
+        `));
+        await db.execute(sql.raw(`
+          INSERT INTO project_settings (project_id)
+          SELECT pi.id FROM project_info pi
+          LEFT JOIN project_settings ps ON pi.id = ps.project_id
+          WHERE ps.id IS NULL
+          ON CONFLICT (project_id) DO NOTHING
+        `));
       }
 
       // Fix previously-migrated operational_tasks that were incorrectly set to 'PM'

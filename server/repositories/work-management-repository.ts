@@ -98,11 +98,11 @@ export class WorkManagementRepository {
     await this.dbInstance.update(workItems).set({ deletedAt: new Date() }).where(eq(workItems.id, id));
   }
 
-  async getTaskComments(taskId: number): Promise<TaskComment[]> { return this.dbInstance.select().from(taskComments).where(eq(taskComments.taskId, taskId)).orderBy(desc(taskComments.createdAt)); }
+  async getTaskComments(taskId: number): Promise<TaskComment[]> { return this.dbInstance.select().from(taskComments).where(eq(taskComments.workItemId, taskId)).orderBy(desc(taskComments.createdAt)); }
   async createTaskComment(data: InsertTaskComment): Promise<TaskComment> { const [created] = await this.dbInstance.insert(taskComments).values({ ...data, createdAt: new Date() }).returning(); return created; }
   async deleteTaskComment(id: number): Promise<void> { await this.dbInstance.delete(taskComments).where(eq(taskComments.id, id)); }
 
-  async getTaskChecklists(taskId: number): Promise<TaskChecklist[]> { return this.dbInstance.select().from(taskChecklists).where(eq(taskChecklists.taskId, taskId)).orderBy(taskChecklists.sortOrder); }
+  async getTaskChecklists(taskId: number): Promise<TaskChecklist[]> { return this.dbInstance.select().from(taskChecklists).where(eq(taskChecklists.workItemId, taskId)).orderBy(taskChecklists.sortOrder); }
   async createTaskChecklist(data: InsertTaskChecklist): Promise<TaskChecklist> { const [created] = await this.dbInstance.insert(taskChecklists).values({ ...data, createdAt: new Date() }).returning(); return created; }
   async deleteTaskChecklist(id: number): Promise<void> { await this.dbInstance.delete(taskChecklists).where(eq(taskChecklists.id, id)); }
 
@@ -111,11 +111,11 @@ export class WorkManagementRepository {
   async updateChecklistItem(id: number, data: Partial<InsertTaskChecklistItem>): Promise<TaskChecklistItem> { const [updated] = await this.dbInstance.update(taskChecklistItems).set(data).where(eq(taskChecklistItems.id, id)).returning(); return updated; }
   async deleteChecklistItem(id: number): Promise<void> { await this.dbInstance.delete(taskChecklistItems).where(eq(taskChecklistItems.id, id)); }
 
-  async getTaskAttachments(taskId: number): Promise<TaskAttachment[]> { return this.dbInstance.select().from(taskAttachments).where(eq(taskAttachments.taskId, taskId)).orderBy(desc(taskAttachments.createdAt)); }
+  async getTaskAttachments(taskId: number): Promise<TaskAttachment[]> { return this.dbInstance.select().from(taskAttachments).where(eq(taskAttachments.workItemId, taskId)).orderBy(desc(taskAttachments.createdAt)); }
   async createTaskAttachment(data: InsertTaskAttachment): Promise<TaskAttachment> { const [created] = await this.dbInstance.insert(taskAttachments).values({ ...data, createdAt: new Date() }).returning(); return created; }
   async deleteTaskAttachment(id: number): Promise<void> { await this.dbInstance.delete(taskAttachments).where(eq(taskAttachments.id, id)); }
 
-  async getTaskActivityLog(taskId: number): Promise<TaskActivityLog[]> { return this.dbInstance.select().from(taskActivityLog).where(eq(taskActivityLog.taskId, taskId)).orderBy(desc(taskActivityLog.createdAt)); }
+  async getTaskActivityLog(taskId: number): Promise<TaskActivityLog[]> { return this.dbInstance.select().from(taskActivityLog).where(eq(taskActivityLog.workItemId, taskId)).orderBy(desc(taskActivityLog.createdAt)); }
   async createTaskActivityLog(data: InsertTaskActivityLog): Promise<TaskActivityLog> { const [created] = await this.dbInstance.insert(taskActivityLog).values({ ...data, createdAt: new Date() }).returning(); return created; }
 
   async getAllWritebackMappings(): Promise<WritebackMapping[]> { return this.dbInstance.select().from(writebackMappings).orderBy(desc(writebackMappings.createdAt)); }
