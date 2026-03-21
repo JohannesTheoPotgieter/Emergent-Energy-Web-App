@@ -6,7 +6,7 @@
  * dashboard_project_metrics / dashboard_program_metrics tables.
  */
 
-import { eq, sql, inArray, isNull, and } from "drizzle-orm";
+import { eq, sql, inArray, isNull, and, gte } from "drizzle-orm";
 import { db, getDbMode } from "../db";
 import {
   projectInfo,
@@ -17,6 +17,9 @@ import {
 } from "@shared/schema";
 import { workItems } from "@shared/schema";
 import { qcWarning, qcChecklist, qcItemInstance } from "@shared/schema";
+
+const REFRESH_COOLDOWN_MS = 5 * 60 * 1000; // Skip projects refreshed within 5 minutes
+const CONCURRENCY_LIMIT = 5; // Max parallel project refreshes
 
 function toNum(v: unknown): number {
   if (v === null || v === undefined || v === "") return 0;
@@ -257,23 +260,39 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
 
 // ─── Refresh all projects ──────────────────────────────────────────
 
-export async function refreshAllMetrics(): Promise<{ refreshed: number }> {
+export async function refreshAllMetrics(): Promise<{ refreshed: number; failed: number; failedProjectIds: number[] }> {
   const projects = await db.select({ id: projectInfo.id }).from(projectInfo);
+
+  // Skip projects that were refreshed recently
+  const cutoff = new Date(Date.now() - REFRESH_COOLDOWN_MS);
+  const recentlyRefreshed = new Set<number>();
+  try {
+    const recentRows = await db
+      .select({ projectId: dashboardProjectMetrics.projectId })
+      .from(dashboardProjectMetrics)
+      .where(gte(dashboardProjectMetrics.lastRefreshedAt, cutoff));
+    for (const r of recentRows) recentlyRefreshed.add(r.projectId);
+  } catch {
+    // Table may not exist yet; refresh all
+  }
+
+  const toRefresh = projects.filter((p) => !recentlyRefreshed.has(p.id));
   let refreshed = 0;
-  for (const p of projects) {
-    try {
-      await refreshProjectMetrics(p.id);
-      refreshed++;
-    } catch (err: any) {
-      console.warn(
-        `[dashboard-metrics] Failed to refresh project ${p.id}:`,
-        err.message,
-      );
+
+  // Process with concurrency limit instead of sequentially
+  for (let i = 0; i < toRefresh.length; i += CONCURRENCY_LIMIT) {
+    const batch = toRefresh.slice(i, i + CONCURRENCY_LIMIT);
+    const results = await Promise.allSettled(
+      batch.map((p) => refreshProjectMetrics(p.id)),
+    );
+    for (const result of results) {
+      if (result.status === "fulfilled") refreshed++;
+      else console.warn(`[dashboard-metrics] Failed to refresh project:`, result.reason?.message);
     }
   }
 
   await refreshProgramMetrics();
-  return { refreshed };
+  return { refreshed, failed, failedProjectIds };
 }
 
 // ─── Program-level refresh ─────────────────────────────────────────

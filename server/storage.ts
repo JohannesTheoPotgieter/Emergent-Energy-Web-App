@@ -1091,7 +1091,7 @@ export class DatabaseStorage implements IStorage {
     await softCloseByProjectName(this.dbInstance, "normalized_cost_lines", projectName);
   }
 
-  async updateProgramExpenseFields(id: number, fields: Record<string, any>): Promise<ProgramExpense | undefined> {
+  async updateProgramExpenseFields(id: number, fields: Record<string, any>, expectedUpdatedAt?: string): Promise<ProgramExpense | undefined> {
     const mappedFields: Record<string, any> = {};
     const fieldMap: Record<string, string> = {
       expenseCategory: 'costCategory',
@@ -1119,6 +1119,25 @@ export class DatabaseStorage implements IStorage {
       return undefined;
     }
     const canonicalId = id >= 900000 ? id - 900000 : id;
+
+    // Optimistic locking: if caller provides expectedUpdatedAt, verify row hasn't changed
+    if (expectedUpdatedAt) {
+      const [current] = await this.dbInstance
+        .select({ updatedAt: normalizedCostLines.updatedAt })
+        .from(normalizedCostLines)
+        .where(eq(normalizedCostLines.id, canonicalId))
+        .limit(1);
+      if (current?.updatedAt) {
+        const currentTs = new Date(current.updatedAt).getTime();
+        const expectedTs = new Date(expectedUpdatedAt).getTime();
+        if (currentTs !== expectedTs) {
+          const err = new Error("Row was modified by another user. Please refresh and try again.");
+          (err as any).status = 409;
+          throw err;
+        }
+      }
+    }
+
     const result = await this.dbInstance
       .update(normalizedCostLines)
       .set(mappedFields)

@@ -177,7 +177,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
     },
     enabled: !!projectName,
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const { data: teamMembers = [] } = useQuery<{ id: number; name: string }[]>({
@@ -201,7 +201,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
     },
     enabled: !!projectName,
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const { data: workspaceData } = useQuery<QualityWorkspaceData>({
@@ -213,7 +213,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
     },
     enabled: !!projectName,
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const { data: planLinks = [] } = useQuery({
@@ -225,7 +225,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
     },
     enabled: !!projectName,
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const { data: projectTasks = [] } = useQuery({
@@ -237,7 +237,7 @@ export function QualityTab({ projectName }: QualityTabProps) {
     },
     enabled: !!projectName,
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const invalidateAll = () => {
