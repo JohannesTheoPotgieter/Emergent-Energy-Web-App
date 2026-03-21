@@ -1,6 +1,6 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../../../db";
-import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLines, procurementItems, projectEngDeliverables, projectEngStages, projectInfo, projectPhaseHistory, projectRevenueSummary, qcChecklist, qcItemInstance, smartImportRuns, workItems, users, counterparties, projectExecutionState, projectSettings, projectTeamMembers, dashboardProjectMetrics, qcWarning, qcItemEvidence } from "@shared/schema";
+import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLines, procurementItems, projectEngDeliverables, projectEngStages, projectInfo, projectPhaseHistory, projectRevenueSummary, qcChecklist, qcItemInstance, smartImportRuns, workItems, workItemPm, workItemEngineering, workItemScheduling, users, counterparties, projectExecutionState, projectSettings, projectTeamMembers, dashboardProjectMetrics, qcWarning, qcItemEvidence } from "@shared/schema";
 import { syncProjectSplitTables } from "../../../lib/project-info-sync";
 
 export async function listProjects(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null }) {
@@ -78,6 +78,64 @@ export async function createWorkItem(projectId: number, payload: any, userId: nu
     .limit(1);
   if (existing) return existing;
   const [created] = await db.insert(workItems).values({ ...payload, projectId, createdBy: userId }).returning();
+
+  // Populate extension tables (1:1 with work_items)
+  const workItemId = created.id;
+  await Promise.all([
+    db.insert(workItemPm).values({
+      workItemId,
+      duration: payload.duration ?? null,
+      percentComplete: payload.percentComplete ?? 0,
+      expectedPctComplete: payload.expectedPctComplete ?? null,
+      phase: payload.phase ?? null,
+      isMilestone: Boolean(payload.isMilestone),
+      indentLevel: payload.indentLevel ?? 0,
+      ownerName: payload.ownerName ?? null,
+      isShared: Boolean(payload.isShared),
+      holdReason: payload.holdReason ?? null,
+      blockedType: payload.blockedType ?? null,
+      blockerReason: payload.blockerReason ?? null,
+      approvalRequired: Boolean(payload.approvalRequired),
+      trackingRag: payload.trackingRag ?? null,
+      taskTypeTag: payload.taskTypeTag ?? null,
+      subProjectName: payload.subProjectName ?? null,
+      linkedPlanItemId: payload.linkedPlanItemId ?? null,
+      linkedDeliverableId: payload.linkedDeliverableId ?? null,
+      linkedQualityItemInstanceId: payload.linkedQualityItemInstanceId ?? null,
+    }),
+    db.insert(workItemEngineering).values({
+      workItemId,
+      wbsCode: payload.wbsCode ?? null,
+      outlineNumber: payload.outlineNumber ?? null,
+      legacyTable: payload.legacyTable ?? null,
+      legacyId: payload.legacyId ?? null,
+      sourceRow: payload.sourceRow ?? null,
+      sourceSheet: payload.sourceSheet ?? null,
+      importRunId: payload.importRunId ?? null,
+    }),
+    db.insert(workItemScheduling).values({
+      workItemId,
+      scheduledDate: payload.scheduledDate ?? null,
+      scheduledStartTime: payload.scheduledStartTime ?? null,
+      scheduledEndTime: payload.scheduledEndTime ?? null,
+      estimateMinutes: payload.estimateMinutes ?? null,
+      taskCategory: payload.taskCategory ?? null,
+      baselineStart: payload.baselineStart ?? null,
+      baselineEnd: payload.baselineEnd ?? null,
+      baselineDuration: payload.baselineDuration ?? null,
+      taskMode: payload.taskMode ?? "auto",
+      actualStart: payload.actualStart ?? null,
+      actualEnd: payload.actualEnd ?? null,
+      actualDuration: payload.actualDuration ?? null,
+      isRecurring: Boolean(payload.isRecurring),
+      recurrenceFrequency: payload.recurrenceFrequency ?? null,
+      recurrenceInterval: payload.recurrenceInterval ?? 1,
+      recurrenceDaysOfWeek: payload.recurrenceDaysOfWeek ?? null,
+      recurrenceEndDate: payload.recurrenceEndDate ?? null,
+      recurrenceParentId: payload.recurrenceParentId ?? null,
+    }),
+  ]);
+
   return created;
 }
 
