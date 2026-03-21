@@ -55,6 +55,7 @@ import { db } from "../db";
 import { z } from "zod";
 import {
   projectInfo,
+  projectExecutionState,
   projectRevenueSummary,
   projectEditableFields,
   programInflows,

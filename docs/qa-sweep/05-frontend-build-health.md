@@ -37,21 +37,15 @@ dist/public/assets/index-B281KdbI.js                       4,092.90 kB │ gzip:
 
 2. **`server/seed-engineering.ts`**: Replaced `operationalTasks` import with `workItems`. Updated insert statement to use `workItems` table with correct columns (`workstream: "ENG"`, `source: "INTEGRATION"`, `createdBy: 1`).
 
+3. **`server/departments/fye-revenue-tracking-routes.ts`**: Added missing `projectExecutionState` import — was used in 19 places but never imported, causing all TypeScript errors.
+
 ---
 
 ## 2. TypeScript Strict Check (`tsc --noEmit`)
 
-**Result: 19 errors — all server-side, zero client-side**
+**Result: PASS — 0 errors (client and server)**
 
-All 19 errors are in `server/departments/fye-revenue-tracking-routes.ts` referencing `projectExecutionState` (a missing identifier). These are pre-existing server-side issues unrelated to the frontend.
-
-```
-server/departments/fye-revenue-tracking-routes.ts(512,34): error TS2304: Cannot find name 'projectExecutionState'.
-server/departments/fye-revenue-tracking-routes.ts(513,30): error TS2304: Cannot find name 'projectExecutionState'.
-... (17 more identical errors in same file)
-```
-
-**Client TypeScript: 0 errors** — Frontend compiles cleanly with no type errors.
+All 19 pre-existing `projectExecutionState` errors have been fixed by adding the missing import.
 
 ---
 
@@ -141,7 +135,7 @@ React Query is the primary data-fetching mechanism but a significant number of r
 | Check | Result | Details |
 |-------|--------|---------|
 | 1. Full build | **PASS** | Client + server build successfully (2 critical import errors fixed) |
-| 2. TypeScript strict | **PASS (client)** | 0 client errors; 19 pre-existing server errors (`projectExecutionState`) |
+| 2. TypeScript strict | **PASS** | 0 errors — all 19 `projectExecutionState` errors fixed |
 | 3. Broken imports | **PASS** | 0 broken imports to deleted files |
 | 4. Deleted API paths | **ADVISORY** | 13 references to `/api/tasks` and `/api/expenses` — may be active routes |
 | 5. Raw fetch mutations | **ADVISORY** | 35 raw fetch mutation calls — `my-work-tasks.tsx` is highest priority for migration |
