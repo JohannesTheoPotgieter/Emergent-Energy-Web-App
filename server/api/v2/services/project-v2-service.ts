@@ -2,7 +2,7 @@ import * as repo from "../repositories/project-v2-repository";
 import { ApiV2Error, paginationMeta } from "../utils/http";
 import { db } from "../../../db";
 import { dashboardProjectMetrics, dashboardProgramMetrics } from "@shared/schema";
-import { refreshAllMetrics } from "../../../services/dashboard-metrics";
+import { refreshAllMetrics, refreshProjectMetricsAsync } from "../../../services/dashboard-metrics";
 
 export async function listProjectsService(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null }) {
   const { rows, total } = await repo.listProjects(params);
@@ -49,12 +49,15 @@ export async function developmentHandoverService(projectId: number, userId: numb
 }
 
 export async function createWorkItemService(projectId: number, payload: any, userId: number) {
-  return repo.createWorkItem(projectId, payload, userId);
+  const created = await repo.createWorkItem(projectId, payload, userId);
+  refreshProjectMetricsAsync(projectId);
+  return created;
 }
 
 export async function patchWorkItemService(projectId: number, id: number, payload: any) {
   const updated = await repo.patchWorkItem(projectId, id, payload);
   if (!updated) throw new ApiV2Error("NOT_FOUND", 404, "Work item not found");
+  refreshProjectMetricsAsync(projectId);
   return updated;
 }
 

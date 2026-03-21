@@ -1871,11 +1871,6 @@ router.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res
   }
 });
 
-// Override tables dropped (Cleanup Prompt 4) — return empty for backward compat
-router.get("/api/project-plan/overrides", requireAuth, (_req, res) => res.json([]));
-router.post("/api/project-plan/overrides", requireAuth, (_req, res) => res.json({ message: "Override tables have been removed", count: 0, overrides: [] }));
-
-router.delete("/api/project-plan/overrides/:projectName", requireAuth, (_req, res) => res.json({ message: "Override tables have been removed" }));
 
 // ==================== KEY DATE MAPPINGS ====================
 

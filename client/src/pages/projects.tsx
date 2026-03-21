@@ -193,16 +193,9 @@ function progressColor(pct: number): string {
   return "bg-slate-400";
 }
 
-interface TaskEdits {
-  [rowNumber: number]: { [field: string]: string | number | null };
-}
-
 function TaskCompletionPopover({ projectName, currentPct }: { projectName: string; currentPct: number }) {
   const [open, setOpen] = useState(false);
-  const [edits, setEdits] = useState<TaskEdits>({});
-  const [editingRow, setEditingRow] = useState<number | null>(null);
   const [searchQ, setSearchQ] = useState("");
-  const queryClient = useQueryClient();
 
   const { data: tasks, isLoading } = useQuery({
     queryKey: ["/api/project-plan", projectName],
@@ -218,74 +211,9 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
     enabled: open,
   });
 
-  const saveMutation = useMutation({
-    mutationFn: async (allEdits: TaskEdits) => {
-      const overrides: any[] = [];
-      for (const [rowStr, fields] of Object.entries(allEdits)) {
-        const rowNumber = parseInt(rowStr);
-        for (const [fieldName, value] of Object.entries(fields)) {
-          let overrideValue: string;
-          if (fieldName === "actualPctComplete" || fieldName === "expectedPctComplete") {
-            overrideValue = String(Number(value) / 100);
-          } else {
-            overrideValue = value === null ? "" : String(value);
-          }
-          overrides.push({ projectName, rowNumber, fieldName, overrideValue });
-        }
-      }
-      await apiRequest("POST", "/api/project-plan/overrides", {
-        overrides,
-        overrideCategory: "DATA_CORRECTION",
-        overrideComment: "Edited via project list task editor",
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/project-plan", projectName] });
-      invalidateDashboardQueries(queryClient);
-      setEdits({});
-      setEditingRow(null);
-      setOpen(false);
-    },
-  });
-
-  const getField = (task: any, field: string) => {
-    const rowEdits = edits[task.rowNumber];
-    if (rowEdits && field in rowEdits) return rowEdits[field];
-    return task[field];
-  };
-
-  const setField = (rowNumber: number, field: string, value: any) => {
-    setEdits(prev => ({
-      ...prev,
-      [rowNumber]: { ...(prev[rowNumber] || {}), [field]: value },
-    }));
-  };
-
   const getActPct = (task: any) => {
-    const rowEdits = edits[task.rowNumber];
-    if (rowEdits && "actualPctComplete" in rowEdits) return Math.round(Number(rowEdits.actualPctComplete));
     return task.actualPctComplete != null ? Math.round(Number(task.actualPctComplete) * 100) : 0;
   };
-
-  const setActPct = (rowNumber: number, pctVal: number) => {
-    setField(rowNumber, "actualPctComplete", Math.max(0, Math.min(100, pctVal)));
-  };
-
-  const weightedPct = useMemo(() => {
-    if (!tasks || tasks.length === 0) return currentPct;
-    let totalW = 0, wSum = 0;
-    for (const t of tasks as any[]) {
-      const durVal = getField(t, "durationDays");
-      const dur = durVal && Number(durVal) > 0 ? Number(durVal) : 1;
-      const pct = getActPct(t) / 100;
-      wSum += pct * dur;
-      totalW += dur;
-    }
-    return totalW > 0 ? (wSum / totalW) * 100 : 0;
-  }, [tasks, edits, currentPct]);
-
-  const hasEdits = Object.keys(edits).length > 0;
 
   const filtered = useMemo(() => {
     if (!tasks) return [];
@@ -298,7 +226,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
   }, [tasks, searchQ]);
 
   return (
-    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEdits({}); setEditingRow(null); setSearchQ(""); } }}>
+    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setSearchQ(""); } }}>
       <PopoverTrigger asChild>
         <button data-interactive="true" onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 min-w-[60px] w-full cursor-pointer hover:opacity-80 transition-opacity" data-testid={`btn-act-pct-${projectName}`}>
           <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
@@ -314,18 +242,9 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
         <div className="p-3 border-b bg-muted">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <p className="text-sm font-semibold text-foreground">Edit Tasks</p>
+              <p className="text-sm font-semibold text-foreground">Task Breakdown</p>
               <p className="text-[11px] text-muted-foreground">{projectName.replace(/_Tracker$/i, "").replace(/_/g, " ")} — {(tasks as any[])?.length || 0} tasks</p>
             </div>
-            {hasEdits && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-mono font-semibold text-blue-600">Act%: {weightedPct.toFixed(0)}%</span>
-                <Button size="sm" className="h-7 text-xs px-2" onClick={() => saveMutation.mutate(edits)} disabled={saveMutation.isPending} data-testid="btn-save-task-edits">
-                  {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
-                  Save All
-                </Button>
-              </div>
-            )}
           </div>
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
@@ -352,104 +271,39 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
                   <th className="text-left px-2 py-1.5 w-20">End</th>
                   <th className="text-center px-2 py-1.5 w-12">Days</th>
                   <th className="text-center px-2 py-1.5 w-14">Act%</th>
-                  <th className="w-7"></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((task: any) => {
-                  const isEditing = editingRow === task.rowNumber;
                   const actPct = getActPct(task);
                   return (
                     <tr
                       key={task.rowNumber}
-                      className={`border-b border-slate-50 hover:bg-blue-50/30 transition-colors ${isEditing ? 'bg-blue-50/50' : ''}`}
+                      className="border-b border-slate-50 hover:bg-blue-50/30 transition-colors"
                       data-testid={`task-row-${task.rowNumber}`}
                     >
                       <td className="px-2 py-1.5 text-slate-500 font-mono">{task.taskNo || "-"}</td>
                       <td className="px-2 py-1.5">
-                        {isEditing ? (
-                          <input
-                            type="text"
-                            value={getField(task, "highLevelProgramme") || ""}
-                            onChange={(e) => setField(task.rowNumber, "highLevelProgramme", e.target.value)}
-                            className="w-full h-6 text-[11px] border rounded px-1"
-                            data-testid={`input-task-name-${task.rowNumber}`}
-                          />
-                        ) : (
-                          <span className="truncate block max-w-[160px] font-medium text-foreground" title={task.highLevelProgramme}>
-                            {getField(task, "highLevelProgramme") || "-"}
-                          </span>
-                        )}
+                        <span className="truncate block max-w-[160px] font-medium text-foreground" title={task.highLevelProgramme}>
+                          {task.highLevelProgramme || "-"}
+                        </span>
                       </td>
                       <td className="px-2 py-1.5">
-                        {isEditing ? (
-                          <input
-                            type="date"
-                            value={getField(task, "actualStart") || ""}
-                            onChange={(e) => setField(task.rowNumber, "actualStart", e.target.value)}
-                            className="w-full h-6 text-[10px] border rounded px-0.5"
-                            data-testid={`input-task-start-${task.rowNumber}`}
-                          />
-                        ) : (
-                          <span className="text-muted-foreground font-mono text-[10px]">{(getField(task, "actualStart") || "-").toString().substring(0, 10)}</span>
-                        )}
+                        <span className="text-muted-foreground font-mono text-[10px]">{(task.actualStart || "-").toString().substring(0, 10)}</span>
                       </td>
                       <td className="px-2 py-1.5">
-                        {isEditing ? (
-                          <input
-                            type="date"
-                            value={getField(task, "actualEnd") || ""}
-                            onChange={(e) => setField(task.rowNumber, "actualEnd", e.target.value)}
-                            className="w-full h-6 text-[10px] border rounded px-0.5"
-                            data-testid={`input-task-end-${task.rowNumber}`}
-                          />
-                        ) : (
-                          <span className="text-muted-foreground font-mono text-[10px]">{(getField(task, "actualEnd") || "-").toString().substring(0, 10)}</span>
-                        )}
+                        <span className="text-muted-foreground font-mono text-[10px]">{(task.actualEnd || "-").toString().substring(0, 10)}</span>
                       </td>
                       <td className="px-2 py-1.5 text-center">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            min={0}
-                            value={getField(task, "durationDays") ?? ""}
-                            onChange={(e) => setField(task.rowNumber, "durationDays", e.target.value ? parseInt(e.target.value) : null)}
-                            className="w-12 h-6 text-[10px] font-mono text-center border rounded"
-                            data-testid={`input-task-dur-${task.rowNumber}`}
-                          />
-                        ) : (
-                          <span className="text-muted-foreground font-mono">{getField(task, "durationDays") ?? "-"}</span>
-                        )}
+                        <span className="text-muted-foreground font-mono">{task.durationDays ?? "-"}</span>
                       </td>
                       <td className="px-2 py-1.5 text-center">
                         <div className="flex items-center gap-1">
                           <div className="w-8 h-1.5 bg-muted rounded-full overflow-hidden">
                             <div className={`h-full rounded-full ${progressColor(actPct)}`} style={{ width: `${actPct}%` }} />
                           </div>
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              value={actPct}
-                              onChange={(e) => setActPct(task.rowNumber, parseInt(e.target.value) || 0)}
-                              className="w-9 h-6 text-[10px] font-mono text-center border rounded"
-                              data-testid={`input-task-pct-${task.rowNumber}`}
-                            />
-                          ) : (
-                            <span className="font-mono text-muted-foreground w-7 text-right">{actPct}%</span>
-                          )}
+                          <span className="font-mono text-muted-foreground w-7 text-right">{actPct}%</span>
                         </div>
-                      </td>
-                      <td className="px-1 py-1.5">
-                        <button
-                          onClick={() => setEditingRow(isEditing ? null : task.rowNumber)}
-                          className={`p-0.5 rounded transition-colors ${isEditing ? 'text-blue-600 bg-blue-100' : 'text-slate-500 hover:text-muted-foreground hover:bg-muted'}`}
-                          title={isEditing ? "Done editing" : "Edit task"}
-                          data-testid={`btn-edit-task-${task.rowNumber}`}
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </button>
                       </td>
                     </tr>
                   );
@@ -460,11 +314,6 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
             <EmptyState title="No tasks found" className="my-4" />
           )}
         </div>
-        {hasEdits && (
-          <div className="p-2 border-t bg-muted text-[10px] text-muted-foreground text-center">
-            {Object.keys(edits).length} task(s) modified — edits are saved as overrides and preserved across imports
-          </div>
-        )}
       </PopoverContent>
     </Popover>
   );
@@ -1394,7 +1243,7 @@ export default function ProjectsSummary() {
       return res.json();
     },
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const activeProjects = useMemo(() => projects.filter(p => p.is_active && p.has_tracker_import), [projects]);
