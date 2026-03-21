@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { operationalTasks, projectInfo } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { workItems, projectInfo } from "@shared/schema";
+import { eq, sql, and } from "drizzle-orm";
 import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import engineeringData from "./seed-engineering-data.json";
 
@@ -72,12 +72,13 @@ export async function seedEngineeringData() {
         ? projectNameToId.get(task.project_name.toLowerCase().trim()) ?? null
         : null;
 
-      await db.insert(operationalTasks).values({
-        projectId: resolvedProjectId,
-        projectName: task.project_name,
+      await db.insert(workItems).values({
+        projectId: resolvedProjectId ?? 0,
+        workstream: "ENG",
+        source: "INTEGRATION",
         title: task.title,
         description: task.description || null,
-        status: task.status || "planned",
+        status: task.status || "Not Started",
         priority: task.priority || "Medium",
         startDate: task.start_date || null,
         endDate: task.due_date || null,
@@ -98,6 +99,7 @@ export async function seedEngineeringData() {
         trackingRag: task.tracking_rag || null,
         taskTypeTag: task.task_type_tag || null,
         legacyTable: "operational_tasks",
+        createdBy: 1,
       });
       inserted++;
     }

@@ -67,7 +67,6 @@ import {
   pdTickets,
   fyeKpiCounters,
   fyeReportSnapshots,
-  cosStatusOverrides,
 } from "@shared/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 import ExcelJS from "exceljs";
@@ -115,18 +114,11 @@ function safeNum(v: any): number {
   return isNaN(n) ? 0 : n;
 }
 
-/** Load COS status overrides for isCosRealised enrichment. */
+/** Load COS status overrides for isCosRealised enrichment.
+ *  NOTE: cosStatusOverrides table was removed — override data is now baked into base rows.
+ *  This function returns an empty map for backward compatibility. */
 async function loadCosOverrides(): Promise<Map<string, string>> {
-  try {
-    const overrides = await db.select().from(cosStatusOverrides);
-    const map = new Map<string, string>();
-    for (const o of overrides) {
-      map.set(`${o.projectName}::${o.rowNumber}`, o.overrideStatus);
-    }
-    return map;
-  } catch {
-    return new Map();
-  }
+  return new Map();
 }
 
 /** Attach COS override status to expense rows for isCosRealised(). */
