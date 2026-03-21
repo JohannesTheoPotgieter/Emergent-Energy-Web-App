@@ -4,7 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 import { users, organizations } from "./users";
-import { projectInfo, companyLifecyclePhaseEnum } from "./projects";
+import { projectInfo } from "./projects";
 import { workItems } from "./tasks";
 
 // ===================== ENGINEERING DELIVERABLES =====================
@@ -105,10 +105,6 @@ export type WarningStatus = typeof WARNING_STATUSES[number];
 
 // ===================== ENGINEERING TASKS — DROPPED =====================
 // Table engineering_tasks dropped; data lives in work_items (workstream='ENG').
-// Schema definition removed — see work_items in tasks.ts.
-
-export const engTaskStatusEnum = pgEnum('eng_task_status', ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETE', 'ON_HOLD']);
-
 // ===================== ENGINEERING STAGE TEMPLATES (Part E2) =====================
 
 export const engStageStatusEnum = pgEnum('eng_stage_status', ['not_started', 'in_progress', 'blocked', 'ready_for_review', 'complete']);

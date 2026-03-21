@@ -12,7 +12,6 @@ import { smartImportRuns } from "./imports";
 export const counterpartyTypeEnum = pgEnum('counterparty_type', ['SUPPLIER', 'INSTALLER', 'OTHER']);
 export const revenueLineStatusEnum = pgEnum('revenue_line_status', ['PLANNED', 'INVOICED', 'PAID', 'IN_BANK', 'REALISED']);
 export const costLineStatusEnum = pgEnum('cost_line_status', ['PLANNED', 'INVOICED', 'APPROVED', 'PAID']);
-export const dependencyTypeEnum = pgEnum('dependency_type', ['FS', 'SS', 'FF', 'SF']);
 export const patternTypeEnum = pgEnum('pattern_type', ['PREFIX', 'REGEX', 'TOKEN_SHAPE']);
 export const patternMatchOutcomeEnum = pgEnum('pattern_match_outcome', ['AUTO_APPLIED', 'USER_CONFIRMED', 'USER_OVERRIDDEN', 'UNRESOLVED']);
 export const invoiceCaptureStatusEnum = pgEnum('invoice_capture_status', ['captured', 'submitted', 'verified', 'approved', 'rejected']);

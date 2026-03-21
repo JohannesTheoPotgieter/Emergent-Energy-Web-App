@@ -1,15 +1,6 @@
-import { pgTable, text, integer, timestamp, pgEnum, serial, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, serial, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-
-// Enums
-export const userRoleEnum = pgEnum('user_role', [
-  'admin', 'member', 'quality_manager', 'viewer', 'eng_program_manager',
-  'COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO',
-  'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER',
-  'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER',
-  'ACCOUNTANT', 'ENGINEER', 'PROJECT_DEVELOPER',
-]);
 
 // ===================== ORGANIZATIONS (Prompt 11 — Multi-tenancy) =====================
 export const organizations = pgTable("organizations", {

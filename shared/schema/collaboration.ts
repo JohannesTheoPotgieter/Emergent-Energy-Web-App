@@ -9,17 +9,9 @@ import { counterparties } from "./finance";
 
 // ===================== ENUMS =====================
 
-export const assigneeTypeEnum = pgEnum('assignee_type', ['internal_user', 'external_counterparty', 'external_contact']);
-export const entityAssignmentRoleEnum = pgEnum('entity_assignment_role', ['OWNER', 'ASSIGNEE', 'APPROVER', 'REVIEWER', 'VIEWER']);
 export const meetingActionItemStatusEnum = pgEnum('meeting_action_item_status', ['pending', 'converted', 'dismissed']);
 export const approvalStatusEnum = pgEnum('approval_status', ['pending', 'approved', 'rejected']);
 export const auditSourceEnum = pgEnum('audit_source', ['UI', 'IMPORT', 'SETTINGS', 'DOCS', 'SYSTEM']);
-export const feedbackTicketTypeEnum = pgEnum('feedback_ticket_type', ['bug', 'feature']);
-export const feedbackTicketStatusEnum = pgEnum('feedback_ticket_status', ['open', 'in_progress', 'resolved', 'closed']);
-export const feedbackTicketPriorityEnum = pgEnum('feedback_ticket_priority', ['low', 'medium', 'high', 'critical']);
-export const eeInfoNodeStatusEnum = pgEnum('ee_info_node_status', ['stub', 'draft', 'published']);
-export const eeInfoNodeCategoryEnum = pgEnum('ee_info_node_category', ['role', 'process', 'tool', 'template', 'other', 'unknown']);
-export const eeInfoEdgeTypeEnum = pgEnum('ee_info_edge_type', ['link', 'embed', 'reference']);
 export const pmActionTypeEnum = pgEnum('pm_action_type', [
   'site_visit', 'generate_po', 'link_invoice', 'raise_variation',
   'log_delay', 'log_risk', 'upload_photo', 'update_progress', 'escalate'
@@ -789,7 +781,6 @@ export type StandupEntry = typeof standupEntries.$inferSelect;
 
 // ===================== DOMAIN EVENTS ARCHITECTURE (Prompt 13) =====================
 
-export const domainEventStatusEnum = pgEnum('domain_event_status', ['pending', 'processed', 'failed']);
 export const eventProcessingStatusEnum = pgEnum('event_processing_status', ['success', 'failed', 'skipped']);
 
 export const domainEvents = pgTable("domain_events", {

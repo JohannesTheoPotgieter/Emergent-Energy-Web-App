@@ -7,8 +7,6 @@ import { smartImportRuns } from "./imports";
 
 // ===================== ENUMS =====================
 
-export const projectStatusEnum = pgEnum('project_status', ['Planning', 'Active', 'Completed', 'On Hold']);
-export const projectStageEnum = pgEnum('project_stage', ['Development', 'Construction', 'Operations']);
 export const phaseSourceEnum = pgEnum('phase_source', ['EXCEL_IMPORT', 'MANUAL']);
 
 // ===================== CLIENTS =====================
@@ -373,17 +371,6 @@ export const PHASE_TO_ENG_STAGES: Record<string, string[]> = {
 
 // ===================== PROJECT DEVELOPMENT (PD) =====================
 
-export const pdTicketStatusEnum = pgEnum('pd_ticket_status', ['Draft', 'In Progress', 'On Hold', 'Completed', 'Cancelled']);
-export const pdRequestTypeEnum = pgEnum('pd_request_type', [
-  'Cost Proposal', 'IFC Planning', 'Site Assessment', 'Feasibility Study',
-  'Grid Application', 'Design Review', 'Battery Assessment', 'Full EPC',
-]);
-export const pdFundingTypeEnum = pgEnum('pd_funding_type', ['PPA', 'Cash', 'Lease', 'Hybrid', 'Other']);
-export const pdProvinceEnum = pgEnum('pd_province', [
-  'Eastern Cape', 'Free State', 'Gauteng', 'KwaZulu-Natal', 'Limpopo',
-  'Mpumalanga', 'Northern Cape', 'North West', 'Western Cape',
-]);
-
 export const pdTickets = pgTable("pd_tickets", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").references(() => clients.id),
@@ -599,13 +586,6 @@ export const COMPANY_LIFECYCLE_PHASE_LABELS: Record<CompanyLifecyclePhase, strin
   AFTER_SALES: "After Sales",
 };
 
-export const companyLifecyclePhaseEnum = pgEnum('company_lifecycle_phase', [
-  'FIRST_ASSESSMENT',
-  'COST_PROPOSAL_DESIGN',
-  'PD_PM_HANDOVER',
-  'EXECUTION',
-  'AFTER_SALES',
-]);
 
 // ===================== GOVERNANCE =====================
 
@@ -687,8 +667,6 @@ export const stageGateOverrides = pgTable("stage_gate_overrides", {
 export type StageGateOverride = typeof stageGateOverrides.$inferSelect;
 
 // ===================== PORTFOLIO MANAGEMENT =====================
-
-export const portfolioStatusEnum = pgEnum('portfolio_status', ['Active', 'On Hold', 'Completed', 'Archived']);
 
 export const portfolios = pgTable("portfolios", {
   id: serial("id").primaryKey(),
