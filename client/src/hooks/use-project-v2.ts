@@ -1,5 +1,5 @@
 /**
- * Prompt 15 — V2 Project Detail hooks
+ * V2 Project Detail hooks
  *
  * Single consolidated query for project detail,
  * plus lazy-load hooks for each tab domain.
@@ -13,7 +13,14 @@ import type {
   ProjectPlanResponse,
   ProjectQualityResponse,
   ProjectEngineeringResponse,
+  FinanceSummaryV2,
+  PlanSummary,
+  QualitySummary,
+  TeamMember,
 } from "@shared/api-types/project-v2";
+
+// Re-export sub-types so consumers don't need a separate import
+export type { FinanceSummaryV2, PlanSummary, QualitySummary, TeamMember };
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await apiRequest("GET", url);
