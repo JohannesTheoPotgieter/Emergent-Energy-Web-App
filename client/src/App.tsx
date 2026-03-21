@@ -25,7 +25,6 @@ import QmDashboardPage from "@/pages/qm-dashboard";
 import EngineeringDashboardPage from "@/pages/engineering-dashboard";
 import EngineeringTasksPage from "@/pages/engineering-tasks";
 import EngineeringAuditPage from "@/pages/engineering-audit";
-import RoleSettingsPage from "@/pages/role-settings";
 import LifecycleBoardPage from "@/pages/lifecycle-board";
 import ExecutionBoardPage from "@/pages/execution-board";
 import SmartImportPage from "@/pages/smart-import";
@@ -40,7 +39,6 @@ import LeaderboardPage from "@/pages/leaderboard";
 import FeedbackPage from "@/pages/feedback";
 import EeInfoPage from "@/pages/ee-info";
 import TrainingPage from "@/pages/training";
-import PMDashboard from "@/pages/pm-dashboard";
 import PortfoliosPage from "@/pages/portfolios";
 import PortfolioDetailPage from "@/pages/portfolio-detail";
 import PdDashboardPage from "@/pages/pd-dashboard";
@@ -114,7 +112,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   LifecycleBoardPage,
   ExecutionBoardPage,
   MyToolMeetingsPage,
-  RoleSettingsPage,
   SmartImportPage,
   SharePointIntakePage,
   InvoicePatternsPage,
@@ -127,7 +124,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   FeedbackPage,
   EeInfoPage,
   TrainingPage,
-  PMDashboard,
   PortfoliosPage,
   PortfolioDetailPage,
   PdDashboardPage,
