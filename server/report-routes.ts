@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { projectInfo, type ProjectInfo, smartImportRuns, normalizedCostLines, normalizedRevenueLines, workItems, manualEditFlags } from "@shared/schema";
+import { projectInfo, projectExecutionState, type ProjectInfo, smartImportRuns, normalizedCostLines, normalizedRevenueLines, workItems, manualEditFlags } from "@shared/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import ExcelJS from "exceljs";
@@ -75,9 +75,11 @@ async function calculateKPIs(month: string): Promise<KPIPayload> {
   const { monthStartStr, monthEndStr } = parsed;
   const startTs = Date.now();
 
-  const allProjects = await db.select().from(projectInfo);
+  const allProjectRows = await db.select().from(projectInfo)
+    .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
+  const allProjects = allProjectRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id }));
 
-  const activeProjects = allProjects.filter((p: ProjectInfo) => {
+  const activeProjects = allProjects.filter((p: any) => {
     if (!p.isActive) return false;
     const phase = (p.phase || "").trim();
     return !INACTIVE_STATUSES.some(s => s.toLowerCase() === phase.toLowerCase());

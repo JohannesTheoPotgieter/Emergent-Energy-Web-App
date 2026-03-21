@@ -42,7 +42,7 @@ import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
 import { ProjectChangeControlTab } from "@/components/tabs/ProjectChangeControlTab";
 import { ProjectProcurementTab } from "@/components/tabs/ProjectProcurementTab";
 import { ProjectCommissioningTab } from "@/components/tabs/ProjectCommissioningTab";
-import { useProgramData } from "@/hooks/use-program-data";
+import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
@@ -51,6 +51,8 @@ import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, 
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
 import { usePermission } from "@/hooks/use-permissions";
 import { type NextMilestoneSummary } from "@/lib/next-milestone";
+import { useProjectDetail, useProjectFinance, useProjectPlan, useProjectQuality, useProjectEngineering } from "@/hooks/use-project-v2";
+import type { ProjectPermissions } from "@shared/api-types/project-v2";
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", border: "border-border" },
@@ -737,7 +739,7 @@ export default function ProjectDetailPage() {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
   const projectName = params?.projectName ? decodeURIComponent(params.projectName) : "";
-  const { projectsSummary, isLoading: programDataLoading } = useProgramData();
+  const { projectsSummary, isLoading: programDataLoading } = useProjectsSummary();
   const { user } = useAuth();
 
   useEffect(() => {
@@ -848,6 +850,16 @@ export default function ProjectDetailPage() {
   const queryClient = useQueryClient();
   const projectInfo = projectsSummary?.find((p: any) => p.project_name === projectName);
   const projectInfoId = projectInfo?.project_info_id;
+
+  // ─── V2 Consolidated project query ─────────────────────────────
+  const { data: v2Detail } = useProjectDetail(projectInfoId);
+  const v2Perms: ProjectPermissions | null = v2Detail?.permissions ?? null;
+
+  // V2 lazy-load hooks — each tab domain loads on demand
+  const { data: v2Finance } = useProjectFinance(projectInfoId, activeSection === "commercial");
+  const { data: v2Plan } = useProjectPlan(projectInfoId, activeSection === "delivery");
+  const { data: v2Quality } = useProjectQuality(projectInfoId, activeSection === "quality");
+  const { data: v2Engineering } = useProjectEngineering(projectInfoId, activeSection === "engineering");
 
   const { data: pmAssignableUsers } = useQuery<{ id: number; name: string; username: string; role: string }[]>({
     queryKey: ["/api/pm-assignable-users"],
@@ -1068,7 +1080,7 @@ export default function ProjectDetailPage() {
   }
 
   const displayName = projectName.replace("_Tracker", "");
-  const phase = projectInfo?.phase || null;
+  const phase = v2Detail?.executionState?.phase ?? projectInfo?.phase ?? null;
   const executionPhase = projectInfo?.execution_phase || phase || null;
   const pd = projectInfo?.pd || "—";
   const pm = projectInfo?.pm || "—";
@@ -1079,11 +1091,12 @@ export default function ProjectDetailPage() {
   const completionNum = projectInfo?.project_pct_complete != null ? projectInfo.project_pct_complete * 100 : 0;
   const isAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
   const canSetRag = ['admin', 'COO_ADMIN', 'CEO_ADMIN', 'CCO'].includes(user?.role || '');
-  const ragStatus = projectInfo?.rag_status || null;
+  const ragStatus = v2Detail?.executionState?.ragStatus ?? projectInfo?.rag_status ?? null;
 
-  // GC-003: Prefer server-computed KPIs (healthSummary) with client-side fallback
+  // Prefer V2 consolidated data → healthSummary → client-side fallback
+  const v2ContractValue = v2Detail?.financeSummary?.contractValue;
   const totalRevenueActual = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
-  const contractValue = healthSummary?.revenue.contractValue ?? projectInfo?.contract_value ?? totalRevenueActual ?? 0;
+  const contractValue = v2ContractValue ?? healthSummary?.revenue.contractValue ?? projectInfo?.contract_value ?? totalRevenueActual ?? 0;
   const totalBudgetFromExpenses = (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
   const budgetTotal = healthSummary?.cost.budgetTotal ?? projectInfo?.budget_total ?? totalBudgetFromExpenses ?? 0;
 
@@ -1100,21 +1113,21 @@ export default function ProjectDetailPage() {
     const pctNorm = pct > 1 ? pct : pct * 100;
     return pctNorm >= 100;
   });
-  const planCompletionPct = healthSummary?.schedule.completionPct ?? (planTasks.length > 0 ? (completedPlanTasks.length / planTasks.length) * 100 : 0);
-  const scheduleRag: "green" | "amber" | "red" = (healthSummary?.schedule.rag as any) ?? computeScheduleRag(overduePlanTasks.length);
+  const planCompletionPct = v2Detail?.planSummary?.completionPct ?? healthSummary?.schedule.completionPct ?? (planTasks.length > 0 ? (completedPlanTasks.length / planTasks.length) * 100 : 0);
+  const scheduleRag: "green" | "amber" | "red" = (healthSummary?.schedule.rag as any) ?? computeScheduleRag(v2Detail?.planSummary?.tasksOverdue ?? overduePlanTasks.length);
 
   const totalExpenses = healthSummary?.cost.totalExpenses ?? (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
   const costRatio = healthSummary?.cost.ratio ?? (budgetTotal > 0 ? totalExpenses / budgetTotal : 0);
   const costRag: "green" | "amber" | "red" = (healthSummary?.cost.rag as any) ?? computeCostRag(costRatio);
 
-  const qualitySummary = qualityData as any;
-  const qualityPhases = qualitySummary?.phases || [];
+  const qualitySummaryLegacy = qualityData as any;
+  const qualityPhases = qualitySummaryLegacy?.phases || [];
   const qualityGatesTotal = healthSummary?.quality.gatesTotal ?? qualityPhases.length;
   const qualityGatesPassed = healthSummary?.quality.gatesPassed ?? qualityPhases.filter((p: any) => p.applicableItems > 0 && p.approvedItems >= p.applicableItems).length;
   const qualityTotalItems = healthSummary?.quality.totalItems ?? qualityPhases.reduce((s: number, p: any) => s + (p.applicableItems || 0), 0);
   const qualityApprovedItems = healthSummary?.quality.approvedItems ?? qualityPhases.reduce((s: number, p: any) => s + (p.approvedItems || 0), 0);
   const qualityProgressPct = healthSummary?.quality.progressPct ?? (qualityTotalItems > 0 ? (qualityApprovedItems / qualityTotalItems) * 100 : 0);
-  const qualityRag: "green" | "amber" | "red" = (healthSummary?.quality.rag as any) ?? computeQualityRag(!!qualitySummary?.hasChecklist, qualityGatesPassed, qualityGatesTotal, qualityApprovedItems);
+  const qualityRag: "green" | "amber" | "red" = (healthSummary?.quality.rag as any) ?? computeQualityRag(!!qualitySummaryLegacy?.hasChecklist, qualityGatesPassed, qualityGatesTotal, qualityApprovedItems);
 
   const revTabMilestones: any[] = revenueTrustData?.milestones || [];
 
@@ -1450,7 +1463,7 @@ export default function ProjectDetailPage() {
         pageName="Project Detail"
         dataSources={[
           { endpoint: "/api/projects-summary", tables: ["project_info", "normalized_cost_lines", "normalized_revenue_lines", "normalized_plan_tasks"], description: "Project summary data" },
-          { endpoint: `/api/projects/${projectInfoId}/eng-tasks`, tables: ["engineering_tasks"], description: "Engineering tasks for this project" },
+          { endpoint: `/api/projects/${projectInfoId}/eng-tasks`, tables: ["work_items"], description: "Engineering tasks for this project" },
           { endpoint: `/api/projects/${projectInfoId}/phase-history`, tables: ["phase_history"], description: "Phase transition history" },
           { endpoint: "/api/normalized-plan-tasks", tables: ["normalized_plan_tasks"], description: "Gantt / project plan tasks" },
           { endpoint: "/api/normalized-cost-lines", tables: ["normalized_cost_lines"], description: "Expenditure line items" },

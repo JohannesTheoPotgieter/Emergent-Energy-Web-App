@@ -1,7 +1,7 @@
 // @ts-nocheck
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
-import { clients, pdTickets, operationalTasks, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES } from "@shared/schema";
+import { clients, pdTickets, workItems, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState } from "@shared/schema";
 import { eq, ilike, sql, and, desc, asc, or, count } from "drizzle-orm";
 import { getFeatureFlag } from "./lib/feature-flags";
 import { requirePermission } from "./permission-middleware";
@@ -169,20 +169,9 @@ export function registerPdRoutes(app: Express) {
         .orderBy(desc(pdTickets.createdAt));
 
       const ticketIds = rows.map(r => r.ticket.id);
+      // PD ticket task counts: pdTicketId was on operational_tasks which is being dropped.
+      // Work items don't carry pdTicketId; returning empty counts until PD-ticket linkage is re-modelled.
       let taskCounts: Record<number, { total: number; completed: number }> = {};
-      if (ticketIds.length > 0) {
-        const taskStats = await db.select({
-          pdTicketId: operationalTasks.pdTicketId,
-          total: sql<number>`count(*)::int`,
-          completed: sql<number>`count(*) filter (where ${operationalTasks.status} = 'COMPLETE')::int`,
-        })
-          .from(operationalTasks)
-          .where(sql`${operationalTasks.pdTicketId} IN (${sql.raw(ticketIds.join(","))})`)
-          .groupBy(operationalTasks.pdTicketId);
-        for (const s of taskStats) {
-          if (s.pdTicketId) taskCounts[s.pdTicketId] = { total: s.total, completed: s.completed };
-        }
-      }
 
       const enriched = rows.map(r => ({
         ...r,
@@ -198,16 +187,9 @@ export function registerPdRoutes(app: Express) {
       } else if (role === "PROJECT_DEVELOPER") {
         result = enriched.filter(r => r.ticket.createdBy === user?.id || r.ticket.projectDeveloperUserId === user?.id);
       } else if (role === "ENGINEER") {
-        const engTaskLinks = await db.select({ pdTicketId: operationalTasks.pdTicketId })
-          .from(operationalTasks)
-          .where(
-            and(
-              sql`${operationalTasks.pdTicketId} IS NOT NULL`,
-              sql`${operationalTasks.assignees}::text ILIKE ${'%' + (user?.name || '') + '%'}`
-            )
-          );
-        const engTicketIds = new Set(engTaskLinks.map(t => t.pdTicketId).filter(Boolean));
-        result = enriched.filter(r => engTicketIds.has(r.ticket.id));
+        // PD ticket → task linkage via pdTicketId no longer available (operational_tasks dropped).
+        // Engineers see no PD tickets until linkage is re-modelled on work_items.
+        result = [];
       } else {
         result = enriched;
       }
@@ -228,18 +210,19 @@ export function registerPdRoutes(app: Express) {
           clientName: clients.name,
           clientClientId: clients.clientId,
           projectName: projectInfo.projectName,
-          projectPhase: projectInfo.phase,
+          projectPhase: projectExecutionState.phase,
         })
         .from(pdTickets)
         .leftJoin(clients, eq(pdTickets.clientId, clients.id))
         .leftJoin(projectInfo, eq(pdTickets.projectId, projectInfo.id))
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
         .where(eq(pdTickets.id, id));
 
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
 
-      const tasks = await db.select().from(operationalTasks)
-        .where(eq(operationalTasks.pdTicketId, id))
-        .orderBy(asc(operationalTasks.sortOrder), asc(operationalTasks.id));
+      // PD ticket → task linkage via pdTicketId no longer available (operational_tasks dropped).
+      // Returning empty task list until PD-ticket linkage is re-modelled on work_items.
+      const tasks: any[] = [];
 
       const taskIds = tasks.map(t => t.id);
       let recentActivity: any[] = [];
@@ -434,14 +417,16 @@ export function registerPdRoutes(app: Express) {
       const search = (req.query.search as string) || "";
       let query;
       if (search) {
-        query = db.select({ id: projectInfo.id, projectName: projectInfo.projectName, phase: projectInfo.phase, pd: projectInfo.pd })
+        query = db.select({ id: projectInfo.id, projectName: projectInfo.projectName, phase: projectExecutionState.phase, pd: projectInfo.pd })
           .from(projectInfo)
+          .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
           .where(ilike(projectInfo.projectName, `%${search}%`))
           .orderBy(asc(projectInfo.projectName))
           .limit(20);
       } else {
-        query = db.select({ id: projectInfo.id, projectName: projectInfo.projectName, phase: projectInfo.phase, pd: projectInfo.pd })
+        query = db.select({ id: projectInfo.id, projectName: projectInfo.projectName, phase: projectExecutionState.phase, pd: projectInfo.pd })
           .from(projectInfo)
+          .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
           .orderBy(asc(projectInfo.projectName))
           .limit(50);
       }
@@ -488,18 +473,18 @@ async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?: strin
   const spawned: any[] = [];
   for (let i = 0; i < templates.length; i++) {
     const tmpl = templates[i];
-    const [task] = await db.insert(operationalTasks).values({
+    if (!ticket.projectId) continue; // workItems requires a projectId
+    const [task] = await db.insert(workItems).values({
       projectId: ticket.projectId,
-      projectName,
+      workstream: "ENG",
+      source: "UI",
       title: `[PD] ${tmpl.title}`,
       description: `Auto-spawned from PD Ticket #${ticket.id} (${ticket.requestType}) for ${ticket.projectSiteName}`,
       status: "TO DO",
       priority: tmpl.priority === "High" ? "High" : "Medium",
-      dueDate: ticket.dueDate || null,
-      pdTicketId: ticket.id,
+      endDate: ticket.dueDate || null,
       sortOrder: i,
       createdBy: user?.id || null,
-      domain: "BOTH",
     }).returning();
 
     if (task) {

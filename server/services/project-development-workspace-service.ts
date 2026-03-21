@@ -4,7 +4,6 @@ import {
   intakeRequests,
   intakeTasks,
   msObjects,
-  operationalTasks,
   pdTickets,
   projectCommunicationTimelineEvents,
   projectEditableFields,
@@ -781,17 +780,7 @@ export async function getProjectDevelopmentWorkspace(params: {
           .from(intakeTasks)
           .where(inArray(intakeTasks.intakeRequestId, intakeRequestIds))
       : Promise.resolve([]),
-    pdTicketIds.length > 0
-      ? db
-          .select({
-            pdTicketId: operationalTasks.pdTicketId,
-            total: sql<number>`count(*)::int`,
-            completed: sql<number>`count(*) filter (where ${operationalTasks.status} = 'COMPLETE')::int`,
-          })
-          .from(operationalTasks)
-          .where(inArray(operationalTasks.pdTicketId, pdTicketIds))
-          .groupBy(operationalTasks.pdTicketId)
-      : Promise.resolve([]),
+    Promise.resolve([] as PdTicketTaskSource[]),
     workItemIds.length > 0
       ? db
           .select({

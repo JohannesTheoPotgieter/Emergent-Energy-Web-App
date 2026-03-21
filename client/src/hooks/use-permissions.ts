@@ -1,6 +1,15 @@
+/**
+ * Prompt 15 — Simplified permission hook
+ *
+ * Reads permissions from the server via /api/auth/permissions.
+ * Also exports useV2Permissions() for reading V2 API-embedded permissions
+ * from the React Query cache.
+ */
+
 import { useAuth } from "./use-auth";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { checkPermission, normalizeRoleForPermissions, PermissionEntity, PermissionAction } from "@shared/schema";
+import type { ProjectPermissions } from "@shared/api-types/project-v2";
 
 interface PermissionsResponse {
   role?: string;
@@ -50,4 +59,16 @@ export function usePermission(entity: PermissionEntity, action: PermissionAction
   // Fall back to hardcoded defaults
   const allowed = checkPermission(normalizeRoleForPermissions(user.role), entity, action);
   return { allowed, loading: false };
+}
+
+/**
+ * Read V2-embedded project permissions from the React Query cache.
+ * Returns null if the project hasn't been loaded via V2 yet.
+ */
+export function useV2ProjectPermissions(projectId: number | undefined): ProjectPermissions | null {
+  const queryClient = useQueryClient();
+  if (!projectId) return null;
+
+  const cached = queryClient.getQueryData<{ permissions?: ProjectPermissions }>(["v2-project-detail", projectId]);
+  return cached?.permissions ?? null;
 }

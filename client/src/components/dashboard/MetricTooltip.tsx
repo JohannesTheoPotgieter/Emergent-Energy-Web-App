@@ -142,7 +142,7 @@ export const EXECUTION_METHODOLOGIES = {
     formula:
       "Eng. Blockers = tasks with blocker_reason OR priority in [high, urgent, critical] OR status contains 'block'. Quality = open qc_warnings (status ≠ closed). Approvals = approvals with status = pending.",
     sources: [
-      "operational_tasks (engineering blockers)",
+      "work_items (engineering blockers)",
       "qc_warning (quality issues)",
       "approvals (pending approvals)",
       "smart_import_runs (import freshness)",
@@ -186,7 +186,7 @@ export const EXECUTION_METHODOLOGIES = {
     formula:
       'Tasks with blocker_reason set, OR priority in [high, urgent, critical], OR status contains "block"',
     sources: [
-      "operational_tasks (non-deleted, non-complete)",
+      "work_items (non-deleted, non-complete)",
       "Up to 5 items shown per project",
     ],
   } as MetricMethodology,

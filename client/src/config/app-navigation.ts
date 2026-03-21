@@ -20,7 +20,7 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Home",
     path: "/",
-    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/my-tool"]),
+    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work"]),
     secondary: [
       { label: "Home", path: "/" },
       { label: "My Work", path: "/my-work" },

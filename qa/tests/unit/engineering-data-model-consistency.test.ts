@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 /**
- * Tests for data model consistency after migration from operational_tasks to work_items.
+ * Tests for data model consistency — work_items is now the canonical table (operational_tasks removed).
  * Verifies that the adapter mapping produces expected response shapes.
  */
 

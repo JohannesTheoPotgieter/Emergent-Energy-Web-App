@@ -3,7 +3,8 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, desc, sql } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, projectPhaseHistory, users } from "@shared/schema";
+import { projectInfo, projectPhaseHistory, users, projectExecutionState } from "@shared/schema";
+import { syncProjectSplitTables } from "./lib/project-info-sync";
 import { logAuditFromReq } from "./audit-logger";
 import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
 import { storage } from "./storage";
@@ -151,10 +152,12 @@ export function registerHandoverRoutes(app: Express) {
       const [project] = await db.select({
         id: projectInfo.id,
         projectName: projectInfo.projectName,
-        phase: projectInfo.phase,
+        phase: projectExecutionState.phase,
         pd: projectInfo.pd,
         pm: projectInfo.pm,
-      }).from(projectInfo).where(eq(projectInfo.id, projectId));
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectInfo.id, projectId));
 
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -589,7 +592,9 @@ export function registerHandoverRoutes(app: Express) {
         } as any);
       }
       if (body.excelTrackerLink && body.status === "ACCEPTED") {
-        await db.update(projectInfo).set({ excelTrackerLink: body.excelTrackerLink, updatedAt: new Date() }).where(eq(projectInfo.id, projectId));
+        const trackerFields = { excelTrackerLink: body.excelTrackerLink, updatedAt: new Date() };
+        await db.update(projectInfo).set(trackerFields).where(eq(projectInfo.id, projectId));
+        await syncProjectSplitTables(projectId, trackerFields);
       }
       logAuditFromReq(req, {
         entityType: "pd_pm_handover",
@@ -718,7 +723,9 @@ export function registerHandoverRoutes(app: Express) {
       }
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       await db.execute(sql.raw(`UPDATE project_pd_pm_handover SET status = 'ACCEPTED', handover_status_text = 'Accepted', accepted_by = '${(user?.name || 'Unknown').replace(/'/g, "''")}', accepted_at = NOW(), updated_at = NOW(), rejection_reason = NULL WHERE project_id = ${projectId}`));
-      await db.update(projectInfo).set({ executionEnabled: true, executionGateStatus: "ENABLED", phase: "PM Active", updatedAt: new Date() }).where(eq(projectInfo.id, projectId));
+      const acceptFields = { executionEnabled: true, executionGateStatus: "ENABLED", phase: "PM Active", updatedAt: new Date() };
+      await db.update(projectInfo).set(acceptFields).where(eq(projectInfo.id, projectId));
+      await syncProjectSplitTables(projectId, acceptFields);
       if (project && user?.id && project.phase !== "PM Active") {
         await db.insert(projectPhaseHistory).values({
           projectId,
@@ -769,7 +776,9 @@ export function registerHandoverRoutes(app: Express) {
       }
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       await db.execute(sql.raw(`UPDATE project_pd_pm_handover SET status = 'REJECTED', handover_status_text = 'Rejected', rejected_by = '${(user?.name || 'Unknown').replace(/'/g, "''")}', rejected_at = NOW(), rejection_reason = '${reason.replace(/'/g, "''")}', updated_at = NOW() WHERE project_id = ${projectId}`));
-      await db.update(projectInfo).set({ executionEnabled: false, executionGateStatus: "NOT_ELIGIBLE", updatedAt: new Date() }).where(eq(projectInfo.id, projectId));
+      const rejectFields = { executionEnabled: false, executionGateStatus: "NOT_ELIGIBLE", updatedAt: new Date() };
+      await db.update(projectInfo).set(rejectFields).where(eq(projectInfo.id, projectId));
+      await syncProjectSplitTables(projectId, rejectFields);
       await insertPdPmHandoverHistory({
         projectId,
         req,
@@ -821,7 +830,9 @@ export function registerHandoverRoutes(app: Express) {
         return res.status(400).json({ error: "Excel tracker link can only be updated after handover is accepted." });
       }
 
-      await db.update(projectInfo).set({ excelTrackerLink: trackerLink, updatedAt: new Date() }).where(eq(projectInfo.id, projectId));
+      const excelFields = { excelTrackerLink: trackerLink, updatedAt: new Date() };
+      await db.update(projectInfo).set(excelFields).where(eq(projectInfo.id, projectId));
+      await syncProjectSplitTables(projectId, excelFields);
       logAuditFromReq(req, { entityType: "pd_pm_handover", entityId: String(projectId), action: "excel_tracker.updated", changesJson: { updatedBy: user?.name || "Unknown" } });
 
       res.json({ success: true });

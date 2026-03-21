@@ -5,6 +5,7 @@ import * as service from "../services/project-v2-service";
 import { ApiV2Error, asyncHandler, created, ok, paginationQuerySchema, validate } from "../utils/http";
 import { getProjectScope } from "../../../middleware/project-scope-middleware";
 import { scopeProjectIds } from "../../../services/project-access-service";
+import { computeProjectPermissions } from "../middleware/permission-helper";
 import {
   engineeringDesignCreateSchema,
   engineeringDesignPatchSchema,
@@ -318,3 +319,55 @@ export const lookupsByType = asyncHandler(async (req, res) => {
 });
 
 export const auditActivity = asyncHandler(async (_req, res) => ok(res, await service.auditActivityService()));
+
+// Prompt 12: Materialized dashboard metrics endpoint
+export const dashboardMetrics = asyncHandler(async (_req, res) => ok(res, await service.dashboardMetricsService()));
+export const dashboardRefresh = asyncHandler(async (_req, res) => ok(res, await service.dashboardRefreshService()));
+
+// ─── Prompt 14: Consolidated project endpoints with permissions ────
+
+export const projectDetailConsolidated = asyncHandler(async (req, res) => {
+  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
+  const [data, permissions] = await Promise.all([
+    service.getConsolidatedProjectService(projectId),
+    computeProjectPermissions(req),
+  ]);
+  ok(res, { ...data, permissions });
+});
+
+export const projectFinanceDetail = asyncHandler(async (req, res) => {
+  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
+  const [data, permissions] = await Promise.all([
+    service.getProjectFinanceDetailService(projectId),
+    computeProjectPermissions(req),
+  ]);
+  ok(res, { ...data, permissions });
+});
+
+export const projectPlanDetail = asyncHandler(async (req, res) => {
+  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
+  const workstream = req.query.workstream ? String(req.query.workstream) : undefined;
+  const [data, permissions] = await Promise.all([
+    service.getProjectPlanDetailService(projectId, workstream),
+    computeProjectPermissions(req),
+  ]);
+  ok(res, { ...data, permissions });
+});
+
+export const projectQualityDetail = asyncHandler(async (req, res) => {
+  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
+  const [data, permissions] = await Promise.all([
+    service.getProjectQualityDetailService(projectId),
+    computeProjectPermissions(req),
+  ]);
+  ok(res, { ...data, permissions });
+});
+
+export const projectEngineeringDetail = asyncHandler(async (req, res) => {
+  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
+  const [data, permissions] = await Promise.all([
+    service.getProjectEngineeringDetailService(projectId),
+    computeProjectPermissions(req),
+  ]);
+  ok(res, { ...data, permissions });
+});
