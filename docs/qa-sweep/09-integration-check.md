@@ -1,7 +1,7 @@
 # QA-09 — Cross-Module Integration Check
 
 **Date:** 2026-03-21
-**Status:** 🟡 PARTIAL — 6 broken links identified across 5 pipelines
+**Status:** ✅ ALL FIXED — 6 broken links identified and resolved across 5 pipelines
 
 ---
 
@@ -224,37 +224,19 @@ On Next Import
 
 ---
 
-## Summary of All Broken Links
+## Summary of All Broken Links — ALL FIXED
 
-| # | Pipeline | Broken Link | Severity | Fix Location |
-|---|----------|------------|----------|--------------|
-| 1 | Task → Dashboard | Extension tables (`work_item_pm`, etc.) not populated on `createWorkItem()` | Medium | `project-v2-repository.ts:80` — add extension inserts |
-| 2 | Task → Dashboard | `patchWorkItem()` does not trigger dashboard metrics refresh | Medium | `project-v2-service.ts:55-59` — add `refreshProjectMetricsAsync(projectId)` |
-| 3 | Phase → Audit | Main phase PATCH endpoint skips `project_phase_history` insert | High | `lifecycle-routes.ts:1401` — add insert after phase update |
-| 4 | QC → Dashboard | QC item updates do not trigger dashboard metrics refresh | Medium | `quality-routes.ts:695` — add `refreshProjectMetricsAsync()` after `recalculateWarnings()` |
-| 5 | Override → Dashboard | Finance edit routes do not trigger dashboard metrics refresh | Medium | `finance-routes.ts` — add `refreshProjectMetricsAsync()` in edit handlers |
-| 6 | Override → Dashboard | `refreshProjectMetricsAsync` imported but unused in finance-routes | Low | Already imported at line 34, just needs to be called |
+| # | Pipeline | Broken Link | Severity | Fix Applied |
+|---|----------|------------|----------|-------------|
+| 1 | Task → Dashboard | Extension tables (`work_item_pm`, etc.) not populated on `createWorkItem()` | Medium | ✅ FIXED — `project-v2-repository.ts:createWorkItem()` now inserts into all 3 extension tables |
+| 2 | Task → Dashboard | `patchWorkItem()` does not trigger dashboard metrics refresh | Medium | ✅ FIXED — `project-v2-service.ts:patchWorkItemService()` and `createWorkItemService()` now call `refreshProjectMetricsAsync(projectId)` |
+| 3 | Phase → Audit | Main phase PATCH endpoint skips `project_phase_history` insert | High | ✅ FIXED — `lifecycle-routes.ts` PATCH phase now inserts into `projectPhaseHistory` with fromPhase, toPhase, changedByUserId, reason |
+| 4 | QC → Dashboard | QC item updates do not trigger dashboard metrics refresh | Medium | ✅ FIXED — `quality-routes.ts` item update and approve endpoints now resolve projectId and call `refreshProjectMetricsAsync()` |
+| 5 | Override → Dashboard | Finance edit routes do not trigger dashboard metrics refresh | Medium | ✅ FIXED — Added `refreshProjectMetricsAsync()` to: toggle-realised, expenditure/overrides, revenue-tab date-override, expense-task-links date-override, finance/revenue/overrides, finance/cos/overrides |
+| 6 | Override → Dashboard | `refreshProjectMetricsAsync` imported but unused in finance-routes | Low | ✅ FIXED — Now used in 6 finance edit endpoints |
 
 ---
 
-## Recommendations
+## Recommendation (Future)
 
-### Immediate Fixes (High Priority)
-
-1. **Add `project_phase_history` insert to lifecycle PATCH endpoint**
-   - File: `server/lifecycle-routes.ts` near line 1401
-   - Insert: `{ projectId, fromPhase, toPhase, changedByUserId, reason }`
-
-2. **Wire `refreshProjectMetricsAsync()` into all data mutation paths**
-   - `quality-routes.ts:695` — after `recalculateWarnings()`
-   - `project-v2-service.ts:55-59` — after `patchWorkItem()`
-   - `finance-routes.ts` — in all override/edit handlers (import already present)
-
-### Near-Term Fixes (Medium Priority)
-
-3. **Populate extension tables on work item creation**
-   - `project-v2-repository.ts:80` — add conditional inserts to `work_item_pm`, `work_item_engineering`, `work_item_scheduling` based on payload
-
-4. **Consider event-driven metrics refresh**
-   - Currently metrics refresh is coupled to specific route handlers
-   - A centralized approach (e.g., call refresh on any write to finance/task/QC tables) would prevent future gaps
+- **Consider event-driven metrics refresh** — Currently metrics refresh is coupled to specific route handlers. A centralized approach (e.g., call refresh on any write to finance/task/QC tables) would prevent future gaps.
