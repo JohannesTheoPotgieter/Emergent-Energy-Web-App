@@ -1,6 +1,6 @@
 // @ts-nocheck
 import type { Request } from "express";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   approvals,
   changeRequests,
@@ -739,6 +739,85 @@ export async function getAssignmentsForEntity(
   const legacy = await getLegacyAssignments(db, entityType, entityId);
   if (!assignmentRole) return legacy;
   return legacy.filter((assignment) => assignment.assignmentRole === assignmentRole);
+}
+
+/**
+ * Batch-fetch assignments for multiple entities of the same type in a single query.
+ * Eliminates N+1 patterns by fetching all canonical assignments at once.
+ */
+export async function getAssignmentsForEntities(
+  entityType: AssignmentEntityType,
+  entityIds: number[],
+  assignmentRole?: AssignmentRole,
+): Promise<Map<number, ResolvedAssignment[]>> {
+  const result = new Map<number, ResolvedAssignment[]>();
+  if (entityIds.length === 0) return result;
+
+  // Initialize all IDs with empty arrays
+  for (const id of entityIds) result.set(id, []);
+
+  const conditions = [
+    eq(entityAssignments.entityType, entityType),
+    inArray(entityAssignments.entityId, entityIds),
+    eq(entityAssignments.active, true),
+  ];
+  if (assignmentRole) {
+    conditions.push(eq(entityAssignments.assignmentRole, assignmentRole));
+  }
+
+  const rows = await db
+    .select()
+    .from(entityAssignments)
+    .where(and(...conditions))
+    .orderBy(desc(entityAssignments.assignedAt), desc(entityAssignments.id));
+
+  // Batch-resolve all unique assignee targets
+  const uniqueTargets = new Map<string, { type: AssigneeType; id: number }>();
+  for (const row of rows) {
+    const key = `${row.assigneeType}:${row.assigneeId}`;
+    if (!uniqueTargets.has(key)) {
+      uniqueTargets.set(key, { type: row.assigneeType as AssigneeType, id: row.assigneeId });
+    }
+  }
+
+  const resolvedMap = new Map<string, AssignableDirectoryEntry | null>();
+  const resolveEntries = Array.from(uniqueTargets.entries());
+  const resolvedResults = await Promise.all(
+    resolveEntries.map(([, target]) => resolveAssignableTarget(target.type, target.id)),
+  );
+  resolveEntries.forEach(([key], index) => {
+    resolvedMap.set(key, resolvedResults[index]);
+  });
+
+  // Group rows by entity ID and build resolved assignments
+  for (const row of rows) {
+    const key = `${row.assigneeType}:${row.assigneeId}`;
+    const resolved = resolvedMap.get(key);
+    const assignment: ResolvedAssignment = {
+      id: row.id,
+      entityType,
+      entityId: row.entityId,
+      assignmentRole: row.assignmentRole as AssignmentRole,
+      assigneeType: row.assigneeType as AssigneeType,
+      assigneeId: row.assigneeId,
+      displayLabel: resolved?.displayLabel || row.displayLabelSnapshot,
+      displayLabelSnapshot: row.displayLabelSnapshot,
+      secondaryLabel: resolved?.secondaryLabel || null,
+      active: Boolean(row.active),
+    };
+    result.get(row.entityId)!.push(assignment);
+  }
+
+  // For entities with no canonical assignments, fall back to legacy per-entity
+  for (const id of entityIds) {
+    if (result.get(id)!.length === 0) {
+      const legacy = await getLegacyAssignments(db, entityType, id);
+      const filtered = assignmentRole ? legacy.filter((a) => a.assignmentRole === assignmentRole) : legacy;
+      result.set(id, filtered);
+    }
+  }
+
+  return result;
 }
 
 async function canSelfManageAssignment(entityType: AssignmentEntityType, entityId: number, userId: number, role: string): Promise<boolean> {

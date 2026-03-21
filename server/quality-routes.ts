@@ -17,7 +17,7 @@ import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
-import { getAssignmentsForEntity, setEntityAssignment } from "./services/assignment-service";
+import { getAssignmentsForEntity, getAssignmentsForEntities, setEntityAssignment } from "./services/assignment-service";
 import {
   computeQualityRiskSummary,
   evaluateQualityGovernanceItem,
@@ -563,10 +563,7 @@ export function registerQualityRoutes(app: Express) {
 
       const itemIds = itemInstances.map(i => i.id);
       const evidence = itemIds.length ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemIds)) : [];
-      const assignmentEntries = await Promise.all(
-        itemIds.map(async (itemId) => [itemId, await getAssignmentsForEntity("quality_item", itemId, "ASSIGNEE")] as const),
-      );
-      const assignmentMap = new Map(assignmentEntries);
+      const assignmentMap = await getAssignmentsForEntities("quality_item", itemIds, "ASSIGNEE");
 
       const templateId = checklist.templateId;
       const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, templateId));

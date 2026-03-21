@@ -28,6 +28,7 @@ import {
   listAssignableDirectory,
   listAssignableDirectoryForTaskSource,
   getAssignmentsForEntity,
+  getAssignmentsForEntities,
   mapTaskSourceToEntityType,
   setEntityAssignment,
 } from "./services/assignment-service";
@@ -610,10 +611,7 @@ export function registerMsSyncRoutes(app: Express) {
             .where(eq(approvals.status, "pending"))
             .orderBy(desc(approvals.requestedAt));
 
-          const generalAssignmentEntries = await Promise.all(
-            generalApprovals.map(async (approval) => [approval.id, await getAssignmentsForEntity("approval", approval.id, "APPROVER")] as const),
-          );
-          const generalAssignmentsById = new Map(generalAssignmentEntries);
+          const generalAssignmentsById = await getAssignmentsForEntities("approval", generalApprovals.map((a) => a.id), "APPROVER");
 
           let filteredGeneral = generalApprovals;
           if (!isAdmin) {
