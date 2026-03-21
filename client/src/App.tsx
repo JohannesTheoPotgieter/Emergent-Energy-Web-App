@@ -7,80 +7,86 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NetworkStatus } from "@/components/NetworkStatus";
 import AppLayout from "@/components/layout/AppLayout";
-import LoginPage from "@/pages/login";
-import Dashboard from "@/pages/dashboard";
-import HomePage from "@/pages/home";
-import ProjectLifecyclePage from "@/pages/project-lifecycle";
-import ProjectsSummary from "@/pages/projects";
-import CashflowPage from "@/pages/cashflow";
-import RevenueTrackerPage from "@/pages/revenue-tracker";
-import CostTracker from "@/pages/cos";
-import GpTrackerPage from "@/pages/gp-tracker";
-import NotFound from "@/pages/not-found";
-import ProjectDetailPage from "@/pages/project-detail";
-import MyToolAdminSettingsPage from "@/pages/my-tool-admin-settings";
-import MyToolPrioritiesPage from "@/pages/my-tool-priorities";
-import MyToolMeetingsPage from "@/pages/my-tool-meetings";
-import QmDashboardPage from "@/pages/qm-dashboard";
-import EngineeringDashboardPage from "@/pages/engineering-dashboard";
-import EngineeringTasksPage from "@/pages/engineering-tasks";
-import EngineeringAuditPage from "@/pages/engineering-audit";
-import LifecycleBoardPage from "@/pages/lifecycle-board";
-import ExecutionBoardPage from "@/pages/execution-board";
-import SmartImportPage from "@/pages/smart-import";
-import SharePointIntakePage from "@/pages/SharePointIntakePage";
-import InvoicePatternsPage from "@/pages/invoice-patterns";
-import SubcontractorDashboardPage from "@/pages/subcontractor-dashboard";
-import CounterpartiesPage from "@/pages/counterparties";
-import SystemActivityLogPage from "@/pages/system-activity-log";
-import WeeklyReviewsPage from "@/pages/weekly-reviews";
-import AdminRolesPage from "@/pages/admin-roles";
-import LeaderboardPage from "@/pages/leaderboard";
-import FeedbackPage from "@/pages/feedback";
-import EeInfoPage from "@/pages/ee-info";
-import TrainingPage from "@/pages/training";
-import PortfoliosPage from "@/pages/portfolios";
-import PortfolioDetailPage from "@/pages/portfolio-detail";
-import PdDashboardPage from "@/pages/pd-dashboard";
-import PdTicketsPage from "@/pages/pd-tickets";
-import PdTicketCreatePage from "@/pages/pd-ticket-create";
-import PdTicketDetailPage from "@/pages/pd-ticket-detail";
-import MsCallbackPage from "@/pages/ms-callback";
-import TeamsChatsPage from "@/pages/teams-chats";
-import CollaborationPage from "@/pages/collaboration";
-import CollabEmailPage from "@/pages/collab-email";
-import CollabTeamsPage from "@/pages/collab-teams";
-import FinancialLinkingPage from "@/pages/financial-linking";
-import PMOnTheGoHome from "@/pages/pm-on-the-go-home";
-import PMOnTheGoProject from "@/pages/pm-on-the-go-project";
-import MyWorkHomePage from "@/pages/my-work-home";
-import MyWorkTasksPage from "@/pages/my-work-tasks";
-import MyWorkCalendarPage from "@/pages/my-work-calendar";
-import ApprovalsPage from "@/pages/admin-approvals";
-import PMDeliverablesPage from "@/pages/pm-deliverables";
-import DatabaseMigrationPage from "@/pages/database-migration";
-import ClientsPage from "@/pages/clients";
-import ImportControlTowerPage from "@/pages/import-control-tower";
-import ProgrammeReportsPage from "@/pages/programme-reports";
-import KpiTraceabilityPage from "@/pages/kpi-traceability";
-import AdminRecoveryPage from "@/pages/admin-recovery";
-import AdminControlCenterPage from "@/pages/admin-control-center";
-import ActionLaunchpadPage from "@/pages/action-launchpad";
-import PdPmHandoverPage from "@/pages/pd-pm-handover";
-import PmHandoverReviewPage from "@/pages/pm-handover-review";
-import HandoverControlPage from "@/pages/handover-control";
-import FyeRevenueTrackingPage from "@/pages/fye-revenue-tracking";
-import TaskManagementPage from "@/pages/task-management";
-import StandupsPage from "@/pages/standups";
-import ExceptionsPage from "@/pages/exceptions";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { checkPermission, normalizeRoleForPermissions } from "@shared/schema";
-import { ShieldAlert, ArrowLeft } from "lucide-react";
+import { ShieldAlert, ArrowLeft, Loader2 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PAGE_REGISTRY, ROLE_LANDING_PAGE, getPermissionEntityForPath } from "@/config/page-registry";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
+
+// Eagerly loaded pages (critical path — login, home, not-found)
+import LoginPage from "@/pages/login";
+import HomePage from "@/pages/home";
+import NotFound from "@/pages/not-found";
+import MsCallbackPage from "@/pages/ms-callback";
+
+// Lazy-loaded pages (code-split into separate chunks)
+const Dashboard = lazy(() => import("@/pages/dashboard"));
+const ProjectLifecyclePage = lazy(() => import("@/pages/project-lifecycle"));
+const ProjectsSummary = lazy(() => import("@/pages/projects"));
+const CashflowPage = lazy(() => import("@/pages/cashflow"));
+const RevenueTrackerPage = lazy(() => import("@/pages/revenue-tracker"));
+const CostTracker = lazy(() => import("@/pages/cos"));
+const GpTrackerPage = lazy(() => import("@/pages/gp-tracker"));
+const ProjectDetailPage = lazy(() => import("@/pages/project-detail"));
+const MyToolAdminSettingsPage = lazy(() => import("@/pages/my-tool-admin-settings"));
+const MyToolPrioritiesPage = lazy(() => import("@/pages/my-tool-priorities"));
+const MyToolMeetingsPage = lazy(() => import("@/pages/my-tool-meetings"));
+const QmDashboardPage = lazy(() => import("@/pages/qm-dashboard"));
+const EngineeringDashboardPage = lazy(() => import("@/pages/engineering-dashboard"));
+const EngineeringTasksPage = lazy(() => import("@/pages/engineering-tasks"));
+const EngineeringAuditPage = lazy(() => import("@/pages/engineering-audit"));
+const RoleSettingsPage = lazy(() => import("@/pages/role-settings"));
+const LifecycleBoardPage = lazy(() => import("@/pages/lifecycle-board"));
+const ExecutionBoardPage = lazy(() => import("@/pages/execution-board"));
+const SmartImportPage = lazy(() => import("@/pages/smart-import"));
+const SharePointIntakePage = lazy(() => import("@/pages/SharePointIntakePage"));
+const InvoicePatternsPage = lazy(() => import("@/pages/invoice-patterns"));
+const SubcontractorDashboardPage = lazy(() => import("@/pages/subcontractor-dashboard"));
+const CounterpartiesPage = lazy(() => import("@/pages/counterparties"));
+const SystemActivityLogPage = lazy(() => import("@/pages/system-activity-log"));
+const WeeklyReviewsPage = lazy(() => import("@/pages/weekly-reviews"));
+const AdminRolesPage = lazy(() => import("@/pages/admin-roles"));
+const LeaderboardPage = lazy(() => import("@/pages/leaderboard"));
+const FeedbackPage = lazy(() => import("@/pages/feedback"));
+const EeInfoPage = lazy(() => import("@/pages/ee-info"));
+const TrainingPage = lazy(() => import("@/pages/training"));
+const PMDashboard = lazy(() => import("@/pages/pm-dashboard"));
+const PortfoliosPage = lazy(() => import("@/pages/portfolios"));
+const PortfolioDetailPage = lazy(() => import("@/pages/portfolio-detail"));
+const PdDashboardPage = lazy(() => import("@/pages/pd-dashboard"));
+const PdTicketsPage = lazy(() => import("@/pages/pd-tickets"));
+const PdTicketCreatePage = lazy(() => import("@/pages/pd-ticket-create"));
+const PdTicketDetailPage = lazy(() => import("@/pages/pd-ticket-detail"));
+const TeamsChatsPage = lazy(() => import("@/pages/teams-chats"));
+const CollaborationPage = lazy(() => import("@/pages/collaboration"));
+const CollabEmailPage = lazy(() => import("@/pages/collab-email"));
+const CollabTeamsPage = lazy(() => import("@/pages/collab-teams"));
+const FinancialLinkingPage = lazy(() => import("@/pages/financial-linking"));
+const PMOnTheGoHome = lazy(() => import("@/pages/pm-on-the-go-home"));
+const PMOnTheGoProject = lazy(() => import("@/pages/pm-on-the-go-project"));
+const MyWorkHomePage = lazy(() => import("@/pages/my-work-home"));
+const MyWorkTasksPage = lazy(() => import("@/pages/my-work-tasks"));
+const MyWorkCalendarPage = lazy(() => import("@/pages/my-work-calendar"));
+const ApprovalsPage = lazy(() => import("@/pages/admin-approvals"));
+const PMDeliverablesPage = lazy(() => import("@/pages/pm-deliverables"));
+const DatabaseMigrationPage = lazy(() => import("@/pages/database-migration"));
+const ClientsPage = lazy(() => import("@/pages/clients"));
+const ImportControlTowerPage = lazy(() => import("@/pages/import-control-tower"));
+const ProgrammeReportsPage = lazy(() => import("@/pages/programme-reports"));
+const KpiTraceabilityPage = lazy(() => import("@/pages/kpi-traceability"));
+const AdminRecoveryPage = lazy(() => import("@/pages/admin-recovery"));
+const AdminControlCenterPage = lazy(() => import("@/pages/admin-control-center"));
+const ActionLaunchpadPage = lazy(() => import("@/pages/action-launchpad"));
+const PdPmHandoverPage = lazy(() => import("@/pages/pd-pm-handover"));
+const PmHandoverReviewPage = lazy(() => import("@/pages/pm-handover-review"));
+const HandoverControlPage = lazy(() => import("@/pages/handover-control"));
+const FyeRevenueTrackingPage = lazy(() => import("@/pages/fye-revenue-tracking"));
+const TaskManagementPage = lazy(() => import("@/pages/task-management"));
+const StandupsPage = lazy(() => import("@/pages/standups"));
+const ExceptionsPage = lazy(() => import("@/pages/exceptions"));
 
 const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups"];
 const PM_ALLOWED_PATHS = ["/", "/dashboard", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm-dashboard", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups"];
@@ -300,6 +306,7 @@ function ProtectedPages() {
   return (
     <RoleGuard>
     <AppLayout>
+      <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
       <div key={location} className="page-enter">
         <Switch>
           <Route path="/" component={HomePage} />
@@ -312,6 +319,7 @@ function ProtectedPages() {
           <Route component={NotFound} />
         </Switch>
       </div>
+      </Suspense>
     </AppLayout>
     </RoleGuard>
   );

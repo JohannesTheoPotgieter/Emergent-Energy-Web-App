@@ -219,8 +219,8 @@ export default function MyWorkCalendarPage() {
       const res = await fetch("/api/outlook/status", { headers: authHeaders(), credentials: "include" });
       return res.json();
     },
-    staleTime: 0,
-    gcTime: 0,
+    staleTime: 10_000,
+    gcTime: 60_000,
   });
 
   const { data: outlookEvents = [], isLoading: outlookLoading } = useQuery<OutlookEvent[]>({
@@ -235,8 +235,8 @@ export default function MyWorkCalendarPage() {
       return Array.isArray(data) ? data.filter((e: OutlookEvent) => !e.isCancelled) : [];
     },
     enabled: connectionStatus !== undefined,
-    staleTime: 0,
-    gcTime: 0,
+    staleTime: 10_000,
+    gcTime: 60_000,
   });
 
   const { data: allTaskData, isLoading: tasksLoading } = useQuery<any>({
@@ -249,8 +249,8 @@ export default function MyWorkCalendarPage() {
       if (!res.ok) return null;
       return res.json();
     },
-    staleTime: 0,
-    gcTime: 0,
+    staleTime: 10_000,
+    gcTime: 60_000,
   });
 
   const { data: msActionItems = [] } = useQuery<Array<{ id: number; type: string; subject_or_title: string; preview: string | null; web_link: string | null; received_or_start_datetime: string | null; action_required: boolean }>>({

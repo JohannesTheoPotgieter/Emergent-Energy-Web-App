@@ -1539,7 +1539,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
     const id = parseInt(String(req.params.id || ""), 10);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
 
-    const { realised } = req.body as { realised: boolean };
+    const { realised, expectedUpdatedAt } = req.body as { realised: boolean; expectedUpdatedAt?: string };
     if (typeof realised !== 'boolean') return res.status(400).json({ error: "realised (boolean) required" });
 
     const allExpenses = await storage.getAllProgramExpenses();
@@ -1556,7 +1556,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
 
     const updated = await storage.updateProgramExpenseFields(id, {
       invoiceDateConfirmed: realised,
-    });
+    }, expectedUpdatedAt);
 
     if (!updated) {
       return res.status(500).json({ error: "Failed to update expense fields" });
@@ -1568,6 +1568,9 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
     });
 
     res.json({ success: true, id, realised });
+
+    // Refresh dashboard metrics for the affected project
+    if (expense.projectId) refreshProjectMetricsAsync(expense.projectId);
   } catch (error) {
     console.error("Toggle realised error:", error);
     res.status(500).json({ error: "Failed to toggle realised status" });
@@ -1580,11 +1583,12 @@ router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin,
   try {
     const id = parseInt(String(req.params.id || ""), 10);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid cost line id" });
-    const { noRevenueLinked } = req.body as { noRevenueLinked: boolean };
+    const { noRevenueLinked, expectedUpdatedAt } = req.body as { noRevenueLinked: boolean; expectedUpdatedAt?: string };
     if (typeof noRevenueLinked !== 'boolean') return res.status(400).json({ error: "noRevenueLinked (boolean) required" });
-    await storage.updateProgramExpenseFields(id, { noRevenueLinked });
+    await storage.updateProgramExpenseFields(id, { noRevenueLinked }, expectedUpdatedAt);
     res.json({ success: true, id, noRevenueLinked });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.status === 409) return res.status(409).json({ error: error.message });
     console.error("Toggle no-revenue-linked error:", error);
     res.status(500).json({ error: "Failed to toggle no-revenue-linked" });
   }
@@ -3485,6 +3489,15 @@ router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireA
     }
 
     res.json({ success: true });
+
+    // Refresh dashboard metrics for this project
+    try {
+      const allProjectInfoRows = await storage.getAllProjectInfo();
+      const proj = allProjectInfoRows.find((p: any) => p.projectName === projectName);
+      if (proj) refreshProjectMetricsAsync(proj.id);
+    } catch (metricsErr: any) {
+      console.warn("[finance] Revenue date override metrics refresh failed:", metricsErr.message);
+    }
   } catch (error) {
     console.error("Date override error:", error);
     res.status(500).json({ error: "Failed to save date override" });
@@ -3661,6 +3674,18 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
     }
 
     res.json({ message: "Expenditure overrides saved and applied", count: saved.length, overrides: saved });
+
+    // Refresh dashboard metrics for affected projects
+    try {
+      const allProjectInfoRows = await storage.getAllProjectInfo();
+      const nameToId = new Map(allProjectInfoRows.map((p: any) => [p.projectName, p.id]));
+      for (const pn of projectNames) {
+        const pid = nameToId.get(pn);
+        if (pid) refreshProjectMetricsAsync(pid);
+      }
+    } catch (metricsErr: any) {
+      console.warn("[finance] Expenditure override metrics refresh failed:", metricsErr.message);
+    }
   } catch (error) {
     console.error("Failed to save expenditure overrides:", error);
     res.status(500).json({ error: "Failed to save expenditure overrides", message: error instanceof Error ? error.message : "Failed to save expenditure overrides" });
@@ -3754,9 +3779,19 @@ router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, re
 router.post("/api/expense-task-links/:projectName/:expenseId/date-override", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
     const { dateOverride, reason } = req.body;
-    await storage.updateExpenseTaskLinkDateOverride(req.params.projectName, parseInt(req.params.expenseId), dateOverride, reason);
+    const expProjectName = req.params.projectName;
+    await storage.updateExpenseTaskLinkDateOverride(expProjectName, parseInt(req.params.expenseId), dateOverride, reason);
 
     res.json({ success: true });
+
+    // Refresh dashboard metrics for this project
+    try {
+      const allProjectInfoRows = await storage.getAllProjectInfo();
+      const proj = allProjectInfoRows.find((p: any) => p.projectName === expProjectName);
+      if (proj) refreshProjectMetricsAsync(proj.id);
+    } catch (metricsErr: any) {
+      console.warn("[finance] Expense date override metrics refresh failed:", metricsErr.message);
+    }
   } catch (error) {
     res.status(500).json({ error: "Failed to save date override" });
   }
@@ -4228,6 +4263,19 @@ router.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, require
     } catch (auditErr: any) { console.warn("[audit] Finance revenue override audit failed:", auditErr.message); }
 
     res.json({ message: "Finance revenue overrides saved", count: saved.length, overrides: saved });
+
+    // Refresh dashboard metrics for affected projects
+    try {
+      const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))];
+      const allProjectInfoRows = await storage.getAllProjectInfo();
+      const nameToId = new Map(allProjectInfoRows.map((p: any) => [p.projectName, p.id]));
+      for (const pn of projectNames) {
+        const pid = nameToId.get(pn);
+        if (pid) refreshProjectMetricsAsync(pid);
+      }
+    } catch (metricsErr: any) {
+      console.warn("[finance] Finance revenue override metrics refresh failed:", metricsErr.message);
+    }
   } catch (error) {
     res.status(500).json({ error: "Failed to save finance revenue overrides", message: error instanceof Error ? error.message : "Failed to save finance revenue overrides" });
   }
@@ -4290,6 +4338,19 @@ router.post("/api/finance/cos/overrides", requireAuth, requireAdmin, requirePerm
     } catch (auditErr: any) { console.warn("[audit] Finance COS override audit failed:", auditErr.message); }
 
     res.json({ message: "Finance COS overrides saved", count: saved.length, overrides: saved });
+
+    // Refresh dashboard metrics for affected projects
+    try {
+      const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))];
+      const allProjectInfoRows = await storage.getAllProjectInfo();
+      const nameToId = new Map(allProjectInfoRows.map((p: any) => [p.projectName, p.id]));
+      for (const pn of projectNames) {
+        const pid = nameToId.get(pn);
+        if (pid) refreshProjectMetricsAsync(pid);
+      }
+    } catch (metricsErr: any) {
+      console.warn("[finance] Finance COS override metrics refresh failed:", metricsErr.message);
+    }
   } catch (error) {
     res.status(500).json({ error: "Failed to save finance COS overrides", message: error instanceof Error ? error.message : "Failed to save finance COS overrides" });
   }

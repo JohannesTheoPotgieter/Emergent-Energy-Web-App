@@ -9,7 +9,7 @@ import { deliverables, projectInfo, normalizedCostLines, normalizedRevenueLines,
 import { logAuditFromReq } from "./audit-logger";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { requirePermission } from "./permission-middleware";
-import { getAssignmentsForEntity, setEntityAssignment } from "./services/assignment-service";
+import { getAssignmentsForEntity, getAssignmentsForEntities, setEntityAssignment } from "./services/assignment-service";
 
 const uploadDir = path.join(process.cwd(), "uploads", "_private_deliverables");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -237,10 +237,8 @@ export function registerDeliverableCaptureRoutes(app: Express) {
       `);
 
       const serializedRows = (rows.rows || []) as any[];
-      const assignmentEntries = await Promise.all(
-        serializedRows.map(async (row) => [Number(row.id), await getAssignmentsForEntity("deliverable", Number(row.id))] as const),
-      );
-      const assignmentMap = new Map(assignmentEntries);
+      const deliverableIds = serializedRows.map((row) => Number(row.id));
+      const assignmentMap = await getAssignmentsForEntities("deliverable", deliverableIds);
 
       res.json(serializedRows.map((row) => ({
         ...row,
