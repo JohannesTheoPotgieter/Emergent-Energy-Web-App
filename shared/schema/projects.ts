@@ -190,7 +190,7 @@ export const projectRevenueSummary = pgTable("project_revenue_summary", {
   actualMargin: decimal("actual_margin", { precision: 6, scale: 4 }),
   voPmLimit: decimal("vo_pm_limit", { precision: 15, scale: 2 }),
   currentVoTotal: decimal("current_vo_total", { precision: 15, scale: 2 }),
-  projectId: integer("project_id").references(() => projectInfo.id),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
   capturedAt: timestamp("captured_at").notNull().defaultNow(),
   // Temporal columns (Prompt 9)
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),

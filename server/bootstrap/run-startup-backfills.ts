@@ -4,6 +4,7 @@ import { runUserAssignmentBackfill } from "./backfills/user-assignment-backfill"
 import { runMsAssignmentCleanup } from "./backfills/ms-assignment-cleanup-backfill";
 import { runWorkItemsBackfill } from "./backfills/work-items-backfill";
 import { runAssigneeUserIdsBackfill } from "./backfills/assignee-user-ids-backfill";
+import { runIntegrityGuard } from "./backfills/integrity-guard";
 
 export async function runStartupBackfills(options: {
   startupBackfillEnabled: boolean;
@@ -22,5 +23,8 @@ export async function runStartupBackfills(options: {
   );
   await runAssigneeUserIdsBackfill(log).catch((err: any) =>
     log(`[Backfill] assignee_user_ids sync error: ${err?.message || err}`, "Startup:Backfill"),
+  );
+  await runIntegrityGuard(log).catch((err: any) =>
+    log(`[Backfill] integrity guard error: ${err?.message || err}`, "Startup:Backfill"),
   );
 }

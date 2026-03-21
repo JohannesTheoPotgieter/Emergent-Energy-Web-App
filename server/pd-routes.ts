@@ -228,7 +228,7 @@ export function registerPdRoutes(app: Express) {
       let recentActivity: any[] = [];
       if (taskIds.length > 0) {
         recentActivity = await db.select().from(taskActivityLog)
-          .where(sql`${taskActivityLog.taskId} IN (${sql.raw(taskIds.join(","))})`)
+          .where(sql`${taskActivityLog.workItemId} IN (${sql.raw(taskIds.join(","))})`)
           .orderBy(desc(taskActivityLog.createdAt))
           .limit(20);
       }
@@ -489,10 +489,10 @@ async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?: strin
 
     if (task) {
       await db.insert(taskActivityLog).values({
-        taskId: task.id,
-        userId: user?.id || null,
-        action: "created",
-        details: `Task auto-spawned from PD Ticket #${ticket.id} (${ticket.requestType})`,
+        workItemId: task.id,
+        actorId: user?.id || null,
+        actionType: "created",
+        newValue: `Task auto-spawned from PD Ticket #${ticket.id} (${ticket.requestType})`,
       });
       spawned.push(task);
     }

@@ -38,8 +38,7 @@ export const TASK_BUCKET_LABELS: Record<TaskBucket, string> = {
 
 export const taskComments = pgTable("task_comments", {
   id: serial("id").primaryKey(),
-  taskId: integer("task_id").notNull(),
-  workItemId: integer("work_item_id").references(() => workItems.id, { onDelete: "cascade" }),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
   authorId: integer("author_id").references(() => users.id),
   body: text("body").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -51,8 +50,7 @@ export type TaskComment = typeof taskComments.$inferSelect;
 
 export const taskChecklists = pgTable("task_checklists", {
   id: serial("id").primaryKey(),
-  taskId: integer("task_id").notNull(),
-  workItemId: integer("work_item_id").references(() => workItems.id, { onDelete: "cascade" }),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -77,8 +75,7 @@ export type TaskChecklistItem = typeof taskChecklistItems.$inferSelect;
 
 export const taskAttachments = pgTable("task_attachments", {
   id: serial("id").primaryKey(),
-  taskId: integer("task_id").notNull(),
-  workItemId: integer("work_item_id").references(() => workItems.id, { onDelete: "cascade" }),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
   filename: text("filename").notNull(),
   url: text("url").notNull(),
   mimeType: text("mime_type"),
@@ -93,8 +90,7 @@ export type TaskAttachment = typeof taskAttachments.$inferSelect;
 
 export const taskDeliverables = pgTable("task_deliverables", {
   id: serial("id").primaryKey(),
-  taskId: integer("task_id").notNull(),
-  workItemId: integer("work_item_id").references(() => workItems.id, { onDelete: "cascade" }),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
   filename: text("filename").notNull(),
   originalName: text("original_name").notNull(),
   fileSize: integer("file_size"),
@@ -112,8 +108,7 @@ export type TaskDeliverable = typeof taskDeliverables.$inferSelect;
 
 export const taskActivityLog = pgTable("task_activity_log", {
   id: serial("id").primaryKey(),
-  taskId: integer("task_id").notNull(),
-  workItemId: integer("work_item_id").references(() => workItems.id, { onDelete: "cascade" }),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
   actorId: integer("actor_id").references(() => users.id),
   actionType: text("action_type").notNull(),
   fieldName: text("field_name"),
@@ -130,8 +125,7 @@ export type TaskActivityLog = typeof taskActivityLog.$inferSelect;
 
 export const taskWatchers = pgTable("task_watchers", {
   id: serial("id").primaryKey(),
-  taskId: integer("task_id").notNull(),
-  workItemId: integer("work_item_id").references(() => workItems.id, { onDelete: "cascade" }),
+  workItemId: integer("work_item_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
   userId: integer("user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -177,7 +171,7 @@ export const workItems = pgTable("work_items", {
   sourceRow: integer("source_row"),
   sourceSheet: text("source_sheet"),
   importRunId: integer("import_run_id"),
-  createdBy: integer("created_by").references(() => users.id),
+  createdBy: integer("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),

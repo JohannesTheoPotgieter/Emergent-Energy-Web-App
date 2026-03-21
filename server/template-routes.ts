@@ -219,7 +219,7 @@ async function applyTemplate(
           }).returning();
 
           await db.insert(taskActivityLog).values({
-            taskId: task.id,
+            workItemId: task.id,
             actorId: actorUserId,
             actionType: "created",
             newValue: `${item.title} (template-generated, key: ${item.itemKey})`,

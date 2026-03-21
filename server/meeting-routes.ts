@@ -12,6 +12,7 @@ import {
   projectInfo,
   users,
 } from "@shared/schema";
+import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { z } from "zod";
 import { requirePermission } from "./permission-middleware";
 
@@ -389,15 +390,18 @@ export function registerMeetingRoutes(app: Express) {
       const overrides = req.body || {};
       const projectName = overrides.projectName || actionItem.text.substring(0, 100);
 
-      const [project] = await db
-        .insert(projectInfo)
-        .values({
+      const insertValues = {
           projectName,
           sizeKwp: overrides.sizeKwp || null,
           pd: overrides.pd || actionItem.owner || null,
           pm: overrides.pm || null,
-        })
+        };
+      const [project] = await db
+        .insert(projectInfo)
+        .values(insertValues)
         .returning();
+
+      await syncProjectSplitTablesAfterInsert(project.id, insertValues);
 
       await db
         .update(meetingActionItems)
