@@ -58,12 +58,10 @@ export const listProjects = asyncHandler(async (req, res) => {
   ok(res, response.rows, response.meta);
 });
 
-export const projectDetail = asyncHandler(async (req, res) => {
+export const projectOverview = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   ok(res, await service.getProjectOverviewService(projectId));
 });
-
-export const projectOverview = projectDetail;
 
 export const projectLifecycle = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
@@ -94,11 +92,6 @@ export const developmentHandover = asyncHandler(async (req, res) => {
   created(res, { projectId, transitionedTo: updated.phase });
 });
 
-export const projectEngineering = asyncHandler(async (req, res) => {
-  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  ok(res, await service.getProjectEngineeringService(projectId));
-});
-
 export const engineeringDesigns = asyncHandler(async (req, res) => {
   const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
   if (req.method === "POST") {
@@ -117,11 +110,6 @@ export const engineeringDesigns = asyncHandler(async (req, res) => {
     return ok(res, row);
   }
   ok(res, await service.listEngineeringDesignsService(projectId));
-});
-
-export const projectQuality = asyncHandler(async (req, res) => {
-  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  ok(res, await service.getProjectQualityService(projectId));
 });
 
 export const qualityChecks = asyncHandler(async (req, res) => {
@@ -256,11 +244,6 @@ export const procurementInvoices = asyncHandler(async (req, res) => {
     return created(res, row);
   }
   ok(res, await service.listInvoicesService(projectId));
-});
-
-export const projectFinance = asyncHandler(async (req, res) => {
-  const { projectId } = validate(projectIdParamSchema, req.params, "Invalid projectId");
-  ok(res, await service.getProjectOverviewService(projectId));
 });
 
 export const financeSummary = asyncHandler(async (req, res) => {
