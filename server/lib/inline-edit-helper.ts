@@ -64,6 +64,7 @@ export async function inlineEdit(
 
   setClauses.push(`source = 'imported_edited'`);
   setClauses.push(`last_edited_at = NOW()`);
+  setClauses.push(`updated_at = NOW()`);
   if (userId != null) {
     setClauses.push(`last_edited_by = ${userId}`);
   }
@@ -109,9 +110,15 @@ export async function revertToImported(
   const rows = result.rows as any[];
   if (!rows[0]?.import_snapshot) return false;
 
-  const snapshot = typeof rows[0].import_snapshot === 'string'
-    ? JSON.parse(rows[0].import_snapshot)
-    : rows[0].import_snapshot;
+  let snapshot: Record<string, any>;
+  try {
+    snapshot = typeof rows[0].import_snapshot === 'string'
+      ? JSON.parse(rows[0].import_snapshot)
+      : rows[0].import_snapshot;
+  } catch {
+    console.error(`[inline-edit] Corrupted import_snapshot JSON for ${tableName} row ${rowId}`);
+    return false;
+  }
 
   // Build SET clauses from snapshot
   const setClauses = Object.entries(snapshot)

@@ -257,14 +257,18 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
 
 // ─── Refresh all projects ──────────────────────────────────────────
 
-export async function refreshAllMetrics(): Promise<{ refreshed: number }> {
+export async function refreshAllMetrics(): Promise<{ refreshed: number; failed: number; failedProjectIds: number[] }> {
   const projects = await db.select({ id: projectInfo.id }).from(projectInfo);
   let refreshed = 0;
+  let failed = 0;
+  const failedProjectIds: number[] = [];
   for (const p of projects) {
     try {
       await refreshProjectMetrics(p.id);
       refreshed++;
     } catch (err: any) {
+      failed++;
+      failedProjectIds.push(p.id);
       console.warn(
         `[dashboard-metrics] Failed to refresh project ${p.id}:`,
         err.message,
@@ -273,7 +277,7 @@ export async function refreshAllMetrics(): Promise<{ refreshed: number }> {
   }
 
   await refreshProgramMetrics();
-  return { refreshed };
+  return { refreshed, failed, failedProjectIds };
 }
 
 // ─── Program-level refresh ─────────────────────────────────────────

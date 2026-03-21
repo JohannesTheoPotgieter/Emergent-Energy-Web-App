@@ -172,7 +172,14 @@ export function registerHandoverRoutes(app: Express) {
 
       const gates = GATE_DEFINITIONS.map(def => {
         const dbGate = gateMap.get(def.gateId);
-        const checkedItems: string[] = dbGate?.checked_items ? (typeof dbGate.checked_items === "string" ? JSON.parse(dbGate.checked_items) : dbGate.checked_items) : [];
+        let checkedItems: string[] = [];
+        if (dbGate?.checked_items) {
+          try {
+            checkedItems = typeof dbGate.checked_items === "string" ? JSON.parse(dbGate.checked_items) : dbGate.checked_items;
+          } catch {
+            console.error(`[handover] Corrupted checked_items JSON for gate ${def.gateId}`);
+          }
+        }
         return {
           gateId: def.gateId,
           label: def.label,
@@ -356,7 +363,7 @@ export function registerHandoverRoutes(app: Express) {
         performedByName: r.performed_by_name,
         performedByRole: r.performed_by_role,
         performedAt: r.performed_at,
-        details: typeof r.details === "string" ? JSON.parse(r.details) : r.details,
+        details: (() => { try { return typeof r.details === "string" ? JSON.parse(r.details) : r.details; } catch { return {}; } })(),
       }));
 
       res.json({ history });
@@ -424,7 +431,7 @@ export function registerHandoverRoutes(app: Express) {
       const now = Date.now();
       const items = rows.map((row) => {
         const status = row.handover_status || "DRAFT";
-        const deliverables = typeof row.deliverables === "string" ? JSON.parse(row.deliverables) : (row.deliverables || {});
+        const deliverables = (() => { try { return typeof row.deliverables === "string" ? JSON.parse(row.deliverables) : (row.deliverables || {}); } catch { return {}; } })();
         const deliverablesComplete = ["handoverCharter", "siteVisitReport", "signedCostProposal"].every((key) => Boolean(deliverables?.[key]));
         const trackerLinked = Boolean(row.excel_tracker_link);
         const executionEnabled = row.execution_enabled === true;
@@ -509,7 +516,7 @@ export function registerHandoverRoutes(app: Express) {
         performedByName: row.performed_by_name,
         performedByRole: row.performed_by_role,
         performedAt: row.performed_at,
-        details: typeof row.details === "string" ? JSON.parse(row.details) : row.details,
+        details: (() => { try { return typeof row.details === "string" ? JSON.parse(row.details) : row.details; } catch { return {}; } })(),
       }));
 
       res.json({
