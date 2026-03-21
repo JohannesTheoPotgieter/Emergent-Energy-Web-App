@@ -119,6 +119,26 @@ export async function backfillWorkItems(): Promise<void> {
       const otTable = await resolveTable("operational_tasks");
       if (!otTable) return;
 
+      // Auto-create missing projects in project_info for operational_tasks
+      // This ensures all engineering tasks can be linked to a valid project
+      const createdProjects = await db.execute(sql.raw(`
+        INSERT INTO project_info (project_name, phase, is_active)
+        SELECT DISTINCT ot.project_name, 'P0_FIRST_ASSESSMENT', true
+        FROM "${otTable}" ot
+        WHERE ot.project_name IS NOT NULL
+          AND ot.deleted_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM project_info pi
+            WHERE LOWER(TRIM(pi.project_name)) = LOWER(TRIM(ot.project_name))
+          )
+        ON CONFLICT (project_name) DO NOTHING
+        RETURNING project_name
+      `));
+      const createdCount = (createdProjects as any).rows?.length ?? 0;
+      if (createdCount > 0) {
+        console.log(`[Backfill] Auto-created ${createdCount} missing projects in project_info for operational_tasks`);
+      }
+
       // Fix previously-migrated operational_tasks that were incorrectly set to 'PM'
       // operational_tasks are engineering/ops tasks and should use workstream 'ENG'
       const fixedRows = await db.execute(sql.raw(`
@@ -160,7 +180,7 @@ export async function backfillWorkItems(): Promise<void> {
           tracking_rag, task_type_tag
         )
         SELECT
-          ot.project_id, 'ENG', 'task', 'UI', ot.title, ot.description,
+          COALESCE(ot.project_id, pi.id), 'ENG', 'task', 'UI', ot.title, ot.description,
           CASE COALESCE(ot.status, 'TO DO')
             WHEN 'TO DO' THEN 'Not Started'
             WHEN 'IN PROGRESS' THEN 'In Progress'
@@ -179,6 +199,7 @@ export async function backfillWorkItems(): Promise<void> {
           COALESCE(ot.approval_required, false), ot.completed_at,
           ot.tracking_rag, ot.task_type_tag
         FROM "${otTable}" ot
+        LEFT JOIN project_info pi ON LOWER(TRIM(pi.project_name)) = LOWER(TRIM(ot.project_name))
         WHERE ot.deleted_at IS NULL
           AND NOT EXISTS (
             SELECT 1 FROM work_items wi WHERE wi.external_ref = CONCAT('OT::', ot.id::text)
@@ -482,8 +503,40 @@ export async function backfillWorkItems(): Promise<void> {
       console.log(`[Backfill] Recovered projectId for ${recoveredCount} orphaned ENG work_items`);
     }
 
+    // Second recovery pass: resolve via operational_tasks.project_name → project_info
+    // This handles tasks where operational_tasks.project_id was never set (e.g. from seed data)
+    const otTableForRecovery = await resolveTable("operational_tasks");
+    if (otTableForRecovery) {
+      const recoveredByName = await db.execute(sql.raw(`
+        UPDATE work_items wi SET project_id = pi.id
+        FROM "${otTableForRecovery}" ot
+        JOIN project_info pi ON LOWER(TRIM(pi.project_name)) = LOWER(TRIM(ot.project_name))
+        WHERE wi.workstream = 'ENG'
+          AND wi.project_id IS NULL
+          AND wi.deleted_at IS NULL
+          AND wi.legacy_table = 'operational_tasks'
+          AND wi.legacy_id = ot.id
+          AND ot.project_name IS NOT NULL
+        RETURNING wi.id
+      `));
+      const recoveredByNameCount = (recoveredByName as any).rows?.length ?? 0;
+      if (recoveredByNameCount > 0) {
+        console.log(`[Backfill] Recovered projectId via project_name for ${recoveredByNameCount} orphaned ENG work_items`);
+      }
+    }
+
     const totalWi = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM work_items`));
     console.log(`[Backfill] Total work_items: ${(totalWi as any).rows?.[0]?.cnt ?? 0}`);
+
+    // Post-migration integrity check: warn about any remaining orphaned work_items
+    const orphanCheck = await db.execute(sql.raw(`
+      SELECT COUNT(*) as cnt FROM work_items
+      WHERE project_id IS NULL AND workstream = 'ENG' AND deleted_at IS NULL
+    `));
+    const orphanCount = Number((orphanCheck as any).rows?.[0]?.cnt ?? 0);
+    if (orphanCount > 0) {
+      console.warn(`[Backfill] WARNING: ${orphanCount} ENG work_items still have NULL project_id after migration. These will show as "Unassigned Project" on the dashboard.`);
+    }
 
     await setFeatureFlag("canonical_work_items_v1", true, "system-backfill");
     console.log("[Backfill] canonical_work_items_v1 feature flag enabled");

@@ -1,6 +1,8 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { Link, useSearch, useLocation } from "wouter";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -8,13 +10,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getQueryFn, apiRequest } from "@/lib/queryClient";
 import { usePermission } from "@/hooks/use-permissions";
 import {
-  Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ComposedChart,
 } from "recharts";
 import {
   DollarSign, TrendingUp, Activity, Search, Download,
   AlertCircle, BarChart3, FileText, Camera,
-  Plus, Trash2, Pencil, RefreshCw, X, Check, Eye, Clock,
+  Plus, Trash2, Pencil, RefreshCw, X, Check, Eye, Clock, FilterX, ChevronDown,
 } from "lucide-react";
 
 // ─── Types ───
@@ -60,6 +62,7 @@ interface ProjectRow {
   budgetGpPct: number | null;
   actualGpPct: number | null;
   signedStatus: string;
+  hasTracker: boolean;
 }
 
 interface DetailData {
@@ -127,8 +130,20 @@ function formatRand(val: number | null | undefined): string {
   return `${sign}R ${abs.toFixed(2)}`;
 }
 
+/** Abbreviated Rand format for chart Y-axis ticks (e.g. "R 9.3M", "R 450K"). */
+function formatRandShort(val: number | null | undefined): string {
+  if (val == null || isNaN(val)) return "–";
+  if (val === 0) return "R 0";
+  const sign = val < 0 ? "-" : "";
+  const abs = Math.abs(val);
+  if (abs >= 1_000_000_000) return `${sign}R ${(abs / 1_000_000_000).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(0)}K`;
+  return `${sign}R ${abs.toFixed(0)}`;
+}
+
 function formatPct(val: number | null | undefined): string {
-  if (val == null || isNaN(val) || !isFinite(val)) return "N/A";
+  if (val == null || isNaN(val) || !isFinite(val)) return "–";
   return `${(val * 100).toFixed(1)}%`;
 }
 
@@ -164,7 +179,7 @@ function DashboardSection({
     { key: "budget", label: "Budget", color: "text-blue-700 bg-blue-50" },
     { key: "actualForecast", label: "Actual + Forecast", color: "text-emerald-700 bg-emerald-50" },
     { key: "actual", label: "Actual", color: "text-amber-700 bg-amber-50" },
-    { key: "captured", label: "Captured Data", color: "text-purple-700 bg-purple-50" },
+    { key: "captured", label: "Captured Data", color: "text-gray-700 bg-gray-50" },
   ] as const;
 
   const data = useMemo(() => {
@@ -261,13 +276,13 @@ function DashboardChart({
           <ComposedChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
             <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-            <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => formatRand(v)} />
+            <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => formatRandShort(v)} />
             <Tooltip formatter={(v: number) => formatRand(v)} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="Budget" fill="#3b82f6" opacity={0.6} />
+            <Area type="monotone" dataKey="Budget" fill="#3b82f6" stroke="#3b82f6" fillOpacity={0.15} strokeWidth={1} />
             <Line type="monotone" dataKey="Actual + Forecast" stroke="#10b981" strokeWidth={2} dot={false} connectNulls={false} />
             <Line type="monotone" dataKey="Actual" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2 }} connectNulls={false} />
-            <Line type="monotone" dataKey="Captured" stroke="#8b5cf6" strokeWidth={1.5} strokeDasharray="4 2" dot={false} connectNulls={false} />
+            <Line type="monotone" dataKey="Captured" stroke="#86efac" strokeWidth={1.5} strokeDasharray="4 2" dot={false} connectNulls={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </CardContent>
@@ -275,7 +290,161 @@ function DashboardChart({
   );
 }
 
+// ─── Budget Editor Modal ───
+
+interface BudgetRow { id?: number; projectName: string; fye: string; monthKey: string; budgetType: string; amount: string }
+
+function BudgetEditorModal({ fye, months, open, onClose }: { fye: number; months: DashboardMonth[]; open: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [activeType, setActiveType] = useState<"revenue" | "cos">("revenue");
+  const [saved, setSaved] = useState(false);
+
+  const { data: budgets, isLoading: budgetsLoading } = useQuery<BudgetRow[]>({
+    queryKey: [`/api/fye-revenue-tracking/budgets?fye=${fye}`],
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: open,
+  });
+
+  const monthKeys = months.map((m) => m.monthKey);
+  const [revValues, setRevValues] = useState<Record<string, string>>({});
+  const [cosValues, setCosValues] = useState<Record<string, string>>({});
+
+  // Initialize values when budgets load or modal opens
+  useEffect(() => {
+    if (!open) return;
+    const rv: Record<string, string> = {};
+    const cv: Record<string, string> = {};
+    if (budgets && budgets.length > 0) {
+      for (const b of budgets) {
+        if (b.budgetType === "revenue") rv[b.monthKey] = b.amount;
+        else if (b.budgetType === "cos") cv[b.monthKey] = b.amount;
+      }
+    } else {
+      for (const m of months) {
+        rv[m.monthKey] = m.revenue.budget !== 0 ? String(m.revenue.budget) : "";
+        cv[m.monthKey] = m.cos.budget !== 0 ? String(m.cos.budget) : "";
+      }
+    }
+    setRevValues(rv);
+    setCosValues(cv);
+    setSaved(false);
+  }, [budgets, months, open]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      for (const mk of monthKeys) {
+        const revAmt = revValues[mk];
+        if (revAmt !== undefined && revAmt !== "") {
+          await apiRequest("POST", "/api/fye-revenue-tracking/budgets", {
+            projectName: "__FYE_TOTAL__", fye: String(fye), monthKey: mk, budgetType: "revenue", amount: revAmt,
+          });
+        }
+        const cosAmt = cosValues[mk];
+        if (cosAmt !== undefined && cosAmt !== "") {
+          await apiRequest("POST", "/api/fye-revenue-tracking/budgets", {
+            projectName: "__FYE_TOTAL__", fye: String(fye), monthKey: mk, budgetType: "cos", amount: cosAmt,
+          });
+        }
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/dashboard?fye=${fye}`] });
+      qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/budgets?fye=${fye}`] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    },
+  });
+
+  const values = activeType === "revenue" ? revValues : cosValues;
+  const setValues = activeType === "revenue" ? setRevValues : setCosValues;
+
+  // Compute total for the active tab
+  const total = monthKeys.reduce((sum, mk) => sum + (parseFloat(values[mk] || "0") || 0), 0);
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-sm font-semibold">Edit Monthly Budgets — FYE {fye}</DialogTitle>
+        </DialogHeader>
+
+        {/* Tabs */}
+        <div className="flex border-b mb-3">
+          <button
+            onClick={() => setActiveType("revenue")}
+            className={cn(
+              "px-4 py-2 text-xs font-medium border-b-2 -mb-px transition-colors",
+              activeType === "revenue" ? "border-blue-600 text-blue-600" : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >Revenue Budgets</button>
+          <button
+            onClick={() => setActiveType("cos")}
+            className={cn(
+              "px-4 py-2 text-xs font-medium border-b-2 -mb-px transition-colors",
+              activeType === "cos" ? "border-amber-600 text-amber-600" : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >COS Budgets</button>
+        </div>
+
+        {/* Month rows */}
+        <div className="max-h-[400px] overflow-y-auto">
+          {budgetsLoading ? (
+            <div className="space-y-2 py-4 px-3">{[1,2,3,4,5,6].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
+          ) : (
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-background">
+              <tr className="border-b">
+                <th className="text-left px-3 py-1.5 font-medium w-28">Month</th>
+                <th className="text-left px-3 py-1.5 font-medium">Current Value</th>
+                <th className="text-left px-3 py-1.5 font-medium">New Amount (R)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {months.map((m) => {
+                const currentVal = activeType === "revenue" ? m.revenue.budget : m.cos.budget;
+                return (
+                  <tr key={m.monthKey} className="border-b hover:bg-muted/30">
+                    <td className="px-3 py-2 font-medium">{m.label}</td>
+                    <td className="px-3 py-2 tabular-nums text-muted-foreground">{formatRand(currentVal)}</td>
+                    <td className="px-3 py-1.5">
+                      <Input
+                        type="number" step="0.01"
+                        value={values[m.monthKey] || ""}
+                        onChange={(e) => setValues((p) => ({ ...p, [m.monthKey]: e.target.value }))}
+                        className="h-7 text-xs text-right w-full max-w-[200px] tabular-nums"
+                        placeholder="0.00"
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* Total row */}
+              <tr className="border-t-2 bg-muted/50 font-bold">
+                <td className="px-3 py-2">Total</td>
+                <td className="px-3 py-2"></td>
+                <td className="px-3 py-2 tabular-nums">{formatRand(total)}</td>
+              </tr>
+            </tbody>
+          </table>
+          )}
+        </div>
+
+        <DialogFooter className="flex items-center gap-2 pt-2">
+          {saveMutation.isError && <p className="text-xs text-red-500 mr-auto">{(saveMutation.error as any)?.message || "Save failed"}</p>}
+          {saved && <p className="text-xs text-emerald-600 mr-auto flex items-center gap-1"><Check className="h-3 w-3" />Saved successfully</p>}
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onClose}>Cancel</Button>
+          <Button size="sm" className="h-8 text-xs" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
+            {saveMutation.isPending ? "Saving..." : "Save Budgets"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DashboardTab({ fye }: { fye: number }) {
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const canEdit = usePermission("fye_revenue_tracking", "edit");
   const { data, isLoading, error, refetch } = useQuery<DashboardData>({
     queryKey: [`/api/fye-revenue-tracking/dashboard?fye=${fye}`],
     queryFn: getQueryFn({ on401: "throw" }),
@@ -295,6 +464,16 @@ function DashboardTab({ fye }: { fye: number }) {
 
   return (
     <div className="space-y-2">
+      {/* Budget Edit Button (admin only) */}
+      {canEdit.allowed && (
+        <div className="flex justify-end">
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowBudgetModal(true)}>
+            <Pencil className="h-3 w-3 mr-1" />Edit Budgets
+          </Button>
+        </div>
+      )}
+      {canEdit.allowed && <BudgetEditorModal fye={fye} months={months} open={showBudgetModal} onClose={() => setShowBudgetModal(false)} />}
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
         <DashboardChart title="Revenue Tracking" months={months} metricKey="revenue" />
         <DashboardChart title="GP Tracking" months={months} metricKey="gp" />
@@ -572,12 +751,147 @@ function LostDealsSection({ lostDeals, canEdit, fye }: { lostDeals: LostDealRow[
   );
 }
 
+// ─── Debounce hook ───
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
+
+// ─── Multi-select filter dropdown ───
+
+function MultiSelectFilter({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const toggle = (val: string) => {
+    const next = new Set(selected);
+    if (next.has(val)) next.delete(val);
+    else next.add(val);
+    onChange(next);
+  };
+
+  const count = selected.size;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "h-8 text-xs border rounded px-2 bg-background flex items-center gap-1 min-w-[120px] justify-between",
+          count > 0 && "border-blue-400 bg-blue-50"
+        )}
+      >
+        <span className="truncate">{count > 0 ? `${label} (${count})` : label}</span>
+        <ChevronDown className="h-3 w-3 shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute top-9 left-0 z-50 bg-background border rounded shadow-lg max-h-56 overflow-y-auto min-w-[180px]">
+          {options.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">No options</div>
+          ) : (
+            <>
+              <button
+                onClick={() => onChange(new Set())}
+                className="w-full text-left px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 border-b"
+              >
+                Clear all
+              </button>
+              {options.map((opt) => (
+                <label key={opt} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted/50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(opt)}
+                    onChange={() => toggle(opt)}
+                    className="rounded border-gray-300 h-3 w-3"
+                  />
+                  <span className="truncate">{opt}</span>
+                </label>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── URL param helpers for filter state ───
+
+function parseSetParam(params: URLSearchParams, key: string): Set<string> {
+  const val = params.get(key);
+  if (!val) return new Set();
+  return new Set(val.split(",").filter(Boolean));
+}
+
+function setToParam(s: Set<string>): string {
+  return [...s].join(",");
+}
+
 function DetailTab({ fye }: { fye: number }) {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [fundingFilter, setFundingFilter] = useState("");
+  const searchString = useSearch();
+  const [, setLocation] = useLocation();
+  const params = useMemo(() => new URLSearchParams(searchString), [searchString]);
+
+  // Initialize filter state from URL params
+  const [searchInput, setSearchInput] = useState(params.get("q") || "");
+  const debouncedSearch = useDebounce(searchInput, 300);
+  const [bdFilter, setBdFilter] = useState<Set<string>>(() => parseSetParam(params, "bd"));
+  const [provinceFilter, setProvinceFilter] = useState<Set<string>>(() => parseSetParam(params, "prov"));
+  const [typeFilter, setTypeFilter] = useState<Set<string>>(() => parseSetParam(params, "type"));
+  const [fundingFilter, setFundingFilter] = useState<Set<string>>(() => parseSetParam(params, "fund"));
+  const [trackersOnly, setTrackersOnly] = useState(() => params.get("trackers") !== "0");
   const [sortKey, setSortKey] = useState<keyof ProjectRow>("projectName");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  // Sync filters to URL params (preserving existing params like fye)
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    // Clear filter-specific params, then re-set active ones
+    for (const key of ["q", "bd", "prov", "type", "fund", "trackers"]) p.delete(key);
+    if (debouncedSearch) p.set("q", debouncedSearch);
+    if (bdFilter.size > 0) p.set("bd", setToParam(bdFilter));
+    if (provinceFilter.size > 0) p.set("prov", setToParam(provinceFilter));
+    if (typeFilter.size > 0) p.set("type", setToParam(typeFilter));
+    if (fundingFilter.size > 0) p.set("fund", setToParam(fundingFilter));
+    if (!trackersOnly) p.set("trackers", "0");
+    const qs = p.toString();
+    const currentPath = window.location.pathname;
+    setLocation(qs ? `${currentPath}?${qs}` : currentPath, { replace: true });
+  }, [debouncedSearch, bdFilter, provinceFilter, typeFilter, fundingFilter, trackersOnly, setLocation]);
+
+  const hasAnyFilter = debouncedSearch || bdFilter.size > 0 || provinceFilter.size > 0 || typeFilter.size > 0 || fundingFilter.size > 0 || !trackersOnly;
+
+  const clearAll = () => {
+    setSearchInput("");
+    setBdFilter(new Set());
+    setProvinceFilter(new Set());
+    setTypeFilter(new Set());
+    setFundingFilter(new Set());
+    setTrackersOnly(true);
+  };
 
   const toggleSort = (key: keyof ProjectRow) => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -607,12 +921,22 @@ function DetailTab({ fye }: { fye: number }) {
 
   const canEdit = usePermission("fye_revenue_tracking", "edit");
 
+  // Extract unique filter options from data
+  const uniqueBds = useMemo(() => [...new Set(data?.projects.map((p) => p.businessDeveloper).filter(Boolean) as string[])].sort(), [data]);
+  const uniqueProvinces = useMemo(() => [...new Set(data?.projects.map((p) => p.province).filter(Boolean) as string[])].sort(), [data]);
+  const uniqueTypes = useMemo(() => [...new Set(data?.projects.map((p) => p.projectType).filter(Boolean) as string[])].sort(), [data]);
+  const uniqueFunding = useMemo(() => [...new Set(data?.projects.map((p) => p.fundingType).filter(Boolean) as string[])].sort(), [data]);
+
   const filtered = useMemo(() => {
     if (!data) return [];
+    const search = debouncedSearch.toLowerCase();
     const rows = data.projects.filter((p) => {
-      if (search && !p.projectName.toLowerCase().includes(search.toLowerCase())) return false;
-      if (statusFilter && p.status !== statusFilter) return false;
-      if (fundingFilter && p.fundingType !== fundingFilter) return false;
+      if (trackersOnly && !p.hasTracker) return false;
+      if (search && !p.projectName.toLowerCase().includes(search)) return false;
+      if (bdFilter.size > 0 && (!p.businessDeveloper || !bdFilter.has(p.businessDeveloper))) return false;
+      if (provinceFilter.size > 0 && (!p.province || !provinceFilter.has(p.province))) return false;
+      if (typeFilter.size > 0 && (!p.projectType || !typeFilter.has(p.projectType))) return false;
+      if (fundingFilter.size > 0 && (!p.fundingType || !fundingFilter.has(p.fundingType))) return false;
       return true;
     });
     return rows.sort((a, b) => {
@@ -623,10 +947,7 @@ function DetailTab({ fye }: { fye: number }) {
       const cmp = typeof av === "number" ? (av as number) - (bv as number) : String(av).localeCompare(String(bv));
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [data, search, statusFilter, fundingFilter, sortKey, sortDir]);
-
-  const uniqueStatuses = useMemo(() => [...new Set(data?.projects.map((p) => p.status).filter(Boolean) as string[])].sort(), [data]);
-  const uniqueFunding = useMemo(() => [...new Set(data?.projects.map((p) => p.fundingType).filter(Boolean) as string[])].sort(), [data]);
+  }, [data, debouncedSearch, bdFilter, provinceFilter, typeFilter, fundingFilter, trackersOnly, sortKey, sortDir]);
 
   const filteredTotals = useMemo(() => {
     return filtered.reduce(
@@ -644,25 +965,41 @@ function DetailTab({ fye }: { fye: number }) {
 
   const handleExport = async () => {
     try {
-      const csvRows = [
-        ["Project Name", "Business Developer", "Province", "Size (kWp)", "Project Type", "Funding Type", "Start Date", "PC Date", "Status", "Budget Revenue", "Budget COS", "Budget GP", "Actual Revenue", "Actual Expense", "Actual GP", "Budget GP%", "Actual GP%"],
-        ...filtered.map((p) => [
-          p.projectName, p.businessDeveloper || "", p.province || "", p.sizeKwp, p.projectType || "", p.fundingType || "",
-          p.startDate || "", p.pcDate || "", p.status || "",
-          p.budgetRevenue, p.budgetCos, p.budgetGp, p.actualRevenue, p.actualExpense, p.actualGp,
-          formatPct(p.budgetGpPct), formatPct(p.actualGpPct),
-        ]),
+      const headers = ["Project Name", "Business Developer", "Province", "Size (kWp)", "Project Type", "Funding Type", "Start Date", "PC Date", "Status", "Budget Revenue", "Budget COS", "Budget GP", "Actual Revenue", "Actual Expense", "Actual GP", "Budget GP%", "Actual GP%"];
+      const dataRows = filtered.map((p) => [
+        p.projectName, p.businessDeveloper || "", p.province || "", p.sizeKwp, p.projectType || "", p.fundingType || "",
+        p.startDate || "", p.pcDate || "", p.status || "",
+        p.budgetRevenue, p.budgetCos, p.budgetGp, p.actualRevenue, p.actualExpense, p.actualGp,
+        formatPct(p.budgetGpPct), formatPct(p.actualGpPct),
+      ]);
+      const totalsRow = [
+        `Totals (${filtered.length})`, "", "", "", "", "", "", "", "",
+        filteredTotals.budgetRevenue, filteredTotals.budgetCos, filteredTotals.budgetGp,
+        filteredTotals.actualRevenue, filteredTotals.actualExpense, filteredTotals.actualGp,
+        formatPct(filteredTotals.budgetRevenue ? filteredTotals.budgetGp / filteredTotals.budgetRevenue : null),
+        formatPct(filteredTotals.actualRevenue ? filteredTotals.actualGp / filteredTotals.actualRevenue : null),
       ];
+      const csvRows = [headers, ...dataRows, totalsRow];
       const csv = csvRows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
       const blob = new Blob([csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `fye-${fye}-detail.csv`;
+      const today = new Date().toISOString().slice(0, 10);
+      a.download = `FYE_${fye}_Revenue_Detail_${today}.csv`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {}
   };
+
+  // Collect active filter pills
+  const pills: { label: string; onRemove: () => void }[] = [];
+  if (debouncedSearch) pills.push({ label: `Search: "${debouncedSearch}"`, onRemove: () => setSearchInput("") });
+  bdFilter.forEach((v) => pills.push({ label: `BD: ${v}`, onRemove: () => { const n = new Set(bdFilter); n.delete(v); setBdFilter(n); } }));
+  provinceFilter.forEach((v) => pills.push({ label: `Province: ${v}`, onRemove: () => { const n = new Set(provinceFilter); n.delete(v); setProvinceFilter(n); } }));
+  typeFilter.forEach((v) => pills.push({ label: `Type: ${v}`, onRemove: () => { const n = new Set(typeFilter); n.delete(v); setTypeFilter(n); } }));
+  fundingFilter.forEach((v) => pills.push({ label: `Funding: ${v}`, onRemove: () => { const n = new Set(fundingFilter); n.delete(v); setFundingFilter(n); } }));
+  if (!trackersOnly) pills.push({ label: "Showing All (incl. untracked)", onRemove: () => setTrackersOnly(true) });
 
   if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-32 w-full" />)}</div>;
   if (error || !data) return (
@@ -685,20 +1022,42 @@ function DetailTab({ fye }: { fye: number }) {
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-          <Input placeholder="Search projects..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 h-8 text-xs" />
+          <Input placeholder="Search projects..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} className="pl-8 h-8 text-xs" />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-8 text-xs border rounded px-2 bg-background">
-          <option value="">All Statuses</option>
-          {uniqueStatuses.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={fundingFilter} onChange={(e) => setFundingFilter(e.target.value)} className="h-8 text-xs border rounded px-2 bg-background">
-          <option value="">All Funding</option>
-          {uniqueFunding.map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
-        <Button variant="outline" size="sm" className="h-8 text-xs" onClick={handleExport}>
+        <MultiSelectFilter label="Business Developer" options={uniqueBds} selected={bdFilter} onChange={setBdFilter} />
+        <MultiSelectFilter label="Province" options={uniqueProvinces} selected={provinceFilter} onChange={setProvinceFilter} />
+        <MultiSelectFilter label="Project Type" options={uniqueTypes} selected={typeFilter} onChange={setTypeFilter} />
+        <MultiSelectFilter label="Funding Type" options={uniqueFunding} selected={fundingFilter} onChange={setFundingFilter} />
+        <Button
+          variant={trackersOnly ? "default" : "outline"}
+          size="sm"
+          className={`h-8 text-xs ${trackersOnly ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}`}
+          onClick={() => setTrackersOnly(!trackersOnly)}
+        >
+          <Check className={`h-3.5 w-3.5 mr-1 ${trackersOnly ? "" : "opacity-0"}`} />
+          Tracked Only
+        </Button>
+        {hasAnyFilter && (
+          <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={clearAll}>
+            <FilterX className="h-3.5 w-3.5 mr-1" />Clear All
+          </Button>
+        )}
+        <Button variant="outline" size="sm" className="h-8 text-xs ml-auto" onClick={handleExport}>
           <Download className="h-3.5 w-3.5 mr-1" />Export CSV
         </Button>
       </div>
+
+      {/* Active filter pills */}
+      {pills.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {pills.map((pill, i) => (
+            <span key={i} className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2.5 py-0.5 text-[11px]">
+              {pill.label}
+              <button onClick={pill.onRemove} className="hover:text-blue-900"><X className="h-3 w-3" /></button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Project Table */}
       <Card>
@@ -708,25 +1067,25 @@ function DetailTab({ fye }: { fye: number }) {
               <tr className="border-b">
                 {([
                   ["projectName", "Project Name", "left", true],
-                  ["businessDeveloper", "BD", "left", false],
+                  ["businessDeveloper", "Business Developer", "left", false],
                   ["province", "Province", "left", false],
-                  ["sizeKwp", "kWp", "right", false],
-                  ["projectType", "Type", "left", false],
-                  ["fundingType", "Funding", "left", false],
-                  ["startDate", "Start", "left", false],
+                  ["sizeKwp", "Size kWp", "right", false],
+                  ["projectType", "Project Type", "left", false],
+                  ["fundingType", "Funding Type", "left", false],
+                  ["startDate", "Start Date", "left", false],
                   ["pcDate", "PC Date", "left", false],
                   ["status", "Status", "left", false],
-                  ["budgetRevenue", "Budget Rev", "right", false],
+                  ["budgetRevenue", "Budget Revenue", "right", false],
                   ["budgetCos", "Budget COS", "right", false],
                   ["budgetGp", "Budget GP", "right", false],
-                  ["actualRevenue", "Actual Rev", "right", false],
-                  ["actualExpense", "Actual Exp", "right", false],
+                  ["actualRevenue", "Actual Revenue", "right", false],
+                  ["actualExpense", "Actual Expense", "right", false],
                   ["actualGp", "Actual GP", "right", false],
-                  ["budgetGpPct", "Bud GP%", "right", false],
-                  ["actualGpPct", "Act GP%", "right", false],
+                  ["budgetGpPct", "Budget GP%", "right", false],
+                  ["actualGpPct", "Actual GP%", "right", false],
                 ] as const).map(([key, label, align, sticky]) => (
                   <th key={key} onClick={() => toggleSort(key as keyof ProjectRow)} className={cn(
-                    `text-${align} px-${sticky ? 3 : 2} py-2 font-medium cursor-pointer select-none hover:text-foreground`,
+                    `text-${align} px-${sticky ? 3 : 2} py-2 font-medium cursor-pointer select-none hover:text-foreground whitespace-nowrap`,
                     sticky && "sticky left-0 bg-muted/80 z-20 min-w-[180px]"
                   )}>{label}{sortIndicator(key as keyof ProjectRow)}</th>
                 ))}
@@ -737,29 +1096,8 @@ function DetailTab({ fye }: { fye: number }) {
                 <tr><td colSpan={17} className="text-center py-8 text-muted-foreground">No projects found for FYE {fye}{search ? ` matching "${search}"` : ""}</td></tr>
               ) : (
                 <>
-                  {filtered.map((p) => (
-                    <tr key={p.projectId} className="border-b hover:bg-muted/30">
-                      <td className="px-3 py-1.5 font-medium sticky left-0 bg-white z-10 truncate max-w-[200px]" title={p.projectName}>{p.projectName}</td>
-                      <td className="px-2 py-1.5 truncate max-w-[100px]" title={p.businessDeveloper || ""}>{p.businessDeveloper || "—"}</td>
-                      <td className="px-2 py-1.5">{p.province || "—"}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{p.sizeKwp ? p.sizeKwp.toLocaleString() : "—"}</td>
-                      <td className="px-2 py-1.5">{p.projectType || "—"}</td>
-                      <td className="px-2 py-1.5">{p.fundingType || "—"}</td>
-                      <td className="px-2 py-1.5">{formatDate(p.startDate)}</td>
-                      <td className="px-2 py-1.5">{formatDate(p.pcDate)}</td>
-                      <td className="px-2 py-1.5">{p.status ? <Badge variant="outline" className="text-[10px]">{p.status}</Badge> : "—"}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.budgetRevenue)}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.budgetCos)}</td>
-                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.budgetGp < 0 && "text-red-600")}>{formatRand(p.budgetGp)}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.actualRevenue)}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.actualExpense)}</td>
-                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGp < 0 && "text-red-600")}>{formatRand(p.actualGp)}</td>
-                      <td className="text-right px-2 py-1.5 tabular-nums">{formatPct(p.budgetGpPct)}</td>
-                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGpPct != null && p.actualGpPct < 0 && "text-red-600")}>{formatPct(p.actualGpPct)}</td>
-                    </tr>
-                  ))}
-                  {/* Totals Row */}
-                  <tr className="border-t-2 bg-muted/50 font-bold">
+                  {/* Totals Row — pinned at top */}
+                  <tr className="border-b-2 bg-muted/50 font-bold">
                     <td className="px-3 py-2 sticky left-0 bg-muted/50 z-10">Totals ({filtered.length})</td>
                     <td colSpan={8}></td>
                     <td className="text-right px-2 py-2 tabular-nums">{formatRand(filteredTotals.budgetRevenue)}</td>
@@ -768,9 +1106,32 @@ function DetailTab({ fye }: { fye: number }) {
                     <td className="text-right px-2 py-2 tabular-nums">{formatRand(filteredTotals.actualRevenue)}</td>
                     <td className="text-right px-2 py-2 tabular-nums">{formatRand(filteredTotals.actualExpense)}</td>
                     <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.actualGp < 0 && "text-red-600")}>{formatRand(filteredTotals.actualGp)}</td>
-                    <td className="text-right px-2 py-2 tabular-nums">{formatPct(filteredTotals.budgetRevenue ? filteredTotals.budgetGp / filteredTotals.budgetRevenue : null)}</td>
+                    <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.budgetGp < 0 && "text-red-600")}>{formatPct(filteredTotals.budgetRevenue ? filteredTotals.budgetGp / filteredTotals.budgetRevenue : null)}</td>
                     <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.actualGp < 0 && "text-red-600")}>{formatPct(filteredTotals.actualRevenue ? filteredTotals.actualGp / filteredTotals.actualRevenue : null)}</td>
                   </tr>
+                  {filtered.map((p) => (
+                    <tr key={p.projectId} className="border-b hover:bg-muted/30">
+                      <td className="px-3 py-1.5 font-medium sticky left-0 bg-white z-10 truncate max-w-[200px]" title={p.projectName}>
+                        <Link href={`/project/${encodeURIComponent(p.projectName)}`} className="text-blue-600 hover:underline">{p.projectName}</Link>
+                      </td>
+                      <td className="px-2 py-1.5 truncate max-w-[120px]" title={p.businessDeveloper || ""}>{p.businessDeveloper || "—"}</td>
+                      <td className="px-2 py-1.5">{p.province || "—"}</td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{p.sizeKwp ? p.sizeKwp.toLocaleString() : "—"}</td>
+                      <td className="px-2 py-1.5">{p.projectType || "—"}</td>
+                      <td className="px-2 py-1.5">{p.fundingType || "—"}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{formatDate(p.startDate)}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{formatDate(p.pcDate)}</td>
+                      <td className="px-2 py-1.5">{p.status ? <Badge variant="outline" className="text-[10px]">{p.status}</Badge> : "—"}</td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.budgetRevenue)}</td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.budgetCos)}</td>
+                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.budgetGp < 0 && "text-red-600")}>{formatRand(p.budgetGp)}</td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.actualRevenue)}</td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.actualExpense)}</td>
+                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGp < 0 && "text-red-600")}>{formatRand(p.actualGp)}</td>
+                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.budgetGpPct != null && p.budgetGpPct < 0 && "text-red-600")}>{formatPct(p.budgetGpPct)}</td>
+                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGpPct != null && p.actualGpPct < 0 && "text-red-600")}>{formatPct(p.actualGpPct)}</td>
+                    </tr>
+                  ))}
                 </>
               )}
             </tbody>
@@ -786,7 +1147,7 @@ function DetailTab({ fye }: { fye: number }) {
 
       {/* KPI Counts */}
       {kpis && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <Card className="p-3 text-center">
             <div className="text-xs text-muted-foreground mb-1">Brought In</div>
             <div className="text-2xl font-bold">{kpis.broughtIn}</div>
@@ -866,7 +1227,20 @@ function SnapshotsTab({ fye }: { fye: number }) {
     return `${monthNames[now.getMonth()]} ${now.getFullYear()} Month-End`;
   }, []);
 
-  // Historical view
+  // Historical view — loading
+  if (viewId !== null && viewLoading) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setViewId(null)}><X className="h-3 w-3 mr-1" />Back</Button>
+          <span className="text-xs text-muted-foreground">Loading snapshot...</span>
+        </div>
+        <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-32 w-full" />)}</div>
+      </div>
+    );
+  }
+
+  // Historical view — data
   if (viewId !== null && viewData) {
     const sd = viewData.snapshotData;
     return (
@@ -1015,13 +1389,49 @@ function SnapshotsTab({ fye }: { fye: number }) {
 // ─── Main Page ───
 
 export default function FyeRevenueTrackingPage() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "detail" | "snapshots">("dashboard");
-  const [fye, setFye] = useState(getCurrentFye());
+  const searchString = useSearch();
+  const [, setLocation] = useLocation();
+  const params = useMemo(() => new URLSearchParams(searchString), [searchString]);
+
+  const [activeTab, setActiveTab] = useState<"dashboard" | "detail" | "snapshots">(
+    (params.get("tab") as any) || "dashboard"
+  );
+
+  // FYE year from URL param, falling back to current active year
+  const urlFye = params.get("fye");
+  const [fye, setFyeState] = useState(() => {
+    if (urlFye) { const n = parseInt(urlFye, 10); if (!isNaN(n)) return n; }
+    return getCurrentFye();
+  });
+
+  // Fetch available years from API
+  const { data: yearsData } = useQuery<{ years: number[]; currentFye: number }>({
+    queryKey: ["/api/fye-revenue-tracking/years"],
+    queryFn: getQueryFn({ on401: "throw" }),
+  });
 
   const fyeOptions = useMemo(() => {
+    if (yearsData?.years?.length) return yearsData.years;
     const current = getCurrentFye();
-    return [current - 1, current, current + 1];
-  }, []);
+    return [current + 1, current, current - 1];
+  }, [yearsData]);
+
+  // Sync FYE and tab to URL
+  const setFye = useCallback((y: number) => {
+    setFyeState(y);
+    const p = new URLSearchParams(window.location.search);
+    p.set("fye", String(y));
+    setLocation(`${window.location.pathname}?${p.toString()}`, { replace: true });
+  }, [setLocation]);
+
+  // Initialize URL param on mount if missing
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (!p.has("fye")) {
+      p.set("fye", String(fye));
+      setLocation(`${window.location.pathname}?${p.toString()}`, { replace: true });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-4">

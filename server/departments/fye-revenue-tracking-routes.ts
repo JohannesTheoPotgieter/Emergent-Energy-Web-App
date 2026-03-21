@@ -13,8 +13,8 @@
  * DASHBOARD:
  *   Budget Revenue (monthly)   → fye_budgets (budgetType="revenue") [editable by finance]
  *   Budget COS (monthly)       → fye_budgets (budgetType="cos") [editable by finance]
- *   Actual Revenue (monthly)   → program_inflows (milestoneAmount, keyed by paymentReceivedDate) [read-only import]
- *   Actual COS (monthly)       → program_expense (actualCosTotal/expenseActualTotal, keyed by expenseInvoicedDate) [read-only import]
+ *   Actual Revenue (monthly)   → COS-ratio allocation: (lineItemCOS / projectTotalCOS) * projectTotalRevenue, keyed by expenseInvoicedDate [matches Revenue Tracker]
+ *   Actual COS (monthly)       → program_expense.expenseActualTotal, keyed by expenseInvoicedDate [read-only import]
  *   Captured Revenue           → finance_revenue_monthly (value, summed per monthEndDate) [read-only import]
  *   Captured COS               → finance_cos_monthly (value, summed per monthEndDate) [read-only import]
  *   Forecast Revenue           → fye_budgets for future months (budget as forecast proxy)
@@ -67,11 +67,11 @@ import {
   pdTickets,
   fyeKpiCounters,
   fyeReportSnapshots,
-  projectExecutionState,
+  cosStatusOverrides,
 } from "@shared/schema";
-import { eq, and, sql, gte, lte, desc, inArray } from "drizzle-orm";
+import { eq, and, sql, desc } from "drizzle-orm";
 import ExcelJS from "exceljs";
-import { extractMonthKey, parseExpenseAmount } from "../lib/calculations/financeUtils";
+import { extractMonthKey, normalizeProjectName } from "../lib/calculations/financeUtils";
 
 const router = Router();
 
@@ -115,6 +115,214 @@ function safeNum(v: any): number {
   return isNaN(n) ? 0 : n;
 }
 
+/** Load COS status overrides for isCosRealised enrichment. */
+async function loadCosOverrides(): Promise<Map<string, string>> {
+  try {
+    const overrides = await db.select().from(cosStatusOverrides);
+    const map = new Map<string, string>();
+    for (const o of overrides) {
+      map.set(`${o.projectName}::${o.rowNumber}`, o.overrideStatus);
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+/** Attach COS override status to expense rows for isCosRealised(). */
+function enrichWithOverrides(expenses: any[], cosOverrideMap: Map<string, string>): void {
+  for (const exp of expenses) {
+    const key = `${exp.projectName}::${exp._sourceRow || exp.rowNumber}`;
+    const override = cosOverrideMap.get(key);
+    if (override) exp._cosOverrideStatus = override;
+  }
+}
+
+/**
+ * COS-ratio revenue allocation — matches Revenue Tracker logic exactly.
+ * Builds per-project revenue and COS totals, then distributes revenue
+ * to months proportionally based on when COS is invoiced.
+ */
+function buildCosRatioRevenue(
+  allInflows: { projectName: string; milestoneAmount: any }[],
+  allExpenses: { projectName: string; rowType: any; expenseActualTotal: any; expenseInvoicedDate: any; expenseInvoiceNumber?: any; expensePoNumber?: any; _cosOverrideStatus?: any; _cosRealisedFlag?: any }[],
+  monthKeys: string[],
+): Record<string, number> {
+  // 1. Total revenue per project (from all inflows, regardless of date)
+  const revenueByProject = new Map<string, number>();
+  for (const inf of allInflows) {
+    const amt = safeNum(inf.milestoneAmount);
+    if (amt === 0) continue;
+    const pName = normalizeProjectName(inf.projectName);
+    revenueByProject.set(pName, (revenueByProject.get(pName) || 0) + amt);
+  }
+
+  // 2. Total COS per project (from all item expenses, regardless of date)
+  const cosByProject = new Map<string, number>();
+  for (const exp of allExpenses) {
+    if (exp.rowType !== "item" && exp.rowType != null) continue;
+    const amount = safeNum(exp.expenseActualTotal);
+    if (amount === 0) continue;
+    const pName = normalizeProjectName(exp.projectName);
+    cosByProject.set(pName, (cosByProject.get(pName) || 0) + amount);
+  }
+
+  // 3. Allocate revenue to months via COS-ratio (revenue recognized when COS invoiced)
+  const revByMonth: Record<string, number> = {};
+  for (const exp of allExpenses) {
+    if (exp.rowType !== "item" && exp.rowType != null) continue;
+    const amount = safeNum(exp.expenseActualTotal);
+    if (amount === 0) continue;
+    const mk = extractMonthKey(exp.expenseInvoicedDate);
+    if (!mk || !monthKeys.includes(mk)) continue;
+
+    const pName = normalizeProjectName(exp.projectName);
+    const projectTotalCOS = cosByProject.get(pName) || 0;
+    const projectTotalRevenue = revenueByProject.get(pName) || 0;
+
+    const revenueAmount = projectTotalCOS > 0
+      ? (amount / projectTotalCOS) * projectTotalRevenue
+      : 0;
+
+    revByMonth[mk] = (revByMonth[mk] || 0) + revenueAmount;
+  }
+  return revByMonth;
+}
+
+/**
+ * Build monthly COS totals using only expenseActualTotal (standardized).
+ */
+function buildCosByMonth(
+  allExpenses: { projectName: string; rowType: any; expenseActualTotal: any; expenseInvoicedDate: any }[],
+  monthKeys: string[],
+): Record<string, number> {
+  const cosByMonth: Record<string, number> = {};
+  for (const exp of allExpenses) {
+    if (exp.rowType !== "item" && exp.rowType != null) continue;
+    const amount = safeNum(exp.expenseActualTotal);
+    if (amount === 0) continue;
+    const mk = extractMonthKey(exp.expenseInvoicedDate);
+    if (!mk || !monthKeys.includes(mk)) continue;
+    cosByMonth[mk] = (cosByMonth[mk] || 0) + amount;
+  }
+  return cosByMonth;
+}
+
+/**
+ * Compute the 3 month keys immediately following a given month key.
+ * E.g. "2026-03" → ["2026-04", "2026-05", "2026-06"]
+ */
+function getNext3MonthKeys(currentMk: string): string[] {
+  const [y, m] = currentMk.split("-").map(Number);
+  const keys: string[] = [];
+  for (let i = 1; i <= 3; i++) {
+    const d = new Date(Date.UTC(y, m - 1 + i, 1));
+    keys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+  return keys;
+}
+
+/**
+ * Build forecast revenue for the next 3 months using COS-ratio allocation
+ * on expenses with forecast payment dates (not yet invoiced).
+ * Also includes planned inflows (milestones not yet received).
+ */
+function buildForecastRevenue(
+  allInflows: { projectName: string; milestoneAmount: any }[],
+  forecastExpenses: { projectName: string; rowType: any; budgetTotal: any; forecastMonth: string }[],
+  forecastMonthKeys: string[],
+): Record<string, number> {
+  // Total revenue per project (same denominator as actuals)
+  const revenueByProject = new Map<string, number>();
+  for (const inf of allInflows) {
+    const amt = safeNum(inf.milestoneAmount);
+    if (amt === 0) continue;
+    const pName = normalizeProjectName(inf.projectName);
+    revenueByProject.set(pName, (revenueByProject.get(pName) || 0) + amt);
+  }
+
+  // Total budget COS per project (from budgetTotal on all items)
+  const budgetCosByProject = new Map<string, number>();
+  for (const exp of forecastExpenses) {
+    const amt = safeNum(exp.budgetTotal);
+    if (amt === 0) continue;
+    const pName = normalizeProjectName(exp.projectName);
+    budgetCosByProject.set(pName, (budgetCosByProject.get(pName) || 0) + amt);
+  }
+
+  // Allocate revenue to forecast months via COS-ratio on budget amounts
+  const forecastRevByMonth: Record<string, number> = {};
+  for (const exp of forecastExpenses) {
+    if (!forecastMonthKeys.includes(exp.forecastMonth)) continue;
+    const amt = safeNum(exp.budgetTotal);
+    if (amt === 0) continue;
+    const pName = normalizeProjectName(exp.projectName);
+    const projectTotalCOS = budgetCosByProject.get(pName) || 0;
+    const projectTotalRevenue = revenueByProject.get(pName) || 0;
+    const revenueAmount = projectTotalCOS > 0 ? (amt / projectTotalCOS) * projectTotalRevenue : 0;
+    forecastRevByMonth[exp.forecastMonth] = (forecastRevByMonth[exp.forecastMonth] || 0) + revenueAmount;
+  }
+  return forecastRevByMonth;
+}
+
+/**
+ * Build forecast COS for the next 3 months from expenses
+ * with forecast payment dates but not yet invoiced.
+ */
+function buildForecastCos(
+  forecastExpenses: { projectName: string; rowType: any; budgetTotal: any; forecastMonth: string }[],
+  forecastMonthKeys: string[],
+): Record<string, number> {
+  const forecastCosByMonth: Record<string, number> = {};
+  for (const exp of forecastExpenses) {
+    if (!forecastMonthKeys.includes(exp.forecastMonth)) continue;
+    const amt = safeNum(exp.budgetTotal);
+    if (amt === 0) continue;
+    forecastCosByMonth[exp.forecastMonth] = (forecastCosByMonth[exp.forecastMonth] || 0) + amt;
+  }
+  return forecastCosByMonth;
+}
+
+// ─── GET /api/fye-revenue-tracking/years ───
+// Returns available FYE years derived from data in fye_budgets, forecast_pipeline,
+// fye_kpi_counters, and fye_report_snapshots, merged with a default range around
+// the current active FYE so the selector always has reasonable options.
+router.get(
+  "/api/fye-revenue-tracking/years",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (_req, res) => {
+    try {
+      const current = getCurrentFye();
+      const yearSet = new Set<number>([current - 1, current, current + 1]);
+
+      // Gather distinct years from FYE tables
+      try {
+        const budgetYears = await db.selectDistinct({ fye: fyeBudgets.fye }).from(fyeBudgets);
+        for (const r of budgetYears) { const y = parseInt(String(r.fye), 10); if (!isNaN(y)) yearSet.add(y); }
+      } catch {}
+      try {
+        const pipelineYears = await db.selectDistinct({ fye: forecastPipeline.fyeYear }).from(forecastPipeline);
+        for (const r of pipelineYears) { if (r.fye) yearSet.add(r.fye); }
+      } catch {}
+      try {
+        const kpiYears = await db.selectDistinct({ fye: fyeKpiCounters.fyeYear }).from(fyeKpiCounters);
+        for (const r of kpiYears) { if (r.fye) yearSet.add(r.fye); }
+      } catch {}
+      try {
+        const snapYears = await db.selectDistinct({ fye: fyeReportSnapshots.fyeYear }).from(fyeReportSnapshots);
+        for (const r of snapYears) { if (r.fye) yearSet.add(r.fye); }
+      } catch {}
+
+      const years = [...yearSet].sort((a, b) => b - a); // Descending
+      res.json({ years, currentFye: current });
+    } catch (error: any) {
+      console.error("FYE years error:", error);
+      res.status(500).json({ error: "Failed to fetch FYE years", message: error?.message });
+    }
+  }
+);
+
 // ─── GET /api/fye-revenue-tracking/dashboard ───
 router.get(
   "/api/fye-revenue-tracking/dashboard",
@@ -146,46 +354,35 @@ router.get(
         // fye_budgets table may not exist yet
       }
 
-      // 2. Actual Revenue from program_inflows (payment received dates within FYE)
-      const allInflows = await db.select({
-        projectName: programInflows.projectName,
-        milestoneAmount: programInflows.milestoneAmount,
-        paymentReceivedDate: programInflows.paymentReceivedDate,
-      }).from(programInflows);
-      const actualRevByMonth: Record<string, number> = {};
-      for (const inf of allInflows) {
-        // Only count as actual if payment was actually received
-        if (!inf.paymentReceivedDate) continue;
-        const mk = extractMonthKey(inf.paymentReceivedDate);
-        if (mk && monthKeys.includes(mk)) {
-          const amt = safeNum(inf.milestoneAmount);
-          actualRevByMonth[mk] = (actualRevByMonth[mk] || 0) + amt;
-        }
-      }
+      // 2. Load inflows + expenses + COS overrides for COS-ratio revenue allocation
+      const [allInflows, allExpenses, cosOverrideMap] = await Promise.all([
+        db.select({
+          projectName: programInflows.projectName,
+          milestoneAmount: programInflows.milestoneAmount,
+        }).from(programInflows),
+        db.select({
+          projectName: programExpense.projectName,
+          rowType: programExpense.rowType,
+          expenseActualTotal: programExpense.expenseActualTotal,
+          expenseInvoicedDate: programExpense.expenseInvoicedDate,
+          expenseInvoiceNumber: programExpense.expenseInvoiceNumber,
+          expensePoNumber: programExpense.expensePoNumber,
+          rowNumber: programExpense.rowNumber,
+          budgetTotal: programExpense.budgetTotal,
+          forecastPaymentDate: programExpense.forecastPaymentDate,
+          computedForecastPaymentDate: programExpense.computedForecastPaymentDate,
+        }).from(programExpense),
+        loadCosOverrides(),
+      ]);
+      enrichWithOverrides(allExpenses, cosOverrideMap);
 
-      // 3. Actual COS from program_expense (invoice dates within FYE)
-      const allExpenses = await db.select({
-        projectName: programExpense.projectName,
-        rowType: programExpense.rowType,
-        expenseActualTotal: programExpense.expenseActualTotal,
-        actualCosTotal: programExpense.actualCosTotal,
-        expenseInvoicedDate: programExpense.expenseInvoicedDate,
-      }).from(programExpense);
-      const actualCosByMonth: Record<string, number> = {};
-      for (const exp of allExpenses) {
-        // Skip non-item rows (categories, subtotals, blanks).
-        // If rowType is null/undefined (SQLite may not have the column), treat as item.
-        if (exp.rowType != null && exp.rowType !== "item") continue;
-        const mk = extractMonthKey(exp.expenseInvoicedDate);
-        if (mk && monthKeys.includes(mk)) {
-          const amt = safeNum(exp.actualCosTotal || exp.expenseActualTotal);
-          if (amt !== 0) {
-            actualCosByMonth[mk] = (actualCosByMonth[mk] || 0) + amt;
-          }
-        }
-      }
+      // 3. Actual Revenue via COS-ratio allocation (matches Revenue Tracker)
+      const actualRevByMonth = buildCosRatioRevenue(allInflows, allExpenses as any, monthKeys);
 
-      // 4. Captured data from finance_revenue_monthly / finance_cos_monthly
+      // 4. Actual COS using expenseActualTotal only (standardized)
+      const actualCosByMonth = buildCosByMonth(allExpenses as any, monthKeys);
+
+      // 5. Captured data from finance_revenue_monthly / finance_cos_monthly
       const capturedRevRows = await db.select({
         monthEndDate: financeRevenueMonthly.monthEndDate,
         value: financeRevenueMonthly.value,
@@ -214,11 +411,32 @@ router.get(
       const now = new Date();
       const currentMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
+      // 6. Build 3-month forecast from planned/scheduled expense data
+      // Use expenses not yet invoiced that have a forecast payment date
+      const forecastWindow = getNext3MonthKeys(currentMk);
+      const forecastExpenses: { projectName: string; rowType: any; budgetTotal: any; forecastMonth: string }[] = [];
+      for (const exp of allExpenses) {
+        if (exp.rowType !== "item" && exp.rowType != null) continue;
+        // Skip items already invoiced (they're in actuals)
+        if (exp.expenseInvoicedDate) continue;
+        const budgetAmt = safeNum((exp as any).budgetTotal);
+        if (budgetAmt === 0) continue;
+        // Use computed forecast date first, then manual forecast date
+        const forecastDate = (exp as any).computedForecastPaymentDate || (exp as any).forecastPaymentDate;
+        const fMk = extractMonthKey(forecastDate);
+        if (fMk && forecastWindow.includes(fMk)) {
+          forecastExpenses.push({ projectName: exp.projectName, rowType: exp.rowType, budgetTotal: budgetAmt, forecastMonth: fMk });
+        }
+      }
+      const forecastRevByMonth = buildForecastRevenue(allInflows, forecastExpenses, forecastWindow);
+      const forecastCosByMonth = buildForecastCos(forecastExpenses, forecastWindow);
+
       // Build monthly dashboard data
       const months = monthKeys.map((mk) => {
         const budgetRev = budgetRevByMonth[mk] || 0;
         const budgetCos = budgetCosByMonth[mk] || 0;
         const isPastOrCurrent = mk <= currentMk;
+        const isForecastMonth = forecastWindow.includes(mk);
 
         // Actual values - only for past/current months, null for future
         const actualRev = isPastOrCurrent ? (actualRevByMonth[mk] || 0) : null;
@@ -228,9 +446,22 @@ router.get(
         const capturedRev = capturedRevByMonth[mk] || null;
         const capturedCos = capturedCosByMonth[mk] || null;
 
-        // Actual + Forecast: use actual for past months, budget for future
-        const actualForecastRev = isPastOrCurrent ? (actualRevByMonth[mk] || 0) : budgetRev;
-        const actualForecastCos = isPastOrCurrent ? (actualCosByMonth[mk] || 0) : budgetCos;
+        // Actual + Forecast blending:
+        //   Past/current months → actual values
+        //   Next 3 months → forecast from planned data
+        //   Beyond forecast window → 0
+        let actualForecastRev: number;
+        let actualForecastCos: number;
+        if (isPastOrCurrent) {
+          actualForecastRev = actualRevByMonth[mk] || 0;
+          actualForecastCos = actualCosByMonth[mk] || 0;
+        } else if (isForecastMonth) {
+          actualForecastRev = forecastRevByMonth[mk] || 0;
+          actualForecastCos = forecastCosByMonth[mk] || 0;
+        } else {
+          actualForecastRev = 0;
+          actualForecastCos = 0;
+        }
 
         return {
           monthKey: mk,
@@ -316,46 +547,34 @@ router.get(
         // Table may not exist in SQLite — proceed with computed values
       }
 
-      // If project_revenue_summary is empty, compute from raw data
+      // If project_revenue_summary is empty, compute from raw data (standardized to expenseActualTotal)
       if (revSummaryMap.size === 0) {
-        // Budget Revenue per project = SUM(milestone_amount) from all inflows
         const allInflows = await db.select({
           projectName: programInflows.projectName,
           milestoneAmount: programInflows.milestoneAmount,
-          paymentReceivedDate: programInflows.paymentReceivedDate,
         }).from(programInflows);
-        // Actual Revenue per project = SUM(milestone_amount) WHERE payment_received_date within FYE
-        const inflowsByProject = new Map<string, { budget: number; actual: number }>();
+        // Total revenue per project (all milestones, all time)
+        const inflowsByProject = new Map<string, { budget: number }>();
         for (const inf of allInflows) {
-          const pn = inf.projectName;
-          if (!inflowsByProject.has(pn)) inflowsByProject.set(pn, { budget: 0, actual: 0 });
-          const entry = inflowsByProject.get(pn)!;
-          entry.budget += safeNum(inf.milestoneAmount);
-          if (inf.paymentReceivedDate) {
-            const mk = extractMonthKey(inf.paymentReceivedDate);
-            if (mk && mk >= fyeStart && mk <= fyeEnd) {
-              entry.actual += safeNum(inf.milestoneAmount);
-            }
-          }
+          const pn = normalizeProjectName(inf.projectName);
+          if (!inflowsByProject.has(pn)) inflowsByProject.set(pn, { budget: 0 });
+          inflowsByProject.get(pn)!.budget += safeNum(inf.milestoneAmount);
         }
 
-        // Budget COS per project = SUM(expense_actual_total) from all expenses
-        // Actual COS per project = SUM(expense_actual_total) WHERE invoiced within FYE
+        // COS per project using expenseActualTotal only
         const allExpenses = await db.select({
           projectName: programExpense.projectName,
           rowType: programExpense.rowType,
           expenseActualTotal: programExpense.expenseActualTotal,
-          actualCosTotal: programExpense.actualCosTotal,
           expenseInvoicedDate: programExpense.expenseInvoicedDate,
         }).from(programExpense);
         const expensesByProject = new Map<string, { budget: number; actual: number }>();
         for (const exp of allExpenses) {
-          // Skip non-item rows if rowType exists
-          if (exp.rowType != null && exp.rowType !== "item") continue;
-          const pn = exp.projectName;
+          if (exp.rowType !== "item" && exp.rowType != null) continue;
+          const pn = normalizeProjectName(exp.projectName);
           if (!expensesByProject.has(pn)) expensesByProject.set(pn, { budget: 0, actual: 0 });
           const entry = expensesByProject.get(pn)!;
-          const amt = safeNum(exp.actualCosTotal || exp.expenseActualTotal);
+          const amt = safeNum(exp.expenseActualTotal);
           entry.budget += amt;
           if (exp.expenseInvoicedDate) {
             const mk = extractMonthKey(exp.expenseInvoicedDate);
@@ -366,12 +585,13 @@ router.get(
         }
 
         for (const p of activeProjects) {
-          const inf = inflowsByProject.get(p.projectName) || { budget: 0, actual: 0 };
-          const exp = expensesByProject.get(p.projectName) || { budget: 0, actual: 0 };
+          const pn = normalizeProjectName(p.projectName);
+          const inf = inflowsByProject.get(pn) || { budget: 0 };
+          const exp = expensesByProject.get(pn) || { budget: 0, actual: 0 };
           revSummaryMap.set(p.projectName, {
             plannedRevenue: inf.budget,
             plannedExpenditure: exp.budget,
-            actualRevenue: inf.actual,
+            actualRevenue: exp.actual > 0 ? (exp.budget > 0 ? (exp.actual / exp.budget) * inf.budget : 0) : 0,
             actualExpenditure: exp.actual,
           });
         }
@@ -436,6 +656,7 @@ router.get(
           budgetGpPct: safeDivide(budgetGp, budgetRev),
           actualGpPct: safeDivide(actualGp, actualRev),
           signedStatus: p.signedStatus || "NONE",
+          hasTracker: revSummaryMap.has(p.projectName),
         };
       });
 
@@ -835,26 +1056,15 @@ async function collectSnapshotData(fye: number) {
     }
   } catch {}
 
-  // Actual Revenue
-  const allInflows = await db.select({ projectName: programInflows.projectName, milestoneAmount: programInflows.milestoneAmount, paymentReceivedDate: programInflows.paymentReceivedDate }).from(programInflows);
-  const actualRevByMonth: Record<string, number> = {};
-  for (const inf of allInflows) {
-    if (!inf.paymentReceivedDate) continue;
-    const mk = extractMonthKey(inf.paymentReceivedDate);
-    if (mk && monthKeys.includes(mk)) actualRevByMonth[mk] = (actualRevByMonth[mk] || 0) + safeNum(inf.milestoneAmount);
-  }
-
-  // Actual COS
-  const allExpenses = await db.select({ projectName: programExpense.projectName, rowType: programExpense.rowType, expenseActualTotal: programExpense.expenseActualTotal, actualCosTotal: programExpense.actualCosTotal, expenseInvoicedDate: programExpense.expenseInvoicedDate }).from(programExpense);
-  const actualCosByMonth: Record<string, number> = {};
-  for (const exp of allExpenses) {
-    if (exp.rowType != null && exp.rowType !== "item") continue;
-    const mk = extractMonthKey(exp.expenseInvoicedDate);
-    if (mk && monthKeys.includes(mk)) {
-      const amt = safeNum(exp.actualCosTotal || exp.expenseActualTotal);
-      if (amt !== 0) actualCosByMonth[mk] = (actualCosByMonth[mk] || 0) + amt;
-    }
-  }
+  // Actual Revenue + COS via COS-ratio allocation (matches Revenue Tracker)
+  const [allInflows, allExpenses, snapCosOverrides] = await Promise.all([
+    db.select({ projectName: programInflows.projectName, milestoneAmount: programInflows.milestoneAmount }).from(programInflows),
+    db.select({ projectName: programExpense.projectName, rowType: programExpense.rowType, expenseActualTotal: programExpense.expenseActualTotal, expenseInvoicedDate: programExpense.expenseInvoicedDate, expenseInvoiceNumber: programExpense.expenseInvoiceNumber, expensePoNumber: programExpense.expensePoNumber, rowNumber: programExpense.rowNumber, budgetTotal: programExpense.budgetTotal, forecastPaymentDate: programExpense.forecastPaymentDate, computedForecastPaymentDate: programExpense.computedForecastPaymentDate }).from(programExpense),
+    loadCosOverrides(),
+  ]);
+  enrichWithOverrides(allExpenses, snapCosOverrides);
+  const actualRevByMonth = buildCosRatioRevenue(allInflows, allExpenses as any, monthKeys);
+  const actualCosByMonth = buildCosByMonth(allExpenses as any, monthKeys);
 
   // Captured
   const capturedRevByMonth: Record<string, number> = {};
@@ -866,16 +1076,44 @@ async function collectSnapshotData(fye: number) {
     for (const r of cCos) { const mk = extractMonthKey(r.monthEndDate); if (mk && monthKeys.includes(mk)) capturedCosByMonth[mk] = (capturedCosByMonth[mk] || 0) + safeNum(r.value); }
   } catch {}
 
+  // Build 3-month forecast from planned/scheduled expense data (same as dashboard)
+  const forecastWindow = getNext3MonthKeys(currentMk);
+  const forecastExpenses: { projectName: string; rowType: any; budgetTotal: any; forecastMonth: string }[] = [];
+  for (const exp of allExpenses) {
+    if (exp.rowType !== "item" && exp.rowType != null) continue;
+    if (exp.expenseInvoicedDate) continue; // Skip already invoiced
+    const budgetAmt = safeNum((exp as any).budgetTotal);
+    if (budgetAmt === 0) continue;
+    const forecastDate = (exp as any).computedForecastPaymentDate || (exp as any).forecastPaymentDate;
+    const fMk = extractMonthKey(forecastDate);
+    if (fMk && forecastWindow.includes(fMk)) {
+      forecastExpenses.push({ projectName: exp.projectName, rowType: exp.rowType, budgetTotal: budgetAmt, forecastMonth: fMk });
+    }
+  }
+  const forecastRevByMonth = buildForecastRevenue(allInflows, forecastExpenses, forecastWindow);
+  const forecastCosByMonth = buildForecastCos(forecastExpenses, forecastWindow);
+
   // Dashboard months
   const dashboardMonths = monthKeys.map((mk) => {
     const bRev = budgetRevByMonth[mk] || 0, bCos = budgetCosByMonth[mk] || 0;
     const isPast = mk <= currentMk;
+    const isForecast = forecastWindow.includes(mk);
     const aRev = isPast ? (actualRevByMonth[mk] || 0) : null;
     const aCos = isPast ? (actualCosByMonth[mk] || 0) : null;
     const cRev = capturedRevByMonth[mk] || null;
     const cCos = capturedCosByMonth[mk] || null;
-    const afRev = isPast ? (actualRevByMonth[mk] || 0) : bRev;
-    const afCos = isPast ? (actualCosByMonth[mk] || 0) : bCos;
+    // Actual + Forecast blending: past=actual, next 3 months=forecast, beyond=0
+    let afRev: number, afCos: number;
+    if (isPast) {
+      afRev = actualRevByMonth[mk] || 0;
+      afCos = actualCosByMonth[mk] || 0;
+    } else if (isForecast) {
+      afRev = forecastRevByMonth[mk] || 0;
+      afCos = forecastCosByMonth[mk] || 0;
+    } else {
+      afRev = 0;
+      afCos = 0;
+    }
     return {
       monthKey: mk, label: monthKeyToLabel(mk),
       revenue: { budget: bRev, actualForecast: afRev, actual: aRev, captured: cRev !== null ? cRev : (isPast ? 0 : null) },
@@ -888,27 +1126,29 @@ async function collectSnapshotData(fye: number) {
   const projects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName, sizeKwp: projectInfo.sizeKwp, pd: projectInfo.pd, constructionStartDate: projectExecutionState.constructionStartDate, commissioningDate: projectExecutionState.commissioningDate, phase: projectExecutionState.phase, signedStatus: projectExecutionState.signedStatus, isActive: projectExecutionState.isActive, contractValue: projectInfo.contractValue }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
   const activeProjects = projects.filter((p) => p.isActive !== false);
 
-  // Compute per-project financials
+  // Compute per-project financials (standardized to expenseActualTotal)
   const inflowsByProject = new Map<string, { budget: number; actual: number }>();
   for (const inf of allInflows) {
-    if (!inflowsByProject.has(inf.projectName)) inflowsByProject.set(inf.projectName, { budget: 0, actual: 0 });
-    const e = inflowsByProject.get(inf.projectName)!;
+    const pName = normalizeProjectName(inf.projectName);
+    if (!inflowsByProject.has(pName)) inflowsByProject.set(pName, { budget: 0, actual: 0 });
+    const e = inflowsByProject.get(pName)!;
     e.budget += safeNum(inf.milestoneAmount);
-    if (inf.paymentReceivedDate) { const mk = extractMonthKey(inf.paymentReceivedDate); if (mk && mk >= fyeStart && mk <= fyeEnd) e.actual += safeNum(inf.milestoneAmount); }
   }
   const expensesByProject = new Map<string, { budget: number; actual: number }>();
   for (const exp of allExpenses) {
-    if (exp.rowType != null && exp.rowType !== "item") continue;
-    if (!expensesByProject.has(exp.projectName)) expensesByProject.set(exp.projectName, { budget: 0, actual: 0 });
-    const e = expensesByProject.get(exp.projectName)!;
-    const amt = safeNum(exp.actualCosTotal || exp.expenseActualTotal);
+    if (exp.rowType !== "item" && exp.rowType != null) continue;
+    const pName = normalizeProjectName(exp.projectName);
+    if (!expensesByProject.has(pName)) expensesByProject.set(pName, { budget: 0, actual: 0 });
+    const e = expensesByProject.get(pName)!;
+    const amt = safeNum(exp.expenseActualTotal);
     e.budget += amt;
     if (exp.expenseInvoicedDate) { const mk = extractMonthKey(exp.expenseInvoicedDate); if (mk && mk >= fyeStart && mk <= fyeEnd) e.actual += amt; }
   }
 
   const projectRows = activeProjects.map((p) => {
-    const inf = inflowsByProject.get(p.projectName) || { budget: 0, actual: 0 };
-    const exp = expensesByProject.get(p.projectName) || { budget: 0, actual: 0 };
+    const pName = normalizeProjectName(p.projectName);
+    const inf = inflowsByProject.get(pName) || { budget: 0, actual: 0 };
+    const exp = expensesByProject.get(pName) || { budget: 0, actual: 0 };
     return { projectName: p.projectName, businessDeveloper: p.pd, province: null, sizeKwp: safeNum(p.sizeKwp), status: p.phase, budgetRevenue: inf.budget, budgetCos: exp.budget, budgetGp: inf.budget - exp.budget, actualRevenue: inf.actual, actualExpense: exp.actual, actualGp: inf.actual - exp.actual, budgetGpPct: safeDivide(inf.budget - exp.budget, inf.budget), actualGpPct: safeDivide(inf.actual - exp.actual, inf.actual) };
   });
   const totals = projectRows.reduce((a, r) => ({ budgetRevenue: a.budgetRevenue + r.budgetRevenue, budgetCos: a.budgetCos + r.budgetCos, budgetGp: a.budgetGp + r.budgetGp, actualRevenue: a.actualRevenue + r.actualRevenue, actualExpense: a.actualExpense + r.actualExpense, actualGp: a.actualGp + r.actualGp }), { budgetRevenue: 0, budgetCos: 0, budgetGp: 0, actualRevenue: 0, actualExpense: 0, actualGp: 0 });
@@ -1271,6 +1511,38 @@ async function seedFyeData() {
       await db.execute(sql`INSERT INTO fye_kpi_counters (fye_year, brought_in, signed, created_at, updated_at)
         VALUES (2026, 26, 10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
       console.log("[FYE Seed] Inserted KPI counters for FYE 2026");
+    }
+
+    // Seed FYE 2026 aggregate monthly budgets (Revenue + COS)
+    const existingBudgets = await db
+      .select({ id: fyeBudgets.id })
+      .from(fyeBudgets)
+      .where(and(eq(fyeBudgets.fye, "2026"), eq(fyeBudgets.projectName, "__FYE_TOTAL__")))
+      .limit(1);
+
+    if (existingBudgets.length === 0) {
+      const budgetData: [string, string, string][] = [
+        // [monthKey, revenueAmount, cosAmount]
+        ["2025-09", "9348308.37",  "8083466.99"],
+        ["2025-10", "18892558.25", "16346971.77"],
+        ["2025-11", "23185462.07", "20063809.84"],
+        ["2025-12", "14313016.10", "12381959.44"],
+        ["2026-01", "14328580.47", "12395435.22"],
+        ["2026-02", "23948744.22", "20724666.98"],
+        ["2026-03", "23811191.68", "20599956.60"],
+        ["2026-04", "26808799.27", "23137378.14"],
+        ["2026-05", "36331899.47", "31403537.82"],
+        ["2026-06", "48187541.07", "41710854.07"],
+        ["2026-07", "45191393.46", "39116760.20"],
+        ["2026-08", "85332843.65", "73983831.01"],
+      ];
+      for (const [monthKey, rev, cos] of budgetData) {
+        await db.execute(sql`INSERT INTO fye_budgets (project_id, project_name, fye, month_key, budget_type, amount, created_at, updated_at)
+          VALUES (NULL, '__FYE_TOTAL__', '2026', ${monthKey}, 'revenue', ${rev}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
+        await db.execute(sql`INSERT INTO fye_budgets (project_id, project_name, fye, month_key, budget_type, amount, created_at, updated_at)
+          VALUES (NULL, '__FYE_TOTAL__', '2026', ${monthKey}, 'cos', ${cos}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
+      }
+      console.log("[FYE Seed] Inserted 24 budget rows (12 revenue + 12 COS) for FYE 2026");
     }
   } catch (err: any) {
     console.error("[FYE Seed] Error:", err.message);

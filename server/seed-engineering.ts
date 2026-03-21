@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { workItems, projectInfo } from "@shared/schema";
-import { eq, sql, and } from "drizzle-orm";
+import { operationalTasks, projectInfo } from "@shared/schema";
+import { eq, sql } from "drizzle-orm";
 import engineeringData from "./seed-engineering-data.json";
 
 export async function seedEngineeringData() {
@@ -19,11 +19,30 @@ export async function seedEngineeringData() {
 
     console.log(`[Seed] Found ${clickupCount} ClickUp tasks, expected ${engineeringData.length}. Seeding engineering data...`);
 
-    // Build project name → id lookup
-    const allProjects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
+    // Ensure all referenced projects exist in project_info
+    const uniqueProjectNames = [...new Set((engineeringData as any[]).map(t => t.project_name).filter(Boolean))];
+    const existingProjects = await db
+      .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+      .from(projectInfo);
     const projectNameToId = new Map<string, number>();
-    for (const p of allProjects) {
-      if (p.projectName) projectNameToId.set(p.projectName, p.id);
+    for (const p of existingProjects) {
+      projectNameToId.set(p.projectName.toLowerCase().trim(), p.id);
+    }
+
+    let projectsCreated = 0;
+    for (const name of uniqueProjectNames) {
+      if (!projectNameToId.has(name.toLowerCase().trim())) {
+        const [created] = await db.insert(projectInfo).values({
+          projectName: name,
+          phase: "P0_FIRST_ASSESSMENT",
+          isActive: true,
+        }).returning({ id: projectInfo.id });
+        projectNameToId.set(name.toLowerCase().trim(), created.id);
+        projectsCreated++;
+      }
+    }
+    if (projectsCreated > 0) {
+      console.log(`[Seed] Auto-created ${projectsCreated} missing projects in project_info`);
     }
 
     let inserted = 0;
@@ -45,17 +64,14 @@ export async function seedEngineeringData() {
         }
       }
 
-      const projectId = projectNameToId.get(task.project_name);
-      if (!projectId) {
-        console.warn(`[Seed] Skipping task "${task.title}" — project "${task.project_name}" not found`);
-        skipped++;
-        continue;
-      }
+      // Resolve project_id from project_info
+      const resolvedProjectId = task.project_name
+        ? projectNameToId.get(task.project_name.toLowerCase().trim()) ?? null
+        : null;
 
-      await db.insert(workItems).values({
-        projectId,
-        workstream: "ENG",
-        source: "INTEGRATION",
+      await db.insert(operationalTasks).values({
+        projectId: resolvedProjectId,
+        projectName: task.project_name,
         title: task.title,
         description: task.description || null,
         status: task.status || "planned",
