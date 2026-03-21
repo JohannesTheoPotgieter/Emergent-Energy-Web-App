@@ -201,27 +201,6 @@ export const insertFinanceCosMonthlySchema = createInsertSchema(financeCosMonthl
 export type InsertFinanceCosMonthly = z.infer<typeof insertFinanceCosMonthlySchema>;
 export type FinanceCosMonthly = typeof financeCosMonthly.$inferSelect;
 
-// ===================== OVERRIDE MIGRATION TRACKING =====================
-
-export const overrideMigrationOrphans = pgTable("override_migration_orphans", {
-  id: serial("id").primaryKey(),
-  overrideTable: text("override_table").notNull(),
-  overrideId: integer("override_id").notNull(),
-  overrideData: jsonb("override_data").notNull(),
-  reason: text("reason").notNull().default("no_matching_base_row"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-export const overrideMigrationAmbiguous = pgTable("override_migration_ambiguous", {
-  id: serial("id").primaryKey(),
-  overrideTable: text("override_table").notNull(),
-  overrideId: integer("override_id").notNull(),
-  overrideData: jsonb("override_data").notNull(),
-  matchingBaseIds: jsonb("matching_base_ids").notNull(),
-  reason: text("reason").notNull().default("multiple_matching_base_rows"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
 // ===================== WORKING PLAN =====================
 
 export const workingPlanScenario = pgTable("working_plan_scenario", {
