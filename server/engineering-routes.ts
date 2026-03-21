@@ -25,6 +25,7 @@ import { applyTemplate } from "./template-routes";
 import { syncProjectSplitTables } from "./lib/project-info-sync";
 import { requireAuthority, requirePermission, evaluateAuthorityForRequest } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { sendError } from "./lib/api-error";
 import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject, mapToOpsStatus } from "./work-items-adapter";
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
@@ -145,6 +146,192 @@ async function createNotification(_recipientUserId: number, _eventType: string, 
   return null;
 }
 
+/**
+ * Enrich engineering tasks with resolved assignees, deliverables context,
+ * Microsoft items, stage context, and computed flags.
+ * Used by both the task list and task detail endpoints.
+ */
+async function enrichEngineeringTasks(tasks: any[], req: Request): Promise<any[]> {
+  if (tasks.length === 0) return [];
+
+  const { buildUserMap, mergeResolvedWithTextNames } = await import("./user-resolver");
+  const userMap = await buildUserMap();
+  const visibleProjectIds = Array.from(
+    new Set(
+      tasks
+        .map((task: any) => (typeof task.projectId === "number" ? task.projectId : null))
+        .filter((value): value is number => Number.isInteger(value) && value > 0),
+    ),
+  );
+  const canViewAllMicrosoftContext = MICROSOFT_ADMIN_ROLES.has(getUserRole(req));
+  const currentUserId = getUser(req).id;
+
+  let deliverableRows: any[] = [];
+  let microsoftRows: any[] = [];
+  try {
+    [deliverableRows, microsoftRows] = await Promise.all([
+      visibleProjectIds.length > 0
+        ? db.select({
+            id: deliverables.id,
+            projectId: deliverables.projectId,
+            title: deliverables.title,
+            status: deliverables.status,
+            updatedAt: deliverables.updatedAt,
+          })
+          .from(deliverables)
+          .where(inArray(deliverables.projectId, visibleProjectIds))
+          .orderBy(desc(deliverables.updatedAt))
+        : Promise.resolve([]),
+      visibleProjectIds.length > 0
+        ? db.select({
+            id: msObjects.id,
+            userId: msObjects.userId,
+            linkedProjectId: msObjects.linkedProjectId,
+            linkedTaskId: msObjects.linkedTaskId,
+            type: msObjects.type,
+            subjectOrTitle: msObjects.subjectOrTitle,
+            webLink: msObjects.webLink,
+            actionRequired: msObjects.actionRequired,
+            receivedOrStartDatetime: msObjects.receivedOrStartDatetime,
+          })
+          .from(msObjects)
+          .where(and(
+            inArray(msObjects.linkedProjectId, visibleProjectIds),
+            ne(msObjects.dismissed, true),
+            ...(canViewAllMicrosoftContext ? [] : [eq(msObjects.userId, currentUserId)]),
+          ))
+          .orderBy(desc(msObjects.receivedOrStartDatetime))
+        : Promise.resolve([]),
+    ]);
+  } catch (enrichErr: any) {
+    console.warn("[Engineering] Non-fatal enrichment error (deliverables/microsoft):", enrichErr.message);
+  }
+
+  const deliverablesByProject = new Map<number, Array<{
+    id: number;
+    title: string;
+    status: string;
+    updatedAt: Date | null;
+  }>>();
+  for (const row of deliverableRows) {
+    const list = deliverablesByProject.get(row.projectId) || [];
+    list.push({ id: row.id, title: row.title, status: row.status, updatedAt: row.updatedAt });
+    deliverablesByProject.set(row.projectId, list);
+  }
+
+  const microsoftByProject = new Map<number, Array<{
+    id: number;
+    linkedTaskId: number | null;
+    type: string;
+    title: string | null;
+    webLink: string | null;
+    actionRequired: boolean;
+    receivedOrStartDatetime: Date | null;
+  }>>();
+  for (const row of microsoftRows) {
+    const projectKey = typeof row.linkedProjectId === "number" ? row.linkedProjectId : null;
+    if (!projectKey) continue;
+    const list = microsoftByProject.get(projectKey) || [];
+    list.push({
+      id: row.id,
+      linkedTaskId: row.linkedTaskId,
+      type: row.type,
+      title: row.subjectOrTitle,
+      webLink: row.webLink,
+      actionRequired: row.actionRequired === true,
+      receivedOrStartDatetime: row.receivedOrStartDatetime,
+    });
+    microsoftByProject.set(projectKey, list);
+  }
+
+  const allWorkItemIds = tasks.map((t: any) => t.workItemId || t.id).filter(Boolean);
+  const stageContextMap = new Map<number, string>();
+  try {
+    const stageLinks = allWorkItemIds.length > 0
+      ? await db.select({
+          workItemId: projectEngTasks.workItemId,
+          stageName: engStageTemplates.name,
+        })
+        .from(projectEngTasks)
+        .innerJoin(projectEngStages, eq(projectEngTasks.projectEngStageId, projectEngStages.id))
+        .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
+        .where(sql`${projectEngTasks.workItemId} IN (${sql.join(allWorkItemIds.map((id: number) => sql`${id}`), sql`, `)})`)
+      : [];
+    for (const sl of stageLinks) {
+      if (sl.workItemId) stageContextMap.set(sl.workItemId, sl.stageName);
+    }
+  } catch (stageErr: any) {
+    console.warn("[Engineering] Non-fatal stage context error:", stageErr.message);
+  }
+
+  return tasks.map((t: any) => {
+    const resolvedAssigneeIds = Array.from(
+      new Set([
+        ...((t.assigneeUserIds || []).filter((uid: number) => Number.isInteger(uid)) as number[]),
+        ...(typeof t.ownerUserId === "number" ? [t.ownerUserId] : []),
+      ]),
+    );
+    const idResolved = resolvedAssigneeIds.map((uid: number) => userMap.get(uid)).filter(Boolean);
+    const mergedAssignees = mergeResolvedWithTextNames(idResolved, t.assignees, userMap);
+    const projectDeliverables = typeof t.projectId === "number" ? (deliverablesByProject.get(t.projectId) || []) : [];
+    const rawMicrosoftItems = typeof t.projectId === "number" ? (microsoftByProject.get(t.projectId) || []) : [];
+    const projectLinks = t.projectName
+      ? buildMyWorkSourceLinks({ source: "engineering_task", rawId: t.id, projectName: t.projectName })
+      : null;
+    const deliverableLinks = t.projectName
+      ? buildMyWorkSourceLinks({ source: "deliverables", rawId: t.id, projectName: t.projectName })
+      : null;
+    const relatedMicrosoftItems = rawMicrosoftItems.slice(0, 3).map((item) => {
+      const msLinks = buildMyWorkSourceLinks({
+        source: "microsoft",
+        rawId: item.id,
+        projectName: t.projectName || null,
+        sourceType: item.type,
+        webLink: item.webLink,
+      });
+      return {
+        id: item.id, linkedTaskId: item.linkedTaskId, type: item.type,
+        title: item.title, webLink: item.webLink, actionRequired: item.actionRequired,
+        receivedOrStartDatetime: item.receivedOrStartDatetime,
+        sourceHref: msLinks.sourceHref, sourceContextLabel: msLinks.sourceContextLabel,
+        externalHref: msLinks.externalHref,
+      };
+    });
+    const microsoftActionRequiredCount = rawMicrosoftItems.filter((item) => item.actionRequired).length;
+    const approvalPendingDeliverableCount = projectDeliverables.filter((item) =>
+      isDeliverableApprovalPendingStatus(item.status),
+    ).length;
+
+    return {
+      ...t,
+      assignees: mergedAssignees.map((user: any) => user.name),
+      assigneeUserIds: resolvedAssigneeIds,
+      assigneeUserId: resolvedAssigneeIds[0] || null,
+      resolvedAssignees: mergedAssignees,
+      resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
+      isUnassigned: mergedAssignees.length === 0 && !t.ownerUserId,
+      isBlocked: isBlockedStatus(t.status) || !!t.holdReason || !!t.blockedType,
+      isReviewNeeded: isReviewNeededStatus(t.status),
+      isApprovalPending: isApprovalPendingStatus(t.status),
+      projectLinkedDeliverableCount: projectDeliverables.length,
+      approvalPendingDeliverableCount,
+      projectLinkedDeliverables: projectDeliverables.slice(0, 3),
+      deliverableContextHref: deliverableLinks?.sourceHref || null,
+      deliverableContextLabel: deliverableLinks?.sourceContextLabel || null,
+      projectHref: projectLinks?.projectHref || null,
+      sourceHref: projectLinks?.sourceHref || null,
+      sourceContextLabel: stageContextMap.has(t.workItemId || t.id)
+        ? `Engineering Stage: ${stageContextMap.get(t.workItemId || t.id)}`
+        : (projectLinks?.sourceContextLabel || null),
+      externalHref: projectLinks?.externalHref || null,
+      hasMicrosoftContext: rawMicrosoftItems.length > 0,
+      microsoftActionRequiredCount,
+      relatedMicrosoftItems,
+      stageContext: stageContextMap.get(t.workItemId || t.id) || null,
+    };
+  });
+}
+
 export function registerEngineeringRoutes(app: Express) {
 
   app.use("/api/eng", jwtAuth);
@@ -226,7 +413,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(members);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -238,7 +425,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(member);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -251,7 +438,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -269,7 +456,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(allUsers);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -287,7 +474,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(allUsers);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -332,7 +519,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ message: `Backfill complete: ${updated} work items updated, ${assignmentsCreated} assignments created` });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -349,206 +536,11 @@ export function registerEngineeringRoutes(app: Express) {
         projectId: projectId ? parseInt(projectId as string) : undefined,
       });
 
-      const { buildUserMap, mergeResolvedWithTextNames } = await import("./user-resolver");
-      const userMap = await buildUserMap();
-      const visibleProjectIds = Array.from(
-        new Set(
-          tasks
-            .map((task: any) => (typeof task.projectId === "number" ? task.projectId : null))
-            .filter((value): value is number => Number.isInteger(value) && value > 0),
-        ),
-      );
-      const canViewAllMicrosoftContext = MICROSOFT_ADMIN_ROLES.has(getUserRole(req));
-      const currentUserId = getUser(req).id;
-
-      // Non-fatal enrichment - if deliverables/microsoft queries fail, tasks still load
-      let deliverableRows: any[] = [];
-      let microsoftRows: any[] = [];
-      try {
-        [deliverableRows, microsoftRows] = await Promise.all([
-          visibleProjectIds.length > 0
-            ? db.select({
-                id: deliverables.id,
-                projectId: deliverables.projectId,
-                title: deliverables.title,
-                status: deliverables.status,
-                updatedAt: deliverables.updatedAt,
-              })
-              .from(deliverables)
-              .where(inArray(deliverables.projectId, visibleProjectIds))
-              .orderBy(desc(deliverables.updatedAt))
-            : Promise.resolve([]),
-          visibleProjectIds.length > 0
-            ? db.select({
-                id: msObjects.id,
-                userId: msObjects.userId,
-                linkedProjectId: msObjects.linkedProjectId,
-                linkedTaskId: msObjects.linkedTaskId,
-                type: msObjects.type,
-                subjectOrTitle: msObjects.subjectOrTitle,
-                webLink: msObjects.webLink,
-                actionRequired: msObjects.actionRequired,
-                receivedOrStartDatetime: msObjects.receivedOrStartDatetime,
-              })
-              .from(msObjects)
-              .where(and(
-                inArray(msObjects.linkedProjectId, visibleProjectIds),
-                ne(msObjects.dismissed, true),
-                ...(canViewAllMicrosoftContext ? [] : [eq(msObjects.userId, currentUserId)]),
-              ))
-              .orderBy(desc(msObjects.receivedOrStartDatetime))
-            : Promise.resolve([]),
-        ]);
-      } catch (enrichErr: any) {
-        console.warn("[Engineering] Non-fatal enrichment error (deliverables/microsoft):", enrichErr.message);
-      }
-
-      const deliverablesByProject = new Map<number, Array<{
-        id: number;
-        title: string;
-        status: string;
-        updatedAt: Date | null;
-      }>>();
-      for (const row of deliverableRows) {
-        const list = deliverablesByProject.get(row.projectId) || [];
-        list.push({
-          id: row.id,
-          title: row.title,
-          status: row.status,
-          updatedAt: row.updatedAt,
-        });
-        deliverablesByProject.set(row.projectId, list);
-      }
-
-      const microsoftByProject = new Map<number, Array<{
-        id: number;
-        linkedTaskId: number | null;
-        type: string;
-        title: string | null;
-        webLink: string | null;
-        actionRequired: boolean;
-        receivedOrStartDatetime: Date | null;
-      }>>();
-      for (const row of microsoftRows) {
-        const projectKey = typeof row.linkedProjectId === "number" ? row.linkedProjectId : null;
-        if (!projectKey) continue;
-        const list = microsoftByProject.get(projectKey) || [];
-        list.push({
-          id: row.id,
-          linkedTaskId: row.linkedTaskId,
-          type: row.type,
-          title: row.subjectOrTitle,
-          webLink: row.webLink,
-          actionRequired: row.actionRequired === true,
-          receivedOrStartDatetime: row.receivedOrStartDatetime,
-        });
-        microsoftByProject.set(projectKey, list);
-      }
-
-      // Build stage context map for tasks linked to engineering stages (non-fatal)
-      const allWorkItemIds = tasks.map((t: any) => t.workItemId || t.id).filter(Boolean);
-      const stageContextMap = new Map<number, string>();
-      try {
-        const stageLinks = allWorkItemIds.length > 0
-          ? await db.select({
-              workItemId: projectEngTasks.workItemId,
-              stageName: engStageTemplates.name,
-            })
-            .from(projectEngTasks)
-            .innerJoin(projectEngStages, eq(projectEngTasks.projectEngStageId, projectEngStages.id))
-            .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
-            .where(sql`${projectEngTasks.workItemId} IN (${sql.join(allWorkItemIds.map((id: number) => sql`${id}`), sql`, `)})`)
-          : [];
-        for (const sl of stageLinks) {
-          if (sl.workItemId) stageContextMap.set(sl.workItemId, sl.stageName);
-        }
-      } catch (stageErr: any) {
-        console.warn("[Engineering] Non-fatal stage context error:", stageErr.message);
-      }
-
-      const enriched = tasks.map((t: any) => {
-        const resolvedAssigneeIds = Array.from(
-          new Set([
-            ...((t.assigneeUserIds || []).filter((uid: number) => Number.isInteger(uid)) as number[]),
-            ...(typeof t.ownerUserId === "number" ? [t.ownerUserId] : []),
-          ]),
-        );
-        const idResolved = resolvedAssigneeIds.map((uid: number) => userMap.get(uid)).filter(Boolean);
-        const mergedAssignees = mergeResolvedWithTextNames(idResolved, t.assignees, userMap);
-        const projectDeliverables = typeof t.projectId === "number" ? (deliverablesByProject.get(t.projectId) || []) : [];
-        const rawMicrosoftItems = typeof t.projectId === "number" ? (microsoftByProject.get(t.projectId) || []) : [];
-        const projectLinks = t.projectName
-          ? buildMyWorkSourceLinks({
-              source: "engineering_task",
-              rawId: t.id,
-              projectName: t.projectName,
-            })
-          : null;
-        const deliverableLinks = t.projectName
-          ? buildMyWorkSourceLinks({
-              source: "deliverables",
-              rawId: t.id,
-              projectName: t.projectName,
-            })
-          : null;
-        const relatedMicrosoftItems = rawMicrosoftItems.slice(0, 3).map((item) => {
-          const msLinks = buildMyWorkSourceLinks({
-            source: "microsoft",
-            rawId: item.id,
-            projectName: t.projectName || null,
-            sourceType: item.type,
-            webLink: item.webLink,
-          });
-          return {
-            id: item.id,
-            linkedTaskId: item.linkedTaskId,
-            type: item.type,
-            title: item.title,
-            webLink: item.webLink,
-            actionRequired: item.actionRequired,
-            receivedOrStartDatetime: item.receivedOrStartDatetime,
-            sourceHref: msLinks.sourceHref,
-            sourceContextLabel: msLinks.sourceContextLabel,
-            externalHref: msLinks.externalHref,
-          };
-        });
-        const microsoftActionRequiredCount = rawMicrosoftItems.filter((item) => item.actionRequired).length;
-        const approvalPendingDeliverableCount = projectDeliverables.filter((item) =>
-          isDeliverableApprovalPendingStatus(item.status),
-        ).length;
-
-        return {
-          ...t,
-          assignees: mergedAssignees.map((user: any) => user.name),
-          assigneeUserIds: resolvedAssigneeIds,
-          assigneeUserId: resolvedAssigneeIds[0] || null,
-          resolvedAssignees: mergedAssignees,
-          resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
-          isUnassigned: mergedAssignees.length === 0 && !t.ownerUserId,
-          isBlocked: isBlockedStatus(t.status) || !!t.holdReason || !!t.blockedType,
-          isReviewNeeded: isReviewNeededStatus(t.status),
-          isApprovalPending: isApprovalPendingStatus(t.status),
-          projectLinkedDeliverableCount: projectDeliverables.length,
-          approvalPendingDeliverableCount,
-          projectLinkedDeliverables: projectDeliverables.slice(0, 3),
-          deliverableContextHref: deliverableLinks?.sourceHref || null,
-          deliverableContextLabel: deliverableLinks?.sourceContextLabel || null,
-          projectHref: projectLinks?.projectHref || null,
-          sourceHref: projectLinks?.sourceHref || null,
-          sourceContextLabel: stageContextMap.has(t.workItemId || t.id)
-            ? `Engineering Stage: ${stageContextMap.get(t.workItemId || t.id)}`
-            : (projectLinks?.sourceContextLabel || null),
-          externalHref: projectLinks?.externalHref || null,
-          hasMicrosoftContext: rawMicrosoftItems.length > 0,
-          microsoftActionRequiredCount,
-          relatedMicrosoftItems,
-          stageContext: stageContextMap.get(t.workItemId || t.id) || null,
-        };
-      });
+      const enriched = await enrichEngineeringTasks(tasks, req);
       res.json(enriched);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -610,7 +602,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(createdPayload);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -699,7 +691,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(payload);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -953,7 +945,7 @@ export function registerEngineeringRoutes(app: Express) {
         changesJson: { error: err?.message || "unknown" },
       });
       console.error("[Eng] Send for approval error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1199,7 +1191,7 @@ export function registerEngineeringRoutes(app: Express) {
         changesJson: { error: err?.message || "unknown" },
       });
       console.error("[Eng] Send deliverable error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1239,7 +1231,7 @@ export function registerEngineeringRoutes(app: Express) {
       })));
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1282,7 +1274,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1299,7 +1291,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.sendFile(filePath);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1315,7 +1307,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ success: true, message: `Task "${existing.title}" deleted` });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1348,33 +1340,53 @@ export function registerEngineeringRoutes(app: Express) {
         }
       }
 
-      // All validations passed — apply updates
-      const updatedTasks = [];
-      for (const taskId of taskIds) {
-        const adapterUpdates: any = {};
-        if (updates.status) adapterUpdates.status = updates.status;
-        if (updates.holdReason !== undefined) adapterUpdates.holdReason = updates.holdReason;
-        if (updates.blockedType !== undefined) adapterUpdates.blockedType = updates.blockedType;
-        if (updates.priority !== undefined) adapterUpdates.priority = updates.priority;
-        if (updates.ownerUserId !== undefined) adapterUpdates.ownerUserId = updates.ownerUserId;
-        if (updates.status === "COMPLETE") adapterUpdates.completedAt = new Date();
+      // All validations passed — apply updates atomically
+      const updatedTaskIds: number[] = [];
+      await db.transaction(async (tx) => {
+        for (const taskId of taskIds) {
+          const adapterUpdates: any = {};
+          if (updates.status) adapterUpdates.status = updates.status;
+          if (updates.holdReason !== undefined) adapterUpdates.holdReason = updates.holdReason;
+          if (updates.blockedType !== undefined) adapterUpdates.blockedType = updates.blockedType;
+          if (updates.priority !== undefined) adapterUpdates.priority = updates.priority;
+          if (updates.ownerUserId !== undefined) adapterUpdates.ownerUserId = updates.ownerUserId;
+          if (updates.status === "COMPLETE") adapterUpdates.completedAt = new Date();
 
-        const updated = await updateEngineeringWorkItem(taskId, adapterUpdates);
-        if (updated) {
-          const mapped = await getEngineeringWorkItemById(taskId);
-          if (mapped) updatedTasks.push(mapped);
-          await db.insert(taskActivityLog).values({
-            workItemId: taskId, actorId: getUser(req).id,
-            actionType: "bulk_updated",
-            newValue: JSON.stringify(updates),
-          });
+          const setData: any = { updatedAt: new Date() };
+          if (adapterUpdates.status !== undefined) setData.status = adapterUpdates.status;
+          if (adapterUpdates.holdReason !== undefined) setData.holdReason = adapterUpdates.holdReason;
+          if (adapterUpdates.blockedType !== undefined) setData.blockedType = adapterUpdates.blockedType;
+          if (adapterUpdates.priority !== undefined) setData.priority = adapterUpdates.priority;
+          if (adapterUpdates.ownerUserId !== undefined) setData.ownerUserId = adapterUpdates.ownerUserId;
+          if (adapterUpdates.completedAt !== undefined) setData.completedAt = adapterUpdates.completedAt;
+
+          const [updated] = await tx.update(workItems)
+            .set(setData)
+            .where(and(eq(workItems.id, taskId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)))
+            .returning({ id: workItems.id });
+
+          if (updated) {
+            updatedTaskIds.push(taskId);
+            await tx.insert(taskActivityLog).values({
+              workItemId: taskId, actorId: getUser(req).id,
+              actionType: "bulk_updated",
+              newValue: JSON.stringify(updates),
+            });
+          }
         }
+      });
+
+      // Fetch enriched results outside the transaction
+      const updatedTasks = [];
+      for (const taskId of updatedTaskIds) {
+        const mapped = await getEngineeringWorkItemById(taskId);
+        if (mapped) updatedTasks.push(mapped);
       }
 
       res.json({ updated: updatedTasks.length, tasks: updatedTasks });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1399,7 +1411,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(mapped || { id: updated.id, workItemId: updated.id });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1415,7 +1427,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(watchers);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1454,7 +1466,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(watcher);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1483,7 +1495,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1494,10 +1506,11 @@ export function registerEngineeringRoutes(app: Express) {
       const id = parseInt(req.params.id);
       const task = await getEngineeringWorkItemById(id);
       if (!task) return res.status(404).json({ error: "Task not found" });
-      res.json(task);
+      const [enriched] = await enrichEngineeringTasks([task], req);
+      res.json(enriched);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1518,7 +1531,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(comments);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1545,7 +1558,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(comment);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1569,7 +1582,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(activity);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1581,7 +1594,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(subtasks);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1623,7 +1636,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(mapped || { id: subtaskWorkItem.id, title: data.title, status: "TO DO" });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1651,7 +1664,7 @@ export function registerEngineeringRoutes(app: Express) {
       })));
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1684,7 +1697,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1720,7 +1733,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(del);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1769,7 +1782,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1801,7 +1814,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1841,7 +1854,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ deliverable: updated, version });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1856,7 +1869,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(file);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1872,7 +1885,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(file);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1889,7 +1902,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(result);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1910,7 +1923,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(pointer);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -1923,7 +1936,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2017,7 +2030,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ scanned: allTasks.length + allDeliverables.length, warningsCreated: newWarnings.length, warnings: newWarnings });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2036,7 +2049,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(result);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2060,7 +2073,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2077,7 +2090,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2294,7 +2307,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2386,7 +2399,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2442,7 +2455,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(workload);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2486,7 +2499,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(result);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2504,7 +2517,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(pipeline);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2518,7 +2531,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(orphans);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2533,7 +2546,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(highWarnings);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2547,7 +2560,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(allUsers);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2727,7 +2740,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ entries, total, categoryCounts });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2808,7 +2821,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2850,7 +2863,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -2873,7 +2886,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(history);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -3004,7 +3017,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Engineering] CP Signed Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -3037,7 +3050,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -3148,7 +3161,7 @@ export function registerEngineeringRoutes(app: Express) {
     } catch (err: any) {
       console.error("[Phase] Error:", err.message);
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -3178,7 +3191,7 @@ export function registerEngineeringRoutes(app: Express) {
     } catch (err: any) {
       console.error("[Phase] History error:", err.message);
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -3202,7 +3215,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -3226,7 +3239,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ tasksCreated: created.length, tasks });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -3236,7 +3249,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(report);
     } catch (err: any) {
       console.error("[Reconciliation] engineering error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -3246,7 +3259,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(report);
     } catch (err: any) {
       console.error("[Reconciliation] projects error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -3277,7 +3290,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Reconciliation] summary error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -3507,7 +3520,7 @@ export function registerEngineeringRoutes(app: Express) {
     } catch (err: any) {
       console.error("Home action hub error:", err);
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -3532,7 +3545,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Engineering] Widget config GET error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 
@@ -3570,7 +3583,7 @@ export function registerEngineeringRoutes(app: Express) {
       return res.json({ success: true });
     } catch (err: any) {
       console.error("[Engineering] Widget config PUT error:", err);
-      res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
+      sendError(res, err);
     }
   });
 }
