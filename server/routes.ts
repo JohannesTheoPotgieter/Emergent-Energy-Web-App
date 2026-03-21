@@ -5143,7 +5143,9 @@ export async function registerRoutes(
   app.get("/api/projects", requireAuth, async (req, res) => {
     try {
       const projects = await storage.getAllProjects();
-      res.json(projects);
+      // Strip internal fields before responding
+      const shaped = projects.map(({ sourceFile, ...rest }: any) => rest);
+      res.json(shaped);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch projects", message: "Failed to fetch projects" });
     }
@@ -5159,7 +5161,9 @@ export async function registerRoutes(
       if (!project) {
         return res.status(404).json({ error: "Project not found", message: "Project not found" });
       }
-      res.json(project);
+      // Strip internal fields before responding
+      const { sourceFile, ...shaped } = project as any;
+      res.json(shaped);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch project", message: "Failed to fetch project" });
     }
@@ -5169,10 +5173,13 @@ export async function registerRoutes(
 
   app.get("/api/tasks", requireAuth, async (req, res) => {
     try {
+      // Strip internal fields from task responses
+      const stripTask = ({ sourceSheet, rowLocator, ...rest }: any) => rest;
+
       const { projectId } = req.query;
       if (projectId && typeof projectId === 'string') {
         const tasks = await storage.getTasksByProject(parseInt(projectId));
-        return res.json(tasks);
+        return res.json(tasks.map(stripTask));
       }
       const tasks = await storage.getAllTasks();
 
@@ -5180,7 +5187,7 @@ export async function registerRoutes(
       const role = user?.role || "";
       const FULL_ACCESS_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "ENGINEERING_MANAGER", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER"];
       if (FULL_ACCESS_ROLES.includes(role)) {
-        return res.json(tasks);
+        return res.json(tasks.map(stripTask));
       }
 
       const userId = user?.id || user?.userId;
@@ -5193,7 +5200,7 @@ export async function registerRoutes(
         if (Array.isArray(assigneeIds) && assigneeIds.includes(userId)) return true;
         return false;
       });
-      res.json(scopedTasks);
+      res.json(scopedTasks.map(stripTask));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch tasks", message: "Failed to fetch tasks" });
     }
