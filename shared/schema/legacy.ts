@@ -1,113 +1,90 @@
-import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, serial } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { projectStatusEnum, projectStageEnum } from "./projects";
 import { users } from "./users";
 
-// ===================== LEGACY ENUMS =====================
+// ===================== LEGACY TYPE STUBS =====================
+// The tables below (projects, expenses, revenues, tasks, budgets) have been
+// dropped from the database.  These plain interfaces preserve the shapes
+// that storage.ts compatibility mappers still return until all callers are
+// migrated to canonical types.
 
-export const expenseStatusEnum = pgEnum('expense_status', ['Paid', 'Pending', 'Forecast']);
-export const expenseCategoryEnum = pgEnum('expense_category', ['Procurement', 'Construction', 'Legal', 'Development', 'Grid Connection', 'Operational']);
-export const revenueTypeEnum = pgEnum('revenue_type', ['PPA', 'Merchant', 'LGC', 'Capacity']);
-export const revenueStatusEnum = pgEnum('revenue_status', ['Realised', 'Forecast']);
-export const taskStatusEnum = pgEnum('task_status', ['Not Started', 'In Progress', 'Complete', 'Delayed']);
-export const budgetCategoryEnum = pgEnum('budget_category', ['REV', 'COS', 'OPS']);
+export interface Project {
+  id: number;
+  name: string;
+  code: string;
+  manager: string;
+  site: string;
+  status: string;
+  stage: string;
+  startDate: string;
+  completionDate: string;
+  budget: string;
+  sourceFile: string;
+  lastUpdated: Date;
+}
 
-// ===================== LEGACY TABLES — DROPPED =====================
-// These tables have been dropped from the database.
-// Schema definitions are kept ONLY for TypeScript type inference.
-// Data lives in: project_info, normalized_cost_lines, normalized_revenue_lines, work_items.
+export type InsertProject = Omit<Project, "id" | "lastUpdated">;
 
-/** @deprecated Table dropped. Type-only reference. */
-export const projects = pgTable("projects", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  code: text("code").notNull().unique(),
-  manager: text("manager").notNull(),
-  site: text("site").notNull(),
-  status: projectStatusEnum("status").notNull().default('Planning'),
-  stage: projectStageEnum("stage").notNull().default('Development'),
-  startDate: text("start_date").notNull(),
-  completionDate: text("completion_date").notNull(),
-  budget: decimal("budget", { precision: 15, scale: 2 }).notNull(),
-  sourceFile: text("source_file").notNull(),
-  lastUpdated: timestamp("last_updated").notNull().defaultNow(),
-});
+export interface Expense {
+  id: number;
+  projectId: number;
+  category: string;
+  description: string;
+  amount: string;
+  date: string;
+  vendor: string;
+  invoiceNumber: string | null;
+  status: string;
+  sourceSheet: string;
+  rowLocator: number | null;
+  createdAt: Date;
+}
 
-export const insertProjectSchema = createInsertSchema(projects).omit({ id: true, lastUpdated: true } as any);
-export type InsertProject = z.infer<typeof insertProjectSchema>;
-export type Project = typeof projects.$inferSelect;
+export type InsertExpense = Omit<Expense, "id" | "createdAt">;
 
-/** @deprecated Table dropped. Type-only reference. */
-export const expenses = pgTable("expenses", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  category: expenseCategoryEnum("category").notNull(),
-  description: text("description").notNull(),
-  amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
-  date: text("date").notNull(),
-  vendor: text("vendor").notNull(),
-  invoiceNumber: text("invoice_number"),
-  status: expenseStatusEnum("status").notNull().default('Forecast'),
-  sourceSheet: text("source_sheet").notNull().default('Expenditure Breakdown'),
-  rowLocator: integer("row_locator"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export interface Revenue {
+  id: number;
+  projectId: number;
+  type: string;
+  amount: string;
+  date: string;
+  status: string;
+  sourceSheet: string;
+  rowLocator: number | null;
+  createdAt: Date;
+}
 
-export const insertExpenseSchema = createInsertSchema(expenses).omit({ id: true, createdAt: true } as any);
-export type InsertExpense = z.infer<typeof insertExpenseSchema>;
-export type Expense = typeof expenses.$inferSelect;
+export type InsertRevenue = Omit<Revenue, "id" | "createdAt">;
 
-/** @deprecated Table dropped. Type-only reference. */
-export const revenues = pgTable("revenues", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  type: revenueTypeEnum("type").notNull(),
-  amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
-  date: text("date").notNull(),
-  status: revenueStatusEnum("status").notNull().default('Forecast'),
-  sourceSheet: text("source_sheet").notNull().default('Revenue Tracking'),
-  rowLocator: integer("row_locator"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export interface Task {
+  id: number;
+  projectId: number;
+  taskName: string;
+  startDate: string;
+  endDate: string;
+  progress: number;
+  status: string;
+  assignee: string;
+  sourceSheet: string;
+  rowLocator: number | null;
+  createdAt: Date;
+}
 
-export const insertRevenueSchema = createInsertSchema(revenues).omit({ id: true, createdAt: true } as any);
-export type InsertRevenue = z.infer<typeof insertRevenueSchema>;
-export type Revenue = typeof revenues.$inferSelect;
+export type InsertTask = Omit<Task, "id" | "createdAt">;
 
-/** @deprecated Table dropped. Type-only reference. */
-export const tasks = pgTable("tasks", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  taskName: text("task_name").notNull(),
-  startDate: text("start_date").notNull(),
-  endDate: text("end_date").notNull(),
-  progress: integer("progress").notNull().default(0),
-  status: taskStatusEnum("status").notNull().default('Not Started'),
-  assignee: text("assignee").notNull(),
-  sourceSheet: text("source_sheet").notNull().default('Project Plan'),
-  rowLocator: integer("row_locator"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export interface Budget {
+  id: number;
+  projectId: number;
+  month: string;
+  category: string;
+  amount: string;
+  createdAt: Date;
+}
 
-export const insertTaskSchema = createInsertSchema(tasks).omit({ id: true, createdAt: true } as any);
-export type InsertTask = z.infer<typeof insertTaskSchema>;
-export type Task = typeof tasks.$inferSelect;
+export type InsertBudget = Omit<Budget, "id" | "createdAt">;
 
-/** @deprecated Table dropped. Type-only reference. */
-export const budgets = pgTable("budgets", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: 'cascade' }),
-  month: text("month").notNull(),
-  category: budgetCategoryEnum("category").notNull(),
-  amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-export const insertBudgetSchema = createInsertSchema(budgets).omit({ id: true, createdAt: true } as any);
-export type InsertBudget = z.infer<typeof insertBudgetSchema>;
-export type Budget = typeof budgets.$inferSelect;
+// ===================== ACTIVE TABLES =====================
 
 // Upload Metadata Table
 export const uploadMetadata = pgTable("upload_metadata", {
