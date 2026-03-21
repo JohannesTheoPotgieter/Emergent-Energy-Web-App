@@ -49,11 +49,11 @@
 
 1. **44 tables retain `project_name` text columns** (02-schema-consistency §5) — By design for import keys and display snapshots. Not a referential integrity risk, but can become stale on project rename.
 
-2. **Main JS bundle is 4,092 kB (950 kB gzipped)** (05-frontend-build-health §1) — Code-splitting recommended to reduce initial load.
+2. **~~Main JS bundle is 4,092 kB (950 kB gzipped)~~** (05-frontend-build-health §1) — **[FIXED]** Code-splitting implemented via `React.lazy()` for 64 page components.
 
 3. **React Query : raw fetch ratio is 2.3:1** (05-frontend-build-health §6) — 839 React Query calls vs 364 raw fetch. Gradual migration recommended.
 
-4. **`direct eval()` in quality-routes.ts:1817** (05-frontend-build-health §1) — Flagged by esbuild. Should be replaced with safer alternative.
+4. **~~`direct eval()` in quality-routes.ts:1817~~** (05-frontend-build-health §1) — **[FIXED]** Replaced with `Function()` constructor.
 
 5. **Legacy routes (~250+) coexist with V2 routes (48)** (03-api-audit §1) — Track for deprecation once V2 frontend migration completes.
 
@@ -99,11 +99,11 @@
 10. **[DONE]** Strip internal fields from legacy route responses — prevents leaking DB internals
 11. **[DONE]** Add permissions to all V2 sub-resource endpoints
 12. **[DONE]** Add 25+ missing Zod response schemas for V2 endpoints
-13. **Migrate 13 stale `/api/tasks` and `/api/expenses` frontend references to V2 endpoints** — prevents breakage when legacy routes are retired
-14. **Migrate 35 raw `fetch()` mutations to React Query `useMutation`** — improves cache consistency and error handling
-15. **Remove 4 dead V2 handler exports** — reduces code surface and confusion
-16. **Implement code-splitting for 4 MB main bundle** — improves initial page load time
-17. **Replace `eval()` in quality-routes.ts** — security and bundler compatibility
+13. **[RESOLVED]** `/api/tasks` and `/api/expenses` frontend references — verified all 13 routes are **still active** in `server/task-management-routes.ts` and `server/routes.ts`. Not stale; track for V2 migration when legacy routes are retired.
+14. **Migrate 35 raw `fetch()` mutations to React Query `useMutation`** — improves cache consistency and error handling (`my-work-tasks.tsx` highest priority at 17 calls)
+15. **[RESOLVED]** Dead V2 handler exports — verified already removed/renamed in prior refactor. No action needed.
+16. **[DONE]** Implement code-splitting for 4 MB main bundle — 64 page components converted to `React.lazy()` with `Suspense` fallback in `App.tsx`
+17. **[DONE]** Replace `eval()` in `quality-routes.ts:1817` — replaced with `Function()` constructor for safe formula evaluation
 18. **Complete remaining QA audits (06–11)** — frontend routes, state management, forms/mutations, integration flows, error handling, performance
 
 ---
