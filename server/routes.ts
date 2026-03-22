@@ -1765,17 +1765,17 @@ export async function registerRoutes(
       const usePromotedProjectDetail = rolloutFlags.promoted_core_project_detail_read;
 
       const [allProjectInfo, allExpenses, rawInflows, rawPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans, allPlanOverrides, lastImportRows, allClientsData, handoverRows] = await Promise.all([
-        usePromotedProjectDetail ? listProjectInfoFromPromotedCoreCompat() : storage.getAllProjectInfo(),
-        storage.getAllProgramExpenses(),
-        storage.getAllProgramInflows(),
-        storage.getAllProjectPlans(),
-        storage.getAllProjectEditableFields(),
-        storage.getAllMilestoneTaskLinks(),
-        storage.getAllOperationalTasks(),
-        db.selectDistinct({ fileName: uploadMetadata.fileName }).from(uploadMetadata),
-        db.selectDistinct({ projectName: smartImportRuns.projectName }).from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
-        db.select().from(normalizedCostLines),
-        db.select().from(normalizedRevenueLines),
+        (usePromotedProjectDetail ? listProjectInfoFromPromotedCoreCompat() : storage.getAllProjectInfo()).catch((e: any) => { console.warn("[projects-summary] allProjectInfo failed:", e.message); return []; }),
+        storage.getAllProgramExpenses().catch((e: any) => { console.warn("[projects-summary] allExpenses failed:", e.message); return []; }),
+        storage.getAllProgramInflows().catch((e: any) => { console.warn("[projects-summary] rawInflows failed:", e.message); return []; }),
+        storage.getAllProjectPlans().catch((e: any) => { console.warn("[projects-summary] rawPlans failed:", e.message); return []; }),
+        storage.getAllProjectEditableFields().catch((e: any) => { console.warn("[projects-summary] allEditableFields failed:", e.message); return []; }),
+        storage.getAllMilestoneTaskLinks().catch((e: any) => { console.warn("[projects-summary] allTaskLinks failed:", e.message); return []; }),
+        storage.getAllOperationalTasks().catch((e: any) => { console.warn("[projects-summary] allOpTasks failed:", e.message); return []; }),
+        db.selectDistinct({ fileName: uploadMetadata.fileName }).from(uploadMetadata).catch((e: any) => { console.warn("[projects-summary] uploadMetadata failed:", e.message); return []; }),
+        db.selectDistinct({ projectName: smartImportRuns.projectName }).from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')).catch((e: any) => { console.warn("[projects-summary] smartImportRuns failed:", e.message); return []; }),
+        db.select().from(normalizedCostLines).catch((e: any) => { console.warn("[projects-summary] normalizedCostLines failed:", e.message); return []; }),
+        db.select().from(normalizedRevenueLines).catch((e: any) => { console.warn("[projects-summary] normalizedRevenueLines failed:", e.message); return []; }),
         useCanonicalPs
           ? (async () => {
               const [wiRows, piRows] = await Promise.all([
@@ -1848,7 +1848,7 @@ export async function registerRoutes(
                 scheduledStartTime: null,
                 scheduledEndTime: null,
               }));
-            })(),
+            })().catch((e: any) => { console.warn("[projects-summary] work items failed:", e.message); return []; }),
         Promise.resolve([]),
         db
           .select({
@@ -1857,8 +1857,9 @@ export async function registerRoutes(
           })
           .from(smartImportRuns)
           .where(eq(smartImportRuns.status, 'COMMITTED'))
-          .groupBy(smartImportRuns.projectName),
-        usePromotedProjectDetail ? listClientsFromPromotedCoreCompat() : db.select().from(clients),
+          .groupBy(smartImportRuns.projectName)
+          .catch((e: any) => { console.warn("[projects-summary] lastImportRows failed:", e.message); return []; }),
+        (usePromotedProjectDetail ? listClientsFromPromotedCoreCompat() : db.select().from(clients)).catch((e: any) => { console.warn("[projects-summary] clients failed:", e.message); return []; }),
         db.execute(sql.raw(`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`)).catch(() => ({ rows: [] })),
       ]);
       const allPlans = rawPlans;
