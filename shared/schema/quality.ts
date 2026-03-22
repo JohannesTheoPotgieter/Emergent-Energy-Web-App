@@ -3,7 +3,7 @@ import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, re
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-import { users, organizations } from "./users";
+import { users } from "./users";
 import { projectInfo } from "./projects";
 
 // ===================== QUALITY MODULE TABLES =====================
@@ -14,10 +14,8 @@ export const qcTemplate = pgTable("qc_template", {
   version: integer("version").notNull().default(1),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-  // Multi-tenancy (Prompt 11)
-  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
 });
-export const insertQcTemplateSchema = createInsertSchema(qcTemplate).omit({ id: true, createdAt: true, organizationId: true } as any);
+export const insertQcTemplateSchema = createInsertSchema(qcTemplate).omit({ id: true, createdAt: true } as any);
 export type InsertQcTemplate = z.infer<typeof insertQcTemplateSchema>;
 export type QcTemplate = typeof qcTemplate.$inferSelect;
 

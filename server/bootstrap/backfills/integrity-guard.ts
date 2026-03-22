@@ -55,16 +55,16 @@ export async function runIntegrityGuard(
   try {
     const res = await db.execute(sql.raw(`
       INSERT INTO dashboard_project_metrics (
-        project_id, organization_id, project_name, pm, pd, phase, rag_status,
+        project_id, project_name, pm, pd, phase, rag_status,
         contract_value, total_revenue, received_revenue, outstanding_revenue,
         total_cost, paid_cost, outstanding_cost,
         task_count, tasks_completed, tasks_in_progress, tasks_overdue, tasks_active,
         open_warnings
       )
       SELECT
-        pi.id, pi.organization_id, pi.project_name, pi.pm, pi.pd,
+        pi.id, pi.project_name, pi.pm, pi.pd,
         pes.phase, pes.rag_status, pi.contract_value,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
       FROM project_info pi
       LEFT JOIN project_execution_state pes ON pi.id = pes.project_id
       LEFT JOIN dashboard_project_metrics dpm ON pi.id = dpm.project_id
