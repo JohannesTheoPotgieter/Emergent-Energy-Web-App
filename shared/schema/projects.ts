@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { users, organizations } from "./users";
+import { users } from "./users";
 import { smartImportRuns } from "./imports";
 
 // ===================== ENUMS =====================
@@ -19,10 +19,8 @@ export const clients = pgTable("clients", {
   updatedBy: integer("updated_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  // Multi-tenancy (Prompt 11)
-  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
 });
-export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true, organizationId: true } as any);
+export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertClient = z.infer<typeof insertClientSchema>;
 export type Client = typeof clients.$inferSelect;
 
@@ -42,11 +40,9 @@ export const projectInfo = pgTable("project_info", {
   pmUserId: integer("pm_user_id"),
   pdUserId: integer("pd_user_id"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  // Multi-tenancy (Prompt 11)
-  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
 });
 
-export const insertProjectInfoSchema = createInsertSchema(projectInfo).omit({ id: true, updatedAt: true, organizationId: true } as any);
+export const insertProjectInfoSchema = createInsertSchema(projectInfo).omit({ id: true, updatedAt: true } as any);
 export type InsertProjectInfo = z.infer<typeof insertProjectInfoSchema>;
 export type ProjectInfo = typeof projectInfo.$inferSelect;
 
@@ -506,10 +502,8 @@ export const phaseTemplate = pgTable("phase_template", {
   createdByUserId: integer("created_by_user_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  // Multi-tenancy (Prompt 11)
-  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
 });
-export const insertPhaseTemplateSchema = createInsertSchema(phaseTemplate).omit({ id: true, createdAt: true, updatedAt: true, organizationId: true } as any);
+export const insertPhaseTemplateSchema = createInsertSchema(phaseTemplate).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertPhaseTemplate = z.infer<typeof insertPhaseTemplateSchema>;
 export type PhaseTemplate = typeof phaseTemplate.$inferSelect;
 
@@ -679,10 +673,8 @@ export const portfolios = pgTable("portfolios", {
   updatedBy: integer("updated_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  // Multi-tenancy (Prompt 11)
-  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
 });
-export const insertPortfolioSchema = createInsertSchema(portfolios).omit({ id: true, createdAt: true, updatedAt: true, organizationId: true } as any);
+export const insertPortfolioSchema = createInsertSchema(portfolios).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertPortfolio = z.infer<typeof insertPortfolioSchema>;
 export type Portfolio = typeof portfolios.$inferSelect;
 
@@ -936,7 +928,6 @@ export type NormalizedExecutionPhase = typeof normalizedExecutionPhases.$inferSe
 export const dashboardProjectMetrics = pgTable("dashboard_project_metrics", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").unique().notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
-  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
   // Financial aggregates
   totalRevenue: decimal("total_revenue", { precision: 15, scale: 2 }).notNull().default("0"),
   receivedRevenue: decimal("received_revenue", { precision: 15, scale: 2 }).notNull().default("0"),
@@ -969,7 +960,6 @@ export type DashboardProjectMetrics = typeof dashboardProjectMetrics.$inferSelec
 
 export const dashboardProgramMetrics = pgTable("dashboard_program_metrics", {
   id: serial("id").primaryKey(),
-  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
   totalProjects: integer("total_projects").notNull().default(0),
   activeProjects: integer("active_projects").notNull().default(0),
   totalProgramRevenue: decimal("total_program_revenue", { precision: 15, scale: 2 }).notNull().default("0"),
