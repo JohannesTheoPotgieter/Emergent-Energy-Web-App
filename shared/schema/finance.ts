@@ -3,7 +3,7 @@ import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, re
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-import { users, organizations } from "./users";
+import { users } from "./users";
 import { projectInfo } from "./projects";
 import { smartImportRuns } from "./imports";
 
@@ -389,10 +389,8 @@ export const counterparties = pgTable("counterparties", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   lastSeenAt: timestamp("last_seen_at"),
-  // Multi-tenancy (Prompt 11)
-  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
 });
-export const insertCounterpartySchema = createInsertSchema(counterparties).omit({ id: true, createdAt: true, updatedAt: true, organizationId: true } as any);
+export const insertCounterpartySchema = createInsertSchema(counterparties).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertCounterparty = z.infer<typeof insertCounterpartySchema>;
 export type Counterparty = typeof counterparties.$inferSelect;
 

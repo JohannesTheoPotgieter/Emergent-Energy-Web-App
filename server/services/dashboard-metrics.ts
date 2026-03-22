@@ -169,7 +169,6 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
 
   const row = {
     projectId,
-    organizationId: (project as any).organizationId ?? 1,
     totalRevenue: totalRevenue.toFixed(2),
     receivedRevenue: receivedRevenue.toFixed(2),
     outstandingRevenue: outstandingRevenue.toFixed(2),
@@ -213,7 +212,7 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
   } else {
     await db.execute(sql`
       INSERT INTO dashboard_project_metrics (
-        project_id, organization_id,
+        project_id,
         total_revenue, received_revenue, outstanding_revenue,
         total_cost, paid_cost, outstanding_cost, margin_pct,
         task_count, tasks_completed, tasks_in_progress, tasks_overdue, tasks_active,
@@ -221,7 +220,7 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
         health_score, phase, rag_status, contract_value, project_name, pm, pd,
         last_refreshed_at
       ) VALUES (
-        ${row.projectId}, ${row.organizationId},
+        ${row.projectId},
         ${row.totalRevenue}, ${row.receivedRevenue}, ${row.outstandingRevenue},
         ${row.totalCost}, ${row.paidCost}, ${row.outstandingCost}, ${row.marginPct},
         ${row.taskCount}, ${row.tasksCompleted}, ${row.tasksInProgress}, ${row.tasksOverdue}, ${row.tasksActive},
@@ -231,7 +230,6 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
       )
       ON CONFLICT (project_id)
       DO UPDATE SET
-        organization_id = EXCLUDED.organization_id,
         total_revenue = EXCLUDED.total_revenue,
         received_revenue = EXCLUDED.received_revenue,
         outstanding_revenue = EXCLUDED.outstanding_revenue,
@@ -297,13 +295,10 @@ export async function refreshAllMetrics(): Promise<{ refreshed: number; failed: 
 
 // ─── Program-level refresh ─────────────────────────────────────────
 
-export async function refreshProgramMetrics(
-  organizationId: number = 1,
-): Promise<void> {
+export async function refreshProgramMetrics(): Promise<void> {
   const projectRows = await db
     .select()
-    .from(dashboardProjectMetrics)
-    .where(eq(dashboardProjectMetrics.organizationId, organizationId));
+    .from(dashboardProjectMetrics);
 
   let totalProjects = projectRows.length;
   let activeProjects = 0;
@@ -340,7 +335,6 @@ export async function refreshProgramMetrics(
   const avgMargin = marginCount > 0 ? (marginSum / marginCount).toFixed(4) : null;
 
   const row = {
-    organizationId,
     totalProjects,
     activeProjects,
     totalProgramRevenue: totalProgramRevenue.toFixed(2),
@@ -358,22 +352,18 @@ export async function refreshProgramMetrics(
     const existing = await db
       .select()
       .from(dashboardProgramMetrics)
-      .where(eq(dashboardProgramMetrics.organizationId, organizationId))
       .limit(1);
 
     if (existing.length > 0) {
       await db
         .update(dashboardProgramMetrics)
-        .set(row)
-        .where(eq(dashboardProgramMetrics.organizationId, organizationId));
+        .set(row);
     } else {
       await db.insert(dashboardProgramMetrics).values(row);
     }
   } else {
-    // Upsert by organization — use simple delete+insert since there's only one row per org
-    await db
-      .delete(dashboardProgramMetrics)
-      .where(eq(dashboardProgramMetrics.organizationId, organizationId));
+    // Simple delete+insert since there's only one row
+    await db.delete(dashboardProgramMetrics);
     await db.insert(dashboardProgramMetrics).values(row);
   }
 }
@@ -389,8 +379,8 @@ export function refreshProjectMetricsAsync(projectId: number): void {
   );
 }
 
-export function refreshProgramMetricsAsync(organizationId: number = 1): void {
-  refreshProgramMetrics(organizationId).catch((err) =>
+export function refreshProgramMetricsAsync(): void {
+  refreshProgramMetrics().catch((err) =>
     console.warn(
       `[dashboard-metrics] Async program refresh failed:`,
       err.message,
