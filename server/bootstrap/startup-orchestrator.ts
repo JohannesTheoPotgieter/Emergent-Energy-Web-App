@@ -26,25 +26,26 @@ async function runDrizzleSchemaSync(log: (message: string, source?: string) => v
   if (mode !== "postgres") return;
   if (!process.env.DATABASE_URL) return;
 
-  // In production/staging, schema sync runs at build time — skip at startup
-  const isProd = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
-  if (isProd) {
-    log("drizzle-kit push skipped — runs at build time in production", "Startup:Schema");
-    return;
+  try {
+    execSync("psql $DATABASE_URL -f script/pre-push-enums.sql", {
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 30000,
+      env: { ...process.env },
+    });
+    log("pre-push enums/tables synced", "Startup:Schema");
+  } catch (err: any) {
+    log(`pre-push enums warning (non-fatal): ${err.message}`, "Startup:Schema");
   }
 
   try {
-    log("Running drizzle-kit push to sync schema with database...", "Startup:Schema");
-    execSync("npx drizzle-kit push --force", {
+    execSync("psql $DATABASE_URL -f script/full-schema-alignment.sql", {
       stdio: ["pipe", "pipe", "pipe"],
-      timeout: 60000,
+      timeout: 30000,
       env: { ...process.env },
     });
-    log("drizzle-kit push completed — all schema tables synced", "Startup:Schema");
+    log("full schema alignment synced", "Startup:Schema");
   } catch (err: any) {
-    // Non-fatal: the additive alignments below will handle critical tables
-    const stderr = err.stderr?.toString?.() || "";
-    log(`drizzle-kit push warning (non-fatal): ${stderr || err.message}`, "Startup:Schema");
+    log(`full schema alignment warning (non-fatal): ${err.message}`, "Startup:Schema");
   }
 }
 
