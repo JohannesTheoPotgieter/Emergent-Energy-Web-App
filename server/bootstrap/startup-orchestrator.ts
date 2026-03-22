@@ -14,14 +14,24 @@ import { execSync } from "child_process";
  * In development mode with PostgreSQL, run drizzle-kit push to auto-create
  * all tables from the Drizzle schema. This ensures 100% schema coverage
  * without manually maintaining DDL for every table.
+ *
+ * In production, drizzle-kit push runs at BUILD time (see .replit deployment
+ * config) so the schema is synced before the server starts. This avoids
+ * blocking the HTTP port during startup. The additive ALTER TABLE statements
+ * in runAdditiveSchemaAlignments() handle any remaining column additions at
+ * runtime without needing drizzle-kit.
  */
 async function runDrizzleSchemaSync(log: (message: string, source?: string) => void) {
   const mode = getDbMode();
   if (mode !== "postgres") return;
   if (!process.env.DATABASE_URL) return;
-  // In production, only run if ENABLE_STARTUP_SCHEMA_REPAIR is explicitly set
+
+  // In production/staging, schema sync runs at build time — skip at startup
   const isProd = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
-  if (isProd && process.env.ENABLE_STARTUP_SCHEMA_REPAIR !== "true") return;
+  if (isProd) {
+    log("drizzle-kit push skipped — runs at build time in production", "Startup:Schema");
+    return;
+  }
 
   try {
     log("Running drizzle-kit push to sync schema with database...", "Startup:Schema");
@@ -330,38 +340,70 @@ async function runAdditiveSchemaAlignments() {
       total_revenue DECIMAL(15,2) NOT NULL DEFAULT 0,
       received_revenue DECIMAL(15,2) NOT NULL DEFAULT 0,
       outstanding_revenue DECIMAL(15,2) NOT NULL DEFAULT 0,
-      total_expenses DECIMAL(15,2) NOT NULL DEFAULT 0,
-      paid_expenses DECIMAL(15,2) NOT NULL DEFAULT 0,
-      outstanding_expenses DECIMAL(15,2) NOT NULL DEFAULT 0,
-      gross_profit DECIMAL(15,2) NOT NULL DEFAULT 0,
-      gross_margin_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
-      actual_progress_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
-      expected_progress_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
-      schedule_variance_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
+      total_cost DECIMAL(15,2) NOT NULL DEFAULT 0,
+      paid_cost DECIMAL(15,2) NOT NULL DEFAULT 0,
+      outstanding_cost DECIMAL(15,2) NOT NULL DEFAULT 0,
+      margin_pct DECIMAL(8,4),
+      task_count INTEGER NOT NULL DEFAULT 0,
+      tasks_completed INTEGER NOT NULL DEFAULT 0,
+      tasks_in_progress INTEGER NOT NULL DEFAULT 0,
+      tasks_overdue INTEGER NOT NULL DEFAULT 0,
+      tasks_active INTEGER NOT NULL DEFAULT 0,
+      open_warnings INTEGER NOT NULL DEFAULT 0,
+      qc_progress_pct DECIMAL(8,4),
+      health_score DECIMAL(5,2),
       phase TEXT,
       rag_status TEXT,
       contract_value DECIMAL(15,2),
-      last_refreshed_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      project_name TEXT,
+      pm TEXT,
+      pd TEXT,
+      last_refreshed_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS dashboard_program_metrics (
       id SERIAL PRIMARY KEY,
       total_projects INTEGER NOT NULL DEFAULT 0,
       active_projects INTEGER NOT NULL DEFAULT 0,
       total_program_revenue DECIMAL(15,2) NOT NULL DEFAULT 0,
-      total_program_expenses DECIMAL(15,2) NOT NULL DEFAULT 0,
-      program_gross_profit DECIMAL(15,2) NOT NULL DEFAULT 0,
-      program_gross_margin_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
-      avg_progress_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
-      avg_schedule_variance_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
-      green_count INTEGER NOT NULL DEFAULT 0,
-      amber_count INTEGER NOT NULL DEFAULT 0,
-      red_count INTEGER NOT NULL DEFAULT 0,
-      last_refreshed_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      total_program_cost DECIMAL(15,2) NOT NULL DEFAULT 0,
+      received_revenue DECIMAL(15,2) NOT NULL DEFAULT 0,
+      paid_cost DECIMAL(15,2) NOT NULL DEFAULT 0,
+      avg_margin DECIMAL(8,4),
+      projects_at_risk INTEGER NOT NULL DEFAULT 0,
+      total_tasks_overdue INTEGER NOT NULL DEFAULT 0,
+      total_open_warnings INTEGER NOT NULL DEFAULT 0,
+      last_refreshed_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+  `);
+
+  // ── dashboard_project_metrics columns (align old table shape with Drizzle schema) ──
+  await safeExec("dashboard_project_metrics columns", `
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS total_cost DECIMAL(15,2) NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS paid_cost DECIMAL(15,2) NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS outstanding_cost DECIMAL(15,2) NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS margin_pct DECIMAL(8,4);
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS task_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS tasks_completed INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS tasks_in_progress INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS tasks_overdue INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS tasks_active INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS open_warnings INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS qc_progress_pct DECIMAL(8,4);
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS health_score DECIMAL(5,2);
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS project_name TEXT;
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS pm TEXT;
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS pd TEXT;
+  `);
+
+  // ── dashboard_program_metrics columns (align old table shape with Drizzle schema) ──
+  await safeExec("dashboard_program_metrics columns", `
+    ALTER TABLE dashboard_program_metrics ADD COLUMN IF NOT EXISTS total_program_cost DECIMAL(15,2) NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_program_metrics ADD COLUMN IF NOT EXISTS received_revenue DECIMAL(15,2) NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_program_metrics ADD COLUMN IF NOT EXISTS paid_cost DECIMAL(15,2) NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_program_metrics ADD COLUMN IF NOT EXISTS avg_margin DECIMAL(8,4);
+    ALTER TABLE dashboard_program_metrics ADD COLUMN IF NOT EXISTS projects_at_risk INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_program_metrics ADD COLUMN IF NOT EXISTS total_tasks_overdue INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_program_metrics ADD COLUMN IF NOT EXISTS total_open_warnings INTEGER NOT NULL DEFAULT 0;
   `);
 
   // ── project_info columns (comprehensive – every column from Drizzle schema) ──

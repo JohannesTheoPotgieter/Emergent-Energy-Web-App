@@ -9,7 +9,6 @@
 CREATE TABLE IF NOT EXISTS dashboard_project_metrics (
   id SERIAL PRIMARY KEY,
   project_id INTEGER UNIQUE NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
-  organization_id INTEGER NOT NULL DEFAULT 1 REFERENCES organizations(id),
   -- Financial aggregates
   total_revenue NUMERIC(15,2) NOT NULL DEFAULT 0,
   received_revenue NUMERIC(15,2) NOT NULL DEFAULT 0,
@@ -40,14 +39,12 @@ CREATE TABLE IF NOT EXISTS dashboard_project_metrics (
 );
 
 CREATE INDEX IF NOT EXISTS idx_dpm_project_id ON dashboard_project_metrics(project_id);
-CREATE INDEX IF NOT EXISTS idx_dpm_organization_id ON dashboard_project_metrics(organization_id);
 CREATE INDEX IF NOT EXISTS idx_dpm_phase ON dashboard_project_metrics(phase);
 CREATE INDEX IF NOT EXISTS idx_dpm_rag_status ON dashboard_project_metrics(rag_status);
 
 -- Step 2: Program-level materialized metrics
 CREATE TABLE IF NOT EXISTS dashboard_program_metrics (
   id SERIAL PRIMARY KEY,
-  organization_id INTEGER NOT NULL DEFAULT 1 REFERENCES organizations(id),
   total_projects INTEGER NOT NULL DEFAULT 0,
   active_projects INTEGER NOT NULL DEFAULT 0,
   total_program_revenue NUMERIC(15,2) NOT NULL DEFAULT 0,
@@ -61,4 +58,4 @@ CREATE TABLE IF NOT EXISTS dashboard_program_metrics (
   last_refreshed_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_dpgm_organization_id ON dashboard_program_metrics(organization_id);
+-- organization_id removed (organizations multi-tenancy rolled back)

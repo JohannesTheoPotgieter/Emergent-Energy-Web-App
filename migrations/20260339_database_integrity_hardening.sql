@@ -236,7 +236,7 @@ ON CONFLICT (project_id) DO NOTHING;
 -- The refresh service will populate real values on next cycle.
 
 INSERT INTO dashboard_project_metrics (
-  project_id, organization_id, project_name, pm, pd, phase, rag_status,
+  project_id, project_name, pm, pd, phase, rag_status,
   contract_value, total_revenue, received_revenue, outstanding_revenue,
   total_cost, paid_cost, outstanding_cost,
   task_count, tasks_completed, tasks_in_progress, tasks_overdue, tasks_active,
@@ -244,7 +244,6 @@ INSERT INTO dashboard_project_metrics (
 )
 SELECT
   pi.id,
-  pi.organization_id,
   pi.project_name,
   pi.pm,
   pi.pd,
