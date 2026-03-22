@@ -55,6 +55,230 @@ async function runAdditiveSchemaAlignments() {
     }
   }
 
+  // ── Foundation tables that other tables reference via foreign keys ──
+  await safeExec("users table", `
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      email TEXT NOT NULL,
+      password TEXT NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'member',
+      department TEXT,
+      microsoft_id TEXT UNIQUE,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      token_version INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("clients table", `
+    CREATE TABLE IF NOT EXISTS clients (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      short_code TEXT,
+      type TEXT,
+      legal_entity TEXT,
+      primary_contact_name TEXT,
+      primary_contact_email TEXT,
+      primary_contact_phone TEXT,
+      notes TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("counterparties table", `
+    CREATE TABLE IF NOT EXISTS counterparties (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT,
+      contact_name TEXT,
+      contact_email TEXT,
+      contact_phone TEXT,
+      notes TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      role_tags TEXT[] NOT NULL DEFAULT '{}',
+      updated_at TIMESTAMP DEFAULT NOW(),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("project_info table", `
+    CREATE TABLE IF NOT EXISTS project_info (
+      id SERIAL PRIMARY KEY,
+      project_name TEXT NOT NULL,
+      size_kwp NUMERIC(15,2),
+      pd TEXT,
+      pm TEXT,
+      contract_value NUMERIC(15,2),
+      canonical_project_id INTEGER,
+      client_id INTEGER REFERENCES clients(id),
+      pm_user_id INTEGER,
+      pd_user_id INTEGER,
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("role_permissions table", `
+    CREATE TABLE IF NOT EXISTS role_permissions (
+      id SERIAL PRIMARY KEY,
+      role TEXT NOT NULL,
+      entity TEXT NOT NULL,
+      action TEXT NOT NULL,
+      allowed BOOLEAN NOT NULL DEFAULT true,
+      scope TEXT,
+      authority_model JSONB,
+      permission_version INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("app_settings table", `
+    CREATE TABLE IF NOT EXISTS app_settings (
+      id SERIAL PRIMARY KEY,
+      key TEXT NOT NULL UNIQUE,
+      value TEXT,
+      updated_by TEXT,
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("upload_metadata table", `
+    CREATE TABLE IF NOT EXISTS upload_metadata (
+      id SERIAL PRIMARY KEY,
+      file_name TEXT NOT NULL,
+      upload_date TIMESTAMP NOT NULL DEFAULT NOW(),
+      row_count INTEGER,
+      status TEXT
+    );
+  `);
+
+  await safeExec("smart_import_runs table", `
+    CREATE TABLE IF NOT EXISTS smart_import_runs (
+      id SERIAL PRIMARY KEY,
+      project_name TEXT NOT NULL,
+      file_name TEXT,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      row_count INTEGER,
+      uploaded_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      committed_at TIMESTAMP
+    );
+  `);
+
+  await safeExec("work_items table", `
+    CREATE TABLE IF NOT EXISTS work_items (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER REFERENCES project_info(id),
+      title TEXT NOT NULL,
+      description TEXT,
+      type TEXT,
+      status TEXT NOT NULL DEFAULT 'NOT_STARTED',
+      priority TEXT NOT NULL DEFAULT 'MEDIUM',
+      workstream TEXT,
+      source TEXT,
+      wbs_code TEXT,
+      start_date TEXT,
+      end_date TEXT,
+      duration INTEGER,
+      actual_start TEXT,
+      actual_end TEXT,
+      actual_duration INTEGER,
+      percent_complete INTEGER DEFAULT 0,
+      owner_user_id INTEGER REFERENCES users(id),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      deleted_at TIMESTAMP
+    );
+  `);
+
+  // ── Financial tables ──
+  await safeExec("program_expense table", `
+    CREATE TABLE IF NOT EXISTS program_expense (
+      id SERIAL PRIMARY KEY,
+      project_name TEXT NOT NULL,
+      category TEXT,
+      description TEXT,
+      amount NUMERIC(15,2),
+      date TEXT,
+      status TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("program_inflows table", `
+    CREATE TABLE IF NOT EXISTS program_inflows (
+      id SERIAL PRIMARY KEY,
+      project_name TEXT NOT NULL,
+      category TEXT,
+      description TEXT,
+      amount NUMERIC(15,2),
+      date TEXT,
+      status TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("normalized_cost_lines table", `
+    CREATE TABLE IF NOT EXISTS normalized_cost_lines (
+      id SERIAL PRIMARY KEY,
+      project_name TEXT,
+      project_id INTEGER REFERENCES project_info(id),
+      description TEXT,
+      amount NUMERIC(15,2),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("normalized_revenue_lines table", `
+    CREATE TABLE IF NOT EXISTS normalized_revenue_lines (
+      id SERIAL PRIMARY KEY,
+      project_name TEXT,
+      project_id INTEGER REFERENCES project_info(id),
+      description TEXT,
+      amount NUMERIC(15,2),
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("project_plan table", `
+    CREATE TABLE IF NOT EXISTS project_plan (
+      id SERIAL PRIMARY KEY,
+      project_name TEXT NOT NULL,
+      task_name TEXT,
+      start_date TEXT,
+      end_date TEXT,
+      duration_days INTEGER,
+      status TEXT,
+      pct_complete INTEGER DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("cashflow_points table", `
+    CREATE TABLE IF NOT EXISTS cashflow_points (
+      id SERIAL PRIMARY KEY,
+      project_name TEXT,
+      project_id INTEGER REFERENCES project_info(id),
+      date TEXT,
+      amount NUMERIC(15,2),
+      type TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("project_revenue_summary table", `
+    CREATE TABLE IF NOT EXISTS project_revenue_summary (
+      id SERIAL PRIMARY KEY,
+      project_name TEXT NOT NULL,
+      project_id INTEGER,
+      total_revenue NUMERIC(15,2) DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
   // ── Critical tables that must exist for core app functionality ──
   await safeExec("project_execution_state table", `
     CREATE TABLE IF NOT EXISTS project_execution_state (
@@ -782,8 +1006,23 @@ export async function runStartupOrchestrator(options: {
   await runStartupMaintenanceOrchestrator({ runtimeMaintenanceEnabled, startupSchemaRepairEnabled, log });
   report.maintenance.push(runtimeMaintenanceEnabled && startupSchemaRepairEnabled ? "completed" : "skipped");
 
-  await runStartupSeeds({ startupDataSeedEnabled, allowStartupMutations, log });
-  report.seeds.push(startupDataSeedEnabled ? "completed" : "skipped");
+  // Auto-enable data seeding if PostgreSQL is detected and project_info is empty
+  let effectiveDataSeedEnabled = startupDataSeedEnabled;
+  if (!effectiveDataSeedEnabled && getDbMode() === "postgres") {
+    try {
+      const countResult = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM project_info`));
+      const count = parseInt(String((countResult as any).rows?.[0]?.cnt ?? "0"), 10);
+      if (count === 0) {
+        log("PostgreSQL project_info is empty — auto-enabling data seed migration", "Startup:DataSeed");
+        effectiveDataSeedEnabled = true;
+      }
+    } catch (err: any) {
+      log(`Could not check project_info count (${err.message}) — auto-enabling data seed`, "Startup:DataSeed");
+      effectiveDataSeedEnabled = true;
+    }
+  }
+  await runStartupSeeds({ startupDataSeedEnabled: effectiveDataSeedEnabled, allowStartupMutations: effectiveDataSeedEnabled || allowStartupMutations, log });
+  report.seeds.push(effectiveDataSeedEnabled ? "completed" : "skipped");
 
   await runStartupBackfills({
     startupBackfillEnabled,
