@@ -842,6 +842,7 @@ export class DatabaseStorage implements IStorage {
   private shouldUseLegacyProjectInfoReadFallback(error: unknown): boolean {
     const mode = getDbMode();
     const message = error instanceof Error ? error.message : String(error ?? "");
+    const code = (error as any)?.code;
 
     const missingColumnNames = [
       "phase_updated_at",
@@ -862,12 +863,14 @@ export class DatabaseStorage implements IStorage {
     ];
 
     if (mode === "sqlite") {
+      if (message.includes("no such table")) return true;
       return message.includes("no such column")
         && missingColumnNames.some((col) => message.includes(col));
     }
 
+    // PostgreSQL: error code 42P01 = undefined_table
+    if (code === "42P01") return true;
     // PostgreSQL: error code 42703 = undefined_column
-    const code = (error as any)?.code;
     if (code === "42703") {
       return missingColumnNames.some((col) => message.includes(col));
     }
@@ -879,23 +882,44 @@ export class DatabaseStorage implements IStorage {
     projectName?: string;
     id?: number;
   }): Promise<ProjectInfo[]> {
-    const baseQuery = this.dbInstance.select({
-      id: projectInfo.id,
-      projectName: projectInfo.projectName,
-      sizeKwp: projectInfo.sizeKwp,
-      pd: projectInfo.pd,
-      pm: projectInfo.pm,
-      contractValue: projectInfo.contractValue,
-      phase: projectExecutionState.phase,
-      updatedAt: projectInfo.updatedAt,
-    }).from(projectInfo)
-      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
+    let rows: any[];
+    try {
+      const baseQuery = this.dbInstance.select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        sizeKwp: projectInfo.sizeKwp,
+        pd: projectInfo.pd,
+        pm: projectInfo.pm,
+        contractValue: projectInfo.contractValue,
+        phase: projectExecutionState.phase,
+        updatedAt: projectInfo.updatedAt,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
 
-    const rows = filters?.projectName
-      ? await baseQuery.where(eq(projectInfo.projectName, filters.projectName))
-      : filters?.id != null
-        ? await baseQuery.where(eq(projectInfo.id, filters.id))
-        : await baseQuery.orderBy(desc(projectInfo.updatedAt));
+      rows = filters?.projectName
+        ? await baseQuery.where(eq(projectInfo.projectName, filters.projectName))
+        : filters?.id != null
+          ? await baseQuery.where(eq(projectInfo.id, filters.id))
+          : await baseQuery.orderBy(desc(projectInfo.updatedAt));
+    } catch {
+      // project_execution_state table may not exist — query project_info alone
+      const simpleQuery = this.dbInstance.select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        sizeKwp: projectInfo.sizeKwp,
+        pd: projectInfo.pd,
+        pm: projectInfo.pm,
+        contractValue: projectInfo.contractValue,
+        updatedAt: projectInfo.updatedAt,
+      }).from(projectInfo);
+
+      const simpleRows = filters?.projectName
+        ? await simpleQuery.where(eq(projectInfo.projectName, filters.projectName))
+        : filters?.id != null
+          ? await simpleQuery.where(eq(projectInfo.id, filters.id))
+          : await simpleQuery.orderBy(desc(projectInfo.updatedAt));
+      rows = simpleRows.map(r => ({ ...r, phase: null }));
+    }
 
     return rows.map((row) => ({
       ...row,

@@ -2428,6 +2428,9 @@ export async function registerRoutes(
         projectIds: finalResult
           .map((project: any) => Number(project.project_info_id))
           .filter((value: number) => Number.isFinite(value)),
+      }).catch((err: any) => {
+        console.warn("getPlatformProjectSummaryMap failed (non-fatal):", err.message);
+        return new Map();
       });
       finalResult = finalResult.map((project: any) => ({
         ...project,
@@ -2437,12 +2440,16 @@ export async function registerRoutes(
       }));
 
       if (usePromotedProjectDetail || req.query.compare === "1" || req.query.compare === "true") {
-        const projectDetailComparison = await compareProjectDetailMasterReadiness();
-        if (projectDetailComparison.status !== "ready") {
-          console.warn("[promoted-read][project-detail] mismatch detected", projectDetailComparison);
+        try {
+          const projectDetailComparison = await compareProjectDetailMasterReadiness();
+          if (projectDetailComparison.status !== "ready") {
+            console.warn("[promoted-read][project-detail] mismatch detected", projectDetailComparison);
+          }
+          res.setHeader("X-Promoted-Project-Detail-Read", usePromotedProjectDetail ? "enabled" : "disabled");
+          res.setHeader("X-Promoted-Project-Detail-Comparison-Status", projectDetailComparison.status);
+        } catch (compErr: any) {
+          console.warn("compareProjectDetailMasterReadiness failed (non-fatal):", compErr.message);
         }
-        res.setHeader("X-Promoted-Project-Detail-Read", usePromotedProjectDetail ? "enabled" : "disabled");
-        res.setHeader("X-Promoted-Project-Detail-Comparison-Status", projectDetailComparison.status);
       }
 
       res.json(finalResult);
