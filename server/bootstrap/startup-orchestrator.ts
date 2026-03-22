@@ -581,6 +581,71 @@ async function runAdditiveSchemaAlignments() {
     );
   `);
 
+  // ── Deliverables table (required by execution dashboard / platform summary) ──
+  await safeExec("deliverables table", `
+    CREATE TABLE IF NOT EXISTS deliverables (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id),
+      project_name TEXT NOT NULL,
+      deliverable_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      phase TEXT,
+      owner_user_id INTEGER REFERENCES users(id),
+      reviewer_user_id INTEGER REFERENCES users(id),
+      qc_reviewer_user_id INTEGER REFERENCES users(id),
+      status TEXT NOT NULL DEFAULT 'TO DO',
+      current_version INTEGER NOT NULL DEFAULT 1,
+      sharepoint_folder_site_id TEXT,
+      sharepoint_folder_drive_id TEXT,
+      sharepoint_folder_item_id TEXT,
+      linked_plan_item_id INTEGER,
+      linked_quality_item_instance_id INTEGER,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      scheduled_date TEXT,
+      scheduled_start_time TEXT,
+      scheduled_end_time TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_deliverables_project_status ON deliverables(project_id, status);
+  `);
+
+  // ── Audit events table ──
+  await safeExec("audit_events table", `
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id SERIAL PRIMARY KEY,
+      actor_role TEXT NOT NULL,
+      user_id INTEGER,
+      user_name TEXT,
+      source TEXT NOT NULL DEFAULT 'UI',
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      action TEXT NOT NULL,
+      changes_json TEXT,
+      project_name TEXT,
+      correlation_id TEXT,
+      ip_address TEXT,
+      request_path TEXT,
+      request_method TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_events_project ON audit_events(project_name, created_at);
+  `);
+
+  // ── Project phase history table ──
+  await safeExec("project_phase_history table", `
+    CREATE TABLE IF NOT EXISTS project_phase_history (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL,
+      from_phase TEXT,
+      to_phase TEXT NOT NULL,
+      changed_by_user_id INTEGER NOT NULL,
+      changed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      reason TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_project_phase_history_project ON project_phase_history(project_id, changed_at);
+  `);
+
   // ── PD → PM Handover table (required by /api/projects-summary) ──
   await safeExec("project_pd_pm_handover table", `
     CREATE TABLE IF NOT EXISTS project_pd_pm_handover (
