@@ -11,15 +11,9 @@ import { sql } from "drizzle-orm";
 import { execSync } from "child_process";
 
 /**
- * In development mode with PostgreSQL, run drizzle-kit push to auto-create
- * all tables from the Drizzle schema. This ensures 100% schema coverage
- * without manually maintaining DDL for every table.
- *
- * In production, drizzle-kit push runs at BUILD time (see .replit deployment
- * config) so the schema is synced before the server starts. This avoids
- * blocking the HTTP port during startup. The additive ALTER TABLE statements
- * in runAdditiveSchemaAlignments() handle any remaining column additions at
- * runtime without needing drizzle-kit.
+ * SQL-based schema sync: runs pre-push-enums.sql (all enums + stub tables)
+ * then full-schema-alignment.sql (all columns via ALTER TABLE ADD COLUMN IF NOT EXISTS).
+ * This replaces drizzle-kit push which hangs on interactive rename prompts.
  */
 async function runDrizzleSchemaSync(log: (message: string, source?: string) => void) {
   const mode = getDbMode();
