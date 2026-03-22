@@ -17,7 +17,7 @@ ENABLE_STARTUP_SCHEMA_REPAIR = "true"
 
 [deployment]
 deploymentTarget = "autoscale"
-build = ["sh", "-c", "npm run build && psql $DATABASE_URL -f script/pre-push-enums.sql && npx drizzle-kit push --force"]
+build = ["sh", "-c", "npm run build && psql $DATABASE_URL -f script/pre-push-enums.sql && psql $DATABASE_URL -f script/full-schema-alignment.sql"]
 publicDir = "dist/public"
 run = ["sh", "-c", "npm run start"]
 
