@@ -906,6 +906,47 @@ export default function ProjectDetailPage() {
   });
 
 
+  const { data: engStagesData } = useQuery({
+    queryKey: ["project-eng-stages-overview", projectInfoId],
+    queryFn: async () => {
+      const res = await engFetch(`/api/projects/${projectInfoId}/eng-stages`);
+      if (!res.ok) return { stages: [] };
+      return res.json();
+    },
+    enabled: !!projectInfoId,
+  });
+
+  const { data: projectPlanData = [] } = useQuery({
+    queryKey: ["project-plan", projectName],
+    queryFn: async () => {
+      const res = await engFetch(`/api/planning-tasks/${encodeURIComponent(projectName)}`);
+      if (!res.ok) return [];
+      const raw = await res.json();
+      return Array.isArray(raw) ? raw : (raw.tasks || []);
+    },
+    enabled: !!projectName,
+  });
+
+  const { data: revenueData = [] } = useQuery({
+    queryKey: ["program-inflows", projectName],
+    queryFn: async () => {
+      const res = await engFetch(`/api/program-inflows?projectName=${encodeURIComponent(projectName)}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectName,
+  });
+
+  const { data: expenseData = [] } = useQuery({
+    queryKey: ["program-expenses", projectName],
+    queryFn: async () => {
+      const res = await engFetch(`/api/program-expenses/${encodeURIComponent(projectName)}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectName,
+  });
+
   const { data: revenueTrustData } = useQuery<any>({
     queryKey: ["revenue-tab", projectName],
     queryFn: async () => {
@@ -934,6 +975,36 @@ export default function ProjectDetailPage() {
       return res.json();
     },
     enabled: !!projectInfoId && canViewTab.finance && (activeSection === "commercial" || activeSection === "overview" || activeSection === "delivery"),
+  });
+
+  const { data: cashflowData = [] } = useQuery({
+    queryKey: ["cashflow", projectName],
+    queryFn: async () => {
+      const res = await engFetch(`/api/cashflow?project=${encodeURIComponent(projectName)}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectName,
+  });
+
+  const { data: engDataForAlerts } = useQuery<{ tasks: any[] }>({
+    queryKey: ["project-eng-tasks", projectInfo?.project_info_id],
+    queryFn: async () => {
+      const res = await engFetch(`/api/projects/${projectInfo?.project_info_id}/eng-tasks`);
+      if (!res.ok) return { tasks: [] };
+      return res.json();
+    },
+    enabled: !!projectInfo?.project_info_id,
+  });
+
+  const { data: qualityData } = useQuery({
+    queryKey: ["quality-summary", projectName],
+    queryFn: async () => {
+      const res = await engFetch(`/api/quality/project/${encodeURIComponent(projectName)}/summary`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!projectName,
   });
 
   const { data: projectExceptions } = useQuery<{ items: Array<{ id: string; title: string; severity: string; sourceLink: string; reason: string }>; summary?: { total: number; bySeverity: Record<string, number> } }>({
@@ -1023,27 +1094,44 @@ export default function ProjectDetailPage() {
   const canSetRag = ['admin', 'COO_ADMIN', 'CEO_ADMIN', 'CCO'].includes(user?.role || '');
   const ragStatus = v2Detail?.executionState?.ragStatus ?? projectInfo?.rag_status ?? null;
 
-  // ─── KPI computation: V2 detail → healthSummary (server-side truth) ───
-  const contractValue = v2Detail?.financeSummary?.contractValue ?? healthSummary?.revenue.contractValue ?? projectInfo?.contract_value ?? 0;
-  const budgetTotal = healthSummary?.cost.budgetTotal ?? projectInfo?.budget_total ?? 0;
+  // ─── KPI computation: V2 detail → healthSummary → client-side fallback ───
+  const v2ContractValue = v2Detail?.financeSummary?.contractValue;
+  const totalRevenueActual = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
+  const contractValue = v2ContractValue ?? healthSummary?.revenue.contractValue ?? projectInfo?.contract_value ?? totalRevenueActual ?? 0;
+  const totalBudgetFromExpenses = (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
+  const budgetTotal = healthSummary?.cost.budgetTotal ?? projectInfo?.budget_total ?? totalBudgetFromExpenses ?? 0;
 
   // Schedule KPIs
-  const overduePlanTaskCount = healthSummary?.alerts.overduePlanTasks ?? v2Detail?.planSummary?.tasksOverdue ?? 0;
-  const planCompletionPct = v2Detail?.planSummary?.completionPct ?? healthSummary?.schedule.completionPct ?? 0;
-  const scheduleRag: "green" | "amber" | "red" = (healthSummary?.schedule.rag as any) ?? computeScheduleRag(overduePlanTaskCount);
+  const planTasks = projectPlanData as any[];
+  const today = new Date().toISOString().split("T")[0];
+  const overduePlanTasks = planTasks.filter((t: any) => {
+    const endDate = t.actualEndDate || t.dueDate || t.actualEnd || t.endDate;
+    const pct = t.percentComplete != null ? Number(t.percentComplete) : (Number(t.actualPctComplete) || 0);
+    const pctNorm = pct > 1 ? pct : pct * 100;
+    return endDate && endDate.substring(0, 10) < today && pctNorm < 100;
+  });
+  const completedPlanTasks = planTasks.filter((t: any) => {
+    const pct = t.percentComplete != null ? Number(t.percentComplete) : (Number(t.actualPctComplete) || 0);
+    const pctNorm = pct > 1 ? pct : pct * 100;
+    return pctNorm >= 100;
+  });
+  const planCompletionPct = v2Detail?.planSummary?.completionPct ?? healthSummary?.schedule.completionPct ?? (planTasks.length > 0 ? (completedPlanTasks.length / planTasks.length) * 100 : 0);
+  const scheduleRag: "green" | "amber" | "red" = (healthSummary?.schedule.rag as any) ?? computeScheduleRag(v2Detail?.planSummary?.tasksOverdue ?? overduePlanTasks.length);
 
   // Cost KPIs
-  const totalExpenses = healthSummary?.cost.totalExpenses ?? v2Detail?.financeSummary?.totalCost ?? 0;
+  const totalExpenses = healthSummary?.cost.totalExpenses ?? (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
   const costRatio = healthSummary?.cost.ratio ?? (budgetTotal > 0 ? totalExpenses / budgetTotal : 0);
   const costRag: "green" | "amber" | "red" = (healthSummary?.cost.rag as any) ?? computeCostRag(costRatio);
 
   // Quality KPIs
-  const qualityGatesTotal = healthSummary?.quality.gatesTotal ?? 0;
-  const qualityGatesPassed = healthSummary?.quality.gatesPassed ?? 0;
-  const qualityTotalItems = healthSummary?.quality.totalItems ?? 0;
-  const qualityApprovedItems = healthSummary?.quality.approvedItems ?? 0;
-  const qualityProgressPct = healthSummary?.quality.progressPct ?? (v2Detail?.qualitySummary?.checklistProgress ?? 0);
-  const qualityRag: "green" | "amber" | "red" = (healthSummary?.quality.rag as any) ?? computeQualityRag(false, qualityGatesPassed, qualityGatesTotal, qualityApprovedItems);
+  const qualitySummaryLegacy = qualityData as any;
+  const qualityPhases = qualitySummaryLegacy?.phases || [];
+  const qualityGatesTotal = healthSummary?.quality.gatesTotal ?? qualityPhases.length;
+  const qualityGatesPassed = healthSummary?.quality.gatesPassed ?? qualityPhases.filter((p: any) => p.applicableItems > 0 && p.approvedItems >= p.applicableItems).length;
+  const qualityTotalItems = healthSummary?.quality.totalItems ?? qualityPhases.reduce((s: number, p: any) => s + (p.applicableItems || 0), 0);
+  const qualityApprovedItems = healthSummary?.quality.approvedItems ?? qualityPhases.reduce((s: number, p: any) => s + (p.approvedItems || 0), 0);
+  const qualityProgressPct = healthSummary?.quality.progressPct ?? (qualityTotalItems > 0 ? (qualityApprovedItems / qualityTotalItems) * 100 : 0);
+  const qualityRag: "green" | "amber" | "red" = (healthSummary?.quality.rag as any) ?? computeQualityRag(!!qualitySummaryLegacy?.hasChecklist, qualityGatesPassed, qualityGatesTotal, qualityApprovedItems);
 
   // Revenue milestones (from revenue-tab endpoint — provides milestone-level detail not in V2)
   const revTabMilestones: any[] = revenueTrustData?.milestones || [];
@@ -1069,16 +1157,32 @@ export default function ProjectDetailPage() {
     .reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
   const revenueRealisedPct = healthSummary?.revenue.realisedPct ?? (contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0);
 
+  const isExpensePaid = (e: any): boolean => {
+    const hasPaymentDate = !!(e.expensePaymentDate && String(e.expensePaymentDate).trim());
+    const hasInvoiceNumber = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
+    if (!hasInvoiceNumber || !hasPaymentDate) return false;
+    const paymentDateConfirmed = e.paymentDateFontColor === 'red' ? false : (e.paymentDateFontColor === 'black' ? true : e.paymentDateConfirmed === true);
+    return paymentDateConfirmed;
+  };
+
+  const isCosRealised = (e: any): boolean => {
+    const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
+    const hasInvDate = !!(e.expenseInvoicedDate && String(e.expenseInvoicedDate).trim());
+    return hasInvoice && hasInvDate;
+  };
+
   // COS realisation
-  const totalRealisedCos = healthSummary?.cos.totalRealised ?? v2Detail?.financeSummary?.paidCost ?? 0;
+  const totalRealisedCos = healthSummary?.cos.totalRealised ?? (expenseData as any[]).reduce((s: number, e: any) => {
+    if (isCosRealised(e)) return s + (Number(e.expenseActualTotal) || 0);
+    return s;
+  }, 0);
   const cosDenominator = totalExpenses > 0 ? totalExpenses : budgetTotal;
   const cosRealisedPct = healthSummary?.cos.realisedPct ?? (cosDenominator > 0 ? (totalRealisedCos / cosDenominator) * 100 : 0);
   const marginDelta = revenueRealisedPct - cosRealisedPct;
 
   const overallRag: "green" | "amber" | "red" = (healthSummary?.overall.rag as any) ?? computeOverallRag(scheduleRag, costRag, qualityRag);
   const commercialPendingCount = Math.max(revTabMilestones.filter((m: any) => m.status !== 'inBank').length, 0);
-  // Outstanding cost count derived from V2 finance summary
-  const unpaidExpenseCount = v2Finance ? v2Finance.costLines.filter((l) => !l.paidDate).length : (v2Detail?.financeSummary?.outstandingCost ?? 0) > 0 ? 1 : 0;
+  const unpaidExpenseCount = Math.max((expenseData as any[]).filter((e: any) => !isExpensePaid(e)).length, 0);
   const revenueReconciliation = revenueTrustData?.reconciliation;
   const expenditureReconciliation = expenditureTrustData?.reconciliation;
   const pendingCashApprovals = revenueReconciliation?.approvals?.affectingCashCount
@@ -1098,10 +1202,10 @@ export default function ProjectDetailPage() {
     ...((expenditureTrustData?.riskSignals || []) as any[]),
   ].slice(0, 6);
   const dependencyCount = pdTicketsData.length;
-  // Engineering KPIs from V2 engineering endpoint and healthSummary
-  const overdueEngineeringCount = healthSummary?.alerts.overdueEngineeringTasks ?? v2Detail?.planSummary?.tasksOverdue ?? 0;
+  // GC-010: Normalize engineering status casing for overdue count
+  const overdueEngineeringCount = healthSummary?.alerts.overdueEngineeringTasks ?? (engDataForAlerts?.tasks || []).filter((t: any) => t.dueDate && t.dueDate < today && String(t.status).toUpperCase() !== "COMPLETE").length;
   const topAlerts = [
-    { label: "Overdue plan tasks", count: overduePlanTaskCount, action: () => openExecutionArea("delivery", "task-grid") },
+    { label: "Overdue plan tasks", count: overduePlanTasks.length, action: () => openExecutionArea("delivery", "task-grid") },
     { label: "Overdue engineering tasks", count: overdueEngineeringCount, action: () => openExecutionArea("engineering", "eng-tasks") },
     { label: "Pending quality approvals", count: Math.max(qualityTotalItems - qualityApprovedItems, 0), action: () => openExecutionArea("quality", "quality") },
     { label: "Unpaid supplier costs", count: unpaidExpenseCount, action: () => openExecutionArea("commercial", "expenditure") },
@@ -1112,11 +1216,18 @@ export default function ProjectDetailPage() {
     hasComms: !!projectName,
   };
 
-  // Engineering stage/task KPIs from V2 engineering data
-  const engStages = v2Engineering?.stages || [];
-  const engWorkItems = v2Engineering?.workItems || [];
-  const engTotalTasks = healthSummary?.engineering.totalTasks ?? engWorkItems.length;
-  const engCompletedTasks = healthSummary?.engineering.completedTasks ?? engWorkItems.filter((t) => String(t.status).toUpperCase() === "COMPLETE").length;
+  const engStages = engStagesData?.stages || [];
+  // GC-010: Normalize engineering status casing — compare case-insensitively
+  const engStageTotalTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.length || 0), 0);
+  const engStageCompletedTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.filter((t: any) => String(t.status).toLowerCase() === "complete").length || 0), 0);
+
+  const engBoardTasks = engDataForAlerts?.tasks || [];
+  const engBoardTotal = engBoardTasks.length;
+  // GC-010: Normalize engineering status casing
+  const engBoardCompleted = engBoardTasks.filter((t: any) => String(t.status).toUpperCase() === "COMPLETE").length;
+
+  const engTotalTasks = engStageTotalTasks + engBoardTotal;
+  const engCompletedTasks = engStageCompletedTasks + engBoardCompleted;
   const engStagePct = healthSummary?.engineering.progressPct ?? (engTotalTasks > 0 ? (engCompletedTasks / engTotalTasks) * 100 : 0);
 
 
@@ -1154,7 +1265,7 @@ export default function ProjectDetailPage() {
       {/* GC-012: Contract value reconciliation warning — uses V2 finance summary */}
       {(() => {
         const projectContractValue = Number(projectInfo?.contract_value) || 0;
-        const revenueMilestoneTotal = v2Detail?.financeSummary?.totalRevenue ?? revTabMilestones.reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+        const revenueMilestoneTotal = totalRevenueActual;
         const hasContractMismatch = projectContractValue > 0 && revenueMilestoneTotal > 0
           && Math.abs(projectContractValue - revenueMilestoneTotal) / projectContractValue > 0.01;
         return hasContractMismatch ? (
@@ -1355,12 +1466,12 @@ export default function ProjectDetailPage() {
       <DataSourceDebug
         pageName="Project Detail"
         dataSources={[
-          { endpoint: "/api/v2/projects/:id", tables: ["project_info"], description: "V2 consolidated project detail" },
-          { endpoint: "/api/v2/projects/:id/finance", tables: ["normalized_cost_lines", "normalized_revenue_lines"], description: "V2 finance (lazy)" },
-          { endpoint: "/api/v2/projects/:id/plan", tables: ["normalized_plan_tasks"], description: "V2 plan (lazy)" },
-          { endpoint: "/api/v2/projects/:id/quality", tables: ["qc_checklists", "qc_item_instances"], description: "V2 quality (lazy)" },
-          { endpoint: "/api/v2/projects/:id/engineering", tables: ["work_items", "project_eng_stages"], description: "V2 engineering (lazy)" },
+          { endpoint: "/api/projects-summary", tables: ["project_info", "normalized_cost_lines", "normalized_revenue_lines", "normalized_plan_tasks"], description: "Project summary data" },
+          { endpoint: `/api/projects/${projectInfoId}/eng-tasks`, tables: ["work_items"], description: "Engineering tasks for this project" },
           { endpoint: `/api/projects/${projectInfoId}/phase-history`, tables: ["phase_history"], description: "Phase transition history" },
+          { endpoint: "/api/normalized-plan-tasks", tables: ["normalized_plan_tasks"], description: "Gantt / project plan tasks" },
+          { endpoint: "/api/normalized-cost-lines", tables: ["normalized_cost_lines"], description: "Expenditure line items" },
+          { endpoint: "/api/normalized-revenue-lines", tables: ["normalized_revenue_lines"], description: "Revenue tracking line items" },
         ]}
       />
     </PageShell>

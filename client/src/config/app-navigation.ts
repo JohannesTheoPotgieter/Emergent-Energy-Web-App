@@ -94,10 +94,11 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Knowledge",
     path: "/ee-info",
-    match: (pathname) => startsWithAny(pathname, ["/ee-info", "/leaderboard", "/feedback", "/training"]),
+    match: (pathname) => startsWithAny(pathname, ["/ee-info", "/leaderboard", "/feedback", "/training", "/department-scores"]),
     secondary: [
       { label: "Lifecycle & SOP", path: "/ee-info" },
       { label: "Leaderboard", path: "/leaderboard" },
+      { label: "Dept Scores", path: "/department-scores" },
       { label: "Training", path: "/training" },
       { label: "Feedback", path: "/feedback" },
     ],

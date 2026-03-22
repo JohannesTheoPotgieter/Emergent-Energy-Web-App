@@ -901,24 +901,53 @@ export class DatabaseStorage implements IStorage {
         : filters?.id != null
           ? await baseQuery.where(eq(projectInfo.id, filters.id))
           : await baseQuery.orderBy(desc(projectInfo.updatedAt));
-    } catch {
-      // project_execution_state table may not exist — query project_info alone
-      const simpleQuery = this.dbInstance.select({
-        id: projectInfo.id,
-        projectName: projectInfo.projectName,
-        sizeKwp: projectInfo.sizeKwp,
-        pd: projectInfo.pd,
-        pm: projectInfo.pm,
-        contractValue: projectInfo.contractValue,
-        updatedAt: projectInfo.updatedAt,
-      }).from(projectInfo);
+    } catch (joinErr: any) {
+      // project_execution_state table may not exist — try reading phase from project_info directly
+      console.warn("[storage] project_execution_state join failed, falling back to project_info:", joinErr.message);
+      try {
+        // project_info may still have a phase column from legacy schema
+        const fallbackRows = await this.dbInstance.execute(
+          sql`SELECT id, project_name, size_kwp, pd, pm, contract_value, updated_at,
+                     CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_info' AND column_name='phase')
+                          THEN (SELECT phase FROM project_info pi2 WHERE pi2.id = project_info.id)
+                          ELSE NULL END as phase
+              FROM project_info
+              ORDER BY updated_at DESC`
+        );
+        rows = (fallbackRows.rows as any[]).map(r => ({
+          id: r.id,
+          projectName: r.project_name,
+          sizeKwp: r.size_kwp,
+          pd: r.pd,
+          pm: r.pm,
+          contractValue: r.contract_value,
+          phase: r.phase,
+          updatedAt: r.updated_at,
+        }));
+        if (filters?.projectName) {
+          rows = rows.filter(r => r.projectName === filters.projectName);
+        } else if (filters?.id != null) {
+          rows = rows.filter(r => r.id === filters.id);
+        }
+      } catch {
+        // Last resort: no phase data available
+        const simpleQuery = this.dbInstance.select({
+          id: projectInfo.id,
+          projectName: projectInfo.projectName,
+          sizeKwp: projectInfo.sizeKwp,
+          pd: projectInfo.pd,
+          pm: projectInfo.pm,
+          contractValue: projectInfo.contractValue,
+          updatedAt: projectInfo.updatedAt,
+        }).from(projectInfo);
 
-      const simpleRows = filters?.projectName
-        ? await simpleQuery.where(eq(projectInfo.projectName, filters.projectName))
-        : filters?.id != null
-          ? await simpleQuery.where(eq(projectInfo.id, filters.id))
-          : await simpleQuery.orderBy(desc(projectInfo.updatedAt));
-      rows = simpleRows.map(r => ({ ...r, phase: null }));
+        const simpleRows = filters?.projectName
+          ? await simpleQuery.where(eq(projectInfo.projectName, filters.projectName))
+          : filters?.id != null
+            ? await simpleQuery.where(eq(projectInfo.id, filters.id))
+            : await simpleQuery.orderBy(desc(projectInfo.updatedAt));
+        rows = simpleRows.map(r => ({ ...r, phase: null }));
+      }
     }
 
     return rows.map((row) => ({
