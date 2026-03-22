@@ -18,8 +18,10 @@ import { execSync } from "child_process";
 async function runDrizzleSchemaSync(log: (message: string, source?: string) => void) {
   const mode = getDbMode();
   if (mode !== "postgres") return;
-  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
   if (!process.env.DATABASE_URL) return;
+  // In production, only run if ENABLE_STARTUP_SCHEMA_REPAIR is explicitly set
+  const isProd = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
+  if (isProd && process.env.ENABLE_STARTUP_SCHEMA_REPAIR !== "true") return;
 
   try {
     log("Running drizzle-kit push to sync schema with database...", "Startup:Schema");
@@ -52,6 +54,91 @@ async function runAdditiveSchemaAlignments() {
       console.error(`[Schema] ${label} error:`, err.message);
     }
   }
+
+  // ── Critical tables that must exist for core app functionality ──
+  await safeExec("project_execution_state table", `
+    CREATE TABLE IF NOT EXISTS project_execution_state (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER UNIQUE NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      phase TEXT,
+      phase_updated_at TIMESTAMP,
+      phase_updated_by_user_id INTEGER REFERENCES users(id),
+      phase_notes TEXT,
+      pd_handover_date TEXT,
+      construction_start_date TEXT,
+      commissioning_date TEXT,
+      om_handover_date TEXT,
+      client_handover_date TEXT,
+      construction_start_actual TEXT,
+      pd_handover_actual TEXT,
+      commissioning_actual TEXT,
+      client_handover_actual TEXT,
+      escalation_level TEXT,
+      rag_status TEXT,
+      rag_comment TEXT,
+      rag_updated_at TIMESTAMP,
+      rag_updated_by_user_id INTEGER,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      archived_status TEXT NOT NULL DEFAULT 'ACTIVE',
+      execution_enabled BOOLEAN NOT NULL DEFAULT false,
+      execution_gate_status TEXT NOT NULL DEFAULT 'NOT_ELIGIBLE',
+      execution_gate_reason TEXT,
+      execution_phase TEXT,
+      signed_status TEXT NOT NULL DEFAULT 'NONE',
+      signed_date TEXT,
+      signed_document_link TEXT,
+      cp_signed BOOLEAN NOT NULL DEFAULT false,
+      cp_signed_date TEXT,
+      cp_signed_by_user_id INTEGER REFERENCES users(id),
+      cp_evidence_type TEXT,
+      cp_evidence_ref TEXT,
+      pm_task_pack_created BOOLEAN NOT NULL DEFAULT false,
+      eng_post_cp_task_pack_created BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("dashboard metrics tables", `
+    CREATE TABLE IF NOT EXISTS dashboard_project_metrics (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER UNIQUE NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      total_revenue DECIMAL(15,2) NOT NULL DEFAULT 0,
+      received_revenue DECIMAL(15,2) NOT NULL DEFAULT 0,
+      outstanding_revenue DECIMAL(15,2) NOT NULL DEFAULT 0,
+      total_expenses DECIMAL(15,2) NOT NULL DEFAULT 0,
+      paid_expenses DECIMAL(15,2) NOT NULL DEFAULT 0,
+      outstanding_expenses DECIMAL(15,2) NOT NULL DEFAULT 0,
+      gross_profit DECIMAL(15,2) NOT NULL DEFAULT 0,
+      gross_margin_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
+      actual_progress_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
+      expected_progress_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
+      schedule_variance_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
+      phase TEXT,
+      rag_status TEXT,
+      contract_value DECIMAL(15,2),
+      last_refreshed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS dashboard_program_metrics (
+      id SERIAL PRIMARY KEY,
+      total_projects INTEGER NOT NULL DEFAULT 0,
+      active_projects INTEGER NOT NULL DEFAULT 0,
+      total_program_revenue DECIMAL(15,2) NOT NULL DEFAULT 0,
+      total_program_expenses DECIMAL(15,2) NOT NULL DEFAULT 0,
+      program_gross_profit DECIMAL(15,2) NOT NULL DEFAULT 0,
+      program_gross_margin_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
+      avg_progress_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
+      avg_schedule_variance_pct DECIMAL(6,2) NOT NULL DEFAULT 0,
+      green_count INTEGER NOT NULL DEFAULT 0,
+      amber_count INTEGER NOT NULL DEFAULT 0,
+      red_count INTEGER NOT NULL DEFAULT 0,
+      last_refreshed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
 
   // ── project_info columns (comprehensive – every column from Drizzle schema) ──
   await safeExec("project_info columns", `
