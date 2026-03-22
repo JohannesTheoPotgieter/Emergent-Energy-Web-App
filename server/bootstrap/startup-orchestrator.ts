@@ -1115,6 +1115,92 @@ async function runAdditiveSchemaAlignments() {
     );
   `);
 
+  // ── Ensure project_execution_state has phase data migrated from project_info ──
+  // If project_info has a phase column and project_execution_state rows are missing phase,
+  // copy the phase from project_info into project_execution_state
+  await safeExec("backfill phase from project_info to project_execution_state", `
+    DO $$
+    BEGIN
+      -- Only run if project_info has a phase column (legacy schema)
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'project_info' AND column_name = 'phase'
+      ) THEN
+        -- Insert missing execution state rows with phase from project_info
+        INSERT INTO project_execution_state (project_id, phase, created_at, updated_at)
+        SELECT pi.id, pi.phase, NOW(), NOW()
+        FROM project_info pi
+        LEFT JOIN project_execution_state pes ON pes.project_id = pi.id
+        WHERE pes.id IS NULL AND pi.phase IS NOT NULL
+        ON CONFLICT (project_id) DO NOTHING;
+
+        -- Update existing rows where phase is null but project_info has it
+        UPDATE project_execution_state pes
+        SET phase = pi.phase, updated_at = NOW()
+        FROM project_info pi
+        WHERE pes.project_id = pi.id
+          AND (pes.phase IS NULL OR pes.phase = '')
+          AND pi.phase IS NOT NULL AND pi.phase != '';
+      END IF;
+    END $$;
+  `);
+
+  // ── Ensure organization_id columns are nullable for graceful removal ──
+  await safeExec("make organization_id nullable", `
+    DO $$
+    BEGIN
+      -- Make organization_id nullable on tables where it existed but was removed from Drizzle schema
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'organization_id') THEN
+        ALTER TABLE users ALTER COLUMN organization_id DROP NOT NULL;
+        ALTER TABLE users ALTER COLUMN organization_id SET DEFAULT 1;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'project_info' AND column_name = 'organization_id') THEN
+        ALTER TABLE project_info ALTER COLUMN organization_id DROP NOT NULL;
+        ALTER TABLE project_info ALTER COLUMN organization_id SET DEFAULT 1;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'clients' AND column_name = 'organization_id') THEN
+        ALTER TABLE clients ALTER COLUMN organization_id DROP NOT NULL;
+        ALTER TABLE clients ALTER COLUMN organization_id SET DEFAULT 1;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'counterparties' AND column_name = 'organization_id') THEN
+        ALTER TABLE counterparties ALTER COLUMN organization_id DROP NOT NULL;
+        ALTER TABLE counterparties ALTER COLUMN organization_id SET DEFAULT 1;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'dashboard_project_metrics' AND column_name = 'organization_id') THEN
+        ALTER TABLE dashboard_project_metrics ALTER COLUMN organization_id DROP NOT NULL;
+        ALTER TABLE dashboard_project_metrics ALTER COLUMN organization_id SET DEFAULT 1;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'dashboard_program_metrics' AND column_name = 'organization_id') THEN
+        ALTER TABLE dashboard_program_metrics ALTER COLUMN organization_id DROP NOT NULL;
+        ALTER TABLE dashboard_program_metrics ALTER COLUMN organization_id SET DEFAULT 1;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'phase_template' AND column_name = 'organization_id') THEN
+        ALTER TABLE phase_template ALTER COLUMN organization_id DROP NOT NULL;
+        ALTER TABLE phase_template ALTER COLUMN organization_id SET DEFAULT 1;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'portfolios' AND column_name = 'organization_id') THEN
+        ALTER TABLE portfolios ALTER COLUMN organization_id DROP NOT NULL;
+        ALTER TABLE portfolios ALTER COLUMN organization_id SET DEFAULT 1;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'qc_template' AND column_name = 'organization_id') THEN
+        ALTER TABLE qc_template ALTER COLUMN organization_id DROP NOT NULL;
+        ALTER TABLE qc_template ALTER COLUMN organization_id SET DEFAULT 1;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'eng_stage_templates' AND column_name = 'organization_id') THEN
+        ALTER TABLE eng_stage_templates ALTER COLUMN organization_id DROP NOT NULL;
+        ALTER TABLE eng_stage_templates ALTER COLUMN organization_id SET DEFAULT 1;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'role_credentials' AND column_name = 'organization_id') THEN
+        ALTER TABLE role_credentials ALTER COLUMN organization_id DROP NOT NULL;
+        ALTER TABLE role_credentials ALTER COLUMN organization_id SET DEFAULT 1;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'app_settings' AND column_name = 'organization_id') THEN
+        ALTER TABLE app_settings ALTER COLUMN organization_id DROP NOT NULL;
+        ALTER TABLE app_settings ALTER COLUMN organization_id SET DEFAULT 1;
+      END IF;
+    END $$;
+  `);
+
   console.log("[Schema] Additive alignments completed");
 }
 

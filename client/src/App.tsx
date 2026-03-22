@@ -87,6 +87,10 @@ const FyeRevenueTrackingPage = lazy(() => import("@/pages/fye-revenue-tracking")
 const TaskManagementPage = lazy(() => import("@/pages/task-management"));
 const StandupsPage = lazy(() => import("@/pages/standups"));
 const ExceptionsPage = lazy(() => import("@/pages/exceptions"));
+const PhaseTemplatesPage = lazy(() => import("@/pages/phase-templates"));
+const ProjectCreatePage = lazy(() => import("@/pages/project-create"));
+const DepartmentScoresPage = lazy(() => import("@/pages/department-scores"));
+const EngTemplateAdminPage = lazy(() => import("@/pages/eng-template-admin"));
 
 const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups"];
 const PM_ALLOWED_PATHS = ["/", "/dashboard", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm-dashboard", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups"];
@@ -118,6 +122,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   LifecycleBoardPage,
   ExecutionBoardPage,
   MyToolMeetingsPage,
+  RoleSettingsPage,
   SmartImportPage,
   SharePointIntakePage,
   InvoicePatternsPage,
@@ -130,6 +135,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   FeedbackPage,
   EeInfoPage,
   TrainingPage,
+  PMDashboard,
   PortfoliosPage,
   PortfolioDetailPage,
   PdDashboardPage,
@@ -162,6 +168,10 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   TaskManagementPage,
   StandupsPage,
   ExceptionsPage,
+  PhaseTemplatesPage,
+  ProjectCreatePage,
+  DepartmentScoresPage,
+  EngTemplateAdminPage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
