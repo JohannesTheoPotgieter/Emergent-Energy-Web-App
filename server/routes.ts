@@ -1859,7 +1859,7 @@ export async function registerRoutes(
           .where(eq(smartImportRuns.status, 'COMMITTED'))
           .groupBy(smartImportRuns.projectName),
         usePromotedProjectDetail ? listClientsFromPromotedCoreCompat() : db.select().from(clients),
-        db.execute(sql.raw(`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`)),
+        db.execute(sql.raw(`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`)).catch(() => ({ rows: [] })),
       ]);
       const allPlans = rawPlans;
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
@@ -2428,6 +2428,9 @@ export async function registerRoutes(
         projectIds: finalResult
           .map((project: any) => Number(project.project_info_id))
           .filter((value: number) => Number.isFinite(value)),
+      }).catch((err: any) => {
+        console.warn("getPlatformProjectSummaryMap failed (non-fatal):", err.message);
+        return new Map();
       });
       finalResult = finalResult.map((project: any) => ({
         ...project,
@@ -2437,12 +2440,16 @@ export async function registerRoutes(
       }));
 
       if (usePromotedProjectDetail || req.query.compare === "1" || req.query.compare === "true") {
-        const projectDetailComparison = await compareProjectDetailMasterReadiness();
-        if (projectDetailComparison.status !== "ready") {
-          console.warn("[promoted-read][project-detail] mismatch detected", projectDetailComparison);
+        try {
+          const projectDetailComparison = await compareProjectDetailMasterReadiness();
+          if (projectDetailComparison.status !== "ready") {
+            console.warn("[promoted-read][project-detail] mismatch detected", projectDetailComparison);
+          }
+          res.setHeader("X-Promoted-Project-Detail-Read", usePromotedProjectDetail ? "enabled" : "disabled");
+          res.setHeader("X-Promoted-Project-Detail-Comparison-Status", projectDetailComparison.status);
+        } catch (compErr: any) {
+          console.warn("compareProjectDetailMasterReadiness failed (non-fatal):", compErr.message);
         }
-        res.setHeader("X-Promoted-Project-Detail-Read", usePromotedProjectDetail ? "enabled" : "disabled");
-        res.setHeader("X-Promoted-Project-Detail-Comparison-Status", projectDetailComparison.status);
       }
 
       res.json(finalResult);
@@ -4085,9 +4092,9 @@ export async function registerRoutes(
         db.select().from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
         // Read ENG work_items
         db.select().from(workItems).where(and(eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt))),
-        db.execute(sql`SELECT id, project_id, status, title, due_date, assigned_approver FROM approvals`),
+        db.execute(sql`SELECT id, project_id, status, title, due_date, assigned_approver FROM approvals`).catch(() => ({ rows: [] })),
         getAllPMWorkItemsAsProjectPlan(),
-        db.execute(sql`SELECT id, project_name, severity, status, title, owner_user_id, due_date FROM qc_warning`),
+        db.execute(sql`SELECT id, project_name, severity, status, title, owner_user_id, due_date FROM qc_warning`).catch(() => ({ rows: [] })),
         db.execute(sql`SELECT id, name FROM users`),
         db.select().from(cashflowPoints),
         db.select().from(financeRevenueMonthly),
