@@ -18,7 +18,6 @@ ENABLE_STARTUP_SCHEMA_REPAIR = "true"
 [deployment]
 deploymentTarget = "autoscale"
 build = ["sh", "-c", "npm run build"]
-publicDir = "dist/public"
 run = ["sh", "-c", "npm run start"]
 
 [workflows]
