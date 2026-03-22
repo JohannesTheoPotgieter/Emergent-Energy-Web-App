@@ -642,15 +642,15 @@ router.post("/api/home/notes", requireAuth, requireAdmin, async (req, res) => {
 router.get("/api/projects-summary", requireAuth, async (req, res) => {
   try {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, workItemsResult, handoverRows] = await Promise.all([
-      storage.getAllProjectInfo(),
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
-      storage.getAllProjectPlans(),
-      storage.getAllProjectEditableFields(),
-      storage.getAllMilestoneTaskLinks(),
-      storage.getAllOperationalTasks(),
-      db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`),
-      db.execute(sql`SELECT wi.project_id, pi.project_name, wi.percent_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.title, wi.type FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL`),
+      storage.getAllProjectInfo().catch((e: any) => { console.warn("[dept-projects] allProjectInfo failed:", e.message); return []; }),
+      storage.getAllProgramExpenses().catch((e: any) => { console.warn("[dept-projects] allExpenses failed:", e.message); return []; }),
+      storage.getAllProgramInflows().catch((e: any) => { console.warn("[dept-projects] rawInflows failed:", e.message); return []; }),
+      storage.getAllProjectPlans().catch((e: any) => { console.warn("[dept-projects] rawPlans failed:", e.message); return []; }),
+      storage.getAllProjectEditableFields().catch((e: any) => { console.warn("[dept-projects] allEditableFields failed:", e.message); return []; }),
+      storage.getAllMilestoneTaskLinks().catch((e: any) => { console.warn("[dept-projects] allTaskLinks failed:", e.message); return []; }),
+      storage.getAllOperationalTasks().catch((e: any) => { console.warn("[dept-projects] allOpTasks failed:", e.message); return []; }),
+      db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`).catch((e: any) => { console.warn("[dept-projects] uploadMetadata failed:", e.message); return { rows: [] }; }),
+      db.execute(sql`SELECT wi.project_id, pi.project_name, wi.percent_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.title, wi.type FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL`).catch((e: any) => { console.warn("[dept-projects] workItems failed:", e.message); return { rows: [] }; }),
       db.execute(sql`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`).catch(() => ({ rows: [] })),
     ]);
 
