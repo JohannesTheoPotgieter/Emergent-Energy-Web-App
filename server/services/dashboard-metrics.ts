@@ -276,6 +276,8 @@ export async function refreshAllMetrics(): Promise<{ refreshed: number; failed: 
 
   const toRefresh = projects.filter((p) => !recentlyRefreshed.has(p.id));
   let refreshed = 0;
+  let failed = 0;
+  const failedProjectIds: number[] = [];
 
   // Process with concurrency limit instead of sequentially
   for (let i = 0; i < toRefresh.length; i += CONCURRENCY_LIMIT) {
@@ -283,9 +285,14 @@ export async function refreshAllMetrics(): Promise<{ refreshed: number; failed: 
     const results = await Promise.allSettled(
       batch.map((p) => refreshProjectMetrics(p.id)),
     );
-    for (const result of results) {
-      if (result.status === "fulfilled") refreshed++;
-      else console.warn(`[dashboard-metrics] Failed to refresh project:`, result.reason?.message);
+    for (let j = 0; j < results.length; j++) {
+      if (results[j].status === "fulfilled") {
+        refreshed++;
+      } else {
+        failed++;
+        failedProjectIds.push(batch[j].id);
+        console.warn(`[dashboard-metrics] Failed to refresh project ${batch[j].id}:`, (results[j] as PromiseRejectedResult).reason?.message);
+      }
     }
   }
 
