@@ -127,8 +127,11 @@ async function bootstrap() {
     }
   } catch (err) {
     console.error("[Bootstrap] Failed to set up frontend serving:", err);
-    // Serve a basic fallback so the API still works
+    // Only serve 503 for non-API routes so the API still works
     app.use("/{*path}", (_req, res) => {
+      if (_req.path.startsWith("/api/")) {
+        return res.status(404).json({ error: "Not found" });
+      }
       res.status(503).json({ error: "Frontend failed to initialize", detail: String(err) });
     });
   }
