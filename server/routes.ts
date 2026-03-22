@@ -9094,7 +9094,10 @@ export async function registerRoutes(
 
   app.get("/api/export/projects-summary", requireAuth, async (req, res) => {
     try {
-      const response = await fetch(`http://0.0.0.0:${process.env.PORT || 5000}/api/projects-summary`);
+      const authHeader = req.headers.authorization || "";
+      const response = await fetch(`http://0.0.0.0:${process.env.PORT || 5000}/api/projects-summary`, {
+        headers: { Authorization: authHeader },
+      });
       const summary = await response.json();
       const csv = generateCSV(summary, [
         "project_name", "size_kwp", "pd", "pm", "phase",
