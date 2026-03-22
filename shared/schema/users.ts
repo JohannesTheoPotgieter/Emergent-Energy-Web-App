@@ -24,11 +24,9 @@ export const users = pgTable("users", {
   department: text("department"),
   microsoft_id: text("microsoft_id").unique(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-  // Multi-tenancy (Prompt 11)
-  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
 });
 
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, organizationId: true } as any);
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true } as any);
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
@@ -98,10 +96,8 @@ export const roleCredentials = pgTable("role_credentials", {
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-  // Multi-tenancy (Prompt 11)
-  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
 });
-export const insertRoleCredentialSchema = createInsertSchema(roleCredentials).omit({ id: true, createdAt: true, updatedAt: true, organizationId: true } as any);
+export const insertRoleCredentialSchema = createInsertSchema(roleCredentials).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertRoleCredential = z.infer<typeof insertRoleCredentialSchema>;
 export type RoleCredential = typeof roleCredentials.$inferSelect;
 
@@ -113,8 +109,6 @@ export const appSettings = pgTable("app_settings", {
   value: text("value"),
   updatedBy: text("updated_by"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  // Multi-tenancy (Prompt 11)
-  organizationId: integer("organization_id").notNull().default(1).references(() => organizations.id),
 });
 export type AppSetting = typeof appSettings.$inferSelect;
 
