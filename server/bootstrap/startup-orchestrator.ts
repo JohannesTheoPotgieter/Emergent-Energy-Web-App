@@ -673,6 +673,55 @@ async function runAdditiveSchemaAlignments() {
     ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
   `);
 
+  // ── temporal/audit columns on finance tables ──
+  await safeExec("finance temporal columns", `
+    ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS effective_from TIMESTAMP DEFAULT NOW();
+    ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS effective_to TIMESTAMP;
+    ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS snapshot_run_id INTEGER;
+    ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'imported';
+    ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS import_snapshot JSONB;
+    ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS last_edited_by INTEGER;
+    ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS last_edited_at TIMESTAMP;
+    ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS effective_from TIMESTAMP DEFAULT NOW();
+    ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS effective_to TIMESTAMP;
+    ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS snapshot_run_id INTEGER;
+    ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'imported';
+    ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS import_snapshot JSONB;
+    ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS last_edited_by INTEGER;
+    ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS last_edited_at TIMESTAMP;
+    ALTER TABLE cashflow_points ADD COLUMN IF NOT EXISTS effective_from TIMESTAMP DEFAULT NOW();
+    ALTER TABLE cashflow_points ADD COLUMN IF NOT EXISTS effective_to TIMESTAMP;
+    ALTER TABLE cashflow_points ADD COLUMN IF NOT EXISTS snapshot_run_id INTEGER;
+    ALTER TABLE cashflow_points ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'imported';
+    ALTER TABLE cashflow_points ADD COLUMN IF NOT EXISTS import_snapshot JSONB;
+    ALTER TABLE cashflow_points ADD COLUMN IF NOT EXISTS last_edited_by INTEGER;
+    ALTER TABLE cashflow_points ADD COLUMN IF NOT EXISTS last_edited_at TIMESTAMP;
+    ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS effective_from TIMESTAMP DEFAULT NOW();
+    ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS effective_to TIMESTAMP;
+    ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS snapshot_run_id INTEGER;
+    ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'imported';
+    ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS import_snapshot JSONB;
+    ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS last_edited_by INTEGER;
+    ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS last_edited_at TIMESTAMP;
+    ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS effective_from TIMESTAMP DEFAULT NOW();
+    ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS effective_to TIMESTAMP;
+    ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS snapshot_run_id INTEGER;
+    ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'imported';
+    ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS import_snapshot JSONB;
+    ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS last_edited_by INTEGER;
+    ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS last_edited_at TIMESTAMP;
+  `);
+
+  // ── project_id FK additions for tables that gained them in schema refactor ──
+  await safeExec("project_id FK additions", `
+    ALTER TABLE milestone_task_links ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE project_editable_fields ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS linked_project_id INTEGER;
+    ALTER TABLE priority_links ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE expense_task_links ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE cos_status_overrides ADD COLUMN IF NOT EXISTS project_id INTEGER;
+  `);
+
   // ── engineering task columns ──
   await safeExec("engineering task columns", `
     ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS work_item_id INTEGER REFERENCES work_items(id);
