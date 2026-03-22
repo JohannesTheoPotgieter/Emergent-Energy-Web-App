@@ -14,32 +14,58 @@ import { execSync } from "child_process";
  * SQL-based schema sync: runs pre-push-enums.sql (all enums + stub tables)
  * then full-schema-alignment.sql (all columns via ALTER TABLE ADD COLUMN IF NOT EXISTS).
  * This replaces drizzle-kit push which hangs on interactive rename prompts.
+ * Uses psql when available, falls back to db.execute() for production containers.
  */
 async function runDrizzleSchemaSync(log: (message: string, source?: string) => void) {
   const mode = getDbMode();
   if (mode !== "postgres") return;
   if (!process.env.DATABASE_URL) return;
 
-  try {
-    execSync("psql $DATABASE_URL -f script/pre-push-enums.sql", {
-      stdio: ["pipe", "pipe", "pipe"],
-      timeout: 30000,
-      env: { ...process.env },
-    });
-    log("pre-push enums/tables synced", "Startup:Schema");
-  } catch (err: any) {
-    log(`pre-push enums warning (non-fatal): ${err.message}`, "Startup:Schema");
-  }
+  const sqlFiles = [
+    { name: "pre-push-enums.sql", path: "script/pre-push-enums.sql" },
+    { name: "full-schema-alignment.sql", path: "script/full-schema-alignment.sql" },
+  ];
 
-  try {
-    execSync("psql $DATABASE_URL -f script/full-schema-alignment.sql", {
-      stdio: ["pipe", "pipe", "pipe"],
-      timeout: 30000,
-      env: { ...process.env },
-    });
-    log("full schema alignment synced", "Startup:Schema");
-  } catch (err: any) {
-    log(`full schema alignment warning (non-fatal): ${err.message}`, "Startup:Schema");
+  for (const file of sqlFiles) {
+    // Try psql first (fastest, handles DO $$ blocks natively)
+    try {
+      execSync(`psql $DATABASE_URL -f ${file.path}`, {
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 30000,
+        env: { ...process.env },
+      });
+      log(`${file.name} synced (psql)`, "Startup:Schema");
+      continue;
+    } catch (_psqlErr: any) {
+      // psql not available or failed — fall back to db.execute
+    }
+
+    // Fallback: read file and execute via Drizzle
+    try {
+      const fs = await import("fs");
+      const path = await import("path");
+      const candidates = [
+        path.resolve(process.cwd(), file.path),
+        path.resolve(process.cwd(), `dist/${file.path}`),
+        path.resolve(__dirname, `../${file.path}`),
+        path.resolve(__dirname, `../../${file.path}`),
+      ];
+      let sqlContent: string | null = null;
+      for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+          sqlContent = fs.readFileSync(candidate, "utf8");
+          break;
+        }
+      }
+      if (!sqlContent) {
+        log(`${file.name} not found in any search path, skipping`, "Startup:Schema");
+        continue;
+      }
+      await db.execute(sql.raw(sqlContent));
+      log(`${file.name} synced (db.execute)`, "Startup:Schema");
+    } catch (err: any) {
+      log(`${file.name} warning (non-fatal): ${err.message}`, "Startup:Schema");
+    }
   }
 }
 
