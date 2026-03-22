@@ -289,6 +289,16 @@ async function runAdditiveSchemaAlignments() {
     );
   `);
 
+  await safeExec("project_settings table", `
+    CREATE TABLE IF NOT EXISTS project_settings (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER UNIQUE NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      excel_tracker_link TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
   // ── Critical tables that must exist for core app functionality ──
   await safeExec("project_execution_state table", `
     CREATE TABLE IF NOT EXISTS project_execution_state (
@@ -720,6 +730,27 @@ async function runAdditiveSchemaAlignments() {
     ALTER TABLE priority_links ADD COLUMN IF NOT EXISTS project_id INTEGER;
     ALTER TABLE expense_task_links ADD COLUMN IF NOT EXISTS project_id INTEGER;
     ALTER TABLE cos_status_overrides ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE derived_project_kpis ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE finance_cos_monthly ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE finance_revenue_monthly ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE financial_edit_requests ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE financial_integration_rules ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE forecast_pipeline ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE issue_resolution_rules ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE key_date_mappings ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE project_plan ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE project_plan_dependency ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE project_team_members ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE qc_plan_link ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE qc_postmortem ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE qc_warning ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE schedule_change_notice ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE user_project_folders ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE weekly_reviews ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE working_plan_scenario ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE writeback_mappings ADD COLUMN IF NOT EXISTS project_id INTEGER;
   `);
 
   // ── engineering task columns ──
@@ -1114,6 +1145,14 @@ export async function runStartupOrchestrator(options: {
   }
   await runStartupSeeds({ startupDataSeedEnabled: effectiveDataSeedEnabled, allowStartupMutations: effectiveDataSeedEnabled || allowStartupMutations, log });
   report.seeds.push(effectiveDataSeedEnabled ? "completed" : "skipped");
+
+  // Integrity guard always runs (idempotent safety net for 1:1 relationships)
+  try {
+    const { runIntegrityGuard } = await import("./backfills/integrity-guard");
+    await runIntegrityGuard(log);
+  } catch (err: any) {
+    log(`Integrity guard error (non-fatal): ${err.message}`, "Startup:IntegrityGuard");
+  }
 
   await runStartupBackfills({
     startupBackfillEnabled,
