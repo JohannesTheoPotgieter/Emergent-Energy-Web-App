@@ -467,7 +467,7 @@ function ClientOverviewDetail({ client }: { client: ProjectLifecycleWorkspaceCli
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => setLocation("/lifecycle-board")} data-testid="button-client-overview-create-project">
+              <Button variant="outline" onClick={() => setLocation("/project-create")} data-testid="button-client-overview-create-project">
                 <Plus className="mr-1 h-4 w-4" />
                 New Project
               </Button>
@@ -1595,7 +1595,7 @@ export function ProjectLifecyclePage() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={() => setLocation("/lifecycle-board")} data-testid="button-open-project-create-from-client-workspace">
+                <Button variant="outline" onClick={() => setLocation("/project-create")} data-testid="button-open-project-create-from-client-workspace">
                   <Plus className="mr-1 h-4 w-4" />
                   New Project
                 </Button>
