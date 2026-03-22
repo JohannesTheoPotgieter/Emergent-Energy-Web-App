@@ -651,7 +651,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       storage.getAllOperationalTasks(),
       db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`),
       db.execute(sql`SELECT wi.project_id, pi.project_name, wi.percent_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.title, wi.type FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL`),
-      db.execute(sql`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`),
+      db.execute(sql`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`).catch(() => ({ rows: [] })),
     ]);
 
     const handoverMap = new Map<number, any>();

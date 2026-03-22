@@ -581,6 +581,108 @@ async function runAdditiveSchemaAlignments() {
     );
   `);
 
+  // ── PD → PM Handover table (required by /api/projects-summary) ──
+  await safeExec("project_pd_pm_handover table", `
+    CREATE TABLE IF NOT EXISTS project_pd_pm_handover (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL UNIQUE REFERENCES project_info(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'DRAFT',
+      handover_status_text TEXT,
+      pd_owner TEXT,
+      pm_owner TEXT,
+      summary TEXT,
+      risks TEXT,
+      assumptions TEXT,
+      feasibility_status TEXT,
+      feasibility_notes TEXT,
+      dependency_summary TEXT,
+      handover_readiness_status TEXT,
+      handover_readiness_notes TEXT,
+      engineering_status TEXT,
+      quality_status TEXT,
+      notes_to_pm TEXT,
+      handover_summary TEXT,
+      deliverables JSONB NOT NULL DEFAULT '{}',
+      submitted_by TEXT,
+      submitted_at TIMESTAMP,
+      accepted_by TEXT,
+      accepted_at TIMESTAMP,
+      rejected_by TEXT,
+      rejected_at TIMESTAMP,
+      rejection_reason TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // ── Approvals table (required by /api/execution-dashboard) ──
+  await safeExec("approvals table", `
+    DO $$ BEGIN CREATE TYPE approval_status AS ENUM ('pending', 'approved', 'rejected', 'expired'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    CREATE TABLE IF NOT EXISTS approvals (
+      id SERIAL PRIMARY KEY,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      status approval_status NOT NULL DEFAULT 'pending',
+      requested_by INTEGER NOT NULL REFERENCES users(id),
+      requested_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      decided_by INTEGER REFERENCES users(id),
+      decided_at TIMESTAMP,
+      decision_note TEXT,
+      token TEXT,
+      expires_at TIMESTAMP,
+      related_entity_type TEXT,
+      related_entity_id INTEGER,
+      assigned_approver INTEGER REFERENCES users(id),
+      due_date TIMESTAMP,
+      project_id INTEGER NOT NULL REFERENCES project_info(id),
+      approval_category TEXT
+    );
+  `);
+
+  // ── QC Warning table (required by /api/execution-dashboard) ──
+  await safeExec("qc_warning table", `
+    CREATE TABLE IF NOT EXISTS qc_warning (
+      id SERIAL PRIMARY KEY,
+      project_name TEXT NOT NULL,
+      project_id INTEGER REFERENCES project_info(id),
+      severity TEXT NOT NULL DEFAULT 'Medium',
+      warning_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      related_plan_item_id INTEGER,
+      related_item_instance_id INTEGER,
+      status TEXT NOT NULL DEFAULT 'open',
+      owner_user_id INTEGER,
+      due_date TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS qc_warning_event (
+      id SERIAL PRIMARY KEY,
+      warning_id INTEGER NOT NULL REFERENCES qc_warning(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL,
+      note TEXT,
+      actor_user_id INTEGER,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // ── Support tickets table ──
+  await safeExec("support_tickets table", `
+    CREATE TABLE IF NOT EXISTS support_tickets (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER REFERENCES users(id),
+      summary TEXT NOT NULL,
+      steps_to_reproduce TEXT NOT NULL,
+      current_route TEXT,
+      user_agent TEXT,
+      correlation_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
   console.log("[Schema] Additive alignments completed");
 }
 
