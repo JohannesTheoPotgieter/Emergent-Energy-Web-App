@@ -118,7 +118,7 @@ export async function generatePmReportData(month: string) {
   ]);
 
   // Build lookup maps
-  const projectMap = new Map(allProjectRows.map(r => [r.project_info.id, { ...r.project_info, ...r.project_execution_state, id: r.project_info.id }]));
+  const projectMap = new Map(allProjectRows.map(r => [r.project_info.id, { ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id }]));
   const clientMap = new Map(allClients.map(c => [c.id, c]));
   const userMap = new Map(allUsers.map(u => [u.id, u.name]));
   const metricsMap = new Map(allMetrics.map(m => [m.projectId, m]));
@@ -278,7 +278,8 @@ export async function generatePmReportData(month: string) {
   });
 
   // ===== SECTION 4: Tasks =====
-  const pmWorkItems = allWorkItemRows.filter(w => activeProjectIds.has(w.projectId));
+  // Include all workstreams except ENG (engineering has its own report)
+  const pmWorkItems = allWorkItemRows.filter(w => activeProjectIds.has(w.projectId) && w.workstream !== "ENG");
 
   const programmeTaskMetrics = {
     tasksCompletedThisMonth: pmWorkItems.filter(w => {

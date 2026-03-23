@@ -148,12 +148,13 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
 
       res.json({ success: true, status: "reviewed" });
     } catch (err: any) {
+      console.error("[Engineering Monthly Report] Error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
 
   // POST publish
-  app.post("/api/reports/engineering/monthly/:id/publish", requireAuth, requirePermission("reports", "edit"), async (req, res) => {
+  app.post("/api/reports/engineering/monthly/:id/publish", requireAuth, requirePermission("reports", "publish" as any), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
@@ -170,12 +171,13 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
 
       res.json({ success: true, status: "published" });
     } catch (err: any) {
+      console.error("[Engineering Monthly Report] Error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
 
   // POST revert
-  app.post("/api/reports/engineering/monthly/:id/revert", requireAuth, requirePermission("reports", "edit"), async (req, res) => {
+  app.post("/api/reports/engineering/monthly/:id/revert", requireAuth, requirePermission("reports", "publish" as any), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
@@ -192,6 +194,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
 
       res.json({ success: true, status: "draft" });
     } catch (err: any) {
+      console.error("[Engineering Monthly Report] Error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
@@ -221,6 +224,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
         regeneratedAt: updated.regeneratedAt,
       });
     } catch (err: any) {
+      console.error("[Engineering Monthly Report] Error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
@@ -237,6 +241,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
       res.setHeader("Content-Disposition", `attachment; filename="Engineering_Monthly_Report_${snapshot.reportMonth}.pdf"`);
       res.send(pdfBuffer);
     } catch (err: any) {
+      console.error("[Engineering Monthly Report] Error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
@@ -250,6 +255,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
 
       await generateReportExcel(REPORT_TYPE, snapshot.data as any, snapshot.reportMonth, res);
     } catch (err: any) {
+      console.error("[Engineering Monthly Report] Error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
@@ -276,6 +282,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
         monthB: { month: monthB, status: snapshotB.status, data: snapshotB.data },
       });
     } catch (err: any) {
+      console.error("[Engineering Monthly Report] Error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
@@ -300,6 +307,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
 
       res.json(projectData);
     } catch (err: any) {
+      console.error("[Engineering Monthly Report] Error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });

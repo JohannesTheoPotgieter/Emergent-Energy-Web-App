@@ -4,7 +4,8 @@ import { useLocation } from "wouter";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 import ReportHeader from "@/components/reports/ReportHeader";
 import KPITileGrid from "@/components/reports/KPITileGrid";
 import RAGBadge from "@/components/reports/RAGBadge";
@@ -38,6 +39,7 @@ async function apiPost(url: string) {
 
 async function downloadFile(url: string, filename: string) {
   const res = await fetch(url, { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error(`Download failed: ${res.status}`);
   const blob = await res.blob();
   const blobUrl = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -51,8 +53,9 @@ export default function PmMonthlyReport() {
   const [month, setMonth] = useState(getCurrentMonth);
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
-  const { data: report, isLoading } = useQuery({
+  const { data: report, isLoading, error } = useQuery({
     queryKey: ["/api/reports/pm/monthly", month],
     queryFn: async () => {
       const res = await fetch(`/api/reports/pm/monthly?month=${month}`, { headers: getAuthHeaders() });
@@ -64,6 +67,16 @@ export default function PmMonthlyReport() {
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/reports/pm/monthly", month] });
   }, [queryClient, month]);
+
+  const safeAction = useCallback(async (action: () => Promise<void>, label: string) => {
+    try {
+      await action();
+      invalidate();
+      toast({ title: "Success", description: `${label} completed.` });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || `${label} failed.`, variant: "destructive" });
+    }
+  }, [invalidate, toast]);
 
   const reportData = report?.data || {};
   const kpis = reportData.kpis || {};
@@ -90,21 +103,28 @@ export default function PmMonthlyReport() {
         regeneratedAt={report?.regeneratedAt}
         reportId={reportId}
         isLoading={isLoading}
-        onRegenerate={reportId ? async () => { await apiPost(`/api/reports/pm/monthly/${reportId}/regenerate`); invalidate(); } : undefined}
-        onReview={reportId && status === "draft" ? async () => { await apiPost(`/api/reports/pm/monthly/${reportId}/review`); invalidate(); } : undefined}
-        onPublish={reportId && status === "reviewed" ? async () => { await apiPost(`/api/reports/pm/monthly/${reportId}/publish`); invalidate(); } : undefined}
-        onRevert={reportId && status === "reviewed" ? async () => { await apiPost(`/api/reports/pm/monthly/${reportId}/revert`); invalidate(); } : undefined}
-        onExportPdf={reportId ? () => downloadFile(`/api/reports/pm/monthly/${reportId}/export/pdf`, `PM_Report_${month}.pdf`) : undefined}
-        onExportExcel={reportId ? () => downloadFile(`/api/reports/pm/monthly/${reportId}/export/excel`, `PM_Report_${month}.xlsx`) : undefined}
+        onRegenerate={reportId ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/regenerate`), "Regenerate") : undefined}
+        onReview={reportId && status === "draft" ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/review`), "Review") : undefined}
+        onPublish={reportId && status === "reviewed" ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/publish`), "Publish") : undefined}
+        onRevert={reportId && status === "reviewed" ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/revert`), "Revert") : undefined}
+        onExportPdf={reportId ? () => safeAction(() => downloadFile(`/api/reports/pm/monthly/${reportId}/export/pdf`, `PM_Report_${month}.pdf`), "PDF Export") : undefined}
+        onExportExcel={reportId ? () => safeAction(() => downloadFile(`/api/reports/pm/monthly/${reportId}/export/excel`, `PM_Report_${month}.xlsx`), "Excel Export") : undefined}
         onCompare={() => navigate(`/reports/pm/monthly/compare?monthA=${month}`)}
         onHistory={() => navigate("/reports/pm/monthly/history")}
       />
+
+      {error && (
+        <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          {(error as Error).message || "Failed to load report"}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center min-h-[40vh]">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-      ) : (
+      ) : !error && (
         <>
           <KPITileGrid tiles={kpiTiles} />
 

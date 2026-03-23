@@ -65,7 +65,7 @@ export async function generateEngineeringReportData(month: string) {
     allUsers,
   ] = await Promise.all([
     db.select().from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
-    db.select().from(workItems).where(and(isNull(workItems.deletedAt), eq(workItems.workstream, "Engineering"))),
+    db.select().from(workItems).where(and(isNull(workItems.deletedAt), eq(workItems.workstream, "ENG"))),
     db.select().from(deliverables),
     db.select().from(projectEngStages),
     db.select().from(engStageTemplates),
@@ -74,7 +74,7 @@ export async function generateEngineeringReportData(month: string) {
     db.select({ id: users.id, name: users.name }).from(users),
   ]);
 
-  const projectMap = new Map(allProjectRows.map(r => [r.project_info.id, { ...r.project_info, ...r.project_execution_state, id: r.project_info.id }]));
+  const projectMap = new Map(allProjectRows.map(r => [r.project_info.id, { ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id }]));
   const userMap = new Map(allUsers.map(u => [u.id, u.name]));
   const stageTemplateMap = new Map(stageTemplates.map(s => [s.id, s]));
 
